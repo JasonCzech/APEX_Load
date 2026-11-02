@@ -20,6 +20,79 @@ function validRelationshipStateCounts(states?: Record<string, unknown>): boolean
   return true
 }
 
+// The secret-free metadata the analyzer attaches to each correlation: the
+// variable it creates, the rule and evidence that found it, and its review
+// decision. Captured values never travel in these fields.
+export interface AdmittedCorrelationMetadata {
+  name?: string
+  source?: string
+  expression?: string
+  ruleId?: string
+  confidence?: number
+  reviewAction?: string
+  reasons: string[]
+  reasonsOmitted: number
+  classification?: string
+  diffConfidence?: number
+}
+
+export interface AdmittedNativeCorrelation extends AdmittedCorrelationMetadata {
+  ordinal: number
+  preApplied: boolean
+  producer?: SalesforceNativeRequestReference
+  consumers: SalesforceNativeRequestReference[]
+  consumersOmitted: number
+}
+
+const METADATA_TEXT_LIMIT = 512
+const EXPRESSION_LIMIT = 4096
+const REASON_LIMIT = 16
+
+// Each field is optional; a present field of the wrong shape is dropped and
+// reported as malformed rather than shown.
+function admitCorrelationMetadata(row: Record<string, unknown>): { metadata: AdmittedCorrelationMetadata; malformed: boolean } {
+  let malformed = false
+  const text = (field: string, limit = METADATA_TEXT_LIMIT): string | undefined => {
+    const value = row[field]
+    if (value === undefined) return undefined
+    if (typeof value !== 'string' || value.length > limit) { malformed = true; return undefined }
+    return value.trim() || undefined
+  }
+  const ratio = (field: string): number | undefined => {
+    const value = row[field]
+    if (value === undefined) return undefined
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 1) { malformed = true; return undefined }
+    return value
+  }
+  const reasons: string[] = []
+  let reasonsOmitted = 0
+  if (row.reasons !== undefined) {
+    if (!Array.isArray(row.reasons)) malformed = true
+    else {
+      for (const reason of row.reasons) {
+        if (typeof reason !== 'string' || reason.length > METADATA_TEXT_LIMIT) { malformed = true; continue }
+        if (reasons.length >= REASON_LIMIT) { reasonsOmitted++; continue }
+        if (reason.trim()) reasons.push(reason.trim())
+      }
+    }
+  }
+  return {
+    metadata: {
+      name: text('name'),
+      source: text('source'),
+      expression: text('expression', EXPRESSION_LIMIT),
+      ruleId: text('rule_id'),
+      confidence: ratio('confidence'),
+      reviewAction: text('review_action'),
+      reasons,
+      reasonsOmitted,
+      classification: text('classification'),
+      diffConfidence: ratio('diff_confidence'),
+    },
+    malformed,
+  }
+}
+
 function reference(value: unknown): SalesforceNativeRequestReference | undefined {
   const item = object(value)
   if (!item || !number(item.har_entry_id) || referenceFields.some(field => item[field] !== undefined && (typeof item[field] !== 'string' || (item[field] as string).length > 4096))) return undefined
@@ -34,7 +107,7 @@ export function admitNativeCorrelationEvidence(value: unknown) {
   let omittedRows = 0, omittedReferences = 0, referencesRemaining = 2048
   const rawRows = Array.isArray(preview?.correlations) ? preview.correlations : []
   omittedRows = Math.max(0, rawRows.length - 2048)
-  const rows: { ordinal: number; preApplied: boolean; producer?: SalesforceNativeRequestReference; consumers: SalesforceNativeRequestReference[]; consumersOmitted: number }[] = []
+  const rows: AdmittedNativeCorrelation[] = []
   for (let index = 0; index < Math.min(rawRows.length, 2048); index++) {
     const row = object(rawRows[index])
     if (!row) { malformed = true; omittedRows++; continue }
@@ -55,7 +128,9 @@ export function admitNativeCorrelationEvidence(value: unknown) {
     referencesRemaining -= inspected
     const omitted = rawConsumers.length - inspected + rejected
     omittedReferences += omitted
-    rows.push({ ordinal: index + 1, preApplied: row.pre_applied === true, producer, consumers, consumersOmitted: (number(row.consumer_references_omitted) ? row.consumer_references_omitted as number : 0) + omitted })
+    const admitted = admitCorrelationMetadata(row)
+    if (admitted.malformed) malformed = true
+    rows.push({ ...admitted.metadata, ordinal: index + 1, preApplied: row.pre_applied === true, producer, consumers, consumersOmitted: (number(row.consumer_references_omitted) ? row.consumer_references_omitted as number : 0) + omitted })
   }
   return { present: value != null, coverage: coverage as unknown as SalesforceCorrelationCoverage | undefined, coverageValid, rows, malformed: Boolean(malformed), omittedRows, omittedReferences, nativeFinal: preview?.native_path_domain === 'final_native' }
 }

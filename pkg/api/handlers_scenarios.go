@@ -51,7 +51,7 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if shapeErr != nil {
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return
 	}
 	if featureID != "" {
@@ -266,7 +266,7 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if shapeErr != nil {
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return
 	}
 	if featureID != "" {
@@ -434,7 +434,7 @@ func (s *Server) handleValidateScenarioLoadModel(w http.ResponseWriter, r *http.
 		return
 	}
 	if shapeErr != nil {
-		writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+		writeDomainFeaturePolicyUnavailable(w)
 		return
 	}
 	if featureID != "" {

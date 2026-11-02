@@ -374,3 +374,18 @@ func TestWorkloadShapeCatalogMatchesFeatureCatalog(t *testing.T) {
 		}
 	}
 }
+
+func TestWriteDomainFeaturePolicyUnavailableCarriesAStableCode(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	writeDomainFeaturePolicyUnavailable(recorder)
+	if recorder.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", recorder.Code)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body["code"] != "domain_feature_policy_unavailable" || body["error"] != "domain feature policy is unavailable" {
+		t.Fatalf("body = %v", body)
+	}
+}

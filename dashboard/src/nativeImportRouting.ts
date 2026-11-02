@@ -132,12 +132,52 @@ export async function archiveIsJMeterProject(file: File): Promise<boolean> {
   return complete && plans && !sources
 }
 
+// A zipped HAR capture, as the HAR capture guide asks for sensitive captures:
+// the HAR importer unwraps the one .har inside (pkg/api/har_import_archive.go).
+export function isHARCaptureFileName(fileName: string): boolean {
+  const name = fileName.toLowerCase()
+  return name.endsWith('.har') || name.endsWith('.har.zip')
+}
+
+function zipMemberIsOSMetadata(memberName: string): boolean {
+  const lower = memberName.toLowerCase()
+  const base = zipMemberBase(memberName)
+  return lower.endsWith('/') || lower.startsWith('__macosx/') || lower.includes('/__macosx/') || base === '.ds_store' || base === 'thumbs.db' || base === 'desktop.ini'
+}
+
+// archiveIsZippedHARCapture recognizes a ZIP holding exactly one .har and
+// nothing else but folders and OS metadata, which the HAR importer reads
+// directly. An archive with anything more (a VuGen script that keeps a HAR
+// beside its sources) stays with the archive importers.
+export async function archiveIsZippedHARCapture(file: File): Promise<boolean> {
+  if (!isZipArchiveFile(file)) return false
+  let captures = 0
+  let other = false
+  const complete = await visitZipMemberNames(file, memberName => {
+    if (zipMemberIsOSMetadata(memberName)) return false
+    if (zipMemberBase(memberName).endsWith('.har')) captures += 1
+    else other = true
+    return other || captures > 1
+  })
+  return complete && !other && captures === 1
+}
+
+// Whether a dropped file is a HAR capture, plain or zipped.
+export async function fileIsHARCapture(file: File): Promise<boolean> {
+  if (isHARCaptureFileName(file.name)) return true
+  try {
+    return await archiveIsZippedHARCapture(file)
+  } catch {
+    return false
+  }
+}
+
 export function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
   const name = fileName.toLowerCase()
   if (name.endsWith('.bruno.zip') || name.endsWith('.bruno.tar') || name.endsWith('.bruno.tar.gz') || name.endsWith('.bru')) return { launcher: 'bruno' }
+  if (isHARCaptureFileName(name)) return { launcher: 'traffic_har', mode: 'auto_detect' }
   if (name.endsWith('.zip') || name.endsWith('.usz')) return { launcher: 'enterprise_archive' }
   if (name.endsWith('.jmx')) return { launcher: 'jmeter' }
-  if (name.endsWith('.har')) return { launcher: 'traffic_har', mode: 'auto_detect' }
   if (name.endsWith('.postman_collection.json') || name.endsWith('.postman_environment.json')) return { launcher: 'postman' }
   if (name.endsWith('.asyncapi.json') || name.endsWith('.asyncapi.yaml') || name.endsWith('.asyncapi.yml')) return { launcher: 'asyncapi' }
   if (name.endsWith('.openapi.json') || name.endsWith('.openapi.yaml') || name.endsWith('.openapi.yml')) return { launcher: 'openapi' }
@@ -149,6 +189,20 @@ export function nativeImportTargetForFileName(fileName: string): NativeImportTar
   if (name.endsWith('.js') || name.endsWith('.ts')) return { launcher: 'k6' }
   if (name.endsWith('.http') || name.endsWith('.curl') || name.endsWith('.sh') || name.endsWith('.txt')) return { launcher: 'sample', mode: 'standard_api' }
   return { launcher: 'openapi' }
+}
+
+// The extensions some script importer reads. nativeImportTargetForFileName
+// routes any other name to the OpenAPI importer as a last resort, so a drop
+// checks this first instead of opening an importer that will refuse the file.
+const SUPPORTED_IMPORT_EXTENSIONS = [
+  '.bru', '.bruno.zip', '.bruno.tar', '.bruno.tar.gz', '.zip', '.usz', '.jmx', '.har',
+  '.json', '.wsdl', '.xml', '.raml', '.yaml', '.yml', '.avro', '.mqsc', '.properties',
+  '.js', '.ts', '.http', '.curl', '.sh', '.txt',
+]
+
+export function isSupportedNativeImportFileName(fileName: string): boolean {
+  const name = fileName.toLowerCase()
+  return SUPPORTED_IMPORT_EXTENSIONS.some(extension => name.endsWith(extension))
 }
 
 export function hasBrunoSourceMarkers(content: string): boolean {
@@ -230,6 +284,7 @@ export async function nativeImportTargetForFile(file: File): Promise<NativeImpor
     return { launcher: 'bruno', mode: 'native_requests' }
   }
   if (await archiveIsJMeterProject(file)) return { launcher: 'jmeter' }
+  if (!name.endsWith('.bruno.zip') && await archiveIsZippedHARCapture(file)) return { launcher: 'traffic_har', mode: 'auto_detect' }
   const namedTarget = nativeImportTargetForFileName(name)
   if (name.endsWith('.js') || name.endsWith('.ts')) {
     const content = await file.slice(0, 128 * 1024).text()
@@ -263,8 +318,17 @@ export async function resolveNativeImportRequest(
     }
   }))
   if (!isCurrent(requestID)) return null
-  const target = targets.find(candidate => candidate.launcher === 'bruno' && candidate.mode === 'native_requests')
-    || targets.find(candidate => candidate.launcher === 'bruno')
-    || targets[0]
-  return { id: requestID, files: usable, ...target }
+  // Incidental files (a folder's .DS_Store) may ride along with a supported
+  // one, but a drop with no supported file opens no importer.
+  const supported = targets.filter((_target, index) => isSupportedNativeImportFileName(usable[index].name) || isOpenCollectionFileName(usable[index]))
+  const target = supported.find(candidate => candidate.launcher === 'bruno' && candidate.mode === 'native_requests')
+    || supported.find(candidate => candidate.launcher === 'bruno')
+    || supported[0]
+  if (!target) return null
+  // The HAR importer reads a primary and a comparison capture: only HAR files
+  // may fill those slots.
+  const requestFiles = target.launcher === 'traffic_har'
+    ? usable.filter((_file, index) => targets[index].launcher === 'traffic_har')
+    : usable
+  return { id: requestID, files: requestFiles, ...target }
 }

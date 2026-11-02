@@ -235,6 +235,49 @@ function ScriptsAuthoringContent({
     destinationOperationBusy,
     setSuggestedFolderName,
   )
+  const effectiveProtocolLauncher = importLauncher ?? (draftReturnTarget?.subView === 'protocol-import' ? draftReturnTarget.importLauncher ?? null : null)
+  const effectiveProtocolMode = importLauncher ? importMode : (draftReturnTarget?.subView === 'protocol-import' ? draftReturnTarget.importMode ?? null : importMode)
+  const protocolImportEditReturnTarget: AuthoringReturnTarget = {
+    subView: 'protocol-import',
+    importLauncher: effectiveProtocolLauncher,
+    importMode: effectiveProtocolMode,
+    label: 'Back to import review',
+    description: 'Return to the import review without losing the current converted draft or correlation findings.',
+    retainedGuardIds: ['ProtocolAssetImport'],
+  }
+  // The protocol review's record of the draft it opened in the editor. The
+  // review stays mounted behind the editor, so a save made there must reach it
+  // or Back would show the saved draft as unsaved, with Save offered again.
+  const protocolDraftSavedRef = useRef<((saved: StoredScript) => void) | null>(null)
+  const openProtocolImportDraftInEditor = (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => {
+    protocolDraftSavedRef.current = onDraftSaved || null
+    onEditDraft(script, focus, protocolImportEditReturnTarget)
+  }
+  const saveProtocolDraft = (saved: StoredScript, options?: ScriptSaveOptions) => {
+    const recordSave = protocolDraftSavedRef.current
+    protocolDraftSavedRef.current = null
+    recordSave?.(saved)
+    onSaved(saved, options)
+  }
+  const renderProtocolImportSurface = (hidden = false) => createOptionsSurface(
+    <ProtocolAssetImport
+      key={`${effectiveProtocolLauncher}:${effectiveProtocolMode || ''}`}
+      kind={protocolKindForLauncher(effectiveProtocolLauncher)}
+      initialFile={importFiles?.[0] || null}
+      initialComparisonFile={importFiles?.[1] || null}
+      initialMode={effectiveProtocolMode}
+      projectId={projectId}
+      folderId={destinationFolderValue}
+      onImported={onImported}
+      onEdit={openProtocolImportDraftInEditor}
+      onClose={onOpenCreateOptions}
+      onOperationBusyChange={setImportOperationBusy}
+    />,
+    hidden,
+    destinationFolderControl,
+    destinationOperationBusy,
+    setSuggestedFolderName,
+  )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
 
   switch (subView) {
@@ -250,13 +293,29 @@ function ScriptsAuthoringContent({
           </div>
         )
       }
+      if (draftReturnTarget?.subView === 'protocol-import' && effectiveProtocolLauncher !== 'yaml_chooser') {
+        return (
+          <div className="scripts-authoring-stack">
+            {renderProtocolImportSurface(true)}
+            <div className="page">
+              {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
+              <ScriptEditor returnTarget={{ label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource }} initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={saveProtocolDraft} onClose={closeCreateEditor} />
+            </div>
+          </div>
+        )
+      }
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit': {
       // History opens from the editor's More menu; an archived script has no editor, so it keeps the panel.
-      const editor = <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor returnTarget={draftReturnTarget?.subView === 'import' ? { label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource } : undefined} scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
-      return draftReturnTarget?.subView === 'import'
-        ? <div className="scripts-authoring-stack">{renderEnterpriseArchiveImportSurface(true)}{editor}</div>
-        : editor
+      const retainsImportSurface = draftReturnTarget?.subView === 'import' || (draftReturnTarget?.subView === 'protocol-import' && effectiveProtocolLauncher !== 'yaml_chooser')
+      const editor = <div className="page">{editingId && editingScript?.archived_at && <ObjectHistory key={editingId} projectId={projectId} resourceType="script" resourceId={editingId} activity={editingActivity} />}{editingScript?.archived_at ? <section aria-label="Archived script"><h2>{editingScript.name} — Archived</h2><p>Restore this script from the library before editing or executing it.</p><button className="btn btn-secondary" onClick={onOpenLibrary}>Back to library</button><pre className="object-archive-content">{JSON.stringify(editingScript, null, 2)}</pre></section> : <>{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor returnTarget={retainsImportSurface && draftReturnTarget ? { label: draftReturnTarget.label, description: draftReturnTarget.description, retainedGuardIds: draftReturnTarget.retainedGuardIds, onReturn: onReturnToDraftSource } : undefined} scriptId={editingId} initialScript={editingScript} initialAuthoring={editingAuthoring} initialRetainedDraft={editingRetainedDraft} initialRetainedNeedsReview={editingRetainedNeedsReview} initialRetainedJsonText={editingRetainedJsonText} initialRetainedCreatedSecretNames={editingRetainedCreatedSecretNames} projectId={projectId} folderId={destinationFolderValue} takenScriptNames={takenScriptNames} onSave={onSaved} onClose={draftReturnTarget ? onReturnToDraftSource : onOpenLibrary} activity={editingActivity} initialWorkspace={editingWorkspace} /></>}</div>
+      if (draftReturnTarget?.subView === 'import') {
+        return <div className="scripts-authoring-stack">{renderEnterpriseArchiveImportSurface(true)}{editor}</div>
+      }
+      if (draftReturnTarget?.subView === 'protocol-import' && effectiveProtocolLauncher !== 'yaml_chooser') {
+        return <div className="scripts-authoring-stack">{renderProtocolImportSurface(true)}{editor}</div>
+      }
+      return editor
     }
     case 'import':
       return (
@@ -291,8 +350,10 @@ function ScriptsAuthoringContent({
           <YAMLImportChooser key={`${importLauncher}:${importMode || ''}`} initialFiles={importFiles || undefined} projectId={projectId} folderId={destinationFolderValue} onFolderChange={setDestinationFolderId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
         )
       }
-      return renderCreateOptionsSurface(
-        <ProtocolAssetImport key={`${importLauncher}:${importMode || ''}`} kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} folderId={destinationFolderValue} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} onOperationBusyChange={setImportOperationBusy} />,
+      return (
+        <div className="scripts-authoring-stack">
+          {renderProtocolImportSurface(false)}
+        </div>
       )
     case 'oracle-review':
       return createOptionsSurface(

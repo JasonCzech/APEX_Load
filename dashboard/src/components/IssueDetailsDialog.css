@@ -14,12 +14,12 @@
 }
 
 .issue-details-overlay {
-  z-index: 1300;
+  z-index: var(--z-modal-nested, 240);
 }
 
 .issue-details-dialog {
-  width: min(680px, calc(100vw - 32px));
-  max-height: min(720px, calc(100vh - 48px));
+  width: min(680px, calc(100% - 32px));
+  max-height: min(720px, calc(100% - 48px));
   display: flex;
   flex-direction: column;
 }

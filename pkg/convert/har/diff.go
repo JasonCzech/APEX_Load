@@ -241,7 +241,7 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 	if err := ctx.Err(); err != nil {
 		return nil, aligner, err
 	}
-	requestInputs, truncated, err := diffRequestInputs(ctx, baselineObservations, comparison.observations)
+	requestInputs, truncated, err := diffRequestInputs(ctx, baselineObservations, comparison.observations, aligner.observationNarrowKey)
 	if err != nil {
 		return nil, aligner, err
 	}
@@ -298,8 +298,15 @@ type diffAligner struct {
 	// extractions caches extractor results on comparison responses: several
 	// correlations often share an extractor and try the same responses.
 	extractions map[diffExtractionKey]diffExtraction
-	// narrowed caches request groups narrowed to a query-key set.
-	narrowed map[diffNarrowKey][]sample.HARSourceObservation
+	// narrowed caches request groups narrowed to a query-key set, and
+	// narrowKeys each observation's narrow key: an Aura key decodes the
+	// batch envelope, so each request is decoded once, not once per
+	// producer signature its group is narrowed to.
+	narrowed   map[diffNarrowKey][]sample.HARSourceObservation
+	narrowKeys map[diffObservationRef]string
+	// narrowKeyComputations counts narrow keys computed (not served from
+	// narrowKeys).
+	narrowKeyComputations int
 	// baselineValues and comparisonValues are each recording's correlated
 	// values, which mask path segments in templates (built on first use).
 	baselineValues   []string
@@ -324,6 +331,11 @@ type diffExtractionKey struct {
 type diffExtraction struct {
 	value string
 	err   error
+}
+
+type diffObservationRef struct {
+	comparison bool
+	id         int
 }
 
 type diffNarrowKey struct {
@@ -351,6 +363,7 @@ func newDiffAligner(baseline, comparison []sample.HARSourceObservation, baseline
 		claimed:          map[int]int{},
 		extractions:      map[diffExtractionKey]diffExtraction{},
 		narrowed:         map[diffNarrowKey][]sample.HARSourceObservation{},
+		narrowKeys:       map[diffObservationRef]string{},
 		baselineValues:   diffCorrelatedValues(baselineCorrelations),
 		comparisonValues: diffCorrelatedValues(comparisonCorrelations),
 	}
@@ -432,9 +445,15 @@ func (a *diffAligner) reextract(corr sample.Correlation, baselineValue string, n
 	}
 	candidates := group
 	queryKeys := diffQueryKeySet(producer.RequestURL)
-	if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: queryKeys}, candidates); len(narrowed) > 0 {
+	narrowKey := a.observationNarrowKey(false, producer)
+	if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: narrowKey}, candidates); len(narrowed) > 0 {
 		candidates = narrowed
-		peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: queryKeys}, peers)
+		peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: narrowKey}, peers)
+	} else if narrowKey != queryKeys {
+		if narrowed := a.narrow(diffNarrowKey{comparison: true, template: template, group: key, queryKeys: queryKeys}, candidates); len(narrowed) > 0 {
+			candidates = narrowed
+			peers = a.narrow(diffNarrowKey{template: template, group: key, queryKeys: queryKeys}, peers)
+		}
 	}
 	ordinal := 0
 	for index, peer := range peers {
@@ -483,9 +502,24 @@ func (a *diffAligner) narrow(key diffNarrowKey, observations []sample.HARSourceO
 	if narrowed, ok := a.narrowed[key]; ok {
 		return narrowed
 	}
-	narrowed := observationsWithQueryKeySet(observations, key.queryKeys)
+	narrowed := observationsWithQueryKeySet(observations, key.queryKeys, func(observation sample.HARSourceObservation) string {
+		return a.observationNarrowKey(key.comparison, observation)
+	})
 	a.narrowed[key] = narrowed
 	return narrowed
+}
+
+// observationNarrowKey is diffObservationNarrowKey for one recording's
+// observation, computed once per observation.
+func (a *diffAligner) observationNarrowKey(comparison bool, observation sample.HARSourceObservation) string {
+	ref := diffObservationRef{comparison: comparison, id: observation.ID}
+	if key, ok := a.narrowKeys[ref]; ok {
+		return key
+	}
+	a.narrowKeyComputations++
+	key := diffObservationNarrowKey(observation)
+	a.narrowKeys[ref] = key
+	return key
 }
 
 // evaluate runs corr's extractor on a comparison response, once per extractor
@@ -801,10 +835,17 @@ func diffQueryKeySet(rawURL string) string {
 	return strings.Join(keys, "&")
 }
 
-func observationsWithQueryKeySet(observations []sample.HARSourceObservation, keySet string) []sample.HARSourceObservation {
+func observationsWithQueryKeySet(observations []sample.HARSourceObservation, keySet string, narrowKey func(sample.HARSourceObservation) string) []sample.HARSourceObservation {
 	var out []sample.HARSourceObservation
+	useNarrowKey := strings.Contains(keySet, "#aura:")
 	for _, observation := range observations {
-		if diffQueryKeySet(observation.RequestURL) == keySet {
+		candidateKey := ""
+		if useNarrowKey {
+			candidateKey = narrowKey(observation)
+		} else {
+			candidateKey = diffQueryKeySet(observation.RequestURL)
+		}
+		if candidateKey == keySet {
 			out = append(out, observation)
 		}
 	}

@@ -129,6 +129,36 @@ func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
 			input:  `input[data-token="brief"]`,
 			secret: "brief",
 		},
+		{
+			name:   "Salesforce HAR postData params pw",
+			input:  "{\n  \"name\": \"pw\",\n  \"value\": \"SandboxPass!99\"\n}",
+			secret: "SandboxPass!99",
+		},
+		{
+			name:   "Salesforce HAR form text pw and frontdoor sid",
+			input:  `"text": "un=perf%40example.test&pw=SandboxPass%2199", "url": "https://org.my.salesforce.com/secur/frontdoor.jsp?sid=00Daa0000012345!AQEAQFakeSessionTokenValue1234567890&cshc=x"`,
+			secret: "SandboxPass%2199",
+		},
+		{
+			name:   "Salesforce JSON-escaped hidden sid input",
+			input:  `"text": "<form><input type=\"hidden\" name=\"sid\" id=\"sid\" value=\"00Daa0000012345!AQEAQHiddenFormSession1234567890\" /></form>"`,
+			secret: "00Daa0000012345!AQEAQHiddenFormSession1234567890",
+		},
+		{
+			name:   "Salesforce percent-encoded frontdoor sid in a retURL",
+			input:  `"value": "https://org.my.salesforce.com/?retURL=%2Fsecur%2Ffrontdoor.jsp%3Fsid%3D00Daa0000012345%21AQEAQEncodedSessionToken1234567890%26cshc%3Dx"`,
+			secret: "AQEAQEncodedSessionToken1234567890",
+		},
+		{
+			name:   "Salesforce double-encoded session id",
+			input:  `next=%252Fsecur%252Ffrontdoor.jsp%253Fx%253D00Daa0000012345%2521AQEAQDoubleEncodedToken1234567890`,
+			secret: "AQEAQDoubleEncodedToken1234567890",
+		},
+		{
+			name:   "Salesforce Aura token cookie in HAR cookies[]",
+			input:  "{\n  \"name\": \"__Host-ERIC_PROD-2876452450001777317\",\n  \"value\": \"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig\"\n}",
+			secret: "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ4In0.sig",
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -137,6 +167,11 @@ func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
 				t.Fatalf("Redact(%q) = %q, changed=%t", test.input, got, changed)
 			}
 		})
+	}
+	// Minified JS identifiers such as "const pw=a" must not be false-positived.
+	jsBundle := `function f(a){const pw=a+1;var Pw=2;return pw+Pw;}`
+	if got, changed := Redact(jsBundle); changed || got != jsBundle {
+		t.Fatalf("minified JS unexpectedly redacted: %q", got)
 	}
 }
 
@@ -234,5 +269,34 @@ func TestBuildKeepsFullTextOnlyForTruncatedMappedFiles(t *testing.T) {
 	}
 	if strings.Contains(string(encoded), "FullText") || strings.Contains(string(encoded), "full_text") {
 		t.Fatal("serialized review names the in-memory full text")
+	}
+}
+
+// Inside a HAR every JSON body is itself a JSON string, so a token response's
+// keys are escaped. The key-based redactor still finds them.
+func TestRedactFindsTokensInAJSONBodyHeldInAJSONString(t *testing.T) {
+	content := `{"response":{"content":{"text":"{\"access_token\":\"opaqueAccess123\",\"refresh_token\":\"5Aep861SyntheticRefresh\",\"id_token\":\"eyJhbGciOi.synthetic.sig\",\"instance_url\":\"https:\/\/acme.my.salesforce.com\"}"}}}`
+	redacted, changed := Redact(content)
+	if !changed {
+		t.Fatal("Redact reported no change")
+	}
+	for _, secret := range []string{"opaqueAccess123", "5Aep861SyntheticRefresh", "eyJhbGciOi.synthetic.sig"} {
+		if strings.Contains(redacted, secret) {
+			t.Fatalf("redacted text still holds %q: %s", secret, redacted)
+		}
+	}
+	if !strings.Contains(redacted, `\"refresh_token\":\"[REDACTED]\"`) || !strings.Contains(redacted, `\"instance_url\":\"https:\/\/acme.my.salesforce.com\"`) {
+		t.Fatalf("redaction did not keep the escaped JSON shape: %s", redacted)
+	}
+	// An escaped value that itself holds an escape is redacted whole.
+	slashed, _ := Redact(`"{\"token\":\"abc\\\/def\"}"`)
+	if strings.Contains(slashed, "abc") || strings.Contains(slashed, "def") {
+		t.Fatalf("escaped value with an inner escape was not redacted whole: %s", slashed)
+	}
+	// So is one holding an escaped quote (\\\") or ending in an escaped
+	// backslash (\\\\), and the value after it keeps its shape.
+	quoted, _ := Redact(`"{\"token\":\"abc\\\"SECRETREST\",\"pw\":\"x\\\\\",\"user\":\"kept\"}"`)
+	if strings.Contains(quoted, "abc") || strings.Contains(quoted, "SECRETREST") || !strings.Contains(quoted, `\"pw\":\"[REDACTED]\"`) || !strings.Contains(quoted, `\"user\":\"kept\"`) {
+		t.Fatalf("escaped value with an inner quote or backslash was not redacted whole: %s", quoted)
 	}
 }

@@ -232,7 +232,12 @@ export default function LinkedCodePane({
       scrollWithinPane,
       ...(wrapLines ? [EditorView.lineWrapping] : []),
       EditorView.editable.of(false),
-      EditorView.contentAttributes.of({ 'aria-label': ariaLabel || 'Read-only code' }),
+      EditorView.contentAttributes.of({
+        role: 'textbox',
+        'aria-readonly': 'true',
+        'aria-multiline': 'true',
+        'aria-label': ariaLabel || 'Read-only code',
+      }),
       EditorView.domEventHandlers({
         wheel(event, view) {
           return routeLinkedCodePaneWheel(event, view.scrollDOM)
@@ -267,6 +272,9 @@ export default function LinkedCodePane({
 
   useEffect(() => {
     if (!view) return
+    if (typeof view.scrollDOM?.setAttribute === 'function') {
+      view.scrollDOM.setAttribute('tabindex', '0')
+    }
 
     const effects: StateEffect<unknown>[] = []
 

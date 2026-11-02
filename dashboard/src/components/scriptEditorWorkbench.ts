@@ -4,6 +4,7 @@
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProtocolEvidence } from '../types'
 import { httpSequenceRequests } from './scriptActionHelpers'
+import { resolveNestedAction } from './scriptEditorJsonModel'
 
 // Compatibility exports for callers that still treat the workbench module as
 // the Script JSON utility entry point. New code should import from
@@ -171,6 +172,72 @@ export function resolveDebugRowForEvent(
   const actionIndex = Number(event.action_index)
   if (!Number.isInteger(actionIndex)) return null
   return rows.find((r) => r.phase === phase && r.actionIndex === actionIndex) ?? null
+}
+
+/** Where a keyboard breakpoint goes: an action, one request of a sequence, or a nested step. */
+export type ShortcutBreakpointTarget =
+  | { phase: string; actionIndex: number; requestIndex?: number }
+  | { phase: string; actionIndex: number; stepPath: string[] }
+
+export interface ShortcutBreakpointContext {
+  /** The script as it is now: an open replay event may be from an older draft. */
+  script: ScriptDefinition
+  workspaceTab: string
+  /** The replay event whose evidence is open in Debug. */
+  selectedEvent?: { phase?: string; action_index?: number; request_index?: number; step_path?: string[] } | null
+  /**
+   * The open event comes from a replay of the steps as they are now. After a
+   * structural edit its action index may name a different step, so it takes
+   * no breakpoint, as its Edit action is unavailable.
+   */
+  selectedEventFromCurrentDraft?: boolean
+  /**
+   * The step selected in the outline (Author's, which Debug's outline shows
+   * too), at any phase and depth, with the step itself when the caller
+   * resolved it: a nested block is not a breakpoint location.
+   */
+  focus?: { phase: string; actionIndex: number; stepPath?: string[]; action?: ScriptActionDefinition | null } | null
+  activeAction: number | null
+  firstRow?: { phase: string; actionIndex: number } | null
+}
+
+function shortcutBreakpointLocation(phase: string, actionIndex: number, stepPath?: readonly string[]): ShortcutBreakpointTarget {
+  if (!stepPath?.length) return { phase, actionIndex }
+  // A request of a sequence, top-level or nested, is addressed by its index, as
+  // the outline's own toggle and gutter key it (containerChildSteps gives every
+  // sequence child a requestIndex), so F9 sets the breakpoint the row shows.
+  const request = /^requests\[(\d+)\]$/.exec(stepPath[stepPath.length - 1])
+  return request ? { phase, actionIndex, requestIndex: Number(request[1]) } : { phase, actionIndex, stepPath: [...stepPath] }
+}
+
+/**
+ * The step F9 and Cmd/Ctrl+B toggle a breakpoint on, when no outline row has
+ * keyboard focus (the outline handles both keys for its focused row): in Debug
+ * the open replay event's step; otherwise the selected step, which may be in
+ * init or teardown or nested in a block; then the active action; then the
+ * script's first step. A nested block (If, Switch, Loop, Parallel, Sequence)
+ * selected in the outline takes none: replay pauses only before the steps it
+ * runs, never on a nested block's own path, and the outline shows no
+ * breakpoint on a block row, so one set there would never fire or show.
+ */
+export function shortcutBreakpointTarget({ script, workspaceTab, selectedEvent, selectedEventFromCurrentDraft, focus, activeAction, firstRow }: ShortcutBreakpointContext): ShortcutBreakpointTarget | null {
+  if (workspaceTab === 'debug' && selectedEvent && typeof selectedEvent.action_index === 'number') {
+    const phase = selectedEvent.phase || 'action'
+    // Evidence from a replay of an older draft names steps by their place
+    // then: that place may now hold another step, or none. It takes no
+    // breakpoint, which would land on the wrong step or never show or fire.
+    if (!selectedEventFromCurrentDraft) return null
+    const root = scriptActionsForPhase(script, phase === 'init' || phase === 'teardown' ? phase : 'action')[selectedEvent.action_index]
+    const eventPath = selectedEvent.step_path?.length ? selectedEvent.step_path : selectedEvent.request_index != null ? [`requests[${selectedEvent.request_index}]`] : []
+    if (!root || (eventPath.length && !resolveNestedAction(root, eventPath))) return null
+    return shortcutBreakpointLocation(phase, selectedEvent.action_index, selectedEvent.request_index != null ? [`requests[${selectedEvent.request_index}]`] : selectedEvent.step_path)
+  }
+  if (focus) {
+    if (focus.stepPath?.length && focus.action && debugContainerKind(focus.action)) return null
+    return shortcutBreakpointLocation(focus.phase, focus.actionIndex, focus.stepPath)
+  }
+  if (activeAction !== null) return { phase: 'action', actionIndex: activeAction }
+  return firstRow ? { phase: firstRow.phase, actionIndex: firstRow.actionIndex } : null
 }
 
 export function scriptActionsForPhase(script: ScriptDefinition, phase: ScriptActionPhase): ScriptActionDefinition[] {
@@ -376,20 +443,204 @@ export function uniqueActionName(base: string, existing: string[]): string {
   return candidate
 }
 
+const MASKED_VALUE = '[REDACTED]'
+
+// Where a clone lost a masked value, in the words the duplicate notice uses:
+// `body`, `target`, `header Authorization`, `cookie sid`, `assertions`.
+type MaskedValueRemovals = Set<string>
+
+function scrubRedactedStringsInPlace(node: unknown, removals: MaskedValueRemovals, label: string, skipKeys?: ReadonlySet<string>): unknown {
+  if (typeof node === 'string') {
+    if (!node.includes(MASKED_VALUE)) return node
+    removals.add(label)
+    return node.split(MASKED_VALUE).join('')
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < node.length; i++) {
+      node[i] = scrubRedactedStringsInPlace(node[i], removals, label)
+    }
+    return node
+  }
+  if (node && typeof node === 'object') {
+    const record = node as Record<string, unknown>
+    for (const key of Object.keys(record)) {
+      if (skipKeys?.has(key)) continue
+      record[key] = scrubRedactedStringsInPlace(record[key], removals, label)
+    }
+  }
+  return node
+}
+
+// A Cookie header keeps its unmasked cookies: only the pairs whose value was
+// masked go (`sid=[REDACTED]; theme=dark` keeps `theme=dark`).
+function withoutMaskedCookies(value: string, removals: MaskedValueRemovals): string {
+  return value.split(';').map(pair => pair.trim()).filter(pair => {
+    if (!pair.includes(MASKED_VALUE)) return pair !== ''
+    removals.add(`cookie ${pair.split('=')[0].trim() || 'value'}`)
+    return false
+  }).join('; ')
+}
+
+// A header whose value was masked is left out of the clone (an empty
+// credential header only fails differently), except a Cookie header, which
+// keeps the cookies that were not masked.
+function withoutMaskedHeader(name: string, value: string, removals: MaskedValueRemovals): string | null {
+  if (name.includes(MASKED_VALUE)) {
+    removals.add('header')
+    return null
+  }
+  if (!value.includes(MASKED_VALUE)) return value
+  if (name.trim().toLowerCase() === 'cookie') {
+    const kept = withoutMaskedCookies(value, removals)
+    return kept || null
+  }
+  removals.add(`header ${name}`)
+  return null
+}
+
+function forEachNestedStep(action: ScriptActionDefinition, visit: (child: ScriptActionDefinition) => void) {
+  const ctrl = action.control as unknown as Record<string, unknown> | undefined
+  if (ctrl && typeof ctrl === 'object') {
+    for (const key of ['steps', 'else', 'default'] as const) {
+      if (Array.isArray(ctrl[key])) for (const child of ctrl[key] as ScriptActionDefinition[]) visit(child)
+    }
+    // Switch cases and parallel branches each hold their own steps.
+    for (const key of ['cases', 'branches'] as const) {
+      if (!Array.isArray(ctrl[key])) continue
+      for (const group of ctrl[key] as Array<{ steps?: ScriptActionDefinition[] }>) {
+        if (Array.isArray(group?.steps)) for (const child of group.steps) visit(child)
+      }
+    }
+  }
+  if (action.params && typeof action.params === 'object') {
+    const params = action.params as Record<string, unknown>
+    if (Array.isArray(params.requests)) {
+      for (const child of params.requests as ScriptActionDefinition[]) {
+        if (child && typeof child === 'object') visit(child)
+      }
+    }
+    if (params.request && typeof params.request === 'object' && !Array.isArray(params.request)) {
+      visit(params.request as ScriptActionDefinition)
+    }
+  }
+}
+
+function stripClonedActionImportProvenance(action: ScriptActionDefinition, removals: MaskedValueRemovals): void {
+  if (action.metadata && typeof action.metadata === 'object') {
+    const meta = action.metadata as Record<string, unknown>
+    delete meta.import_action_uid
+    delete meta.import_credential_targets
+    delete meta.import_credential_target_keys
+    delete meta.import_header_fidelity
+    delete meta.import_multipart_fidelity
+    delete meta.restored_body_protected
+    // A read projection's fail-closed gate (ApplyScriptProjectionResponseGate)
+    // belongs to the response copy, not the behavior: the server drops it the
+    // same way (WithoutTransientScriptProjectionGate) — the marker, the
+    // projection's import_review and the import_review_required blocker.
+    const review = meta.import_review && typeof meta.import_review === 'object' && !Array.isArray(meta.import_review)
+      ? meta.import_review as Record<string, unknown>
+      : null
+    const projectionGate = Boolean(meta.script_projection_response_gate_v1) || review?.source === 'script_projection'
+    delete meta.script_projection_response_gate_v1
+    if (projectionGate) {
+      if (review?.source === 'script_projection') delete meta.import_review
+      if (meta.execution_blocker === 'import_review_required') delete meta.execution_blocker
+      if (Array.isArray(meta.execution_blockers)) {
+        const filtered = meta.execution_blockers.filter(entry => entry !== 'import_review_required')
+        if (filtered.length > 0) meta.execution_blockers = filtered
+        else delete meta.execution_blockers
+      }
+    }
+    // HAR evidence (har.request.query_string, har.response.cookies) carries the
+    // masked values the disclosure projection put there.
+    for (const key of Object.keys(meta)) {
+      if (key.startsWith('har.')) meta[key] = scrubRedactedStringsInPlace(meta[key], new Set(), '')
+    }
+    if (Object.keys(meta).length === 0) {
+      delete action.metadata
+    }
+  }
+  const anyAction = action as unknown as Record<string, unknown>
+  if (Array.isArray(action.headers)) {
+    const rawHeaders = action.headers as Array<{ name?: string; value?: string }>
+    ;(action as unknown as { headers?: unknown }).headers = rawHeaders.flatMap(header => {
+      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
+      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
+    })
+  } else if (action.headers && typeof action.headers === 'object') {
+    const record = action.headers as Record<string, string>
+    for (const key of Object.keys(record)) {
+      const value = withoutMaskedHeader(key, record[key] || '', removals)
+      if (value === null) delete record[key]
+      else record[key] = value
+    }
+  }
+  if (Array.isArray(anyAction.header_list)) {
+    const rawHeaderList = anyAction.header_list as Array<{ name?: string; value?: string }>
+    const filteredHeaderList = rawHeaderList.flatMap(header => {
+      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
+      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
+    })
+    if (filteredHeaderList.length > 0) {
+      anyAction.header_list = filteredHeaderList
+    } else {
+      delete anyAction.header_list
+    }
+  }
+  forEachNestedStep(action, child => stripClonedActionImportProvenance(child, removals))
+  // Nested steps were scrubbed by their own pass, under their own names.
+  const nested = new Set(['metadata', 'control', 'requests', 'request'])
+  for (const key of Object.keys(anyAction)) {
+    if (nested.has(key)) continue
+    if (key === 'params' && anyAction.params && typeof anyAction.params === 'object' && !Array.isArray(anyAction.params)) {
+      scrubRedactedStringsInPlace(anyAction.params, removals, 'params', nested)
+      continue
+    }
+    anyAction[key] = scrubRedactedStringsInPlace(anyAction[key], removals, key)
+  }
+}
+
+export interface DuplicatedActionList {
+  actions: ScriptActionDefinition[]
+  /**
+   * The masked credential values the copy could not carry (`body`,
+   * `header Authorization`, `cookie sid`), so the author can supply them: a
+   * masked value has no stored value to back it in a new step.
+   */
+  removedMaskedValues: string[]
+}
+
 /**
  * Insert a deep copy of the action at `index` directly after it, with a unique
  * name. The clone is a full deep copy (all keys, incl. unknown/params.*, and
- * nested control steps) so editing it never mutates the original.
+ * nested control steps) so editing it never mutates the original. Imported
+ * single-action provenance IDs (`import_action_uid`) and redacted credential
+ * preservation markers are stripped from the clone so saving never rejects the
+ * copy as a duplicate provenance UID or unbacked `[REDACTED]` placeholder; the
+ * values those placeholders stood for are reported, as the copy runs without them.
  */
+export function duplicateActionInListWithReport(
+  actions: ScriptActionDefinition[],
+  index: number,
+): DuplicatedActionList {
+  const source = actions[index]
+  if (!source) return { actions, removedMaskedValues: [] }
+  const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
+  const removals: MaskedValueRemovals = new Set()
+  stripClonedActionImportProvenance(clone, removals)
+  clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
+  return {
+    actions: [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)],
+    removedMaskedValues: [...removals].sort(),
+  }
+}
+
 export function duplicateActionInList(
   actions: ScriptActionDefinition[],
   index: number,
 ): ScriptActionDefinition[] {
-  const source = actions[index]
-  if (!source) return actions
-  const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
-  clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
-  return [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)]
+  return duplicateActionInListWithReport(actions, index).actions
 }
 
 // --- Transactions ----------------------------------------------------------

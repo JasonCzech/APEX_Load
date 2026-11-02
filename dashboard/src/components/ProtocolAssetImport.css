@@ -1,0 +1,63 @@
+/* Stage 2 keeps the draft's name, profile and save at hand while the review
+   scrolls: one compact row, never taller than 88px. */
+.har-stage2-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.6rem;
+  max-height: 88px;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+.har-stage2-name {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 220px;
+  margin: 0;
+}
+.har-stage2-name span { font-weight: 600; white-space: nowrap; }
+.har-stage2-name input { flex: 1 1 160px; min-width: 140px; }
+.har-stage2-profile,
+.har-stage2-save {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+}
+.har-stage2-profile .btn[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-weight: 600;
+  opacity: 1;
+}
+.har-stage2-toolbar > .tag-chip,
+.har-stage2-toolbar > .btn { flex: 0 0 auto; white-space: nowrap; }
+.har-stage2-chip { max-width: 16rem; overflow: hidden; text-overflow: ellipsis; }
+.har-stage2-save { margin-left: auto; }
+/* Jump targets land below the sticky toolbar. */
+.har-stage2-scope section,
+.har-stage2-scope [tabindex="-1"],
+.har-stage2-scope .sample-import-review-block { scroll-margin-top: 96px; }
+.har-options-staged {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+@media (max-width: 720px) {
+  .har-stage2-toolbar { position: static; flex-wrap: wrap; max-height: none; overflow: visible; }
+  .har-stage2-save { margin-left: 0; }
+}

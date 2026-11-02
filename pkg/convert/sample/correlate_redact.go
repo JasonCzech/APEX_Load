@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
@@ -855,32 +856,46 @@ func cloneMetadata(input map[string]any) map[string]any {
 }
 
 // redactSourceReviewSecrets scrubs credentials from the preserved source text
-// shown in the Source Comparison panel. This runs regardless of the
-// sanitize_sensitive option: that option controls whether the generated
-// actions keep raw values, not whether secrets persist in script metadata.
-// Returns the set of file names whose content was redacted.
-func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) map[string]bool {
+// shown in the Source Comparison panel while preserving line breaks so
+// source-to-script StartLine/EndLine mappings remain accurate. Files larger
+// than sourceview.MaxFullTextBytes never retain FullText in sourceview.Build,
+// so only a bounded display prefix needs redaction; originalLengths preserves
+// each file's true byte count for OriginalBytes.
+func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) (map[string]bool, map[string]int) {
 	redacted := make(map[string]bool, len(files))
+	originalLengths := make(map[string]int, len(files))
 	for name, content := range files {
-		next, changed := redactExchangeSecrets(content, exchanges)
-		if strings.HasSuffix(strings.ToLower(name), ".har") {
-			if scrubbed, err := scrub.HAR([]byte(next), scrub.Policy{}); err == nil {
-				next = string(scrubbed)
-				changed = true
+		originalLengths[name] = len(content)
+		working := content
+		if len(working) > sourceview.MaxFullTextBytes {
+			// Keep more than MaxFileChars so sourceview.Build marks the file
+			// Truncated; converter.go clears FullText when OriginalBytes
+			// exceeds MaxFullTextBytes.
+			cut := min(len(working), sourceview.MaxFileChars*2)
+			for cut > 0 && cut < len(working) && !utf8.RuneStart(working[cut]) {
+				cut--
 			}
+			working = working[:cut]
 		}
-		if changed {
+		limit := max(sourceview.MaxFileChars+1, len(working)+(1<<20))
+		next, changedExchange := redactExchangeSecrets(working, exchanges, limit)
+		next, changedPatterns := sourceview.Redact(next)
+		if changedExchange || changedPatterns || len(working) != len(content) {
 			files[name] = next
+		}
+		if changedExchange || changedPatterns {
 			redacted[name] = true
 		}
 	}
-	return redacted
+	return redacted, originalLengths
 }
 
-func redactExchangeSecrets(content string, exchanges []exchange) (string, bool) {
+// redactExchangeSecrets bounds expanding substitutions at outputLimit bytes
+// (sourceview.MaxFileChars+1 when outputLimit is not positive).
+func redactExchangeSecrets(content string, exchanges []exchange, outputLimit int) (string, bool) {
 	original := content
 	redactions := collectExchangeSecretRedactions(exchanges)
-	replacements := make(map[string]string, 2*(len(redactions.headerValues)+len(redactions.bodyReplacements)))
+	replacements := map[string]string{}
 	for _, replacement := range redactions.bodyReplacements {
 		addRawAndJSONEscapedReplacement(replacements, replacement.body, replacement.sanitized)
 	}
@@ -892,11 +907,10 @@ func redactExchangeSecrets(content string, exchanges []exchange) (string, bool) 
 	// ReplaceAll calls can rescan "[REDACTED]" and expand it repeatedly when a
 	// later short secret (for example "D") appears inside the marker.
 	if len(replacements) > 0 {
-		// Source review retains only MaxFileChars. Bound expanding substitutions
-		// one byte beyond that display ceiling so even a one-byte credential
-		// repeated throughout a large import cannot create a many-times-larger
-		// transient string before sourceview applies its truncation marker.
-		content, _ = correlate.ApplyVarsWithOutputLimit(content, replacements, sourceview.MaxFileChars+1)
+		if outputLimit <= 0 {
+			outputLimit = sourceview.MaxFileChars + 1
+		}
+		content, _ = correlate.ApplyVarsWithOutputLimit(content, replacements, outputLimit)
 	}
 	// Catch-all for secret fields that did not round-trip through a parsed
 	// exchange verbatim (re-serialized bodies, query strings, ...).

@@ -59,28 +59,130 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 	}
 
 	const key = dsl.ImportPreservedCredentialTargetsMetadataKey
-	priorTargetsByPath := make(map[string]any)
+	const uidKey = dsl.ImportActionUIDMetadataKey
+	type priorSurfaceTargets struct {
+		raw  any
+		path string
+	}
+	priorTargetsByPath := make(map[string]priorSurfaceTargets)
+	priorUIDByPath := make(map[string]string)
 	if err := dslwalk.Walk(prior, func(ref dslwalk.SurfaceRef) error {
-		if raw, exists := ref.Metadata()[key]; exists {
-			priorTargetsByPath[ref.Path] = raw
+		meta := ref.Metadata()
+		if raw, exists := meta[key]; exists {
+			priorTargetsByPath[ref.Path] = priorSurfaceTargets{raw: raw, path: ref.Path}
+		}
+		if uid, ok := meta[uidKey]; ok && dsl.IsValidImportActionUID(uid) {
+			priorUIDByPath[ref.Path] = uid.(string)
 		}
 		return nil
 	}); err != nil {
 		return fmt.Errorf("inspect durable import credential locators: %w", err)
 	}
+
+	alignedDisplayPaths, err := buildAlignedCandidateToPriorDisplayPaths(candidate, prior)
+	if err != nil {
+		// Without an alignment there is no safe way to tell which candidate
+		// surface a durable locator belongs to: restoring by array position
+		// after a deletion or insertion would strip a retained credential's
+		// locator, and the next masked read would show that credential.
+		if len(priorTargetsByPath) > 0 {
+			return fmt.Errorf("restore durable import credential locators: %w", err)
+		}
+	}
+	// The durable locators follow the step alignment alone. It is the same
+	// per-collection, identity-checked matching that reconciliation used to
+	// restore each step's stored values, so a step receives the locators of
+	// exactly the stored step whose credential it now holds. The client-supplied
+	// import_action_uid is not trusted on its own: a forged copy of a
+	// credential step's UID on an earlier step must neither take that step's
+	// locators nor strip them from the step that reconciliation restored.
+	//
+	// When several candidate steps carry the same UID, the one aligned with the
+	// stored step of that UID keeps it (otherwise the first one walked), and
+	// every other copy is renamed so later updates stay unambiguous.
+	uidOwners := make(map[string]string)
 	if err := dslwalk.Walk(candidate, func(ref dslwalk.SurfaceRef) error {
-		raw, exists := priorTargetsByPath[ref.Path]
+		uidVal, hasUID := ref.Metadata()[uidKey]
+		if !hasUID || !dsl.IsValidImportActionUID(uidVal) {
+			return nil
+		}
+		uidStr := uidVal.(string)
+		owner, claimed := uidOwners[uidStr]
+		if !claimed || (uidOwnerAligned(ref.Path, uidStr, alignedDisplayPaths, priorUIDByPath) &&
+			!uidOwnerAligned(owner, uidStr, alignedDisplayPaths, priorUIDByPath)) {
+			uidOwners[uidStr] = ref.Path
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	// A renamed copy must take a UID no other step uses, in the candidate or
+	// in the stored script. Reusing one would store two steps with the same
+	// UID, and step matching then gives up on every UID-stamped step of that
+	// collection, so the next save would strip the durable credential locators
+	// of the steps it can no longer match.
+	usedUIDs := make(map[string]struct{})
+	collectUIDs := func(script *dsl.Script) error {
+		return dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if uid, ok := ref.Metadata()[uidKey].(string); ok && uid != "" {
+				usedUIDs[uid] = struct{}{}
+			}
+			return nil
+		})
+	}
+	if err := collectUIDs(candidate); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	if err := collectUIDs(prior); err != nil {
+		return fmt.Errorf("inspect import action identifiers: %w", err)
+	}
+	uidCopies := make(map[string]int)
+	mintCopyUID := func(uid string) string {
+		for {
+			uidCopies[uid]++
+			next := fmt.Sprintf("%s-copy-%d", uid, uidCopies[uid]+1)
+			if _, taken := usedUIDs[next]; !taken {
+				usedUIDs[next] = struct{}{}
+				return next
+			}
+		}
+	}
+
+	if err := dslwalk.Walk(candidate, func(ref dslwalk.SurfaceRef) error {
 		metadata := ref.Metadata()
+		var matched priorSurfaceTargets
+		exists := false
+
+		if uidVal, hasUID := metadata[uidKey]; hasUID && dsl.IsValidImportActionUID(uidVal) {
+			uidStr := uidVal.(string)
+			if uidOwners[uidStr] != ref.Path {
+				// A duplicated step received a copied UID in the editor; mint
+				// a unique deterministic UID so later updates stay unambiguous.
+				if copyUID := mintCopyUID(uidStr); dsl.IsValidImportActionUID(copyUID) {
+					metadata[uidKey] = copyUID
+				} else {
+					// The suffixed name would exceed the UID limit; the copy
+					// keeps no UID, as a copy made in the editor does.
+					delete(metadata, uidKey)
+				}
+				ref.SetMetadata(metadata)
+			}
+		}
+		if alignedPriorPath, aligned := alignedDisplayPaths[ref.Path]; aligned {
+			matched, exists = priorTargetsByPath[alignedPriorPath]
+		}
+
 		if !exists {
 			if metadata != nil {
 				delete(metadata, key)
 			}
 			return nil
 		}
-		cloned, err := CloneImportSecurityMetadata(raw)
+		cloned, err := CloneImportSecurityMetadata(matched.raw)
 		if err != nil {
 			return err
 		}
+		cloned = remapRestoredCredentialTargetPaths(cloned, matched.path, ref.Path)
 		if metadata == nil {
 			metadata = make(map[string]any)
 		}
@@ -91,6 +193,141 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 		return fmt.Errorf("restore durable import credential locators: %w", err)
 	}
 	return nil
+}
+
+// uidOwnerAligned reports whether the candidate surface at path is aligned
+// with the stored surface that carries uid.
+func uidOwnerAligned(path, uid string, alignedDisplayPaths, priorUIDByPath map[string]string) bool {
+	alignedPriorPath, aligned := alignedDisplayPaths[path]
+	return aligned && priorUIDByPath[alignedPriorPath] == uid
+}
+
+func remapRestoredCredentialTargetPaths(cloned any, priorPath, currentPath string) any {
+	if priorPath == "" || currentPath == "" || priorPath == currentPath {
+		return cloned
+	}
+	items, ok := cloned.([]any)
+	if !ok {
+		return cloned
+	}
+	priorPointer := DslWalkPathJSONPointer(priorPath)
+	currentPointer := DslWalkPathJSONPointer(currentPath)
+	priorFieldPrefix := priorPath + "."
+	currentFieldPrefix := currentPath + "."
+	for _, rawItem := range items {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			continue
+		}
+		if reqKey, ok := item["request_key"].(string); ok {
+			switch reqKey {
+			case priorPath:
+				item["request_key"] = currentPath
+			case priorPointer:
+				if priorPointer != "" && currentPointer != "" {
+					item["request_key"] = currentPointer
+				}
+			}
+		}
+		if field, ok := item["field"].(string); ok && strings.HasPrefix(field, priorFieldPrefix) {
+			item["field"] = currentFieldPrefix + strings.TrimPrefix(field, priorFieldPrefix)
+		}
+	}
+	return items
+}
+
+// buildAlignedCandidateToPriorDisplayPaths maps each candidate surface's
+// display path to the prior surface it was reconciled from. It compares the
+// executable scripts: reconciliation has already restored every stored value
+// into the step it matched, so a matched step's identity equals its stored
+// step's. Projecting the candidate instead would read its client-supplied
+// credential locators, which are about to be replaced: a dropped locator
+// changes how a located identity field projects, and one the engine cannot
+// resolve fails the projection. It fails rather than leave the caller to fall
+// back to positional alignment.
+func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) (map[string]string, error) {
+	candidateValue, err := ScriptAsJSONValue(candidate)
+	if err != nil {
+		return nil, err
+	}
+	priorValue, err := ScriptAsJSONValue(prior)
+	if err != nil {
+		return nil, err
+	}
+	candidateMap, ok1 := candidateValue.(map[string]any)
+	priorMap, ok2 := priorValue.(map[string]any)
+	if !ok1 || !ok2 {
+		return nil, fmt.Errorf("could not align the script's steps with the stored version")
+	}
+	aligned := make(map[string]string)
+	unmatchedCollection := ""
+	var walk func(candVal, priorVal any, candPath, priorPath string)
+	walk = func(candVal, priorVal any, candPath, priorPath string) {
+		switch typed := candVal.(type) {
+		case map[string]any:
+			pMap, _ := priorVal.(map[string]any)
+			if candPath != "" && priorPath != "" {
+				candDisplay := ImportContextDisplayPath(candPath)
+				priorDisplay := ImportContextDisplayPath(priorPath)
+				aligned[candDisplay] = priorDisplay
+				if strings.EqualFold(strings.TrimSpace(StringJSONValue(typed["type"])), "http_async_start") {
+					aligned[candDisplay+".params.request"] = priorDisplay + ".params.request"
+				}
+			}
+			for k, child := range typed {
+				var pChild any
+				nextPriorPath := ""
+				if pMap != nil && priorPath != "" || (pMap != nil && candPath == "") {
+					pChild = pMap[k]
+					nextPriorPath = AppendImportContextPath(priorPath, k)
+				}
+				walk(child, pChild, AppendImportContextPath(candPath, k), nextPriorPath)
+			}
+		case []any:
+			pSlice, pOK := priorVal.([]any)
+			if !pOK || priorPath == "" {
+				return
+			}
+			if IsActionCollectionContextPath(candPath) {
+				matches, ok := MatchCredentialPreservingActionCollection(typed, pSlice)
+				if !ok {
+					if unmatchedCollection == "" {
+						unmatchedCollection = ImportContextDisplayPath(candPath)
+					}
+					return
+				}
+				for i, child := range typed {
+					priorIdx := matches[i]
+					if priorIdx < 0 || priorIdx >= len(pSlice) {
+						continue
+					}
+					walk(
+						child,
+						pSlice[priorIdx],
+						AppendImportContextPath(candPath, strconv.Itoa(i)),
+						AppendImportContextPath(priorPath, strconv.Itoa(priorIdx)),
+					)
+				}
+				return
+			}
+			for i, child := range typed {
+				if i >= len(pSlice) {
+					break
+				}
+				walk(
+					child,
+					pSlice[i],
+					AppendImportContextPath(candPath, strconv.Itoa(i)),
+					AppendImportContextPath(priorPath, strconv.Itoa(i)),
+				)
+			}
+		}
+	}
+	walk(candidateMap, priorMap, "", "")
+	if unmatchedCollection != "" {
+		return nil, fmt.Errorf("could not match the steps of %s with the stored version", unmatchedCollection)
+	}
+	return aligned, nil
 }
 
 func CloneImportSecurityMetadata(value any) (any, error) {
@@ -185,17 +422,32 @@ func ValidatePreservedImportCredentialEditsWithOptions(
 }
 
 func HasNewProjectedCredential(candidate, projectedCandidate, prior, projectedPrior any) bool {
+	return hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior, "")
+}
+
+func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string) bool {
 	switch typed := candidate.(type) {
 	case map[string]any:
 		projectedMap, _ := projectedCandidate.(map[string]any)
 		priorMap, _ := prior.(map[string]any)
 		projectedPriorMap, _ := projectedPrior.(map[string]any)
 		for key, child := range typed {
-			if HasNewProjectedCredential(
+			var safeChild, priorChild, safePriorChild any
+			if projectedMap != nil {
+				safeChild = projectedMap[key]
+			}
+			if priorMap != nil {
+				priorChild = priorMap[key]
+			}
+			if projectedPriorMap != nil {
+				safePriorChild = projectedPriorMap[key]
+			}
+			if hasNewProjectedCredentialAtPath(
 				child,
-				projectedMap[key],
-				priorMap[key],
-				projectedPriorMap[key],
+				safeChild,
+				priorChild,
+				safePriorChild,
+				AppendImportContextPath(path, key),
 			) {
 				return true
 			}
@@ -204,19 +456,34 @@ func HasNewProjectedCredential(candidate, projectedCandidate, prior, projectedPr
 	case []any:
 		projectedSlice, _ := projectedCandidate.([]any)
 		priorSlice, _ := prior.([]any)
-		projectedPriorSlice, _ := projectedPrior.([]any)
+		projectedPriorSlice, projectedPriorOK := projectedPrior.([]any)
+		var actionMatches []int
+		hasActionMatches := false
+		if projectedPriorOK && IsActionCollectionContextPath(path) && len(projectedSlice) == len(typed) {
+			actionMatches, hasActionMatches = MatchCredentialPreservingActionCollection(projectedSlice, projectedPriorSlice)
+		}
 		for index, child := range typed {
 			var safeChild, priorChild, safePriorChild any
 			if index < len(projectedSlice) {
 				safeChild = projectedSlice[index]
 			}
-			if index < len(priorSlice) {
-				priorChild = priorSlice[index]
+			priorIdx := index
+			if hasActionMatches {
+				priorIdx = actionMatches[index]
 			}
-			if index < len(projectedPriorSlice) {
-				safePriorChild = projectedPriorSlice[index]
+			if priorIdx >= 0 && priorIdx < len(priorSlice) {
+				priorChild = priorSlice[priorIdx]
 			}
-			if HasNewProjectedCredential(child, safeChild, priorChild, safePriorChild) {
+			if priorIdx >= 0 && priorIdx < len(projectedPriorSlice) {
+				safePriorChild = projectedPriorSlice[priorIdx]
+			}
+			if hasNewProjectedCredentialAtPath(
+				child,
+				safeChild,
+				priorChild,
+				safePriorChild,
+				AppendImportContextPath(path, strconv.Itoa(index)),
+			) {
 				return true
 			}
 		}
@@ -322,16 +589,23 @@ func unsentStepReviewMetadataLeaf(path, actionPath string, action map[string]any
 		return false
 	}
 	key, _, nested := strings.Cut(strings.TrimPrefix(path, prefix), "/")
-	if _, review := stepReviewMetadataKeys[key]; !review {
-		return false
+	if _, review := stepReviewMetadataKeys[key]; review {
+		if nested {
+			return true
+		}
+		return UnsentStepReviewMetadata(dsl.Action{
+			Type:     StringJSONValue(action["type"]),
+			Metadata: map[string]any{key: leaf},
+		}, key)
 	}
-	if nested {
-		return true
+	if IsHTTPImportProvenanceMetadataKey(key) {
+		sent, _ := varflow.MetadataReads(dsl.Action{
+			Type:     StringJSONValue(action["type"]),
+			Metadata: map[string]any{key: leaf},
+		}, key)
+		return !sent
 	}
-	return UnsentStepReviewMetadata(dsl.Action{
-		Type:     StringJSONValue(action["type"]),
-		Metadata: map[string]any{key: leaf},
-	}, key)
+	return false
 }
 
 // stepDependencyCodeLeaf reports whether path is a top-level review entry
@@ -411,7 +685,9 @@ func retainedImportCredentialContextChange(
 		rawPrior,
 		safePrior any,
 		path,
-		actionPath string,
+		priorPath,
+		actionPath,
+		priorActionPath string,
 	) (string, bool)
 	visit = func(
 		raw,
@@ -419,7 +695,9 @@ func retainedImportCredentialContextChange(
 		rawPrior,
 		safePrior any,
 		path,
-		actionPath string,
+		priorPath,
+		actionPath,
+		priorActionPath string,
 	) (string, bool) {
 		// Review evidence has no execution context to change. The new-credential
 		// check has already compared it leaf by leaf.
@@ -428,6 +706,7 @@ func retainedImportCredentialContextChange(
 		}
 		if _, isAction := candidateActions[path]; isAction {
 			actionPath = path
+			priorActionPath = priorPath
 		}
 		switch typed := raw.(type) {
 		case map[string]any:
@@ -435,13 +714,29 @@ func retainedImportCredentialContextChange(
 			priorMap, _ := rawPrior.(map[string]any)
 			safePriorMap, _ := safePrior.(map[string]any)
 			for key, child := range typed {
+				var safeChild, priorChild, safePriorChild any
+				if safeMap != nil {
+					safeChild = safeMap[key]
+				}
+				if priorMap != nil {
+					priorChild = priorMap[key]
+				}
+				if safePriorMap != nil {
+					safePriorChild = safePriorMap[key]
+				}
+				nextPriorPath := ""
+				if path == "" || priorPath != "" {
+					nextPriorPath = AppendImportContextPath(priorPath, key)
+				}
 				if context, changed := visit(
 					child,
-					safeMap[key],
-					priorMap[key],
-					safePriorMap[key],
+					safeChild,
+					priorChild,
+					safePriorChild,
 					AppendImportContextPath(path, key),
+					nextPriorPath,
 					actionPath,
+					priorActionPath,
 				); changed {
 					return context, true
 				}
@@ -449,17 +744,30 @@ func retainedImportCredentialContextChange(
 		case []any:
 			safeSlice, _ := safe.([]any)
 			priorSlice, _ := rawPrior.([]any)
-			safePriorSlice, _ := safePrior.([]any)
+			safePriorSlice, safePriorOK := safePrior.([]any)
+			var actionMatches []int
+			hasActionMatches := false
+			if safePriorOK && IsActionCollectionContextPath(path) && len(safeSlice) == len(typed) {
+				actionMatches, hasActionMatches = MatchCredentialPreservingActionCollection(safeSlice, safePriorSlice)
+			}
 			for index, child := range typed {
 				var safeChild, priorChild, safePriorChild any
 				if index < len(safeSlice) {
 					safeChild = safeSlice[index]
 				}
-				if index < len(priorSlice) {
-					priorChild = priorSlice[index]
+				priorIdx := index
+				if hasActionMatches {
+					priorIdx = actionMatches[index]
 				}
-				if index < len(safePriorSlice) {
-					safePriorChild = safePriorSlice[index]
+				nextPriorPath := ""
+				if priorIdx >= 0 && (path == "" || priorPath != "") {
+					if priorIdx < len(priorSlice) {
+						priorChild = priorSlice[priorIdx]
+					}
+					if priorIdx < len(safePriorSlice) {
+						safePriorChild = safePriorSlice[priorIdx]
+					}
+					nextPriorPath = AppendImportContextPath(priorPath, strconv.Itoa(priorIdx))
 				}
 				if context, changed := visit(
 					child,
@@ -467,7 +775,9 @@ func retainedImportCredentialContextChange(
 					priorChild,
 					safePriorChild,
 					AppendImportContextPath(path, strconv.Itoa(index)),
+					nextPriorPath,
 					actionPath,
+					priorActionPath,
 				); changed {
 					return context, true
 				}
@@ -494,18 +804,18 @@ func retainedImportCredentialContextChange(
 				return "", false
 			}
 			candidateAction, candidateExists := candidateActions[actionPath]
-			priorAction, priorExists := priorActions[actionPath]
+			priorAction, priorExists := priorActions[priorActionPath]
 			if !candidateExists || !priorExists ||
 				!reflect.DeepEqual(candidateTransport, priorTransport) ||
 				!reflect.DeepEqual(candidateAction, priorAction) ||
-				references.requestChanged(actionPath) {
+				references.requestChangedBetween(actionPath, priorActionPath) {
 				return ImportContextDisplayPath(actionPath), true
 			}
 		}
 		return "", false
 	}
 
-	return visit(candidate, projectedCandidate, prior, projectedPrior, "", "")
+	return visit(candidate, projectedCandidate, prior, projectedPrior, "", "", "", "")
 }
 
 func ImportTransportContext(script map[string]any) map[string]any {

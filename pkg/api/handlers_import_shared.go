@@ -82,7 +82,7 @@ func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Requ
 		}
 		policy, err := s.loadDomainFeaturePolicy(project.DomainID)
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "domain feature policy is unavailable")
+			writeDomainFeaturePolicyUnavailable(w)
 			return
 		}
 		featurePolicy := domainFeatureResponse(policy)

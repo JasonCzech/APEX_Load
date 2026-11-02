@@ -1477,4 +1477,158 @@ describe('SourceMappingReview', () => {
     expect(container.textContent).toContain('Original import path: actions[0]')
   })
 
+  it('tracks independent copy feedback per button and displays lifecycle section badges', async () => {
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => true) })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+
+    const lifecycleScript = {
+      ...script,
+      init: [{ name: 'Sign In', type: 'request', method: 'POST', target: '/login' }],
+      teardown: [{ name: 'Logout', type: 'request', method: 'GET', target: '/secur/logout.jsp' }],
+    }
+    const lifecycleReview = {
+      source_files: sourceReview.source_files,
+      mappings: [
+        {
+          id: 'signin',
+          source_file: 'Action.c',
+          start_line: 3,
+          end_line: 3,
+          function: 'web_submit_data',
+          target_path: 'init[0]',
+          target_name: 'Sign In',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'executable',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={lifecycleReview} script={lifecycleScript} />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('.source-map-section-badge')?.textContent).toBe('Init')
+
+    const panelButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))
+    const wholeSourceBtn = () => panelButtons()[1]
+    const mappedSourceBtn = () => panelButtons()[0]
+    const mappedDslBtn = () => panelButtons()[3]
+    const wholeDslBtn = () => panelButtons()[4]
+
+    await act(async () => { wholeSourceBtn().click() })
+    await flushPromises()
+    expect(wholeSourceBtn().textContent).toBe('Copied')
+    expect(mappedSourceBtn().textContent).toBe('Copy mapped source')
+
+    await act(async () => { wholeDslBtn().click() })
+    await flushPromises()
+    expect(wholeDslBtn().textContent).toBe('Copied')
+    expect(mappedDslBtn().textContent).toBe('Copy mapped destination')
+    expect(wholeSourceBtn().textContent).toBe('Copy whole source file')
+  })
+
+  it('copies a whole source file over 16 MiB, which only bounds retention, not the clipboard', async () => {
+    const execCommand = vi.fn(() => true)
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: execCommand })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+    const large = `${'x'.repeat((16 << 20) + 1)}\n`
+    const largeReview = { ...sourceReview, source_files: sourceReview.source_files.map((file, index) => index === 0 ? { ...file, content: large } : file) }
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={largeReview} script={script} />)
+    })
+    await flushPromises()
+    const wholeSourceBtn = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))[1]
+    await act(async () => { wholeSourceBtn().click() })
+    await flushPromises()
+    expect(execCommand).toHaveBeenCalledWith('copy')
+    expect(wholeSourceBtn().textContent).toBe('Copied')
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('relabels copy whole source file as copy retained source preview when truncated beyond retention and sets aria-expanded on mapping toggle', async () => {
+    const truncatedReview = {
+      source_files: [{
+        path: 'capture.har',
+        language: 'json',
+        content: '{\n  "log": {}\n}\n\n[truncated for source review]',
+        truncated: true,
+        original_bytes: 173 << 20,
+      }],
+      mappings: [{
+        id: 'map-trunc-1',
+        source_file: 'capture.har',
+        start_line: 1,
+        end_line: 3,
+        function: 'GET /one/one.app',
+        target_path: 'actions[0]',
+        status: 'converted' as const,
+        support_mode: 'executable' as const,
+      }],
+    }
+    const simpleScript = {
+      ...script,
+      name: 'Truncated_HAR',
+      version: '1.0.0',
+      actions: [{ name: 'Open Lightning', type: 'GET', method: 'GET', target: '/one/one.app' }],
+    }
+
+    // The copy holds the preview's source, not the marker the preview ends with.
+    let copiedText = ''
+    const originalExecCommand = Object.getOwnPropertyDescriptor(document, 'execCommand')
+    Object.defineProperty(document, 'execCommand', { configurable: true, value: vi.fn(() => {
+      copiedText = Array.from(document.querySelectorAll('textarea')).pop()?.value || ''
+      return true
+    }) })
+    onTestFinished(() => {
+      if (originalExecCommand) Object.defineProperty(document, 'execCommand', originalExecCommand)
+      else delete (document as { execCommand?: unknown }).execCommand
+    })
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={truncatedReview} script={simpleScript} />)
+    })
+    await flushPromises()
+
+    const toggleBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      button => button.textContent?.startsWith('Show mappings') || button.textContent === 'Hide mappings',
+    )!
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('false')
+    expect(toggleBtn.getAttribute('aria-controls')).toBe('source-mapping-table-region')
+    expect(container.querySelector('#source-mapping-table-region')).not.toBeNull()
+
+    const panelButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))
+    expect(panelButtons[1]?.textContent).toBe('Copy retained source preview')
+    expect(panelButtons[1]?.getAttribute('title')).toContain('16 MiB review retention limit')
+
+    await act(async () => { panelButtons[1]!.click() })
+    await flushPromises()
+    expect(copiedText).toBe('{\n  "log": {}\n}')
+
+    await act(async () => { toggleBtn.click() })
+    expect(toggleBtn.getAttribute('aria-expanded')).toBe('true')
+  })
+
+  it('says why a small truncated file copies its preview, without claiming the retention limit', async () => {
+    const review = {
+      source_files: [{ path: 'small.har', language: 'json', content: '{\n  "log": {}\n}\n\n[truncated for source review]', truncated: true, original_bytes: 3 << 20 }],
+      mappings: [{ id: 'map-small', source_file: 'small.har', start_line: 1, end_line: 3, function: 'GET /', target_path: 'actions[0]', status: 'converted' as const, support_mode: 'executable' as const }],
+    }
+    const simpleScript = { ...script, name: 'Small_HAR', version: '1.0.0', actions: [{ name: 'Open', type: 'GET', method: 'GET', target: '/' }] }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={review} script={simpleScript} />) })
+    await flushPromises()
+    const copyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))[1]
+    expect(copyButton?.textContent).toBe('Copy retained source preview')
+    expect(copyButton?.getAttribute('title')).not.toContain('16 MiB')
+    expect(copyButton?.getAttribute('title')).toContain('kept only a preview')
+  })
+
 })

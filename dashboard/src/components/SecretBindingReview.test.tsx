@@ -2717,6 +2717,32 @@ describe('SecretBindingReview reuse across scripts', () => {
     })
     expect(container.querySelector('.secret-binding-review-reuse-all')).toBeNull()
   })
+
+  it('does not badge an unprobed secret store as read-only when all bindings preserve imported values', async () => {
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[{
+            id: 'har-preserved-pw',
+            path: 'actions[0].body',
+            label: 'Login password',
+            context: 'POST /',
+            suggested_name: 'SALESFORCE_PASSWORD',
+            replacement: '{{secret.SALESFORCE_PASSWORD}}',
+            source_value_available: true,
+            destination_value_preserved: true,
+          }]}
+          onApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const summaryText = container.querySelector('.credentials-card-summary')?.textContent || ''
+    expect(summaryText).toContain('Project secret provider')
+    expect(summaryText).not.toContain('read-only')
+  })
 })
 
 

@@ -45,7 +45,7 @@ var sensitiveNames = map[string]struct{}{
 	"clientsecret": {}, "connectionstring": {}, "cookie": {}, "credential": {}, "credentials": {}, "csrf": {},
 	"csrftoken": {}, "deliverytag": {}, "dsn": {}, "idsecret": {}, "idtoken": {},
 	"jmssettlementtoken": {}, "locktoken": {}, "password": {}, "pass": {}, "passcode": {}, "passphrase": {}, "passwd": {},
-	"privatekey": {}, "proxyauthorization": {}, "pwd": {}, "receipthandle": {},
+	"privatekey": {}, "proxyauthorization": {}, "pw": {}, "pwd": {}, "receipthandle": {},
 	"refreshtoken": {}, "sas": {}, "saskey": {}, "sassignature": {}, "secret": {},
 	"secretaccesskey": {}, "sharedaccesskey": {}, "sharedaccesssignature": {},
 	"session": {}, "sessionid": {}, "sessiontoken": {}, "sid": {}, "storagestate": {},
@@ -80,7 +80,7 @@ var broadSensitiveHeaders = map[string]struct{}{
 }
 
 var staticFields = map[string]struct{}{
-	"password": {}, "passwd": {}, "pwd": {}, "pass": {}, "passcode": {},
+	"password": {}, "passwd": {}, "pw": {}, "pwd": {}, "pass": {}, "passcode": {},
 	"secret": {}, "client_secret": {}, "clientsecret": {},
 	"api_key": {}, "apikey": {}, "private_key": {},
 	"privatekey": {}, "secret_key": {}, "secretkey": {},
@@ -151,6 +151,9 @@ func MatchableNamedValue(name, value string) bool {
 // passwords, passcodes, PINs, one-time codes and secrets.
 func PasswordLikeName(name string) bool {
 	normalized := NormalizeName(name)
+	if normalized == "pw" {
+		return true
+	}
 	for _, word := range []string{"password", "passwd", "passcode", "passphrase", "secret"} {
 		if strings.Contains(normalized, word) {
 			return true

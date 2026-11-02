@@ -10,7 +10,12 @@ import './ImportDropzone.css'
 interface Props {
   accept: string
   file: File | null
-  onFile: (file: File | null) => void
+  // Returns false when the host did not take the file now (it refused it, or
+  // asks first whether to discard the work the file would replace); the zone
+  // then reports nothing added.
+  onFile: (file: File | null) => boolean | void | Promise<unknown>
+  // Optional 2-file handler (e.g. primary + comparison HAR captures dropped or picked together).
+  onPairFiles?: (primary: File, secondary: File) => boolean | void
   dropHint: string
   // Optional validation: return an error message to reject the dropped file.
   validate?: (file: File) => string | null
@@ -32,7 +37,7 @@ interface Props {
 // drops (which carry real absolute paths via Wails OnFileDrop), reconstructing a
 // File for the existing upload path. In the browser it uses the standard
 // <input type=file> + HTML5 drag-drop.
-export default function ImportDropzone({ accept, file, onFile, dropHint, validate, onError, disabled = false, workingLabel }: Props) {
+export default function ImportDropzone({ accept, file, onFile, onPairFiles, dropHint, validate, onError, disabled = false, workingLabel }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const zoneRef = useRef<HTMLDivElement>(null)
   const disabledRef = useRef(disabled)
@@ -59,9 +64,40 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       }
     }
     onError?.('')
-    onFile(next)
-    return true
+    return onFile(next) !== false
   }, [validate, onError, onFile])
+
+  const acceptFiles = useCallback((incoming: ArrayLike<File> | null | undefined): string | null => {
+    if (disabledRef.current || !incoming || incoming.length === 0) return null
+    if (incoming.length > 1 && onPairFiles) {
+      if (incoming.length > 2) {
+        onError?.('Drop at most two HAR captures (primary and comparison).')
+        return null
+      }
+      const primary = incoming[0]
+      const secondary = incoming[1]
+      if (!primary || !secondary) return null
+      if (validate) {
+        const primaryError = validate(primary)
+        if (primaryError) {
+          onError?.(primaryError)
+          return null
+        }
+        const secondaryError = validate(secondary)
+        if (secondaryError) {
+          onError?.(secondaryError)
+          return null
+        }
+      }
+      onError?.('')
+      if (onPairFiles(primary, secondary) === false) return null
+      return `Added ${primary.name} + ${secondary.name}`
+    }
+    if (acceptFile(incoming[0])) {
+      return `Added ${incoming[0].name}`
+    }
+    return null
+  }, [acceptFile, onError, onPairFiles, validate])
 
   // Native drop (desktop): Wails delivers absolute paths; reconstruct a File.
   const handleNativePaths = useCallback((paths: string[]) => {
@@ -73,7 +109,8 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
     beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      if (acceptFile(files[0])) succeedIngest(`Added ${files[0].name}`)
+      const label = acceptFiles(files)
+      if (label) succeedIngest(label)
       else failIngest()
     }).catch(error => {
       setDragOver(false)
@@ -81,15 +118,16 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       onError?.(nativeFileReadErrorMessage(error))
       if (shouldUseBrowserFileFallback(error)) setBrowserFallback(true)
     })
-  }, [acceptFile, onError, beginIngest, succeedIngest, failIngest])
+  }, [acceptFiles, onError, beginIngest, succeedIngest, failIngest])
   useDesktopFileDrop(zoneRef, handleNativePaths, desktop)
 
   const handleBrowse = useCallback(() => {
     if (disabledRef.current) return
     if (nativeDialogs) {
-      void pickFilesViaBridge(accept).then(files => {
+      const picked = onPairFiles ? pickFilesViaBridge(accept, true) : pickFilesViaBridge(accept)
+      void picked.then(files => {
         if (files.length > 0) {
-          acceptFile(files[0])
+          acceptFiles(files)
         }
       }).catch(error => {
         onError?.(nativeFileReadErrorMessage(error))
@@ -101,7 +139,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       return
     }
     inputRef.current?.click()
-  }, [nativeDialogs, accept, acceptFile, onError])
+  }, [nativeDialogs, accept, acceptFiles, onError, onPairFiles])
 
   const handleDrop = (event: DragEvent) => {
     event.preventDefault()
@@ -110,12 +148,13 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
     // In the desktop shell, file drops arrive via the native OnFileDrop router
     // (dataTransfer carries no usable path); ignore the HTML5 drop there.
     if (desktop) return
-    const dropped = event.dataTransfer.files?.[0]
-    if (!dropped) return
+    const droppedList = event.dataTransfer.files
+    if (!droppedList || droppedList.length === 0) return
     // The File is available synchronously here, so the feedback hook holds the
     // "reading" state briefly — otherwise a drop lands with no visible change.
     beginIngest()
-    if (acceptFile(dropped)) succeedIngest(`Added ${dropped.name}`)
+    const label = acceptFiles(droppedList)
+    if (label) succeedIngest(label)
     else failIngest()
   }
 
@@ -150,10 +189,11 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
         ref={inputRef}
         type="file"
         accept={accept}
+        multiple={Boolean(onPairFiles)}
         disabled={disabled}
         onClick={event => event.stopPropagation()}
         onChange={event => {
-          acceptFile(event.target.files?.[0])
+          acceptFiles(event.target.files)
           event.target.value = ''
         }}
         hidden

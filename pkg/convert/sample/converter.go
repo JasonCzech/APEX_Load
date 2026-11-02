@@ -88,12 +88,17 @@ type ConvertOptions struct {
 	// the background (poll, long-poll, push) into background conversations.
 	// Off keeps them as recorded steps.
 	AsyncScan *bool `json:"async_scan,omitempty"`
-	// StepTransactions (HAR input; default off) times each user step as a
-	// transaction when the recording marked none (stepTransactionWindows).
+	// StepTransactions (HAR input) times each user step as a transaction when
+	// the recording marked none (stepTransactionWindows). Nil defaults it on
+	// for a HAR import (EntryPointImportHAR or EntryPointImportSalesforce) of
+	// Salesforce traffic with advancing timestamps unless DisableSalesforce
+	// is set, and off otherwise; a recording that marks its own transactions
+	// keeps them instead.
 	StepTransactions *bool `json:"step_transactions,omitempty"`
-	// RecordedConcurrency (HAR input; default off) replays the requests the
-	// browser had in flight together as concurrent request groups
-	// (groupRecordedConcurrency).
+	// RecordedConcurrency (HAR input) replays the requests the browser had in
+	// flight together as concurrent request groups (groupRecordedConcurrency).
+	// Nil defaults it on under the same conditions as StepTransactions when
+	// SalesforceNative is also on, and off otherwise.
 	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile (HAR input): its host and
 	// content-type filters, header drop list, think-time threshold and
@@ -121,17 +126,41 @@ type ConvertOptions struct {
 	AgentforceTransform        *bool                `json:"agentforce_transform,omitempty"`
 	Parameterize               bool                 `json:"parameterize,omitempty"`
 	ParameterizationSelections []paramize.Selection `json:"parameterization_selections,omitempty"`
+	// SourceFileName overrides the default synthetic filename ("sample.har")
+	// recorded in SourceReview when non-empty.
+	SourceFileName string `json:"source_file_name,omitempty"`
+	// RedactSourceReview scrubs sensitive literals from SourceReview without
+	// redacting executable action headers or bodies; defaults to
+	// SanitizeSensitive when nil.
+	RedactSourceReview *bool `json:"redact_source_review,omitempty"`
+	// FilterClientTelemetry omits pure client-telemetry Aura beacon POSTs
+	// (InstrumentationBeacon / o11y) from executable actions when true and
+	// static assets are not included. Unset, it defaults to true for the HAR
+	// and Salesforce import entry points and false for every other caller.
+	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
+	// StampActionProvenance attaches har.entry_index and import_action_uid
+	// metadata to converted HAR request actions for interactive API import
+	// review and surgical action exclusion. Defaults to false so library
+	// converter contracts stay invariant.
+	StampActionProvenance bool `json:"stamp_action_provenance,omitempty"`
 }
 
 type ConvertStats struct {
-	Format               string `json:"format"`
-	TotalRequests        int    `json:"total_requests"`
-	ConvertedActions     int    `json:"converted_actions"`
-	FilteredAssets       int    `json:"filtered_assets,omitempty"`
-	SkippedRequests      int    `json:"skipped_requests,omitempty"`
-	Assertions           int    `json:"assertions"`
-	Extractors           int    `json:"extractors"`
-	CorrelationsDetected int    `json:"correlations_detected"`
+	Format        string `json:"format"`
+	TotalRequests int    `json:"total_requests"`
+	// ConvertedActions counts the request actions in the generated script.
+	ConvertedActions int `json:"converted_actions"`
+	// FilteredAssets counts every request the import left out by filter:
+	// static assets, client-telemetry beacons and recording-profile
+	// exclusions. It therefore includes FilteredTelemetry.
+	FilteredAssets int `json:"filtered_assets,omitempty"`
+	// FilteredTelemetry is the subset of FilteredAssets that were
+	// client-telemetry Aura beacons (InstrumentationBeacon / o11y).
+	FilteredTelemetry    int `json:"filtered_telemetry,omitempty"`
+	SkippedRequests      int `json:"skipped_requests,omitempty"`
+	Assertions           int `json:"assertions"`
+	Extractors           int `json:"extractors"`
+	CorrelationsDetected int `json:"correlations_detected"`
 }
 
 type Correlation struct {
@@ -346,11 +375,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var (
-		exchanges   []exchange
-		warnings    []string
-		diagnostics diag.Collector
-		filtered    int
-		skipped     int
+		exchanges         []exchange
+		warnings          []string
+		diagnostics       diag.Collector
+		filtered          int
+		telemetryFiltered int
+		skipped           int
 	)
 
 	httpVersionMode := effectiveSettings.HTTPVersionMode
@@ -370,6 +400,17 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			break
 		}
 		exchanges, warnings, filtered, skipped, err = document.parse(includeStatic, httpVersionMode, &diagnostics)
+		// The HAR and Salesforce importers leave client-telemetry beacons out
+		// by default; recorder, browser-HTTP and sample conversions keep the
+		// traffic the browser sent unless a caller asks for the filter.
+		filterTelemetryDefault := entryPoint == EntryPointImportHAR || entryPoint == EntryPointImportSalesforce
+		if err == nil && !includeStatic && convertutil.BoolOption(req.Options.FilterClientTelemetry, filterTelemetryDefault) {
+			exchanges, telemetryFiltered = filterClientTelemetryExchanges(exchanges)
+			filtered += telemetryFiltered
+			if telemetryFiltered > 0 {
+				diagnostics.Add(diag.Info, "HAR telemetry beacon", "HAR import", fmt.Sprintf("%d client-telemetry Aura beacon request(s) were omitted from the executable script", telemetryFiltered))
+			}
+		}
 		if err == nil && !includeStatic && strings.EqualFold(effectiveSettings.ResourceMode, "in_step") {
 			pageResources = document.inStepResources()
 		}
@@ -383,12 +424,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("no requests found in sample input")
 	}
 	if format == "har" && req.Options.Profile != nil {
-		var profileFiltered int
-		exchanges, profileFiltered = applyRecordingProfileFilters(exchanges, req.Options.Profile)
-		filtered += profileFiltered
-		if profileFiltered > 0 {
-			warnings = append(warnings, fmt.Sprintf("recording profile %q left %d request(s) out by host or content type", req.Options.Profile.Name, profileFiltered))
-		}
+		var drops recordingProfileDrops
+		exchanges, drops = applyRecordingProfileFilters(exchanges, req.Options.Profile)
+		filtered += drops.total()
+		warnings = append(warnings, drops.warnings(req.Options.Profile.Name)...)
 		if len(exchanges) == 0 {
 			return nil, errors.New("the recording profile filtered out every request")
 		}
@@ -403,17 +442,34 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	// Step transactions are placed once the requests are built (below), so
 	// they can leave out the background requests the recorded shape folds.
-	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, false)
+	isHARImportFlow := format == "har" && (entryPoint == EntryPointImportHAR || entryPoint == EntryPointImportSalesforce)
+	// Generic HAR mode is a HAR import (or browser capture) whose Salesforce
+	// native authoring, on by default for those entry points, was turned off.
+	// The recorder and sample importers never default it on and offer no such
+	// option, so their output keeps no generic Aura guard or warning.
+	genericAuraMode := format == "har" && (isHARImportFlow || entryPoint == EntryPointBrowserHTTP) && !effectiveSettings.SalesforceNative && !effectiveSettings.DisableSalesforce
+	defaultSalesforceShaping := isHARImportFlow && !effectiveSettings.DisableSalesforce && isSalesforceImportTraffic(exchanges) && exchangesHaveTimestampProgression(exchanges)
+	stepTransactions := format == "har" && len(req.Options.Transactions) == 0 && convertutil.BoolOption(req.Options.StepTransactions, defaultSalesforceShaping)
+	recordedConcurrency := format == "har" && convertutil.BoolOption(req.Options.RecordedConcurrency, defaultSalesforceShaping && effectiveSettings.SalesforceNative)
 	if stepTransactions && exchangesCarryRecordedTransactions(exchanges) {
 		stepTransactions = false
 		warnings = append(warnings, "Step transactions were not added: the recording already marks its transactions, which the script keeps.")
 	}
-	// A recorded Salesforce Mobile SDK sign-in reads its credentials from a
-	// users file and is reviewed before correlation (salesforce_signin.go).
+	// A recorded Salesforce Mobile SDK or desktop sign-in reads its
+	// credentials from a users file and is reviewed before correlation
+	// (salesforce_signin.go). disable_salesforce asks for a generic script,
+	// so the recorded sign-in and sign-out stay where they were recorded, but
+	// the steps that act on the org at load (a password reset, an identity
+	// verification) are still gated.
 	var signIn *salesforceSignIn
 	if format == "har" {
-		if signIn = findSalesforceSignIn(exchanges); signIn != nil {
-			signIn.prepareExchanges(exchanges)
+		if found := findSalesforceSignIn(exchanges); found != nil {
+			if effectiveSettings.DisableSalesforce {
+				gateSalesforceSignInSideEffects(exchanges)
+			} else {
+				signIn = found
+				signIn.prepareExchanges(exchanges)
+			}
 		}
 	}
 
@@ -523,10 +579,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		Warnings:     warnings,
 		Correlations: correlations,
 		Stats: ConvertStats{
-			Format:          format,
-			TotalRequests:   len(exchanges) + filtered + skipped,
-			FilteredAssets:  filtered,
-			SkippedRequests: skipped,
+			Format:            format,
+			TotalRequests:     len(exchanges) + filtered + skipped,
+			FilteredAssets:    filtered,
+			FilteredTelemetry: telemetryFiltered,
+			SkippedRequests:   skipped,
 		},
 	}
 	if warning := requestimport.ApplyIntegratedAuth(result.Script, integratedAuthHosts(exchanges)); warning != "" {
@@ -546,8 +603,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	var sourceFiles map[string]string
 	var sourceLocations []sampleSourceLocation
 	if !req.Options.OmitSourceReview {
-		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent)
-		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
+		sourceFiles = sampleSourceFiles(format, req.Content, req.ResponseContent, req.Options.SourceFileName)
+		sourceLocations = sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges, req.Options.SourceFileName)
 	}
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
@@ -595,6 +652,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			BodyEncoding: ex.BodyEncoding,
 			Metadata:     cloneMetadata(ex.Metadata),
 		}
+		if format == "har" && req.Options.StampActionProvenance && ex.SourceEntryID > 0 {
+			if action.Metadata == nil {
+				action.Metadata = map[string]any{}
+			}
+			action.Metadata["har.entry_index"] = ex.SourceEntryID
+			if existingUID, _ := action.Metadata[dsl.ImportActionUIDMetadataKey].(string); !dsl.IsValidImportActionUID(existingUID) {
+				action.Metadata[dsl.ImportActionUIDMetadataKey] = fmt.Sprintf("har-entry-%d", ex.SourceEntryID)
+			}
+		}
+		requestimport.CorrelateHARQueryStringValues(action.Metadata, stepVars, applyCorrelationVars)
 		if ex.ContentEncoding != "" {
 			if action.Params == nil {
 				action.Params = map[string]any{}
@@ -679,6 +746,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			if pageTitleChecks {
 				if title := requestimport.RecordedPageTitle(responseHeaderValue(ex.Response, "Content-Type"), ex.Response.Status, ex.Response.Body, correlationValues(correlations)); title != "" {
 					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_contains", Value: title})
+					result.Stats.Assertions++
+				}
+			}
+			// In generic HAR mode, guard /aura POSTs against HTTP-200 Aura
+			// envelope errors.
+			if includeAssertions && genericAuraMode && isGenericAuraPostExchange(ex) {
+				if !strings.Contains(ex.Response.Body, "/*ERROR*/") {
+					action.Assertions = append(action.Assertions, dsl.Assertion{Type: "body_not_contains", Value: "/*ERROR*/"})
 					result.Stats.Assertions++
 				}
 			}
@@ -804,7 +879,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				if reason != "" {
 					result.Warnings = append(result.Warnings, "Step transactions were not added: "+reason+".")
 				}
-			} else {
+			} else if req.Options.StepTransactions != nil || len(windows) >= 2 || signIn != nil {
 				tagStepTransactions(result.Script.Actions, windows, member)
 				req.Options.Transactions = windows
 				stepStarts = stepMarkerStarts(exchanges, windows, member)
@@ -846,9 +921,16 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			var notMoved string
 			newIndex, sourceMappings, moved, notMoved = signIn.moveToInit(result.Script, exchanges, newIndex, sourceMappings)
 			result.Warnings = append(result.Warnings, signIn.warnings(moved, notMoved)...)
+			if moved > 0 {
+				var teardownMoved int
+				var carried []string
+				var stays string
+				newIndex, sourceMappings, teardownMoved, carried, stays = signIn.moveLogoutToTeardown(result.Script, exchanges, newIndex, sourceMappings)
+				result.Warnings = append(result.Warnings, logoutWarnings(teardownMoved, carried, stays)...)
+			}
 			signIn.restoreRecordedBodies(exchanges)
 		}
-		if convertutil.BoolOption(req.Options.RecordedConcurrency, false) {
+		if recordedConcurrency {
 			var groups, refused int
 			sourceMappings, newIndex, groups, refused = groupRecordedConcurrency(result.Script, exchanges, newIndex, sourceMappings, thinkThreshold(req.Options.Profile))
 			if groups > 0 {
@@ -859,6 +941,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 		}
 		result.Baseline = recordedBaseline(exchanges, newIndex)
+	}
+	if genericAuraMode && scriptHasUncorrelatedAuraToken(result.Script) {
+		result.Warnings = append(result.Warnings, "Generic HAR mode left one or more aura.token values literal in /aura requests; enable Salesforce native authoring or extract __Host-ERIC_* Set-Cookie from /one/one.app before replay.")
 	}
 	for index := range result.Correlations {
 		corr := &result.Correlations[index]
@@ -874,7 +959,32 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Stats.CorrelationsDetected = len(correlations)
 	if !req.Options.OmitSourceReview {
+		var redactedFiles map[string]bool
+		var originalLengths map[string]int
+		if convertutil.BoolOption(req.Options.RedactSourceReview, convertutil.BoolOption(req.Options.SanitizeSensitive, false)) {
+			redactedFiles, originalLengths = redactSourceReviewSecrets(sourceFiles, exchanges)
+		}
 		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+		if result.SourceReview != nil && len(originalLengths) > 0 {
+			for i := range result.SourceReview.SourceFiles {
+				sf := &result.SourceReview.SourceFiles[i]
+				if origLen, ok := originalLengths[sf.Path]; ok {
+					sf.OriginalBytes = origLen
+					// A file over the retention limit keeps only its redacted
+					// preview, even when redaction shrank that preview under
+					// the display limit. A smaller file redaction shrank to
+					// the display limit is whole, so its Truncated flag stays
+					// as Build set it.
+					if origLen > sourceview.MaxFullTextBytes {
+						sf.FullText = ""
+						sf.Truncated = true
+					}
+				}
+				if redactedFiles[sf.Path] {
+					sf.Redacted = true
+				}
+			}
+		}
 	}
 	result.EffectiveSettings = effectiveSettings
 	return result, nil
@@ -968,6 +1078,84 @@ func isExplicitRedirectStep(ex exchange) bool {
 		return false
 	}
 	return headerLookup(ex.Response.Headers, "Location") != ""
+}
+
+func exchangesHaveTimestampProgression(exchanges []exchange) bool {
+	if len(exchanges) < 2 {
+		return false
+	}
+	var first time.Time
+	hasProgression := false
+	for i, ex := range exchanges {
+		if !ex.HasStartedAt {
+			return false
+		}
+		if i == 0 {
+			first = ex.StartedAt
+		} else if !ex.StartedAt.Equal(first) {
+			hasProgression = true
+		}
+	}
+	return hasProgression
+}
+
+// isSalesforceImportTraffic reports a capture of a Salesforce application:
+// Lightning (Aura, one.app) or sign-in (frontdoor.jsp) traffic, or a capture
+// that is mostly Salesforce hosts (Classic). A single request to a Salesforce
+// host from another site, such as a Web-to-Lead form post or an Embedded
+// Service config load, does not make it one.
+func isSalesforceImportTraffic(exchanges []exchange) bool {
+	salesforceHosts := 0
+	for _, ex := range exchanges {
+		parsed, err := url.Parse(ex.URL)
+		if err != nil {
+			continue
+		}
+		p := strings.ToLower(strings.TrimRight(parsed.Path, "/"))
+		if p == "/aura" || strings.HasSuffix(p, "/aura") || p == "/one/one.app" || strings.HasSuffix(p, "/secur/frontdoor.jsp") {
+			return true
+		}
+		host := strings.ToLower(parsed.Hostname())
+		if strings.HasSuffix(host, ".salesforce.com") ||
+			strings.HasSuffix(host, ".force.com") ||
+			strings.HasSuffix(host, ".salesforce-setup.com") {
+			salesforceHosts++
+		}
+	}
+	return salesforceHosts > 0 && salesforceHosts*2 > len(exchanges)
+}
+
+func isGenericAuraPostExchange(ex exchange) bool {
+	if !strings.EqualFold(ex.Method, "POST") {
+		return false
+	}
+	p := strings.ToLower(strings.TrimRight(urlPath(ex.URL), "/"))
+	return p == "/aura" || strings.HasSuffix(p, "/aura")
+}
+
+func scriptHasUncorrelatedAuraToken(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	check := func(actions []dsl.Action) bool {
+		for _, a := range actions {
+			if !strings.EqualFold(a.Method, "POST") || !strings.Contains(a.Body, "aura.token=") {
+				continue
+			}
+			for _, field := range strings.Split(a.Body, "&") {
+				k, v, ok := strings.Cut(field, "=")
+				if !ok || k != "aura.token" {
+					continue
+				}
+				v = strings.TrimSpace(v)
+				if v != "" && v != "null" && v != "undefined" && !strings.Contains(v, "{{") && !strings.Contains(v, "%7B%7B") && !strings.Contains(v, "%7b%7b") {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return check(script.Init) || check(script.Actions) || check(script.Teardown)
 }
 
 func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {

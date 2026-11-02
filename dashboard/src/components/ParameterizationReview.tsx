@@ -51,6 +51,26 @@ const SUGGESTION_PAGE_SIZE = 50
 const DIFF_PAGE_SIZE = 100
 const LOCATION_PREVIEW_LIMIT = 20
 
+const BROWSER_CAPABILITY_VAR_NAMES = new Set([
+  'accept_language',
+  'accept_encoding',
+  'user_agent',
+  'dnt',
+  'upgrade_insecure_requests',
+  'priority',
+])
+
+function isBrowserCapabilitySuggestion(suggestion: ParameterizationSuggestion): boolean {
+  if (suggestion.pre_applied || suggestion.auto_apply) return false
+  const normalized = (suggestion.var_name || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  if (!normalized) return false
+  return normalized.startsWith('sec_ch_ua') || BROWSER_CAPABILITY_VAR_NAMES.has(normalized)
+}
+
 function confidenceBand(confidence: number): 'high' | 'medium' | 'low' {
   if (confidence >= 0.8) return 'high'
   if (confidence >= 0.5) return 'medium'
@@ -283,55 +303,78 @@ export default function ParameterizationReview({ parameterization, script, scrip
         </nav>
       )}
 
-      {grouped.map(group => (
-        <details key={group.kind} className={`paramize-group paramize-group-${group.kind}`} open>
-          <summary>
-            <span>{kindLabels[group.kind] ?? group.kind}</span>
-            <small>{group.items.length}</small>
-          </summary>
-          <ul className="paramize-list">
-            {group.items.map(suggestion => (
-              <li key={suggestion.id} className={`paramize-item${suggestion.pre_applied ? ' paramize-item-preapplied' : ''}`}>
-                <label className="paramize-item-main">
-                  {suggestion.pre_applied
-                    ? <span className="paramize-preapplied-mark" title="Applied during conversion">✓</span>
-                    : <input
-                        type="checkbox"
-                        checked={!!selected[suggestion.id]}
-                        disabled={disabled || applying}
-                        onChange={() => toggle(suggestion)}
-                      />}
-                  <span className="paramize-item-name">{suggestion.var_name}</span>
-                  <span className="paramize-item-change">
-                    <code className="paramize-before">{suggestionDisplayValue(suggestion)}</code>
-                    <span className="paramize-arrow" aria-hidden>→</span>
-                    <code className="paramize-after">{suggestion.replacement}</code>
-                  </span>
-                  <span className={`paramize-confidence paramize-confidence-${confidenceBand(suggestion.confidence)}`}>
-                    {suggestion.pre_applied ? 'applied' : `${confidenceBand(suggestion.confidence)} ${Math.round(suggestion.confidence * 100)}%`}
-                  </span>
-                  {suggestion.high_risk && <span className="paramize-high-risk">high risk</span>}
-                  {suggestion.script_name && <span className="paramize-script-tag">{suggestion.script_name}</span>}
-                </label>
-                <p className="paramize-rationale">{isAuraSuggestion(suggestion) ? 'Replace the selected decoded field and preserve its encoding.' : suggestion.rationale}</p>
-                {isAuraSuggestion(suggestion) && <div className="paramize-aura-locations">
-                  <p>{suggestion.locations!.length} occurrence(s). Captured payload values are hidden.</p>
-                  <ul>{suggestion.locations!.slice(0, LOCATION_PREVIEW_LIMIT).map((location, index) => <li key={index}>
-                    <AuraParameterLocationDetails location={location} />
-                  </li>)}</ul>
-                  {suggestion.locations!.length > LOCATION_PREVIEW_LIMIT && <p>{suggestion.locations!.length - LOCATION_PREVIEW_LIMIT} more occurrences. All are included when this suggestion is applied.</p>}
-                </div>}
-                {!isAuraSuggestion(suggestion) && suggestion.locations && suggestion.locations.length > 0 && (
-                  <p className="paramize-locations">
-                    {suggestion.locations.length} occurrence(s): {suggestion.locations.slice(0, LOCATION_PREVIEW_LIMIT).map(l => `${l.action_name || `${l.section}[${l.action_index}]`} (${l.field})`).join(', ')}
-                    {suggestion.locations.length > LOCATION_PREVIEW_LIMIT ? `, and ${suggestion.locations.length - LOCATION_PREVIEW_LIMIT} more` : ''}
-                  </p>
-                )}
-              </li>
-            ))}
-          </ul>
-        </details>
-      ))}
+      {grouped.map(group => {
+        const primaryItems: ParameterizationSuggestion[] = []
+        const browserCapabilityItems: ParameterizationSuggestion[] = []
+        for (const item of group.items) {
+          if (isBrowserCapabilitySuggestion(item)) browserCapabilityItems.push(item)
+          else primaryItems.push(item)
+        }
+        const splitBrowserHeaders = primaryItems.length > 0 && browserCapabilityItems.length > 0
+        const visiblePrimaryItems = splitBrowserHeaders ? primaryItems : group.items
+        const selectedBrowserHeaderCount = browserCapabilityItems.filter(item => selected[item.id] && !item.pre_applied).length
+        const renderSuggestionItem = (suggestion: ParameterizationSuggestion) => (
+          <li key={suggestion.id} className={`paramize-item${suggestion.pre_applied ? ' paramize-item-preapplied' : ''}`}>
+            <label className="paramize-item-main">
+              {suggestion.pre_applied
+                ? <span className="paramize-preapplied-mark" title="Applied during conversion">✓</span>
+                : <input
+                    type="checkbox"
+                    checked={!!selected[suggestion.id]}
+                    disabled={disabled || applying}
+                    onChange={() => toggle(suggestion)}
+                  />}
+              <span className="paramize-item-name">{suggestion.var_name}</span>
+              <span className="paramize-item-change">
+                <code className="paramize-before">{suggestionDisplayValue(suggestion)}</code>
+                <span className="paramize-arrow" aria-hidden>→</span>
+                <code className="paramize-after">{suggestion.replacement}</code>
+              </span>
+              <span className={`paramize-confidence paramize-confidence-${confidenceBand(suggestion.confidence)}`}>
+                {suggestion.pre_applied ? 'applied' : `${confidenceBand(suggestion.confidence)} ${Math.round(suggestion.confidence * 100)}%`}
+              </span>
+              {suggestion.high_risk && <span className="paramize-high-risk">high risk</span>}
+              {suggestion.script_name && <span className="paramize-script-tag">{suggestion.script_name}</span>}
+            </label>
+            <p className="paramize-rationale">{isAuraSuggestion(suggestion) ? 'Replace the selected decoded field and preserve its encoding.' : suggestion.rationale}</p>
+            {isAuraSuggestion(suggestion) && <div className="paramize-aura-locations">
+              <p>{suggestion.locations!.length} occurrence(s). Captured payload values are hidden.</p>
+              <ul>{suggestion.locations!.slice(0, LOCATION_PREVIEW_LIMIT).map((location, index) => <li key={index}>
+                <AuraParameterLocationDetails location={location} />
+              </li>)}</ul>
+              {suggestion.locations!.length > LOCATION_PREVIEW_LIMIT && <p>{suggestion.locations!.length - LOCATION_PREVIEW_LIMIT} more occurrences. All are included when this suggestion is applied.</p>}
+            </div>}
+            {!isAuraSuggestion(suggestion) && suggestion.locations && suggestion.locations.length > 0 && (
+              <p className="paramize-locations">
+                {suggestion.locations.length} occurrence(s): {suggestion.locations.slice(0, LOCATION_PREVIEW_LIMIT).map(l => `${l.action_name || `${l.section}[${l.action_index}]`} (${l.field})`).join(', ')}
+                {suggestion.locations.length > LOCATION_PREVIEW_LIMIT ? `, and ${suggestion.locations.length - LOCATION_PREVIEW_LIMIT} more` : ''}
+              </p>
+            )}
+          </li>
+        )
+        return (
+          <details key={group.kind} className={`paramize-group paramize-group-${group.kind}`} open>
+            <summary>
+              <span>{kindLabels[group.kind] ?? group.kind}</span>
+              <small>{group.items.length}</small>
+            </summary>
+            <ul className="paramize-list">
+              {visiblePrimaryItems.map(renderSuggestionItem)}
+            </ul>
+            {splitBrowserHeaders && (
+              <details className="paramize-browser-headers">
+                <summary>
+                  <span>Browser capability headers ({browserCapabilityItems.length})</span>
+                  {selectedBrowserHeaderCount > 0 && <small>{selectedBrowserHeaderCount} selected</small>}
+                </summary>
+                <ul className="paramize-list">
+                  {browserCapabilityItems.map(renderSuggestionItem)}
+                </ul>
+              </details>
+            )}
+          </details>
+        )
+      })}
 
       {guided && reviewing && <section className="import-review-suggestion-preview" aria-label="Parameter suggestion preview">
         <h4>Review selected parameter changes</h4>

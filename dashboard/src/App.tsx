@@ -3251,11 +3251,18 @@ function AppShell({
     document.title = `${effectiveTopbarTitle} | APEX Load`;
   }, [effectiveTopbarTitle]);
 
+  const hasMountedRouteFocusRef = useRef(false);
   useEffect(() => {
     const returnTarget = returningCommandCenter
       ? mainContentRef.current?.querySelector<HTMLElement>("[data-command-details]")
       : null;
     const monitorFocus = takeMonitoringTabFocus();
+    if (!hasMountedRouteFocusRef.current) {
+      hasMountedRouteFocusRef.current = true;
+      if (!monitorFocus && !returnTarget) {
+        return;
+      }
+    }
     if (monitorFocus) {
       // Topbar contributions settle after the route panel mounts.
       const frame = requestAnimationFrame(() => {

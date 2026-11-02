@@ -1,18 +1,23 @@
-import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
+import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { importSourceName } from '../appTopbar'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
+import HarCaptureGuideButton from './HarCaptureGuideButton'
+import HarCorrelationStudio from './HarCorrelationStudio'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { carryPreAppliedCorrelations, exclusionRefusedBeforeCommit, filesHaveIdenticalBytes, harShapingApplied, sourceSecretSessionAfterExclusion, statsAfterExclusion, withoutSourceValues } from './ProtocolAssetImportModel'
+import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
+import './ProtocolAssetImport.css'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceDomainObservation, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import AuraOutcomeReview from './AuraOutcomeReview'
@@ -43,7 +48,7 @@ import {
   invalidateProtectedImportCandidate,
   mergeProtectedParameterizationSelectionIds,
 } from './protectedImportSession'
-import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import { HTTPVersionModeField } from './HTTPVersionModeField'
 import type { HTTPVersionImportMode } from './httpVersionModel'
 import './SampleScriptImport.css'
@@ -58,6 +63,7 @@ const REPLACE_TARGET_PAGE_SIZE = 100
 interface Props {
   kind: ImportKind
   initialFile?: File | null
+  initialComparisonFile?: File | null
   initialMode?: string | null
   projectId?: string
   // folderId is the destination folder for scripts saved from this import,
@@ -66,7 +72,12 @@ interface Props {
   // common case of importing while a folder is open.
   folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
-  onEdit?: (script: ScriptDefinition) => void
+  /**
+   * Opens the reviewed draft in the Visual Editor. The review stays mounted
+   * behind the editor; onDraftSaved records a save made there so Back shows
+   * the draft as saved.
+   */
+  onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus, onDraftSaved?: (saved: StoredScript) => void) => void
   onClose?: () => void
   onOperationBusyChange?: (busy: boolean) => void
 }
@@ -81,9 +92,9 @@ const copy = {
   },
   har: {
     title: importSourceName('traffic_har'),
-    subtitle: 'Upload a Chrome DevTools HAR file, or a .zip holding one, and convert recorded HTTP entries into a reviewable APEX Load HTTP script. Salesforce traffic is auto-detected and can emit a native Salesforce draft.',
+    subtitle: 'Upload one or two Chrome DevTools HAR captures (or .zip archives) to convert recorded HTTP traffic into an APEX Load DSL script with Salesforce correlation & lifecycle analysis.',
     accept: '.har,.zip,application/json,application/zip',
-    drop: 'Drop a .har or zipped .har file here',
+    drop: 'Drop one or two .har (or zipped .har) files here',
     button: 'Convert HAR',
   },
   'recorder-export': {
@@ -264,6 +275,46 @@ const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
   cloudtest: ['Review-only until fixture-proven'],
   'eventhubs-capture': ['Event Hubs'],
   'broker-config': ['JMS Solace', 'JMS IBM MQ review/mock'],
+}
+
+// A display cap that says what it hides: "Showing K of N" and "Show all N".
+function CappedFindingList<T>({ items, limit, noun, itemKey, renderItem, leading }: {
+  items: readonly T[]
+  limit: number
+  noun: string
+  itemKey: (item: T, index: number) => string
+  renderItem: (item: T) => ReactNode
+  /** Rows always listed ahead of the capped items (such as blockers). */
+  leading?: ReactNode
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const visible = showAll ? items : items.slice(0, limit)
+  return (
+    <>
+      <ul className="sample-import-findings">
+        {leading}
+        {visible.map((item, index) => <li key={itemKey(item, index)}>{renderItem(item)}</li>)}
+      </ul>
+      {items.length > limit && (
+        <div className="sample-import-actions compact">
+          <span className="sample-import-muted">Showing {visible.length} of {items.length} {noun}</span>
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={showAll} onClick={() => setShowAll(current => !current)}>
+            {showAll ? `Show first ${limit} ${noun}` : `Show all ${items.length} ${noun}`}
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// A Salesforce host's imported requests, and every raw HAR entry on it when
+// that differs (filtered static assets and telemetry count only there).
+// After an exclusion the counts still describe the draft as it was converted.
+function salesforceDomainCounts(domain: SalesforceDomainObservation, excludedSinceConversion = false): string {
+  const requests = `${domain.count} request${domain.count === 1 ? '' : 's'} ${excludedSinceConversion ? 'at import' : 'in the draft'}`
+  const harCount = Number.isSafeInteger(domain.har_count) && (domain.har_count || 0) > 0 ? domain.har_count! : undefined
+  if (harCount === undefined || harCount === domain.count) return requests
+  return `${requests} · ${harCount} HAR entr${harCount === 1 ? 'y' : 'ies'}`
 }
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
@@ -699,6 +750,10 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
 
 const endpointTotal = salesforceEndpointTotal
 const IMPORT_DRAFT_EXPIRED_MESSAGE = 'This credential-preserving import draft has expired. Re-run the import before saving, editing, or changing it.'
+const EXCLUSION_OUTCOME_UNKNOWN_MESSAGE = 'The exclusion did not answer, so it may have been applied on the server. Re-run the import before saving or changing this draft.'
+// A draft that is not credential-preserving lives only in this review, so an
+// unanswered exclusion left it as it was; only the sent session may be gone.
+const EXCLUSION_SESSION_RELEASED_MESSAGE = 'The exclusion did not answer, and the draft was not changed. The recorded credential values were released; bind those credentials by hand or re-run the import. You can retry the exclusion.'
 
 let asyncAPIBatchSaveOperationSequence = 0
 let genericImportBatchSaveOperationSequence = 0
@@ -741,8 +796,9 @@ function importDraftHasExpired(result: ProtocolImportResult | null | undefined):
   return importDraftExpiryStatus(result?.import_draft_expires_at)?.expired === true
 }
 
-export default function ProtocolAssetImport({ kind, initialFile, initialMode, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
+export default function ProtocolAssetImport({ kind, initialFile, initialComparisonFile, initialMode, projectId, folderId, onImported, onEdit, onClose, onOperationBusyChange }: Props) {
   const api = useApi()
+  const navigationGuard = useNavigationGuardRunner()
   const importScenario = useImportScenario(projectId)
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const convertTask = useAsyncTask<ProtocolImportResult>()
@@ -777,9 +833,34 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [])
   useEffect(() => abortConversionRequest, [abortConversionRequest])
   const reviewScope = `${reviewGeneration}:${projectId || ''}`
-  const { savedResult, publish: publishSaved, openSaved } = useImportSaveOutcome(reviewScope, onImported)
-  // The converted draft lives only in this review until it is saved.
-  useUnsavedWorkGuard('ProtocolAssetImport', 'Import review', Boolean(result) && !savedResult, () => undefined)
+  // Expanded finding lists outlive edits to the reviewed draft, such as an
+  // exclusion; only a new conversion or a dropped source collapses them.
+  const [findingListEpoch, setFindingListEpoch] = useState(0)
+  const findingListScope = `${findingListEpoch}:${projectId || ''}`
+  const { savedResult: publishedSaveResult, publish: publishSaveOutcome, openSaved } = useImportSaveOutcome(reviewScope, onImported)
+  // A draft opened in the Visual Editor and saved there is saved for this
+  // review too: its Save would otherwise create a second copy.
+  const [editorSave, setEditorSave] = useState<{ scope: string; result: ImportedSaveResult } | null>(null)
+  const savedResult = publishedSaveResult ?? (editorSave && editorSave.scope === reviewScope ? editorSave.result : null)
+  const reviewScopeRef = useRef(reviewScope)
+  reviewScopeRef.current = reviewScope
+  // The review scope whose draft was just saved. The leave guard reads it live,
+  // so a save that navigates in the same turn is not asked about.
+  const cleanReviewScopeRef = useRef<string | null>(null)
+  const publishSaved = (saved: ImportedSaveResult, destination?: ImportSaveDestination) => {
+    if (saved.scripts.length > 0 && reviewScopeRef.current === reviewScope) {
+      cleanReviewScopeRef.current = reviewScope
+      navigationGuard.markClean('ProtocolAssetImport')
+    }
+    publishSaveOutcome(saved, destination)
+  }
+  // The editor already opened the saved script, so nothing is published.
+  const recordEditorSave = (scope: string) => (saved: StoredScript) => {
+    if (reviewScopeRef.current !== scope) return
+    cleanReviewScopeRef.current = scope
+    navigationGuard.markClean('ProtocolAssetImport')
+    setEditorSave({ scope, result: { scripts: [saved] } })
+  }
   const reviewProjectIdRef = useRef(projectId)
   reviewProjectIdRef.current = projectId
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
@@ -835,6 +916,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     internalReviewBusyRef.current = busy
     setInternalReviewBusy(busy)
   }, [])
+  // An exclusion is this surface's own review mutation. It has its own flag:
+  // the shared one above is the child review's, which a finishing exclusion
+  // must not clear, and the child review's panels lock on this one.
+  const exclusionInFlightRef = useRef(0)
+  const exclusionTokenRef = useRef(0)
+  const [exclusionInFlight, setExclusionInFlight] = useState(false)
+  // Requests excluded since the review's conversion. The conversion's own
+  // evidence (diff step positions, Salesforce counts) predates them.
+  const [excludedSinceConversion, setExcludedSinceConversion] = useState(0)
   const [file, setFile] = useState<File | null>(null)
   useSuggestImportFolderName(file?.name)
   const sourceFileRef = useRef<File | null>(file)
@@ -863,18 +953,26 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [])
   const [, setConversionScope] = useState(0)
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
+  const [duplicateHARWarning, setDuplicateHARWarning] = useState('')
+  const [showAllOpenAPICorrelations, setShowAllOpenAPICorrelations] = useState(false)
+  const [showAllRAMLResources, setShowAllRAMLResources] = useState(false)
+  const [showAllCloudTestScenarios, setShowAllCloudTestScenarios] = useState(false)
   const [auraSourceFocus, setAuraSourceFocus] = useState<ImportSourceIssueFocus | null>(null)
   const [name, setName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [soapVersion, setSoapVersion] = useState('1.1')
   const [includeStaticAssets, setIncludeStaticAssets] = useState(false)
-  const [stepTransactions, setStepTransactions] = useState(false)
-  const [recordedConcurrency, setRecordedConcurrency] = useState(false)
+  const [stepTransactions, setStepTransactions] = useState<boolean | undefined>(undefined)
+  const [recordedConcurrency, setRecordedConcurrency] = useState<boolean | undefined>(undefined)
+  const [filterClientTelemetry, setFilterClientTelemetry] = useState(true)
   const [salvageTruncatedHAR, setSalvageTruncatedHAR] = useState(false)
   const [harHTTPVersionMode, setHARHTTPVersionMode] = useState<HTTPVersionImportMode>('upgrade')
   const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
+  // Conversion options changed after an inspection wait for Re-inspect HARs,
+  // so a toggle never silently discards a reviewed draft.
+  const [harOptionsStaged, setHAROptionsStaged] = useState(false)
   const [retentionDays, setRetentionDays] = useState(7)
   const [messageError, setMessageError] = useState('')
   const [conversionNotice, setConversionNotice] = useState('')
@@ -948,13 +1046,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const labels = copy[kind]
   const resetConvertTask = convertTask.reset
   const resetSaveTask = saveTask.reset
+  const reviewMutationBusy = internalReviewBusy || exclusionInFlight
+  const reviewMutationBusyNow = () => internalReviewBusyRef.current || exclusionInFlightRef.current !== 0
   const operationBusy = convertTask.pending
     || saveTask.pending
     || persistenceInProgress
     || saveAllPreparing
-    || internalReviewBusy
+    || reviewMutationBusy
     || replayTask.pending
-  const sourceMutationLocked = settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
+  const sourceMutationLocked = convertTask.pending || settingsEditing || persistenceInProgress || saveTask.pending || saveAllPreparing
   // What each source zone says while the conversion request is in flight. The
   // optional environment and comparison files travel in the same request as the
   // main file, so every zone holding one reports it. The verb is the one on the
@@ -962,12 +1062,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const sourceWorkingLabel = (source: File | null) => (
     convertTask.pending && source ? describeWorking(reviewMode === 'validation' ? 'Validating' : 'Inspecting', source.name) : undefined
   )
-  const saveTargetLocked = sourceMutationLocked || internalReviewBusy
+  const saveTargetLocked = sourceMutationLocked || reviewMutationBusy
+  // A rename commits to the reviewed draft, which an in-flight review request
+  // (exclusion, credential binding) is about to replace.
+  const scriptNameLocked = sourceMutationLocked || reviewMutationBusy
   const projectScopeRequired = kind === 'har' && (!projectId || projectId === 'unassigned')
   // A credential action can await several API calls before onSave runs. Freeze
   // the replace target at the moment that action becomes busy so the eventual
   // commit cannot close over a target selected after credential preparation.
-  if (!internalReviewBusy && !persistenceInProgress && !saveTask.pending) {
+  if (!reviewMutationBusy && !persistenceInProgress && !saveTask.pending) {
     openAPISaveTargetRef.current = {
       mode: openAPISaveMode,
       targetScriptId: openAPIReplaceTarget.scriptId,
@@ -1007,11 +1110,51 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     if (!saveAllInFlightRef.current) setSaveAllPreparing(false)
     internalReviewBusyRef.current = false
     setInternalReviewBusy(false)
+    exclusionInFlightRef.current = 0
+    setExclusionInFlight(false)
     setPreparedCredentialSummary(null)
     resetAsyncAPISavedScripts()
     setMessageError('')
     setConversionNotice('')
+    setExcludedSinceConversion(0)
+    setShowAllOpenAPICorrelations(false)
+    setShowAllRAMLResources(false)
+    setShowAllCloudTestScenarios(false)
+    setFindingListEpoch(current => current + 1)
+    setHAROptionsStaged(false)
   }, [abortConversionRequest, advanceReviewGeneration, resetAsyncAPISavedScripts, resetConvertTask, resetSaveTask, sourceSecretSessions])
+  // A HAR conversion option changed while a review is open waits for Re-inspect
+  // HARs; with nothing reviewed yet (or the review saved) it simply resets.
+  const stageConversionOptionChange = () => {
+    if (kind === 'har' && latestResultRef.current && !savedResult) {
+      setHAROptionsStaged(true)
+      return
+    }
+    invalidateConversionSource()
+  }
+  // A new, replaced or removed source file discards the reviewed draft, so it
+  // asks first, as Back, Re-inspect and a profile switch do.
+  // Returns whether the source changed now; false while the discard prompt
+  // decides, so a dropzone does not report a file it has not taken.
+  const replaceConversionSource = (apply: () => void): boolean => {
+    let applied = false
+    navigationGuard.runGuarded(() => {
+      invalidateConversionSource()
+      apply()
+      applied = true
+    })
+    return applied
+  }
+  // The converted draft lives only in this review until it is saved.
+  // It stays dirty while a save is in flight: a save that then fails leaves
+  // the review as the only copy of the draft.
+  useUnsavedWorkGuard(
+    'ProtocolAssetImport',
+    'Import review',
+    Boolean(result) && !savedResult,
+    () => invalidateConversionSource(),
+    () => Boolean(latestResultRef.current) && cleanReviewScopeRef.current !== reviewScopeRef.current,
+  )
   // Cancel returns the importer to its idle state at once. Invalidation aborts
   // the request and advances the review generation, so a response that still
   // settles is discarded with its unaccepted source-secret session. Focus goes
@@ -1046,10 +1189,45 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const supportsBaseURL = kind !== 'asyncapi' && kind !== 'eventhubs-capture' && kind !== 'broker-config'
 
   useEffect(() => {
-    if (!initialFile) return
+    if (!initialFile && !initialComparisonFile) return
     invalidateConversionSource()
-    setFile(initialFile)
-  }, [initialFile, invalidateConversionSource])
+    // Handed-off files skip the dropzone, so they get its checks here.
+    const rejection = (initialFile && validateImportFile(kind, initialFile))
+      || (kind === 'har' && initialComparisonFile && validateImportFile('har', initialComparisonFile))
+      || null
+    if (rejection) {
+      setMessageError(rejection)
+      return
+    }
+    if (initialFile) setFile(initialFile)
+    if (kind === 'har' && initialComparisonFile) setSecondaryHARFile(initialComparisonFile)
+  }, [initialComparisonFile, initialFile, invalidateConversionSource, kind])
+
+  useEffect(() => {
+    if (kind !== 'har' || !file || !secondaryHARFile || file.size !== secondaryHARFile.size) {
+      setDuplicateHARWarning('')
+      return
+    }
+    let cancelled = false
+    void (async () => {
+      try {
+        if (typeof file.slice !== 'function' || typeof secondaryHARFile.slice !== 'function') {
+          if (file.name === secondaryHARFile.name && file.lastModified === secondaryHARFile.lastModified) {
+            setDuplicateHARWarning('Primary and comparison HAR files appear to be the exact same capture. Upload a second independent recording to detect dynamic session values.')
+          }
+          return
+        }
+        const identical = await filesHaveIdenticalBytes(file, secondaryHARFile, () => cancelled)
+        if (identical === null || cancelled) return
+        setDuplicateHARWarning(identical
+          ? 'Primary and comparison HAR files have identical byte content. Upload two separate browser recordings so dynamic tokens can be differentiated from static values.'
+          : '')
+      } catch {
+        if (!cancelled) setDuplicateHARWarning('')
+      }
+    })()
+    return () => { cancelled = true }
+  }, [file, kind, secondaryHARFile])
 
   useEffect(() => {
     // Clear before fetching, not on resolve. One slot now serves every kind, so
@@ -1102,11 +1280,30 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       setMessageError('Select a project from the workspace context before inspecting HAR traffic. HAR review stores protected source evidence inside that project.')
       return
     }
+    const trimmedBaseURL = baseURL.trim()
+    if (supportsBaseURL && trimmedBaseURL) {
+      // The HAR converter only moves recorded requests onto a concrete http(s)
+      // base, so the HAR import refuses any template syntax in it.
+      if (kind === 'har' && (trimmedBaseURL.includes('{{') || trimmedBaseURL.includes('}}'))) {
+        setMessageError('Base URL override for a HAR import must be a concrete http:// or https:// URL; {{...}} templates are not supported. Leave it blank to keep the recorded origin, and retarget the run with its base URL override.')
+        return
+      }
+      const validBaseURL = /^https?:\/\/\S+$/i.test(trimmedBaseURL)
+        || (kind !== 'har' && trimmedBaseURL.startsWith('{{') && trimmedBaseURL.includes('}}'))
+      if (!validBaseURL) {
+        setMessageError(kind === 'har'
+          ? 'Base URL override must start with http:// or https://.'
+          : 'Base URL override must start with http://, https://, or a {{...}} template variable.')
+        return
+      }
+    }
     resetAsyncAPISavedScripts()
     abortConversionRequest()
+    setHAROptionsStaged(false)
     const abortController = new AbortController()
     conversionAbortRef.current = abortController
     const sourceGeneration = advanceReviewGeneration()
+    setFindingListEpoch(current => current + 1)
     const sourceProjectId = reviewProjectIdRef.current
     const sourceFile = file
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
@@ -1114,6 +1311,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       && sourceFileRef.current === sourceFile
     setMessageError('')
     setConversionNotice('')
+    setExcludedSinceConversion(0)
     setReviewMode(mode)
     recorderReplaySessionIdRef.current = ''
     recorderReplayStatusRef.current = 'idle'
@@ -1151,6 +1349,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           include_static_assets: includeStaticAssets,
           step_transactions: stepTransactions,
           recorded_concurrency: recordedConcurrency,
+          // The converter keeps every request when static assets are
+          // included, telemetry beacons among them.
+          filter_client_telemetry: filterClientTelemetry && !includeStaticAssets,
+          validate_only: mode === 'validation',
           salvage_truncated: salvageTruncatedHAR,
           http_version_mode: harHTTPVersionMode,
           secondary_file: secondaryHARFile || undefined,
@@ -1201,9 +1403,186 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     }
   }
 
+  // A profile switch or Re-inspect re-runs the open review in the mode the user
+  // chose for it: a Validate Only review stays a validation, which keeps no
+  // full source text and allocates no source-secret session.
   const handleHARSalesforceNativeConvert = async (salesforceNative: boolean) => {
     setHARSalesforceNative(salesforceNative)
-    await handleConvert('conversion', { salesforceNative })
+    await handleConvert(reviewMode, { salesforceNative })
+  }
+  // Re-converting replaces the reviewed draft, so it asks first, as leaving does.
+  const switchHARProfile = (salesforceNative: boolean) => {
+    navigationGuard.runGuarded(() => { void handleHARSalesforceNativeConvert(salesforceNative) })
+  }
+  const reinspectHARs = () => {
+    navigationGuard.runGuarded(() => { void handleConvert(reviewMode) })
+  }
+
+  // A late exclusion response still consumed the session it was sent. The
+  // review keeps its draft, so its requirements lose the recorded values that
+  // session held rather than pointing a save at a session that is gone.
+  const dropConsumedSourceSecretSession = (sessionId: string) => {
+    const currentResult = latestResultRef.current
+    if (!currentResult || currentResult.source_secret_session_id !== sessionId) return
+    const droppedResult = {
+      ...currentResult,
+      secret_binding_requirements: withoutSourceValues(currentResult.secret_binding_requirements),
+      source_secret_session_id: undefined,
+      source_secret_session_expires_at: undefined,
+    } as ProtocolImportResult
+    latestResultRef.current = droppedResult
+    convertTask.setValue(droppedResult)
+  }
+
+  // Returns whether the exclusion started: a refused one (an expired draft,
+  // or other work in flight) changes nothing the studio could observe.
+  const handleExcludeBlockedActions = (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }): boolean => {
+    const currentResult = latestResultRef.current
+    if (!currentResult || operationBusy || reviewMutationBusyNow()) return false
+    if (importDraftHasExpired(currentResult)) {
+      setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      return false
+    }
+    const sourceScripts = currentResult.scripts?.length
+      ? currentResult.scripts
+      : currentResult.script
+        ? [currentResult.script]
+        : []
+    const sourceScriptIndex = selectedScriptIndexRef.current
+    const currentReviewed = sourceScripts[sourceScriptIndex] || sourceScripts[0]
+    if (!currentReviewed) return false
+    const sourceGeneration = reviewGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && selectedScriptIndexRef.current === sourceScriptIndex
+    // Requirement IDs hash their action path, so the server re-keys the
+    // recorded values to the moved requirements. It consumes the session it
+    // is sent, so the response's replacement is the only live one.
+    const sentSourceSecretSessionId = currentResult.source_secret_session_id?.trim() || undefined
+    setMessageError('')
+    const exclusionToken = ++exclusionTokenRef.current
+    exclusionInFlightRef.current = exclusionToken
+    setExclusionInFlight(true)
+    void (async () => {
+      try {
+        const response = await api.excludeImportDraftActions({
+          script: currentReviewed,
+          ...(options.actionUids?.length ? { action_uids: options.actionUids } : {}),
+          exclude_unexported_bodies: Boolean(options.excludeUnexportedBodies),
+          ...(sentSourceSecretSessionId ? { source_secret_session_id: sentSourceSecretSessionId } : {}),
+        })
+        const sessionAfter = sourceSecretSessionAfterExclusion(sentSourceSecretSessionId, response, response.secret_binding_requirements || [])
+        if (sentSourceSecretSessionId) {
+          // The sent session is gone server-side whether or not this response
+          // is still current; discarding it again would only 404.
+          sourceSecretSessions.settle('conversion', sourceProjectId, sentSourceSecretSessionId)
+        }
+        if (!requestIsCurrent()) {
+          sourceSecretSessions.discardUnaccepted(sourceProjectId, sessionAfter.sessionId)
+          if (sentSourceSecretSessionId) dropConsumedSourceSecretSession(sentSourceSecretSessionId)
+          return
+        }
+        if (sessionAfter.sessionId) sourceSecretSessions.replace('conversion', sourceProjectId, sessionAfter.sessionId)
+        advanceReviewGeneration()
+        // The review is the authority for its draft's name; the request carried
+        // the name it had when it started.
+        const latest = latestResultRef.current
+        const latestScripts = latest?.scripts?.length ? latest.scripts : latest?.script ? [latest.script] : sourceScripts
+        const latestName = latestScripts[sourceScriptIndex]?.name?.trim()
+        const excludedScript = latestName ? { ...response.script, name: latestName } : response.script
+        const nextScripts = sourceScripts.length
+          ? sourceScripts.map((entry, idx) => idx === sourceScriptIndex ? excludedScript : entry)
+          : [excludedScript]
+
+        // Suggestion IDs and source mappings name actions by position, so the
+        // import's copies went stale with the exclusion. The server re-derived
+        // the suggestions and remapped the draft's own source review; without
+        // them the stale copies are dropped rather than shown.
+        const excludedSourceReview = sourceReviewForImport(null, excludedScript)
+        const removedCount = Number.isSafeInteger(response.removed_count) && response.removed_count > 0 ? response.removed_count : 0
+        const nextResult = {
+          ...currentResult,
+          script: nextScripts[0],
+          scripts: nextScripts,
+          ...(response.preflight ? { preflight: response.preflight } : {}),
+          parameterization: carryPreAppliedCorrelations(currentResult.parameterization, response.parameterization, excludedScript),
+          source_review: excludedSourceReview || undefined,
+          // The review header counts the conversion's actions.
+          stats: statsAfterExclusion(currentResult.stats, removedCount),
+          // Candidate IDs hash their action paths, so the import's candidates
+          // went stale with the exclusion; the apply endpoint would refuse them.
+          shared_values: response.shared_values || undefined,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            sessionAfter.sessionId ? currentResult.secret_binding_requirements : withoutSourceValues(currentResult.secret_binding_requirements),
+            sourceScriptIndex,
+            currentReviewed,
+            sessionAfter.requirements,
+          ),
+          ...(sentSourceSecretSessionId
+            ? {
+                source_secret_session_id: sessionAfter.sessionId,
+                source_secret_session_expires_at: sessionAfter.sessionId ? sessionAfter.expiresAt : undefined,
+              }
+            : {}),
+          ...(response.import_draft_expires_at ? { import_draft_expires_at: response.import_draft_expires_at } : {}),
+        } as ProtocolImportResult
+        commitReviewMutation(nextResult, undefined, { preserveDraftExpiry: true })
+        if (removedCount > 0) setExcludedSinceConversion(previous => previous + removedCount)
+        const validationIssues = (response.validation_issues || []).filter(issue => typeof issue === 'string' && issue.trim())
+        // The notice describes this draft: an exclusion that leaves it clean
+        // clears an earlier exclusion's issues rather than repeating them.
+        setConversionNotice(validationIssues.length > 0
+          ? `Excluded ${countLabel(response.removed_count || 0, 'request')} from the draft. The edited draft has validation issues: ${validationIssues.join('; ')}`
+          : '')
+      } catch (error: unknown) {
+        if (exclusionRefusedBeforeCommit(error)) {
+          if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to exclude blocked actions from draft'))
+          return
+        }
+        // The server may have finished: consumed the sent session and rotated
+        // the draft's attestation. Neither is usable, so both are given up
+        // rather than pointing a later save at them.
+        if (!requestIsCurrent()) {
+          // An invalidation already released the session; a review that kept
+          // the draft only loses the recorded values the session held.
+          if (sentSourceSecretSessionId) dropConsumedSourceSecretSession(sentSourceSecretSessionId)
+          return
+        }
+        if (sentSourceSecretSessionId) sourceSecretSessions.replace('conversion', sourceProjectId, undefined)
+        const latest = latestResultRef.current
+        if (latest) {
+          const credentialPreserving = Boolean(latest.import_draft_expires_at?.trim())
+          const settledResult = {
+            ...latest,
+            ...(sentSourceSecretSessionId && latest.source_secret_session_id === sentSourceSecretSessionId
+              ? {
+                  secret_binding_requirements: withoutSourceValues(latest.secret_binding_requirements),
+                  source_secret_session_id: undefined,
+                  source_secret_session_expires_at: undefined,
+                }
+              : {}),
+            // A rotated attestation no longer matches this draft; the server
+            // would refuse it as invalid or expired, so the review says so now.
+            ...(credentialPreserving ? { import_draft_expires_at: new Date(0).toISOString() } : {}),
+          } as ProtocolImportResult
+          latestResultRef.current = settledResult
+          convertTask.setValue(settledResult)
+          setMessageError(credentialPreserving
+            ? EXCLUSION_OUTCOME_UNKNOWN_MESSAGE
+            : sentSourceSecretSessionId
+              ? EXCLUSION_SESSION_RELEASED_MESSAGE
+              : getErrorMessage(error, 'Failed to exclude blocked actions from draft'))
+        }
+      } finally {
+        // A newer exclusion, or an invalidation, owns the flag now.
+        if (exclusionInFlightRef.current === exclusionToken) {
+          exclusionInFlightRef.current = 0
+          setExclusionInFlight(false)
+        }
+      }
+    })()
+    return true
   }
 
   const stats = result?.stats as Record<string, unknown> | undefined
@@ -1328,6 +1707,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const ramlSummary = kind === 'raml' ? (result as RAMLImportResult | null | undefined)?.summary : undefined
   const cloudTestResult = kind === 'cloudtest' ? result as CloudTestImportResult | null | undefined : undefined
   const harDiff = harSummary?.har_diff
+  const harShaping = harShapingApplied(kind === 'har' ? reviewedScript : null, result?.warnings)
+  const toolbarSaveDisabled = operationBusy || settingsEditing || importDraftExpired
+  const reviewResultRef = useRef<HTMLDivElement>(null)
+  // The review's own Save step prepares credentials before it saves.
+  const focusReviewSaveStep = () => {
+    const header = reviewResultRef.current?.querySelector<HTMLElement>('.script-import-review-header')
+    header?.scrollIntoView({ block: 'start' })
+    header?.focus()
+  }
+  // Recording Studio in the current workspace; the route change asks before
+  // it leaves this review.
+  const currentWorkspace = typeof window === 'undefined' ? null : parseAppViewFromHash(window.location.hash)
+  const recordingStudioHref = viewToLocationHash({
+    page: 'scripts',
+    mode: 'record',
+    projectId: currentWorkspace?.projectId || projectId,
+    applicationId: currentWorkspace?.applicationId,
+    releaseId: currentWorkspace?.releaseId,
+  })
   const selectedReplayPreflight = reviewedScript?.metadata?.import?.preserved?.replay_preflight as OpenAPIImportResult['preflight'] | undefined
   const replayPreflight = (generatedScripts.length > 1 ? selectedReplayPreflight : result?.preflight || selectedReplayPreflight) || null
   const openAPICorrelations: OpenAPICorrelation[] = kind === 'openapi' ? ((result as OpenAPIImportResult | null | undefined)?.correlations || []) : []
@@ -1419,15 +1817,21 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const commitReviewMutation = (
     nextResult: ProtocolImportResult,
     recorderDraftNotice?: string,
-    options?: { preserveProtectedCandidate?: boolean },
+    options?: { preserveProtectedCandidate?: boolean; preserveDraftExpiry?: boolean },
   ) => {
     const sessionId = activeProtectedImportSessionId(nextResult)
     const preserveProtectedCandidate = options?.preserveProtectedCandidate === true
       && (kind === 'openapi' || kind === 'postman')
       && !!sessionId
-    const compatibilityResult = preserveProtectedCandidate
+    let compatibilityResult = preserveProtectedCandidate
       ? nextResult
       : invalidateProtectedImportCandidate(nextResult)
+    if (!preserveProtectedCandidate && options?.preserveDraftExpiry && nextResult.import_draft_expires_at) {
+      compatibilityResult = {
+        ...compatibilityResult,
+        import_draft_expires_at: nextResult.import_draft_expires_at,
+      }
+    }
     if (!preserveProtectedCandidate) {
       protectedCommitOverridesRef.current = {
         sessionId: '',
@@ -1502,7 +1906,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         : []
     const currentGeneratedScripts = currentImportedScripts
     const currentReviewedScript = currentGeneratedScripts[sourceScriptIndex] || currentGeneratedScripts[0]
-    if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || internalReviewBusyRef.current) return
+    if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || reviewMutationBusyNow()) return
     if (importDraftHasExpired(currentResult)) {
       setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
       return
@@ -1821,12 +2225,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       }
       latestResultRef.current = compatibilityResult
       convertTask.setValue(compatibilityResult)
-      onEdit?.(currentScript)
+      onEdit?.(currentScript, undefined, recordEditorSave(reviewScopeRef.current))
     }
   }
 
   const handleSaveAllAsyncAPIScripts = async () => {
-    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || internalReviewBusyRef.current) return
+    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || reviewMutationBusyNow()) return
     if (importDraftHasExpired(latestResultRef.current)) {
       setMessageError(IMPORT_DRAFT_EXPIRED_MESSAGE)
       return
@@ -2222,7 +2626,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const selectAsyncAPIReviewScript = (index: number, focusButton = false) => {
-    if (saveAllPreparing || saveTask.pending || internalReviewBusy || generatedScripts.length === 0) return
+    if (saveAllPreparing || saveTask.pending || reviewMutationBusy || generatedScripts.length === 0) return
     const nextIndex = Math.max(0, Math.min(generatedScripts.length - 1, index))
     setPreparedCredentialSummary(null)
     advanceReviewGeneration()
@@ -2240,6 +2644,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     if (nextIndex === null || nextIndex === index) return
     event.preventDefault()
     selectAsyncAPIReviewScript(nextIndex, true)
+  }
+
+  const handleScriptNameChange = (nextName: string, invalidateWhenNoDraft: boolean) => {
+    setName(nextName)
+    const currentResult = latestResultRef.current
+    if (!convertTask.pending && currentResult && generatedScripts.length === 1 && !savedResult) {
+      const trimmed = nextName.trim()
+      if (trimmed) {
+        const updatedScript = { ...generatedScripts[0], name: trimmed }
+        commitReviewMutation(
+          { ...currentResult, script: updatedScript, scripts: [updatedScript] } as ProtocolImportResult,
+          undefined,
+          { preserveProtectedCandidate: true, preserveDraftExpiry: true },
+        )
+      }
+    } else if (invalidateWhenNoDraft) {
+      invalidateConversionSource()
+    }
   }
 
   const confirmationResult = asyncAPIMultiScript ? { scripts: generatedScripts.flatMap((_, index) => asyncAPISavedScripts[index] ? [asyncAPISavedScripts[index]] : []) } : savedResult
@@ -2262,24 +2684,33 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           <h2>{labels.title}</h2>
           <p className="sample-import-subtitle">{labels.subtitle}</p>
         </div>
-        {onClose && <button className="btn btn-secondary" onClick={() => {
-          invalidateConversionSource()
-          onClose()
-        }}>Back</button>}
+        <div className="sample-import-actions compact">
+          {kind === 'har' && <HarCaptureGuideButton />}
+          {onClose && <button className="btn btn-secondary" onClick={() => {
+            navigationGuard.runGuarded(() => {
+              invalidateConversionSource()
+              onClose()
+            })
+          }}>Back</button>}
+        </div>
       </div>
 
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
 
       <details className="import-source-setup" open={!result}>
-        <summary>Source & conversion options — changing these requires a new review</summary>
-      <div className="sample-import-card">
+        <summary>{kind === 'har' ? 'Source & conversion options — option changes wait for Re-inspect HARs' : 'Source & conversion options — changing these requires a new review'}</summary>
+      <div className="sample-import-card" aria-busy={convertTask.pending || undefined}>
         <div className="sample-import-grid">
           <div className="sample-import-field sample-import-span-2">
             <span>File</span>
             <ImportDropzone
               accept={labels.accept}
               file={file}
-              onFile={next => { invalidateConversionSource(); setFile(next) }}
+              onFile={next => replaceConversionSource(() => setFile(next))}
+              onPairFiles={kind === 'har' ? (primary, secondary) => replaceConversionSource(() => {
+                setFile(primary)
+                setSecondaryHARFile(secondary)
+              }) : undefined}
               dropHint={labels.drop}
               validate={candidate => validateImportFile(kind, candidate)}
               onError={setMessageError}
@@ -2323,13 +2754,13 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           {supportsScriptName && (
             <label className="sample-import-field">
               <span>Script Name</span>
-              <input value={name} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setName(event.target.value) }} placeholder={scriptNamePlaceholder(kind)} />
+              <input value={name} disabled={scriptNameLocked} onChange={event => handleScriptNameChange(event.target.value, true)} placeholder={scriptNamePlaceholder(kind)} />
             </label>
           )}
           {supportsBaseURL && (
             <label className="sample-import-field">
               <span>Base URL Override</span>
-              <input value={baseURL} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setBaseURL(event.target.value) }} placeholder="https://api.example.com" />
+              <input value={baseURL} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setBaseURL(event.target.value) }} placeholder="https://api.example.com" />
             </label>
           )}
           {kind === 'asyncapi' && (
@@ -2392,52 +2823,66 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 <ImportDropzone
                   accept={labels.accept}
                   file={secondaryHARFile}
-                  onFile={next => { invalidateConversionSource(); setSecondaryHARFile(next) }}
+                  onFile={next => replaceConversionSource(() => setSecondaryHARFile(next))}
                   dropHint="Drop an optional comparison HAR file here"
                   validate={candidate => validateImportFile('har', candidate)}
                   onError={setMessageError}
                   disabled={sourceMutationLocked}
                   workingLabel={sourceWorkingLabel(secondaryHARFile)}
                 />
-                <small>Optional second recording for correlation diff</small>
+                <small>Optional second recording for correlation diff — drop both HARs onto the primary dropzone at once, or open the <strong style={{ fontWeight: 600 }}>HAR capture guide</strong> above for DevTools settings that keep captures small and complete.</small>
+                {/* Said before the upload, so the duplicate is not sent twice. */}
+                {duplicateHARWarning && !result && <p className="sample-import-warning" role="status">{duplicateHARWarning}</p>}
               </div>
               <label className="sample-import-field">
                 <span>Retention Days</span>
-                <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
+                <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
               </label>
               <label className="sample-toggle">
-                <input type="checkbox" checked={redactSensitive} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRedactSensitive(event.target.checked) }} />
+                <input type="checkbox" checked={redactSensitive} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRedactSensitive(event.target.checked) }} />
                 Scrub sensitive fields
               </label>
               <label className="sample-toggle sample-import-span-2">
-                <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setIncludeStaticAssets(event.target.checked) }} />
+                <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setIncludeStaticAssets(event.target.checked) }} />
                 Include static assets
               </label>
-              <label className="sample-toggle sample-import-span-2" title="Split the recording into user steps at each recorded pause longer than the think-time threshold, and time each step as a transaction named for its page. A recording whose transactions were marked while recording keeps those.">
-                <input type="checkbox" checked={stepTransactions} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setStepTransactions(event.target.checked) }} />
-                Time each user step as a transaction
+              <label className="sample-toggle sample-import-span-2" title="Split the recording into user steps at each recorded pause longer than the think-time threshold, and time each step as a transaction named for its page. Enabled automatically for multi-step Salesforce recordings, or explicitly when toggled.">
+                <input type="checkbox" ref={element => { if (element) element.indeterminate = stepTransactions === undefined && !result }} checked={stepTransactions ?? harShaping.stepTransactions} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setStepTransactions(event.target.checked) }} />
+                Time each user step as a transaction{stepTransactions === undefined && !result ? ' (automatic for Salesforce recordings)' : ''}
               </label>
-              <label className="sample-toggle sample-import-span-2" title="Group consecutive requests the browser had in flight at the same time and replay each group concurrently, as the recording sent them, instead of one after another.">
-                <input type="checkbox" checked={recordedConcurrency} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setRecordedConcurrency(event.target.checked) }} />
-                Replay parallel browser requests concurrently
+              <label className="sample-toggle sample-import-span-2" title="Group consecutive requests the browser had in flight at the same time and replay each group concurrently, as the recording sent them, instead of one after another. Enabled automatically for multi-step Salesforce recordings, or explicitly when toggled.">
+                <input type="checkbox" ref={element => { if (element) element.indeterminate = recordedConcurrency === undefined && !result }} checked={recordedConcurrency ?? harShaping.recordedConcurrency} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRecordedConcurrency(event.target.checked) }} />
+                Replay parallel browser requests concurrently{recordedConcurrency === undefined && !result ? ' (automatic for Salesforce-aware recordings)' : ''}
+              </label>
+              <label className="sample-toggle sample-import-span-2" title={includeStaticAssets
+                ? 'Including static assets keeps every recorded request, telemetry beacons among them. Clear Include static assets to filter beacons.'
+                : 'Exclude browser telemetry beacons such as Salesforce Aura InstrumentationBeacon and o11y client-monitoring POSTs that add noise and unexported-body replay blockers.'}>
+                <input type="checkbox" checked={filterClientTelemetry && !includeStaticAssets} disabled={sourceMutationLocked || includeStaticAssets} onChange={event => { stageConversionOptionChange(); setFilterClientTelemetry(event.target.checked) }} />
+                Filter client telemetry beacons{includeStaticAssets ? ' (off while static assets are included)' : ''}
               </label>
               <label className="sample-toggle sample-import-span-2" title="Import the complete entries of a HAR file that was cut off partway through. The script ends where the capture was cut.">
-                <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setSalvageTruncatedHAR(event.target.checked) }} />
+                <input type="checkbox" checked={salvageTruncatedHAR} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setSalvageTruncatedHAR(event.target.checked) }} />
                 Recover the complete entries of a truncated HAR
               </label>
               <HTTPVersionModeField className="sample-import-field sample-import-span-2" value={harHTTPVersionMode} disabled={sourceMutationLocked}
-                onChange={mode => { invalidateConversionSource(); setHARHTTPVersionMode(mode) }} />
+                onChange={mode => { stageConversionOptionChange(); setHARHTTPVersionMode(mode) }} />
             </>
           )}
           {supportsAgentforceTransform && file && (
             <label className="sample-toggle sample-import-span-2" title="If an Agentforce Agent API conversation is detected, rewrite the script to acquire an OAuth2 token, correlate the session id, consume SSE, and end the session.">
-              <input type="checkbox" checked={agentforceReplayReady} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setAgentforceReplayReady(event.target.checked) }} />
+              <input type="checkbox" checked={agentforceReplayReady} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setAgentforceReplayReady(event.target.checked) }} />
               Make Agentforce replay-ready (if an Agent API flow is detected)
             </label>
           )}
         </div>
       </div>
 
+      {harOptionsStaged && result && (
+        <div className="sample-import-warning har-options-staged" role="status">
+          <span>Conversion options changed. The review below still reflects the previous options until you re-inspect.</span>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={reinspectHARs} disabled={operationBusy || !file || projectScopeRequired}>Re-inspect HARs</button>
+        </div>
+      )}
       <div className="sample-import-actions">
         {projectScopeRequired && <p id="har-project-scope-required" className="sample-import-error" role="status">Select a project from the workspace context before inspecting HAR traffic.</p>}
         {kind !== 'asyncapi' && (
@@ -2467,7 +2912,51 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
 
       {result && reviewedScript && (
-        <div className="sample-import-result">
+        <div className={`sample-import-result${kind === 'har' ? ' har-stage2-scope' : ''}`} ref={reviewResultRef}>
+          {kind === 'har' && (
+            <div className="har-stage2-toolbar" role="group" aria-label="Import review toolbar">
+              <label className="har-stage2-name">
+                <span>Script name</span>
+                <input
+                  aria-label="Reviewed script name"
+                  value={name}
+                  disabled={scriptNameLocked || Boolean(savedResult)}
+                  onChange={event => handleScriptNameChange(event.target.value, false)}
+                  placeholder={reviewedScript.name || scriptNamePlaceholder(kind)}
+                />
+              </label>
+              {salesforceReview?.detected ? (
+                <div className="har-stage2-profile" role="group" aria-label="Conversion profile">
+                  <button type="button" className="btn btn-sm" aria-pressed={harSalesforceNative} disabled={harSalesforceNative || operationBusy || !file || Boolean(savedResult)} onClick={() => switchHARProfile(true)}>Salesforce-aware HTTP (Recommended)</button>
+                  <button type="button" className="btn btn-sm" aria-pressed={!harSalesforceNative} disabled={!harSalesforceNative || operationBusy || !file || Boolean(savedResult)} onClick={() => switchHARProfile(false)}>Generic HAR</button>
+                </div>
+              ) : (
+                <span className="tag-chip">Profile: Standard HTTP HAR</span>
+              )}
+              {secondaryHARFile && <span className="tag-chip har-stage2-chip" title={secondaryHARFile.name}>2-HAR: {secondaryHARFile.name}</span>}
+              {harOptionsStaged && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={reinspectHARs} disabled={operationBusy || !file || projectScopeRequired} title="Conversion options changed since this review. Re-inspecting replaces the review.">Re-inspect HARs</button>
+              )}
+              {!savedResult && (
+                <div className="har-stage2-save" role="group" aria-label="Save reviewed draft">
+                  {secretBindingRequirements.length > 0 ? (
+                    <button type="button" className="btn btn-primary btn-sm" onClick={focusReviewSaveStep}>Choose credentials to save</button>
+                  ) : (
+                    <>
+                      {onEdit && generatedScripts.length === 1 && (
+                        <button type="button" className="btn btn-secondary btn-sm" disabled={toolbarSaveDisabled} onClick={handleEditReviewedScript}>
+                          {editRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open draft in Visual Editor'}
+                        </button>
+                      )}
+                      <button type="button" className="btn btn-primary btn-sm" disabled={toolbarSaveDisabled} onClick={() => { void handleSave() }}>
+                        {saveTask.pending || persistenceInProgress ? 'Saving…' : 'Save draft'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           <ScriptImportReview
             tabbed
             existingScripts={{ choices: saveChoices, labels: generatedScripts.map(script => script.name) }}
@@ -2479,7 +2968,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy || asyncAPIScriptPageStart === 0}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy || asyncAPIScriptPageStart === 0}
                       onClick={() => selectAsyncAPIReviewScript(Math.max(0, asyncAPIScriptPageStart - ASYNCAPI_SCRIPT_PAGE_SIZE), true)}
                     >
                       Previous scripts
@@ -2490,7 +2979,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy || asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE >= generatedScripts.length}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy || asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE >= generatedScripts.length}
                       onClick={() => selectAsyncAPIReviewScript(asyncAPIScriptPageStart + ASYNCAPI_SCRIPT_PAGE_SIZE, true)}
                     >
                       Next scripts
@@ -2514,7 +3003,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                       className={`sample-import-script-tab ${index === selectedScriptIndex ? 'active' : ''}`}
                       onClick={() => selectAsyncAPIReviewScript(index)}
                       onKeyDown={event => handleAsyncAPIScriptKeyDown(event, index)}
-                      disabled={saveAllPreparing || saveTask.pending || internalReviewBusy}
+                      disabled={saveAllPreparing || saveTask.pending || reviewMutationBusy}
                     >
                       {script.protocol} · {script.name}{asyncAPISavedScripts[index] ? ' · Saved' : ''}
                     </button>
@@ -2525,7 +3014,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   className="btn btn-secondary btn-sm"
                   type="button"
                   onClick={handleSaveAllAsyncAPIScripts}
-                  disabled={importDraftExpired || asyncAPIPendingScriptIndices.length === 0 || saveTask.pending || saveAllPreparing || internalReviewBusy || Boolean(asyncAPISaveAllDisabledReason)}
+                  disabled={importDraftExpired || asyncAPIPendingScriptIndices.length === 0 || saveTask.pending || saveAllPreparing || reviewMutationBusy || Boolean(asyncAPISaveAllDisabledReason)}
                   aria-describedby={asyncAPISaveAllDisabledReason ? 'asyncapi-save-all-disabled-reason' : undefined}
                   title={importDraftExpired
                     ? 'Re-run the import to obtain a fresh credential-preserving draft before saving.'
@@ -2542,7 +3031,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             )} </>}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
-            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ' This preview came from a dry-run validation; nothing has been saved. You can still save the reviewed script if the output looks correct.' : ''}`}
+            subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ` This preview came from a dry-run validation; nothing has been saved.${kind === 'har' ? ' A saved validation draft keeps no full source text and cannot move recorded credentials into project secrets; use Inspect & review to save with both.' : ' You can still save the reviewed script if the output looks correct.'}` : ''}`}
             saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to script library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
             script={reviewedScript}
             warnings={result.warnings}
@@ -2579,7 +3068,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             onReviewBusyChange={handleInternalReviewBusyChange}
             onCredentialActionStart={captureProtectedSaveTarget}
             saving={saveTask.pending || persistenceInProgress}
-            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress}
+            reviewBusy={saveAllPreparing || saveTask.pending || persistenceInProgress || exclusionInFlight}
             saveDisabled={(Boolean(savedResult) && !asyncAPIMultiScript) || asyncAPISelectedSaveDisabled || (kind === 'postman' && postmanSaveMode === 'replace' && !postmanReplaceTarget.scriptId) || (kind === 'openapi' && openAPISaveMode === 'replace' && !openAPIReplaceTarget.scriptId)}
             saveDisabledReason={savedResult && !asyncAPIMultiScript ? 'This import is already saved. Open it above or import more files.' : scriptImportSaveDisabledReason}
             onSave={asyncAPIPrepareSelectedForBatch
@@ -2667,12 +3156,21 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <div className="sample-import-review-block">
                 <h4>Correlation Review</h4>
                 <ul className="sample-import-findings">
-                  {openAPICorrelations.slice(0, 8).map(correlation => (
+                  {(showAllOpenAPICorrelations ? openAPICorrelations : openAPICorrelations.slice(0, 8)).map(correlation => (
                     <li key={`${correlation.name}-${correlation.found_in_step}`}>
                       <strong>{correlation.name}</strong> step {correlation.found_in_step} → {correlation.used_in_steps.join(', ')} <code>{correlation.expression}</code>
                     </li>
                   ))}
                 </ul>
+                {openAPICorrelations.length > 8 && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowAllOpenAPICorrelations(current => !current)}
+                  >
+                    {showAllOpenAPICorrelations ? 'Show fewer correlations' : `Show all ${openAPICorrelations.length} correlations (showing 8 of ${openAPICorrelations.length})`}
+                  </button>
+                )}
               </div>
             )}
             {kind === 'openapi' && (
@@ -2825,6 +3323,20 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               </div>
             )}
 
+            {kind === 'har' && reviewedScript && (
+              <HarCorrelationStudio
+                script={reviewedScript}
+                stats={stats}
+                warnings={result?.warnings}
+                harDiff={harDiff}
+                salesforceReview={salesforceReview}
+                duplicateFileWarning={duplicateHARWarning}
+                busy={operationBusy || exclusionInFlight}
+                stepPositionsStale={excludedSinceConversion > 0}
+                onExcludeBlockedActions={savedResult ? undefined : handleExcludeBlockedActions}
+                recordingStudioHref={recordingStudioHref}
+              />
+            )}
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">
                 <h4>HAR Artifact Review</h4>
@@ -2834,42 +3346,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   { label: 'retention days', value: harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0 },
                   ...(harDiff ? [{ label: 'dynamic candidates', value: harDiff.dynamic_candidates }, { label: 'static candidates', value: harDiff.static_candidates }] : [])
                 ]} />
-                {harDiff?.classifications?.length ? (
-                  <ul className="sample-import-findings">
-                    {harDiff.classifications.slice(0, 5).map(item => (
-                      <li key={`${item.name}-${item.classification}-${item.found_in_step || 0}`}>
-                        <strong>{item.name}</strong> {item.classification} ({Math.round((item.diff_confidence || 0) * 100)}%)
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
+                {/* Each diff classification is a row of the correlation studio above. */}
               </div>
             )}
             {kind === 'har' && salesforceReview && (
               <div className="sample-import-review-block">
                 <h4>Salesforce Native Review</h4>
-                {salesforceReview.detected && (
-                  <div className="sample-import-actions compact">
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleHARSalesforceNativeConvert(false)}
-                      disabled={convertTask.pending || !file || !harSalesforceNative}
-                    >
-                      {convertTask.pending && harSalesforceNative ? 'Converting…' : 'Force Generic HAR'}
-                    </button>
-                    <button
-                      type="button"
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => handleHARSalesforceNativeConvert(true)}
-                      disabled={convertTask.pending || !file || harSalesforceNative}
-                    >
-                      {convertTask.pending && !harSalesforceNative ? 'Converting…' : 'Use Native Salesforce Draft'}
-                    </button>
-                  </div>
+                {excludedSinceConversion > 0 && (
+                  <p className="sample-import-muted">The request counts below describe the draft as converted; {countLabel(excludedSinceConversion, 'request')} {excludedSinceConversion === 1 ? 'was' : 'were'} excluded from it since.</p>
                 )}
-                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
-                <AuraOutcomeReview report={salesforceReview.aura_outcomes} sourceReview={sourceReview || undefined} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
+                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
+                <AuraOutcomeReview report={salesforceReview.aura_outcomes} script={reviewedScript} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
                 <ImportEvidenceFacts facts={[
                   { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },
                   { label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` },
@@ -2879,22 +3366,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   { label: 'Lightning calls', value: endpointTotal(salesforceReview, 'lightning_endpoints') }
                 ]} />
                 {(salesforceReview.domains?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {salesforceReview.domains!.slice(0, 5).map(domain => (
-                      <li key={`${domain.host}-${domain.kind}`}>
-                        <strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})
-                      </li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-domains`}
+                    items={salesforceReview.domains!}
+                    limit={5}
+                    noun="domains"
+                    itemKey={domain => `${domain.host}-${domain.kind}`}
+                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({salesforceDomainCounts(domain, excludedSinceConversion > 0)})</>}
+                  />
                 )}
                 {(salesforceReview.transactions?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {salesforceReview.transactions!.slice(0, 5).map(tx => (
-                      <li key={`${tx.name}-${tx.source}`}>
-                        <strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}
-                      </li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-transactions`}
+                    items={salesforceReview.transactions!}
+                    limit={5}
+                    noun="transactions"
+                    itemKey={tx => `${tx.name}-${tx.source}`}
+                    renderItem={tx => <><strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}</>}
+                  />
                 )}
                 {salesforceApiSurfaceBreakdown(salesforceReview).length > 0 && (
                   <>
@@ -2911,21 +3400,29 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 {(salesforceReview.parameterizations?.length || 0) > 0 && (
                   <>
                     <p className="sample-import-subtitle">Aura parameterization candidates</p>
-                    <ul className="sample-import-findings">
-                      {salesforceReview.parameterizations!.slice(0, 6).map(param => (
-                        <li key={param.name}>
-                          <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
-                          {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
-                        </li>
-                      ))}
-                    </ul>
+                    <CappedFindingList
+                      key={`${findingListScope}-sf-parameterizations`}
+                      items={salesforceReview.parameterizations!}
+                      limit={6}
+                      noun="parameterization candidates"
+                      itemKey={param => param.name}
+                      renderItem={param => <>
+                        <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
+                        {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
+                      </>}
+                    />
                   </>
                 )}
                 {(salesforceReview.blockers?.length || salesforceReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {salesforceReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {salesforceReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-sf-next-actions`}
+                    items={salesforceReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={salesforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
               </div>
             )}
@@ -2940,11 +3437,22 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   ...(ramlSummary?.base_url ? [{ label: 'Base URL', value: ramlSummary.base_url }] : [])
                 ]} />
                 {(ramlSummary?.resources?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {ramlSummary!.resources!.slice(0, 6).map(resource => (
-                      <li key={resource}><strong>{resource}</strong> converted from RAML resources</li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="sample-import-findings">
+                      {(showAllRAMLResources ? ramlSummary!.resources! : ramlSummary!.resources!.slice(0, 6)).map(resource => (
+                        <li key={resource}><strong>{resource}</strong> converted from RAML resources</li>
+                      ))}
+                    </ul>
+                    {ramlSummary!.resources!.length > 6 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setShowAllRAMLResources(current => !current)}
+                      >
+                        {showAllRAMLResources ? 'Show fewer resources' : `Show all ${ramlSummary!.resources!.length} resources (showing 6 of ${ramlSummary!.resources!.length})`}
+                      </button>
+                    )}
+                  </>
                 )}
                 {(ramlSummary?.auth_schemes?.length || 0) > 0 && (
                   <ul className="sample-import-findings">
@@ -2975,13 +3483,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   { label: 'unknown elements', value: cloudTestResult.stats?.unknown_elements ?? 0 }
                 ]} />
                 {(cloudTestResult.scenario_drafts?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {cloudTestResult.scenario_drafts!.slice(0, 8).map(scenario => (
-                      <li key={`${scenario.source_file}-${scenario.source_path}`}>
-                        <strong>{scenario.name}</strong> — {scenario.groups.length} track{scenario.groups.length === 1 ? '' : 's'}; review required
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="sample-import-findings">
+                      {(showAllCloudTestScenarios ? cloudTestResult.scenario_drafts! : cloudTestResult.scenario_drafts!.slice(0, 8)).map(scenario => (
+                        <li key={`${scenario.source_file}-${scenario.source_path}`}>
+                          <strong>{scenario.name}</strong> — {scenario.groups.length} track{scenario.groups.length === 1 ? '' : 's'}; review required
+                        </li>
+                      ))}
+                    </ul>
+                    {cloudTestResult.scenario_drafts!.length > 8 && (
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => setShowAllCloudTestScenarios(current => !current)}
+                      >
+                        {showAllCloudTestScenarios ? 'Show fewer scenario drafts' : `Show all ${cloudTestResult.scenario_drafts!.length} scenario drafts (showing 8 of ${cloudTestResult.scenario_drafts!.length})`}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}
@@ -2989,11 +3508,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
               <div className="sample-import-review-block">
                 <h4>MuleSoft / Anypoint Review</h4>
                 {(mulesoftReview.domains?.length || 0) > 0 && (
-                  <ul className="sample-import-findings">
-                    {mulesoftReview.domains!.slice(0, 5).map(domain => (
-                      <li key={`${domain.host}-${domain.kind}`}><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</li>
-                    ))}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-domains`}
+                    items={mulesoftReview.domains!}
+                    limit={5}
+                    noun="domains"
+                    itemKey={domain => `${domain.host}-${domain.kind}`}
+                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</>}
+                  />
                 )}
                 {(mulesoftReview.policy_findings?.length || 0) > 0 && (
                   <>
@@ -3012,10 +3534,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   </>
                 )}
                 {(mulesoftReview.blockers?.length || mulesoftReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {mulesoftReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {mulesoftReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-next-actions`}
+                    items={mulesoftReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={mulesoftReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
               </div>
             )}
@@ -3058,10 +3585,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   </ul>
                 )}
                 {(agentforceReview.blockers?.length || agentforceReview.next_actions?.length) ? (
-                  <ul className="sample-import-findings">
-                    {agentforceReview.blockers?.slice(0, 4).map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    {agentforceReview.next_actions?.slice(0, 4).map(item => <li key={`next-${item}`}><strong>Next action</strong> {item}</li>)}
-                  </ul>
+                  <CappedFindingList
+                    key={`${findingListScope}-agentforce-next-actions`}
+                    items={agentforceReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={agentforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
                 ) : null}
               </div>
             )}

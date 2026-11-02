@@ -136,6 +136,12 @@ func TestDiffCostStaysLinearInSameEndpointRequests(t *testing.T) {
 			if limit := 2 * len(prepared.observations); scanned > limit {
 				t.Fatalf("requests scanned for reuse = %d, want at most %d", scanned, limit)
 			}
+			// Request-input pairing reads each observation's narrow key from
+			// the aligner, so every key is computed once, by the aligner.
+			baselineObservations, _ := converted.Document.SourceObservations(true)
+			if want := len(baselineObservations) + len(prepared.observations); len(aligner.narrowKeys) != want || aligner.narrowKeyComputations != want {
+				t.Fatalf("aligner narrow keys = %d (computed %d), want %d: request pairing must reuse them", len(aligner.narrowKeys), aligner.narrowKeyComputations, want)
+			}
 		})
 	}
 }
@@ -315,5 +321,51 @@ func TestDiffReuseIndexHandlesEmptyAndShortText(t *testing.T) {
 		if got := aligner.reusedAfter(check.value, check.producer); got != check.want {
 			t.Fatalf("reusedAfter(%q, %d) = %v, want %v", check.value, check.producer, got, check.want)
 		}
+	}
+}
+
+// Narrowing a group of Aura batches to each producer's action signature
+// decodes each batch envelope once, however many signatures the group is
+// narrowed to.
+func TestDiffNarrowDecodesEachAuraBatchOnce(t *testing.T) {
+	const n = 40
+	auraBatch := func(id int) sample.HARSourceObservation {
+		message := url.QueryEscape(fmt.Sprintf(`{"actions":[{"id":"%d;a","descriptor":"apex://Ctrl%d/ACTION$run","params":{}}]}`, id, id))
+		return sample.HARSourceObservation{
+			Method: "POST",
+			Observation: correlate.Observation{
+				ID:          id,
+				RequestURL:  fmt.Sprintf("https://acme.lightning.force.com/aura?r=%d", id),
+				RequestBody: "message=" + message + "&aura.token=t",
+			},
+		}
+	}
+	baseline := make([]sample.HARSourceObservation, 0, n)
+	comparison := make([]sample.HARSourceObservation, 0, n)
+	for id := 1; id <= n; id++ {
+		baseline = append(baseline, auraBatch(id))
+		comparison = append(comparison, auraBatch(id))
+	}
+	aligner := newDiffAligner(baseline, comparison, nil, nil)
+	group := diffRequestKey(baseline[0])
+	for _, producer := range baseline {
+		narrowKey := aligner.observationNarrowKey(false, producer)
+		if !strings.Contains(narrowKey, "#aura:") {
+			t.Fatalf("narrow key %q carries no Aura signature", narrowKey)
+		}
+		if got := aligner.narrow(diffNarrowKey{comparison: true, group: group, queryKeys: narrowKey}, comparison); len(got) != 1 || got[0].ID != producer.ID {
+			t.Fatalf("comparison narrowed to %d requests for producer %d", len(got), producer.ID)
+		}
+		aligner.narrow(diffNarrowKey{group: group, queryKeys: narrowKey}, baseline)
+	}
+	if limit := 2 * n; aligner.narrowKeyComputations > limit {
+		t.Fatalf("narrow keys computed = %d, want at most %d (one per observation)", aligner.narrowKeyComputations, limit)
+	}
+	// Request-input pairing, which runs after the aligner, reuses its keys.
+	if _, _, err := diffRequestInputs(context.Background(), baseline, comparison, aligner.observationNarrowKey); err != nil {
+		t.Fatal(err)
+	}
+	if limit := 2 * n; aligner.narrowKeyComputations > limit {
+		t.Fatalf("narrow keys computed with request pairing = %d, want at most %d (one per observation)", aligner.narrowKeyComputations, limit)
 	}
 }

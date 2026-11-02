@@ -3097,7 +3097,7 @@ func TestRedactExchangeSecretsAppliesReplacementsNonRecursively(t *testing.T) {
 			{Name: "X-Api-Key", Value: "D"},
 		},
 	}}
-	got, changed := redactExchangeSecrets("A D", exchanges)
+	got, changed := redactExchangeSecrets("A D", exchanges, 0)
 	if !changed {
 		t.Fatal("redactExchangeSecrets reported unchanged")
 	}
@@ -3110,7 +3110,7 @@ func TestRedactExchangeSecretsBoundsExpandingSensitiveHeaderReplacement(t *testi
 	content := strings.Repeat("x", sourceview.MaxFileChars)
 	got, changed := redactExchangeSecrets(content, []exchange{{
 		Headers: map[string]string{"Authorization": "x"},
-	}})
+	}}, 0)
 	if !changed {
 		t.Fatal("redactExchangeSecrets reported unchanged")
 	}
@@ -3178,5 +3178,159 @@ func TestPrepareCorrelationApplicationAppliesAroundReviewOnlyContainment(t *test
 				t.Fatalf("applied = %#v, review-only = %#v", correlations[0], correlations[1])
 			}
 		})
+	}
+}
+
+func TestConvertLargeHARClearsTruncatedSourcePreviewFullText(t *testing.T) {
+	// Build a HAR payload slightly larger than sourceview.MaxFullTextBytes (16 MiB)
+	// so redactedSnippetForSourcePreview returns a ~120 KB preview snippet while
+	// sf.FullText must be cleared rather than storing the snippet as "full text".
+	pad := strings.Repeat("a", sourceview.MaxFullTextBytes+4096)
+	harPayload := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping","headers":[{"name":"X-Pad","value":"` + pad + `"}]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}]}}`
+	redact := true
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: harPayload,
+		Options: ConvertOptions{
+			SourceFileName:     "huge.har",
+			RedactSourceReview: &redact,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+		t.Fatalf("SourceReview.SourceFiles = %#v, want 1", result.SourceReview)
+	}
+	sf := result.SourceReview.SourceFiles[0]
+	if !sf.Truncated {
+		t.Fatalf("SourceFile.Truncated = false, want true for >16 MiB HAR")
+	}
+	if sf.FullText != "" {
+		t.Fatalf("SourceFile.FullText len = %d, want 0 (must not store 120 KB snippet as full text)", len(sf.FullText))
+	}
+}
+
+// Redaction can shrink a file just over the preview limit to within it.
+// Build then keeps the whole redacted file, which must not be labelled a
+// truncated preview because the original was longer.
+func TestConvertRedactedHARWithinPreviewLimitIsNotMarkedTruncated(t *testing.T) {
+	secret := strings.Repeat("s", 200)
+	build := func(padLen int) string {
+		return `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping","headers":[{"name":"Authorization","value":"Bearer ` + secret + `"},{"name":"X-Pad","value":"` + strings.Repeat("a", padLen) + `"}]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}]}}`
+	}
+	harPayload := build(0)
+	harPayload = build(sourceview.MaxFileChars + 50 - len(harPayload))
+	if len(harPayload) != sourceview.MaxFileChars+50 {
+		t.Fatalf("payload is %d bytes, want %d", len(harPayload), sourceview.MaxFileChars+50)
+	}
+	redact := true
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: harPayload,
+		Options: ConvertOptions{SourceFileName: "edge.har", RedactSourceReview: &redact},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+		t.Fatalf("SourceReview.SourceFiles = %#v, want 1", result.SourceReview)
+	}
+	sf := result.SourceReview.SourceFiles[0]
+	if strings.Contains(sf.Content, secret) {
+		t.Fatal("the Authorization value survived redaction")
+	}
+	if len(sf.Content) > sourceview.MaxFileChars {
+		t.Fatalf("redacted content is %d bytes, want at most %d for this scenario", len(sf.Content), sourceview.MaxFileChars)
+	}
+	if sf.Truncated {
+		t.Fatal("a whole redacted file was marked as a truncated preview")
+	}
+	if sf.OriginalBytes != len(harPayload) {
+		t.Fatalf("OriginalBytes = %d, want %d", sf.OriginalBytes, len(harPayload))
+	}
+
+	// A file over the retention limit is only ever a preview, even when
+	// redaction shrinks that preview under the display limit.
+	bigSecret := strings.Repeat("t", sourceview.MaxFileChars+10_000)
+	big := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping","headers":[{"name":"Authorization","value":"Bearer ` + bigSecret + `"},{"name":"X-Pad","value":"` + strings.Repeat("a", sourceview.MaxFullTextBytes) + `"}]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}]}}`
+	result, err = Convert(ImportRequest{
+		Format:  "har",
+		Content: big,
+		Options: ConvertOptions{SourceFileName: "big.har", RedactSourceReview: &redact},
+	})
+	if err != nil {
+		t.Fatalf("Convert(big) returned error: %v", err)
+	}
+	sf = result.SourceReview.SourceFiles[0]
+	if strings.Contains(sf.Content, bigSecret[:100]) || len(sf.Content) > sourceview.MaxFileChars {
+		t.Fatalf("big preview kept the secret or is %d bytes; this scenario needs redaction to shrink it under %d", len(sf.Content), sourceview.MaxFileChars)
+	}
+	if !sf.Truncated || sf.FullText != "" {
+		t.Fatalf("a %d-byte file shows as whole (truncated=%v, full text %d bytes)", len(big), sf.Truncated, len(sf.FullText))
+	}
+}
+
+// A zipped HAR is unwrapped before conversion, so its upload name names the
+// archive. Source review keys the HAR text by a text name it keeps, not by an
+// opaque archive name it would leave out.
+func TestConvertZippedHARUploadNameKeepsSourceReview(t *testing.T) {
+	harPayload := `{"log":{"entries":[{"request":{"method":"GET","url":"https://api.example.test/ping","headers":[]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}]}}`
+	for upload, want := range map[string]string{
+		"capture.zip":         "capture.har",
+		"attone.har.zip":      "attone.har",
+		`C:\uploads\b.tar.gz`: "b.har",
+		"plain.har":           "plain.har",
+		".zip":                "sample.har",
+	} {
+		result, err := Convert(ImportRequest{Format: "har", Content: harPayload, Options: ConvertOptions{SourceFileName: upload}})
+		if err != nil {
+			t.Fatalf("%s: Convert returned error: %v", upload, err)
+		}
+		if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+			t.Fatalf("%s: SourceReview.SourceFiles = %#v, want 1", upload, result.SourceReview)
+		}
+		if got := result.SourceReview.SourceFiles[0].Path; got != want {
+			t.Fatalf("%s: source file = %q, want %q", upload, got, want)
+		}
+		for _, mapping := range result.SourceReview.Mappings {
+			if mapping.SourceFile != want {
+				t.Fatalf("%s: mapping source file = %q, want %q", upload, mapping.SourceFile, want)
+			}
+		}
+	}
+}
+
+// The telemetry filter defaults on only for the HAR and Salesforce importers.
+// Recorder, browser-HTTP and sample conversions keep the beacons the browser
+// sent unless the caller asks for the filter.
+func TestConvertTelemetryFilterDefaultsByEntryPoint(t *testing.T) {
+	harPayload := `{"log":{"entries":[` +
+		`{"request":{"method":"GET","url":"https://acme.lightning.force.com/one/one.app","headers":[]},"response":{"status":200,"headers":[],"content":{"text":"ok"}}},` +
+		`{"request":{"method":"POST","url":"https://acme.lightning.force.com/aura?r=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1","headers":[],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"message=%7B%7D"}},"response":{"status":200,"headers":[],"content":{"text":"{}"}}}` +
+		`]}}`
+	on := true
+	for _, tc := range []struct {
+		entryPoint string
+		filter     *bool
+		want       int
+	}{
+		{entryPoint: EntryPointImportHAR, want: 1},
+		{entryPoint: EntryPointImportSalesforce, want: 1},
+		{entryPoint: EntryPointRecorderConvert, want: 0},
+		{entryPoint: EntryPointBrowserHTTP, want: 0},
+		{entryPoint: EntryPointImportSample, want: 0},
+		{entryPoint: EntryPointRecorderConvert, filter: &on, want: 1},
+	} {
+		result, err := Convert(ImportRequest{Format: "har", Content: harPayload, Options: ConvertOptions{EntryPoint: tc.entryPoint, FilterClientTelemetry: tc.filter, OmitSourceReview: true}})
+		if err != nil {
+			t.Fatalf("%s: Convert returned error: %v", tc.entryPoint, err)
+		}
+		if result.Stats.FilteredTelemetry != tc.want {
+			t.Fatalf("%s (filter=%v): filtered telemetry = %d, want %d", tc.entryPoint, tc.filter, result.Stats.FilteredTelemetry, tc.want)
+		}
+		if result.Stats.FilteredAssets < result.Stats.FilteredTelemetry {
+			t.Fatalf("%s: filtered assets %d must include filtered telemetry %d", tc.entryPoint, result.Stats.FilteredAssets, result.Stats.FilteredTelemetry)
+		}
 	}
 }

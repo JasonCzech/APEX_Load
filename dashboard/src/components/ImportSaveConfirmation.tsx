@@ -31,6 +31,7 @@ export default function ImportSaveConfirmation({ result, onImportMore, onOpen, d
   // Recent (a no-op in the browser): one script reopens in the editor, a batch
   // in the script library, and a scenario the save made opens in the builder.
   // Recorded once per saved batch.
+  const containerRef = useRef<HTMLDivElement>(null)
   const resultRef = useRef(result)
   resultRef.current = result
   const recentKey = [result?.scenario?.id || '', ...(result?.scripts || []).map(script => script.id)].join('\n')
@@ -38,6 +39,9 @@ export default function ImportSaveConfirmation({ result, onImportMore, onOpen, d
     const saved = resultRef.current
     const scripts = saved?.scripts
     if (!saved || !scripts?.length) return
+    if (typeof document !== 'undefined' && (!document.activeElement || document.activeElement === document.body)) {
+      containerRef.current?.focus({ preventScroll: true })
+    }
     const [firstSaved] = scripts
     const scope = firstSaved.project_id ? { projectId: firstSaved.project_id } : {}
     void (async () => {
@@ -67,7 +71,7 @@ export default function ImportSaveConfirmation({ result, onImportMore, onOpen, d
     </button>
   )
   return (
-    <div className="settings-notice">
+    <div ref={containerRef} tabIndex={-1} className="settings-notice">
       <p role="status">Saved {result.scripts.length} script{result.scripts.length === 1 ? '' : 's'} to the script library.</p>
       <div className="script-import-review-actions">
         {savedScenario && (

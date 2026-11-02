@@ -213,3 +213,21 @@ func TestRecordedConcurrencyGroupsFitTheStoredPreparationWalk(t *testing.T) {
 		}
 	}
 }
+
+func TestRecordedConcurrencySkipsSalesforceCometDAndBulkPollingEndpoints(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		concurrencyRequest("comet1", "/cometd/60.0"),
+		concurrencyRequest("comet2", "/cometd/60.0"),
+		concurrencyRequest("bulk1", "/services/data/v60.0/jobs/query/7508c00000QRYA6AAL"),
+		concurrencyRequest("bulk2", "/services/data/v60.0/jobs/query/7508c00000QRYA6AAL"),
+	}}
+	exchanges := []exchange{
+		concurrencyExchange(0, 500),
+		concurrencyExchange(10, 500),
+		concurrencyExchange(20, 500),
+		concurrencyExchange(30, 500),
+	}
+	if _, _, groups, _ := groupRecordedConcurrency(script, exchanges, nil, nil, 500*time.Millisecond); groups != 0 || len(script.Actions) != 4 {
+		t.Fatalf("groups = %d, actions = %d, want CometD and Bulk polling left ungrouped for control_loop synthesis", groups, len(script.Actions))
+	}
+}

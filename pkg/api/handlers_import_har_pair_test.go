@@ -580,7 +580,7 @@ func holdBaselineFailureWhileComparisonConverts(t *testing.T) bool {
 	ended := make(chan struct{})
 	var once sync.Once
 	previous, previousSlots := harComparisonPreparer, harComparisonSlots
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		defer once.Do(func() { close(ended) })
 		started <- ctx
 		<-hold
@@ -592,9 +592,12 @@ func holdBaselineFailureWhileComparisonConverts(t *testing.T) bool {
 	harComparisonSlots = make(chan struct{}, 2)
 	defer func() { harComparisonPreparer, harComparisonSlots = previous, previousSlots }()
 
+	// The baseline is valid JSON but not a HAR, padded so decoding it takes a
+	// few milliseconds: long enough, even under -race, for the comparison
+	// goroutine to reach the converter before the baseline fails.
 	payload, err := json.Marshal(map[string]any{
 		"name":              "Broken baseline",
-		"content":           `{"foo":1}`,
+		"content":           `{"foo":1,"pad":"` + strings.Repeat("a", 4<<20) + `"}`,
 		"secondary_content": harPairLoadHAR(2),
 	})
 	if err != nil {
@@ -758,12 +761,12 @@ func TestHARComparisonWaitingForASlotEndsWithItsImport(t *testing.T) {
 	harComparisonSlots = make(chan struct{}, 1)
 	harComparisonSlots <- struct{}{}
 	prepared := make(chan struct{}, 1)
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		prepared <- struct{}{}
 		return nil, nil, nil
 	}
 
-	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	select {
 	case <-job.done:
 		t.Fatal("the comparison ran without a slot")
@@ -786,7 +789,7 @@ func TestHARComparisonWaitingForASlotEndsWithItsImport(t *testing.T) {
 
 	// Once the slot frees, the next comparison runs and gives it back.
 	<-harComparisonSlots
-	next := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	next := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	defer next.release()
 	select {
 	case <-next.done:
@@ -869,7 +872,7 @@ func TestHARComparisonGivenUpOnDoesNotTakeAFreedSlot(t *testing.T) {
 	harComparisonSlots = make(chan struct{}, 1)
 	harComparisonSlots <- struct{}{} // held, as by another import's comparison
 	converted := make(chan struct{}, 1)
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		converted <- struct{}{}
 		return nil, nil, nil
 	}
@@ -878,7 +881,7 @@ func TestHARComparisonGivenUpOnDoesNotTakeAFreedSlot(t *testing.T) {
 	// to keep time for its later stages.
 	importCtx, cancelImport := context.WithTimeout(context.Background(), 400*time.Millisecond)
 	defer cancelImport()
-	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), har.ConvertOptions{})
+	job := startHARComparison(context.Background(), []byte(harPairLoadHAR(1)), nil, har.ConvertOptions{})
 	if job.wait(importCtx, time.Millisecond) {
 		t.Fatal("a comparison queued for a slot was reported finished")
 	}
@@ -911,7 +914,7 @@ func TestHARImportProcessingOutlivesTheUploadGrantBehindTheActivityBuffer(t *tes
 	previousRead, previousWrite, previousWindow, previousGrace := apiServerReadTimeout, apiServerWriteTimeout, largeUploadReadWindow, largeUploadWriteGrace
 	previousPreparer := harComparisonPreparer
 	apiServerReadTimeout, apiServerWriteTimeout, largeUploadReadWindow, largeUploadWriteGrace = 300*time.Millisecond, 300*time.Millisecond, 300*time.Millisecond, 100*time.Millisecond
-	harComparisonPreparer = func(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+	harComparisonPreparer = func(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 		time.Sleep(1500 * time.Millisecond)
 		return nil, nil, errors.New("comparison HAR: held for the test")
 	}
@@ -981,5 +984,67 @@ func TestHARPairImportReportsUnhandledRequestInputs(t *testing.T) {
 		if section.Key == "har_pair_diff" && section.Severity != "warning" {
 			t.Fatalf("pair diff section severity = %q, want warning", section.Severity)
 		}
+	}
+}
+
+// The comparison HAR keeps only its correlations and source observations, so
+// it converts without the shaping and provenance work whose output it
+// discards, while keeping the baseline's request selection and correlation
+// settings, and the diff is the same as a full conversion's.
+func TestHARComparisonOptionsSkipDiscardedWork(t *testing.T) {
+	on := true
+	off := false
+	full := har.ConvertOptions{
+		ScriptName:            "Pair",
+		SourceFileName:        "baseline.har",
+		StampActionProvenance: true,
+		StepTransactions:      &on,
+		RecordedConcurrency:   &on,
+		IncludeStaticAssets:   &off,
+		FilterClientTelemetry: &on,
+		CorrelationMode:       "review_only",
+		EntryPoint:            "import_har",
+	}
+	trimmed := harComparisonOptions(full)
+	if trimmed.StampActionProvenance || trimmed.StepTransactions == nil || *trimmed.StepTransactions || trimmed.RecordedConcurrency == nil || *trimmed.RecordedConcurrency || trimmed.SourceFileName != "" {
+		t.Fatalf("comparison options = %+v, want provenance, step transactions, recorded concurrency and source file name off", trimmed)
+	}
+	if trimmed.IncludeStaticAssets != full.IncludeStaticAssets || trimmed.FilterClientTelemetry != full.FilterClientTelemetry || trimmed.CorrelationMode != full.CorrelationMode || trimmed.EntryPoint != full.EntryPoint {
+		t.Fatalf("comparison options = %+v changed the baseline's request selection or correlation settings", trimmed)
+	}
+	if !full.StampActionProvenance || !*full.StepTransactions || full.SourceFileName == "" {
+		t.Fatal("harComparisonOptions wrote through to the baseline's options")
+	}
+
+	baselineData := []byte(apiCredentialCorrelationHAR("baseline-token-1234567890"))
+	comparisonData := []byte(apiCredentialCorrelationHAR("comparison-token-0987654321"))
+	opts := har.ConvertOptions{StampActionProvenance: true, StepTransactions: &on, RecordedConcurrency: &on, SourceFileName: "baseline.har"}
+	baseline, err := har.Convert(baselineData, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullPrepared, err := har.PrepareComparison(comparisonData, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trimmedPrepared, _, err := prepareHARComparison(context.Background(), comparisonData, baselineData, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullDiff, err := har.DiffPreparedContext(context.Background(), baseline, fullPrepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trimmedDiff, err := har.DiffPreparedContext(context.Background(), baseline, trimmedPrepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fullJSON, _ := json.Marshal(fullDiff)
+	trimmedJSON, _ := json.Marshal(trimmedDiff)
+	if !bytes.Equal(fullJSON, trimmedJSON) {
+		t.Fatalf("diff with trimmed comparison options = %s, want the full conversion's %s", trimmedJSON, fullJSON)
+	}
+	if fullDiff.DynamicCandidates == 0 {
+		t.Fatalf("diff = %s found no dynamic value; the equivalence check would prove nothing", fullJSON)
 	}
 }

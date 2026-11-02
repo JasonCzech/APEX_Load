@@ -417,6 +417,24 @@ describe('useScriptApi import wrappers', () => {
     expect((options.body as FormData).get('secondary_file')).toBe(second)
   })
 
+  it('serializes explicit false HAR toggles and validate_only stateless inspection', async () => {
+    const file = new File(['{}'], 'first.har')
+    await api.importHAR(file, {
+      project_id: 'project-1',
+      step_transactions: false,
+      recorded_concurrency: false,
+      filter_client_telemetry: false,
+      validate_only: true,
+    })
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/har?project_id=project-1&validate_only=true&response_format=canonical-v1')
+    const body = options.body as FormData
+    expect(body.get('step_transactions')).toBe('false')
+    expect(body.get('recorded_concurrency')).toBe('false')
+    expect(body.get('filter_client_telemetry')).toBe('false')
+    expect(body.get('validate_only')).toBe('true')
+  })
+
   it('bounds HAR imports with a deadline that outlasts the controller and grants upload time', async () => {
     expect(HAR_IMPORT_TIMEOUT_MS).toBe(330_000)
     expect(harImportTimeoutMs()).toBe(HAR_IMPORT_TIMEOUT_MS)

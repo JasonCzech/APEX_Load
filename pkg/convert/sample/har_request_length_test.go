@@ -8,6 +8,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 type harLengthCase struct {
@@ -301,6 +302,28 @@ func TestIsAuraTelemetryBeacon(t *testing.T) {
 	}
 }
 
+// A batch whose body the export dropped is read from its query. An aura.*
+// business action riding with a beacon caboose keeps the batch: it is neither
+// telemetry nor wholly excluded by a profile that excludes the beacon.
+func TestAuraQueryFallbackKeepsBusinessActionsInMixedBatches(t *testing.T) {
+	mixed := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=40&aura.RecordUi.executeGraphQL=1&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1"}
+	if isClientTelemetryExchange(mixed) {
+		t.Fatal("a mixed business + beacon batch without a body was dropped as telemetry")
+	}
+	profile := &recordingprofile.Profile{ExcludedAuraDescriptors: []string{"InstrumentationBeacon"}}
+	if exchangeAllAuraActionsExcluded(mixed, profile) {
+		t.Fatal("a profile excluding the beacon dropped the business action with it")
+	}
+	beacon := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=41&ui-instrumentation-components-beacon.InstrumentationBeacon.sendData=1"}
+	if !isClientTelemetryExchange(beacon) {
+		t.Fatal("a pure beacon batch was kept")
+	}
+	apex := exchange{Method: "POST", URL: "https://a.lightning.force.com/aura?r=42&aura.ApexAction.execute=1"}
+	if got := auraExchangeDescriptors(apex); len(got) != 1 || got[0] != "aura.ApexAction.execute" {
+		t.Fatalf("auraExchangeDescriptors(apex) = %v", got)
+	}
+}
+
 // Resources recorded after an omitted telemetry beacon attach to the page
 // before it, not to the beacon that is no step.
 func TestInStepResourcesSkipAnOmittedTelemetryBeacon(t *testing.T) {
@@ -323,5 +346,30 @@ func TestInStepResourcesSkipAnOmittedTelemetryBeacon(t *testing.T) {
 	resources := document.inStepResources()
 	if len(resources[1]) != 1 || len(resources[2]) != 0 {
 		t.Fatalf("resources = %#v, want app.js on the page (entry 1), not the omitted beacon (entry 2)", resources)
+	}
+}
+
+// Requests a recording profile leaves out for its excluded Aura descriptors
+// are reported apart from its host and content-type drops, with the
+// patterns that matched, so a broad substring pattern is easy to find.
+func TestRecordingProfileDropsNameTheAuraDescriptorPatterns(t *testing.T) {
+	profile := &recordingprofile.Profile{
+		Name:                    "Lightning",
+		ExcludeHosts:            []string{"cdn.example.test"},
+		ExcludedAuraDescriptors: []string{" getRecord ", "InstrumentationBeacon"},
+	}
+	exchanges := []exchange{
+		{Method: "GET", URL: "https://cdn.example.test/app.js", Response: &response{Status: 200}},
+		{Method: "POST", URL: "https://a.lightning.force.com/aura?r=1&ui-force-components-controllers-recordGlobalValueProvider.RecordGvp.getRecordWithFields=1", Response: &response{Status: 200}},
+		{Method: "POST", URL: "https://a.lightning.force.com/aura?r=2&aura.RecordUi.executeGraphQL=1", Response: &response{Status: 200}},
+	}
+	kept, drops := applyRecordingProfileFilters(exchanges, profile)
+	if len(kept) != 1 || drops.byHostOrType != 1 || drops.byAura != 1 || drops.total() != 2 {
+		t.Fatalf("kept = %d, drops = %+v; want the host and the getRecord batch dropped", len(kept), drops)
+	}
+	warnings := drops.warnings(profile.Name)
+	if len(warnings) != 2 || !strings.Contains(warnings[0], "1 request(s) out by host or content type") ||
+		!strings.Contains(warnings[1], "1 Aura request(s)") || !strings.Contains(warnings[1], `"getRecord"`) || strings.Contains(warnings[1], "InstrumentationBeacon") {
+		t.Fatalf("warnings = %q; want the host drop and the descriptor drop told apart, naming the matched pattern", warnings)
 	}
 }

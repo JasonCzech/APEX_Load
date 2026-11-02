@@ -175,3 +175,22 @@ func TestValidateBackgroundRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// ExcludedAuraDescriptorMatch names the pattern a descriptor holds, as the
+// profile lists it, so an import can say which pattern left a batch out.
+func TestExcludedAuraDescriptorMatchNamesThePattern(t *testing.T) {
+	profile := Profile{ExcludedAuraDescriptors: []string{"  ", " getRecord ", "Apex"}}
+	for descriptor, want := range map[string]string{
+		"RecordGvp.getRecordWithFields": "getRecord",
+		"aura://ApexActionController":   "Apex",
+		"aura.RecordUi.executeGraphQL":  "",
+		"   ":                           "",
+	} {
+		if got := profile.ExcludedAuraDescriptorMatch(descriptor); got != want {
+			t.Errorf("ExcludedAuraDescriptorMatch(%q) = %q, want %q", descriptor, got, want)
+		}
+		if got := profile.ExcludesAuraDescriptor(descriptor); got != (want != "") {
+			t.Errorf("ExcludesAuraDescriptor(%q) = %v", descriptor, got)
+		}
+	}
+}

@@ -118,6 +118,10 @@ const savedImportResolvedSecretMarker = "resolved-before-save"
 // (savedImportSecretSnapshot).
 func (tr *TestRunner) refreshSavedImportEvaluation(script, prior *dsl.Script, secrets engine.SecretResolver) error {
 	if !savedImportEvaluationRefreshed(script, prior) {
+		if script != nil && scriptImportSource(prior) != "" && scriptImportSource(script) != "" &&
+			!scriptRequiresJavaVuserAuthoringApproval(prior) && preservedReplayPreflight(prior) != nil {
+			attachImportReplayPreflight(script, scriptImportSource(prior), repairReplayPreflight(script, prior, secrets))
+		}
 		return nil
 	}
 	source := scriptImportSource(prior)

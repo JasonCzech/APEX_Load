@@ -191,7 +191,7 @@ func TestDiffRequestInputsReadJSONBodies(t *testing.T) {
 		`{"big":1234567890123456789,"records":{"001A000001abcdeQAA":{"name":"same"}},"actions":[{"id":"Zq9vT0kenAAA"},{"id":"Zq9vT0kenBBB"},{"id":"Zq9vT0kenCCC"}]}`)}
 	comparison := []sample.HARSourceObservation{jsonInputObservation(1,
 		`{"big":1234567890123456788,"records":{"001A000009zyxwvQAA":{"name":"same"}},"actions":[{"id":"Pp8uU1lfoAAA"},{"id":"Pp8uU1lfoBBB"},{"id":"Pp8uU1lfoCCC"}]}`)}
-	inputs, _, err := diffRequestInputs(context.Background(), baseline, comparison)
+	inputs, _, err := diffRequestInputs(context.Background(), baseline, comparison, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,7 +248,7 @@ func TestDiffRequestInputsStopWithTheImport(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	baseline := []sample.HARSourceObservation{jsonInputObservation(1, `{"a":"Zq9vT0kenAAA"}`)}
-	if _, _, err := diffRequestInputs(ctx, baseline, baseline); !errors.Is(err, context.Canceled) {
+	if _, _, err := diffRequestInputs(ctx, baseline, baseline, nil); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }

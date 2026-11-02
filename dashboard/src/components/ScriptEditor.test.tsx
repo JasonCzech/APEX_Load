@@ -1945,8 +1945,8 @@ describe('ScriptEditor', () => {
     const gridHeaderRule = cssRule(editorCss, '.parameter-grid thead th')
     const formFocusRule = cssRule(editorCss, '.script-editor :where(input, select, textarea):focus-visible')
 
-    expect(backdropRule).toContain('z-index: 220;')
-    expect(dialogRule).toContain('width: min(1440px, calc(100vw - 48px));')
+    expect(backdropRule).toContain('z-index: var(--z-modal, 220);')
+    expect(dialogRule).toContain('width: min(1440px, calc(100% - 48px));')
     expect(documentDialogRule).toContain('width: 100%;')
     expect(documentDialogRule).toContain('max-width: none;')
     expect(documentDialogRule).toContain('align-self: stretch;')
@@ -2807,6 +2807,19 @@ describe('ScriptEditor', () => {
     expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_B'))).toBe(true)
   })
 
+  it('tells the author which masked credentials a duplicated step goes without', async () => {
+    const maskedScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=[REDACTED]', header_list: [{ name: 'Authorization', value: 'Bearer [REDACTED]' }] } as unknown as ScriptDefinition['actions'][number]],
+    } as ScriptDefinition
+    await act(async () => { root.render(<ScriptEditor initialScript={maskedScript} />) })
+    const signIn = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Sign in') && !row.textContent?.includes('(copy)'))
+    await act(async () => {
+      signIn()?.querySelector<HTMLButtonElement>('[aria-label="Duplicate init action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.querySelector('.editor-toast.warning')?.textContent).toContain('The copy of Sign in has no value for 2 masked credentials (body, header Authorization)')
+  })
+
   it('remaps lifecycle breakpoints when lifecycle actions move and delete', async () => {
     const lifecycleScript: ScriptDefinition = {
       ...initialScript,
@@ -3665,6 +3678,102 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(container, 'Action editor')?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('saves Aura envelope Parameters JSON typed but not applied, and blocks the save while it is invalid', async () => {
+    const message = JSON.stringify({ actions: [{ id: '1;a', descriptor: 'aura://RecordUiController/ACTION$getRecord', params: { recordId: '001OLD' } }] })
+    const auraBody = `message=${encodeURIComponent(message)}&aura.token={{var.aura_token}}`
+    const auraScript: ScriptDefinition = { ...initialScript, actions: [{ name: 'Aura_Record', type: 'request', method: 'POST', target: '/aura', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: auraBody }] }
+    window.localStorage.setItem('scriptEditorCenterTabs:draft', JSON.stringify({ tabs: ['script-json', 'request-body'], activeTabId: 'request-body' }))
+    await act(async () => { root.render(<ScriptEditor initialScript={auraScript} projectId="project-1" />) })
+    const params = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Parameters (JSON) for RecordUiController.getRecord"]')!
+    const typeParams = (text: string) => act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(params, text)
+      params.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await typeParams('{broken')
+    const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+    expect(save.disabled).toBe(true)
+    expect(container.textContent).toContain('Fix Aura envelope edits before saving')
+    await typeParams('{"recordId":"001NEW"}')
+    expect(save.disabled).toBe(false)
+    // No Apply: Save script still writes the edit into the body.
+    await act(async () => { save.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const payload = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    const sent = decodeURIComponent(payload.actions[0].body!.split('&')[0].slice('message='.length))
+    expect(JSON.parse(sent).actions[0].params).toEqual({ recordId: '001NEW' })
+    expect(payload.actions[0].body).toContain('aura.token={{var.aura_token}}')
+  })
+
+  it('returns unapplied Aura edits to their step when a delete above it is undone', async () => {
+    const message = JSON.stringify({ actions: [{ id: '1;a', descriptor: 'aura://RecordUiController/ACTION$getRecord', params: { recordId: '001OLD' } }] })
+    const auraBody = `message=${encodeURIComponent(message)}&aura.token={{var.aura_token}}`
+    const auraScript: ScriptDefinition = { ...initialScript, actions: [
+      { ...initialScript.actions[0], name: 'Open Cart', target: '/cart' },
+      { name: 'Aura_Record', type: 'request', method: 'POST', target: '/aura', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: auraBody },
+    ] }
+    window.localStorage.setItem('scriptEditorCenterTabs:draft', JSON.stringify({ tabs: ['script-json', 'request-body'], activeTabId: 'request-body' }))
+    await act(async () => { root.render(<ScriptEditor initialScript={auraScript} projectId="project-1" />) })
+    const actionRow = (name: string) => Array.from(container.querySelectorAll<HTMLElement>('.action-item')).find(row => row.textContent?.includes(name))
+    await act(async () => { actionRow('Aura_Record')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const params = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Parameters (JSON) for RecordUiController.getRecord"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(params, '{"recordId":"001NEW"}')
+      params.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { actionRow('Open Cart')?.querySelector<HTMLButtonElement>('[aria-label="Delete action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    expect(actionRow('Open Cart')).toBeUndefined()
+    await act(async () => { findButtonByTitle(container, 'Undo document change')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+    expect(actionRow('Open Cart')).toBeTruthy()
+    // The edit is back on the Aura step, not left on Open Cart, which took its old place.
+    expect(container.textContent).not.toContain('Fix Aura envelope edits before saving')
+    const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+    expect(save.disabled).toBe(false)
+    await act(async () => { save.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const payload = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    expect(payload.actions[0].name).toBe('Open Cart')
+    expect(payload.actions[0].body).toBe(initialScript.actions[0].body)
+    const sent = decodeURIComponent(payload.actions[1].body!.split('&')[0].slice('message='.length))
+    expect(JSON.parse(sent).actions[0].params).toEqual({ recordId: '001NEW' })
+  })
+
+  it('holds unapplied Aura edits stale after a Script JSON apply that adds steps, and returns them on undo', async () => {
+    const message = JSON.stringify({ actions: [{ id: '1;a', descriptor: 'aura://RecordUiController/ACTION$getRecord', params: { recordId: '001OLD' } }] })
+    const auraBody = `message=${encodeURIComponent(message)}&aura.token={{var.aura_token}}`
+    const auraStep = { name: 'Aura_Record', type: 'request', method: 'POST', target: '/aura', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: auraBody }
+    const auraScript: ScriptDefinition = { ...initialScript, actions: [{ ...initialScript.actions[0], name: 'Open Cart', target: '/cart' }, auraStep] }
+    window.localStorage.setItem('scriptEditorCenterTabs:draft', JSON.stringify({ tabs: ['script-json', 'request-body'], activeTabId: 'request-body' }))
+    await act(async () => { root.render(<ScriptEditor initialScript={auraScript} projectId="project-1" />) })
+    const actionRow = (name: string) => Array.from(container.querySelectorAll<HTMLElement>('.action-item')).find(row => row.textContent?.includes(name))
+    await act(async () => { actionRow('Aura_Record')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const params = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Parameters (JSON) for RecordUiController.getRecord"]')!
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(params, '{"recordId":"001NEW"}')
+      params.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await act(async () => { findCenterTab(container, 'DSL')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const fullJsonButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit in Full Script JSON')
+    await act(async () => { fullJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+    const editJsonButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit JSON')
+    await act(async () => { editJsonButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement
+    // The JSON inserts an identical copy of the Aura step at actions[1].
+    await act(async () => { changeTextareaValue(codeArea, JSON.stringify({ script: { ...auraScript, actions: [auraScript.actions[0], auraStep, auraStep] } }, null, 2)); await Promise.resolve() })
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Apply changes')!
+    await act(async () => { applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+    expect(container.textContent).toContain('Fix Aura envelope edits before saving')
+    await act(async () => { findButtonByTitle(container, 'Undo document change')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+    expect(container.textContent).not.toContain('Fix Aura envelope edits before saving')
+    const save = container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+    expect(save.disabled).toBe(false)
+    await act(async () => { save.click(); await Promise.resolve() })
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const payload = apiMock.createScript.mock.calls[0][0] as ScriptDefinition
+    expect(payload.actions).toHaveLength(2)
+    const sent = decodeURIComponent(payload.actions[1].body!.split('&')[0].slice('message='.length))
+    expect(JSON.parse(sent).actions[0].params).toEqual({ recordId: '001NEW' })
   })
 
   it('applies valid manual JSON edits into the structured authoring tools and save payload', async () => {
@@ -12454,6 +12563,26 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Health_Check')
     expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
 
+    // Cmd+Z in a text field (an Aura Parameters textarea, say) undoes that
+    // field's typing, never the document edit.
+    const editorElement = container.querySelector('.script-editor')!
+    const field = document.createElement('textarea')
+    editorElement.appendChild(field)
+    const undoKey = () => new KeyboardEvent('keydown', { key: 'z', metaKey: true, bubbles: true, cancelable: true })
+    const fieldUndo = undoKey()
+    await act(async () => { field.dispatchEvent(fieldUndo) })
+    field.remove()
+    expect(fieldUndo.defaultPrevented).toBe(false)
+    expect(container.textContent).not.toContain('Undid the last document change.')
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
+    const editorUndo = undoKey()
+    await act(async () => { editorElement.dispatchEvent(editorUndo) })
+    expect(editorUndo.defaultPrevented).toBe(true)
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length)
+    const editorRedo = new KeyboardEvent('keydown', { key: 'z', metaKey: true, shiftKey: true, bubbles: true, cancelable: true })
+    await act(async () => { editorElement.dispatchEvent(editorRedo) })
+    expect(Array.from(container.querySelectorAll('.action-item')).length).toBe(initialScript.actions.length + 1)
+
     const undoButton = findButtonByTitle(container, 'Undo document change')
     expect(undoButton).toBeTruthy()
     if (!undoButton) {
@@ -13741,6 +13870,260 @@ describe('ScriptEditor', () => {
       const tab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
       expect(tab.textContent).toBe('Problems 1 · 1 failed')
       expect(tab.getAttribute('aria-label')).toBe('Problems: 1 script issue, 1 failed execution')
+    })
+
+    it('renders readiness blockers in Debugger Problems, jumps to Author, and clears unexported HAR body via Delete step', async () => {
+      const blockedHarDraft: ScriptDefinition = {
+        ...initialScript,
+        actions: [
+          { name: 'Lightning Home', type: 'GET', method: 'GET', target: '/lightning/page/home' },
+          {
+            name: 'Unexported Beacon',
+            type: 'POST',
+            method: 'POST',
+            target: '/aura?r=94',
+            metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true },
+          },
+        ],
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={blockedHarDraft} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      expect(problemsTab.textContent).toBe('Problems 1')
+      await act(async () => { problemsTab.click() })
+      await flushReact()
+
+      const blockerGroup = container.querySelector<HTMLElement>('.debugger-problem-group')!
+      expect(blockerGroup.querySelector('h4')?.textContent).toBe('Blocking replay (1)')
+      expect(blockerGroup.textContent).toContain('Supply or remove unexported HAR request body')
+      // The blocker is listed once, in its group.
+      expect(Array.from(container.querySelectorAll('.debugger-problem-list .debugger-problem-row')).filter(row => row.textContent?.includes('Supply or remove unexported HAR request body'))).toHaveLength(1)
+      await act(async () => { findButtonByText(blockerGroup, 'Select in Author')!.click() })
+      await flushReact()
+
+      const repairPanel = container.querySelector<HTMLElement>('[data-blocker-repair]')
+      expect(repairPanel).toBeTruthy()
+      const deleteStepBtn = findButtonByText(repairPanel!, 'Delete step')
+      expect(deleteStepBtn).toBeTruthy()
+      await act(async () => { deleteStepBtn!.click() })
+      await flushReact()
+
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(topbarDebug().disabled).toBe(false)
+    })
+
+    it('keeps an unapplied Source JSON draft when an unexported HAR body blocker is cleared or its step deleted', async () => {
+      const blockedHarDraft: ScriptDefinition = {
+        ...initialScript,
+        actions: [
+          { name: 'Lightning Home', type: 'GET', method: 'GET', target: '/lightning/page/home' },
+          { name: 'Unexported Beacon', type: 'POST', method: 'POST', target: '/aura?r=94', body: 'message=%7B%7D', metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true } },
+        ],
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={blockedHarDraft} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      await act(async () => { problemsTab.click() })
+      await flushReact()
+      await act(async () => { findButtonByText(container.querySelector<HTMLElement>('.debugger-problem-group')!, 'Select in Author')!.click() })
+      await flushReact()
+      const repairPanel = () => container.querySelector<HTMLElement>('[data-blocker-repair]')!
+      expect(findButtonByText(repairPanel(), 'Mark body supplied & clear blocker')!.disabled).toBe(false)
+
+      // An unapplied edit in the Source JSON pane.
+      await act(async () => { findCenterTab(container, 'DSL')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { findButtonByText(container, 'Full Script JSON')?.click() })
+      await act(async () => { findButtonByText(container, 'Edit JSON')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve() })
+      const codeArea = () => container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement
+      const draftJson = JSON.stringify({ script: { ...blockedHarDraft, name: 'Pasted JSON Draft' } }, null, 2)
+      await act(async () => { changeTextareaValue(codeArea(), draftJson); await Promise.resolve() })
+      await flushReact()
+      expect(container.querySelector('.script-code-status.dirty')?.textContent).toContain('Unsaved JSON edits')
+
+      // The panel's direct draft actions wait for Apply or Reset.
+      const clear = findButtonByText(repairPanel(), 'Mark body supplied & clear blocker')!
+      expect(clear.disabled).toBe(true)
+      expect(clear.title).toBe('Apply or reset your Source changes first')
+      expect(findButtonByText(repairPanel(), 'Delete step')!.disabled).toBe(true)
+      // Debug's Delete blocked action refuses too, keeping the draft and the step.
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      await act(async () => { problems.click() })
+      await flushReact()
+      await act(async () => { findButtonByText(container.querySelector<HTMLElement>('.debugger-problem-group')!, 'Delete blocked action')!.click() })
+      await flushReact()
+      expect(document.body.textContent).toContain('Apply or reset your Source changes first, then delete the blocked step.')
+      expect(debugOutlineRow(container, 'Unexported Beacon')).toBeDefined()
+      await act(async () => { modeChip('Author').click() })
+      await flushReact()
+      expect(codeArea().value).toBe(draftJson)
+      expect(container.querySelector('.script-code-status.dirty')?.textContent).toContain('Unsaved JSON edits')
+    })
+
+    it('deletes a blocked step from Debug Problems, keeping its sequence and breakpoints valid', async () => {
+      const blockedSequenceDraft: ScriptDefinition = {
+        ...initialScript,
+        actions: [
+          { name: 'Lightning Home', type: 'GET', method: 'GET', target: '/lightning/page/home' },
+          {
+            name: 'Concurrent requests',
+            type: 'http_sequence',
+            params: { requests: [
+              { name: 'Beacon', type: 'POST', method: 'POST', target: '/aura?r=1', metadata: { execution_blockers: ['har_request_body_not_exported'], review_required: true } },
+              { name: 'Load record', type: 'POST', method: 'POST', target: '/aura?r=2', body: 'message=%7B%7D' },
+            ] },
+          } as unknown as ScriptDefinition['actions'][number],
+        ],
+      }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={blockedSequenceDraft} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+      await act(async () => { problemsTab.click() })
+      await flushReact()
+      const blockerGroup = container.querySelector<HTMLElement>('.debugger-problem-group')!
+      expect(blockerGroup.querySelector('h4')?.textContent).toBe('Blocking replay (1)')
+      // Each row's delete names the step it removes, for keyboard and screen-reader users.
+      const blockerTitle = blockerGroup.querySelector('.replay-blocker strong')!.textContent!
+      expect(blockerTitle).not.toBe('')
+      expect(findButtonByText(blockerGroup, 'Delete blocked action')!.getAttribute('aria-label')).toBe(`Delete blocked action: ${blockerTitle}`)
+      await act(async () => { findButtonByText(blockerGroup, 'Delete blocked action')!.click() })
+      await flushReact()
+
+      expect(topbarDebug().textContent).toBe('Debug one iteration')
+      expect(container.querySelector('.debugger-problem-group')).toBeNull()
+      // Only the blocked request went; the sequence keeps its other request.
+      expect(debugOutlineRow(container, 'Concurrent requests')).toBeDefined()
+      expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Removed the blocked step')
+    })
+
+    it('offers no Delete blocked action for a value gate or a code a save clears, only for a step\'s own blocker', async () => {
+      const openProblems = async () => {
+        await act(async () => { modeChip('Debug').click() })
+        await flushReact()
+        const problemsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(button => button.textContent?.startsWith('Problems'))!
+        await act(async () => { problemsTab.click() })
+        await flushReact()
+      }
+      const consumer = { name: 'Confirm', type: 'POST', method: 'POST', target: '/confirm/{{var.sid}}', metadata: { execution_blockers: ['missing_producer:sid'] } }
+      // Nothing sets sid: the gate is the value's problem, located at its first use.
+      const unproduced: ScriptDefinition = { ...initialScript, actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }, consumer] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={unproduced} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await openProblems()
+      expect(container.querySelector('.debugger-problem-group')).toBeNull()
+      expect(findButtonByText(container, 'Delete blocked action')).toBeUndefined()
+      expect(container.querySelector('.debugger-problem-list')?.textContent).toContain('sid')
+
+      // The draft now sets sid: only a save clears the step's stale review code.
+      await act(async () => { root.unmount() })
+      root = createRoot(container)
+      const produced: ScriptDefinition = { ...unproduced, actions: [{ ...unproduced.actions[0], extractors: [{ name: 'sid', type: 'regex', source: 'body', expression: 'sid=(\\w+)' }] }, consumer] }
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={produced} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
+      await openProblems()
+      expect(container.querySelector('.debugger-problem-group')).toBeNull()
+      expect(findButtonByText(container, 'Delete blocked action')).toBeUndefined()
+      expect(container.querySelector('.debugger-problem-list')?.textContent).toContain('sid')
+      expect(debugOutlineRow(container, 'Confirm')).toBeDefined()
+    })
+
+    it('disables Debug and surfaces an inline alert when Session Variables JSON is malformed', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor initialScript={initialScript} projectId="project-1" />)) })
+      await flushReact()
+      await setSessionVariables('{malformed')
+      expect(container.querySelector('#debug-variables-error')?.textContent).toBeTruthy()
+      expect(topbarDebug().disabled).toBe(true)
+    })
+
+    it('supports keyboard resizing on author rail separators and F9 breakpoint toggling', async () => {
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor initialScript={initialScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+
+      const outlineSeparator = container.querySelector<HTMLElement>('.author-rail-resize[aria-controls="script-outline-panel"]')
+      expect(outlineSeparator).toBeTruthy()
+      expect(outlineSeparator?.getAttribute('tabindex')).toBe('0')
+      const beforeWidth = Number(outlineSeparator?.getAttribute('aria-valuenow'))
+      await act(async () => {
+        outlineSeparator!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+      })
+      const afterWidth = Number(outlineSeparator?.getAttribute('aria-valuenow'))
+      expect(afterWidth).toBeGreaterThan(beforeWidth)
+
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('none')
+      await act(async () => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true }))
+      })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
+    })
+
+    it('toggles the breakpoint of the selected init step with F9 and Cmd/Ctrl+B, not the first step', async () => {
+      const lifecycleScript: ScriptDefinition = {
+        ...initialScript,
+        init: [
+          { name: 'Warmup_A', type: 'GET', method: 'GET', target: '/a' },
+          { name: 'Warmup_B', type: 'GET', method: 'GET', target: '/b' },
+        ],
+      } as ScriptDefinition
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor initialScript={lifecycleScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+      const warmupB = Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Warmup_B'))!
+      await act(async () => { warmupB.click() })
+      await flushReact()
+      await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true })) })
+      await flushReact()
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(debugOutlineGutter(container, 'Warmup_B')?.className).toContain('active')
+      expect(debugOutlineGutter(container, 'Warmup_A')?.className).toContain('none')
+
+      // In Debug, Cmd/Ctrl+B on a focused outline row toggles that row alone.
+      const mainStep = debugOutlineRow(container, initialScript.actions[0].name)!
+      await act(async () => { mainStep.focus(); mainStep.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true, bubbles: true, cancelable: true })) })
+      await flushReact()
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
+      expect(debugOutlineGutter(container, 'Warmup_A')?.className).toContain('none')
+      expect(debugOutlineGutter(container, 'Warmup_B')?.className).toContain('active')
+    })
+
+    it('toggles the breakpoint of the Author outline row with keyboard focus, not the selected step', async () => {
+      const lifecycleScript: ScriptDefinition = {
+        ...initialScript,
+        init: [
+          { name: 'Warmup_A', type: 'GET', method: 'GET', target: '/a' },
+          { name: 'Warmup_B', type: 'GET', method: 'GET', target: '/b' },
+        ],
+      } as ScriptDefinition
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor initialScript={lifecycleScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+      const warmupB = Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Warmup_B'))!
+      await act(async () => { warmupB.click() })
+      await flushReact()
+      // Arrow keys move focus without selecting: F9 and Cmd/Ctrl+B act on the focused row.
+      const authorRow = (name: string) => Array.from(container.querySelectorAll<HTMLElement>('nav.script-outline-tree [role="treeitem"]')).find(row => row.getAttribute('data-tooltip') === name)!
+      await act(async () => { const row = authorRow('Warmup_A'); row.focus(); row.dispatchEvent(new KeyboardEvent('keydown', { key: 'F9', bubbles: true, cancelable: true })) })
+      await flushReact()
+      await act(async () => { const row = authorRow(initialScript.actions[0].name); row.focus(); row.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', ctrlKey: true, bubbles: true, cancelable: true })) })
+      await flushReact()
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(debugOutlineGutter(container, 'Warmup_A')?.className).toContain('active')
+      expect(debugOutlineGutter(container, initialScript.actions[0].name)?.className).toContain('active')
+      expect(debugOutlineGutter(container, 'Warmup_B')?.className).toContain('none')
     })
   })
 })

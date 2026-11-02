@@ -1,0 +1,80 @@
+.har-capture-guide,
+.har-capture-guide-section,
+.har-capture-guide-steps {
+  display: flex;
+  flex-direction: column;
+}
+.har-capture-guide {
+  gap: 16px;
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.har-capture-guide-intro { margin: 0; color: var(--text-secondary); }
+.har-capture-guide-section { gap: 8px; }
+.har-capture-guide-section h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.har-capture-guide-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.har-capture-guide-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.har-capture-guide-table th,
+.har-capture-guide-table td {
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--border);
+}
+.har-capture-guide-table th {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.har-capture-guide-table tbody tr:last-child td { border-bottom: none; }
+.har-capture-guide-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.har-capture-guide-badge.on { background: var(--success-bg); color: var(--success-text); }
+.har-capture-guide-badge.off { background: var(--warning-bg); color: var(--warning-text); }
+.har-capture-guide-badge.action { background: var(--accent-soft); color: var(--accent-text); }
+.har-capture-guide-callout {
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius);
+  background: var(--warning-bg);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+.har-capture-guide-steps { margin: 0; padding-left: 18px; gap: 6px; color: var(--text-secondary); }
+.har-capture-guide-steps strong { color: var(--text-primary); }
+.har-capture-guide-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.har-capture-guide-code {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--code-bg);
+  color: var(--code-text);
+  font-family: var(--font-mono, monospace);
+  font-size: 11.5px;
+  line-height: 1.45;
+}

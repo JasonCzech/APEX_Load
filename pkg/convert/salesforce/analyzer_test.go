@@ -3229,3 +3229,66 @@ func TestAnalyzeDetectionOnlyDoesNotAssessOrGenerateReplay(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildNativePreviewDoesNotCountNonExecutableQueryMetadataAsCorrelationUsage(t *testing.T) {
+	const rawValue = "tok +/== recorded"
+	unsupportedSpelling := url.PathEscape(rawValue)
+	target := "/callback?access_token=" + unsupportedSpelling
+	script := &dsl.Script{
+		Name:     "SF query metadata non-executable surface",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{
+				Name:   "Use token",
+				Type:   "GET",
+				Method: "GET",
+				Target: target,
+				// har.request.query_string is the decoded query the HAR importer
+				// keeps beside the wire target. It is display metadata, not a
+				// replayed surface, so its raw value must not count as usage.
+				Metadata: map[string]any{
+					"har.request.query_string": []any{
+						map[string]any{"name": "access_token", "value": rawValue},
+					},
+				},
+			},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap"},
+			{ID: 2, Method: "GET", URL: "https://acme.my.salesforce.com" + target},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       rawValue,
+			Confidence:  0.95,
+		}},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[1].Target; got != target {
+		t.Fatalf("target = %q, want %q", got, target)
+	}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("source extractors = %#v, want none when only non-executable metadata matched", preview.Script.Actions[0].Extractors)
+	}
+	if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+		t.Fatalf("correlations = %#v, want PreApplied=false and manual_value_replacement_required when wire target still carries recorded value", preview.Correlations)
+	}
+	if raw, _ := json.Marshal(preview.Script.Actions[1].Metadata["har.request.query_string"]); strings.Contains(string(raw), "{{var.") {
+		t.Fatalf("har.request.query_string = %s, want the recorded value kept when the wire target was not rewritten", raw)
+	}
+}

@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import type { SourceReview, SourceReviewMapping } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition, SourceReview, SourceReviewMapping } from '../types/scripts'
 import type { AuraActionState, AuraOutcomeBatch, AuraOutcomeReport } from '../types/scriptImports'
+import { formatAuraActionTitle, parseAuraFormEnvelope, type AuraSubAction } from './auraEnvelopeModel'
+import { flattenScriptActions, harEntryIndex, hasUnexportedBodyBlocker } from './harCorrelationStudioModel'
 import { ImportEvidenceFacts } from './ImportConversionDetails'
 import './AuraOutcomeReview.css'
 
@@ -27,6 +29,7 @@ const ISSUE_LABELS: Record<string, string> = {
   unexpected_response: 'Response action has no matched request',
   invalid_form: 'Request form could not be inspected',
   missing_message: 'Request message missing',
+  request_body_not_captured: 'POST body omitted by browser HAR export',
   duplicate_message: 'Multiple request messages',
   invalid_session: 'Aura framework error: the session is invalid',
   client_out_of_sync: 'Aura framework error: the client is out of sync with the server',
@@ -46,9 +49,19 @@ function stateLabel(value: AuraActionState): AuraActionState {
 function issueLabel(code: string): string {
   return Object.prototype.hasOwnProperty.call(ISSUE_LABELS, code) ? ISSUE_LABELS[code] : 'Unrecognized inspection diagnostic'
 }
-function sourceMapping(batch: AuraOutcomeBatch, sourceReview?: SourceReview): SourceReviewMapping | undefined {
-  if (!batch.action_path) return undefined
-  const matches = sourceReview?.mappings?.filter(mapping => mapping.target_path === batch.action_path && mapping.target_kind === 'action') || []
+// The batch's request where the draft holds it now. The report keeps the
+// conversion's positions, while an exclusion remaps the source review to the
+// moved positions, so a stamped request is located by its HAR entry. Without
+// a stamp the conversion position stands only while nothing was excluded.
+function currentActionPath(batch: AuraOutcomeBatch, lookup: ScriptActionLookup, positionsShifted: boolean): string | undefined {
+  if (lookup.stamped && batch.har_entry_id) return lookup.pathByEntry.get(batch.har_entry_id)
+  if (positionsShifted) return undefined
+  return batch.action_path || undefined
+}
+function sourceMapping(batch: AuraOutcomeBatch, lookup: ScriptActionLookup, positionsShifted: boolean, sourceReview?: SourceReview): SourceReviewMapping | undefined {
+  const actionPath = currentActionPath(batch, lookup, positionsShifted)
+  if (!actionPath) return undefined
+  const matches = sourceReview?.mappings?.filter(mapping => mapping.target_path === actionPath && mapping.target_kind === 'action') || []
   const mapping = matches.length === 1 ? matches[0] : undefined
   if (!mapping?.id || !mapping.source_file) return undefined
   return sourceReview?.mappings?.filter(candidate => candidate.id === mapping.id).length === 1 ? mapping : undefined
@@ -62,7 +75,102 @@ function requiresReview(batch: AuraOutcomeBatch): boolean {
   return batch.request_valid !== true || batch.analysis.has_response !== true || batch.analysis.complete !== true || batch.analysis.success !== true
 }
 
-export default function AuraOutcomeReview({ report, sourceReview, onViewSource }: { report?: AuraOutcomeReport; sourceReview?: SourceReview; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+interface ResolvedBatchAction {
+  name?: string
+  bodyNotExported: boolean
+  /** Request actions of the batch's Aura envelope, by 1-based ordinal. */
+  descriptors: Map<number, string>
+}
+
+type ScriptActionLookup = { byEntry: Map<number, ScriptActionDefinition>; pathByEntry: Map<number, string>; stamped: boolean }
+
+// Excluding requests from the draft shifts every later position, while the
+// report keeps the positions of the conversion. Requests stamped with their
+// HAR entry are found by that entry, so a batch never names its neighbour.
+function scriptActionLookup(script: ScriptDefinition | null | undefined): ScriptActionLookup {
+  const byEntry = new Map<number, ScriptActionDefinition>()
+  const pathByEntry = new Map<number, string>()
+  let stamped = false
+  if (script) {
+    for (const entry of flattenScriptActions(script)) {
+      const index = harEntryIndex(entry.action)
+      if (index === undefined) continue
+      stamped = true
+      if (!byEntry.has(index)) {
+        byEntry.set(index, entry.action)
+        pathByEntry.set(index, entry.path)
+      }
+    }
+  }
+  return { byEntry, pathByEntry, stamped }
+}
+
+function actionAtPath(script: ScriptDefinition, actionPath: string): ScriptActionDefinition | undefined {
+  const direct = /^(init|actions|teardown)\[(\d+)\](?:\.params\.requests\[(\d+)\])?$/.exec(actionPath.trim())
+  if (!direct) return undefined
+  const section = direct[1] === 'init' ? script.init : direct[1] === 'teardown' ? script.teardown : script.actions
+  const action: ScriptActionDefinition | undefined = Array.isArray(section) ? section[Number(direct[2])] : undefined
+  if (!action || direct[3] === undefined) return action
+  const requests = Array.isArray(action.params?.requests) ? action.params?.requests as ScriptActionDefinition[] : []
+  const sub = requests[Number(direct[3])]
+  return sub && typeof sub === 'object' ? sub : undefined
+}
+
+// The failing sub-action's title, named as the step names and the envelope
+// preview name it (formatAuraActionTitle, the server's ShortTitle):
+// Controller.method, or [namespace.]Class.method for an Apex action.
+function auraActionDescriptor(subAction: AuraSubAction): string {
+  const descriptor = typeof subAction.descriptor === 'string' ? subAction.descriptor.trim() : ''
+  return descriptor ? formatAuraActionTitle(subAction) : ''
+}
+
+function envelopeDescriptors(action: ScriptActionDefinition): Map<number, string> {
+  const descriptors = new Map<number, string>()
+  const envelope = parseAuraFormEnvelope(typeof action.body === 'string' ? action.body : undefined)
+  envelope?.actions.forEach((subAction, index) => {
+    const descriptor = auraActionDescriptor(subAction)
+    if (descriptor) descriptors.set(index + 1, descriptor)
+  })
+  return descriptors
+}
+
+function resolveBatchAction(script: ScriptDefinition | null | undefined, lookup: ScriptActionLookup, batch: AuraOutcomeBatch): ResolvedBatchAction | null {
+  if (!script) return null
+  let action: ScriptActionDefinition | undefined
+  if (lookup.stamped && batch.har_entry_id) {
+    action = lookup.byEntry.get(batch.har_entry_id)
+  } else if (batch.action_path) {
+    action = actionAtPath(script, batch.action_path)
+    // A stamped request at the reported position came from another entry.
+    if (action && batch.har_entry_id && harEntryIndex(action) !== undefined && harEntryIndex(action) !== batch.har_entry_id) action = undefined
+  }
+  if (!action) return null
+  return {
+    name: typeof action.name === 'string' && action.name.trim() ? action.name.trim() : undefined,
+    bodyNotExported: hasUnexportedBodyBlocker(action),
+    descriptors: envelopeDescriptors(action),
+  }
+}
+
+function outcomeLabel(outcome: { ordinal: number; state: AuraActionState; descriptor?: string }, resolved: ResolvedBatchAction | null) {
+  const descriptor = (typeof outcome.descriptor === 'string' && outcome.descriptor.trim()) || resolved?.descriptors.get(outcome.ordinal) || ''
+  return <>Action {ordinal(outcome.ordinal)}{descriptor ? <> (<code>{descriptor}</code>)</> : null}: <strong>{stateLabel(outcome.state)}</strong></>
+}
+
+export default function AuraOutcomeReview({
+  report,
+  script,
+  sourceReview,
+  positionsShifted = false,
+  onViewSource,
+}: {
+  report?: AuraOutcomeReport
+  script?: ScriptDefinition | null
+  sourceReview?: SourceReview
+  /** Requests were excluded from the draft since conversion, so the report's action positions are stale. */
+  positionsShifted?: boolean
+  onViewSource?: (mapping: SourceReviewMapping) => void
+}) {
   const [onlyReview, setOnlyReview] = useState(true)
   const [page, setPage] = useState(0)
   if (!report) return null
@@ -76,6 +184,7 @@ export default function AuraOutcomeReview({ report, sourceReview, onViewSource }
   const failedActions = count(report.state_counts?.ERROR) + count(report.state_counts?.INCOMPLETE) + count(report.state_counts?.ABORTED)
   const omittedDetails = count(report.outcomes_omitted) + count(report.issues_omitted) + count(report.request_issues_omitted)
   const issues = Object.entries(report.issue_counts || {}).filter(([, amount]) => count(amount) > 0)
+  const lookup = scriptActionLookup(script)
 
   return <section className="aura-outcome-review" aria-label="Aura outcomes">
     <h4>Aura outcomes</h4>
@@ -115,15 +224,19 @@ export default function AuraOutcomeReview({ report, sourceReview, onViewSource }
       {reviewBatches.length > 0 && <label className="aura-outcome-filter"><input type="checkbox" checked={onlyReview} onChange={event => { setOnlyReview(event.target.checked); setPage(0) }} /> Only batches requiring review ({reviewBatches.length})</label>}
       <p className="aura-outcome-source-hint">HAR entry numbers identify the original capture order. Imported action positions may differ after filtering or conversion. {sourceReview?.mappings?.length ? 'Source Mapping contains available request mappings.' : 'Source mappings are unavailable for this review.'}</p>
       {visible.map((batch, index) => {
-        const mapping = sourceMapping(batch, sourceReview)
+        const mapping = sourceMapping(batch, lookup, positionsShifted, sourceReview)
+        const resolvedAction = resolveBatchAction(script, lookup, batch)
         return <div className="aura-outcome-batch" key={currentPage * PAGE_SIZE + index}>
-        <div className="aura-outcome-batch-heading"><strong>Request {ordinal(batch.action_sequence)}</strong><span>{batchStatus(batch)}</span></div>
+        <div className="aura-outcome-batch-heading">
+          <strong>Request {ordinal(batch.action_sequence)}{resolvedAction?.name ? ` — ${resolvedAction.name}` : ''}</strong>
+          <span>{resolvedAction?.bodyNotExported ? `${batchStatus(batch)} · Body not exported` : batchStatus(batch)}</span>
+        </div>
         {mapping && onViewSource && <button type="button" className="btn btn-secondary btn-sm" onClick={() => onViewSource(mapping)}>View request {ordinal(batch.action_sequence)} source mapping</button>}
         <p>{batch.har_entry_id ? `HAR entry ${ordinal(batch.har_entry_id)} · ` : ''}{batch.request_valid === true ? 'Imported request structure valid' : 'Imported request structure needs review'} · {count(batch.analysis.matched_actions)} matched / {count(batch.analysis.request_actions)} requested / {count(batch.analysis.response_actions)} returned actions</p>
         {(count(batch.analysis.outcomes_omitted) > 0 || count(batch.analysis.issues_omitted) > 0) && <p>{count(batch.analysis.outcomes_omitted)} action outcomes · {count(batch.analysis.issues_omitted)} captured findings omitted from this batch’s retained details.</p>}
         {count(batch.request_issues_omitted) > 0 && <p>{count(batch.request_issues_omitted)} imported request findings omitted from this batch’s retained details.</p>}
-        {(batch.analysis.outcomes?.length || 0) > 0 && <ul className="aura-outcome-actions">{batch.analysis.outcomes!.slice(0, OUTCOME_LIMIT).map((outcome, outcomeIndex) => <li key={outcomeIndex}>Action {ordinal(outcome.ordinal)}: <strong>{stateLabel(outcome.state)}</strong></li>)}</ul>}
-        {(batch.analysis.outcomes?.length || 0) > OUTCOME_LIMIT && <details><summary>Remaining action outcomes ({batch.analysis.outcomes!.length - OUTCOME_LIMIT})</summary><ul>{batch.analysis.outcomes!.slice(OUTCOME_LIMIT).map((outcome, outcomeIndex) => <li key={outcomeIndex}>Action {ordinal(outcome.ordinal)}: <strong>{stateLabel(outcome.state)}</strong></li>)}</ul></details>}
+        {(batch.analysis.outcomes?.length || 0) > 0 && <ul className="aura-outcome-actions">{batch.analysis.outcomes!.slice(0, OUTCOME_LIMIT).map((outcome, outcomeIndex) => <li key={outcomeIndex}>{outcomeLabel(outcome, resolvedAction)}</li>)}</ul>}
+        {(batch.analysis.outcomes?.length || 0) > OUTCOME_LIMIT && <details><summary>Remaining action outcomes ({batch.analysis.outcomes!.length - OUTCOME_LIMIT})</summary><ul>{batch.analysis.outcomes!.slice(OUTCOME_LIMIT).map((outcome, outcomeIndex) => <li key={outcomeIndex}>{outcomeLabel(outcome, resolvedAction)}</li>)}</ul></details>}
         {(batch.request_issues?.length || 0) > 0 && <div><strong>Imported request findings</strong><ul>{batch.request_issues!.slice(0, OUTCOME_LIMIT).map((issue, issueIndex) => <li key={issueIndex}>{issueLabel(issue.code)}{count(issue.ordinal) > 0 ? ` at action ${ordinal(issue.ordinal)}` : ''}</li>)}</ul>{batch.request_issues!.length > OUTCOME_LIMIT && <details><summary>Remaining imported request findings ({batch.request_issues!.length - OUTCOME_LIMIT})</summary><ul>{batch.request_issues!.slice(OUTCOME_LIMIT).map((issue, issueIndex) => <li key={issueIndex}>{issueLabel(issue.code)}{count(issue.ordinal) > 0 ? ` at action ${ordinal(issue.ordinal)}` : ''}</li>)}</ul></details>}</div>}
         {(batch.analysis.issues?.length || 0) > 0 && <strong>Captured envelope findings</strong>}
         {(batch.analysis.issues?.length || 0) > 0 && <ul>{batch.analysis.issues!.slice(0, OUTCOME_LIMIT).map((issue, issueIndex) => <li key={issueIndex}>{issueLabel(issue.code)}{count(issue.ordinal) > 0 ? ` at action ${ordinal(issue.ordinal)}` : ''}</li>)}</ul>}

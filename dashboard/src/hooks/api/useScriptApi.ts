@@ -1,4 +1,4 @@
-import type { EnterpriseArchiveFidelityReport, JMeterBatchRepairRequest, JMeterBatchRepairResponse, SecretBindingRequirement } from '../../types/scriptImports'
+import type { EnterpriseArchiveFidelityReport, ExcludeImportDraftActionsRequest, ExcludeImportDraftActionsResponse, JMeterBatchRepairRequest, JMeterBatchRepairResponse, SecretBindingRequirement } from '../../types/scriptImports'
 import { useCallback, useMemo } from 'react'
 
 import {
@@ -1293,6 +1293,15 @@ export function useScriptApi() {
       step_transactions?: boolean
       /** Replay the requests the browser had in flight together concurrently. */
       recorded_concurrency?: boolean
+      /** Omit browser client-telemetry beacons (e.g. Aura InstrumentationBeacon / o11y). */
+      filter_client_telemetry?: boolean
+      /**
+       * Inspects and converts without retaining full source texts or allocating
+       * a source-secret session. A credential-preserving draft still receives a
+       * short-lived save attestation (import_draft_expires_at), so the reviewed
+       * draft stays savable without a second upload.
+       */
+      validate_only?: boolean
       signal?: AbortSignal
       timeoutMs?: number
     }): Promise<HARImportResult> => {
@@ -1308,13 +1317,16 @@ export function useScriptApi() {
       if (typeof options?.redact_sensitive === 'boolean') formData.append('redact_sensitive', options.redact_sensitive ? 'true' : 'false')
       if (options?.salvage_truncated) formData.append('salvage_truncated', 'true')
       if (options?.http_version_mode) formData.append('http_version_mode', options.http_version_mode)
-      if (options?.step_transactions) formData.append('step_transactions', 'true')
-      if (options?.recorded_concurrency) formData.append('recorded_concurrency', 'true')
+      if (typeof options?.step_transactions === 'boolean') formData.append('step_transactions', options.step_transactions ? 'true' : 'false')
+      if (typeof options?.recorded_concurrency === 'boolean') formData.append('recorded_concurrency', options.recorded_concurrency ? 'true' : 'false')
+      if (typeof options?.filter_client_telemetry === 'boolean') formData.append('filter_client_telemetry', options.filter_client_telemetry ? 'true' : 'false')
+      if (options?.validate_only) formData.append('validate_only', 'true')
 
       const query = new URLSearchParams()
       if (options?.project_id) query.set('project_id', options.project_id)
       if (options?.salesforce_native === false) query.set('salesforce_native', 'false')
       if (options?.agentforce_transform) query.set('agentforce_transform', 'true')
+      if (options?.validate_only) query.set('validate_only', 'true')
       const suffix = query.toString()
       // A caller abort surfaces as the fetch AbortError; only this request's
       // own deadline becomes the actionable timeout message.
@@ -1657,6 +1669,12 @@ export function useScriptApi() {
     [],
   )
 
+  const excludeImportDraftActions = useCallback(
+    (payload: ExcludeImportDraftActionsRequest) =>
+      request<ExcludeImportDraftActionsResponse>('/scripts/import/exclude-actions', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
   const applyImportParameterization = useCallback(
     (payload: ApplyParameterizationRequest) =>
       request<ApplyParameterizationResponse>('/scripts/import/parameterize/apply', { method: 'POST', body: JSON.stringify(payload) }),
@@ -1929,6 +1947,7 @@ export function useScriptApi() {
       rollbackBrunoRevision,
       applyImportParameterization,
       applyImportTransport,
+      excludeImportDraftActions,
       applyImportSharedValues,
       applySecretBindings,
       suggestParameterization,
@@ -2059,6 +2078,7 @@ export function useScriptApi() {
       rollbackBrunoRevision,
       applyImportParameterization,
       applyImportTransport,
+      excludeImportDraftActions,
       applyImportSharedValues,
       applySecretBindings,
       suggestParameterization,

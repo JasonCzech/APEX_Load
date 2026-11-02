@@ -412,6 +412,7 @@ var lifecycleImportRoutes = map[string]lifecycleImportRoute{
 	"/api/v1/scripts/import/transport/apply":                    {"shared review", "Every import launcher", []string{"handlers_import_transport_test.go", "workflow-import-transport.spec.ts"}},
 	"/api/v1/scripts/import/repairs/apply":                      {"shared review", "Every import launcher", []string{"workflow-jmeter-fidelity.spec.ts"}},
 	"/api/v1/scripts/import/repairs/preview":                    {"shared review", "Every import launcher", []string{"import_repairs_test.go", "workflow-jmeter-fidelity.spec.ts"}},
+	"/api/v1/scripts/import/exclude-actions":                    {"shared review", "Every import launcher", []string{"handlers_import_har_ux_test.go"}},
 	"/api/v1/scripts/import/shared-values/apply":                {"shared review", "Multi-script imports", []string{"handlers_import_shared_values_test.go"}},
 	"/api/v1/scripts/import/secrets/migrate":                    {"shared review", "Template/component/clone", []string{"import_candidate_credentials_test.go"}},
 	"/api/v1/scripts/import/secrets/discard":                    {"shared review", "Template/component/clone", []string{"handlers_project_secrets_test.go"}},

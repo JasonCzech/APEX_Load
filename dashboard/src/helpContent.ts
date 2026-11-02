@@ -132,6 +132,8 @@ const CROSS_FILE_SECTION_OWNER: Record<string, string> = {
   'docs/PROTOCOL_SUPPORT.md#jmeter-messaging-fidelity': 'messaging',
   'docs/HELP_CENTER.md#authentication-or-permission-denied': 'troubleshooting',
   'docs/HELP_CENTER.md#create-and-prove-the-script': 'first-test',
+  'docs/APPLICATION_USER_GUIDE.md#capturing-optimal-har-files-for-comparison-and-dsl-conversion': 'imports',
+  'docs/APPLICATION_USER_GUIDE.md#comparing-two-salesforce-har-captures': 'imports',
   'docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#filter-and-page': 'retained-resource-inspection',
   'docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#interpret-a-row': 'retained-resource-inspection',
   'docs/guides/BROWSER_INTELLIGENCE_WORKFLOWS.md#native-waterfall-and-cache-evidence': 'retained-resource-inspection',

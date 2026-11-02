@@ -27,6 +27,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -54,17 +55,37 @@ type projectionContext struct {
 	parameter           bool
 	dataSource          bool
 	metadata            bool
-	javaVMArgument      bool
-	untypedMap          bool
-	schemaScalar        bool
-	action              bool
-	actionList          bool
-	sequenceParams      bool
-	scriptMetadata      bool
-	importMetadata      bool
-	scriptName          bool
-	extractor           bool
-	extractorList       bool
+	// sentMetadataFamily is set on the metadata map of a Kafka or JMS send
+	// step, which delivers each top-level string entry its family does not
+	// treat as provenance as a record header or message property.
+	sentMetadataFamily string
+	// sentMetadataEntry marks such a delivered entry: an executable value,
+	// never a provenance identifier, whatever its key.
+	sentMetadataEntry bool
+	// surfaceMetadata is set only on the metadata map of an action, an
+	// http_sequence request or an http_async_start request: the surfaces that
+	// own a server-stamped import_action_uid. A nested map that merely happens
+	// to be named metadata (config.grpc.metadata, params.*.metadata) is wire or
+	// payload data, never action provenance.
+	surfaceMetadata bool
+	// asyncParams and asyncRequest track an http_async_start step's
+	// params.request, whose metadata is a surface metadata map.
+	asyncParams  bool
+	asyncRequest bool
+	// controlFlow marks an action's control map, whose default list (the
+	// control_switch fallback branch) is an action list like steps and else.
+	controlFlow    bool
+	javaVMArgument bool
+	untypedMap     bool
+	schemaScalar   bool
+	action         bool
+	actionList     bool
+	sequenceParams bool
+	scriptMetadata bool
+	importMetadata bool
+	scriptName     bool
+	extractor      bool
+	extractorList  bool
 	// browserTarget is set for a browser step's target that is a locator or
 	// script, which is never read as a URL.
 	browserTarget dsl.BrowserTargetKind
@@ -220,6 +241,14 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				out[key] = child
 				continue
 			}
+			sentEntry := ctx.sentMetadataFamily != "" &&
+				!messaging.MetadataKeyIsProvenance(ctx.sentMetadataFamily, key)
+			if ctx.surfaceMetadata && !sentEntry &&
+				key == dsl.ImportActionUIDMetadataKey &&
+				dsl.IsValidImportActionUID(child) {
+				out[key] = child
+				continue
+			}
 			if normalized == normalizeName(dsl.ImportHeaderFidelityPreservedNameBase64Key) ||
 				normalized == normalizeName(dsl.ImportHeaderFidelityPreservedValueBase64Key) {
 				out[key] = base64.StdEncoding.EncodeToString([]byte(credential.Redacted))
@@ -288,7 +317,8 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				schemaScalar: !ctx.metadata &&
 					!ctx.untypedMap &&
 					isDisclosureSchemaDiscriminator(key),
-				actionList: !ctx.untypedMap && isDisclosureActionListKey(key),
+				actionList: !ctx.untypedMap && (isDisclosureActionListKey(key) ||
+					ctx.controlFlow && normalized == "default"),
 				sequenceParams: httpSequence &&
 					normalized == "params",
 				extractorList: ctx.action && normalized == "extractors",
@@ -296,7 +326,21 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 			}
 			if ctx.action && !ctx.metadata {
 				childContext.browserTarget = nonURLBrowserTarget(typed, key)
+				if normalized == "metadata" {
+					childContext.sentMetadataFamily = messagingSendMetadataFamily(stringValue(typed["type"]))
+					childContext.surfaceMetadata = true
+				}
+				childContext.controlFlow = normalized == "control"
+				childContext.asyncParams = key == "params" &&
+					strings.EqualFold(strings.TrimSpace(stringValue(typed["type"])), "http_async_start")
 			}
+			if ctx.asyncParams && key == "request" {
+				childContext.asyncRequest = true
+			}
+			if ctx.asyncRequest && !ctx.metadata && normalized == "metadata" {
+				childContext.surfaceMetadata = true
+			}
+			childContext.sentMetadataEntry = sentEntry
 			if ctx.transactionParams && (key == "args" || key == "call_args") {
 				childContext.transactionFunction, _ = typed["function"].(string)
 			}
@@ -500,7 +544,7 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	if ctx.javaVMArgument && javarunner.ContainsSensitiveVMParameterValue(value) {
 		return credential.Redacted
 	}
-	if ctx.metadata && isPortableProvenanceIdentifier(ctx.key, value) {
+	if ctx.metadata && !ctx.sentMetadataEntry && isPortableProvenanceIdentifier(ctx.key, value) {
 		return p.replaceKnown(scrub.ValueURL(value, scrub.Policy{}))
 	}
 	if isSecretReferenceKey(ctx.key) && isNamedReference(value) {
@@ -1298,6 +1342,19 @@ func isReviewEvidenceKey(key string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// messagingSendMetadataFamily returns the messaging family of a step type that
+// sends its metadata (kafka.buildRecord, jms.buildMessage), or "".
+func messagingSendMetadataFamily(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "kafka_produce", "kafka_request_reply":
+		return messaging.FamilyKafka
+	case "jms_publish", "jms_request_reply":
+		return messaging.FamilyJMS
+	default:
+		return ""
 	}
 }
 

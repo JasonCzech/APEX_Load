@@ -28,6 +28,9 @@ type Props = {
   // A repair saves straight to the script, so it waits for unsaved edits to
   // be saved or discarded (it never rebases them).
   dirty: boolean
+  // The editor's Source pane holds an unapplied JSON draft: the direct draft
+  // actions (delete, clear) would discard it, so they wait for Apply or Reset.
+  sourcePending?: boolean
   saving: boolean
   onSaveFirst: () => void
   // The repair was saved: the response carries the stored script and its
@@ -35,11 +38,16 @@ type Props = {
   onApplied: (response: ScriptRepairResponse) => void
   // The saved copy changed under the editor, or an apply's outcome is unknown.
   onReconcile: (error: unknown) => void
+  // Direct Author draft actions for unexported HAR request bodies (`har_request_body_not_exported`).
+  onDeleteStep?: () => void
+  onOpenBody?: () => void
+  onClearUnexportedHarBodyBlocker?: () => void
 }
 
 const FINDING_GONE = 'Finding is no longer present'
 const SCRIPT_NOT_FOUND = /script not found/i
 const DIRTY_REASON = 'Save or discard your changes first'
+const SOURCE_PENDING_REASON = 'Apply or reset your Source changes first'
 // A preview carries the whole script twice (before and after), so a large
 // enough script's preview passes the response cap although the request worked.
 const PREVIEW_TOO_LARGE = 'This repair preview is too large to load: it holds the whole script before and after the repair, which is more than the editor accepts in one response. Nothing was changed. Re-import the source to repair this blocker in the import review.'
@@ -72,7 +80,11 @@ function blockerReason(finding: ImportFinding, bodySource: ProtectedBodySource):
  * the saved script (POST /scripts/{id}/repairs/{preview|apply}). The editor
  * focuses its first control from "Resolve N blockers".
  */
-export default function ScriptBlockerRepairPanel({ scriptId, projectId, baseline, blockedReason, script, bodySource = 'reimport', action, actionPath, dirty, saving, onSaveFirst, onApplied, onReconcile }: Props) {
+export default function ScriptBlockerRepairPanel({
+  scriptId, projectId, baseline, blockedReason, script, bodySource = 'reimport', action, actionPath,
+  dirty, sourcePending = false, saving, onSaveFirst, onApplied, onReconcile,
+  onDeleteStep, onOpenBody, onClearUnexportedHarBodyBlocker,
+}: Props) {
   const api = useApi()
   const headingId = useId()
   // One problem per code, as the start gate and Author Problems count them.
@@ -183,11 +195,51 @@ export default function ScriptBlockerRepairPanel({ scriptId, projectId, baseline
     }
   }
 
+  const hasUnexportedHarBody = findings.some(item => item.code === 'har_request_body_not_exported')
+  const hasUnexportedHarBodyActions = hasUnexportedHarBody && Boolean(onDeleteStep || onOpenBody || onClearUnexportedHarBodyBlocker)
+  const hasSuppliedBody = Boolean((action.body || '').trim() || action.body_file || action.body_multipart?.parts?.length)
+  const unexportedHarBodyControls = hasUnexportedHarBodyActions ? (
+    <div className="script-blocker-repair-actions" role="group" aria-label="Unexported HAR body actions">
+      <p className="script-blocker-repair-note">
+        {hasSuppliedBody
+          ? 'A request body is present on this step. Confirm it below to clear this execution blocker, or delete the step if it was an in-flight beacon.'
+          : 'Delete this step if it was an in-flight browser beacon at HAR export time, or open Request body to supply the payload and then clear the blocker.'}
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.375rem' }}>
+        {onDeleteStep && (
+          <button type="button" className="btn btn-danger btn-sm" disabled={locked || sourcePending} title={sourcePending ? SOURCE_PENDING_REASON : undefined} onClick={onDeleteStep}>
+            Delete step
+          </button>
+        )}
+        {onOpenBody && (
+          <button type="button" className="btn btn-secondary btn-sm" disabled={locked} onClick={onOpenBody}>
+            Open request body
+          </button>
+        )}
+        {onClearUnexportedHarBodyBlocker && (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={locked || sourcePending || !hasSuppliedBody}
+            title={sourcePending ? SOURCE_PENDING_REASON : !hasSuppliedBody ? 'Supply a request body first before clearing this blocker.' : undefined}
+            onClick={onClearUnexportedHarBodyBlocker}
+          >
+            Mark body supplied &amp; clear blocker
+          </button>
+        )}
+      </div>
+    </div>
+  ) : null
+
   let body
   if (repairable.length === 0) {
-    // A protected body's reason above already says where it is restored.
-    const protectedBody = findings.some(item => item.code === 'restored_body_required')
-    body = <p className="script-blocker-repair-note">{protectedBody && bodySource === 'import-review' ? 'Needs the body repair in the import review.' : 'Needs a source change or re-import.'}{protectedBody ? '' : ' Correct the source and import it again; no guided repair applies to this blocker.'}</p>
+    if (unexportedHarBodyControls) {
+      body = unexportedHarBodyControls
+    } else {
+      // A protected body's reason above already says where it is restored.
+      const protectedBody = findings.some(item => item.code === 'restored_body_required')
+      body = <p className="script-blocker-repair-note">{protectedBody && bodySource === 'import-review' ? 'Needs the body repair in the import review.' : 'Needs a source change or re-import.'}{protectedBody ? '' : ' Correct the source and import it again; no guided repair applies to this blocker.'}</p>
+    }
   } else if (!scriptId) {
     // Saving an unsaved draft opened from the import review returns to that
     // review, which repairs the draft before it is saved.
@@ -223,6 +275,7 @@ export default function ScriptBlockerRepairPanel({ scriptId, projectId, baseline
         <p>{blockerReason(item, bodySource)}</p>
       </li>)}
     </ul>
+    {repairable.length > 0 && unexportedHarBodyControls}
     {body}
     <p className="script-blocker-repair-status" role="status">{notice}</p>
     {error && <p className="script-blocker-repair-error" role="alert">{error}</p>}

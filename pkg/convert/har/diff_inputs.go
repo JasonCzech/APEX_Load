@@ -14,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 )
 
 // Request input kinds: what a request value that changed between the two
@@ -438,10 +439,18 @@ func decodeGroupRequest(request map[string]any) (dsl.Action, bool) {
 // path and query-key set, in order) and records every field whose value
 // changed between them. truncated reports that it stopped at its limit of
 // distinct changed values, leaving later requests uncompared. It stops with
-// ctx, checked before each request.
-func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSourceObservation) (inputs []DiffRequestInput, truncated bool, err error) {
+// ctx, checked before each request. narrowKey returns an observation's
+// narrow key (comparison reports which recording it is from), so a caller
+// that already decoded the Aura envelopes (diffAligner.observationNarrowKey)
+// does not decode them again; nil computes each key here.
+func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSourceObservation, narrowKey func(comparison bool, observation sample.HARSourceObservation) string) (inputs []DiffRequestInput, truncated bool, err error) {
 	if len(baseline) == 0 || len(comparison) == 0 {
 		return nil, false, nil
+	}
+	if narrowKey == nil {
+		narrowKey = func(_ bool, observation sample.HARSourceObservation) string {
+			return diffObservationNarrowKey(observation)
+		}
 	}
 	// A baseline value the comparison sends in the same field somewhere is
 	// stable across sessions; it differs only because the two recordings
@@ -453,7 +462,7 @@ func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSou
 		if err := ctx.Err(); err != nil {
 			return nil, false, err
 		}
-		key := diffRequestPairKey(observation)
+		key := diffRequestPairKey(observation, narrowKey(true, observation))
 		byKey[key] = append(byKey[key], index)
 		requestFieldValues(observation.RequestURL, observation.RequestHeaders, observation.RequestBody, func(field, value string) {
 			if stored >= diffInputMaxComparisonValues {
@@ -476,7 +485,7 @@ func diffRequestInputs(ctx context.Context, baseline, comparison []sample.HARSou
 		if truncated {
 			break
 		}
-		key := diffRequestPairKey(observation)
+		key := diffRequestPairKey(observation, narrowKey(false, observation))
 		queue := byKey[key]
 		if len(queue) == 0 {
 			continue
@@ -565,10 +574,49 @@ func diffValueHash(value string) uint64 {
 }
 
 // diffRequestPairKey groups requests the way diffAligner groups producers:
-// method, host, path, then the query-key set, which tells Aura batches apart
-// by the action names in their query.
-func diffRequestPairKey(observation sample.HARSourceObservation) string {
-	return diffRequestKey(observation) + "?" + diffQueryKeySet(observation.RequestURL)
+// method, host, path, then the query-key set and any Salesforce Aura envelope
+// action signature (including Apex classname + method), so parallel or
+// reordered Aura batches and multiple ApexActionController calls pair cleanly.
+// narrowKey is the observation's diffObservationNarrowKey.
+func diffRequestPairKey(observation sample.HARSourceObservation, narrowKey string) string {
+	return diffRequestKey(observation) + "?" + narrowKey
+}
+
+func diffObservationNarrowKey(observation sample.HARSourceObservation) string {
+	queryKeys := diffQueryKeySet(observation.RequestURL)
+	if auraSig := diffAuraActionSignature(observation); auraSig != "" {
+		return queryKeys + "#aura:" + auraSig
+	}
+	return queryKeys
+}
+
+func diffAuraActionSignature(observation sample.HARSourceObservation) string {
+	if !strings.EqualFold(strings.TrimSpace(observation.Method), "POST") {
+		return ""
+	}
+	body := observation.RequestBody
+	if body == "" || len(body) > diffInputMaxBodyBytes || !strings.Contains(body, "message=") {
+		return ""
+	}
+	lowerURL := strings.ToLower(observation.RequestURL)
+	if !strings.Contains(lowerURL, "/aura") {
+		return ""
+	}
+	actions := aura.ParseEnvelopeActions(body, diffInputMaxBodyBytes)
+	if len(actions) == 0 {
+		return ""
+	}
+	tokens := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if token := action.DiffToken(); token != "" {
+			tokens = append(tokens, token)
+		}
+	}
+	if len(tokens) == 0 {
+		return ""
+	}
+	sort.Strings(tokens)
+	return strings.Join(tokens, ",")
 }
 
 // diffIgnoredHeaders are request headers that describe the browser or the

@@ -179,6 +179,44 @@ export interface ApplyImportTransportResponse {
   import_draft_expires_at?: string
 }
 
+export interface ExcludeImportDraftActionsRequest {
+  script: ScriptDefinition
+  action_uids?: string[]
+  exclude_unexported_bodies?: boolean
+  /**
+   * The import's source-secret session. Requirement IDs encode action
+   * positions, so the server consumes it and re-keys its recorded values to
+   * the moved requirements.
+   */
+  source_secret_session_id?: string
+}
+
+export interface ExcludeImportDraftActionsResponse {
+  script: ScriptDefinition
+  removed_count: number
+  preflight?: ReplayPreflight
+  secret_binding_requirements: SecretBindingRequirement[]
+  /**
+   * Re-derived from the edited draft. Suggestion IDs encode action positions,
+   * so the import's earlier list is stale once an action before them is gone.
+   */
+  parameterization?: Parameterization | null
+  /** The edited draft's static validation (not the import's converter warnings). */
+  validation_issues?: string[]
+  import_draft_expires_at?: string
+  /**
+   * Re-derived from the edited draft. Candidate IDs hash each location's
+   * action path, so the import's earlier candidates are stale.
+   */
+  shared_values?: SharedValues | null
+  /**
+   * Present when the request named a source-secret session, which the server
+   * consumed: the re-keyed replacement, or "" when no recorded value survived.
+   */
+  source_secret_session_id?: string
+  source_secret_session_expires_at?: string
+}
+
 export interface ApplyParameterizationResponse {
   script: ScriptDefinition
   diffs: ParameterizationDiff[]
@@ -631,7 +669,10 @@ export interface TrueClient2CompatReport {
 export interface SalesforceDomainObservation {
   host: string
   kind: string
+  /** Imported requests the script sends to this host. */
   count: number
+  /** Every raw HAR entry on this host, including filtered assets and telemetry. */
+  har_count?: number
 }
 
 export interface SalesforceEndpointObservation {
@@ -709,6 +750,8 @@ export interface SalesforceCorrelationCandidate {
   rule_id?: string
   confidence?: number
   reasons?: string[]
+  classification?: string
+  diff_confidence?: number
 }
 
 export interface SalesforceNativePreview {
@@ -742,7 +785,8 @@ export interface AuraBatchAnalysis {
   request_actions: number
   response_actions: number
   matched_actions: number
-  outcomes?: { ordinal: number; state: AuraActionState }[]
+  // descriptor, when the report carries one, names the action (Controller$method).
+  outcomes?: { ordinal: number; state: AuraActionState; descriptor?: string }[]
   issues?: { code: string; ordinal?: number }[]
   outcomes_omitted?: number
   issues_omitted?: number
@@ -976,9 +1020,13 @@ export interface JMeterScenarioDraft {
 
 export interface SampleImportStats {
   format: string
+  // Every HAR entry the importer read: converted, filtered and skipped.
   total_requests: number
   converted_actions: number
+  // Every request a filter left out, including filtered_telemetry.
   filtered_assets?: number
+  filtered_telemetry?: number
+  skipped_requests?: number
   assertions: number
   extractors: number
   correlations_detected: number
@@ -1019,6 +1067,8 @@ export interface HARDiffClassification {
   comparison_value?: string
   found_in_step?: number
   used_in_steps?: number[]
+  producer_found?: boolean
+  matched_descriptor?: string
   classification: 'dynamic' | 'static' | 'candidate' | string
   diff_confidence: number
   reason: string
@@ -1027,13 +1077,42 @@ export interface HARDiffClassification {
 export interface HARDiffReport {
   artifact_mode: HARArtifactMode | string
   compared: boolean
+  reason?: string
   baseline_correlations: number
   comparison_correlations: number
   dynamic_candidates: number
   static_candidates: number
   unmatched_candidates: number
   classifications?: HARDiffClassification[]
+  /**
+   * Request fields whose value changed between the two recordings and that
+   * the generated script still sends as recorded (no server producer was
+   * correlated and no parameterization replaces them).
+   */
+  unhandled_inputs?: HARDiffRequestInput[]
+  unhandled_inputs_truncated?: boolean
+  request_comparison_truncated?: boolean
   warnings?: string[]
+}
+
+/** What a changed request value most likely is (pkg/convert/har DiffInput*). */
+export type HARDiffRequestInputKind =
+  | 'client_timestamp'
+  | 'client_counter'
+  | 'client_generated_id'
+  | 'server_value'
+  | 'unknown_origin'
+  | 'origin_not_checked'
+
+export interface HARDiffRequestInput {
+  /** query:<name>, header:<name>, form:<name> or body, then a JSON path. */
+  field: string
+  kind: HARDiffRequestInputKind | string
+  /** Baseline requests that send a changed value. */
+  requests: number
+  distinct_values: number
+  baseline_entries?: number[]
+  reason: string
 }
 
 export interface HARImportSummary {

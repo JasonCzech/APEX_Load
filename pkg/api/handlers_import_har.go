@@ -5,12 +5,14 @@ import "github.com/jasonczech/apexload/pkg/internal/importreview"
 // handlers_import_har — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -46,10 +48,20 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	importReq.Opts.Profile = profile
 	importReq.Opts.RecordingProfileID = strings.TrimSpace(importReq.RecordingProfileID)
 	importReq.Opts.EntryPoint = sample.EntryPointImportHAR
+	importReq.Opts.StampActionProvenance = true
+	// Byte-identical uploads are caught here without a slot. A zipped or
+	// truncated copy of the baseline is caught by the comparison job once it
+	// has unwrapped and salvaged the comparison the way the baseline was
+	// (prepareHARComparison), before it converts anything.
+	identicalComparison := len(importReq.SecondaryData) > 0 && identicalHARComparisonPayload(importReq.Data, importReq.SecondaryData)
 	// The comparison HAR converts while the baseline does; it reads its own
-	// bytes and a copy of the options, whose shared pointers (Profile and the
-	// option flags) conversion only reads.
-	comparison := startHARComparison(r.Context(), importReq.SecondaryData, importReq.Opts)
+	// bytes, the baseline bytes (only to compare them) and a copy of the
+	// options, whose shared pointers (Profile and the option flags) conversion
+	// only reads.
+	var comparison *harComparisonJob
+	if !identicalComparison {
+		comparison = startHARComparison(r.Context(), importReq.SecondaryData, importReq.Data, importReq.Opts)
+	}
 	// Every return cancels the comparison. Only the success path waits for it
 	// (below): an error response must not wait for a conversion nobody will
 	// use. A canceled comparison ends at its next stage and drops its result.
@@ -69,7 +81,9 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	if !harImportStageOK(w, r) {
 		return
 	}
-	if comparison != nil {
+	if identicalComparison {
+		recordDuplicateHARPair(result)
+	} else if comparison != nil {
 		finished := comparison.wait(r.Context(), baselineConversion)
 		if !harImportStageOK(w, r) {
 			return
@@ -160,6 +174,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 				}
 			}
 			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			importreview.EnsureScriptImportActionUIDs(s)
 			return nil
 		},
 	}
@@ -199,6 +214,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 		ProtectedRequirements:    protectedRequirements,
 		PreparedCredentialReview: preparedCredentialReview,
 		CredentialReviewPrepared: credentialReviewPrepared,
+		ValidateOnly:             importReq.ValidateOnly,
 	})
 }
 
@@ -379,10 +395,11 @@ type harComparisonJob struct {
 }
 
 // startHARComparison begins preparing the comparison HAR, or returns nil when
-// the import has none. opts is the caller's copy; conversion only reads the
-// pointers it shares with the baseline (Profile and the option flags). The
-// job ends with ctx or stop, whichever comes first.
-func startHARComparison(ctx context.Context, data []byte, opts har.ConvertOptions) *harComparisonJob {
+// the import has none. baseline is the unwrapped (and, when opted in, salvaged)
+// baseline capture, which the job only reads. opts is the caller's copy;
+// conversion only reads the pointers it shares with the baseline (Profile and
+// the option flags). The job ends with ctx or stop, whichever comes first.
+func startHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) *harComparisonJob {
 	if len(data) == 0 {
 		return nil
 	}
@@ -415,7 +432,7 @@ func startHARComparison(ctx context.Context, data []byte, opts har.ConvertOption
 				job.prepared, job.err = nil, errors.New("comparison HAR: conversion failed unexpectedly")
 			}
 		}()
-		job.prepared, job.salvage, job.err = harComparisonPreparer(ctx, data, opts)
+		job.prepared, job.salvage, job.err = harComparisonPreparer(ctx, data, baseline, opts)
 	}()
 	return job
 }
@@ -430,8 +447,10 @@ var harComparisonSlots = make(chan struct{}, 2)
 var harComparisonPreparer = prepareHARComparison
 
 // prepareHARComparison unwraps, salvages (under the same salvage_truncated
-// opt-in as the baseline) and converts a comparison HAR.
-func prepareHARComparison(ctx context.Context, data []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
+// opt-in as the baseline) and converts a comparison HAR. A comparison that is
+// then the same capture as baseline, which was unwrapped and salvaged the same
+// way, is not converted: it returns errIdenticalHARComparison.
+func prepareHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) (*har.ComparisonRecording, *har.TruncationSalvage, error) {
 	data, err := unwrapHARArchive(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("comparison HAR upload: %w", err)
@@ -443,11 +462,30 @@ func prepareHARComparison(ctx context.Context, data []byte, opts har.ConvertOpti
 		}
 		data, salvage = salvaged, &report
 	}
-	prepared, err := har.PrepareComparisonContext(ctx, data, opts)
+	if identicalHARComparisonPayload(baseline, data) {
+		return nil, nil, errIdenticalHARComparison
+	}
+	prepared, err := har.PrepareComparisonContext(ctx, data, harComparisonOptions(opts))
 	if err != nil {
 		return nil, salvage, fmt.Errorf("comparison HAR: %w", err)
 	}
 	return prepared, salvage, nil
+}
+
+// harComparisonOptions is the baseline's options for converting its
+// comparison HAR, without the work whose output the comparison discards: only
+// its correlations and parsed source observations are kept, and correlation
+// detection runs before step transactions, recorded concurrency and action
+// provenance are added, so leaving those off cannot change the diff. Request
+// selection (static assets, telemetry, the profile) and correlation settings
+// stay the baseline's, so both recordings are analyzed alike.
+func harComparisonOptions(opts har.ConvertOptions) har.ConvertOptions {
+	off := false
+	opts.StampActionProvenance = false
+	opts.StepTransactions = &off
+	opts.RecordedConcurrency = &off
+	opts.SourceFileName = ""
+	return opts
 }
 
 // release cancels the comparison without waiting for it. One still waiting
@@ -509,6 +547,11 @@ func (job *harComparisonJob) wait(ctx context.Context, baselineConversion time.D
 // har_diff that says why nothing was compared. The diff stops with ctx.
 func (job *harComparisonJob) attach(ctx context.Context, result *har.ConvertResult) {
 	err := job.err
+	if errors.Is(err, errIdenticalHARComparison) {
+		job.prepared = nil
+		recordDuplicateHARPair(result)
+		return
+	}
 	var diff *har.DiffReport
 	if err == nil {
 		diff, err = har.DiffPreparedContext(ctx, result, job.prepared)
@@ -539,6 +582,19 @@ func recordUncomparedHARPair(result *har.ConvertResult, reason string) {
 		Reason:               reason,
 		BaselineCorrelations: len(result.Correlations),
 	}
+}
+
+// duplicateComparisonHARCode is the diagnostic code that marks a pair whose
+// comparison HAR is the baseline capture, so API clients can tell it from the
+// other reasons a pair goes uncompared without matching har_diff.reason.
+const duplicateComparisonHARCode = "duplicate_comparison_har"
+
+// recordDuplicateHARPair records a pair whose two captures are the same
+// recording: uncompared, with identicalHARComparisonReason and the
+// duplicateComparisonHARCode diagnostic.
+func recordDuplicateHARPair(result *har.ConvertResult) {
+	recordUncomparedHARPair(result, identicalHARComparisonReason)
+	result.Unsupported = append(result.Unsupported, diag.Diagnostic{Code: duplicateComparisonHARCode, Element: "HAR pair", Location: "comparison HAR file", Detail: identicalHARComparisonReason, Severity: diag.Warning})
 }
 
 // dropUnperformedHARPairMode reports a conversion as a single design HAR when
@@ -668,6 +724,8 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			DisableSalesforce          *bool                                 `json:"disable_salesforce,omitempty"`
 			SalesforceNative           *bool                                 `json:"salesforce_native,omitempty"`
 			AgentforceTransform        *bool                                 `json:"agentforce_transform,omitempty"`
+			FilterClientTelemetry      *bool                                 `json:"filter_client_telemetry,omitempty"`
+			ValidateOnly               *bool                                 `json:"validate_only,omitempty"`
 			Parameterize               *bool                                 `json:"parameterize,omitempty"`
 			ParameterizationSelections []paramize.Selection                  `json:"parameterization_selections,omitempty"`
 			SecretBindings             []importreview.SecretBindingSelection `json:"secret_bindings,omitempty"`
@@ -700,6 +758,9 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		req.Options.DisableSalesforce = firstNonNilBool(req.DisableSalesforce, req.Options.DisableSalesforce, parseOptionalBool(upload.Value("disable_salesforce")))
 		req.Options.SalesforceNative = firstNonNilBool(req.SalesforceNative, req.Options.SalesforceNative, parseOptionalBool(upload.Value("salesforce_native")))
 		req.Options.AgentforceTransform = firstNonNilBool(req.AgentforceTransform, req.Options.AgentforceTransform, parseOptionalBool(upload.Value("agentforce_transform")))
+		req.Options.FilterClientTelemetry = firstNonNilBool(req.FilterClientTelemetry, req.Options.FilterClientTelemetry, parseOptionalBool(upload.Value("filter_client_telemetry")))
+		req.Options.SourceFileName = firstNonEmpty(req.Options.SourceFileName, upload.Filename)
+		req.Options.BaseURL = strings.TrimSpace(firstNonEmpty(req.Options.BaseURL, upload.Value("base_url")))
 		if param := firstNonNilBool(req.Parameterize, parseOptionalBool(upload.Value("parameterize"))); param != nil {
 			req.Options.Parameterize = *param
 		}
@@ -729,6 +790,10 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			return nil, false, false
 		}
 		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
+		validateOnly := false
+		if v := firstNonNilBool(req.ValidateOnly, parseOptionalBool(upload.Value("validate_only"))); v != nil {
+			validateOnly = *v
+		}
 		return &harImportRequest{
 			Data:               []byte(req.Content),
 			SecondaryData:      []byte(secondary),
@@ -736,6 +801,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			Opts:               req.Options,
 			RecordingProfileID: profileID,
 			SecretBindings:     req.SecretBindings,
+			ValidateOnly:       validateOnly,
 		}, comparisonSent, true
 	}
 
@@ -753,28 +819,30 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 	httpVersionMode := strings.TrimSpace(upload.Value("http_version_mode"))
 	profileID := strings.TrimSpace(firstNonEmpty(upload.Value("recording_profile_id"), upload.Value("profile_id")))
 	opts := har.ConvertOptions{
-		ScriptName:          firstNonEmpty(upload.Value("name"), upload.Name),
-		BaseURL:             upload.Value("base_url"),
-		RecordingProfileID:  profileID,
-		ConversionPolicy:    strings.TrimSpace(upload.Value("conversion_policy")),
-		CorrelationMode:     strings.TrimSpace(upload.Value("correlation_mode")),
-		ResourceMode:        strings.TrimSpace(upload.Value("resource_mode")),
-		ArtifactMode:        normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
-		RetentionDays:       parseOptionalIntDefault(upload.Value("retention_days"), 0),
-		RedactSensitive:     parseOptionalBool(upload.Value("redact_sensitive")),
-		IncludeAssertions:   parseOptionalBool(upload.Value("include_assertions")),
-		InferExtractors:     parseOptionalBool(upload.Value("infer_extractors")),
-		IncludeStaticAssets: parseOptionalBool(upload.Value("include_static_assets")),
-		PageTitleChecks:     parseOptionalBool(upload.Value("page_title_checks")),
-		SalvageTruncated:    parseOptionalBool(upload.Value("salvage_truncated")),
-		AsyncScan:           parseOptionalBool(upload.Value("async_scan")),
-		StepTransactions:    parseOptionalBool(upload.Value("step_transactions")),
-		RecordedConcurrency: parseOptionalBool(upload.Value("recorded_concurrency")),
-		DisableSalesforce:   parseOptionalBool(upload.Value("disable_salesforce")),
-		SalesforceNative:    parseOptionalBool(upload.Value("salesforce_native")),
-		AgentforceTransform: parseOptionalBool(upload.Value("agentforce_transform")),
-		Parameterize:        parseBoolDefault(upload.Value("parameterize"), false),
-		HTTPVersionMode:     httpVersionMode,
+		ScriptName:            firstNonEmpty(upload.Value("name"), upload.Name),
+		SourceFileName:        upload.Filename,
+		BaseURL:               strings.TrimSpace(upload.Value("base_url")),
+		RecordingProfileID:    profileID,
+		ConversionPolicy:      strings.TrimSpace(upload.Value("conversion_policy")),
+		CorrelationMode:       strings.TrimSpace(upload.Value("correlation_mode")),
+		ResourceMode:          strings.TrimSpace(upload.Value("resource_mode")),
+		ArtifactMode:          normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
+		RetentionDays:         parseOptionalIntDefault(upload.Value("retention_days"), 0),
+		RedactSensitive:       parseOptionalBool(upload.Value("redact_sensitive")),
+		IncludeAssertions:     parseOptionalBool(upload.Value("include_assertions")),
+		InferExtractors:       parseOptionalBool(upload.Value("infer_extractors")),
+		IncludeStaticAssets:   parseOptionalBool(upload.Value("include_static_assets")),
+		PageTitleChecks:       parseOptionalBool(upload.Value("page_title_checks")),
+		SalvageTruncated:      parseOptionalBool(upload.Value("salvage_truncated")),
+		AsyncScan:             parseOptionalBool(upload.Value("async_scan")),
+		StepTransactions:      parseOptionalBool(upload.Value("step_transactions")),
+		RecordedConcurrency:   parseOptionalBool(upload.Value("recorded_concurrency")),
+		DisableSalesforce:     parseOptionalBool(upload.Value("disable_salesforce")),
+		SalesforceNative:      parseOptionalBool(upload.Value("salesforce_native")),
+		AgentforceTransform:   parseOptionalBool(upload.Value("agentforce_transform")),
+		FilterClientTelemetry: parseOptionalBool(upload.Value("filter_client_telemetry")),
+		Parameterize:          parseBoolDefault(upload.Value("parameterize"), false),
+		HTTPVersionMode:       httpVersionMode,
 	}
 	if !validHTTPVersionMode(w, httpVersionMode) || !validHARImportPolicyOptions(w, opts) {
 		return nil, false, false
@@ -799,6 +867,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		RecordingProfileID: profileID,
 		Opts:               opts,
 		SecretBindings:     secretBindings,
+		ValidateOnly:       parseBoolDefault(upload.Value("validate_only"), false),
 	}, comparisonSent, true
 }
 
@@ -813,6 +882,9 @@ func firstNonNilBool(values ...*bool) *bool {
 }
 
 func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions) bool {
+	if !validHARImportBaseURL(w, opts.BaseURL) {
+		return false
+	}
 	if _, err := sample.ValidateConversionPolicy(opts.ConversionPolicy); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return false
@@ -826,6 +898,61 @@ func validHARImportPolicyOptions(w http.ResponseWriter, opts har.ConvertOptions)
 		return false
 	}
 	return true
+}
+
+func validHARImportBaseURL(w http.ResponseWriter, raw string) bool {
+	if harImportBaseURLHasTemplate(raw) {
+		writeError(w, http.StatusBadRequest, "invalid base_url: {{...}} templates are not supported for HAR import, because recorded request URLs only follow a concrete http:// or https:// base URL; leave it blank to use the recorded origin, and retarget the run with its base URL override")
+		return false
+	}
+	if !harImportBaseURLAccepted(raw) {
+		writeError(w, http.StatusBadRequest, "invalid base_url: must be an http:// or https:// URL")
+		return false
+	}
+	return true
+}
+
+// harImportBaseURLHasTemplate reports whether a base_url carries template
+// syntax. The HAR converter only moves a recorded request onto the base URL
+// when both parse as http(s) URLs with the same host and port, and nothing
+// expands a template in config.base_url at run time, so a templated base
+// would leave every request on the recorded host while appearing to retarget
+// it.
+func harImportBaseURLHasTemplate(raw string) bool {
+	return strings.Contains(raw, "{{") || strings.Contains(raw, "}}")
+}
+
+// harImportBaseURLAccepted reports whether a base_url is empty or a concrete
+// http(s) URL with a host. Templates are never accepted.
+func harImportBaseURLAccepted(raw string) bool {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return true
+	}
+	if harImportBaseURLHasTemplate(trimmed) || strings.ContainsAny(trimmed, " \t\r\n") {
+		return false
+	}
+	parsed, err := url.Parse(trimmed)
+	return err == nil && parsed != nil && strings.TrimSpace(parsed.Hostname()) != "" &&
+		(strings.EqualFold(parsed.Scheme, "http") || strings.EqualFold(parsed.Scheme, "https"))
+}
+
+// identicalHARComparisonReason is why a pair whose two captures are the same
+// recording is not compared.
+const identicalHARComparisonReason = "the baseline and comparison HAR uploads are identical captures; record two separate sessions to compare dynamic values"
+
+// errIdenticalHARComparison is a comparison job that found the comparison to
+// be the baseline capture once both were unwrapped and salvaged alike.
+var errIdenticalHARComparison = errors.New("comparison HAR is the baseline capture")
+
+// identicalHARComparisonPayload reports whether two captures hold the same
+// bytes, ignoring surrounding whitespace. It never decompresses: callers
+// compare captures already unwrapped and salvaged the same way, or accept
+// that a zipped copy is caught later, by prepareHARComparison.
+func identicalHARComparisonPayload(baseline, secondary []byte) bool {
+	baseTrimmed := bytes.TrimSpace(baseline)
+	secTrimmed := bytes.TrimSpace(secondary)
+	return len(baseTrimmed) > 0 && len(secTrimmed) > 0 && bytes.Equal(baseTrimmed, secTrimmed)
 }
 
 func normalizeHARArtifactMode(value string, hasComparison bool) string {

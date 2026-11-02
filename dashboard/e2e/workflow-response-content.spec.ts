@@ -125,7 +125,7 @@ async function inspectHAR(page: Page, workspace: Workspace, name: string, entrie
 
 async function saveAndOpen(page: Page, controls: Locator) {
   const saved = mutation(page, 'POST', '/api/v1/scripts/import/commit-batch')
-  await controls.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await controls.locator('.script-import-review-actions').getByRole('button', { name: 'Save draft', exact: true }).click()
   const result = await json(await saved)
   const scripts = result.scripts as Record<string, unknown>[]
   expect(scripts).toHaveLength(1)

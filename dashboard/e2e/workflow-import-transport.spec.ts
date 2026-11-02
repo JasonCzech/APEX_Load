@@ -81,7 +81,7 @@ test('a Transport panel origin edit reaches nested requests and survives save an
   await expect(appOrigin).toHaveValue('auto+h3')
 
   await controls.getByRole('tab', { name: /^Review(,|$)/ }).click()
-  await controls.getByRole('button', { name: 'Save draft', exact: true }).click()
+  await controls.locator('.script-import-review-actions').getByRole('button', { name: 'Save draft', exact: true }).click()
   await expect.poll(async () => {
     const listed = await json(await request.get(`/api/v1/scripts?project_id=${workspace.projectId}`)) as { scripts?: Array<{ id: string }> }
     return listed.scripts?.length ?? 0

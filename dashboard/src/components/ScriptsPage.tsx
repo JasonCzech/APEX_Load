@@ -42,6 +42,12 @@ import { requiredScriptSecrets } from './scriptSecretReferenceModel'
 import { loadGitHubScriptStatuses } from './scriptGitHubStatusModel'
 import { boundedAllSettled } from '../utils/boundedAllSettled'
 
+function isHostedDesktopSurface(): boolean {
+  if (typeof window === 'undefined') return false
+  if (window.location.protocol === 'wails:' || window.location.hostname === 'wails.localhost') return true
+  return Boolean((window as unknown as { go?: { main?: { App?: unknown } } }).go?.main?.App)
+}
+
 const GitHubSyncModal = lazy(() => import('./GitHubSyncModal'))
 
 interface Props {
@@ -198,6 +204,9 @@ function scriptSearchText(script: StoredScript) {
 }
 
 const healthFilterKeys = healthFilters.map(filter => filter.key)
+
+// The HAR importer's primary and comparison captures.
+const MAX_HAR_IMPORT_FILES = 2
 
 export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, applicationRepository, initialMode = 'list', initialImport, initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange, featurePolicySignal = 0, builderRoute }: Props) {
   const api = useApi()
@@ -572,7 +581,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     acceptSavedScript(...args)
     const options = args[3]
     const source = args[4] === undefined ? authoringState.draftReturnTarget : args[4]
-    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || options?.keepAuthoringOpen || source?.subView === 'import'
+    const keepAuthoringOpen = options?.laterEdits || options?.configureSecrets || options?.keepAuthoringOpen || source?.subView === 'import' || source?.subView === 'protocol-import'
     if (keepAuthoringOpen) onScriptSaved?.(args[0], { keepAuthoringOpen: true })
     else onScriptSaved?.(args[0])
   }, [acceptSavedScript, authoringState.draftReturnTarget, onScriptSaved])
@@ -613,9 +622,54 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
     modelExistingRequestGenerationRef.current += 1
   }, [authoringState.editingId, authoringState.subView])
   const openImportFiles = createOptionActions.openImportFiles
+  const libraryDropGenerationRef = useRef(0)
+  const [libraryDragOver, setLibraryDragOver] = useState(false)
+  const handleLibraryFileDrop = useCallback((files: File[]) => {
+    const usable = files.filter(Boolean)
+    if (usable.length === 0) return
+    const requestID = ++libraryDropGenerationRef.current
+    const isCurrent = (candidate: number) => libraryDropGenerationRef.current === candidate
+    void import('../nativeImportRouting')
+      .then(async ({ fileIsHARCapture, resolveNativeImportRequest }) => {
+        // A zipped capture (the capture guide's advice) is a HAR as well.
+        const harFlags = await Promise.all(usable.map(fileIsHARCapture))
+        if (!isCurrent(requestID)) return undefined
+        const harCount = harFlags.filter(Boolean).length
+        if (harCount > 0 && harCount < usable.length) {
+          const others = usable.filter((_candidate, index) => !harFlags[index]).map(candidate => candidate.name)
+          setLibraryNotice(`Drop HAR captures on their own: ${others.join(', ')} ${others.length === 1 ? 'is' : 'are'} not ${others.length === 1 ? 'a HAR file' : 'HAR files'}.`)
+          return undefined
+        }
+        if (harCount > MAX_HAR_IMPORT_FILES) {
+          setLibraryNotice('Drop at most two HAR captures (primary and comparison) at once.')
+          return undefined
+        }
+        return resolveNativeImportRequest(usable, requestID, isCurrent)
+      })
+      .then(request => {
+        if (request === undefined || !isCurrent(requestID)) return
+        if (!request) {
+          setLibraryNotice(`${usable.length === 1 ? usable[0].name : `${usable.length} dropped files`} ${usable.length === 1 ? 'is' : 'are'} not a supported script import format.`)
+          return
+        }
+        openImportFiles(request.launcher, request.files, request.mode)
+      })
+      .catch(error => {
+        if (isCurrent(requestID)) {
+          setLibraryNotice(getErrorMessage(error, 'Unable to inspect dropped import file.'))
+        }
+      })
+  }, [openImportFiles])
 
   useEffect(() => {
     if (!nativeImportRequest || nativeImportRequest.files.length === 0) return
+    // The HAR importer has a primary and a comparison slot; a third capture
+    // would be dropped silently, so the request is refused as a drop is.
+    if (nativeImportRequest.launcher === 'traffic_har' && nativeImportRequest.files.length > MAX_HAR_IMPORT_FILES) {
+      setLibraryNotice(`Open at most two HAR captures (primary and comparison) at once; ${nativeImportRequest.files.length} were opened.`)
+      onNativeImportRequestHandled?.()
+      return
+    }
     openImportFiles(nativeImportRequest.launcher, nativeImportRequest.files, nativeImportRequest.mode)
     onNativeImportRequestHandled?.()
   }, [nativeImportRequest, onNativeImportRequestHandled, openImportFiles])
@@ -1235,7 +1289,26 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
         canManageScripts={canManageScripts}
         canMigrateSecrets={canMigrateSecrets}
       >
-      <div className="page">
+      <div
+        className={`page${libraryDragOver ? ' scripts-library-drop-active' : ''}`}
+        onDragOver={event => {
+          if (!canManageScripts || isHostedDesktopSurface() || !Array.from(event.dataTransfer?.types || []).includes('Files')) return
+          event.preventDefault()
+          if (!libraryDragOver) setLibraryDragOver(true)
+        }}
+        onDragLeave={event => {
+          if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+          setLibraryDragOver(false)
+        }}
+        onDrop={event => {
+          if (!canManageScripts || isHostedDesktopSurface()) return
+          const dropped = Array.from(event.dataTransfer?.files || [])
+          if (dropped.length === 0) return
+          event.preventDefault()
+          setLibraryDragOver(false)
+          handleLibraryFileDrop(dropped)
+        }}
+      >
         <div className="page-header">
           <div>
             <h2>Script library</h2>
@@ -1294,7 +1367,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
                     type="search" autoComplete="off"
                     value={libraryQuery}
                     onChange={(event) => setLibraryQuery(event.target.value)}
-                    placeholder="Find scripts by name, protocol, or release..."
+                    placeholder="Find scripts by name, protocol, or release…"
                   />
                 </label>)}
             filterControls={(

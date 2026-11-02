@@ -316,3 +316,38 @@ func TestStepTransactionWindowsKeepALateForcedBoundaryDisjoint(t *testing.T) {
 		t.Fatalf("marker starts = %v, want the late request placed in its step", starts)
 	}
 }
+
+func TestExchangesHaveTimestampProgressionRequiresDistinctTimestamps(t *testing.T) {
+	same := []exchange{stepAt(0, 10), stepAt(0, 10)}
+	if exchangesHaveTimestampProgression(same) {
+		t.Fatal("expected identical placeholder timestamps not to report progression")
+	}
+	distinct := []exchange{stepAt(0, 10), stepAt(150, 10)}
+	if !exchangesHaveTimestampProgression(distinct) {
+		t.Fatal("expected distinct timestamps to report progression")
+	}
+}
+
+// Salesforce shaping defaults belong to captures of a Salesforce application,
+// not to another site that posts one form to a Salesforce host.
+func TestIsSalesforceImportTrafficNeedsASalesforceApplication(t *testing.T) {
+	at := func(rawURL string) exchange { return exchange{Method: "GET", URL: rawURL} }
+	marketing := []exchange{
+		at("https://www.example.test/"),
+		at("https://www.example.test/contact"),
+		at("https://cdn.example.test/app.js"),
+		{Method: "POST", URL: "https://webto.salesforce.com/servlet/servlet.WebToLead"},
+		at("https://www.example.test/thanks"),
+	}
+	if isSalesforceImportTraffic(marketing) {
+		t.Fatal("a Web-to-Lead post made a marketing capture Salesforce traffic")
+	}
+	lightning := append(append([]exchange(nil), marketing...), exchange{Method: "POST", URL: "https://acme.lightning.force.com/aura?r=1"})
+	if !isSalesforceImportTraffic(lightning) {
+		t.Fatal("an Aura request was not Salesforce traffic")
+	}
+	classic := []exchange{at("https://acme.my.salesforce.com/home/home.jsp"), at("https://acme.my.salesforce.com/001/o"), at("https://cdn.example.test/x.js")}
+	if !isSalesforceImportTraffic(classic) {
+		t.Fatal("a capture of mostly Salesforce pages was not Salesforce traffic")
+	}
+}

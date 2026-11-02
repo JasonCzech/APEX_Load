@@ -2,6 +2,7 @@ package salesforce
 
 import (
 	"encoding/json"
+	"errors"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -299,5 +300,37 @@ func TestUncapturedAuraTokenEvidenceCheckIsLinear(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 3*time.Second {
 		t.Fatalf("20000 tokens took %s, want a linear pass", elapsed)
+	}
+}
+
+// The bootstrap-HTML eikoocnekot scan runs after the token is decided and
+// charged. When the search budget runs out on that scan, the token keeps
+// the generic ERIC_* extractor (and the truncation is still reported)
+// instead of being dropped to a literal replay of the recorded token.
+func TestUncapturedAuraTokenSurvivesABudgetMissOnTheBootstrapScan(t *testing.T) {
+	const host = "https://acme.lightning.force.com"
+	html := `<html><script>var auraConfig = {"eikoocnekot":"__Host-ERIC_PROD-2876452450001777317"};</script>` + strings.Repeat("x", 64<<10) + `</html>`
+	observations := []correlate.Observation{
+		{ID: 1, RequestURL: host + "/one/one.app", ResponseBody: html},
+		auraTokenObservation(2, host+"/aura?r=1", "scan-budget-token-value"),
+	}
+	full := newSalesforceCorrelationBudget()
+	confirmed, err := detectUncapturedAuraTokenCorrelations(observations, map[string]bool{}, full, maxSalesforceShapeCorrelations)
+	if err != nil || len(confirmed) != 1 || confirmed[0].Expression == auraTokenCookieExtractor {
+		t.Fatalf("with budget: correlations = %#v, err = %v, want the confirmed-name extractor", confirmed, err)
+	}
+	// Every charge but the last (the bootstrap scan) fits.
+	short := newSalesforceCorrelationBudget()
+	short.maxSearchBytes = full.searchBytes - 1
+	seen := map[string]bool{}
+	correlations, err := detectUncapturedAuraTokenCorrelations(observations, seen, short, maxSalesforceShapeCorrelations)
+	if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
+		t.Fatalf("err = %v, want the work-limit truncation reported", err)
+	}
+	if len(correlations) != 1 || correlations[0].Value != "scan-budget-token-value" || correlations[0].Expression != auraTokenCookieExtractor || len(correlations[0].UsedInIDs) != 1 {
+		t.Fatalf("correlations = %#v, want the decided token under the generic extractor", correlations)
+	}
+	if !seen["scan-budget-token-value"] {
+		t.Fatal("decided token not marked seen")
 	}
 }

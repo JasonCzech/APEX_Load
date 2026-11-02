@@ -264,6 +264,10 @@ describe('dashboard theme tokens', () => {
     expect(accentText).toBeDefined()
     const accentHex = accentText === 'var(--accent)' ? token(block, 'accent') : accentText!
     expect(rgbContrast(rgb(accentHex), cardBackground)).toBeGreaterThanOrEqual(4.5)
+    const accentSoft = rgbaToken(block, 'accent-soft')
+    const softOnCard = composite(accentSoft.color, cardBackground, accentSoft.alpha)
+    expect(rgbContrast(rgb(accentHex), softOnCard)).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(token(block, 'code-text'), token(block, 'code-bg'))).toBeGreaterThanOrEqual(4.5)
     expect(contrast(token(block, 'danger-fill-text'), token(block, 'danger-fill'))).toBeGreaterThanOrEqual(4.5)
   })
 

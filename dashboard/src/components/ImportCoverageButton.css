@@ -5,17 +5,18 @@
 .import-coverage-modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 220;
+  z-index: var(--z-modal, 220);
   display: flex;
   align-items: flex-start;
   justify-content: center;
   padding: 72px 20px 24px;
-  background: rgba(15, 23, 42, 0.48);
+  background: var(--modal-backdrop);
 }
 
 .import-coverage-modal {
   width: min(880px, 100%);
-  max-height: calc(100vh - 96px);
+  max-height: min(100%, calc(100vh - 96px));
+  max-height: min(100%, calc(100dvh - 96px));
   display: flex;
   flex-direction: column;
   overflow: hidden;

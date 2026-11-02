@@ -22,7 +22,8 @@ const { codeMirrorProps } = vi.hoisted(() => ({
   codeMirrorProps: { extensions: [] as unknown[] },
 }))
 const dispatchSpy = vi.fn()
-const measuredScroll = { scrollTop: 0, clientHeight: 100 }
+const setScrollAttrSpy = vi.fn()
+const measuredScroll = { scrollTop: 0, clientHeight: 100, setAttribute: setScrollAttrSpy }
 const measureSpy = vi.fn()
 const createdViews: unknown[] = []
 vi.mock('@uiw/react-codemirror', () => ({
@@ -285,6 +286,14 @@ describe('LinkedCodePane', () => {
       root.render(<LinkedCodePane value="a very long source line" language="json" wrapLines={false} />)
     })
     expect(codeMirrorProps.extensions).not.toContain(EditorView.lineWrapping)
+  })
+
+  it('marks the CodeMirror scroller keyboard-focusable on mount', async () => {
+    setScrollAttrSpy.mockClear()
+    await act(async () => {
+      root.render(<LinkedCodePane value="a\nb" language="json" ariaLabel="Source preview" />)
+    })
+    expect(setScrollAttrSpy).toHaveBeenCalledWith('tabindex', '0')
   })
 
   it('lets the linked code pane scroll while it has room in the wheel direction', () => {

@@ -59,6 +59,7 @@ Every script import route that accepts a POST has a row; a route without one fai
 | `/api/v1/scripts/import/enterprise-script-archive/save` | commit | Multi-script imports | `handlers_import_enterprise_save_test.go`, `workflow-loadrunner-review.spec.ts` |
 | `/api/v1/scripts/import/enterprise-script-archive/validate` | validate | Every import launcher | `openapi_enterprise_archive_collection_test.go`, `workflow-loadrunner-review.spec.ts` |
 | `/api/v1/scripts/import/eventhubs-capture` | launcher | Every import launcher | `handlers_eventhubs_capture_test.go` |
+| `/api/v1/scripts/import/exclude-actions` | shared review | Every import launcher | `handlers_import_har_ux_test.go` |
 | `/api/v1/scripts/import/github` | launcher | Every import launcher | `github_handlers_test.go` |
 | `/api/v1/scripts/import/har` | launcher | Every import launcher | `handlers_import_sample_har_protected_credentials_test.go`, `workflow-import-source.spec.ts` |
 | `/api/v1/scripts/import/jmeter` | launcher | Every import launcher | `jmeter_review_evidence_test.go`, `workflow-jmeter-fidelity.spec.ts` |

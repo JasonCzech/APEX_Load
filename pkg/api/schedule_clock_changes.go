@@ -28,10 +28,14 @@ type ScheduleClockChange struct {
 }
 
 const (
-	maxScheduleClockChanges       = 6
-	maxScheduleClockChangeTimes   = 3
-	maxScheduleClockTransitions   = 64
-	scheduleClockChangeMinHorizon = 366 * 24 * time.Hour
+	maxScheduleClockChanges     = 6
+	maxScheduleClockChangeTimes = 3
+	maxScheduleClockTransitions = 64
+	// Two consecutive Nth-weekday-of-month DST transitions can be 53 weeks
+	// (371 days + 1 hour) apart, e.g. First Sunday of November 2026-11-01 to
+	// 2027-11-07; 372 days guarantees every year's spring-forward and fall-back
+	// transitions fall within the minimum preview horizon.
+	scheduleClockChangeMinHorizon = 372 * 24 * time.Hour
 )
 
 // scheduleClockChangeHorizon is how far ahead clock changes are named: at

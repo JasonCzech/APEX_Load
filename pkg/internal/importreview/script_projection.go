@@ -934,6 +934,12 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 				out[key] = ProjectImportCredentialTargetLocators(child)
 				continue
 			}
+			if ctx.metadata &&
+				key == dsl.ImportActionUIDMetadataKey &&
+				dsl.IsValidImportActionUID(child) {
+				out[key] = child
+				continue
+			}
 			// These import-only payloads retain exact source text in the durable
 			// destination so the operator can finish a gated conversion without
 			// re-importing or re-entering embedded credentials. They are never
@@ -1944,6 +1950,66 @@ func ReconcileProjectedJSONWithOptions(
 	allowRedactedRuntimeData bool,
 	allowLiteralPriorSentinel bool,
 ) (any, error) {
+	initialJSONPath := ""
+	if path != "" && path != "script" {
+		initialJSONPath = displayPathToJSONPointer(path)
+	}
+	return reconcileProjectedJSONWithContext(
+		incoming,
+		projectedPrior,
+		rawPrior,
+		path,
+		initialJSONPath,
+		RedactionTraversalContext{},
+		false,
+		allowRedactedRuntimeData,
+		allowLiteralPriorSentinel,
+	)
+}
+
+func displayPathToJSONPointer(displayPath string) string {
+	trimmed := strings.TrimPrefix(displayPath, "script")
+	trimmed = strings.TrimPrefix(trimmed, ".")
+	if trimmed == "" {
+		return ""
+	}
+	var out strings.Builder
+	for i := 0; i < len(trimmed); {
+		switch trimmed[i] {
+		case '.':
+			i++
+		case '[':
+			end := strings.IndexByte(trimmed[i:], ']')
+			if end < 0 {
+				return AppendJSONPointer(out.String(), trimmed[i:])
+			}
+			out.WriteString(AppendJSONPointer("", trimmed[i+1:i+end]))
+			i += end + 1
+		default:
+			nextDot := strings.IndexAny(trimmed[i:], ".[")
+			if nextDot < 0 {
+				out.WriteString(AppendJSONPointer("", trimmed[i:]))
+				i = len(trimmed)
+			} else {
+				out.WriteString(AppendJSONPointer("", trimmed[i:i+nextDot]))
+				i += nextDot
+			}
+		}
+	}
+	return out.String()
+}
+
+func reconcileProjectedJSONWithContext(
+	incoming any,
+	projectedPrior any,
+	rawPrior any,
+	path string,
+	jsonPath string,
+	ctx RedactionTraversalContext,
+	inNonWireProvenance bool,
+	allowRedactedRuntimeData bool,
+	allowLiteralPriorSentinel bool,
+) (any, error) {
 	switch typed := incoming.(type) {
 	case string:
 		if allowRedactedRuntimeData && IsLegacyRedactedRuntimeSourceTraversalPath(path) {
@@ -1966,16 +2032,17 @@ func ReconcileProjectedJSONWithOptions(
 		// this branch a masked read-modify-write would persist the placeholder and
 		// destroy the recorded correlation id.
 		if projectedOK && rawOK && typed == projected {
-			if strings.Contains(raw, MaskedScriptSecret) && !allowLiteralPriorSentinel {
+			if strings.Contains(raw, MaskedScriptSecret) && !allowLiteralPriorSentinel && !inNonWireProvenance {
 				return nil, fmt.Errorf("%s contains an orphan %s sentinel; bind a secret reference instead", path, MaskedScriptSecret)
 			}
 			return raw, nil
 		}
-		if !strings.Contains(typed, MaskedScriptSecret) {
+		if !strings.Contains(typed, MaskedScriptSecret) || inNonWireProvenance {
 			return typed, nil
 		}
 		return nil, fmt.Errorf("%s contains an orphan %s sentinel; bind a secret reference instead", path, MaskedScriptSecret)
 	case map[string]any:
+		ctx = RedactionContextForMap(typed, jsonPath, ctx)
 		projectedMap, _ := projectedPrior.(map[string]any)
 		rawMap, _ := rawPrior.(map[string]any)
 		// A disclosure projection may have to replace an unprojectable typed
@@ -1997,7 +2064,7 @@ func ReconcileProjectedJSONWithOptions(
 		incomingReviewOnly := IsNonExecutableReviewAction(typed) ||
 			IsDurablyImportReviewGatedAction(typed)
 		if priorWasReviewOnly && !incomingReviewOnly &&
-			JsonValueContainsExecutableMaskedSecretWithOptions(typed, path, allowRedactedRuntimeData) {
+			JsonValueContainsExecutableMaskedSecretWithContext(typed, jsonPath, allowRedactedRuntimeData, ctx) {
 			return nil, fmt.Errorf("%s promotes redacted review evidence into executable fields; bind a secret reference instead", path)
 		}
 		if incomingReviewOnly {
@@ -2018,6 +2085,8 @@ func ReconcileProjectedJSONWithOptions(
 				out[key] = child
 				continue
 			}
+			childJSONPath := AppendJSONPointer(jsonPath, key)
+			childInProvenance := inNonWireProvenance || IsImportProvenanceMetadataPathForContext(childJSONPath, ctx)
 			var projectedChild, rawChild any
 			if projectedMap != nil {
 				projectedChild = projectedMap[key]
@@ -2025,11 +2094,14 @@ func ReconcileProjectedJSONWithOptions(
 			if rawMap != nil {
 				rawChild = rawMap[key]
 			}
-			reconciled, err := ReconcileProjectedJSONWithOptions(
+			reconciled, err := reconcileProjectedJSONWithContext(
 				child,
 				projectedChild,
 				rawChild,
 				path+"."+key,
+				childJSONPath,
+				ctx,
+				childInProvenance,
 				allowRedactedRuntimeData,
 				allowLiteralPriorSentinel,
 			)
@@ -2042,10 +2114,11 @@ func ReconcileProjectedJSONWithOptions(
 	case []any:
 		projectedSlice, projectedOK := projectedPrior.([]any)
 		rawSlice, _ := rawPrior.([]any)
-		containsMaskedSecret := JsonValueContainsExecutableMaskedSecretWithOptions(
+		containsMaskedSecret := JsonValueContainsExecutableMaskedSecretWithContext(
 			typed,
-			path,
+			jsonPath,
 			allowRedactedRuntimeData,
+			ctx,
 		)
 		if allowRedactedRuntimeData && path == "script.data_sources" {
 			// The gate permits durable table sentinels, not positional
@@ -2053,21 +2126,39 @@ func ReconcileProjectedJSONWithOptions(
 			// a reorder cannot restore a prior raw table into a different name.
 			containsMaskedSecret = JsonValueContainsExecutableMaskedSecret(typed, path)
 		}
+		var actionMatches []int
+		hasActionMatches := false
+		if projectedOK && IsActionCollectionTraversalPath(path) {
+			actionMatches, hasActionMatches = MatchCredentialPreservingActionCollectionWithContext(
+				typed,
+				projectedSlice,
+				jsonPath,
+				ctx,
+				allowRedactedRuntimeData,
+			)
+		}
 		if containsMaskedSecret &&
 			(!projectedOK || !reflect.DeepEqual(typed, projectedSlice)) {
 			stableFieldEdit := IsStableRuntimeDataSourceEdit(path, typed, projectedSlice) ||
-				IsStableCredentialPreservingActionCollectionEdit(path, typed, projectedSlice) ||
+				hasActionMatches ||
 				IsStableJavaVMParameterEdit(path, typed, projectedSlice)
 			if !stableFieldEdit {
 				for i, child := range typed {
 					incomingMap, incomingOK := child.(map[string]any)
-					if !incomingOK || i >= len(projectedSlice) {
+					if !incomingOK {
 						continue
 					}
-					projectedMap, _ := projectedSlice[i].(map[string]any)
+					priorIdx := i
+					if hasActionMatches {
+						priorIdx = actionMatches[i]
+					}
+					if priorIdx < 0 || priorIdx >= len(projectedSlice) {
+						continue
+					}
+					projectedMap, _ := projectedSlice[priorIdx].(map[string]any)
 					var rawMap map[string]any
-					if i < len(rawSlice) {
-						rawMap, _ = rawSlice[i].(map[string]any)
+					if priorIdx < len(rawSlice) {
+						rawMap, _ = rawSlice[priorIdx].(map[string]any)
 					}
 					priorWasReviewOnly := IsNonExecutableReviewAction(projectedMap) ||
 						IsNonExecutableReviewAction(rawMap) ||
@@ -2076,27 +2167,55 @@ func ReconcileProjectedJSONWithOptions(
 					incomingReviewOnly := IsNonExecutableReviewAction(incomingMap) ||
 						IsDurablyImportReviewGatedAction(incomingMap)
 					if priorWasReviewOnly && !incomingReviewOnly &&
-						JsonValueContainsExecutableMaskedSecretWithOptions(incomingMap, path, allowRedactedRuntimeData) {
+						JsonValueContainsExecutableMaskedSecretWithContext(incomingMap, AppendJSONPointer(jsonPath, strconv.Itoa(i)), allowRedactedRuntimeData, ctx) {
 						return nil, fmt.Errorf("%s[%d] promotes redacted review evidence into executable fields; bind a secret reference instead", path, i)
 					}
 				}
 				return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
 			}
 		}
+		if projectedOK && IsActionCollectionTraversalPath(path) && !hasActionMatches &&
+			!reflect.DeepEqual(typed, projectedSlice) && actionCollectionHasProjectionResponseGate(typed) {
+			// A step whose credential body this read replaced with a whole-body
+			// sentinel (the transient script_projection gate) can only be
+			// restored from the stored step it was matched to. Reconciling it by
+			// position after the collection changed would persist the sentinel
+			// body and the response-only gate as durable state.
+			return nil, fmt.Errorf("%s changed while containing redacted credentials; bind secret references before modifying or reordering it", path)
+		}
+		if hasActionMatches {
+			if index, carried := unmatchedStepCarriesProjectedValue(typed, projectedSlice, rawSlice, actionMatches); carried {
+				// The step no longer matches the stored step whose projected
+				// value it carries, so that value cannot be restored and saving
+				// would replace the stored value with the read's placeholder.
+				return nil, fmt.Errorf(
+					"%s[%d] changes a step that holds stored values this read shows as placeholders; keep the step's type, method and target, or bind secret references before changing them",
+					path,
+					index,
+				)
+			}
+		}
 		out := make([]any, len(typed))
 		for i, child := range typed {
+			priorIdx := i
+			if hasActionMatches {
+				priorIdx = actionMatches[i]
+			}
 			var projectedChild, rawChild any
-			if i < len(projectedSlice) {
-				projectedChild = projectedSlice[i]
+			if priorIdx >= 0 && priorIdx < len(projectedSlice) {
+				projectedChild = projectedSlice[priorIdx]
 			}
-			if i < len(rawSlice) {
-				rawChild = rawSlice[i]
+			if priorIdx >= 0 && priorIdx < len(rawSlice) {
+				rawChild = rawSlice[priorIdx]
 			}
-			reconciled, err := ReconcileProjectedJSONWithOptions(
+			reconciled, err := reconcileProjectedJSONWithContext(
 				child,
 				projectedChild,
 				rawChild,
 				fmt.Sprintf("%s[%d]", path, i),
+				AppendJSONPointer(jsonPath, strconv.Itoa(i)),
+				ctx,
+				inNonWireProvenance,
 				allowRedactedRuntimeData,
 				allowLiteralPriorSentinel,
 			)
@@ -2518,64 +2637,316 @@ func IsStableJavaVMParameterEdit(path string, incoming, projected []any) bool {
 }
 
 func IsStableCredentialPreservingActionCollectionEdit(path string, incoming, projected []any) bool {
-	if len(incoming) != len(projected) || !IsActionCollectionTraversalPath(path) {
+	if !IsActionCollectionTraversalPath(path) {
 		return false
 	}
+	_, ok := MatchCredentialPreservingActionCollection(incoming, projected)
+	return ok
+}
+
+func MatchCredentialPreservingActionCollection(incoming, projected []any) ([]int, bool) {
+	return MatchCredentialPreservingActionCollectionWithContext(
+		incoming,
+		projected,
+		"/actions",
+		RedactionTraversalContext{httpProtocol: true},
+		false,
+	)
+}
+
+func extractValidImportActionUIDFromMap(action map[string]any) (string, bool) {
+	if action == nil {
+		return "", false
+	}
+	metadata, ok := action["metadata"].(map[string]any)
+	if !ok || metadata == nil {
+		return "", false
+	}
+	raw, exists := metadata[dsl.ImportActionUIDMetadataKey]
+	if !exists || !dsl.IsValidImportActionUID(raw) {
+		return "", false
+	}
+	return raw.(string), true
+}
+
+func actionCarriesProtectedMaskedMaterial(
+	action map[string]any,
+	elementJSONPath string,
+	ctx RedactionTraversalContext,
+	allowRedactedRuntimeData bool,
+) bool {
+	if JsonValueContainsExecutableMaskedSecretWithContext(action, elementJSONPath, allowRedactedRuntimeData, ctx) {
+		return true
+	}
+	// The executable-sentinel scan skips review-gated steps, but the transient
+	// script_projection gate marks a step whose credential body this read
+	// replaced with a whole-body sentinel. Only its matched stored step can
+	// restore that body.
+	if HasScriptProjectionResponseGate(action) {
+		return true
+	}
+	if metadata, ok := action["metadata"].(map[string]any); ok && metadata != nil {
+		if _, hasHeaderFidelity := metadata[dsl.ImportHeaderFidelityMetadataKey]; hasHeaderFidelity {
+			return true
+		}
+		if _, hasMultipartFidelity := metadata[dsl.ImportMultipartFidelityMetadataKey]; hasMultipartFidelity {
+			return true
+		}
+	}
+	return false
+}
+
+// actionCollectionHasProjectionResponseGate reports whether any step of an
+// action collection carries the transient script_projection response gate.
+func actionCollectionHasProjectionResponseGate(actions []any) bool {
+	for _, item := range actions {
+		if action, ok := item.(map[string]any); ok && HasScriptProjectionResponseGate(action) {
+			return true
+		}
+	}
+	return false
+}
+
+// unmatchedStepCarriesProjectedValue reports the first incoming step that
+// matched no stored step yet carries a sentinel-free projected value (such as
+// a redacted <messageId> shown as {{fn.uuid()}}) of a stored step that no
+// incoming step matched either: the edited step itself, whose stored value
+// reconciliation can no longer restore. A copy of a step that still matches
+// keeps the placeholder, since the stored value survives on the original.
+// Values carrying the [REDACTED] sentinel are governed by the protected
+// material and orphan-sentinel rules instead.
+func unmatchedStepCarriesProjectedValue(incoming, projected, raw []any, matches []int) (int, bool) {
+	matchedPrior := make([]bool, len(projected))
+	hasUnmatched := false
+	for _, priorIdx := range matches {
+		if priorIdx >= 0 && priorIdx < len(projected) {
+			matchedPrior[priorIdx] = true
+		} else {
+			hasUnmatched = true
+		}
+	}
+	if !hasUnmatched {
+		return -1, false
+	}
+	placeholders := make(map[string]struct{})
+	for index := range projected {
+		if matchedPrior[index] || index >= len(raw) {
+			continue
+		}
+		collectSentinelFreeProjectedStrings(projected[index], raw[index], placeholders)
+	}
+	if len(placeholders) == 0 {
+		return -1, false
+	}
+	for index, priorIdx := range matches {
+		if priorIdx >= 0 || index >= len(incoming) {
+			continue
+		}
+		if jsonValueContainsAnyString(incoming[index], placeholders) {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+// collectSentinelFreeProjectedStrings adds every string leaf of projected that
+// replaces a different stored string at the same location without carrying
+// the [REDACTED] sentinel.
+func collectSentinelFreeProjectedStrings(projected, raw any, out map[string]struct{}) {
+	switch typed := projected.(type) {
+	case string:
+		if stored, ok := raw.(string); ok && stored != typed && !strings.Contains(typed, MaskedScriptSecret) {
+			out[typed] = struct{}{}
+		}
+	case map[string]any:
+		rawMap, _ := raw.(map[string]any)
+		for key, child := range typed {
+			collectSentinelFreeProjectedStrings(child, rawMap[key], out)
+		}
+	case []any:
+		rawSlice, _ := raw.([]any)
+		for index, child := range typed {
+			var rawChild any
+			if index < len(rawSlice) {
+				rawChild = rawSlice[index]
+			}
+			collectSentinelFreeProjectedStrings(child, rawChild, out)
+		}
+	}
+}
+
+func jsonValueContainsAnyString(value any, texts map[string]struct{}) bool {
+	switch typed := value.(type) {
+	case string:
+		_, found := texts[typed]
+		return found
+	case map[string]any:
+		for _, child := range typed {
+			if jsonValueContainsAnyString(child, texts) {
+				return true
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if jsonValueContainsAnyString(child, texts) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func MatchCredentialPreservingActionCollectionWithContext(
+	incoming,
+	projected []any,
+	collectionJSONPath string,
+	ctx RedactionTraversalContext,
+	allowRedactedRuntimeData bool,
+) ([]int, bool) {
+	projectedMaps := make([]map[string]any, len(projected))
+	priorUIDs := make([]string, len(projected))
+	priorByUID := make(map[string]int, len(projected))
+	uidUniqueInPrior := true
 	primaryKeys := make([]string, len(projected))
 	primaryCounts := make(map[string]int, len(projected))
-	for index := range incoming {
-		incomingMap, incomingOK := incoming[index].(map[string]any)
-		projectedMap, projectedOK := projected[index].(map[string]any)
-		if !incomingOK || !projectedOK {
-			return false
+	secondaryKeys := make([]string, len(projected))
+	secondaryOK := make([]bool, len(projected))
+	compositeCounts := make(map[string]int, len(projected))
+
+	for index, item := range projected {
+		projectedMap, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
 		}
-		if !reflect.DeepEqual(
-			CredentialPreservingActionIdentity(incomingMap),
-			CredentialPreservingActionIdentity(projectedMap),
-		) {
-			return false
+		projectedMaps[index] = projectedMap
+		if uid, hasUID := extractValidImportActionUIDFromMap(projectedMap); hasUID {
+			priorUIDs[index] = uid
+			if _, duplicate := priorByUID[uid]; duplicate {
+				uidUniqueInPrior = false
+			} else {
+				priorByUID[uid] = index
+			}
 		}
 		primaryKey, ok := CredentialPreservingActionIdentityKey(projectedMap)
 		if !ok {
-			return false
+			return nil, false
 		}
 		primaryKeys[index] = primaryKey
 		primaryCounts[primaryKey]++
+		sec, secOK := CredentialPreservingActionSecondaryIdentity(projectedMap)
+		secondaryKeys[index] = sec
+		secondaryOK[index] = secOK
+		if secOK {
+			compositeCounts[primaryKey+"\x00"+sec]++
+		}
 	}
 
-	// A method/target tuple is not necessarily an action identity. Login
-	// collections commonly contain several POST /login actions with different
-	// credentials. When that routing identity is duplicated, require a unique
-	// source/action discriminator to stay at the same position. If no unique
-	// discriminator exists, only an otherwise byte-for-byte unchanged projected
-	// action is safe: positional restoration then cannot associate a credential
-	// with edited behavior from another action.
-	for index := range incoming {
-		if primaryCounts[primaryKeys[index]] == 1 {
-			continue
+	matches := make([]int, len(incoming))
+	lastMatchedPrior := -1
+	sameLength := len(incoming) == len(projected)
+
+	for i, item := range incoming {
+		incomingMap, ok := item.(map[string]any)
+		if !ok {
+			return nil, false
 		}
-		incomingMap := incoming[index].(map[string]any)
-		projectedMap := projected[index].(map[string]any)
-		if reflect.DeepEqual(incomingMap, projectedMap) {
-			continue
-		}
-		incomingSecondary, incomingOK := CredentialPreservingActionSecondaryIdentity(incomingMap)
-		projectedSecondary, projectedOK := CredentialPreservingActionSecondaryIdentity(projectedMap)
-		if !incomingOK || !projectedOK || incomingSecondary != projectedSecondary {
-			return false
-		}
-		for otherIndex := range projected {
-			if otherIndex == index || primaryKeys[otherIndex] != primaryKeys[index] {
+		elemPath := AppendJSONPointer(collectionJSONPath, strconv.Itoa(i))
+		carriesProtected := actionCarriesProtectedMaskedMaterial(incomingMap, elemPath, ctx, allowRedactedRuntimeData)
+		inUID, hasUID := extractValidImportActionUIDFromMap(incomingMap)
+		if hasUID && uidUniqueInPrior {
+			if priorIdx, exists := priorByUID[inUID]; exists {
+				if priorIdx <= lastMatchedPrior {
+					if carriesProtected {
+						return nil, false
+					}
+					matches[i] = -1
+					continue
+				}
+				identityMatches := reflect.DeepEqual(
+					CredentialPreservingActionIdentity(incomingMap),
+					CredentialPreservingActionIdentity(projectedMaps[priorIdx]),
+				)
+				if !identityMatches {
+					if carriesProtected {
+						return nil, false
+					}
+					matches[i] = -1
+					continue
+				}
+				if IsNonExecutableReviewAction(projectedMaps[priorIdx]) || IsDurablyImportReviewGatedAction(projectedMaps[priorIdx]) {
+					if !(IsNonExecutableReviewAction(incomingMap) || IsDurablyImportReviewGatedAction(incomingMap)) && carriesProtected {
+						return nil, false
+					}
+				}
+				matches[i] = priorIdx
+				lastMatchedPrior = priorIdx
 				continue
 			}
-			otherMap := projected[otherIndex].(map[string]any)
-			otherSecondary, otherOK := CredentialPreservingActionSecondaryIdentity(otherMap)
-			if !otherOK || otherSecondary == projectedSecondary {
-				return false
+			// Unrecognized UID on a newly authored step.
+			if carriesProtected {
+				return nil, false
+			}
+			matches[i] = -1
+			continue
+		}
+
+		// Legacy / UID-less fallback.
+		inPrimary, ok := CredentialPreservingActionIdentityKey(incomingMap)
+		if !ok {
+			return nil, false
+		}
+		inSec, inSecOK := CredentialPreservingActionSecondaryIdentity(incomingMap)
+
+		if sameLength && lastMatchedPrior == i-1 && priorUIDs[i] == "" && primaryKeys[i] == inPrimary {
+			validSamePos := primaryCounts[inPrimary] == 1 ||
+				reflect.DeepEqual(incomingMap, projectedMaps[i]) ||
+				(inSecOK && secondaryOK[i] && inSec == secondaryKeys[i] && compositeCounts[inPrimary+"\x00"+inSec] == 1)
+			if validSamePos {
+				matches[i] = i
+				lastMatchedPrior = i
+				continue
 			}
 		}
+
+		foundPrior := -1
+		ambiguous := false
+		for j := lastMatchedPrior + 1; j < len(projectedMaps); j++ {
+			if priorUIDs[j] != "" {
+				// Prevent a UID-stripped incoming action from matching a UID-stamped
+				// prior action that held protected credentials.
+				continue
+			}
+			if primaryKeys[j] != inPrimary {
+				continue
+			}
+			if primaryCounts[inPrimary] > 1 {
+				if !inSecOK || !secondaryOK[j] || inSec != secondaryKeys[j] || compositeCounts[inPrimary+"\x00"+inSec] != 1 {
+					continue
+				}
+			}
+			if foundPrior >= 0 {
+				ambiguous = true
+				break
+			}
+			foundPrior = j
+		}
+		if foundPrior >= 0 && !ambiguous {
+			if IsNonExecutableReviewAction(projectedMaps[foundPrior]) || IsDurablyImportReviewGatedAction(projectedMaps[foundPrior]) {
+				if !(IsNonExecutableReviewAction(incomingMap) || IsDurablyImportReviewGatedAction(incomingMap)) && carriesProtected {
+					return nil, false
+				}
+			}
+			matches[i] = foundPrior
+			lastMatchedPrior = foundPrior
+			continue
+		}
+		if carriesProtected {
+			return nil, false
+		}
+		matches[i] = -1
 	}
-	return true
+
+	return matches, true
 }
 
 func IsActionCollectionTraversalPath(path string) bool {
@@ -2583,9 +2954,36 @@ func IsActionCollectionTraversalPath(path string) bool {
 	case "script.init", "script.actions", "script.teardown":
 		return true
 	default:
-		return strings.HasSuffix(path, ".control.steps") ||
+		if strings.HasSuffix(path, ".control.steps") ||
 			strings.HasSuffix(path, ".control.else") ||
-			strings.HasSuffix(path, ".params.requests")
+			strings.HasSuffix(path, ".control.default") ||
+			strings.HasSuffix(path, ".params.requests") {
+			return true
+		}
+		if strings.HasSuffix(path, "].steps") &&
+			(strings.Contains(path, ".control.cases[") || strings.Contains(path, ".control.branches[")) {
+			return true
+		}
+		return false
+	}
+}
+
+func IsActionCollectionContextPath(path string) bool {
+	switch path {
+	case "/init", "/actions", "/teardown":
+		return true
+	default:
+		if strings.HasSuffix(path, "/control/steps") ||
+			strings.HasSuffix(path, "/control/else") ||
+			strings.HasSuffix(path, "/control/default") ||
+			strings.HasSuffix(path, "/params/requests") {
+			return true
+		}
+		if strings.HasSuffix(path, "/steps") &&
+			(strings.Contains(path, "/control/cases/") || strings.Contains(path, "/control/branches/")) {
+			return true
+		}
+		return false
 	}
 }
 

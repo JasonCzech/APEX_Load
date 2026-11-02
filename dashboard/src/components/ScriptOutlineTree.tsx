@@ -116,6 +116,22 @@ interface Props {
   naturalWidthRef?: { current: (() => number) | null }
   /** Debug only: breakpoint gutter and run status. */
   debug?: OutlineDebug
+  /**
+   * Author: F9 and Cmd/Ctrl+B toggle the breakpoint of the row with keyboard
+   * focus, which arrow keys move without selecting it. Called only for a row
+   * that takes a breakpoint (see outlineRowTakesBreakpoint).
+   */
+  onToggleRowBreakpoint?: (item: DebugRailRenderRow) => void
+}
+
+/**
+ * Whether F9 on an outline row sets a breakpoint, as the Debug gutter has
+ * one: a step, transaction marker or request, never a phase, a transaction or
+ * sub-transaction group, a nested block or Debug's "All requests" row.
+ */
+function outlineRowTakesBreakpoint(row: OutlineRow): boolean {
+  const item = row.select
+  return Boolean(item) && row.kind !== 'phase' && row.kind !== 'transaction' && row.kind !== 'subtransaction' && item!.kind !== 'container' && !row.allRequests
 }
 
 function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutlineSelection) {
@@ -129,7 +145,7 @@ function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutl
  * tree. A long outline renders only the rows in view, and names are cut at the
  * end on a word boundary to fit, never inside an identifier.
  */
-export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug }: Props) {
+export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint }: Props) {
   const id = useId()
   const treeRef = useRef<HTMLDivElement>(null)
   const [expansion, setExpansion] = useState(() => ({ key: resetKey, state: freshExpansion(model) }))
@@ -251,6 +267,18 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     pendingFocus.current = target.key
     if (virtual) virtualizer.scrollToIndex(rows.indexOf(target), { align: 'auto' })
   }
+  // The focused row's breakpoint, for F9 and Cmd/Ctrl+B: false when the row
+  // takes none, so the key does nothing here.
+  const toggleFocusedBreakpoint = (row: OutlineRow) => {
+    if (debug) {
+      if (!debug.breakpoint(row)) return false
+      debug.onToggleBreakpoint(row)
+      return true
+    }
+    if (!onToggleRowBreakpoint || !outlineRowTakesBreakpoint(row)) return false
+    onToggleRowBreakpoint(row.select!)
+    return true
+  }
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = rows.findIndex(row => row.key === event.currentTarget.getAttribute('data-row-key'))
     const row = rows[index]
@@ -273,10 +301,13 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         case ' ':
           activate(row)
           return true
+        case 'b':
+        case 'B':
+          // Cmd/Ctrl+B is F9's twin: both toggle the focused row's breakpoint.
+          if (!(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return false
+          return toggleFocusedBreakpoint(row)
         case 'F9':
-          if (!debug?.breakpoint(row)) return false
-          debug.onToggleBreakpoint(row)
-          return true
+          return toggleFocusedBreakpoint(row)
         default:
           return false
       }

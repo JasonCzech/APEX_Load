@@ -259,7 +259,7 @@ func cometdConnectComparisonAction(action dsl.Action) (dsl.Action, bool) {
 	metadata := map[string]any{}
 	for key, value := range action.Metadata {
 		switch key {
-		case "har.pageref", "har.server_ip_address", "har.timings", "har.cache", "har.request.query_string", "har.response.cookies", "har.response.http_version":
+		case "har.pageref", "har.server_ip_address", "har.timings", "har.cache", "har.request.query_string", "har.response.cookies", "har.response.http_version", "har.entry_index", dsl.ImportActionUIDMetadataKey:
 			continue
 		case "salesforce":
 			if source, ok := value.(map[string]any); ok {

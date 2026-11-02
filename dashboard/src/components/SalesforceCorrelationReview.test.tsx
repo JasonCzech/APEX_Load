@@ -26,7 +26,10 @@ describe('captured correlation source review', () => {
     expect(container.textContent).toContain('Original import path: actions[3]')
     expect(container.textContent).toContain('Native path at import: actions[0].params.actions[1]')
     expect(container.textContent).toContain('Draft replacement does not validate login, session freshness, or replay')
-    for (const value of ['private-name', 'private-source', 'private-value']) expect(container.innerHTML).not.toContain(value)
+    // The variable name is secret-free metadata; the source and extractor
+    // expression stay in the editor.
+    expect(container.querySelector('article h5')?.textContent).toBe('Correlation 1: private-name')
+    for (const value of ['private-source', 'private-value']) expect(container.innerHTML).not.toContain(value)
     act(() => { button('View producer source mapping').click(); button('View consumer 1 source mapping').click() })
     expect(navigate.mock.calls).toEqual([[mapping], [mapping]])
   })
@@ -46,6 +49,44 @@ describe('captured correlation source review', () => {
       expect(container.textContent).toContain('Exact source link unavailable')
     }
     expect(navigate).not.toHaveBeenCalled()
+  })
+
+  it('follows a mapping an exclusion moved to a lower index, and nothing else', () => {
+    const navigate = vi.fn()
+    const moved = { ...mapping, target_path: 'actions[2]' }
+    const shifted = (review: SourceReview) => { act(() => { root.render(<SalesforceCorrelationReview preview={preview} sourceReview={review} positionsShifted onViewSource={navigate} />) }) }
+    shifted({ target_domain: 'original_import', mappings: [moved] })
+    act(() => { button('View producer source mapping').click() })
+    expect(navigate.mock.calls).toEqual([[moved]])
+    // Without an exclusion a moved path is not the recorded request.
+    render(preview, { mappings: [moved] }, navigate)
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+    // An exclusion only lowers indexes within one phase and keeps the sub-path.
+    for (const target_path of ['actions[4]', 'init[2]', 'actions[2].extractors[0]', '']) {
+      shifted({ mappings: [{ ...mapping, target_path }] })
+      expect(container.querySelectorAll('button')).toHaveLength(0)
+      expect(container.textContent).toContain('Exact source link unavailable')
+    }
+    shifted({ mappings: [{ ...moved, source_file: 'other.har' }] })
+    expect(container.querySelectorAll('button')).toHaveLength(0)
+    expect(navigate).toHaveBeenCalledTimes(1)
+  })
+
+  it('follows a grouped request an exclusion renumbered inside its http_sequence', () => {
+    const navigate = vi.fn()
+    const nested = { ...mapping, target_path: 'actions[3].params.requests[2]' }
+    const nestedPreview: SalesforceNativePreview = { ...preview, correlations: [{ ...preview.correlations![0], producer_reference: { ...reference, original_action_path: nested.target_path }, consumer_references: [] }] }
+    const shifted = (target_path: string) => { act(() => { root.render(<SalesforceCorrelationReview preview={nestedPreview} sourceReview={{ mappings: [{ ...nested, target_path }] }} positionsShifted onViewSource={navigate} />) }) }
+    for (const target_path of ['actions[3].params.requests[1]', 'actions[1].params.requests[0]']) {
+      shifted(target_path)
+      act(() => { button('View producer source mapping').click() })
+    }
+    expect(navigate.mock.calls.map(([moved]) => moved.target_path)).toEqual(['actions[3].params.requests[1]', 'actions[1].params.requests[0]'])
+    for (const target_path of ['actions[3].params.requests[3]', 'actions[3].params.steps[1]', 'actions[3]', 'actions[3].params.requests[1].extractors[0]']) {
+      shifted(target_path)
+      expect(container.textContent).toContain('Exact source link unavailable')
+    }
+    expect(navigate).toHaveBeenCalledTimes(2)
   })
 
   it('keeps incomplete counts and omitted details visible with no rows', () => {
@@ -128,4 +169,21 @@ describe('captured correlation source review', () => {
     expect(container.textContent).toContain('Detailed evidence incomplete')
   })
 
+
+  it('names each correlation with its rule, confidence, review action and reasons', () => {
+    render({ ...preview, correlations: [{ ...preview.correlations![0], name: 'corr_salesforce_aura_fwuid', rule_id: 'salesforce.aura_context_fwuid', confidence: 0.99, review_action: 'keep_extracted', reasons: ['fwuid in aura.context', 'same_day_release_coupled: constant across paired same-day captures'], classification: 'static', diff_confidence: 0.9 }] })
+    const row = container.querySelector('article')!
+    expect(row.querySelector('h5')?.textContent).toBe('Correlation 1: corr_salesforce_aura_fwuid')
+    expect(row.textContent).toContain('Review action: keep_extracted.')
+    expect(row.textContent).toContain('Rule salesforce.aura_context_fwuid · Confidence 99% · Two-HAR static (90%)')
+    expect(Array.from(row.querySelectorAll('[aria-label="Correlation reasons"] li')).map(item => item.textContent)).toEqual(['fwuid in aura.context', 'same_day_release_coupled: constant across paired same-day captures'])
+    expect(container.textContent).not.toContain('Correlation details are malformed')
+  })
+
+  it('drops malformed metadata fields and reports the row as malformed', () => {
+    render({ ...preview, correlations: [{ ...preview.correlations![0], name: 'corr_ok', confidence: 7, reasons: 'not-a-list' } as unknown as NonNullable<SalesforceNativePreview['correlations']>[number]] })
+    expect(container.querySelector('article h5')?.textContent).toBe('Correlation 1: corr_ok')
+    expect(container.textContent).not.toContain('Confidence')
+    expect(container.textContent).toContain('Correlation details are malformed or unavailable')
+  })
 })

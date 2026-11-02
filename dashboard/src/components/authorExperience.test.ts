@@ -64,6 +64,30 @@ it('remaps root and nested breakpoints on insertion without moving other branche
   expect(breakpoints[0].step_path).toEqual(['loop[0]'])
 })
 
+it('shifts a sequence request breakpoint by its request_index when a request is inserted before it', async () => {
+  const { remapInsertedBreakpoints } = await import('./authorExperience')
+  const breakpoints = [{ phase: 'action', action_index: 0, request_index: 1 }, { phase: 'action', action_index: 0, request_index: 0 }]
+  // Top-level and nested sequences both key a request by request_index alone.
+  for (const stepPath of [['requests[1]'], ['then[0]', 'requests[1]']]) {
+    expect(remapInsertedBreakpoints(breakpoints, { phase: 'action', actionIndex: 0, stepPath })).toEqual([{ ...breakpoints[0], request_index: 2 }, breakpoints[1]])
+  }
+  expect(remapInsertedBreakpoints(breakpoints, { phase: 'action', actionIndex: 0, stepPath: ['then[0]'] })).toEqual(breakpoints)
+})
+
+it('leaves a request breakpoint on another sequence of the step when a request is inserted', async () => {
+  const { remapInsertedBreakpoints } = await import('./authorExperience')
+  const request = (name: string) => ({ name, type: 'request', method: 'GET', target: `/${name}` })
+  const sequence = (names: string[]) => ({ name: 'Seq', type: 'http_sequence', params: { requests: names.map(request) } })
+  // then[0] is [a,b,c] and else[0] gains x0 at requests[0]: [x0,x,y].
+  const root = { name: 'If', type: 'control_if', control: { condition: { op: 'exists', left: '{{var.ok}}' }, steps: [sequence(['a', 'b', 'c'])], else: [sequence(['x0', 'x', 'y'])] } }
+  const script = { name: 's', version: '1', protocol: 'http', config: {}, actions: [root] } as unknown as ScriptDefinition
+  const onC = [{ phase: 'action', action_index: 0, request_index: 2 }]
+  expect(remapInsertedBreakpoints(onC, { phase: 'action', actionIndex: 0, stepPath: ['else[0]', 'requests[0]'] }, script)).toEqual(onC)
+  // A request inserted into the breakpoint's own sequence still moves it.
+  const grown = { ...script, actions: [{ ...root, control: { ...root.control, steps: [sequence(['a', 'new', 'b', 'c'])], else: [sequence(['x', 'y'])] } }] } as unknown as ScriptDefinition
+  expect(remapInsertedBreakpoints(onC, { phase: 'action', actionIndex: 0, stepPath: ['then[0]', 'requests[1]'] }, grown)).toEqual([{ ...onC[0], request_index: 3 }])
+})
+
 it('offers extracted variables from control branches and request sequences without exposing captured values', () => {
   const extracted = { ...added, extractors: [{ name: 'order_id', type: 'jsonpath', source: 'body', expression: '$.id' }] }
   const nested = { ...added, type: 'control_switch', control: { cases: [{ condition: { op: 'exists', left: '{{var.ready}}' }, steps: [extracted] }], default: [{ ...added, type: 'http_sequence', params: { requests: [extracted, { ...added, extractors: [{ name: 'token', type: 'header', source: 'header', expression: 'Authorization' }] }] } }] } }

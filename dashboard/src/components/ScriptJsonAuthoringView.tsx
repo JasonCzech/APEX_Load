@@ -33,6 +33,8 @@ import type { LineRange } from './dslJsonPointers'
 import { buildParameterizeSelectionRequest } from './scriptEditorUtils'
 import CodeLineWrapToggle from './CodeLineWrapToggle'
 import { useCodeLineWrapPreference } from './codeLineWrapPreference'
+import { EditorTabFocusToggle } from './ScriptEditorTabFocus'
+import { editorTabFocusHint, useEditorTabMovesFocus } from './ScriptEditorTabFocusPreference'
 import type { ScriptRepairSuggestion } from './scriptAuthoringAssist'
 import type { ImportedParameterFileMapping } from './scriptEditorImportModel'
 import type { ScriptPhaseActionRow } from './scriptEditorWorkbench'
@@ -112,6 +114,7 @@ export function ScriptCodePane({
   const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const [wordWrapEnabled, setWordWrapEnabled] = useCodeLineWrapPreference()
+  const [tabMovesFocus, setTabMovesFocus] = useEditorTabMovesFocus()
   const activeStartLine = activeRange?.startLine ?? null
   const activeEndLine = activeRange?.endLine ?? null
   const parameterMatchKey = useMemo(
@@ -133,6 +136,11 @@ export function ScriptCodePane({
     if (!allowDirectEdit && jsonEditEnabled) setJsonEditEnabled(false)
   }, [allowDirectEdit, jsonEditEnabled])
 
+  const isDirectlyEditable = allowDirectEdit && jsonEditEnabled
+  const keyboardHintId = useMemo(
+    () => `script-code-kbd-hint-${(ariaLabel || title || 'json').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
+    [ariaLabel, title],
+  )
   const wordWrapAvailable = shouldWrapScriptJsonLines(value)
   const wrapLines = wordWrapEnabled && wordWrapAvailable
   const extensions = useMemo(() => [
@@ -143,9 +151,25 @@ export function ScriptCodePane({
     scriptCodeParameterMatchField,
     scriptCodeCandidateMatchField,
     scriptCodeResolvedValueField,
+    EditorView.contentAttributes.of({
+      'aria-label': ariaLabel || title,
+      ...(isDirectlyEditable ? { 'aria-describedby': keyboardHintId } : {}),
+    }),
     ...(wrapLines ? [EditorView.lineWrapping] : []),
     ...(assistExtensions ?? []),
-  ], [assistExtensions, wrapLines])
+  ], [ariaLabel, assistExtensions, isDirectlyEditable, keyboardHintId, title, wrapLines])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    if (!isDirectlyEditable) {
+      view.scrollDOM.setAttribute('tabindex', '0')
+      view.scrollDOM.setAttribute('aria-label', ariaLabel || title)
+    } else {
+      view.scrollDOM.removeAttribute('tabindex')
+      view.scrollDOM.removeAttribute('aria-label')
+    }
+  }, [ariaLabel, editorReadyVersion, isDirectlyEditable, title])
 
   useEffect(() => {
     const view = viewRef.current
@@ -263,6 +287,7 @@ export function ScriptCodePane({
             wrapLines={wrapLines}
             onChange={setWordWrapEnabled}
           />
+          {isDirectlyEditable && <EditorTabFocusToggle tabMovesFocus={tabMovesFocus} onChange={setTabMovesFocus} />}
           {onRequestParameterize && (
             <button type="button" className="btn btn-sm btn-ghost" onClick={parameterizeCurrentSelection} title="Parameterize the selected value (you can also right-click a selection)">
               Parameterize
@@ -278,11 +303,16 @@ export function ScriptCodePane({
           <button type="button" className="btn btn-sm btn-ghost" onClick={onDownload}>Download</button>
         </div>
       </div>
+      {isDirectlyEditable && (
+        <p id={keyboardHintId} className="script-code-keyboard-hint" style={{ margin: '0 0 6px', fontSize: '12px', color: 'var(--text-muted)' }}>
+          {editorTabFocusHint(tabMovesFocus, 'JSON editor')}
+        </p>
+      )}
       <div
         className="script-code-editor"
         data-dirty={status === 'dirty' ? 'true' : 'false'}
         data-invalid={status === 'invalid' ? 'true' : 'false'}
-        data-readonly={allowDirectEdit && jsonEditEnabled ? 'false' : 'true'}
+        data-readonly={isDirectlyEditable ? 'false' : 'true'}
         onContextMenu={handleEditorContextMenu}
       >
         <CodeMirror
@@ -291,6 +321,7 @@ export function ScriptCodePane({
           extensions={extensions}
           theme="none"
           editable={allowDirectEdit && jsonEditEnabled}
+          indentWithTab={!tabMovesFocus}
           basicSetup={sourceEditorBasicSetup}
           onCreateEditor={view => {
             viewRef.current = view

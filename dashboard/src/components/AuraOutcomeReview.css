@@ -5,7 +5,7 @@
 .aura-outcome-limits { padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); }
 .aura-outcome-limits p { margin: 6px 0 0; }
 .aura-outcome-review summary { padding: 12px 0; cursor: pointer; font-weight: 600; }
-.aura-outcome-filter { display: flex; gap: 8px; align-items: center; padding: 10px 0; }
+.aura-outcome-filter { display: inline-flex; min-height: 24px; gap: 8px; align-items: center; padding: 10px 0; cursor: pointer; }
 .aura-outcome-batch { border-top: 1px solid var(--border); padding: 14px 0; }
 .aura-outcome-batch-heading { display: flex; flex-wrap: wrap; gap: 8px 20px; justify-content: space-between; }
 .aura-outcome-batch p { margin: 8px 0; }

@@ -226,19 +226,24 @@ vi.mock('./SampleScriptImport', () => ({
 }))
 
 vi.mock('./ProtocolAssetImport', () => ({
-  default: ({ kind, onEdit }: { kind: string, onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }) => void }) => (
-    <div data-testid={`protocol-import-${kind}`}>
-      <span>protocol-import:{kind}</span>
-      <button onClick={() => onEdit?.({
-        name: `${kind.toUpperCase()} Draft`,
-        version: '1.0.0',
-        protocol: kind === 'wsdl' ? 'soap' : 'http',
-        config: { base_url: `https://${kind}.example.com` },
-        actions: [],
-      })}
-      >mock-{kind}-edit</button>
-    </div>
-  ),
+  default: function MockProtocolAssetImport({ kind, onEdit }: { kind: string, onEdit?: (script: { name: string, version: string, protocol: string, config: { base_url: string }, actions: unknown[] }, focus?: unknown, onDraftSaved?: (saved: { id: string }) => void) => void }) {
+    // The review's record of a save made in the editor it opened.
+    const [savedId, setSavedId] = useState('')
+    return (
+      <div data-testid={`protocol-import-${kind}`}>
+        <span>protocol-import:{kind}</span>
+        <span>protocol-review-saved:{savedId || 'none'}</span>
+        <button onClick={() => onEdit?.({
+          name: `${kind.toUpperCase()} Draft`,
+          version: '1.0.0',
+          protocol: kind === 'wsdl' ? 'soap' : 'http',
+          config: { base_url: `https://${kind}.example.com` },
+          actions: [],
+        }, undefined, saved => setSavedId(saved.id))}
+        >mock-{kind}-edit</button>
+      </div>
+    )
+  },
 }))
 
 vi.mock('./OracleEBusinessReviewImport', () => ({
@@ -1960,6 +1965,79 @@ describe('ScriptsPage', () => {
 
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:OPENAPI Draft')
+  })
+
+  it('keeps the protocol import review behind the editor after its draft is saved', async () => {
+    apiMock.getScriptAuthoring.mockResolvedValueOnce(authoringFixture({ name: 'OPENAPI Draft' }, 'saved-script-1'))
+    const onScriptSaved = vi.fn()
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" onScriptSaved={onScriptSaved} />)
+    })
+    await flushPromises()
+    await clickButton('Import')
+    await clickButton('OpenAPI / Swagger')
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull(), { timeout: 5000 })
+    await clickButton('mock-openapi-edit')
+    await vi.waitFor(() => expect(container.textContent).toContain('Back to import review'), { timeout: 5000 })
+
+    expect(container.textContent).toContain('protocol-review-saved:none')
+    await clickButton('mock-save')
+    await vi.waitFor(() => expect(container.textContent).toContain('script-id:saved-script-1'), { timeout: 5000 })
+    // The retained review is told its draft was saved, so Back does not
+    // offer Save (a second copy) for it again.
+    expect(container.textContent).toContain('protocol-review-saved:saved-script-1')
+    // The saved script's editor still returns to the mounted review, and its
+    // guard is still retained rather than silently unregistered.
+    expect(container.textContent).toContain('Back to import review')
+    expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="script-editor"]')?.getAttribute('data-retained-guards')).toBe('ProtocolAssetImport')
+    expect(onScriptSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'saved-script-1' }), { keepAuthoringOpen: true })
+
+    // A Back in the save's own turn is the save's return and is ignored
+    // (reopenSavedScript); the user's later click is a separate task.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    await clickButton('Back to import review')
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.querySelector('[data-testid="protocol-import-openapi"]')).not.toBeNull()
+  })
+
+  it.each([
+    { names: ['diagram.png'], notice: 'diagram.png is not a supported script import format.' },
+    { names: ['capture.har', 'notes.txt'], notice: 'Drop HAR captures on their own: notes.txt is not a HAR file.' },
+    { names: ['a.har', 'b.har', 'c.json'], notice: 'Drop HAR captures on their own: c.json is not a HAR file.' },
+    { names: ['a.har', 'b.har', 'c.har'], notice: 'Drop at most two HAR captures (primary and comparison) at once.' },
+  ])('refuses a library drop of $names with a notice', async ({ names, notice }) => {
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    const page = Array.from(container.querySelectorAll<HTMLElement>('.page')).find(element => element.querySelector('.settings-notice, table, h2, button'))!
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: names.map(name => new File(['{}'], name)), types: ['Files'] } })
+    await act(async () => { page.dispatchEvent(drop) })
+    await flushPromises()
+    await vi.waitFor(() => expect(container.querySelector('[role="alert"]')?.textContent).toContain(notice), { timeout: 5000 })
+    expect(container.querySelector('[data-testid^="protocol-import-"]')).toBeNull()
+  })
+
+  it('opens the HAR importer for a library drop of a capture with its zipped comparison', async () => {
+    await act(async () => root.render(<ScriptsPage />))
+    await flushPromises()
+    const page = Array.from(container.querySelectorAll<HTMLElement>('.page')).find(element => element.querySelector('.settings-notice, table, h2, button'))!
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [new File(['{}'], 'a.har'), new File(['{}'], 'b.har.zip')], types: ['Files'] } })
+    await act(async () => { page.dispatchEvent(drop) })
+    await flushPromises()
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="protocol-import-har"]')).not.toBeNull(), { timeout: 5000 })
+    expect(container.querySelector('[role="alert"]')?.textContent || '').not.toContain('not a HAR file')
+  })
+
+  it('refuses a native open of more than two HAR captures with a notice', async () => {
+    const handled = vi.fn()
+    const files = ['a.har', 'b.har', 'c.har'].map(name => new File(['{}'], name))
+    await act(async () => root.render(<ScriptsPage nativeImportRequest={{ id: 1, launcher: 'traffic_har', mode: 'auto_detect', files }} onNativeImportRequestHandled={handled} />))
+    await flushPromises()
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Open at most two HAR captures (primary and comparison) at once; 3 were opened.')
+    expect(container.querySelector('[data-testid^="protocol-import-"]')).toBeNull()
+    expect(handled).toHaveBeenCalledTimes(1)
   })
 
   it('routes jmeter import edit handoff through the draft editor', async () => {

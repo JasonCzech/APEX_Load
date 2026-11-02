@@ -39,6 +39,7 @@ func (s *Server) importSalesforce(w http.ResponseWriter, r *http.Request, import
 	importReq.Opts.Profile = profile
 	importReq.Opts.RecordingProfileID = strings.TrimSpace(importReq.RecordingProfileID)
 	importReq.Opts.EntryPoint = sample.EntryPointImportSalesforce
+	importReq.Opts.StampActionProvenance = true
 
 	result, err := har.Convert(importReq.Data, importReq.Opts)
 	if err != nil {
@@ -121,6 +122,7 @@ func (s *Server) importSalesforce(w http.ResponseWriter, r *http.Request, import
 				}
 			}
 			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
+			importreview.EnsureScriptImportActionUIDs(s)
 			return nil
 		},
 	}
@@ -151,6 +153,7 @@ func (s *Server) importSalesforce(w http.ResponseWriter, r *http.Request, import
 		ProtectedRequirements:    protectedRequirements,
 		PreparedCredentialReview: preparedCredentialReview,
 		CredentialReviewPrepared: credentialReviewPrepared,
+		ValidateOnly:             importReq.ValidateOnly,
 	})
 }
 

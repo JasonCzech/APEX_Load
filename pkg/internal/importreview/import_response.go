@@ -77,6 +77,11 @@ type ScriptImportResponseOptions struct {
 	// Those responses replace the editable draft with a masked StoredScript, so
 	// issuing a second one-shot save capability would only consume capacity.
 	SkipDraftAttestation bool
+	// ValidateOnly marks an inspection-only request: the response returns the
+	// converted preview and diagnostics without retaining full source texts or
+	// allocating a source-secret session. A credential-preserving draft still
+	// gets its short-lived save attestation, so the reviewed draft stays savable.
+	ValidateOnly bool
 	// DisableDraftExpiration keeps the one-shot, server-scoped save capability
 	// valid until it is consumed or explicitly discarded. Enterprise archive
 	// imports expose this as an opt-in expiration policy and default it off.

@@ -326,5 +326,7 @@ describe('TestExecutionCharts real Recharts overlay rendering', () => {
     await triggerContextAction(loadImpactCard, 'Overlay ART')
     const loadImpactAfter = curvePaths(loadImpactCard)
     expect(loadImpactAfter.length).toBe(loadImpactBefore.length + 1)
-  })
+  // Renders every Command Center chart tab with real Recharts; under a loaded
+  // CI runner the full walk exceeds the 5 s default.
+  }, 30_000)
 })

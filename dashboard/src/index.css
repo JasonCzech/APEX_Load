@@ -150,6 +150,12 @@
   --run-calendar-ad-hoc-text: var(--chart-3);
 
   --radius: 16px;
+  --z-topbar: 40;
+  --z-sidebar: 80;
+  --z-popover: 120;
+  --z-modal: 220;
+  --z-modal-nested: 240;
+  --z-skip-link: 1400;
   --transition-fast: 0.15s cubic-bezier(0.4, 0, 0.2, 1);
   --transition-spring: 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   color-scheme: dark;
@@ -274,8 +280,8 @@
   --accent-border: rgba(103, 183, 225, 0.38);
   --accent-contrast: #002b36;
   --logo-wave: #fdf6e3;
-  /* Text-safe accent and filled-danger tokens (≥4.5:1). */
-  --accent-text: var(--accent);
+  /* Text-safe accent and filled-danger tokens (≥4.5:1, including over --accent-soft). */
+  --accent-text: #7cc5eb;
   --danger-fill: #c0261f;
   --danger-fill-text: #ffffff;
   --accent-hover: #7dd3c7;
@@ -311,7 +317,7 @@
   --focus-ring: rgba(38, 139, 210, 0.95);
   
   --code-bg: #073642;
-  --code-text: #93a1a1;
+  --code-text: #a3b1b1;
 
   --success-bg: rgba(133, 153, 0, 0.12);
   --success-border: rgba(133, 153, 0, 0.25);
@@ -402,7 +408,7 @@
   --focus-ring: rgba(77, 91, 0, 0.9);
   
   --code-bg: #eee8d5;
-  --code-text: #586e75;
+  --code-text: #4a5d64;
 
   --success-bg: rgba(133, 153, 0, 0.12);
   --success-border: rgba(133, 153, 0, 0.25);
@@ -771,7 +777,12 @@ select option:checked {
   font-weight: 500;
   border: none;
   cursor: pointer;
-  transition: all var(--transition-fast);
+  transition:
+    background-color var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .btn:active:not(:disabled) {

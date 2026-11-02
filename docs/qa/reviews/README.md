@@ -10,6 +10,7 @@ Per [`AGENTS.md`](../../../AGENTS.md), review records under `docs/qa/reviews/` a
 
 | Record | Date | Scope |
 | --- | --- | --- |
+| [har-comparison-ux-2026-11/README.md](har-comparison-ux-2026-11/README.md) | 2026-11-01 | Five-axis UX, correctness, thoroughness, consistency & accessibility audit of HAR Import & Two-Salesforce-HAR Comparison -> 6-Tab Review -> Visual Editor -> Replay Debugger (42 independently verified root-cause findings + APEX Correlation Studio redesign blueprint) |
 | [roadmap-int-1-2026-10-28/README.md](roadmap-int-1-2026-10-28/README.md) | 2026-10-28 | End-to-end non-Messaging roadmap integration gate (`INT-1`) across `REC`, `AUTH`, `PROTO`, `NA`, `TEL`, `BE`, and `BI` tracks |
 | [roadmap-rec-c-local-faults-2026-10-28/README.md](roadmap-rec-c-local-faults-2026-10-28/README.md) | 2026-10-28 | `REC-C1` repeatable 3-repetition integrated local fault qualification (7 failover/evacuation scenarios × 3 reps = 21 `-race` runs reconciled against `cmd/apexfault-target`) |
 | [roadmap-na-d1-local-macos-2026-10-28/README.md](roadmap-na-d1-local-macos-2026-10-28/README.md) | 2026-10-28 | `NA-C3` physical writer ownership completion (`_analysis/source.v1`, staging reclamation, admin writer attestation) & `NA-D1` local `darwin/arm64` native DuckDB reference fault trials |

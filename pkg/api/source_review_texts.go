@@ -95,7 +95,7 @@ func (s *Server) retainImportResponseSourceTexts(r *http.Request, opts *scriptIm
 	// A response that skips attestation describes scripts the server saved
 	// before building it, so a hash recorded now would never reach them. Such
 	// an import has to store its text before it saves.
-	if opts.SkipDraftAttestation {
+	if opts.SkipDraftAttestation || opts.ValidateOnly {
 		clearSourceReviewFullText(reviews)
 		return
 	}

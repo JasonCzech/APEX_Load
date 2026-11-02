@@ -239,7 +239,7 @@
 .source-map-table th {
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 2;
   background: var(--bg-card);
 }
 
@@ -529,7 +529,7 @@
 .source-map-review { container-type: inline-size; gap: 10px; }
 .source-map-workspace { display: grid; gap: 12px; min-width: 0; }
 .source-map-comparison { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-.source-map-issue-focus { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--surface-raised, transparent); }
+.source-map-issue-focus { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; color: var(--text-primary); background: var(--bg-surface); }
 .source-map-text-limit { margin: 6px 8px 0; padding: 6px 10px; border-left: 3px solid var(--accent); border-radius: 4px; color: var(--text-secondary); background: var(--bg-secondary); font-size: 12px; }
 .source-map-view-options { font-size: 12px; }
 .source-map-view-options > summary { cursor: pointer; color: var(--text-secondary); }
@@ -596,4 +596,14 @@
   .source-map-preview-files li { grid-template-columns: minmax(0, 1fr) auto; }
   .source-map-preview-path { grid-column: 1 / -1; }
   .source-map-preview-original { text-align: right; }
+}
+.source-map-section-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border: 1px solid var(--accent-border, var(--border));
+  border-radius: 999px;
+  background: var(--accent-soft, var(--bg-secondary));
+  color: var(--accent-text, var(--text-primary));
+  font-size: 11px;
+  font-weight: 600;
 }

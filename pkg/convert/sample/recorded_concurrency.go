@@ -226,16 +226,24 @@ func recordedConcurrentMembers(actions []dsl.Action, timings map[int]recordedTim
 }
 
 // recordedConcurrentEligible reports a request step a concurrent group can
-// run: a plain HTTP request, not an HTML-mode step; its think time moves to
-// the group.
+// run: a plain HTTP request, not an HTML-mode step and not a stateful
+// CometD/Bulk-API polling step; its think time moves to the group.
 func recordedConcurrentEligible(action dsl.Action) bool {
-	if action.Type != "request" || action.Params["html_step"] != nil {
+	if action.Type != "request" || action.Params["html_step"] != nil || isSalesforcePollingEndpoint(action.Target) {
 		return false
 	}
 	child := action
 	child.ThinkTime = dsl.ThinkTimeConfig{}
 	child.ThinkTimeAfter = false
 	return dsl.ValidateHTTPConcurrentChild(child) == nil
+}
+
+func isSalesforcePollingEndpoint(target string) bool {
+	lower := strings.ToLower(target)
+	if strings.Contains(lower, "/cometd/") {
+		return true
+	}
+	return strings.Contains(lower, "/services/data/") && strings.Contains(lower, "/jobs/")
 }
 
 func recordedExtractorNames(action dsl.Action, names map[string]bool) map[string]bool {
@@ -363,6 +371,9 @@ func recordedGroupFitsPreparation(wrapper dsl.Action, children []dsl.Action, scr
 // round trip, with its requests repeated copies times.
 func recordedStoredGroup(wrapper dsl.Action, copies int) (dsl.Action, bool) {
 	children, _ := wrapper.Params["requests"].([]dsl.Action)
+	if copies < 1 || len(children) > dsl.MaxScriptActionDefinitions {
+		return dsl.Action{}, false
+	}
 	repeated := make([]dsl.Action, 0, len(children)*copies)
 	for copy := 0; copy < copies; copy++ {
 		repeated = append(repeated, children...)

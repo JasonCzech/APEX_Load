@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/url"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,6 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol/aura"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
@@ -179,18 +183,57 @@ func webSocketHARDiagnostic(item map[string]any) string {
 	return "WebSocket connection without recorded messages is converted to a connect and close"
 }
 
+// recordingProfileDrops counts the requests a recording profile left out:
+// byHostOrType by its host or response content-type lists, byAura the Aura
+// batches whose every action matched its excluded Aura descriptors, and
+// auraPatterns names the patterns those matched, in profile order.
+type recordingProfileDrops struct {
+	byHostOrType int
+	byAura       int
+	auraPatterns []string
+}
+
+func (d recordingProfileDrops) total() int { return d.byHostOrType + d.byAura }
+
+// warnings explains each kind of drop to the tester, so a broad descriptor
+// pattern is not mistaken for a host or content-type rule.
+func (d recordingProfileDrops) warnings(profileName string) []string {
+	var out []string
+	if d.byHostOrType > 0 {
+		out = append(out, fmt.Sprintf("recording profile %q left %d request(s) out by host or content type", profileName, d.byHostOrType))
+	}
+	if d.byAura > 0 {
+		quoted := make([]string, len(d.auraPatterns))
+		for index, pattern := range d.auraPatterns {
+			quoted[index] = strconv.Quote(pattern)
+		}
+		out = append(out, fmt.Sprintf("recording profile %q left %d Aura request(s) out because every action in them matches its excluded Aura descriptors (matched as substrings: %s)", profileName, d.byAura, strings.Join(quoted, ", ")))
+	}
+	return out
+}
+
 // applyRecordingProfileFilters drops the exchanges a recording profile does
-// not record (host or response content type) and the headers it drops.
-func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofile.Profile) ([]exchange, int) {
+// not record (host, response content type, or excluded Aura descriptors) and
+// the headers it drops.
+func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofile.Profile) ([]exchange, recordingProfileDrops) {
 	kept := exchanges[:0:0]
-	filtered := 0
+	var drops recordingProfileDrops
 	for _, ex := range exchanges {
 		contentType := ""
 		if ex.Response != nil {
 			contentType = responseHeaderValue(ex.Response, "Content-Type")
 		}
 		if !profile.RecordsHost(exchangeHost(ex.URL)) || !profile.RecordsContentType(contentType) {
-			filtered++
+			drops.byHostOrType++
+			continue
+		}
+		if patterns := auraBatchExclusionPatterns(ex, profile); len(patterns) > 0 {
+			drops.byAura++
+			for _, pattern := range patterns {
+				if !slices.Contains(drops.auraPatterns, pattern) {
+					drops.auraPatterns = append(drops.auraPatterns, pattern)
+				}
+			}
 			continue
 		}
 		for name := range ex.Headers {
@@ -198,6 +241,108 @@ func applyRecordingProfileFilters(exchanges []exchange, profile *recordingprofil
 				ex.Headers = headersWithoutFold(ex.Headers, name)
 				ex.HeaderList = headerListWithoutFold(ex.HeaderList, name)
 			}
+		}
+		kept = append(kept, ex)
+	}
+	return kept, drops
+}
+
+// auraExchangeDescriptors extracts sub-action descriptors (including Apex
+// [namespace.]classname.method suffixes) from an Aura POST body or query.
+func auraExchangeDescriptors(ex exchange) []string {
+	if !strings.EqualFold(strings.TrimSpace(ex.Method), "POST") {
+		return nil
+	}
+	parsed, err := url.Parse(ex.URL)
+	if err != nil {
+		return nil
+	}
+	trimmedPath := strings.TrimRight(parsed.Path, "/")
+	if trimmedPath != "/aura" && !strings.HasSuffix(trimmedPath, "/aura") {
+		return nil
+	}
+	if ex.BodyEncoding == "" && ex.Body != "" {
+		if actions := aura.ParseEnvelopeActions(ex.Body, aura.MaxEnvelopeBytes); len(actions) > 0 {
+			out := make([]string, 0, len(actions))
+			for _, act := range actions {
+				if tok := act.FilterToken(); tok != "" {
+					out = append(out, tok)
+				}
+			}
+			if len(out) > 0 {
+				return out
+			}
+		}
+	}
+	// Without a readable body the query names the batch's actions (besides
+	// the r sequence number). Every one counts, aura.* business actions
+	// included, so a batch that carries a business action alongside a
+	// telemetry beacon or an excluded descriptor is never taken for one.
+	var queryDescs []string
+	for key := range parsed.Query() {
+		if key == "r" {
+			continue
+		}
+		queryDescs = append(queryDescs, key)
+	}
+	return queryDescs
+}
+
+func exchangeAllAuraActionsExcluded(ex exchange, profile *recordingprofile.Profile) bool {
+	return len(auraBatchExclusionPatterns(ex, profile)) > 0
+}
+
+// auraBatchExclusionPatterns names the excluded Aura descriptor patterns an
+// Aura batch's actions matched when every one of them matched one, or nil
+// when the batch is recorded (any action matches none, or none is read).
+func auraBatchExclusionPatterns(ex exchange, profile *recordingprofile.Profile) []string {
+	if profile == nil || len(profile.ExcludedAuraDescriptors) == 0 {
+		return nil
+	}
+	descs := auraExchangeDescriptors(ex)
+	if len(descs) == 0 {
+		return nil
+	}
+	var patterns []string
+	for _, d := range descs {
+		pattern := profile.ExcludedAuraDescriptorMatch(d)
+		if pattern == "" {
+			return nil
+		}
+		if !slices.Contains(patterns, pattern) {
+			patterns = append(patterns, pattern)
+		}
+	}
+	return patterns
+}
+
+// isClientTelemetryExchange reports a pure client-telemetry Aura beacon POST
+// (InstrumentationBeacon / o11y) even when the HAR export kept its body. Mixed
+// batches that also carry business sub-actions are never dropped.
+func isClientTelemetryExchange(ex exchange) bool {
+	if isAuraTelemetryBeacon(ex.Method, ex.URL) {
+		return true
+	}
+	descs := auraExchangeDescriptors(ex)
+	if len(descs) == 0 {
+		return false
+	}
+	for _, d := range descs {
+		lower := strings.ToLower(d)
+		if !strings.Contains(lower, "instrumentationbeacon") && !strings.Contains(lower, "o11y") {
+			return false
+		}
+	}
+	return true
+}
+
+func filterClientTelemetryExchanges(exchanges []exchange) ([]exchange, int) {
+	kept := exchanges[:0:0]
+	filtered := 0
+	for _, ex := range exchanges {
+		if isClientTelemetryExchange(ex) {
+			filtered++
+			continue
 		}
 		kept = append(kept, ex)
 	}

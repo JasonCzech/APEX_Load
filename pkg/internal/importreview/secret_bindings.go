@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol/messaging"
 	"regexp"
 	"sort"
 	"strconv"
@@ -75,9 +76,14 @@ type SecretBindingSelection struct {
 type RedactionTraversalContext struct {
 	httpProtocol        bool
 	nonWireMetadataPath string
-	actionName          string
-	actionType          string
-	headerName          string
+	// sentMetadataPath is the metadata path of a Kafka or JMS send step, whose
+	// top-level string entries go on the wire as record headers or message
+	// properties unless sentMetadataFamily marks the key as provenance.
+	sentMetadataPath   string
+	sentMetadataFamily string
+	actionName         string
+	actionType         string
+	headerName         string
 }
 
 type InternalSecretBindingRequirement struct {
@@ -391,6 +397,12 @@ func RedactionContextForMap(value map[string]any, path string, prior RedactionTr
 	prior.actionType = actionType
 	prior.headerName = ""
 	prior.nonWireMetadataPath = ""
+	prior.sentMetadataPath = ""
+	prior.sentMetadataFamily = ""
+	if family := messagingSendMetadataFamily(actionType); family != "" {
+		prior.sentMetadataPath = path + "/metadata"
+		prior.sentMetadataFamily = family
+	}
 	if HttpProvenanceActionPathPattern.MatchString(path) {
 		switch canonical := strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(actionType))); {
 		case prior.httpProtocol && IsHTTPProvenanceActionType(canonical):
@@ -481,27 +493,125 @@ func IsDurablyImportReviewGatedAction(value map[string]any) bool {
 	return reviewRequired
 }
 
+// IsImportProvenanceMetadataPath reports whether a JSON pointer addresses an
+// import provenance entry, or anything beneath one, in the metadata map of the
+// script or of an action surface: a step (including nested control-flow
+// steps), an http_sequence request or an http_async_start request. A map that
+// is merely named metadata somewhere inside executable data (params bodies,
+// config.grpc.metadata) is wire payload, so a provenance-looking key there is
+// never exempt from binding discovery or orphan-sentinel rejection.
 func IsImportProvenanceMetadataPath(path string) bool {
-	segments := strings.Split(path, "/")
-	if len(segments) < 2 {
+	tokens, err := SplitJSONPointer(path)
+	if err != nil {
+		tokens = strings.Split(strings.TrimPrefix(path, "/"), "/")
+	}
+	inSurfaceMetadata := false
+	for index := 0; index+1 < len(tokens); index++ {
+		if tokens[index] != "metadata" {
+			continue
+		}
+		// Metadata nested inside a surface's own metadata map (review
+		// evidence, for example) is never sent either.
+		inSurfaceMetadata = inSurfaceMetadata || isImportSurfaceMetadataPrefix(tokens[:index])
+		if inSurfaceMetadata && IsImportProvenanceMetadataKey(tokens[index+1]) {
+			return true
+		}
+	}
+	return false
+}
+
+// isImportSurfaceMetadataPrefix reports whether tokens address the script root
+// or an action surface whose metadata map is import provenance.
+func isImportSurfaceMetadataPrefix(tokens []string) bool {
+	if len(tokens) == 0 {
+		return true
+	}
+	if len(tokens) < 2 || !isJSONPointerIndex(tokens[1]) {
 		return false
 	}
-	if segments[len(segments)-2] != "metadata" {
+	switch tokens[0] {
+	case "init", "actions", "teardown":
+	default:
 		return false
 	}
-	return IsImportProvenanceMetadataKey(segments[len(segments)-1])
+	rest := tokens[2:]
+	for len(rest) > 0 {
+		switch {
+		case len(rest) >= 3 && rest[0] == "control" &&
+			(rest[1] == "steps" || rest[1] == "else" || rest[1] == "default") &&
+			isJSONPointerIndex(rest[2]):
+			rest = rest[3:]
+		case len(rest) >= 5 && rest[0] == "control" &&
+			(rest[1] == "cases" || rest[1] == "branches") &&
+			isJSONPointerIndex(rest[2]) && rest[3] == "steps" && isJSONPointerIndex(rest[4]):
+			rest = rest[5:]
+		case len(rest) >= 3 && rest[0] == "params" && rest[1] == "requests" &&
+			isJSONPointerIndex(rest[2]):
+			rest = rest[3:]
+		case len(rest) >= 2 && rest[0] == "params" && rest[1] == "request":
+			rest = rest[2:]
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func isJSONPointerIndex(token string) bool {
+	if token == "" {
+		return false
+	}
+	for _, r := range token {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// messagingSendMetadataFamily returns the messaging family of a step type that
+// sends its metadata (kafka.buildRecord, jms.buildMessage), or "".
+func messagingSendMetadataFamily(actionType string) string {
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "kafka_produce", "kafka_request_reply":
+		return messaging.FamilyKafka
+	case "jms_publish", "jms_request_reply":
+		return messaging.FamilyJMS
+	default:
+		return ""
+	}
 }
 
 func IsImportProvenanceMetadataPathForContext(path string, ctx RedactionTraversalContext) bool {
+	// A Kafka or JMS send delivers every top-level string metadata entry its
+	// family does not treat as provenance, including protocol-agnostic import
+	// keys such as source_transaction and import_action_uid. Such an entry is
+	// an executable value, not provenance, whatever its name.
+	if ctx.sentMetadataPath != "" && strings.HasPrefix(path, ctx.sentMetadataPath+"/") {
+		key := strings.TrimPrefix(path, ctx.sentMetadataPath+"/")
+		if !strings.Contains(key, "/") {
+			key = strings.ReplaceAll(strings.ReplaceAll(key, "~1", "/"), "~0", "~")
+			if !messaging.MetadataKeyIsProvenance(ctx.sentMetadataFamily, key) {
+				return false
+			}
+		}
+	}
 	if IsImportProvenanceMetadataPath(path) {
 		return true
 	}
-	separator := strings.LastIndexByte(path, '/')
-	if separator < 0 || ctx.nonWireMetadataPath == "" || path[:separator] != ctx.nonWireMetadataPath {
+	if ctx.nonWireMetadataPath == "" {
 		return false
 	}
-	_, ok := HttpImportProvenanceEvidenceKeys[NormalizeImportProvenanceKey(path[separator+1:])]
-	return ok
+	prefix := ctx.nonWireMetadataPath + "/"
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := strings.TrimPrefix(path, prefix)
+	if slash := strings.IndexByte(rest, '/'); slash >= 0 {
+		rest = rest[:slash]
+	}
+	rest = strings.ReplaceAll(strings.ReplaceAll(rest, "~1", "/"), "~0", "~")
+	return IsHTTPImportProvenanceMetadataKey(rest)
 }
 
 func IsNonExecutableRedactionSubtree(parent map[string]any, key string, path string) bool {

@@ -78,6 +78,7 @@ describe('RecordingProfilesCard', () => {
     await act(async () => setValue(container.querySelector('input[aria-label="Think-time threshold (ms)"]')!, '1500'))
     await act(async () => setValue(container.querySelector('input[aria-label="Never record headers"]')!, 'X-Debug, X-Trace'))
     await act(async () => setValue(container.querySelector('input[aria-label="Exclude content types"]')!, 'image/*'))
+    await act(async () => setValue(container.querySelector('input[aria-label="Exclude Aura actions"]')!, 'ComponentLogger.saveComponentLogEntries'))
     const cookieFamily = Array.from(container.querySelectorAll('[aria-label="Automatic rule families"] label')).find(label => label.textContent === 'cookie')!.querySelector('input')!
     await act(async () => cookieFamily.click())
     await act(async () => button(container, 'Add rule').click())
@@ -94,6 +95,7 @@ describe('RecordingProfilesCard', () => {
       think_time_threshold_ms: 1500,
       drop_headers: ['X-Debug', 'X-Trace'],
       exclude_content_types: ['image/*'],
+      excluded_aura_descriptors: ['ComponentLogger.saveComponentLogEntries'],
       correlation: { disabled_rules: ['cookie'], user_rules: [{ name: 'OrderID', type: 'boundary', left: 'order=', right: '&' }] },
     }], '2026-10-09T01:00:00Z')
     expect(container.querySelector('[data-testid="recording-profile-editor"]')).toBeNull()

@@ -267,7 +267,17 @@ func unquoteJSONString(value string) string {
 	return decoded
 }
 
+// salesforceAuraTokenCookie names the cookie a Lightning session carries its
+// Aura token JWT in (__Host-ERIC_PROD-<n>, ERIC_PROD and the like). Its name
+// shares no component with the generic sensitive names, so a HAR cookies[]
+// entry would otherwise keep the token.
+var salesforceAuraTokenCookie = regexp.MustCompile(`(?i)^(?:__Host-)?ERIC_[A-Z0-9]+(?:-\d+)?$`)
+
 func reviewSensitiveName(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	if strings.EqualFold(trimmed, "sid") || salesforceAuraTokenCookie.MatchString(trimmed) {
+		return true
+	}
 	return scrub.SensitiveName(name) || (scrub.Policy{}).SensitiveHeader(name)
 }
 
@@ -401,9 +411,22 @@ type sourceRedactor struct {
 
 var sourceRedactors = []sourceRedactor{
 	{regexp.MustCompile(`(?i)(lr_unmask\(\s*")([^"]+)("\s*\))`), `${1}[REDACTED]${3}`},
-	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)"\s*:\s*")([^"]+)(")`), `${1}[REDACTED]${3}`},
-	{regexp.MustCompile(`(?i)("Name=(?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)"\s*,\s*"Value=)([^"]+)(")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?i)("(?:password|passwd|pwd|pw|sid|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)"\s*:\s*")([^"]+)(")`), `${1}[REDACTED]${3}`},
+	// A JSON body held in another JSON string (every request and response
+	// body of a HAR) escapes its quotes: \"refresh_token\":\"...\". The
+	// value's own escapes are escaped again (an inner quote is \\\"), so an
+	// escaped backslash takes the escape after it and only a bare \" ends
+	// the value.
+	{regexp.MustCompile(`(?i)(\\"(?:password|passwd|pwd|pw|sid|token|access_token|refresh_token|id_token|api[_-]?key|secret|authorization|cookie|set-cookie)\\"\s*:\s*\\")((?:\\\\(?:[^"\\]|\\.)|[^"\\]|\\[^"\\])+)(\\")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?i)("Name=(?:password|passwd|pwd|pw|sid|token|access_token|refresh_token|id_token|api[_-]?key|secret)"\s*,\s*"Value=)([^"]+)(")`), `${1}[REDACTED]${3}`},
 	{regexp.MustCompile(`(?i)((?:password|passwd|pwd|token|access_token|refresh_token|id_token|api[_-]?key|secret)\s*=\s*)([^&\s",;]+)`), `${1}[REDACTED]`},
+	{regexp.MustCompile(`(?i)((?:^|[?&"]|\\u0026)(?:pw|sid)=)([^&\s",;\\]+)`), `${1}[REDACTED]`},
+	{regexp.MustCompile(`(?is)(<input\b[^>]{0,240}?\bname=\\?"(?:password|passwd|pwd|pw|sid|token|secret)\\?"[^>]{0,240}?\bvalue=\\?")([^"\\]+)(\\?")`), `${1}[REDACTED]${3}`},
+	{regexp.MustCompile(`(?is)(<input\b[^>]{0,240}?\bvalue=\\?")([^"\\]+)(\\?"[^>]{0,240}?\bname=\\?"(?:password|passwd|pwd|pw|sid|token|secret)\\?")`), `${1}[REDACTED]${3}`},
+	// Percent-encoded sid parameters (a frontdoor retURL nested in another
+	// URL) carry neither a literal "sid=" nor a word boundary before 00D.
+	{regexp.MustCompile(`(?i)((?:%26|%3F)(?:pw|sid)%3D)((?:[^&\s",;\\%]|%21)+)`), `${1}[REDACTED]`},
+	{regexp.MustCompile(`(^|[^A-Za-z0-9]|%(?:25)?[0-9A-Fa-f]{2})00D[A-Za-z0-9]{12,18}(?:!|%(?:25)?21)[A-Za-z0-9._%]{20,}`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)((?:Authorization|Cookie|Set-Cookie)\s*[:=]\s*)([^\r\n"]+)`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}`), `${1}[REDACTED]`},
 }

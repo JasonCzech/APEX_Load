@@ -123,7 +123,7 @@ export function issueTitle(code: string): string {
   if (code.startsWith('missing_producer:')) return `Missing value: ${code.slice(17)}`
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
   if (code.startsWith(CONFIG_CODE)) return `Replace configuration reference: ${code.slice(CONFIG_CODE.length)}`
-  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
+  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', har_request_body_not_exported: 'Supply or remove unexported HAR request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
 // Converter warnings are raw messages. Known ones get a title saying what to
 // do; the rest keep their message, cut at a word. The full message stays in
@@ -181,14 +181,14 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
   // step's own finding for the same value is part of it, not a second one.
   const configNames = new Set(findings.flatMap(finding => finding.code.startsWith(CONFIG_CODE) ? [finding.code.slice(CONFIG_CODE.length)] : []))
   for (const finding of findings) {
-    // The generic body review is evidence of the same required body restoration.
-    if (finding.code === 'import_review_required' && findings.some(f => f.code === 'restored_body_required' && f.action_path === finding.action_path)) continue
+    // The generic body review is evidence of the same required body restoration or unexported HAR body.
+    if (finding.code === 'import_review_required' && findings.some(f => (f.code === 'restored_body_required' || f.code === 'har_request_body_not_exported') && f.action_path === finding.action_path)) continue
     // A converter warning a located gate covers is that gate's finding, not a second note.
     if (finding.code.startsWith(WARNING_CODE) && covered.has(warningKey(finding.detail || finding.code.slice(WARNING_CODE.length)))) continue
     const category = findingCategory(finding.code)
     const path = finding.action_path || ''
     // A missing producer blocks only when the server gates it: replay sends most placeholders with a warning.
-    const blocking = finding.gate === 'execution' || finding.severity === 'blocker' || /^(restored_body_required|encrypted_proxy_password|legacy_tls_replacement)$/.test(finding.code)
+    const blocking = finding.gate === 'execution' || finding.severity === 'blocker' || /^(restored_body_required|har_request_body_not_exported|encrypted_proxy_password|legacy_tls_replacement)$/.test(finding.code)
     const action = actions.get(path)
     // Keep branch scopes and parameter namespaces separate. Grouping never applies a bulk repair.
     // A value the server gates is one problem script-wide, wherever its
@@ -230,6 +230,7 @@ export function repairImpactText(code: string, detail = ''): string {
   const category = findingCategory(code)
   if (category === 'values') return code.startsWith('conditional_') ? 'A possible producer exists, but its order or execution path needs review. It must run before the selected request.' : 'This value has no reachable producer. Bind an existing value, add test data, or extract it from a preceding response.'
   if (category === 'bodies') return 'The original payload could not be restored. Supply the body below; previews keep its contents protected.'
+  if (code === 'har_request_body_not_exported') return 'The browser recorded a non-empty Content-Length for this POST, PUT, or PATCH request without exporting postData into the HAR (typically an in-flight beacon when the HAR was saved). Supply the request body and clear this blocker, or delete the step.'
   if (code === 'legacy_tls_replacement') return 'The source uses legacy TLS behavior. Choose a supported replacement and preview the migration.'
   if (/web_reg_find.*Search=ALL/i.test(detail)) return 'The converted check can miss text outside the main response body. Verify the intended assertion before replay.'
   if (category === 'runtime' && code.startsWith('diagnostic:')) return 'Some imported settings need an explicit choice or have no editable equivalent. Review their source values and replay consequences below.'

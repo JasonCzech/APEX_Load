@@ -27,6 +27,7 @@ const (
 
 type ConvertOptions struct {
 	ScriptName          string `json:"script_name,omitempty"`
+	SourceFileName      string `json:"source_file_name,omitempty"`
 	BaseURL             string `json:"base_url,omitempty"`
 	RecordingProfileID  string `json:"recording_profile_id,omitempty"`
 	ConversionPolicy    string `json:"conversion_policy,omitempty"`
@@ -38,6 +39,15 @@ type ConvertOptions struct {
 	InferExtractors     *bool  `json:"infer_extractors,omitempty"`
 	SanitizeSensitive   *bool  `json:"sanitize_sensitive,omitempty"`
 	IncludeStaticAssets *bool  `json:"include_static_assets,omitempty"`
+	// FilterClientTelemetry omits browser telemetry beacons such as Salesforce
+	// Aura InstrumentationBeacon and o11y requests from the generated load
+	// script. It defaults to true when static assets are excluded and the
+	// entry point is the HAR or Salesforce importer (the default here), and to
+	// false for the recorder and browser-HTTP entry points.
+	FilterClientTelemetry *bool `json:"filter_client_telemetry,omitempty"`
+	// StampActionProvenance attaches har.entry_index and import_action_uid
+	// metadata to converted HAR request actions for interactive API import review.
+	StampActionProvenance bool `json:"stamp_action_provenance,omitempty"`
 	// PageTitleChecks adds a check on each HTML page's recorded <title>
 	// (default on); ResourceMode is runtime (default), in_step or separate.
 	PageTitleChecks    *bool  `json:"page_title_checks,omitempty"`
@@ -58,12 +68,16 @@ type ConvertOptions struct {
 	// AsyncScan (default on) collapses requests a page repeated in the
 	// background into background conversations; off keeps them inline.
 	AsyncScan *bool `json:"async_scan,omitempty"`
-	// StepTransactions (default off) times each user step of a recording that
-	// marked no transactions as its own transaction: a step starts at a new
-	// page, a new Lightning page, or after a recorded pause.
+	// StepTransactions times each user step of a recording that marked no
+	// transactions as its own transaction: a step starts at a new page, a new
+	// Lightning page, or after a recorded pause. Unset, it is on for a HAR or
+	// Salesforce import of a Salesforce application capture with real
+	// timestamps (unless Salesforce handling is disabled) and off otherwise.
 	StepTransactions *bool `json:"step_transactions,omitempty"`
-	// RecordedConcurrency (default off) replays the requests the browser had
-	// in flight together as concurrent request groups.
+	// RecordedConcurrency replays the requests the browser had in flight
+	// together as concurrent request groups. Unset, it follows the
+	// StepTransactions default when Salesforce-native replay is on (the HAR
+	// import default) and is off otherwise.
 	RecordedConcurrency *bool `json:"recorded_concurrency,omitempty"`
 	// Profile is the project recording profile; it applies its filters,
 	// header drop list, think-time threshold and correlation settings and
@@ -135,9 +149,12 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
-	redactionEnabled := false
+	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, convertutil.BoolOption(opts.SanitizeSensitive, false))
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
+	if redactionEnabled {
+		sensitivity = scrub.SensitivityScrubbed
+	}
 	entryPoint := opts.EntryPoint
 	if entryPoint == "" {
 		entryPoint = sample.EntryPointImportHAR
@@ -150,13 +167,17 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		Content: string(data),
 		Options: sample.ConvertOptions{
 			BaseURL:                    opts.BaseURL,
+			SourceFileName:             opts.SourceFileName,
 			RecordingProfileID:         opts.RecordingProfileID,
 			ConversionPolicy:           opts.ConversionPolicy,
 			CorrelationMode:            opts.CorrelationMode,
 			IncludeAssertions:          opts.IncludeAssertions,
 			InferExtractors:            opts.InferExtractors,
 			SanitizeSensitive:          boolPointer(false),
+			RedactSourceReview:         &redactionEnabled,
 			IncludeStaticAssets:        opts.IncludeStaticAssets,
+			FilterClientTelemetry:      opts.FilterClientTelemetry,
+			StampActionProvenance:      opts.StampActionProvenance,
 			PageTitleChecks:            opts.PageTitleChecks,
 			ResourceMode:               opts.ResourceMode,
 			HTMLSteps:                  opts.HTMLSteps,

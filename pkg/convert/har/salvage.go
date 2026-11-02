@@ -38,6 +38,7 @@ func pluralEntries(n int) string {
 // salvaged, so corruption in the middle is never silently discarded.
 func SalvageTruncated(data []byte) ([]byte, TruncationSalvage, bool) {
 	data = bytes.TrimPrefix(data, []byte("\uFEFF"))
+	data = bytes.TrimRight(data, " \t\r\n")
 	if json.Valid(data) {
 		return nil, TruncationSalvage{}, false
 	}
