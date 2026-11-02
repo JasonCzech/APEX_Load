@@ -3097,7 +3097,7 @@ func TestRedactExchangeSecretsAppliesReplacementsNonRecursively(t *testing.T) {
 			{Name: "X-Api-Key", Value: "D"},
 		},
 	}}
-	got, changed := redactExchangeSecrets("A D", exchanges)
+	got, changed := redactExchangeSecrets("A D", exchanges, 0)
 	if !changed {
 		t.Fatal("redactExchangeSecrets reported unchanged")
 	}
@@ -3110,7 +3110,7 @@ func TestRedactExchangeSecretsBoundsExpandingSensitiveHeaderReplacement(t *testi
 	content := strings.Repeat("x", sourceview.MaxFileChars)
 	got, changed := redactExchangeSecrets(content, []exchange{{
 		Headers: map[string]string{"Authorization": "x"},
-	}})
+	}}, 0)
 	if !changed {
 		t.Fatal("redactExchangeSecrets reported unchanged")
 	}

@@ -238,16 +238,16 @@ func TestAnalyzeMatchesTemplatedHAREntriesRewritesQueryMetadataAndBoostsDynamicD
 	if !strings.Contains(string(qRaw), `"value":"{{var.corr_salesforce_frontdoor_sid}}"`) || strings.Contains(string(qRaw), rawSID) || strings.Contains(string(qRaw), escapedSID) {
 		t.Fatalf("har.request.query_string = %s, want templated sid", string(qRaw))
 	}
-	// Also verify rewriteSalesforceActionQueryMetadata directly rewrites decoded ! values against percent-encoded vars.
+	// Also verify applyCorrelationVarsToActionQueryMetadata directly rewrites decoded ! values against percent-encoded vars.
 	directAction := &dsl.Action{
 		Metadata: map[string]any{
 			"har.request.query_string": []any{map[string]any{"name": "sid", "value": rawSID}},
 		},
 	}
-	rewriteSalesforceActionQueryMetadata(directAction, map[string]string{escapedSID: "{{var.corr_salesforce_frontdoor_sid}}"})
+	applyCorrelationVarsToActionQueryMetadata(directAction, map[string]string{escapedSID: "{{var.corr_salesforce_frontdoor_sid}}"})
 	qDirect, _ := json.Marshal(directAction.Metadata["har.request.query_string"])
 	if !strings.Contains(string(qDirect), `"value":"{{var.corr_salesforce_frontdoor_sid}}"`) {
-		t.Fatalf("direct rewriteSalesforceActionQueryMetadata = %s, want templated sid", string(qDirect))
+		t.Fatalf("direct applyCorrelationVarsToActionQueryMetadata = %s, want templated sid", string(qDirect))
 	}
 	// Dynamic 18-char record ID must be auto-applied, while static 18-char appId stays literal!
 	if strings.Contains(native.Actions[2].Body, dynamicRecID) {

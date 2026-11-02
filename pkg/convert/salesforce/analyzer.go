@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -821,13 +822,13 @@ func matchHAR(refs []actionRef, entries []harEntry) map[int]int {
 				bestID = candidate.entry.ID
 			}
 		}
-		if bestID == 0 && urlContainsTemplatePlaceholder(ref.URL) {
+		if bestID == 0 && requestimport.ContainsTemplatePlaceholder(ref.URL) {
 			for _, index := range templated.bucket(refURL, candidates) {
 				candidate := candidates[index]
 				if used[candidate.entry.ID] || !strings.EqualFold(ref.Method, candidate.entry.Method) {
 					continue
 				}
-				if !equivalentTemplatedNormalizedURL(refURL, candidate.url) {
+				if !templatedURLMatches(refURL, candidate.url) {
 					continue
 				}
 				if score := harMatchScore(refBody, descriptor, ref.Kind, candidate); score > bestScore {
@@ -859,10 +860,6 @@ func harEntryIndexFromActionMetadata(action *dsl.Action) int {
 	return 0
 }
 
-func urlContainsTemplatePlaceholder(raw string) bool {
-	return strings.Contains(raw, "{{") || strings.Contains(raw, "%7B%7B") || strings.Contains(raw, "%7b%7b")
-}
-
 // templatedHARIndex buckets HAR candidates for the templated-URL fallback so
 // a templated ref scans only the entries that can match it rather than every
 // entry. A ref's placeholder segment positions form its mask; per distinct
@@ -881,7 +878,7 @@ func (t templatedHARIndex) bucket(refURL normalizedURL, candidates []harCandidat
 	var mask strings.Builder
 	mask.WriteString(strconv.Itoa(len(refSegs)))
 	for i, seg := range refSegs {
-		if urlContainsTemplatePlaceholder(seg) {
+		if requestimport.ContainsTemplatePlaceholder(seg) {
 			masked[i] = true
 			mask.WriteByte(',')
 			mask.WriteString(strconv.Itoa(i))
@@ -917,51 +914,13 @@ func templatedHARKey(u normalizedURL, segs []string, masked map[int]bool) string
 	return key.String()
 }
 
-func equivalentTemplatedNormalizedURL(refURL, candURL normalizedURL) bool {
-	if !refURL.parsed || !candURL.parsed {
-		return false
-	}
-	if refURL.scheme != candURL.scheme || refURL.host != candURL.host {
-		return false
-	}
-	if refURL.path != candURL.path {
-		refSegs := strings.Split(refURL.path, "/")
-		candSegs := strings.Split(candURL.path, "/")
-		if len(refSegs) != len(candSegs) {
-			return false
-		}
-		for i := range refSegs {
-			if refSegs[i] == candSegs[i] {
-				continue
-			}
-			if !urlContainsTemplatePlaceholder(refSegs[i]) || candSegs[i] == "" {
-				return false
-			}
-		}
-	}
-	if refURL.query == candURL.query {
-		return true
-	}
-	refQuery, err1 := url.ParseQuery(refURL.query)
-	candQuery, err2 := url.ParseQuery(candURL.query)
-	if err1 != nil || err2 != nil || len(refQuery) != len(candQuery) {
-		return false
-	}
-	for k, refVals := range refQuery {
-		candVals, exists := candQuery[k]
-		if !exists || len(refVals) != len(candVals) {
-			return false
-		}
-		for i := range refVals {
-			if refVals[i] == candVals[i] {
-				continue
-			}
-			if !urlContainsTemplatePlaceholder(refVals[i]) {
-				return false
-			}
-		}
-	}
-	return true
+// templatedURLMatches reports whether a ref URL whose path segments or query
+// values hold correlation templates matches a recorded HAR entry URL.
+func templatedURLMatches(refURL, candURL normalizedURL) bool {
+	return refURL.parsed && candURL.parsed &&
+		refURL.scheme == candURL.scheme && refURL.host == candURL.host &&
+		requestimport.TemplatedPathMatches(refURL.path, candURL.path) &&
+		requestimport.TemplatedQueryMatches(refURL.query, candURL.query)
 }
 
 // harMatchScore ranks one candidate entry against a ref whose body/descriptor have
@@ -1776,7 +1735,7 @@ func buildNativePreviewWithOptions(script *dsl.Script, refs []actionRef, entries
 		action.Body = correlate.ApplyVars(action.Body, actionVars)
 		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, actionVars)
 		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
-		rewriteSalesforceActionQueryMetadata(action, actionVars)
+		applyCorrelationVarsToActionQueryMetadata(action, actionVars)
 		if len(actionVars) == 0 {
 			continue
 		}
@@ -2606,47 +2565,15 @@ func actionCorrelationSurfaces(action *dsl.Action) []string {
 	return surfaces
 }
 
-func rewriteSalesforceActionQueryMetadata(action *dsl.Action, vars map[string]string) {
-	if action == nil || len(action.Metadata) == 0 || len(vars) == 0 {
+// applyCorrelationVarsToActionQueryMetadata keeps the recorded HAR query
+// provenance in step with the rewritten request target.
+func applyCorrelationVarsToActionQueryMetadata(action *dsl.Action, vars map[string]string) {
+	if action == nil || len(vars) == 0 {
 		return
 	}
-	raw, exists := action.Metadata["har.request.query_string"]
-	if !exists || raw == nil {
-		return
-	}
-	rewriteVal := func(val string) string {
-		if val == "" {
-			return val
-		}
-		if updated := correlate.ApplyVars(val, vars); updated != val {
-			return updated
-		}
-		if escaped := url.QueryEscape(val); escaped != val {
-			if tmpl, ok := vars[escaped]; ok {
-				return tmpl
-			}
-			if updated := correlate.ApplyVars(escaped, vars); updated != escaped && strings.Contains(updated, "{{var.") {
-				return updated
-			}
-		}
-		return val
-	}
-	switch items := raw.(type) {
-	case []map[string]any:
-		for index := range items {
-			if val, ok := items[index]["value"].(string); ok {
-				items[index]["value"] = rewriteVal(val)
-			}
-		}
-	case []any:
-		for _, elem := range items {
-			if m, ok := elem.(map[string]any); ok {
-				if val, ok := m["value"].(string); ok {
-					m["value"] = rewriteVal(val)
-				}
-			}
-		}
-	}
+	requestimport.UpdateHARQueryStringValues(action.Metadata, func(value string) string {
+		return requestimport.CorrelatedQueryValue(value, vars, correlate.ApplyVars)
+	})
 }
 
 func templateReferencedAfterRank(refs []actionRef, producerRank int, template string) bool {

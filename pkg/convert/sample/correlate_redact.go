@@ -878,7 +878,7 @@ func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) (m
 			working = working[:cut]
 		}
 		limit := max(sourceview.MaxFileChars+1, len(working)+(1<<20))
-		next, changedExchange := redactExchangeSecretsWithLimit(working, exchanges, limit)
+		next, changedExchange := redactExchangeSecrets(working, exchanges, limit)
 		next, changedPatterns := sourceview.Redact(next)
 		if changedExchange || changedPatterns || len(working) != len(content) {
 			files[name] = next
@@ -890,11 +890,9 @@ func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) (m
 	return redacted, originalLengths
 }
 
-func redactExchangeSecrets(content string, exchanges []exchange) (string, bool) {
-	return redactExchangeSecretsWithLimit(content, exchanges, sourceview.MaxFileChars+1)
-}
-
-func redactExchangeSecretsWithLimit(content string, exchanges []exchange, outputLimit int) (string, bool) {
+// redactExchangeSecrets bounds expanding substitutions at outputLimit bytes
+// (sourceview.MaxFileChars+1 when outputLimit is not positive).
+func redactExchangeSecrets(content string, exchanges []exchange, outputLimit int) (string, bool) {
 	original := content
 	redactions := collectExchangeSecretRedactions(exchanges)
 	replacements := make(map[string]string, 2*(len(redactions.headerValues)+len(redactions.bodyReplacements)))

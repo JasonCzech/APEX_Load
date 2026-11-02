@@ -1141,52 +1141,13 @@ func scriptHasUncorrelatedAuraToken(script *dsl.Script) bool {
 	return check(script.Init) || check(script.Actions) || check(script.Teardown)
 }
 
-func rewriteHARQueryParamValue(val string, vars map[string]string) string {
-	if replaced := applyCorrelationVars(val, vars); replaced != val {
-		return replaced
-	}
-	if escaped := url.QueryEscape(val); escaped != val {
-		if replaced := applyCorrelationVars(escaped, vars); replaced != escaped {
-			return replaced
-		}
-	}
-	return val
-}
-
 func applyCorrelationVarsToHARQueryMetadata(metadata map[string]any, vars map[string]string) {
-	if len(metadata) == 0 || len(vars) == 0 {
+	if len(vars) == 0 {
 		return
 	}
-	raw, ok := metadata["har.request.query_string"]
-	if !ok || raw == nil {
-		return
-	}
-	switch items := raw.(type) {
-	case []map[string]any:
-		cloned := make([]map[string]any, len(items))
-		for i, item := range items {
-			entry := cloneMetadata(item)
-			if val, ok := entry["value"].(string); ok && val != "" {
-				entry["value"] = rewriteHARQueryParamValue(val, vars)
-			}
-			cloned[i] = entry
-		}
-		metadata["har.request.query_string"] = cloned
-	case []any:
-		cloned := make([]any, len(items))
-		for i, rawItem := range items {
-			if item, ok := rawItem.(map[string]any); ok {
-				entry := cloneMetadata(item)
-				if val, ok := entry["value"].(string); ok && val != "" {
-					entry["value"] = rewriteHARQueryParamValue(val, vars)
-				}
-				cloned[i] = entry
-			} else {
-				cloned[i] = rawItem
-			}
-		}
-		metadata["har.request.query_string"] = cloned
-	}
+	requestimport.UpdateHARQueryStringValues(metadata, func(value string) string {
+		return requestimport.CorrelatedQueryValue(value, vars, applyCorrelationVars)
+	})
 }
 
 func mergeFileAssets(script *dsl.Script, assets []dsl.DataSource) {
