@@ -457,7 +457,7 @@ func flattenRequestActionsChecked(script *dsl.Script, persistSequenceChildren bo
 	if rootCount > dsl.MaxScriptActionDefinitions {
 		return nil, fmt.Errorf("script action definitions exceed %d", dsl.MaxScriptActionDefinitions)
 	}
-	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	refs := make([]actionRef, 0, rootCount)
 	seq, rank := 1, 1
 	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction, actionPath string) {
 		method := strings.ToUpper(strings.TrimSpace(action.Method))

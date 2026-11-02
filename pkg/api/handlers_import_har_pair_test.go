@@ -592,9 +592,12 @@ func holdBaselineFailureWhileComparisonConverts(t *testing.T) bool {
 	harComparisonSlots = make(chan struct{}, 2)
 	defer func() { harComparisonPreparer, harComparisonSlots = previous, previousSlots }()
 
+	// The baseline is valid JSON but not a HAR, padded so decoding it takes a
+	// few milliseconds: long enough, even under -race, for the comparison
+	// goroutine to reach the converter before the baseline fails.
 	payload, err := json.Marshal(map[string]any{
 		"name":              "Broken baseline",
-		"content":           `{"foo":1}`,
+		"content":           `{"foo":1,"pad":"` + strings.Repeat("a", 4<<20) + `"}`,
 		"secondary_content": harPairLoadHAR(2),
 	})
 	if err != nil {

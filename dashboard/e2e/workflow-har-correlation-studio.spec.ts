@@ -1,6 +1,7 @@
 import axe from 'axe-core'
 import { test, expect, login, mutation, json } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
+import { canonicalImportDraft } from './support/importResponse'
 
 function buildSyntheticSalesforceHar(options: {
   sessionSid: string
@@ -320,9 +321,9 @@ test('HAR capture guide, 2-HAR Salesforce Correlation Studio, draft exclusion, a
 
   // Desktop sign-in is hoisted into init[] and logout into teardown[]; the
   // funnel reports those counts, so check the numbers, not the labels.
-  const importedScript = importPayload.script as { init?: unknown[]; teardown?: unknown[] } | undefined
-  expect(importedScript?.init?.length ?? 0).toBeGreaterThan(0)
-  expect(importedScript?.teardown?.length ?? 0).toBeGreaterThan(0)
+  const importedScript = canonicalImportDraft(importPayload)
+  expect(importedScript.init?.length ?? 0).toBeGreaterThan(0)
+  expect(importedScript.teardown?.length ?? 0).toBeGreaterThan(0)
   const studio = controls.getByRole('region', { name: 'Correlation studio & capture funnel', exact: true })
   await expect(studio).toBeVisible()
   const funnel = studio.getByRole('group', { name: 'HAR capture conversion funnel', exact: true })

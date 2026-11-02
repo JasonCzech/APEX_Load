@@ -895,7 +895,7 @@ func redactSourceReviewSecrets(files map[string]string, exchanges []exchange) (m
 func redactExchangeSecrets(content string, exchanges []exchange, outputLimit int) (string, bool) {
 	original := content
 	redactions := collectExchangeSecretRedactions(exchanges)
-	replacements := make(map[string]string, 2*(len(redactions.headerValues)+len(redactions.bodyReplacements)))
+	replacements := map[string]string{}
 	for _, replacement := range redactions.bodyReplacements {
 		addRawAndJSONEscapedReplacement(replacements, replacement.body, replacement.sanitized)
 	}

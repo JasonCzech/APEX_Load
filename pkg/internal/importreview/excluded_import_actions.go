@@ -33,7 +33,7 @@ func RefreshProtectedImportCredentialLocations(script *dsl.Script) error {
 		for _, location := range descriptor.Locations {
 			stale[strings.TrimSpace(location.Path)] = struct{}{}
 		}
-		paths := make([]string, 0, len(descriptor.AffectedPaths)+len(locations))
+		paths := make([]string, 0, len(descriptor.AffectedPaths))
 		for _, path := range descriptor.AffectedPaths {
 			if _, positional := stale[strings.TrimSpace(path)]; !positional {
 				paths = append(paths, path)

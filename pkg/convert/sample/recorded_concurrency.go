@@ -371,6 +371,9 @@ func recordedGroupFitsPreparation(wrapper dsl.Action, children []dsl.Action, scr
 // round trip, with its requests repeated copies times.
 func recordedStoredGroup(wrapper dsl.Action, copies int) (dsl.Action, bool) {
 	children, _ := wrapper.Params["requests"].([]dsl.Action)
+	if copies < 1 || len(children) > dsl.MaxScriptActionDefinitions {
+		return dsl.Action{}, false
+	}
 	repeated := make([]dsl.Action, 0, len(children)*copies)
 	for copy := 0; copy < copies; copy++ {
 		repeated = append(repeated, children...)
