@@ -38,6 +38,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importartifact"
+	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/secretstore"
@@ -199,8 +200,6 @@ type brunoSecretMigrationWindow struct {
 	StartedAt time.Time
 	ExpiresAt time.Time
 }
-
-var brunoInspectConcurrency = make(chan struct{}, 1)
 
 func (e *brunoSecretMigrationPartialError) Error() string {
 	return "Bruno source credential migration partially completed"
@@ -395,9 +394,10 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 	}
 	// Decode and bound the upload before occupying the scarce inspection slot.
 	// Slow clients must not prevent an already-spooled request from progressing.
+	inspectSlots := s.brunoInspectSlots()
 	select {
-	case brunoInspectConcurrency <- struct{}{}:
-		defer func() { <-brunoInspectConcurrency }()
+	case inspectSlots <- struct{}{}:
+		defer func() { <-inspectSlots }()
 	default:
 		w.Header().Set("Retry-After", "2")
 		writeError(w, http.StatusTooManyRequests, "Bruno import inspection capacity is currently exhausted")
@@ -4142,9 +4142,19 @@ func (l *brunoImportSessionClaimLease) touch(now time.Time) error {
 		return err
 	}
 	l.errMu.Unlock()
-	if err := l.objects.TouchSessionClaim(
-		l.sessionID, l.projectID, l.actor, l.token, now.UTC(),
-	); err != nil {
+	manager, err := importsession.NewManager(l.objects)
+	if err == nil {
+		err = manager.Renew(importsession.Claim{
+			Scope: importsession.Scope{
+				ID:        l.sessionID,
+				Profile:   importsession.LegacyBrunoProfile,
+				ProjectID: l.projectID,
+				Actor:     l.actor,
+			},
+			Token: l.token,
+		}, now.UTC())
+	}
+	if err != nil {
 		l.errMu.Lock()
 		if l.lostErr == nil {
 			l.lostErr = fmt.Errorf("Bruno import session claim lease lost: %w", err)
@@ -4180,21 +4190,31 @@ func (s *Server) claimBrunoImportSession(
 	if err != nil {
 		return nil, nil, "", "", err
 	}
+	manager, err := importsession.NewManager(objects)
+	if err != nil {
+		return nil, objects, "", "", err
+	}
 	_, actor, _ := s.resolveAuditActor(r)
-	payload, descriptor, claimErr := objects.ClaimSession(
-		r.Context(), id, projectID, actor, brunoImportSessionMaxBytes,
-	)
+	claimed, claimErr := manager.Claim(r.Context(), importsession.Scope{
+		ID:        id,
+		Profile:   importsession.LegacyBrunoProfile,
+		ProjectID: projectID,
+		Actor:     actor,
+	}, brunoImportSessionMaxBytes)
 	if claimErr != nil {
 		if errors.Is(claimErr, os.ErrNotExist) {
 			return nil, objects, actor, "", sql.ErrNoRows
 		}
+		if errors.Is(claimErr, importsession.ErrSessionExpired) {
+			return nil, objects, actor, "", errors.New("Bruno import session expired")
+		}
 		return nil, objects, actor, "", claimErr
 	}
-	claimToken := descriptor.ClaimToken
+	claimToken := claimed.Claim.Token
 	releaseClaim := true
 	defer func() {
 		if releaseClaim {
-			_ = objects.ReleaseSessionClaim(id, projectID, actor, claimToken)
+			_ = manager.Release(claimed.Claim)
 		}
 	}()
 
@@ -4204,8 +4224,8 @@ func (s *Server) claimBrunoImportSession(
 	s.brunoImportMu.Unlock()
 	s.releaseBrunoImportSession(existing, false, false)
 
-	session, decodeErr := decodePersistedBrunoImportSession(id, payload)
-	clear(payload)
+	session, decodeErr := decodePersistedBrunoImportSession(id, claimed.Payload)
+	clear(claimed.Payload)
 	if decodeErr != nil {
 		if session != nil {
 			s.releaseBrunoImportSession(session, false, true)
@@ -4255,23 +4275,25 @@ func (s *Server) loadBrunoImportSession(r *http.Request, id, projectID string) (
 	if err != nil {
 		return nil, err
 	}
+	manager, err := importsession.NewManager(objects)
+	if err != nil {
+		return nil, err
+	}
 	_, actor, _ := s.resolveAuditActor(r)
-	reader, _, err := objects.OpenSession(r.Context(), id, projectID, actor)
+	payload, _, err := manager.Open(r.Context(), importsession.Scope{
+		ID:        id,
+		Profile:   importsession.LegacyBrunoProfile,
+		ProjectID: projectID,
+		Actor:     actor,
+	}, brunoImportSessionMaxBytes)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, sql.ErrNoRows
 		}
+		if errors.Is(err, importsession.ErrSessionExpired) {
+			return nil, errors.New("Bruno import session expired")
+		}
 		return nil, err
-	}
-	payload, readErr := io.ReadAll(io.LimitReader(reader, brunoImportSessionMaxBytes+1))
-	closeErr := reader.Close()
-	if readErr != nil || closeErr != nil {
-		clear(payload)
-		return nil, errors.Join(readErr, closeErr)
-	}
-	if int64(len(payload)) > brunoImportSessionMaxBytes {
-		clear(payload)
-		return nil, errors.New("Bruno import session exceeds its maximum size")
 	}
 	session, err := decodePersistedBrunoImportSession(id, payload)
 	clear(payload)
@@ -4516,7 +4538,6 @@ func (s *Server) startBrunoImportSessionJanitor() {
 		slog.Warn("failed to prune expired Bruno import sessions", "error", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.brunoSessionCleanupCancel = cancel
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -4532,8 +4553,9 @@ func (s *Server) startBrunoImportSessionJanitor() {
 		}
 	}) {
 		cancel()
-		s.brunoSessionCleanupCancel = nil
+		return
 	}
+	s.brunoSessionCleanupCancel = cancel
 }
 
 func (s *Server) expireBrunoImportSession(id string, expected *brunoImportSession) {

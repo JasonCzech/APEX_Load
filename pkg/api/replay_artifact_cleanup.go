@@ -15,9 +15,7 @@ func (s *Server) startReplayArtifactCleanup() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.replayArtifactCleanupCancel = cancel
 	done := make(chan struct{})
-	s.replayArtifactCleanupDone = done
 	if !s.launchBackground(func() {
 		defer close(done)
 		ticker := time.NewTicker(time.Minute)
@@ -48,6 +46,8 @@ func (s *Server) startReplayArtifactCleanup() {
 	}) {
 		cancel()
 		close(done)
-		s.replayArtifactCleanupCancel = nil
+		return
 	}
+	s.replayArtifactCleanupCancel = cancel
+	s.replayArtifactCleanupDone = done
 }

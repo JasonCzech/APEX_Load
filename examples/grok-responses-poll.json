@@ -35,6 +35,7 @@
           "Accept": "application/json"
         },
         "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"input\":\"Reply with the single word pong. Request suffix: {{param.request_suffix}}\",\"max_output_tokens\":32}",
+        "body_template_encoding": "json",
         "extractors": [
           {
             "name": "grok_response_id",

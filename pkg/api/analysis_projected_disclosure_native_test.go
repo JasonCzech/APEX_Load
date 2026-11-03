@@ -77,7 +77,7 @@ func TestNativeAnalysisProjectedProtectedNewAndPersistedMappingsRefuseBeforeArti
 				}
 				for _, request := range requests {
 					w = timeslotRequest(t, s, http.MethodPost, request.path, request.body)
-					if w.Code != http.StatusUnprocessableEntity || strings.Contains(w.Body.String(), secret) || strings.Contains(w.Body.String(), "\"points\"") || analytics.NativeBusy() != before || len(analysisPipelineJobs) != 0 {
+					if w.Code != http.StatusUnprocessableEntity || strings.Contains(w.Body.String(), secret) || strings.Contains(w.Body.String(), "\"points\"") || analytics.NativeBusy() != before || len(s.semaphores.analysisPipelineJobs) != 0 {
 						t.Fatal("historical protected mapping entered native or produced outward evidence", request.path, w.Code, w.Body.String())
 					}
 				}

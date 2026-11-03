@@ -443,14 +443,14 @@ points and the mapping decisions frozen into the evidence revision.
 
 ## Root-cause hypotheses and capacity
 
-Hypotheses (`pkg/rca/hypotheses.go`, signatures `signatures.v1` in
-`pkg/rca/signatures/`, one file each) explain symptoms: rising latency or
+Hypotheses (`pkg/rca/hypotheses.go`, signatures `signatures.v2` in
+`pkg/rca/signatures/`, one file each) explain symptoms: rising latency (including LLM `ttft` and `tpot`), rising
 errors, or falling throughput, on a transaction or action series.
 
 - **Evidence kinds.** Provider series are classified by keywords in their
   metric names (`signatures.Classify`): CPU, memory, GC, pool, consumer lag,
   rebalances, dead letters, retries, scaling (replicas, restarts, OOM kills,
-  cold starts), database wait, and the queue depth, arrival rate and
+  cold starts), database wait, LLM inference signals (KV cache usage, GPU compute/tensor/HBM utilization, inference queue depth/time, KV-cache preemption, rate-limit throttling), and the queue depth, arrival rate and
   residence time Little's law reads. The run's own DNS, connect and TLS time
   per dependency, averaged per interval over the requests that spent any,
   become `dependency/<label>/dns_ms`, `connect_ms` and `tls_ms` series and are
@@ -470,7 +470,8 @@ errors, or falling throughput, on a transaction or action series.
   uncertainty of a level's settle period is `load_coincident`.
 - **Signatures.** `resource_pressure`, `garbage_collection`,
   `pool_exhaustion`, `consumer_lag`, `rebalance`, `dead_letters`, `retries`,
-  `cold_start`, `database_wait` and `network_phase`. Each names its required
+  `cold_start`, `database_wait`, `network_phase`, `kv_cache_saturation`,
+  `gpu_compute_saturation`, `inference_queueing` and `rate_limited`. Each names its required
   evidence kinds, the indicators that support it, its competitors and its
   falsification check. With none of its required kinds measured it lacks
   evidence, and one that cannot explain the symptom's kind is not

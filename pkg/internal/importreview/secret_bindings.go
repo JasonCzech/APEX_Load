@@ -419,7 +419,7 @@ func RedactionContextForMap(value map[string]any, path string, prior RedactionTr
 
 func IsHTTPProvenanceActionType(canonical string) bool {
 	switch canonical {
-	case "request", "get", "post", "put", "patch", "delete", "head", "options", "trace", "connect", "http_sequence", "http_oauth2_token", "source_transaction":
+	case "request", "get", "post", "put", "patch", "delete", "head", "options", "trace", "connect", "http_sequence", "http_oauth2_token", "source_transaction", "llm_request":
 		return true
 	}
 	return false

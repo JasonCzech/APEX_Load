@@ -149,7 +149,7 @@ func retireUnknownUploadFixture(t *testing.T, owner *analysisUploadPhysicalOwner
 		owner.mu.Unlock()
 		if unknown && knownJoined {
 			analysisUploadOwners.Delete(owner.id)
-			owner.releaseOnce.Do(func() { <-analysisUploadWriterSlots })
+			owner.releaseOnce.Do(func() { owner.releaseSlot() })
 			return
 		}
 		time.Sleep(time.Millisecond)

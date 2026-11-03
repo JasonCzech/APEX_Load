@@ -20,9 +20,10 @@ func TestAnalysisCapabilitiesAdvertiseExactImportedIdentityVersionWithoutNativeA
 			// Invalid operator geometry cannot turn a supported wire contract into
 			// available native execution or allocate a heavy job.
 			t.Setenv("APEXLOAD_ANALYSIS_MEMORY_LIMIT", "3GiB")
-			beforeJobs, beforeNative := len(analysisPipelineJobs), analytics.NativeBusy()
+			s := &Server{}
+			beforeJobs, beforeNative := len(s.analysisPipelineSlots()), analytics.NativeBusy()
 			w := httptest.NewRecorder()
-			(&Server{}).handleAnalysisCapabilities(w, httptest.NewRequest(http.MethodGet, "/api/v1/analysis/capabilities?project_id=project", nil))
+			s.handleAnalysisCapabilities(w, httptest.NewRequest(http.MethodGet, "/api/v1/analysis/capabilities?project_id=project", nil))
 			var got AnalysisCapabilitiesResponse
 			if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 				t.Fatal(err)
@@ -30,7 +31,7 @@ func TestAnalysisCapabilitiesAdvertiseExactImportedIdentityVersionWithoutNativeA
 			if w.Code != http.StatusOK || got.ImportedIdentityVersion != 2 || got.Enabled != enabled || got.NativeParquet != analytics.Available() || got.ResourceConfigurationAccepted {
 				t.Fatalf("identity contract conflated with execution admission: status=%d %+v", w.Code, got)
 			}
-			if len(analysisPipelineJobs) != beforeJobs || analytics.NativeBusy() != beforeNative {
+			if len(s.analysisPipelineSlots()) != beforeJobs || analytics.NativeBusy() != beforeNative {
 				t.Fatal("capability inspection admitted native ownership")
 			}
 		})

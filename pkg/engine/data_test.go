@@ -642,3 +642,39 @@ func TestDataProviderRejectsCSVColumnExpansion(t *testing.T) {
 		t.Fatalf("wide CSV error = %v", err)
 	}
 }
+
+func TestDataProvider_JSONL(t *testing.T) {
+	jsonl := strings.Join([]string{
+		`{"prompt":"Explain KV cache","messages":[{"role":"user","content":"Explain KV cache"}],"metadata":{"prompt_id":"p-1","expected_tokens":128}}`,
+		`{"prompt":"Explain FlashAttention","messages":[{"role":"user","content":"Explain FlashAttention"}],"metadata":{"prompt_id":"p-2","expected_tokens":256}}`,
+	}, "\n")
+	dp, err := NewDataProvider([]dsl.DataSource{{
+		Name:       "prompts",
+		Type:       "jsonl",
+		InlineData: jsonl,
+		Strategy:   "sequential",
+		Fields: map[string]string{
+			"prompt":          "prompt",
+			"first_user":      "$.messages[0].content",
+			"messages":        "messages",
+			"prompt_id":       "metadata.prompt_id",
+			"expected_tokens": "metadata.expected_tokens",
+		},
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider jsonl: %v", err)
+	}
+
+	row0 := dp.GetRow("prompts", 0)
+	if row0["prompts.prompt"] != "Explain KV cache" ||
+		row0["prompts.first_user"] != "Explain KV cache" ||
+		row0["prompts.prompt_id"] != "p-1" ||
+		row0["prompts.expected_tokens"] != "128" ||
+		row0["prompts.messages"] != `[{"content":"Explain KV cache","role":"user"}]` {
+		t.Fatalf("unexpected row0: %#v", row0)
+	}
+	row1 := dp.GetRow("prompts", 0)
+	if row1["prompts.prompt_id"] != "p-2" {
+		t.Fatalf("unexpected row1: %#v", row1)
+	}
+}

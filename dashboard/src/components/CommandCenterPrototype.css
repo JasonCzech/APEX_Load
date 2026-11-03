@@ -1207,8 +1207,14 @@ button.command-group-name:focus-visible {
   gap: 6px;
 }
 
-.command-runtime-graphs-grafana .charts-toolbar-badges {
+.command-runtime-graphs-grafana .charts-toolbar-badges:not(.llm-kpi-tiles) {
   display: none;
+}
+
+.command-runtime-graphs-grafana .llm-kpi-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .command-runtime-graphs .archive-chip {

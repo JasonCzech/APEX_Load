@@ -4,6 +4,7 @@ package engine
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"golang.org/x/text/encoding/charmap"
 	"hash/fnv"
@@ -19,6 +20,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/aurapayload"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
+	"github.com/jasonczech/apexload/pkg/internal/templatedjson"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
@@ -270,10 +272,18 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		defaultHeaders, _ = vu.interpolateMapWithSecrets(vu.Script.Config.HTTP.DefaultHeaders)
 		defaultHeaderList, _ = vu.interpolateHeaderListWithSecrets(vu.Script.Config.HTTP.DefaultHeaderList)
 	}
+	templateValueEncoding := actionBodyTemplateValueEncoding(action.Metadata)
+	if enc := strings.TrimSpace(action.BodyTemplateEncoding); enc != "" {
+		if !strings.EqualFold(enc, "json") {
+			vu.bodyResolutionError = fmt.Errorf("unsupported body_template_encoding %q", action.BodyTemplateEncoding)
+		} else if templateValueEncoding == "" {
+			templateValueEncoding = "json"
+		}
+	}
 	body, redactedBody := vu.interpolateActionBody(
 		action.Body,
 		action.BodyEncoding,
-		actionBodyTemplateValueEncoding(action.Metadata),
+		templateValueEncoding,
 		action.Metadata[dsl.ImportAuraTemplateContractMetadataKey],
 	)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
@@ -358,6 +368,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		action: resolved,
 		values: runtimeActionCompositeValues(&action, resolved),
 	}
+	vu.prepareLLMConversationAction(action, resolved)
 	return resolved
 }
 
@@ -504,7 +515,9 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 		return vu.resolveCEscapedBody(body)
 	}
 	interpolate := vu.interpolateWithSecrets
-	if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
+	if strings.EqualFold(strings.TrimSpace(templateValueEncoding), "json") {
+		interpolate = vu.interpolateJSONBodyWithSecrets
+	} else if templateValueEncoding == dsl.ImportURLFormTemplateValueEncodingQueryComponent {
 		interpolate = vu.interpolateURLFormTemplateValuesWithSecrets
 		if strings.EqualFold(encoding, "windows-1252") {
 			interpolate = func(s string) (string, string) {
@@ -547,6 +560,72 @@ func (vu *VUser) interpolateActionBody(body, encoding, templateValueEncoding str
 	}
 	return base64.StdEncoding.EncodeToString([]byte(resolved)),
 		base64.StdEncoding.EncodeToString([]byte(redacted))
+}
+
+func (vu *VUser) interpolateJSONBodyWithSecrets(s string) (string, string) {
+	if s == "" {
+		return s, s
+	}
+	var allowance *int
+	maxBytes := 0
+	matchLimit := -1
+	if budget := vu.concurrentPreparation; budget != nil {
+		if budget.err != nil {
+			return "", ""
+		}
+		if budget.bytesRemaining <= 0 {
+			budget.err = fmt.Errorf("concurrent HTTP preparation byte limit exceeded")
+			return "", ""
+		}
+		maxBytes = budget.bytesRemaining
+		allowance = &budget.templatesRemaining
+		matchLimit = *allowance + 1
+	}
+	matches := templatePattern.FindAllStringIndex(s, matchLimit)
+	contexts, err := templatedjson.ClassifyOccurrences(s, matches)
+	if err != nil {
+		vu.bodyResolutionError = err
+		return s, s
+	}
+	transform := func(index int, _ string, actual, safe string) (string, string, error) {
+		if index < 0 || index >= len(contexts) {
+			return actual, safe, fmt.Errorf("template occurrence index %d out of range", index)
+		}
+		if contexts[index].InString {
+			escapedActual := templatedjson.EscapeStringContent(actual)
+			escapedSafe := safe
+			if safe == actual {
+				escapedSafe = escapedActual
+			} else {
+				escapedSafe = templatedjson.EscapeStringContent(safe)
+			}
+			return escapedActual, escapedSafe, nil
+		}
+		if err := templatedjson.ValidateUnquotedValue(actual); err != nil {
+			return "", "", err
+		}
+		if safe != actual {
+			safe = strconv.Quote(safe)
+		}
+		return actual, safe, nil
+	}
+	resolved, redacted, err := vu.interpolateWithSecretsPolicyBounded(s, transform, maxBytes, allowance, nil)
+	if err != nil {
+		if vu.concurrentPreparation != nil {
+			vu.concurrentPreparation.err = err
+		}
+		vu.bodyResolutionError = err
+		return s, s
+	}
+	if len(vu.unresolvedSecretRefs) == 0 &&
+		len(vu.unresolvedFileRefs) == 0 &&
+		len(vu.unresolvedParameterRefs) == 0 &&
+		len(vu.unresolvedRunRefs) == 0 &&
+		!json.Valid([]byte(resolved)) {
+		vu.bodyResolutionError = fmt.Errorf("json body template produced invalid JSON")
+		return s, s
+	}
+	return resolved, redacted
 }
 
 // resolveCEscapedBody resolves a c_escaped body (LoadRunner BodyBinary):

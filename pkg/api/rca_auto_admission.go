@@ -76,10 +76,13 @@ func (s *Server) reconcileRCAAutoAdmissions(ctx context.Context, after string) s
 	return next
 }
 func (s *Server) startRCAAutoAdmissionWorker() context.CancelFunc {
-	ctx, cancel := context.WithCancel(context.Background())
-	if _, ok := s.store.(rcaAutoAdmissionStore); !ok {
-		return cancel
+	if s == nil {
+		return nil
 	}
+	if _, ok := s.store.(rcaAutoAdmissionStore); !ok {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -101,6 +104,7 @@ func (s *Server) startRCAAutoAdmissionWorker() context.CancelFunc {
 		}
 	}) {
 		cancel()
+		return nil
 	}
 	return cancel
 }

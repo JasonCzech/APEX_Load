@@ -113,7 +113,26 @@ func workloadGroup(g TestGroup, script *dsl.Script) rca.WorkloadGroup {
 		// The open model's arrival rate is its offered load; pacing carries only
 		// the remaining policy.
 		group.Unit = rca.LoadUnitTPS
-		appendLevel(pacing.TPS)
+		if len(pacing.RateStages) > 0 {
+			for _, st := range pacing.RateStages {
+				if st.Warmup {
+					continue
+				}
+				appendLevel(st.TargetTPS)
+				if st.EndTPS != nil {
+					appendLevel(*st.EndTPS)
+				}
+			}
+			pacing.RateStages = nil
+		} else if rateStages {
+			for _, stage := range g.Stages {
+				if !stage.Warmup && stage.TargetTPS != nil {
+					appendLevel(*stage.TargetTPS)
+				}
+			}
+		} else {
+			appendLevel(pacing.TPS)
+		}
 		pacing.TPS = 0
 	case rateStages:
 		// Goal-oriented stages offer a target rate that the controller meets by

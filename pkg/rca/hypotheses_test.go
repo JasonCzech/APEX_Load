@@ -296,3 +296,212 @@ func TestEngineVersionFollowsItsParameters(t *testing.T) {
 		t.Fatalf("%s -> %s", before, after)
 	}
 }
+
+func TestInferenceSignaturesOnTTFTAndTPOTSymptoms(t *testing.T) {
+	ttftSeries := "transaction/chat/ttft_p95_ms"
+	tpotSeries := "transaction/chat/tpot_p95_ms"
+	kvSeries := "monitor/prometheus/vllm/vllm:kv_cache_usage_perc/abc"
+	throttleSeries := "transaction/chat/throttle_rate"
+
+	ttftSymptom := Anomaly{
+		ID: "symptom-ttft", Series: ttftSeries, Onset: detectStart.Add(10 * time.Minute), End: detectStart.Add(20 * time.Minute),
+		OnsetUncertainty: 5 * time.Second, Scope: ScopeTime, Direction: DirectionIncrease, PeakZ: 11,
+		Evidence: []EvidenceRef{{ID: "e-ttft", Kind: "interval"}},
+	}
+	tpotSymptom := Anomaly{
+		ID: "symptom-tpot", Series: tpotSeries, Onset: detectStart.Add(10 * time.Minute), End: detectStart.Add(20 * time.Minute),
+		OnsetUncertainty: 5 * time.Second, Scope: ScopeTime, Direction: DirectionIncrease, PeakZ: 9,
+		Evidence: []EvidenceRef{{ID: "e-tpot", Kind: "interval"}},
+	}
+	kvAnomaly := Anomaly{
+		ID: "cause-kv", Series: kvSeries, Onset: detectStart.Add(7 * time.Minute), End: detectStart.Add(20 * time.Minute),
+		OnsetUncertainty: 5 * time.Second, Scope: ScopeTime, Direction: DirectionIncrease, PeakZ: 14,
+		Evidence: []EvidenceRef{{ID: "e-kv", Kind: "monitor_series"}},
+	}
+	throttleAnomaly := Anomaly{
+		ID: "cause-throttle", Series: throttleSeries, Onset: detectStart.Add(8 * time.Minute), End: detectStart.Add(20 * time.Minute),
+		OnsetUncertainty: 5 * time.Second, Scope: ScopeTime, Direction: DirectionIncrease, PeakZ: 10,
+		Evidence: []EvidenceRef{{ID: "e-throttle", Kind: "interval"}},
+	}
+	series := []Series{
+		{ID: ttftSeries, Kind: SeriesLatency, Measures: signatures.KindTTFT},
+		{ID: tpotSeries, Kind: SeriesLatency, Measures: signatures.KindTPOT},
+		{ID: kvSeries, Kind: SeriesProvider, Measures: signatures.KindKVCache, Nodes: []string{EntityNodeID("prometheus", "VLLM-1")}},
+		{ID: throttleSeries, Kind: SeriesErrorRate, Measures: signatures.KindRateLimit},
+	}
+	graph, _ := BuildGraph(GraphInput{
+		Calls:    []GraphCall{{Transaction: "chat", Action: "POST /v1/chat/completions", DependencyType: "http", Target: "vllm.local"}},
+		Entities: []GraphEntity{{Provider: "prometheus", ID: "VLLM-1", Name: "vllm.local", Type: "SERVICE"}},
+		Mappings: []GraphMapping{{ID: "m", Revision: 1, Dependency: "http:vllm.local", Provider: "prometheus", EntityID: "VLLM-1", Decision: MappingApproved}},
+	}, nil)
+
+	hypotheses, outcome, _ := Hypothesize([]Anomaly{ttftSymptom, tpotSymptom, kvAnomaly, throttleAnomaly}, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	if outcome != OutcomeSupported {
+		t.Fatalf("outcome = %s, hypotheses = %+v", outcome, hypotheses)
+	}
+	kvHyp := hypothesisFor(hypotheses, "kv_cache_saturation")
+	if kvHyp == nil || kvHyp.Confidence != ConfidenceHigh || len(kvHyp.Symptoms) != 2 {
+		t.Fatalf("expected high-confidence kv_cache_saturation explaining both TTFT and TPOT symptoms, got %+v", kvHyp)
+	}
+	rlHyp := hypothesisFor(hypotheses, "rate_limited")
+	if rlHyp == nil || rlHyp.Confidence != ConfidenceHigh {
+		t.Fatalf("expected high-confidence rate_limited from throttle_rate series, got %+v", rlHyp)
+	}
+}
+
+func TestLLMInferenceEvaluationCorpusAndFaultTrials(t *testing.T) {
+	ttftSeries := "transaction/chat/ttft_p95_ms"
+	tpotSeries := "transaction/chat/tpot_p95_ms"
+	kvSeries := "monitor/prometheus/vllm/vllm:kv_cache_usage_perc/abc"
+	gpuSeries := "monitor/prometheus/dcgm/DCGM_FI_DEV_GPU_UTIL/abc"
+	queueSeries := "monitor/prometheus/vllm/vllm:num_requests_waiting/abc"
+	throttleSeries := "transaction/chat/throttle_rate"
+
+	nodeID := EntityNodeID("prometheus", "VLLM-1")
+	const nBuckets = 90
+	const faultBucket = 42 // 7 minutes at 10s bucket width
+	faultStart := detectStart.Add(time.Duration(faultBucket) * detectBucket)
+	levels := oneLevel(nBuckets)
+
+	buildTrialSeries := func(seed int64, causeID, symptomID string) []Series {
+		specs := []struct {
+			id       string
+			kind     string
+			unit     string
+			measures string
+			nodes    []string
+			evKind   string
+			baseMean float64
+			baseSD   float64
+			faultVal float64
+		}{
+			{id: ttftSeries, kind: SeriesLatency, unit: "ms", measures: signatures.KindTTFT, evKind: "interval", baseMean: 80, baseSD: 2.5, faultVal: 460},
+			{id: tpotSeries, kind: SeriesLatency, unit: "ms", measures: signatures.KindTPOT, evKind: "interval", baseMean: 12, baseSD: 0.4, faultVal: 58},
+			{id: kvSeries, kind: SeriesProvider, unit: "ratio", measures: signatures.KindKVCache, nodes: []string{nodeID}, evKind: "monitor_series", baseMean: 0.35, baseSD: 0.015, faultVal: 0.96},
+			{id: gpuSeries, kind: SeriesProvider, unit: "%", measures: signatures.KindGPUCompute, nodes: []string{nodeID}, evKind: "monitor_series", baseMean: 42, baseSD: 1.5, faultVal: 98},
+			{id: queueSeries, kind: SeriesProvider, unit: "requests", measures: signatures.KindInferenceQueue, nodes: []string{nodeID}, evKind: "monitor_series", baseMean: 0.2, baseSD: 0.05, faultVal: 18},
+			{id: throttleSeries, kind: SeriesErrorRate, unit: "ratio", measures: signatures.KindRateLimit, evKind: "interval", baseMean: 0.002, baseSD: 0.0005, faultVal: 0.32},
+		}
+		out := make([]Series, 0, len(specs))
+		for _, sp := range specs {
+			s := Series{
+				ID:          sp.id,
+				Kind:        sp.kind,
+				Unit:        sp.unit,
+				Measures:    sp.measures,
+				Nodes:       sp.nodes,
+				Observation: ObservationInterval,
+				Bucket:      detectBucket,
+				Evidence:    EvidenceRef{ID: "ev-" + sp.id, Kind: sp.evKind, Locator: sp.id},
+				Points:      make([]SeriesPoint, nBuckets),
+			}
+			for b := 0; b < nBuckets; b++ {
+				jitter := float64(((b+int(seed)*3)%5)-2) * 0.25 * sp.baseSD
+				val := sp.baseMean + jitter
+				if sp.id == causeID && b >= faultBucket {
+					val = sp.faultVal + jitter
+				} else if sp.id == symptomID && b >= faultBucket+2 {
+					val = sp.faultVal + jitter
+				}
+				if val < 0 {
+					val = 0
+				}
+				s.Points[b] = SeriesPoint{
+					At:    detectStart.Add(time.Duration(b) * detectBucket),
+					Value: val,
+					Valid: true,
+				}
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+
+	graph, _ := BuildGraph(GraphInput{
+		Calls:    []GraphCall{{Transaction: "chat", Action: "POST /v1/chat/completions", DependencyType: "http", Target: "vllm.local"}},
+		Entities: []GraphEntity{{Provider: "prometheus", ID: "VLLM-1", Name: "vllm.local", Type: "SERVICE"}},
+		Mappings: []GraphMapping{{ID: "m", Revision: 1, Dependency: "http:vllm.local", Provider: "prometheus", EntityID: "VLLM-1", Decision: MappingApproved}},
+	}, nil)
+
+	faultDefs := []struct {
+		class       string
+		expectedSig string
+		causeSeries string
+		symptomSer  string
+	}{
+		{class: "llm_kv_saturation", expectedSig: "kv_cache_saturation", causeSeries: kvSeries, symptomSer: tpotSeries},
+		{class: "llm_gpu_saturation", expectedSig: "gpu_compute_saturation", causeSeries: gpuSeries, symptomSer: tpotSeries},
+		{class: "llm_queue_buildup", expectedSig: "inference_queueing", causeSeries: queueSeries, symptomSer: ttftSeries},
+		{class: "llm_rate_limit_429", expectedSig: "rate_limited", causeSeries: throttleSeries, symptomSer: ttftSeries},
+	}
+
+	manifest := EvalManifest{Schema: EvalManifestSchema}
+	assessments := make(map[string]Assessment)
+
+	seedSeq := int64(100)
+	for _, fd := range faultDefs {
+		for i := 0; i < 5; i++ {
+			seedSeq++
+			id := fd.class + "-" + string(rune('a'+i))
+			trialSeries := buildTrialSeries(seedSeq, fd.causeSeries, fd.symptomSer)
+			anomalies, detection, _ := Detect(DetectionInput{Levels: levels, Series: trialSeries}, DefaultDetectParams, NewBudgeter(DefaultBudget, nil, nil))
+			if len(anomalies) < 2 {
+				t.Fatalf("trial %s: expected >=2 detected anomalies from simulated series, got %d", id, len(anomalies))
+			}
+			hyps, outcome, _ := Hypothesize(anomalies, trialSeries, detection.Judged, graph, levels, DefaultDetectParams)
+			if outcome != OutcomeSupported || len(hyps) == 0 || hyps[0].Signature != fd.expectedSig {
+				t.Fatalf("trial %s: expected top-1 %q, got outcome=%s hyps=%+v", id, fd.expectedSig, outcome, hyps)
+			}
+			manifest.Trials = append(manifest.Trials, EvalTrial{
+				ID:                id,
+				Seed:              "seed-" + id,
+				Class:             fd.class,
+				RunID:             "run-" + id,
+				FaultStart:        &faultStart,
+				ExpectedSignature: fd.expectedSig,
+				Assessment:        id + ".json",
+			})
+			assessments[id] = Assessment{
+				SchemaVersion: AssessmentSchemaVersion,
+				Outcome:       outcome,
+				Inputs:        InputDigests{Engine: "engine-llm-eval"},
+				Anomalies:     anomalies,
+				Hypotheses:    hyps,
+			}
+		}
+	}
+
+	// Quiet controls: simulated noise with no injected fault -> Detect + Hypothesize produce no false attribution.
+	for i := 0; i < 4; i++ {
+		seedSeq++
+		id := "llm-quiet-" + string(rune('a'+i))
+		trialSeries := buildTrialSeries(seedSeq, "", "")
+		anomalies, detection, _ := Detect(DetectionInput{Levels: levels, Series: trialSeries}, DefaultDetectParams, NewBudgeter(DefaultBudget, nil, nil))
+		hyps, outcome, _ := Hypothesize(anomalies, trialSeries, detection.Judged, graph, levels, DefaultDetectParams)
+		manifest.Trials = append(manifest.Trials, EvalTrial{
+			ID:         id,
+			Seed:       "seed-" + id,
+			Class:      HealthyClass,
+			RunID:      "run-" + id,
+			Assessment: id + ".json",
+		})
+		assessments[id] = Assessment{
+			SchemaVersion: AssessmentSchemaVersion,
+			Outcome:       outcome,
+			Inputs:        InputDigests{Engine: "engine-llm-eval"},
+			Anomalies:     anomalies,
+			Hypotheses:    hyps,
+		}
+	}
+
+	scores, err := ScoreEvaluation(manifest, assessments, SplitAll)
+	if err != nil {
+		t.Fatalf("ScoreEvaluation: %v", err)
+	}
+	if scores.FaultTrials != 20 || scores.HealthyControls != 4 {
+		t.Fatalf("unexpected trial counts: fault=%d controls=%d", scores.FaultTrials, scores.HealthyControls)
+	}
+	if scores.Top1.Value != 1.0 || scores.FalseAttribution.Value != 0.0 || scores.OnsetWithinTolerance.Value != 1.0 {
+		t.Fatalf("expected Top1=1.0 FalseAttribution=0.0 OnsetWithinTolerance=1.0, got %+v", scores)
+	}
+}

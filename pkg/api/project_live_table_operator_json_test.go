@@ -121,3 +121,42 @@ func TestProjectLiveTableOperatorMutationRouteRejectsInvalidCellsBeforeAdmission
 		}
 	}
 }
+
+func TestDecodeProjectTableBodyRejectsTrailingTokensAndUnknownFields(t *testing.T) {
+	type sampleReq struct {
+		Name string `json:"name"`
+	}
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "trailing JSON object",
+			body: `{"name":"a"} {"name":"b"}`,
+			want: "request must contain one JSON object",
+		},
+		{
+			name: "trailing malformed token",
+			body: `{"name":"a"} garbage`,
+			want: "request must contain one JSON object",
+		},
+		{
+			name: "unknown field",
+			body: `{"name":"a","unknown":1}`,
+			want: "invalid project live table request fields or body size",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/projects/default/live-tables", strings.NewReader(tc.body))
+			var out sampleReq
+			if decodeProjectTableBody(rec, req, &out) {
+				t.Fatalf("decodeProjectTableBody(%q) succeeded, want failure", tc.body)
+			}
+			if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("decodeProjectTableBody(%q) = %d %s, want substring %q", tc.body, rec.Code, rec.Body.String(), tc.want)
+			}
+		})
+	}
+}

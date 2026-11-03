@@ -189,22 +189,23 @@ func (s *Server) resumeElasticInspectionCleanup(ctx context.Context) {
 	if err != nil {
 		return
 	}
+	slots := s.elasticInspectionSlotChan()
 	for _, op := range ops {
 		if _, running := elasticInspectionCleanupRunning.LoadOrStore(op.ID, true); running {
 			continue
 		}
 		select {
-		case elasticInspectionSlots <- struct{}{}:
+		case slots <- struct{}{}:
 		default:
 			elasticInspectionCleanupRunning.Delete(op.ID)
 			continue
 		}
 		if !s.launchBackground(func() {
 			defer elasticInspectionCleanupRunning.Delete(op.ID)
-			defer func() { <-elasticInspectionSlots }()
+			defer func() { <-slots }()
 			s.closeDirectElasticInspectionCleanup(ctx, store, op)
 		}) {
-			<-elasticInspectionSlots
+			<-slots
 			elasticInspectionCleanupRunning.Delete(op.ID)
 		}
 	}

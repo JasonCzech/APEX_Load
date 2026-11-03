@@ -1,6 +1,8 @@
 package http
 
 import (
+	"strings"
+
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -19,6 +21,12 @@ func addResponseContentReceipt(result *protocol.Result, state, basis string) {
 func fixedResponseReadError(err error) string {
 	if contentdecode.Kind(err) != "" {
 		return err.Error()
+	}
+	if err != nil {
+		msg := err.Error()
+		if strings.HasPrefix(msg, "stream_truncated") || strings.HasPrefix(msg, "stream_timeout") {
+			return msg
+		}
 	}
 	return "response content read failed"
 }

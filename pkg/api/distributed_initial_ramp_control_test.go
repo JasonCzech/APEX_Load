@@ -31,20 +31,22 @@ func TestDistributedInitialRampRejectionRemainsConflictWithoutCompensation(t *te
 	client := &initialRampRejectingGeneratorClient{}
 	startedAt := time.Now().UTC().Add(-time.Second)
 	testRun := &ManagedTest{
-		ID:                      "distributed-initial-ramp",
-		Name:                    "distributed initial ramp",
-		Status:                  "RUNNING",
-		ProjectID:               storage.DefaultProjectID,
-		Duration:                time.Minute,
-		DurationStr:             time.Minute.String(),
-		Groups:                  []TestGroup{{Name: "buyers", VUsers: 1}},
-		TotalVUsers:             1,
-		StartedAt:               &startedAt,
-		executionBackend:        backend,
-		remoteActivated:         true,
-		remoteClient:            client,
-		remoteTarget:            "generator-a",
-		remoteControlGeneration: 1,
+		ID:               "distributed-initial-ramp",
+		Name:             "distributed initial ramp",
+		Status:           "RUNNING",
+		ProjectID:        storage.DefaultProjectID,
+		Duration:         time.Minute,
+		DurationStr:      time.Minute.String(),
+		Groups:           []TestGroup{{Name: "buyers", VUsers: 1}},
+		TotalVUsers:      1,
+		StartedAt:        &startedAt,
+		executionBackend: backend,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteActivated:         true,
+			remoteClient:            client,
+			remoteTarget:            "generator-a",
+			remoteControlGeneration: 1,
+		},
 	}
 	server.runner.tests[testRun.ID] = testRun
 

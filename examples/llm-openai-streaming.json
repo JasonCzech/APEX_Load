@@ -1,0 +1,47 @@
+{
+  "name": "LLM OpenAI-Compatible Streaming (apexllm-target)",
+  "version": "1.0.0",
+  "protocol": "http",
+  "config": {
+    "base_url": "{{env.LLM_BASE_URL}}",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 250
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "run_logic": {
+      "iterations": 1,
+      "auto_transactions": "per_action"
+    }
+  },
+  "actions": [
+    {
+      "name": "Stream Chat Completion",
+      "type": "llm_request",
+      "method": "POST",
+      "target": "/v1/chat/completions",
+      "headers": {
+        "Authorization": "Bearer {{secret.LLM_API_KEY}}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
+      },
+      "body_template_encoding": "json",
+      "body": "{\"model\":\"{{env.LLM_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a concise performance testing assistant.\"},{\"role\":\"user\",\"content\":\"{{env.LLM_PROMPT}}\"}],\"max_tokens\":128,\"temperature\":0.2,\"stream\":true,\"stream_options\":{\"include_usage\":true}}",
+      "params": {
+        "llm_dialect": "openai_chat",
+        "stream_mode": "sse",
+        "model": "{{env.LLM_MODEL}}",
+        "include_usage": true,
+        "save_text_as": "assistant_reply"
+      },
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    }
+  ]
+}

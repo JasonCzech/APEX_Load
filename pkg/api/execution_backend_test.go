@@ -3515,9 +3515,9 @@ func TestApplyRemoteMetricsBatchTerminalBatchPreservesTransactions(t *testing.T)
 	b := newDistributedExecutionBackend([]string{"gen-1"}, 5*time.Second, nil)
 	const target = "gen-1"
 	test := &ManagedTest{
-		ID:                    "t-terminal-preserve",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}, {Name: "admins", VUsers: 1}},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		ID:                     "t-terminal-preserve",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}, {Name: "admins", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 
 	running := generatorrpc.MetricsBatch{
@@ -3565,9 +3565,9 @@ func TestApplyRemoteMetricsBatchIgnoresStaleWindow(t *testing.T) {
 	b := &distributedExecutionBackend{}
 	target := "gen-a"
 	test := &ManagedTest{
-		ID:                    "t-stale-window",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		ID:                     "t-stale-window",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 
 	newer := generatorrpc.MetricsBatch{
@@ -3607,9 +3607,9 @@ func TestApplyRemoteMetricsBatchAcceptsEqualTimestampCommitTransition(t *testing
 	b := &distributedExecutionBackend{}
 	target := "gen-a"
 	test := &ManagedTest{
-		ID:                    "t-equal-timestamp-commit",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 3}},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		ID:                     "t-equal-timestamp-commit",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 3}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 
 	staged := generatorrpc.MetricsBatch{
@@ -3640,5 +3640,115 @@ func TestApplyRemoteMetricsBatchAcceptsEqualTimestampCommitTransition(t *testing
 	live, _, _ = b.applyRemoteMetricsBatch(tr, test, target, staged)
 	if live.ActiveVUsers != 3 {
 		t.Fatalf("delayed staged snapshot regressed active VUsers to %d", live.ActiveVUsers)
+	}
+}
+
+func TestDistributedTestRuntimePrepareAndRollback(t *testing.T) {
+	b := &distributedExecutionBackend{}
+	priorCtx, priorCancel := context.WithCancel(context.Background())
+	defer priorCancel()
+	nextCtx, nextCancel := context.WithCancel(context.Background())
+	defer nextCancel()
+
+	client := &startupLifecycleFakeClient{}
+	stream := &generatorrpc.MetricsStream{}
+	shards := map[string][]GeneratorShardSummary{
+		"buyers": {{Group: "buyers", Target: "gen-single", VUsers: 4}},
+	}
+	pendingAt := time.Now().UTC().Add(-time.Minute)
+	endedAt := time.Now().UTC().Add(-30 * time.Second)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	test := &ManagedTest{
+		ID:            "t-prepare-rollback",
+		Status:        "INITIALIZING",
+		PendingSince:  &pendingAt,
+		PendingReason: "queued",
+		QueuePosition: 2,
+		EndedAt:       &endedAt,
+		Error:         "prior-error",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteThroughputCaps:             map[string]float64{"old\x00buyers": 12.5},
+			remoteArchiveClientsByTarget:     map[string]generatorClient{"old": client},
+			remoteTransactionResponseTimeSLA: map[string]*transactionResponseTimeSLAAccumulator{"buyers\x00login": {}},
+			remoteTransactionResponseTimeSLALegacyByTarget: map[string]map[string]*transactionResponseTimeSLAAccumulator{
+				"old": {"buyers\x00login": {}},
+			},
+			remoteFinalizing:               true,
+			remoteWorkloadCompleted:        true,
+			remoteStopFinalizerRunning:     true,
+			remoteMetricsFlushScheduled:    true,
+			remoteMetricsAcceptedRevision:  9,
+			remoteMetricsPublishedRevision: 8,
+			remoteMetricsGateRevision:      7,
+			remoteGoalUpdateRunning:        true,
+			remoteGoalUpdateRevision:       6,
+			remoteActivated:                true,
+			remoteActivationPending:        false,
+			remoteControlGeneration:        4,
+			remoteLifecycleCtx:             priorCtx,
+			remoteLifecycleCancel:          priorCancel,
+			remoteMetricsStoredRevisionByTarget: map[string]uint64{
+				"old": 5,
+			},
+		},
+	}
+
+	// Empty firstTarget with a single-entry clientsByTarget exercises the single-target fallback.
+	rollback := test.prepareDistributedRuntimeState(
+		b,
+		"",
+		map[string]generatorClient{"gen-single": client},
+		map[string]*generatorrpc.MetricsStream{"gen-single": stream},
+		shards,
+		nextCtx,
+		nextCancel,
+		now,
+	)
+
+	if test.Status != "RUNNING" || test.StartedAt == nil || !test.StartedAt.Equal(now) || test.EndedAt != nil {
+		t.Fatalf("prepared lifecycle state = status=%q started=%v ended=%v", test.Status, test.StartedAt, test.EndedAt)
+	}
+	if test.PendingSince != nil || test.PendingReason != "" || test.QueuePosition != 0 || test.Error != "" || !test.jointHeldFromStart {
+		t.Fatalf("prepared queue/error fields not cleared: pending=%v/%q pos=%d err=%q joint=%v", test.PendingSince, test.PendingReason, test.QueuePosition, test.Error, test.jointHeldFromStart)
+	}
+	if test.remoteTarget != "gen-single" || test.remoteClient != client || test.remoteMetricsStream != stream {
+		t.Fatalf("single-target fallback failed: target=%q client=%v stream=%v", test.remoteTarget, test.remoteClient, test.remoteMetricsStream)
+	}
+	if test.remoteControlGeneration != 5 || test.remoteActivated || !test.remoteActivationPending {
+		t.Fatalf("prepared control/activation = gen=%d activated=%v pending=%v", test.remoteControlGeneration, test.remoteActivated, test.remoteActivationPending)
+	}
+	if test.remoteFinalizing || test.remoteWorkloadCompleted || test.remoteStopFinalizerRunning || test.remoteMetricsFlushScheduled || test.remoteGoalUpdateRunning {
+		t.Fatalf("stale runtime flags survived preparation: %+v", test.distributedTestRuntime)
+	}
+	if test.remoteThroughputCaps != nil || test.remoteArchiveClientsByTarget != nil || test.remoteTransactionResponseTimeSLA != nil || test.remoteTransactionResponseTimeSLALegacyByTarget != nil {
+		t.Fatalf("stale maps survived preparation: %+v", test.distributedTestRuntime)
+	}
+	if test.remoteMetricsAcceptedRevision != 0 || test.remoteMetricsPublishedRevision != 0 || test.remoteMetricsGateRevision != 0 || test.remoteGoalUpdateRevision != 0 || test.remoteMetricsStoredRevisionByTarget != nil {
+		t.Fatalf("stale revisions survived preparation: %+v", test.distributedTestRuntime)
+	}
+	if test.goalControl == nil || len(test.remoteMetricsPublishGate) != 1 {
+		t.Fatalf("goalControl=%v gateLen=%d", test.goalControl, len(test.remoteMetricsPublishGate))
+	}
+
+	test.remoteThroughputCaps = map[string]float64{"gen-single\x00buyers": 10}
+	test.remoteTransactionResponseTimeSLA = map[string]*transactionResponseTimeSLAAccumulator{"buyers\x00login": {}}
+	test.remoteTransactionResponseTimeSLALegacyByTarget = map[string]map[string]*transactionResponseTimeSLAAccumulator{
+		"gen-single": {"buyers\x00login": {}},
+	}
+
+	rollback.restore(test)
+
+	if test.Status != "INITIALIZING" || test.StartedAt != nil || test.EndedAt != nil || test.jointHeldFromStart {
+		t.Fatalf("restored lifecycle state = status=%q started=%v ended=%v joint=%v", test.Status, test.StartedAt, test.EndedAt, test.jointHeldFromStart)
+	}
+	if test.executionBackend != nil || test.GeneratorShards != nil || test.goalControl != nil {
+		t.Fatalf("restored execution references not cleared: backend=%v shards=%v goal=%v", test.executionBackend, test.GeneratorShards, test.goalControl)
+	}
+	if test.remoteTarget != "" || test.remoteClient != nil || test.remoteMetricsStream != nil || test.remoteClientsByTarget != nil || test.remoteMetricsStreamsByTarget != nil || test.remoteMetricsPublishGate != nil || test.remoteThroughputCaps != nil || test.remoteTransactionResponseTimeSLA != nil || test.remoteTransactionResponseTimeSLALegacyByTarget != nil {
+		t.Fatalf("restored remote handles not cleared: %+v", test.distributedTestRuntime)
+	}
+	if test.remoteControlGeneration != 4 || !test.remoteActivated || test.remoteActivationPending || test.remoteLifecycleCtx != priorCtx {
+		t.Fatalf("rollback did not restore prior snapshot: gen=%d activated=%v pending=%v ctx=%v", test.remoteControlGeneration, test.remoteActivated, test.remoteActivationPending, test.remoteLifecycleCtx)
 	}
 }

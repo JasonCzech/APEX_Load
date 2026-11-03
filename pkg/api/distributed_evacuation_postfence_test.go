@@ -345,15 +345,17 @@ func TestEvacuationPostFenceFailuresReleaseUnselectedCandidatesAndNameTheFault(t
 				cancel:       cancel,
 				Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 				Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
-				remoteGroupShards: map[string][]GeneratorShardSummary{
-					"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+				distributedTestRuntime: distributedTestRuntime{
+					remoteGroupShards: map[string][]GeneratorShardSummary{
+						"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+					},
+					remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+					remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+					remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+					remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+					remoteLifecycleCtx:           runCtx,
+					remoteActivated:              true,
 				},
-				remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
-				remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-				remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-				remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
-				remoteLifecycleCtx:           runCtx,
-				remoteActivated:              true,
 			}
 			hub := NewHub()
 			go hub.Run()

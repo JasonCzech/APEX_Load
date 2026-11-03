@@ -288,10 +288,9 @@ func (s *Server) startArchiveCleanupRetry() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.archiveCleanupCancel = cancel
-	s.archiveCleanupDone = make(chan struct{})
-	go func() {
-		defer close(s.archiveCleanupDone)
+	done := make(chan struct{})
+	if !s.launchBackground(func() {
+		defer close(done)
 		ticker := time.NewTicker(archiveCleanupRetryInterval)
 		defer ticker.Stop()
 		runSweep := func() {
@@ -324,5 +323,11 @@ func (s *Server) startArchiveCleanupRetry() {
 				runSweep()
 			}
 		}
-	}()
+	}) {
+		cancel()
+		close(done)
+		return
+	}
+	s.archiveCleanupCancel = cancel
+	s.archiveCleanupDone = done
 }

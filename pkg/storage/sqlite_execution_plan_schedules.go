@@ -44,9 +44,16 @@ func (s *SQLiteStore) SaveExecutionPlanSchedule(schedule *ExecutionPlanSchedule)
 	}
 	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
 	normalizeExecutionPlanScheduleActor(schedule)
+	originalRevision := schedule.Revision
 	if schedule.Revision < 1 {
 		schedule.Revision = 1
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			schedule.Revision = originalRevision
+		}
+	}()
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -79,7 +86,11 @@ func (s *SQLiteStore) SaveExecutionPlanSchedule(schedule *ExecutionPlanSchedule)
 	if affected != 1 {
 		return errors.New("execution plan schedule belongs to another plan or project")
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // CreateExecutionPlanScheduleIfAbsent creates a schedule without ever replacing
@@ -90,10 +101,18 @@ func (s *SQLiteStore) CreateExecutionPlanScheduleIfAbsent(schedule *ExecutionPla
 }
 
 func createExecutionPlanScheduleIfAbsentWithExecutor(executor testSaveExecutor, schedule *ExecutionPlanSchedule) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
 	if err := prepareExecutionPlanSchedule(schedule); err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return false, err
 	}
 	if err := bindExecutionPlanScheduleParent(executor, schedule); err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	result, err := executor.Exec(`INSERT INTO execution_plan_schedules (id, plan_id, project_id, revision, name, cron_expr, timezone, release_id, run_name_template, enabled, missed_run_policy, conflict_summary, next_required_action, last_run_run_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, actor_type, actor_subject, actor_display_name, created_at, updated_at)
@@ -104,29 +123,29 @@ func createExecutionPlanScheduleIfAbsentWithExecutor(executor testSaveExecutor, 
 		schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError,
 		schedule.ActorType, schedule.ActorSubject, schedule.ActorDisplayName, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || affected != 1 {
+		schedule.Revision = originalRevision
 		return false, err
 	}
-	return affected == 1, nil
+	return true, nil
 }
 
 func (s *SQLiteStore) CreateExecutionPlanScheduleIfAbsentAndLeaseTermHeld(schedule *ExecutionPlanSchedule, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	created, err := createExecutionPlanScheduleIfAbsentWithExecutor(tx, schedule)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createExecutionPlanScheduleIfAbsentWithExecutor(tx, schedule)
+	})
+	if (err != nil || !changed) && schedule != nil {
+		schedule.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 // UpdateExecutionPlanScheduleIfRevision updates an existing schedule only when
@@ -137,13 +156,22 @@ func (s *SQLiteStore) UpdateExecutionPlanScheduleIfRevision(schedule *ExecutionP
 }
 
 func updateExecutionPlanScheduleIfRevisionWithExecutor(executor testSaveExecutor, schedule *ExecutionPlanSchedule, expectedRevision int) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
 	if err := prepareExecutionPlanSchedule(schedule); err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return false, err
 	}
 	if expectedRevision < 1 {
+		schedule.Revision = originalRevision
 		return false, errors.New("expected execution plan schedule revision must be positive")
 	}
 	if err := bindExecutionPlanScheduleParent(executor, schedule); err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	nextRevision := expectedRevision + 1
@@ -154,13 +182,16 @@ func updateExecutionPlanScheduleIfRevisionWithExecutor(executor testSaveExecutor
 		schedule.ActorType, schedule.ActorSubject, schedule.ActorDisplayName, schedule.UpdatedAt,
 		schedule.ID, schedule.PlanID, schedule.ProjectID, expectedRevision)
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	if affected != 1 {
+		schedule.Revision = originalRevision
 		return false, nil
 	}
 	schedule.Revision = nextRevision
@@ -168,19 +199,17 @@ func updateExecutionPlanScheduleIfRevisionWithExecutor(executor testSaveExecutor
 }
 
 func (s *SQLiteStore) UpdateExecutionPlanScheduleIfRevisionAndLeaseTermHeld(schedule *ExecutionPlanSchedule, expectedRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	updated, err := updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
+	})
+	if (err != nil || !changed) && schedule != nil {
+		schedule.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return changed, err
 }
 
 // beginExecutionLeaseTermTransaction validates and locks the durable execution
@@ -205,6 +234,53 @@ func (s *SQLiteStore) beginExecutionLeaseTermTransactionContext(ctx context.Cont
 		return nil, err
 	}
 	return tx, nil
+}
+
+// withLeaseTermTx executes fn inside a transaction fenced by the durable
+// execution lease term (name, ownerID, generation), committing only when fn
+// reports changed == true and err == nil.
+func (s *SQLiteStore) withLeaseTermTx(leaseName, leaseOwnerID string, leaseGeneration uint64, fn func(tx *storeTx) (bool, error)) (bool, error) {
+	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	changed, err := fn(tx)
+	if err != nil || !changed {
+		return changed, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// withLeaseOwnerTx executes fn inside a transaction fenced by the durable
+// execution lease owner (name, ownerID), committing only when fn reports
+// changed == true and err == nil.
+func (s *SQLiteStore) withLeaseOwnerTx(leaseName, leaseOwnerID string, fn func(tx *storeTx) (bool, error)) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil || !held {
+		return false, err
+	}
+	changed, err := fn(tx)
+	if err != nil || !changed {
+		return changed, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func prepareExecutionPlanSchedule(schedule *ExecutionPlanSchedule) error {
@@ -383,22 +459,19 @@ func (s *SQLiteStore) DeleteExecutionPlanScheduleGuardedIfLeaseTermHeld(id, leas
 	if id == "" {
 		return "", errors.New("execution plan schedule id is required")
 	}
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return "", err
-	}
-	defer tx.Rollback()
-	result, err := deleteExecutionPlanScheduleGuardedWithExecutor(tx, id)
+	var out ScheduleDeleteResult
+	_, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		result, err := deleteExecutionPlanScheduleGuardedWithExecutor(tx, id)
+		if err != nil {
+			return false, err
+		}
+		out = result
+		return result == ScheduleDeleteDeleted, nil
+	})
 	if err != nil {
 		return "", err
 	}
-	if result != ScheduleDeleteDeleted {
-		return result, nil
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
-	return result, nil
+	return out, nil
 }
 
 func scanExecutionPlanSchedule(row scanner) (*ExecutionPlanSchedule, error) {
@@ -467,20 +540,36 @@ const executionPlanScheduleOccurrenceColumns = `id, schedule_id, plan_id, COALES
 	FROM execution_plan_schedule_occurrences`
 
 func (s *SQLiteStore) SaveExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence) error {
+	var originalRevision int64
+	var originalScheduleRevision int
 	expectedRevision := int64(1)
-	if occurrence != nil && occurrence.Revision > 0 {
-		expectedRevision = occurrence.Revision
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+		if occurrence.Revision > 0 {
+			expectedRevision = occurrence.Revision
+		}
 	}
 	created, err := s.CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence)
 	if err != nil || created {
 		return err
 	}
-	occurrence.Revision = expectedRevision
+	if occurrence != nil {
+		occurrence.Revision = expectedRevision
+	}
 	updated, err := s.CompareAndSwapExecutionPlanScheduleOccurrence(occurrence, expectedRevision)
 	if err != nil {
+		if occurrence != nil {
+			occurrence.Revision = originalRevision
+			occurrence.ScheduleRevision = originalScheduleRevision
+		}
 		return err
 	}
 	if !updated {
+		if occurrence != nil {
+			occurrence.Revision = originalRevision
+			occurrence.ScheduleRevision = originalScheduleRevision
+		}
 		return errors.New("execution plan schedule occurrence changed or was deleted concurrently")
 	}
 	return nil
@@ -539,27 +628,39 @@ func (s *SQLiteStore) CreateExecutionPlanScheduleOccurrenceIfAbsent(occurrence *
 }
 
 func createExecutionPlanScheduleOccurrenceIfAbsentWithExecutor(executor testSaveExecutor, occurrence *ExecutionPlanScheduleOccurrence) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if err := bindExecutionPlanScheduleOccurrenceParent(executor, occurrence); err != nil {
 		return false, err
 	}
 	if err := prepareExecutionPlanScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	occurrence.Revision = 1
 	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, approval_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
-		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.Revision, occurrence.TransitionToken,
+		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, 1, occurrence.TransitionToken,
 		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ApprovalID, occurrence.ConflictSummary,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName, occurrence.CreatedAt, occurrence.UpdatedAt)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || affected <= 0 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	return affected > 0, nil
+	occurrence.Revision = 1
+	return true, nil
 }
 
 // ClaimExecutionPlanScheduleOccurrenceIfCurrent is the scheduler-only create
@@ -570,13 +671,20 @@ func (s *SQLiteStore) ClaimExecutionPlanScheduleOccurrenceIfCurrent(occurrence *
 }
 
 func claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(executor testSaveExecutor, occurrence *ExecutionPlanScheduleOccurrence) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if err := bindExecutionPlanScheduleOccurrenceParent(executor, occurrence); err != nil {
 		return false, err
 	}
 	if err := prepareExecutionPlanScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	occurrence.Revision = 1
 	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, approval_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
 		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		FROM execution_plan_schedules
@@ -585,50 +693,57 @@ func claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(executor testSave
 			AND COALESCE(enabled, 1) = ?
 			AND next_run_at = ?
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
-		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.Revision, occurrence.TransitionToken,
+		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, 1, occurrence.TransitionToken,
 		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ApprovalID, occurrence.ConflictSummary,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName, occurrence.CreatedAt, occurrence.UpdatedAt,
 		occurrence.ScheduleID, occurrence.ScheduleRevision, true, occurrence.PlannedAt)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || affected <= 0 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	return affected > 0, nil
+	occurrence.Revision = 1
+	return true, nil
 }
 
 func (s *SQLiteStore) CreateExecutionPlanScheduleOccurrenceIfAbsentAndLeaseTermHeld(occurrence *ExecutionPlanScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	created, err := createExecutionPlanScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createExecutionPlanScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) ClaimExecutionPlanScheduleOccurrenceIfCurrentAndLeaseTermHeld(occurrence *ExecutionPlanScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	created, err := claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(tx, occurrence)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(tx, occurrence)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) CompareAndSwapExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence, expectedRevision int64) (bool, error) {
@@ -636,6 +751,12 @@ func (s *SQLiteStore) CompareAndSwapExecutionPlanScheduleOccurrence(occurrence *
 }
 
 func compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(executor testSaveExecutor, occurrence *ExecutionPlanScheduleOccurrence, expectedRevision int64) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if expectedRevision < 1 {
 		return false, errors.New("execution plan schedule occurrence expected revision must be positive")
 	}
@@ -643,6 +764,8 @@ func compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(executor testSave
 		return false, err
 	}
 	if err := prepareExecutionPlanScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	result, err := executor.Exec(`UPDATE execution_plan_schedule_occurrences SET
@@ -654,13 +777,19 @@ func compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(executor testSave
 		occurrence.TransitionToken, occurrence.UpdatedAt, occurrence.ID, occurrence.ScheduleID, occurrence.PlannedAt, expectedRevision,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	if affected != 1 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, nil
 	}
 	occurrence.Revision = expectedRevision + 1
@@ -668,53 +797,65 @@ func compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(executor testSave
 }
 
 func (s *SQLiteStore) CompareAndSwapExecutionPlanScheduleOccurrenceIfLeaseTermHeld(occurrence *ExecutionPlanScheduleOccurrence, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	updated, err := compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return changed, err
 }
 
 // ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld is the plan-schedule
 // counterpart of ResolveScenarioScheduleOccurrenceIfLeaseTermHeld.
 func (s *SQLiteStore) ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld(occurrence *ExecutionPlanScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ExecutionPlanSchedule, expectedScheduleRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	originalScheduleRevision := schedule.Revision
-	originalOccurrenceRevision := occurrence.Revision
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalScheduleRevision int
+	if schedule != nil {
+		originalScheduleRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	updated, err := updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
-	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		return updated, err
+	var originalOccurrenceRevision int64
+	var originalOccurrenceScheduleRevision int
+	if occurrence != nil {
+		originalOccurrenceRevision = occurrence.Revision
+		originalOccurrenceScheduleRevision = occurrence.ScheduleRevision
 	}
-	updated, err = compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
-	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
-		return updated, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		updated, err := updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+		if err != nil || !updated {
+			return updated, err
+		}
+		return compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	})
+	if err != nil || !changed {
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 	}
-	if err := tx.Commit(); err != nil {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) ResolveExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ExecutionPlanSchedule, expectedScheduleRevision int) (bool, error) {
-	originalScheduleRevision := schedule.Revision
-	originalOccurrenceRevision := occurrence.Revision
+	var originalScheduleRevision int
+	if schedule != nil {
+		originalScheduleRevision = schedule.Revision
+	}
+	var originalOccurrenceRevision int64
+	var originalOccurrenceScheduleRevision int
+	if occurrence != nil {
+		originalOccurrenceRevision = occurrence.Revision
+		originalOccurrenceScheduleRevision = occurrence.ScheduleRevision
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -725,13 +866,23 @@ func (s *SQLiteStore) ResolveExecutionPlanScheduleOccurrence(occurrence *Executi
 		updated, err = compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
 	}
 	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 		return updated, err
 	}
 	if err := tx.Commit(); err != nil {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 		return false, err
 	}
 	return true, nil

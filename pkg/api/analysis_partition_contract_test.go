@@ -11,14 +11,15 @@ import (
 
 func TestNativePartitionCapabilitiesDescribeContractWithoutAdmittingWork(t *testing.T) {
 	t.Setenv("APEXLOAD_ANALYSIS_PROJECTS", "")
-	beforeJobs, beforeNative := len(analysisPipelineJobs), analytics.NativeBusy()
+	s := &Server{}
+	beforeJobs, beforeNative := len(s.analysisPipelineSlots()), analytics.NativeBusy()
 	w := httptest.NewRecorder()
-	(&Server{}).handleAnalysisCapabilities(w, httptest.NewRequest(http.MethodGet, "/api/v1/analysis/capabilities", nil))
+	s.handleAnalysisCapabilities(w, httptest.NewRequest(http.MethodGet, "/api/v1/analysis/capabilities", nil))
 	var got AnalysisCapabilitiesResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.PartitionManifestVersion != 1 || got.PartitionPruningAvailable != analytics.Available() || got.Enabled || len(analysisPipelineJobs) != beforeJobs || analytics.NativeBusy() != beforeNative {
+	if got.PartitionManifestVersion != 1 || got.PartitionPruningAvailable != analytics.Available() || got.Enabled || len(s.analysisPipelineSlots()) != beforeJobs || analytics.NativeBusy() != beforeNative {
 		t.Fatal("partition wire capability invented project/job admission", got)
 	}
 }

@@ -189,6 +189,9 @@ func (run *vuserRun) configurePacing() {
 		run.pacingCfg.activeSleep = activeControl.SleepActive
 		run.pacingCfg.activeClock = activeControl.ActiveElapsed
 	}
+	if run.vu.QuotaPacer == nil && run.cfg.Pacing.Quota != nil {
+		run.vu.QuotaPacer = NewQuotaPacer(run.cfg.Pacing.Quota)
+	}
 
 	autoTx := normalizeAutoTransactionMode(run.cfg.RunLogic.AutoTransactions)
 	run.actionTxMode = autoTx == "per_action"
@@ -373,6 +376,7 @@ func (run *vuserRun) prepareIteration() (ready, skipped bool) {
 
 	// Reload data row at the start of each iteration
 	if run.iteration > 0 {
+		run.vu.resetLLMConversations()
 		cleanupBindings := run.vu.currentDataBindings()
 		if err := run.vu.loadDataRow(); err != nil {
 			// Main execution stops; teardown still needs the last completed

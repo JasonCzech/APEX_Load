@@ -734,6 +734,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 			continue
 		}
 		attachReportVerdictAndSLA(report)
+		s.attachIdentityNames(report)
 		s.attachReleaseTrend(report)
 		s.attachDashboardPanels(report)
 		encodedBytes := archiveJSONWeight(report)

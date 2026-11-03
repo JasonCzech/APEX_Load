@@ -98,7 +98,7 @@ func TestAnalysisSummaryImportPreviewCommitQueryReconcile(t *testing.T) {
 	if current.State != "ready" || current.Accepted != 18 {
 		t.Fatalf("normalization: %+v", current)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	from := time.Unix(1700000040, 0).UTC()

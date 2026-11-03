@@ -198,9 +198,14 @@ type VUser struct {
 	resultSequence        uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
-	async           *asyncConversations
-	inAsyncDispatch bool
-	onAsyncResult   func(*protocol.Result, *ReplayActionEvent)
+	async                     *asyncConversations
+	inAsyncDispatch           bool
+	onAsyncResult             func(*protocol.Result, *ReplayActionEvent)
+	QuotaPacer                *QuotaPacer
+	llmConversationVars       map[string]struct{}
+	llmConversationHistory    map[string][]LLMConversationMessage
+	lastLLMConversationAction *protocol.Action
+	lastLLMConversationTurn   *pendingLLMConversationTurn
 }
 
 // resolvedActionCredentialComposites pins credential spellings to the exact
@@ -814,7 +819,7 @@ func (vu *VUser) applyActionThinkTimeConfig(ctx context.Context, enabled bool, o
 func (vu *VUser) actionThinkTime(override *dsl.ThinkTimeConfig) time.Duration {
 	global := vu.Script.Config.ThinkTime
 	thinkCfg := protocol.ThinkTimeConfig{
-		Type: global.Type, MeanMs: global.MeanMs, StdMs: global.StdMs,
+		Type: global.Type, Distribution: global.Distribution, MeanMs: global.MeanMs, StdMs: global.StdMs,
 		MinMs: global.MinMs, MaxMs: global.MaxMs, Multiplier: global.Multiplier,
 		LimitMs: global.LimitMs, Ignore: global.Ignore, MinPercent: global.MinPercent, MaxPercent: global.MaxPercent,
 	}

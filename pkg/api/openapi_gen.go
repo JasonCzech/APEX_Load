@@ -459,7 +459,7 @@ func discoveredMuxRoute(call *ast.CallExpr) (discoveredRoute, bool) {
 
 func discoveredRouteSpec(call *ast.CallExpr) (discoveredRoute, bool) {
 	constructor, ok := call.Fun.(*ast.Ident)
-	if !ok || (constructor.Name != "newAuthenticatedAPIRoute" && constructor.Name != "newPublicAPIRoute") || len(call.Args) < 3 {
+	if !ok || (constructor.Name != "newAuthenticatedAPIRoute" && constructor.Name != "newPublicAPIRoute" && constructor.Name != "newSpecializedAPIRoute") || len(call.Args) < 3 {
 		return discoveredRoute{}, false
 	}
 	method, ok := httpMethodExpression(call.Args[0])
@@ -474,10 +474,27 @@ func discoveredRouteSpec(call *ast.CallExpr) (discoveredRoute, bool) {
 	if !ok {
 		return discoveredRoute{}, false
 	}
-	hasAuthMiddleware := constructor.Name == "newAuthenticatedAPIRoute"
-	authMiddleware := ""
-	if hasAuthMiddleware {
+	var (
+		hasAuthMiddleware bool
+		genericAuth       bool
+		authMiddleware    string
+	)
+	switch constructor.Name {
+	case "newAuthenticatedAPIRoute":
+		hasAuthMiddleware = true
+		genericAuth = true
 		authMiddleware = "auth"
+	case "newSpecializedAPIRoute":
+		if len(call.Args) < 4 {
+			return discoveredRoute{}, false
+		}
+		var ok bool
+		authMiddleware, ok = stringLiteral(call.Args[3])
+		if !ok || authMiddleware == "" {
+			return discoveredRoute{}, false
+		}
+		hasAuthMiddleware = true
+		genericAuth = false
 	}
 	return discoveredRoute{
 		Method:          method,
@@ -485,7 +502,7 @@ func discoveredRouteSpec(call *ast.CallExpr) (discoveredRoute, bool) {
 		Handler:         handler,
 		AuthMiddleware:  authMiddleware,
 		Authenticated:   hasAuthMiddleware || inHandlerAuthenticatedRoute(method, path, handler),
-		GenericAuth:     hasAuthMiddleware,
+		GenericAuth:     genericAuth,
 		Unauthenticated: !hasAuthMiddleware,
 	}, true
 }

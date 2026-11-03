@@ -63,6 +63,10 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	if len(batches) == 0 {
 		groupTransactionsVersion = 0
 	}
+	llmSummaryVersion := uint32(generatorrpc.CurrentLLMSummaryVersion)
+	if len(batches) == 0 {
+		llmSummaryVersion = 0
+	}
 	fleetTPS := 0.0
 	groupTPS := make(map[string]float64)
 	statsList := make([]generatorrpc.GeneratorStats, 0, len(batches))
@@ -174,6 +178,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 		if batch.GroupTransactionsVersion != generatorrpc.CurrentGroupTransactionsVersion {
 			groupTransactionsVersion = 0
+		}
+		if batch.LLMSummaryVersion != generatorrpc.CurrentLLMSummaryVersion {
+			llmSummaryVersion = 0
 		}
 		dimensionMetrics = append(dimensionMetrics, batch.ActionDimensionMetrics...)
 		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
@@ -325,6 +332,13 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 			combined.ActionPropertyMetrics = mergeGeneratorMetricAggregateSeries(jointMetrics)
 		}
 		combined.ActionMetrics = mergeGeneratorMetricAggregateSeries(actionMetrics)
+		if llmSummaryVersion != generatorrpc.CurrentLLMSummaryVersion {
+			for i := range combined.ActionMetrics {
+				if combined.ActionMetrics[i].LLM != nil {
+					combined.ActionMetrics[i].LLM.Incomplete = true
+				}
+			}
+		}
 	}
 	combined.TransactionMetrics = mergeGeneratorMetricAggregateSeries(transactionMetrics)
 	combined.DependencyMetrics = mergeGeneratorMetricAggregateSeries(dependencyMetrics)
@@ -358,6 +372,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	}
 	combined.RequestCountsVersion = requestCountsVersion
 	combined.GroupTransactionsVersion = groupTransactionsVersion
+	combined.LLMSummaryVersion = llmSummaryVersion
 	combined.Stats = aggregateDistributedGeneratorStats(statsList)
 	return combined, fleetTPS, groupTPS
 }
@@ -1022,6 +1037,7 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 		}
 	}
 
+	live.LLM = buildLiveLLMMetricsFromAggregates(batch.ActionMetrics, batchWindowSeconds(batch.WindowMs))
 	live.Messaging = protocol.CloneMessagingSummaries(live.Messaging)
 	// Protocol actions may have no business-transaction wrapper. Their evidence
 	// remains useful without manufacturing a fleet transaction population.
@@ -1703,6 +1719,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if len(values) == 1 && values[0].Count > 0 {
 		copy := values[0]
+		copy.LLM = copy.LLM.Clone()
 		copy.JavaHTTP = copy.JavaHTTP.RetainedForPopulation(copy.Count)
 		copy.Messaging = copy.Messaging.Clone()
 		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
@@ -1725,11 +1742,13 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		}
 	}
 	javaUncounted := false
+	llmUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
 		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
+		llmUncounted = llmUncounted || generatorrpc.LLMPeerUncounted(value.LLM, value.Count, value.DependencyType)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -1738,6 +1757,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		engine.MergeLLMSummary(&out.LLM, value.LLM)
 		protocol.MergeJavaHTTPSummary(&out.JavaHTTP, value.JavaHTTP.RetainedForPopulation(value.Count))
 		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		avgMsSum += value.AvgMs * count
@@ -1763,6 +1783,9 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()
+	}
+	if llmUncounted && out.LLM != nil {
+		out.LLM.Incomplete = true
 	}
 	out.JavaHTTP = out.JavaHTTP.RetainedForPopulation(out.Count)
 	out.MessagingVersion = 1

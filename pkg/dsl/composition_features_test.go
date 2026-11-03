@@ -13,4 +13,12 @@ func TestParallelLoopControlCapability(t *testing.T) {
 	if len(RequiredCompositionRuntimeFeatures(nil)) != 0 || len(RequiredCompositionRuntimeFeatures(&Script{Actions: []Action{{Type: "control_break"}}})) != 0 {
 		t.Fatal("unrelated script requires parallel feature")
 	}
+	llmFeatures := RequiredCompositionRuntimeFeatures(&Script{
+		Config:      ScriptConfig{Pacing: PacingConfig{ArrivalProcess: "poisson"}},
+		DataSources: []DataSource{{Name: "prompts", Type: "jsonl", Path: "prompts.jsonl"}},
+		Actions:     []Action{{Type: "llm_request", Target: "/v1/chat/completions"}},
+	})
+	if len(llmFeatures) != 3 || llmFeatures[0] != FeatureLLMInferenceV1 || llmFeatures[1] != FeatureOpenArrivalV2 || llmFeatures[2] != FeatureDataJSONLV1 {
+		t.Fatalf("unexpected llm/arrival/jsonl features: %v", llmFeatures)
+	}
 }

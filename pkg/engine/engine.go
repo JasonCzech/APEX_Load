@@ -797,12 +797,12 @@ func (e *Engine) runOpenWorkload(
 	inFlightLimit := openWorkloadInFlightLimit(e.script)
 	limiter := newInFlightLimiter(inFlightLimit)
 
-	runArrivalScheduler(loopCtx, e.script.Config.Pacing.TPS, func() int {
+	runOpenWorkloadScheduler(loopCtx, e.script.Config.Pacing, DataShardConfig{}, e.script.Config.Pacing.TPS, func() int {
 		if bounded {
 			return arrivals
 		}
 		return 0
-	}(), nil, nil, func() time.Duration { return time.Since(start) }, func(arrival int) {
+	}(), nil, nil, func() time.Duration { return time.Since(start) }, false, func(arrival int) {
 		// Shed the arrival when the in-flight set is saturated: the SUT cannot
 		// keep up, so dropping it protects the generator from unbounded
 		// goroutine growth instead of silently throttling to a closed model.

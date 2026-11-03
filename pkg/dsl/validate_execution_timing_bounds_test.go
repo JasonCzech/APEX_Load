@@ -38,7 +38,7 @@ func TestExecutionTimingValidatorsBoundPacingThinkTimeAndRetries(t *testing.T) {
 	assertIssue(t, issues, fmt.Sprintf("config.think_time.mean_ms must be finite and between 0 and %d", MaxConfiguredProtocolTimeoutMS))
 	assertIssue(t, issues, fmt.Sprintf("config.error_handling.max_retries must be between 0 and %d", MaxErrorRetries))
 	assertIssue(t, issues, fmt.Sprintf("config.error_handling.retry_delay_ms must be between 0 and %d", MaxConfiguredProtocolTimeoutMS))
-	assertIssue(t, issues, "config.error_handling.retry_backoff must be fixed or exponential")
+	assertIssue(t, issues, "config.error_handling.retry_backoff must be fixed, exponential, or retry_after")
 	assertIssue(t, issues, fmt.Sprintf("actions[0].think_time.multiplier must be omitted (defaults/inherits 1) or finite, greater than 0, and at most %d", MaxThinkTimeMultiplier))
 
 	rendezvousIssues := validateRendezvousActionIssues(0, script.Actions[0])

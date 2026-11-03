@@ -31,6 +31,621 @@
         "type": "object"
       }
     },
+    "llm_capacity_plan": {
+      "payload": {
+        "properties": {
+          "current_replicas": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "deployment": {
+            "anyOf": [
+              {
+                "properties": {
+                  "as_of_date": {
+                    "type": "string"
+                  },
+                  "billing_mode": {
+                    "type": "string"
+                  },
+                  "cached_input_cost_1m_usd": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "gpu_cost_per_hour_usd": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "gpu_count": {
+                    "format": "int64",
+                    "type": "integer"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "input_cost_per_1m_usd": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "output_cost_per_1m_usd": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "ptu_cost_per_hour_usd": {
+                    "format": "double",
+                    "type": "number"
+                  },
+                  "ptu_count": {
+                    "format": "int64",
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "headroom_pct": {
+            "format": "double",
+            "type": "number"
+          },
+          "mean_e2e_ms": {
+            "format": "double",
+            "type": "number"
+          },
+          "requests_per_user_per_min": {
+            "format": "double",
+            "type": "number"
+          },
+          "sla": {
+            "properties": {
+              "max_error_rate_pct": {
+                "format": "double",
+                "type": "number"
+              },
+              "max_tpot_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "max_ttft_p95_ms": {
+                "format": "double",
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          "steps": {
+            "items": {
+              "properties": {
+                "achieved_tps": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "error_rate_pct": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "goodput_tps": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "offered_tps": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "sla_breach_reasons": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "sla_breached": {
+                  "type": "boolean"
+                },
+                "step_index": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "system_output_tps": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "throttled_429_pct": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "tpot_p50_ms": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "tpot_p95_ms": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "tpot_p99_ms": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "ttft_p50_ms": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "ttft_p95_ms": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "ttft_p99_ms": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "target_output_tps": {
+            "format": "double",
+            "type": "number"
+          },
+          "target_peak_tps": {
+            "format": "double",
+            "type": "number"
+          },
+          "target_users": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "llm_compare_runs": {
+      "payload": {
+        "properties": {
+          "baseline": {
+            "properties": {
+              "cache_hit_ratio": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "interval_tpot_p95_ms": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "interval_ttft_p95_ms": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "model": {
+                "type": "string"
+              },
+              "output_tokens": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "output_tps_p50": {
+                "format": "double",
+                "type": "number"
+              },
+              "prompt_tokens": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "requests": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "system_output_tps": {
+                "format": "double",
+                "type": "number"
+              },
+              "test_id": {
+                "type": "string"
+              },
+              "throttled_429": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "tpot_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "tpot_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "tpot_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "truncated": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "ttft_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "ttft_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "ttft_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "workload_digest": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "baseline_group": {
+            "type": "string"
+          },
+          "baseline_test_id": {
+            "type": "string"
+          },
+          "candidate": {
+            "properties": {
+              "cache_hit_ratio": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "e2e_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "interval_tpot_p95_ms": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "interval_ttft_p95_ms": {
+                "items": {
+                  "format": "double",
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              "model": {
+                "type": "string"
+              },
+              "output_tokens": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "output_tps_p50": {
+                "format": "double",
+                "type": "number"
+              },
+              "prompt_tokens": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "requests": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "system_output_tps": {
+                "format": "double",
+                "type": "number"
+              },
+              "test_id": {
+                "type": "string"
+              },
+              "throttled_429": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "tpot_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "tpot_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "tpot_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "truncated": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "ttft_p50_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "ttft_p95_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "ttft_p99_ms": {
+                "format": "double",
+                "type": "number"
+              },
+              "workload_digest": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "candidate_group": {
+            "type": "string"
+          },
+          "candidate_test_id": {
+            "type": "string"
+          },
+          "seed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "test_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "llm_prompt_dataset_calibrate": {
+      "payload": {
+        "properties": {
+          "project_id": {
+            "type": "string"
+          },
+          "samples": {
+            "items": {
+              "properties": {
+                "chars": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "tokens": {
+                  "format": "int64",
+                  "type": "integer"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "test_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "llm_prompt_dataset_import": {
+      "payload": {
+        "properties": {
+          "bytes_per_token": {
+            "format": "double",
+            "type": "number"
+          },
+          "format": {
+            "type": "string"
+          },
+          "max_records": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_turns": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "payload": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "scrub_pii": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "llm_prompt_dataset_synthesize": {
+      "payload": {
+        "properties": {
+          "bytes_per_token": {
+            "format": "double",
+            "type": "number"
+          },
+          "count": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "distribution": {
+            "type": "string"
+          },
+          "expected_output_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "max_input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "mean_input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "min_input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "seed": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "shared_prefix_tokens": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "std_input_tokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "monitoring_prometheus_packs": {
+      "query": {
+        "properties": {
+          "pack": {
+            "type": "string"
+          },
+          "pod_label": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_archive_capacity_sweep": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "format": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_archive_genai_span_lookup": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "payload": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "model": {
+            "type": "string"
+          },
+          "trace_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_archive_llm_latency_decomposition": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "run_archive_llm_samples": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "format": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
     "run_list": {
       "query": {
         "properties": {

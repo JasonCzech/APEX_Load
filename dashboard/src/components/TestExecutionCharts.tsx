@@ -71,6 +71,7 @@ import {
   isResponsePercentileChart,
   isStatTileChart,
   buildImportedDashboardCharts,
+  buildLLMCharts,
   latestRouteLatencyValues,
   presetExemptChartIds,
   loadImpactHeatmapChart,
@@ -191,7 +192,7 @@ interface Props {
 }
 
 type ChartDropPosition = 'before' | 'after'
-export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'prometheus' | 'imported'
+export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'llm' | 'prometheus' | 'imported'
 export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
 type ChartCardElement = HTMLElement | null
@@ -225,11 +226,13 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'test_results', label: 'Live Metrics' },
   { id: 'under_load', label: 'Under Load' },
   { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'llm', label: 'LLM' },
   { id: 'prometheus', label: 'Prometheus' },
   { id: 'imported', label: 'Dashboards' },
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
+const llmChartIds = new Set(['llm_ttft', 'llm_tpot', 'llm_tokens'])
 const noTransactionNames: string[] = []
 // The graphs whose rows are the run total, its groups and its transactions.
 const seriesChartIds = new Set(['tps', 'latency', 'errors'])
@@ -254,6 +257,7 @@ function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
   if (isPrometheusChart(chart)) return 'prometheus'
   if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return 'under_load'
   if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
+  if (llmChartIds.has(chart.id)) return 'llm'
   return 'test_results'
 }
 
@@ -743,7 +747,13 @@ export default function TestExecutionCharts({
       )
     ))
     .map(chart => chart.id), [loadImpactGraphCharts])
-  const allChartConfigs = useMemo(() => [...chartConfigs, ...prometheusGraphCharts, ...importedDashboardCharts, ...loadImpactGraphCharts], [loadImpactGraphCharts, prometheusGraphCharts, importedDashboardCharts])
+  const hasLLMData = useMemo(
+    () => Boolean(latestMetrics?.llm?.summary?.requests)
+      || filteredData.some(point => point.llmOutputTokensPerSec !== undefined || point.llmTtftP95Ms !== undefined),
+    [filteredData, latestMetrics],
+  )
+  const llmCharts = useMemo(() => buildLLMCharts(hasLLMData), [hasLLMData])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...llmCharts, ...prometheusGraphCharts, ...importedDashboardCharts, ...loadImpactGraphCharts], [llmCharts, loadImpactGraphCharts, prometheusGraphCharts, importedDashboardCharts])
   const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
   const allChartIdSignature = allChartIds.join('|')
   const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
@@ -1031,6 +1041,7 @@ export default function TestExecutionCharts({
   const showPrometheusTab = prometheusAvailable ?? prometheusGraphCharts.length > 0
   const showImportedTab = importedDashboardsAvailable ?? importedDashboardCharts.length > 0
   const visibleGraphGroupTabs = graphGroupTabs.filter(tab => {
+    if (tab.id === 'llm') return hasLLMData
     if (tab.id === 'prometheus') return showPrometheusTab
     if (tab.id === 'imported') return showImportedTab
     return true
@@ -1177,7 +1188,7 @@ export default function TestExecutionCharts({
   }
 
   const contextChart = chartMenu ? displayedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
-  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0, imported: 0 }
+  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, llm: 0, prometheus: 0, imported: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
@@ -2856,6 +2867,32 @@ export default function TestExecutionCharts({
         <p className="scenario-script-status error" role="alert">
           {`Open-model load shed — ${(latestMetrics?.telemetry?.shedded_arrivals ?? 0).toLocaleString()} arrival${(latestMetrics?.telemetry?.shedded_arrivals ?? 0) === 1 ? '' : 's'} dropped because the system under test could not keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target — lower the TPS or raise run_logic.max_in_flight.`}
         </p>
+      )}
+
+      {hasLLMData && (latestMetrics?.resources?.cpu_process_pct_max ?? latestMetrics?.resources?.cpu_process_pct ?? latest.cpuProcessMax ?? latest.cpuProcess ?? 0) > 85 && (
+        <p className="scenario-script-status error" role="alert">
+          Generator CPU exceeded 85% while streaming SSE tokens — client-side TTFT and TPOT measurements may include generator scheduling jitter.
+        </p>
+      )}
+
+      {hasLLMData && (!enableGraphGroupTabs || activeGraphGroupTab === 'llm') && (
+        <div className="charts-toolbar-badges llm-kpi-tiles" role="region" aria-label="LLM live KPIs">
+          <span className="archive-chip">
+            Output tok/s: {(latestMetrics?.llm?.interval_output_tokens_per_sec ?? latestMetrics?.llm?.output_tokens_per_sec ?? latest.llmOutputTokensPerSec ?? 0).toFixed(1)}
+          </span>
+          <span className="archive-chip">
+            TTFT p95: {(latestMetrics?.llm?.interval_summary?.p95_ttft_ms ?? latestMetrics?.llm?.summary?.p95_ttft_ms ?? latest.llmTtftP95Ms ?? 0).toFixed(1)} ms
+          </span>
+          <span className="archive-chip">
+            TPOT p95: {(latestMetrics?.llm?.interval_summary?.p95_tpot_ms ?? latestMetrics?.llm?.summary?.p95_tpot_ms ?? latest.llmTpotP95Ms ?? 0).toFixed(1)} ms
+          </span>
+          <span className="archive-chip">
+            Goodput %: {(latestMetrics?.llm?.goodput_pct ?? latest.llmGoodputPct ?? 0).toFixed(1)}%
+          </span>
+          <span className="archive-chip">
+            Throttle 429 %: {(latestMetrics?.llm?.throttle_rate_pct ?? latest.llmThrottleRatePct ?? 0).toFixed(1)}%
+          </span>
+        </div>
       )}
 
       {paginateGraphs && displayModeCharts.length > 0 && (

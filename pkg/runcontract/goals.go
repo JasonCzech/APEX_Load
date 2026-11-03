@@ -29,6 +29,17 @@ type GoalConfig struct {
 	MaxRedeliveryRatePct *float64 `json:"max_redelivery_rate_pct,omitempty"`   // percent of received messages redelivered
 	MaxDeadLetterRatePct *float64 `json:"max_dead_letter_rate_pct,omitempty"`  // percent of received messages dead-lettered
 
+	// LLM inference live goals (WP2.4), evaluated against the 30s rolling
+	// LLMLiveMetrics summary on the controller.
+	MaxLLMP95TTFTMs          *float64 `json:"max_llm_p95_ttft_ms,omitempty"`
+	MaxLLMP95TPOTMs          *float64 `json:"max_llm_p95_tpot_ms,omitempty"`
+	MinLLMOutputTokensPerSec *float64 `json:"min_llm_output_tokens_per_sec,omitempty"`
+	MinLLMGoodputPct         *float64 `json:"min_llm_goodput_pct,omitempty"`
+	MaxLLMThrottleRatePct    *float64 `json:"max_llm_throttle_rate_pct,omitempty"`
+	LLMSLOTTFTTargetMs       *float64 `json:"llm_slo_ttft_ms,omitempty"`
+	LLMSLOTPOTTargetMs       *float64 `json:"llm_slo_tpot_ms,omitempty"`
+	LLMSLOE2ETargetMs        *float64 `json:"llm_slo_e2e_ms,omitempty"`
+
 	StopOnSLABreach bool   `json:"stop_on_sla_breach,omitempty"`
 	StopOnMaxErrors bool   `json:"stop_on_max_errors,omitempty"`
 	SLABreachWindow string `json:"sla_breach_window,omitempty"`
@@ -98,10 +109,24 @@ type GoalDrivenConfig struct {
 	Groups map[string]GoalDrivenGroupDefinition `json:"groups"`
 }
 
+type CapacitySweepConfig struct {
+	Mode            string    `json:"mode,omitempty"` // "concurrency" or "rate"
+	Group           string    `json:"group,omitempty"`
+	Levels          []float64 `json:"levels"`
+	WarmupDuration  string    `json:"warmup_duration,omitempty"`
+	MeasureDuration string    `json:"measure_duration"`
+	SLOTTFTMs       *float64  `json:"slo_ttft_ms,omitempty"`
+	SLOTPOTMs       *float64  `json:"slo_tpot_ms,omitempty"`
+	SLOE2EMs        *float64  `json:"slo_e2e_ms,omitempty"`
+	MinGoodputPct   *float64  `json:"min_goodput_pct,omitempty"`
+	StopOnSLOBreach bool      `json:"stop_on_slo_breach,omitempty"`
+}
+
 type WorkloadShapeConfig struct {
-	SteppedRamp *SteppedRampConfig `json:"stepped_ramp,omitempty"`
-	ClosedVUser *ClosedVUserConfig `json:"closed_vuser,omitempty"`
-	GoalDriven  *GoalDrivenConfig  `json:"goal_driven,omitempty"`
+	SteppedRamp   *SteppedRampConfig   `json:"stepped_ramp,omitempty"`
+	ClosedVUser   *ClosedVUserConfig   `json:"closed_vuser,omitempty"`
+	GoalDriven    *GoalDrivenConfig    `json:"goal_driven,omitempty"`
+	CapacitySweep *CapacitySweepConfig `json:"capacity_sweep,omitempty"`
 }
 
 type TransactionSLARule struct {
@@ -116,5 +141,8 @@ type TransactionSLARule struct {
 	// Iterations names the browser iterations judged: warm ones by default
 	// ("" or "warm"), "all", or "cold" ones only. Samples from sessions
 	// that never run warm are judged by every value but "cold".
-	Iterations string `json:"iterations,omitempty"`
+	Iterations string   `json:"iterations,omitempty"`
+	SLOTTFTMs  *float64 `json:"slo_ttft_ms,omitempty"`
+	SLOTPOTMs  *float64 `json:"slo_tpot_ms,omitempty"`
+	SLOE2EMs   *float64 `json:"slo_e2e_ms,omitempty"`
 }

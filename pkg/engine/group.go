@@ -299,6 +299,7 @@ type deferredClosedGroup struct {
 type openGroupStartupPlan struct {
 	group         GroupConfig
 	protoConfig   map[string]any
+	tps           float64
 	totalArrivals int
 	limiter       *inFlightLimiter
 	inFlightLimit int
@@ -1080,8 +1081,11 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	startupStopped := false
 groupLoop:
 	for gi, group := range runGroups {
-		if dsl.CanonicalPacingType(group.Script.Config.Pacing.Type) == "tps" && group.Script.Config.Pacing.TPS > 0 {
-			targetTPS := group.Script.Config.Pacing.TPS
+		if dsl.CanonicalPacingType(group.Script.Config.Pacing.Type) == "tps" && maxConfiguredOpenTPS(group.Script.Config.Pacing) > 0 {
+			targetTPS := maxConfiguredOpenTPS(group.Script.Config.Pacing)
+			if isOpenWorkload(group.Script) {
+				targetTPS = openWorkloadShardTPS(group.Script, group.DataShard)
+			}
 			totalTargetTPS += targetTPS
 			mge.metrics.SetGroupTargetTPS(group.Name, targetTPS)
 		}
@@ -1102,7 +1106,8 @@ groupLoop:
 		}
 		if isOpenWorkload(group.Script) {
 			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
-			inFlightLimit := openWorkloadInFlightLimit(group.Script)
+			shardTPS := openWorkloadShardTPS(group.Script, group.DataShard)
+			inFlightLimit := openWorkloadInFlightLimitForShard(group.Script, group.DataShard)
 			totalArrivals := 0
 			if bounded {
 				totalArrivals = arrivals
@@ -1110,6 +1115,7 @@ groupLoop:
 			openPlans = append(openPlans, openGroupStartupPlan{
 				group:         group,
 				protoConfig:   protoConfig,
+				tps:           shardTPS,
 				totalArrivals: totalArrivals,
 				limiter:       newInFlightLimiter(inFlightLimit),
 				inFlightLimit: inFlightLimit,
@@ -1426,7 +1432,7 @@ groupLoop:
 					}
 					return elapsed
 				}
-				runArrivalSchedulerFromOrigin(mge.arrivalCtx, plan.group.Script.Config.Pacing.TPS, plan.totalArrivals, waitForPlan, mge.SleepActive, activeSinceEpoch, preserveActiveOrigin, func(int) {
+				runOpenWorkloadScheduler(mge.arrivalCtx, plan.group.Script.Config.Pacing, plan.group.DataShard, plan.tps, plan.totalArrivals, waitForPlan, mge.SleepActive, activeSinceEpoch, preserveActiveOrigin, func(int) {
 					// Shed the arrival when the in-flight set is saturated: the SUT
 					// cannot keep up, so dropping it protects the generator from
 					// unbounded goroutine growth instead of silently throttling to a
@@ -1435,7 +1441,7 @@ groupLoop:
 					if !plan.limiter.tryAcquire() {
 						mge.metrics.RecordSheddedArrival()
 						if plan.limiter.shouldWarn() {
-							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", plan.group.Name, "max_in_flight", plan.inFlightLimit, "tps", plan.group.Script.Config.Pacing.TPS)
+							slog.Warn("open workload shedding arrivals: system under test cannot keep up; capping in-flight workers to protect the generator", "group", plan.group.Name, "max_in_flight", plan.inFlightLimit, "tps", plan.tps)
 						}
 						return
 					}
@@ -1459,7 +1465,7 @@ groupLoop:
 					plan.limiter.recordShed(int64(count))
 					mge.metrics.RecordSheddedArrivals(int64(count))
 					if plan.limiter.shouldWarn() {
-						slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "group", plan.group.Name, "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", plan.group.Script.Config.Pacing.TPS)
+						slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "group", plan.group.Name, "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", plan.tps)
 					}
 				})
 				if shed := plan.limiter.Shed(); shed > 0 {

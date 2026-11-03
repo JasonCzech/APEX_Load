@@ -196,6 +196,7 @@ func actionCatalogSeeds() []ActionSpec {
 	seeds = append(seeds, liveTableActionSpecs()...)
 	seeds = append(seeds, nativeServiceActionSpecs()...)
 	seeds = append(seeds, httpActionSpecs()...)
+	seeds = append(seeds, llmActionSpecs()...)
 	seeds = append(seeds, browserActionSpecs()...)
 	seeds = append(seeds, websocketActionSpecs()...)
 	seeds = append(seeds, grpcActionSpecs()...)

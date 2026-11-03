@@ -94,10 +94,11 @@ func (s *Server) handleNativeEvidenceSeries(w http.ResponseWriter, r *http.Reque
 		writeError(w, 400, err.Error())
 		return
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), 30*time.Second)
 	defer cancel()
 	run, ok := s.archiveDomainService().GetTest(r.PathValue("id"))

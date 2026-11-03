@@ -660,6 +660,7 @@ type ServerTelemetry struct {
 	AcknowledgementMs         *float64              `json:"acknowledgement_ms,omitempty"`
 	WebSocket                 *WebSocketDiagnostics `json:"websocket,omitempty"`
 	GRPC                      *GRPCDiagnostics      `json:"grpc,omitempty"`
+	LLM                       *LLMDiagnostics       `json:"llm,omitempty"`
 	ServerProcessingMs        float64               `json:"server_processing_ms,omitempty"`
 	TransferMs                float64               `json:"transfer_ms,omitempty"`
 	SerializationMs           float64               `json:"serialization_ms,omitempty"`
@@ -725,7 +726,7 @@ func (t *ServerTelemetry) HasMeasuredSample() bool {
 		t.MessagesReceivedPerSec != 0 || t.ConsumerLagObserved || t.ConsumerOffsetLagObserved || t.ConsumerLagMs != 0 || t.ConsumerOffsetLag != 0 ||
 		t.ThrottledRequests != 0 || t.ServerBusyCount != 0 || t.QuotaExceededCount != 0 ||
 		t.EventTooLargeCount != 0 || t.EndToEndLatencyMs != 0 ||
-		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused
+		t.RequestSizeClass != "" || t.ResponseSizeClass != "" || t.ConnectionReused || t.LLM != nil
 }
 
 // Extractor extracts a value from the response for use in later templates or variables.
@@ -782,16 +783,17 @@ type Assertion struct {
 // Think time simulates user reading time and is applied after each action
 // to create more realistic traffic patterns. Supports fixed, random, and gaussian distributions.
 type ThinkTimeConfig struct {
-	MinPercent float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
-	MaxPercent float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
-	Type       string  `json:"type"`                 // "fixed", "random", "gaussian"
-	MeanMs     float64 `json:"mean_ms"`              // Mean value in milliseconds
-	StdMs      float64 `json:"std_ms,omitempty"`     // Standard deviation for gaussian
-	MinMs      float64 `json:"min_ms,omitempty"`     // Min for random/gaussian
-	MaxMs      float64 `json:"max_ms,omitempty"`     // Max for random/gaussian
-	Multiplier float64 `json:"multiplier,omitempty"` // Scalar multiplier; zero means omitted/inherit 1
-	LimitMs    float64 `json:"limit_ms,omitempty"`   // Upper limit cap
-	Ignore     bool    `json:"ignore,omitempty"`     // Skip think time for this action
+	MinPercent   float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
+	MaxPercent   float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
+	Type         string  `json:"type"`                   // "fixed", "random", "gaussian", "exponential"
+	Distribution string  `json:"distribution,omitempty"` // "uniform" (default) or "exponential"
+	MeanMs       float64 `json:"mean_ms"`                // Mean value in milliseconds
+	StdMs        float64 `json:"std_ms,omitempty"`       // Standard deviation for gaussian
+	MinMs        float64 `json:"min_ms,omitempty"`       // Min for random/gaussian
+	MaxMs        float64 `json:"max_ms,omitempty"`       // Max for random/gaussian
+	Multiplier   float64 `json:"multiplier,omitempty"`   // Scalar multiplier; zero means omitted/inherit 1
+	LimitMs      float64 `json:"limit_ms,omitempty"`     // Upper limit cap
+	Ignore       bool    `json:"ignore,omitempty"`       // Skip think time for this action
 }
 
 // LifecycleControl is an in-process control receipt from a stateful protocol.
@@ -849,6 +851,10 @@ type Result struct {
 	SampleKind          string               // "child" or "aggregate" for StreamingProtocol results
 	ParentActionName    string               // Aggregate action that emitted this child sample
 	Attempt             int                  // 1-based execution attempt, including retries
+	Attempts            int                  `json:"attempts,omitempty"`           // Total attempts executed for this action
+	ThrottledAttempts   int                  `json:"throttled_attempts,omitempty"` // Number of 429/throttled attempts observed
+	RetryWaitMs         float64              `json:"retry_wait_ms,omitempty"`      // Total retry wait time in milliseconds
+	RetryAfter          time.Duration        `json:"retry_after,omitempty"`        // Parsed Retry-After / retry-after-ms hint from response headers
 	Group               string               // Group/transaction name for metrics
 	Region              string               // Generator region that produced this result (per-result override; empty = use writer region)
 	Phase               string               // init, action, or teardown lifecycle phase assigned by the engine

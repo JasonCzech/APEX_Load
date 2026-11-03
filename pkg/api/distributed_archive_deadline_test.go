@@ -49,7 +49,7 @@ func TestStageRemoteArchiveSharesDeadlineAndReleasesSourceFence(t *testing.T) {
 				targets = append(targets, target)
 				clients[target] = &deadlineArchiveClient{started: started}
 			}
-			test := &ManagedTest{ID: "bounded-collection", remoteClientsByTarget: clients}
+			test := &ManagedTest{ID: "bounded-collection", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: clients}}
 			b := newDistributedExecutionBackend(targets, time.Second, nil)
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()

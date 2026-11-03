@@ -54,3 +54,48 @@ func TestTextMatchesTreatsParameterValuesLiterally(t *testing.T) {
 		t.Fatalf("literal = %q, want the raw value", got)
 	}
 }
+
+func TestJSONBodyTemplateEncoding(t *testing.T) {
+	vu := &VUser{
+		Variables: map[string]string{
+			"prompt":     "Line 1\n\"quoted\" and \\backslash\\\t\x01",
+			"max_tokens": "128",
+			"messages":   `[{"role":"user","content":"hello\nworld"}]`,
+			"bad_num":    "128; drop table",
+		},
+		SecretResolver: SecretResolverFunc(func(name string) (string, bool) {
+			if name == "API_TOKEN" {
+				return `"secret-json-string"`, true
+			}
+			return "", false
+		}),
+	}
+	action := dsl.Action{
+		Name:                 "chat",
+		Type:                 "http",
+		Method:               "POST",
+		Target:               "https://example.invalid/v1/chat/completions",
+		Body:                 `{"prompt":"{{var.prompt}}","max_tokens":{{var.max_tokens}},"messages":{{var.messages}},"token":{{secret.API_TOKEN}}}`,
+		BodyTemplateEncoding: "json",
+	}
+	resolved := vu.resolveAction(action)
+	if vu.bodyResolutionError != nil {
+		t.Fatalf("unexpected bodyResolutionError: %v", vu.bodyResolutionError)
+	}
+	wantBody := `{"prompt":"Line 1\n\"quoted\" and \\backslash\\\t\u0001","max_tokens":128,"messages":[{"role":"user","content":"hello\nworld"}],"token":"secret-json-string"}`
+	if string(resolved.Body) != wantBody {
+		t.Fatalf("resolved.Body = %s, want %s", resolved.Body, wantBody)
+	}
+	wantRedacted := `{"prompt":"Line 1\n\"quoted\" and \\backslash\\\t\u0001","max_tokens":128,"messages":[{"role":"user","content":"hello\nworld"}],"token":"[REDACTED]"}`
+	if string(resolved.RedactedBody) != wantRedacted {
+		t.Fatalf("resolved.RedactedBody = %s, want %s", resolved.RedactedBody, wantRedacted)
+	}
+
+	// Unquoted non-JSON replacement must fail resolution.
+	bad := action
+	bad.Body = `{"max_tokens":{{var.bad_num}}}`
+	vu.resolveAction(bad)
+	if vu.bodyResolutionError == nil {
+		t.Fatalf("expected bodyResolutionError for invalid unquoted JSON value")
+	}
+}

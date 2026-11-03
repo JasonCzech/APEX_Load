@@ -166,8 +166,7 @@ func (s *Server) startCIGitHubCheckReconciliation() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.ciChecksCancel = cancel
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -180,7 +179,11 @@ func (s *Server) startCIGitHubCheckReconciliation() {
 			case <-ticker.C:
 			}
 		}
-	})
+	}) {
+		cancel()
+		return
+	}
+	s.ciChecksCancel = cancel
 }
 
 func (s *Server) reconcileIncompleteCIGitHubChecks(ctx context.Context) {

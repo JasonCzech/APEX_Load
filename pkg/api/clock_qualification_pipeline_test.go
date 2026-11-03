@@ -15,7 +15,7 @@ import (
 func clockPipelineRun(t *testing.T, calibrate func(*clockCalibrations, time.Time)) (*TestRunner, *distributedExecutionBackend, *ManagedTest) {
 	t.Helper()
 	runner := NewTestRunner(1, NewHub(), nil)
-	run := &ManagedTest{ID: "clock-pipeline", Status: "RUNNING", remoteClientsByTarget: map[string]generatorClient{"gen-a": nil, "gen-b": nil}}
+	run := &ManagedTest{ID: "clock-pipeline", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": nil, "gen-b": nil}}}
 	run.clockCalibrations = newClockCalibrations(30 * time.Second)
 	calibrate(run.clockCalibrations, time.Now())
 	runner.tests[run.ID] = run

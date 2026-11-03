@@ -58,6 +58,110 @@ func TestServerBackgroundLifecycleRejectsNewWorkAndWaitsForOwnedWorker(t *testin
 	}
 }
 
+func TestLeaderPeriodicTaskAndRetentionCadencesRejectAfterShutdown(t *testing.T) {
+	t.Setenv("APEXLOAD_AUDIT_RETENTION_DAYS", "7")
+	t.Setenv("APEXLOAD_TIMESLOT_RETENTION_DAYS", "7")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "retention-shutdown.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	server := NewServer(ServerConfig{Store: store})
+	server.generatorDiscovery = &generatorDiscovery{interval: time.Second}
+	server.beginBackgroundShutdown()
+
+	if cancel := server.startLeaderPeriodicTask(10*time.Millisecond, func(time.Time) {}); cancel != nil {
+		t.Fatal("startLeaderPeriodicTask returned non-nil cancel after background shutdown began")
+	}
+	server.startAuditRetentionCadence()
+	server.startTimeslotRetentionCadence()
+	server.startScheduleOccurrenceRetentionCadence()
+	server.startAccessReviewNotifierCadence()
+	server.startGeneratorDiscovery()
+	server.startProviderMonitoring()
+	server.startCIGitHubCheckReconciliation()
+	server.startEvaluationWorker()
+	server.startRCAAnalysisWorker()
+	server.startUsageAccountingSnapshotCadence()
+	server.startGeneratorInventoryRefreshCadence()
+	server.startTelemetryNotificationWorker()
+	server.startReplayArtifactCleanup()
+	server.startArchiveCleanupRetry()
+	server.startArchiveFinalizationRetry()
+	server.startAuthoringReceiptOutcomeJanitor()
+	server.startGrafanaImportSessionJanitor()
+	server.startBrunoImportSessionJanitor()
+	server.startProtectedSourceSecretSessionJanitor()
+	if cancel := server.startRCAAutoAdmissionWorker(); cancel != nil {
+		t.Fatal("startRCAAutoAdmissionWorker returned non-nil cancel after background shutdown began")
+	}
+	if server.auditRetentionCancel != nil ||
+		server.timeslotRetentionCancel != nil ||
+		server.scheduleOccurrenceRetentionCancel != nil ||
+		server.accessReviewNotifyCancel != nil ||
+		server.discoveryCancel != nil ||
+		server.providerMonitoringCancel != nil ||
+		server.ciChecksCancel != nil ||
+		server.evaluationCancel != nil ||
+		server.rcaCancel != nil ||
+		server.usageCancel != nil ||
+		server.generatorInventoryCancel != nil ||
+		server.telemetryNotificationCancel != nil ||
+		server.replayArtifactCleanupCancel != nil ||
+		server.replayArtifactCleanupDone != nil ||
+		server.archiveCleanupCancel != nil ||
+		server.archiveCleanupDone != nil ||
+		server.archiveFinalizationCancel != nil ||
+		server.archiveFinalizationDone != nil ||
+		server.receiptOutcomeCleanupCancel != nil ||
+		server.grafanaSessionCleanupCancel != nil ||
+		server.brunoSessionCleanupCancel != nil ||
+		server.sourceSecretCleanupCancel != nil {
+		t.Fatalf("background cancel/done state retained after shutdown rejection: audit=%v timeslot=%v schedule=%v access=%v discovery=%v provider=%v ci=%v eval=%v rca=%v usage=%v inventory=%v telemetry=%v replayCancel=%v replayDone=%v archiveCleanCancel=%v archiveCleanDone=%v archiveFinalCancel=%v archiveFinalDone=%v receipt=%v grafana=%v bruno=%v secret=%v",
+			server.auditRetentionCancel != nil,
+			server.timeslotRetentionCancel != nil,
+			server.scheduleOccurrenceRetentionCancel != nil,
+			server.accessReviewNotifyCancel != nil,
+			server.discoveryCancel != nil,
+			server.providerMonitoringCancel != nil,
+			server.ciChecksCancel != nil,
+			server.evaluationCancel != nil,
+			server.rcaCancel != nil,
+			server.usageCancel != nil,
+			server.generatorInventoryCancel != nil,
+			server.telemetryNotificationCancel != nil,
+			server.replayArtifactCleanupCancel != nil,
+			server.replayArtifactCleanupDone != nil,
+			server.archiveCleanupCancel != nil,
+			server.archiveCleanupDone != nil,
+			server.archiveFinalizationCancel != nil,
+			server.archiveFinalizationDone != nil,
+			server.receiptOutcomeCleanupCancel != nil,
+			server.grafanaSessionCleanupCancel != nil,
+			server.brunoSessionCleanupCancel != nil,
+			server.sourceSecretCleanupCancel != nil,
+		)
+	}
+}
+
+func TestNilReceiverSemaphoresReturnStableChannels(t *testing.T) {
+	var nilServer *Server
+	if nilServer.ensureSemaphores() != nilServer.ensureSemaphores() {
+		t.Fatal("(*Server)(nil).ensureSemaphores() allocated distinct semaphore structs across calls")
+	}
+	req := (&http.Request{}).WithContext(context.Background())
+	if !nilServer.acquireEnterpriseImportSlot(req, nil) {
+		t.Fatal("(*Server)(nil).acquireEnterpriseImportSlot failed")
+	}
+	nilServer.releaseEnterpriseImportSlot()
+
+	var nilRunner *TestRunner
+	if nilRunner.latencyRouteProbeSlotChan() != nilRunner.latencyRouteProbeSlotChan() {
+		t.Fatal("(*TestRunner)(nil).latencyRouteProbeSlotChan() allocated distinct channels across calls")
+	}
+}
+
 func TestNewServerDoesNotStartReplayRetentionJanitors(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	if browserRunning, scriptRunning, recordingRunning := retentionJanitorsRunning(server); browserRunning || scriptRunning || recordingRunning {

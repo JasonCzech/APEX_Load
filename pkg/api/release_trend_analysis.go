@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"sort"
 	"strings"
 	"time"
@@ -12,7 +15,21 @@ const (
 	trendErrorPctRegressionPoints = 1.0  // error rate up by >1 percentage point
 	trendAvgResponseRegressionPct = 10.0 // avg response up by >10%
 	trendCompletenessDropPoints   = 10.0 // completeness down by >10 points
+	trendLLMGoodputDropPoints     = 5.0  // LLM goodput down by >5 percentage points
 )
+
+// ReleaseTrendLLMSummary holds run-level LLM headline metrics and the workload
+// digest (dataset SHA, arrival process, SLOs) required for comparable LLM
+// regression flags.
+type ReleaseTrendLLMSummary struct {
+	WorkloadDigest     string  `json:"workload_digest,omitempty"`
+	P95TTFTMs          float64 `json:"p95_ttft_ms,omitempty"`
+	P95TPOTMs          float64 `json:"p95_tpot_ms,omitempty"`
+	OutputTokensPerSec float64 `json:"output_tokens_per_sec,omitempty"`
+	GoodputPct         float64 `json:"goodput_pct,omitempty"`
+	ThrottleRatePct    float64 `json:"throttle_rate_pct,omitempty"`
+	CostPerMillionUSD  float64 `json:"cost_per_million_usd,omitempty"`
+}
 
 // ReleaseTrendDeltas holds run-over-run changes vs the immediately prior run.
 type ReleaseTrendDeltas struct {
@@ -21,26 +38,30 @@ type ReleaseTrendDeltas struct {
 	AvgResponsePctDelta float64 `json:"avg_response_pct_delta"`
 	PeakTPSDelta        float64 `json:"peak_tps_delta"`
 	CompletenessDelta   float64 `json:"completeness_delta"`
+	P95TTFTMsDelta      float64 `json:"p95_ttft_ms_delta,omitempty"`
+	P95TPOTMsDelta      float64 `json:"p95_tpot_ms_delta,omitempty"`
+	GoodputPctDelta     float64 `json:"goodput_pct_delta,omitempty"`
 }
 
 // ReleaseTrendPoint is one run in the series, with deltas and regression flags
 // relative to the previous run.
 type ReleaseTrendPoint struct {
-	MetricPopulation string              `json:"metric_population,omitempty"`
-	RunID            string              `json:"run_id"`
-	RunName          string              `json:"run_name"`
-	Status           string              `json:"status"`
-	CompletedAt      time.Time           `json:"completed_at"`
-	Transactions     int64               `json:"transactions"`
-	ErrorPct         float64             `json:"error_pct"`
-	AvgResponseMs    float64             `json:"avg_response_ms"`
-	PeakTPS          float64             `json:"peak_tps"`
-	PeakActiveVUsers int64               `json:"peak_active_vusers"`
-	CompletenessPct  float64             `json:"completeness_pct"`
-	SLABreached      bool                `json:"sla_breached"`
-	TelemetryStatus  string              `json:"telemetry_status,omitempty"`
-	Deltas           *ReleaseTrendDeltas `json:"deltas,omitempty"`
-	Regressions      []string            `json:"regressions,omitempty"`
+	MetricPopulation string                  `json:"metric_population,omitempty"`
+	RunID            string                  `json:"run_id"`
+	RunName          string                  `json:"run_name"`
+	Status           string                  `json:"status"`
+	CompletedAt      time.Time               `json:"completed_at"`
+	Transactions     int64                   `json:"transactions"`
+	ErrorPct         float64                 `json:"error_pct"`
+	AvgResponseMs    float64                 `json:"avg_response_ms"`
+	PeakTPS          float64                 `json:"peak_tps"`
+	PeakActiveVUsers int64                   `json:"peak_active_vusers"`
+	CompletenessPct  float64                 `json:"completeness_pct"`
+	SLABreached      bool                    `json:"sla_breached"`
+	TelemetryStatus  string                  `json:"telemetry_status,omitempty"`
+	LLM              *ReleaseTrendLLMSummary `json:"llm,omitempty"`
+	Deltas           *ReleaseTrendDeltas     `json:"deltas,omitempty"`
+	Regressions      []string                `json:"regressions,omitempty"`
 }
 
 // ReleaseTrend is the multi-run trend analysis for a release.
@@ -139,11 +160,55 @@ func trendPointFromRun(run releaseTrendRun) ReleaseTrendPoint {
 	if report.Overview.Telemetry != nil {
 		point.TelemetryStatus = report.Overview.Telemetry.Status
 	}
+	if report.LLM != nil && report.LLM.TotalRequests > 0 {
+		point.LLM = &ReleaseTrendLLMSummary{
+			WorkloadDigest:     computeLLMWorkloadDigest(report.Manifest),
+			P95TTFTMs:          report.LLM.TTFT.P95Ms,
+			P95TPOTMs:          report.LLM.TPOT.P95Ms,
+			OutputTokensPerSec: report.LLM.OutputTokensPerSec,
+			GoodputPct:         report.LLM.GoodputPct,
+			ThrottleRatePct:    report.LLM.ThrottleRatePct,
+		}
+	}
 	return point
+}
+
+func computeLLMWorkloadDigest(manifest *RunArchiveManifest) string {
+	if manifest == nil {
+		return ""
+	}
+	prov := manifest.Provenance
+	if manifest.InitialProvenance != nil {
+		prov = *manifest.InitialProvenance
+	}
+	type digestInput struct {
+		ComparisonFingerprint string   `json:"comparison_fingerprint,omitempty"`
+		ScenarioID            string   `json:"scenario_id,omitempty"`
+		TotalVUsers           int      `json:"total_vusers,omitempty"`
+		Duration              string   `json:"duration,omitempty"`
+		GroupScripts          []string `json:"group_scripts,omitempty"`
+	}
+	in := digestInput{
+		ComparisonFingerprint: prov.ComparisonFingerprint,
+		ScenarioID:            prov.ScenarioID,
+		TotalVUsers:           prov.TotalVUsers,
+		Duration:              prov.Duration,
+	}
+	for _, g := range prov.Groups {
+		in.GroupScripts = append(in.GroupScripts, g.Name+":"+g.ScriptID+":"+g.TargetDuration)
+	}
+	sort.Strings(in.GroupScripts)
+	raw, _ := json.Marshal(in)
+	sum := sha256.Sum256(raw)
+	return hex.EncodeToString(sum[:8])
 }
 
 func comparableTrendPoints(a, b ReleaseTrendPoint) bool {
 	return a.MetricPopulation == b.MetricPopulation && a.Transactions > 0 && b.Transactions > 0
+}
+
+func comparableLLMTrendPoints(a, b ReleaseTrendPoint) bool {
+	return a.LLM != nil && b.LLM != nil && a.LLM.WorkloadDigest != "" && a.LLM.WorkloadDigest == b.LLM.WorkloadDigest
 }
 
 func computeTrendDeltas(prev, cur ReleaseTrendPoint) *ReleaseTrendDeltas {
@@ -155,6 +220,11 @@ func computeTrendDeltas(prev, cur ReleaseTrendPoint) *ReleaseTrendDeltas {
 	}
 	if prev.AvgResponseMs > 0 {
 		deltas.AvgResponsePctDelta = (cur.AvgResponseMs - prev.AvgResponseMs) / prev.AvgResponseMs * 100
+	}
+	if comparableLLMTrendPoints(prev, cur) {
+		deltas.P95TTFTMsDelta = cur.LLM.P95TTFTMs - prev.LLM.P95TTFTMs
+		deltas.P95TPOTMsDelta = cur.LLM.P95TPOTMs - prev.LLM.P95TPOTMs
+		deltas.GoodputPctDelta = cur.LLM.GoodputPct - prev.LLM.GoodputPct
 	}
 	return deltas
 }
@@ -174,6 +244,17 @@ func detectTrendRegressions(prev, cur ReleaseTrendPoint) []string {
 	}
 	if prev.CompletenessPct-cur.CompletenessPct > trendCompletenessDropPoints {
 		regressions = append(regressions, "run completeness dropped")
+	}
+	if comparableLLMTrendPoints(prev, cur) {
+		if prev.LLM.P95TTFTMs > 0 && (cur.LLM.P95TTFTMs-prev.LLM.P95TTFTMs)/prev.LLM.P95TTFTMs*100 > trendAvgResponseRegressionPct {
+			regressions = append(regressions, "LLM TTFT P95 regressed")
+		}
+		if prev.LLM.P95TPOTMs > 0 && (cur.LLM.P95TPOTMs-prev.LLM.P95TPOTMs)/prev.LLM.P95TPOTMs*100 > trendAvgResponseRegressionPct {
+			regressions = append(regressions, "LLM TPOT P95 regressed")
+		}
+		if prev.LLM.GoodputPct-cur.LLM.GoodputPct > trendLLMGoodputDropPoints {
+			regressions = append(regressions, "LLM goodput dropped")
+		}
 	}
 	if len(regressions) == 0 {
 		return nil

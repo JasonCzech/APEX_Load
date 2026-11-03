@@ -88,10 +88,11 @@ func (s *Server) handleMessagingProgress(w http.ResponseWriter, r *http.Request)
 		writeError(w, 400, "choose live or archive with bounded group and source identity")
 		return
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	var snapshot *protocol.MessagingProgressSnapshot

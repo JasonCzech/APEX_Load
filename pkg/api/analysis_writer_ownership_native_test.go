@@ -118,7 +118,7 @@ func TestAnalysisWriterOwnershipNativePipelineRecordsItsIncarnation(t *testing.T
 	if current.State != "ready" {
 		t.Fatalf("normalization: %+v", current)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	capture.mu.Lock()

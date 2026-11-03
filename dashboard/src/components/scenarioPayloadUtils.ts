@@ -23,6 +23,7 @@ export type ScenarioGroupPayload = {
   termination_mode?: 'duration' | 'iterations'
     target_vusers?: number
     target_tps?: number
+    warmup?: boolean
   }>
   iterations?: number
   initialization: ScenarioDraftGroup['initialization']
@@ -198,6 +199,7 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
           duration: stage.duration,
           ...(stage.target_vusers !== undefined ? { target_vusers: Number(stage.target_vusers) } : {}),
           ...(stage.target_tps !== undefined ? { target_tps: Number(stage.target_tps) } : {}),
+          ...((stage as { warmup?: boolean }).warmup ? { warmup: true } : {}),
         }))
     }
 
@@ -318,6 +320,14 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(hasValue(goalConfig.max_partition_skew_pct) ? { max_partition_skew_pct: goalConfig.max_partition_skew_pct } : {}),
     ...(hasValue(goalConfig.max_redelivery_rate_pct) ? { max_redelivery_rate_pct: goalConfig.max_redelivery_rate_pct } : {}),
     ...(hasValue(goalConfig.max_dead_letter_rate_pct) ? { max_dead_letter_rate_pct: goalConfig.max_dead_letter_rate_pct } : {}),
+    ...(hasValue(goalConfig.max_llm_p95_ttft_ms) ? { max_llm_p95_ttft_ms: goalConfig.max_llm_p95_ttft_ms } : {}),
+    ...(hasValue(goalConfig.max_llm_p95_tpot_ms) ? { max_llm_p95_tpot_ms: goalConfig.max_llm_p95_tpot_ms } : {}),
+    ...(hasValue(goalConfig.min_llm_output_tokens_per_sec) ? { min_llm_output_tokens_per_sec: goalConfig.min_llm_output_tokens_per_sec } : {}),
+    ...(hasValue(goalConfig.min_llm_goodput_pct) ? { min_llm_goodput_pct: goalConfig.min_llm_goodput_pct } : {}),
+    ...(hasValue(goalConfig.max_llm_throttle_rate_pct) ? { max_llm_throttle_rate_pct: goalConfig.max_llm_throttle_rate_pct } : {}),
+    ...(hasValue(goalConfig.llm_slo_ttft_ms) ? { llm_slo_ttft_ms: goalConfig.llm_slo_ttft_ms } : {}),
+    ...(hasValue(goalConfig.llm_slo_tpot_ms) ? { llm_slo_tpot_ms: goalConfig.llm_slo_tpot_ms } : {}),
+    ...(hasValue(goalConfig.llm_slo_e2e_ms) ? { llm_slo_e2e_ms: goalConfig.llm_slo_e2e_ms } : {}),
     ...(goalConfig.transaction_rules !== undefined ? { transaction_rules: structuredClone(goalConfig.transaction_rules) } : {}),
     ...(goalConfig.early_stop !== undefined ? { early_stop: structuredClone(goalConfig.early_stop) } : {}),
     ...(goalConfig.workload_shape_config !== undefined ? { workload_shape_config: structuredClone(goalConfig.workload_shape_config) } : {}),

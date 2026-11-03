@@ -27,6 +27,19 @@ var transactionSLAMetrics = map[string]struct{}{
 	"tps":                     {},
 	"max_consumer_lag_ms":     {},
 	"max_consumer_offset_lag": {},
+	"p50_ttft_ms":             {},
+	"p90_ttft_ms":             {},
+	"p95_ttft_ms":             {},
+	"p99_ttft_ms":             {},
+	"p90_tpot_ms":             {},
+	"p95_tpot_ms":             {},
+	"p99_tpot_ms":             {},
+	"p95_itl_ms":              {},
+	"p99_itl_ms":              {},
+	"output_tokens_per_sec":   {},
+	"goodput_pct":             {},
+	"throttle_rate_pct":       {},
+	"truncation_rate_pct":     {},
 }
 
 var transactionSLAComparators = map[string]struct{}{
@@ -69,6 +82,15 @@ func ValidateTransactionSLARules(rules []TransactionSLARule) error {
 		}
 		if math.IsNaN(rule.Threshold) || math.IsInf(rule.Threshold, 0) || rule.Threshold < 0 {
 			return fmt.Errorf("%s.threshold must be a finite non-negative number", path)
+		}
+		for field, ptr := range map[string]*float64{
+			"slo_ttft_ms": rule.SLOTTFTMs,
+			"slo_tpot_ms": rule.SLOTPOTMs,
+			"slo_e2e_ms":  rule.SLOE2EMs,
+		} {
+			if ptr != nil && (math.IsNaN(*ptr) || math.IsInf(*ptr, 0) || *ptr <= 0) {
+				return fmt.Errorf("%s.%s must be a finite positive number", path, field)
+			}
 		}
 		if rule.Severity != "" && rule.Severity != "fail" && rule.Severity != "warning" {
 			return fmt.Errorf("%s.severity must be fail or warning", path)

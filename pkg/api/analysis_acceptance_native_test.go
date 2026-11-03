@@ -95,7 +95,7 @@ func acceptanceImport(t *testing.T, server *Server, store storage.Store, files [
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	return code, body, *current

@@ -60,7 +60,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 	// only reads.
 	var comparison *harComparisonJob
 	if !identicalComparison {
-		comparison = startHARComparison(r.Context(), importReq.SecondaryData, importReq.Data, importReq.Opts)
+		comparison = s.startHARComparison(r.Context(), importReq.SecondaryData, importReq.Data, importReq.Opts)
 	}
 	// Every return cancels the comparison. Only the success path waits for it
 	// (below): an error response must not wait for a conversion nobody will
@@ -177,6 +177,7 @@ func (s *Server) importHAR(w http.ResponseWriter, r *http.Request, importReq *ha
 			importreview.EnsureScriptImportActionUIDs(s)
 			return nil
 		},
+		LLMTransform: importreview.LLMTransformRequested(r),
 	}
 	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
 	if err != nil {
@@ -399,14 +400,24 @@ type harComparisonJob struct {
 // baseline capture, which the job only reads. opts is the caller's copy;
 // conversion only reads the pointers it shares with the baseline (Profile and
 // the option flags). The job ends with ctx or stop, whichever comes first.
+func (s *Server) startHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) *harComparisonJob {
+	return startHARComparisonWithSlots(ctx, data, baseline, opts, s.harComparisonSlotChan())
+}
+
 func startHARComparison(ctx context.Context, data, baseline []byte, opts har.ConvertOptions) *harComparisonJob {
+	return startHARComparisonWithSlots(ctx, data, baseline, opts, harComparisonSlots)
+}
+
+func startHARComparisonWithSlots(ctx context.Context, data, baseline []byte, opts har.ConvertOptions, slots chan struct{}) *harComparisonJob {
 	if len(data) == 0 {
 		return nil
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	job := &harComparisonJob{done: make(chan struct{}), cancel: cancel}
 	// The job returns its slot to the semaphore it took it from.
-	slots := harComparisonSlots
+	if slots == nil {
+		slots = harComparisonSlots
+	}
 	go func() {
 		defer close(job.done)
 		// A comparison outlives a failed or abandoned import until its
@@ -440,7 +451,8 @@ func startHARComparison(ctx context.Context, data, baseline []byte, opts har.Con
 // harComparisonSlots bounds the comparison HAR conversions that run at once,
 // across all imports. A comparison of up to harImportMaxFileBytes takes
 // several times its size in memory to convert.
-var harComparisonSlots = make(chan struct{}, 2)
+var defaultHARComparisonSlots = make(chan struct{}, 2)
+var harComparisonSlots = defaultHARComparisonSlots
 
 // harComparisonPreparer is prepareHARComparison; tests replace it to hold a
 // comparison mid-conversion.

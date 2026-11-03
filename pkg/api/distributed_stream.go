@@ -52,6 +52,165 @@ func distributedMonitoringArtifacts(tr *TestRunner, test *ManagedTest) *runArtif
 	return artifacts
 }
 
+type distributedPreparationRollback struct {
+	goalControl             *goalControllerState
+	controlGeneration       uint64
+	remoteActivated         bool
+	remoteActivationPending bool
+	lifecycleCtx            context.Context
+	lifecycleCancel         context.CancelFunc
+}
+
+func (rt *distributedTestRuntime) resetForPreparation(
+	firstTarget string,
+	clientsByTarget map[string]generatorClient,
+	streamsByTarget map[string]*generatorrpc.MetricsStream,
+	groupShards map[string][]GeneratorShardSummary,
+	lifecycleCtx context.Context,
+	lifecycleCancel context.CancelFunc,
+) {
+	rt.remoteTarget = firstTarget
+	rt.remoteClient = clientsByTarget[firstTarget]
+	rt.remoteMetricsStream = streamsByTarget[firstTarget]
+	rt.remoteGroupTargets = primaryTargetsFromShards(groupShards)
+	rt.remoteGroupShards = cloneGroupShardMap(groupShards)
+	rt.remoteClientsByTarget = cloneClientMap(clientsByTarget)
+	rt.remoteThroughputCaps = nil
+	rt.remoteArchiveClientsByTarget = nil
+	rt.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streamsByTarget)
+	rt.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
+	rt.remoteTransactionResponseTimeSLA = nil
+	rt.remoteTransactionResponseTimeSLALegacyByTarget = nil
+	rt.remoteTargetStates = make(map[string]string)
+	rt.remoteFinalizing = false
+	rt.remoteLifecycleCtx = lifecycleCtx
+	rt.remoteLifecycleCancel = lifecycleCancel
+	rt.remoteStopFinalizerRunning = false
+	rt.remoteWorkloadCompleted = false
+	rt.remoteMetricsLastPublishedAt = time.Time{}
+	rt.remoteMetricsFlushScheduled = false
+	rt.remoteMetricsAcceptedRevision = 0
+	rt.remoteMetricsPublishedRevision = 0
+	rt.remoteMetricsStoredRevisionByTarget = nil
+	rt.remoteMetricsGateRevision = 0
+	rt.remoteMetricsPublishGate = make(chan struct{}, 1)
+	rt.remoteMetricsPublishGate <- struct{}{}
+	rt.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
+	rt.remoteGoalPublishedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
+	rt.remoteGoalUpdateRunning = false
+	rt.remoteGoalUpdateRevision = 0
+	rt.remoteActivated = false
+	rt.remoteActivationPending = true
+	rt.remoteControlGeneration++
+	if rt.remoteClient == nil && len(clientsByTarget) == 1 {
+		for target, client := range clientsByTarget {
+			rt.remoteTarget = target
+			rt.remoteClient = client
+			rt.remoteMetricsStream = streamsByTarget[target]
+			break
+		}
+	}
+}
+
+func (rt *distributedTestRuntime) restorePreparation(r distributedPreparationRollback) {
+	rt.remoteTarget = ""
+	rt.remoteClient = nil
+	rt.remoteMetricsStream = nil
+	rt.remoteGroupTargets = nil
+	rt.remoteGroupShards = nil
+	rt.remoteClientsByTarget = nil
+	rt.remoteThroughputCaps = nil
+	rt.remoteArchiveClientsByTarget = nil
+	rt.remoteMetricsStreamsByTarget = nil
+	rt.remoteMetricsBatchesByTarget = nil
+	rt.remoteTransactionResponseTimeSLA = nil
+	rt.remoteTransactionResponseTimeSLALegacyByTarget = nil
+	rt.remoteTargetStates = nil
+	rt.remoteFinalizing = false
+	rt.remoteLifecycleCtx = r.lifecycleCtx
+	rt.remoteLifecycleCancel = r.lifecycleCancel
+	rt.remoteStopFinalizerRunning = false
+	rt.remoteWorkloadCompleted = false
+	rt.remoteMetricsLastPublishedAt = time.Time{}
+	rt.remoteMetricsFlushScheduled = false
+	rt.remoteMetricsAcceptedRevision = 0
+	rt.remoteMetricsPublishedRevision = 0
+	rt.remoteMetricsStoredRevisionByTarget = nil
+	rt.remoteMetricsGateRevision = 0
+	rt.remoteMetricsPublishGate = nil
+	rt.remoteGoalAcceptedErrorWindows = nil
+	rt.remoteGoalPublishedErrorWindows = nil
+	rt.remoteGoalUpdateRunning = false
+	rt.remoteGoalUpdateRevision = 0
+	rt.remoteActivated = r.remoteActivated
+	rt.remoteActivationPending = r.remoteActivationPending
+	rt.remoteControlGeneration = r.controlGeneration
+}
+
+func (test *ManagedTest) prepareDistributedRuntimeState(
+	backend testExecutionBackend,
+	firstTarget string,
+	clientsByTarget map[string]generatorClient,
+	streamsByTarget map[string]*generatorrpc.MetricsStream,
+	groupShards map[string][]GeneratorShardSummary,
+	lifecycleCtx context.Context,
+	lifecycleCancel context.CancelFunc,
+	now time.Time,
+) distributedPreparationRollback {
+	rollback := distributedPreparationRollback{
+		goalControl:             test.goalControl,
+		controlGeneration:       test.remoteControlGeneration,
+		remoteActivated:         test.remoteActivated,
+		remoteActivationPending: test.remoteActivationPending,
+		lifecycleCtx:            test.remoteLifecycleCtx,
+		lifecycleCancel:         test.remoteLifecycleCancel,
+	}
+	test.multiEngine = nil
+	test.executionBackend = backend
+	test.GeneratorShards = flattenGroupShards(groupShards)
+	test.distributedTestRuntime.resetForPreparation(
+		firstTarget,
+		clientsByTarget,
+		streamsByTarget,
+		groupShards,
+		lifecycleCtx,
+		lifecycleCancel,
+	)
+	// Coverage requires each generator from its assignment.
+	for target := range clientsByTarget {
+		telemetrySourceLedgerLocked(test).assign(target, now)
+	}
+	// Goal-oriented distributed runs evaluate the goal controller from the
+	// per-target consumeMetrics goroutines (applyRemoteMetricsBatch). Initialize
+	// the controller state here, mirroring the local path (startManagedTestRun),
+	// so the first scale decision does not dereference a nil pointer and crash
+	// the controller.
+	if test.goalControl == nil {
+		test.goalControl = &goalControllerState{}
+	}
+	test.StartedAt = &now
+	test.EndedAt = nil
+	test.Status = "RUNNING"
+	test.PendingSince = nil
+	test.PendingReason = ""
+	test.QueuePosition = 0
+	test.Error = ""
+	test.jointHeldFromStart = true
+	return rollback
+}
+
+func (r distributedPreparationRollback) restore(test *ManagedTest) {
+	test.multiEngine = nil
+	test.executionBackend = nil
+	test.GeneratorShards = nil
+	test.distributedTestRuntime.restorePreparation(r)
+	test.goalControl = r.goalControl
+	test.StartedAt = nil
+	test.EndedAt = nil
+	test.Status = "INITIALIZING"
+	test.jointHeldFromStart = false
+}
+
 func (b *distributedExecutionBackend) startDistributedTestRun(tr *TestRunner, test *ManagedTest, groupShards map[string][]GeneratorShardSummary, clientsByTarget map[string]generatorClient, streamsByTarget map[string]*generatorrpc.MetricsStream) (bool, error) {
 	started, activate, err := b.prepareDistributedTestRun(tr, test, groupShards, clientsByTarget, streamsByTarget)
 	if err != nil || !started {
@@ -100,116 +259,21 @@ func (b *distributedExecutionBackend) prepareDistributedTestRunWithLifecycle(tr 
 		lifecycleCancel()
 		return false, nil, nil //nolint:nilerr // a run cancelled, replaced or fenced before preparation reports not prepared, not a failure
 	}
-	previousGoalControl := test.goalControl
-	previousControlGeneration := test.remoteControlGeneration
-	previousRemoteActivated := test.remoteActivated
-	previousRemoteActivationPending := test.remoteActivationPending
-	previousLifecycleCtx := test.remoteLifecycleCtx
-	previousLifecycleCancel := test.remoteLifecycleCancel
-	test.multiEngine = nil
-	test.executionBackend = b
-	test.remoteTarget = firstTarget
-	test.remoteClient = clientsByTarget[firstTarget]
-	test.remoteMetricsStream = streamsByTarget[firstTarget]
-	test.remoteGroupTargets = primaryTargetsFromShards(groupShards)
-	test.remoteGroupShards = cloneGroupShardMap(groupShards)
-	test.GeneratorShards = flattenGroupShards(groupShards)
-	test.remoteClientsByTarget = cloneClientMap(clientsByTarget)
-	test.remoteArchiveClientsByTarget = nil
-	test.remoteMetricsStreamsByTarget = cloneMetricsStreamMap(streamsByTarget)
-	test.remoteMetricsBatchesByTarget = make(map[string]generatorrpc.MetricsBatch)
-	test.remoteTargetStates = make(map[string]string)
-	// Coverage requires each generator from its assignment.
-	for target := range clientsByTarget {
-		telemetrySourceLedgerLocked(test).assign(target, now)
-	}
-	test.remoteFinalizing = false
-	test.remoteLifecycleCtx = lifecycleCtx
-	test.remoteLifecycleCancel = lifecycleCancel
-	test.remoteStopFinalizerRunning = false
-	test.remoteWorkloadCompleted = false
-	test.remoteMetricsLastPublishedAt = time.Time{}
-	test.remoteMetricsFlushScheduled = false
-	test.remoteMetricsAcceptedRevision = 0
-	test.remoteMetricsPublishedRevision = 0
-	test.remoteMetricsStoredRevisionByTarget = nil
-	test.remoteMetricsGateRevision = 0
-	test.remoteMetricsPublishGate = make(chan struct{}, 1)
-	test.remoteMetricsPublishGate <- struct{}{}
-	test.remoteGoalAcceptedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
-	test.remoteGoalPublishedErrorWindows = make(map[string]distributedGoalErrorAccumulator)
-	test.remoteGoalUpdateRunning = false
-	test.remoteGoalUpdateRevision = 0
-	test.remoteActivated = false
-	test.remoteActivationPending = true
-	test.remoteControlGeneration++
-	// Goal-oriented distributed runs evaluate the goal controller from the
-	// per-target consumeMetrics goroutines (applyRemoteMetricsBatch). Initialize
-	// the controller state here, mirroring the local path (startManagedTestRun),
-	// so the first scale decision does not dereference a nil pointer and crash
-	// the controller.
-	if test.goalControl == nil {
-		test.goalControl = &goalControllerState{}
-	}
-	if test.remoteClient == nil && len(clientsByTarget) == 1 {
-		for target, client := range clientsByTarget {
-			test.remoteTarget = target
-			test.remoteClient = client
-			test.remoteMetricsStream = streamsByTarget[target]
-			break
-		}
-	}
-	test.StartedAt = &now
-	test.EndedAt = nil
-	test.Status = "RUNNING"
-	test.PendingSince = nil
-	test.PendingReason = ""
-	test.QueuePosition = 0
-	test.Error = ""
-	test.jointHeldFromStart = true
+	rollback := test.prepareDistributedRuntimeState(
+		b,
+		firstTarget,
+		clientsByTarget,
+		streamsByTarget,
+		groupShards,
+		lifecycleCtx,
+		lifecycleCancel,
+		now,
+	)
 	if err := tr.saveManagedTestRecord(test); err != nil {
 		// No metrics consumer has been launched yet. Restore the durable startup
 		// state and detach every remote handle so the caller can stop/close the
 		// accepted work before failTestBeforeRun persists FAILED.
-		test.multiEngine = nil
-		test.executionBackend = nil
-		test.remoteTarget = ""
-		test.remoteClient = nil
-		test.remoteMetricsStream = nil
-		test.remoteGroupTargets = nil
-		test.remoteGroupShards = nil
-		test.GeneratorShards = nil
-		test.remoteClientsByTarget = nil
-		test.remoteArchiveClientsByTarget = nil
-		test.remoteMetricsStreamsByTarget = nil
-		test.remoteMetricsBatchesByTarget = nil
-		test.remoteTransactionResponseTimeSLA = nil
-		test.remoteTransactionResponseTimeSLALegacyByTarget = nil
-		test.remoteTargetStates = nil
-		test.remoteFinalizing = false
-		test.remoteLifecycleCtx = previousLifecycleCtx
-		test.remoteLifecycleCancel = previousLifecycleCancel
-		test.remoteStopFinalizerRunning = false
-		test.remoteWorkloadCompleted = false
-		test.remoteMetricsLastPublishedAt = time.Time{}
-		test.remoteMetricsFlushScheduled = false
-		test.remoteMetricsAcceptedRevision = 0
-		test.remoteMetricsPublishedRevision = 0
-		test.remoteMetricsStoredRevisionByTarget = nil
-		test.remoteMetricsGateRevision = 0
-		test.remoteMetricsPublishGate = nil
-		test.remoteGoalAcceptedErrorWindows = nil
-		test.remoteGoalPublishedErrorWindows = nil
-		test.remoteGoalUpdateRunning = false
-		test.remoteGoalUpdateRevision = 0
-		test.remoteActivated = previousRemoteActivated
-		test.remoteActivationPending = previousRemoteActivationPending
-		test.goalControl = previousGoalControl
-		test.remoteControlGeneration = previousControlGeneration
-		test.StartedAt = nil
-		test.EndedAt = nil
-		test.Status = "INITIALIZING"
-		test.jointHeldFromStart = false
+		rollback.restore(test)
 		tr.mu.Unlock()
 		lifecycleCancel()
 		return false, nil, fmt.Errorf("persist distributed RUNNING transition: %w", err)
@@ -1361,6 +1425,7 @@ func (b *distributedExecutionBackend) publishDistributedMetricsRevision(ctx cont
 			return false
 		}
 
+		updateTestLLMRollingWindowLocked(test, live)
 		applyRuntimeGoalTargetsToLiveMetrics(test, live)
 		if !publication.finalizing && test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil && test.Status == "RUNNING" {
 			// As locally: every published running sample enters the goal window.

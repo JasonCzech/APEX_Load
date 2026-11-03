@@ -59,40 +59,21 @@ type BrowserReplaySessionResponse struct {
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {
 	var req BrowserReplayStartRequest
-	if r.Body == nil || r.ContentLength == 0 {
-		writeError(w, http.StatusBadRequest, "request body is required")
+	if !requireNonEmptyReplayBody(w, r) {
 		return
 	}
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if req.Script == nil {
-		writeError(w, http.StatusBadRequest, "script is required")
-		return
-	}
-	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if !bindDraftReplayRequestScript(w, req.Script, req.ProjectID) {
 		return
 	}
 	s.handleStartBrowserReplayRequest(w, r, "", req.Script, req)
 }
 
 func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	stored, ok := s.runner.GetScript(id)
+	stored, ok := s.loadAuthorizedReplayStoredScript(w, r)
 	if !ok {
-		writeError(w, http.StatusNotFound, "script not found")
-		return
-	}
-	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
-		return
-	}
-	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 
@@ -101,35 +82,13 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	script := stored.Script
-	if req.Script != nil {
-		script = req.Script
-		if script.ID == "" {
-			script.ID = stored.ID
-		}
-		if script.Name == "" {
-			script.Name = stored.Name
-		}
-		var resolveErr error
-		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
-		if resolveErr != nil {
-			writeError(w, http.StatusBadRequest, resolveErr.Error())
-			return
-		}
-	} else {
-		// The stored-script route may apply only the bounded browser overrides
-		// in applyBrowserReplayOverrides; none can change the target, proxy, or
-		// credential fields. Retain server-owned import trust for that exact
-		// durable script so harmless viewport/device overrides do not replace
-		// an imported password with its disclosure sentinel.
-		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
-	}
-	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
+	if !ok {
 		return
 	}
+	req.trustedPreservedImport = trustedPreservedImport
 
-	s.handleStartBrowserReplayRequest(w, r, id, script, req)
+	s.handleStartBrowserReplayRequest(w, r, stored.ID, script, req)
 }
 
 // OpenAPI-Responses: 409, 422, 500, 503
@@ -151,61 +110,24 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	}
 	req.browserAuthoredDefinition = engine.BrowserOriginalAuthoredDefinition(script)
 	script = applyBrowserReplayOverrides(script, req)
-	submitted := script
-	var prepared bool
-	script, prepared = prepareTransientExecutableScript(
-		w,
-		script,
-		req.trustedPreservedImport,
-	)
-	if !prepared {
+	preparedExec, ok := s.prepareReplayOrDebugExecution(r.Context(), w, replayExecutionPrepOptions{
+		ScriptID:               id,
+		Script:                 script,
+		ReplaySessionID:        req.ReplaySessionID,
+		RunID:                  req.RunID,
+		ValidateRunID:          true,
+		TrustedPreservedImport: req.trustedPreservedImport,
+		LiveTableSeeds:         req.LiveTableSeeds,
+		Variables:              req.Variables,
+		RequireBrowserProtocol: true,
+		CheckArchivedScript:    true,
+	})
+	if !ok {
 		return
 	}
-	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
-	if resolvedScript != nil {
-		script = resolvedScript
-	}
-	script, prepared = prepareTransientExecutableScript(
-		w,
-		script,
-		req.trustedPreservedImport,
-	)
-	if !prepared {
-		return
-	}
-	issues := append(
-		s.transientStaticIssues(submitted, script, req.trustedPreservedImport),
-		refIssues...,
-	)
-	warnings := append(validationWarnings(script), refWarnings...)
-	if !s.prepareReplayLiveTables(r.Context(), w, script, req.LiveTableSeeds) {
-		return
-	}
-	secretResolver := s.runner.secretResolverForScript(script)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
-	if !preflight.Valid {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"script_id": id,
-			"valid":     preflight.Valid,
-			"issues":    issues,
-			"warnings":  warnings,
-			"preflight": preflight,
-		})
-		return
-	}
-	if script.Protocol != "browser" {
-		writeError(w, http.StatusBadRequest, "browser replay requires script.protocol to be browser")
-		return
-	}
-
-	if id != "" {
-		if err := s.runner.checkArchivedExecution("", []string{id}); err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-	}
-	req.Preflight = preflight
-	req.SecretResolver = secretResolver
+	script = preparedExec.Script
+	req.Preflight = preparedExec.Preflight
+	req.SecretResolver = preparedExec.SecretResolver
 	req.executionContext, req.releaseExecutionContext = s.runner.executionOperationContext(context.Background())
 	session, err := s.browserReplay.Start(id, script, req)
 	if err != nil {
@@ -218,8 +140,8 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 		ScriptID:        id,
 		ReplaySessionID: session.ID,
 		Session:         session,
-		Preflight:       preflight,
-		Warnings:        warnings,
+		Preflight:       preparedExec.Preflight,
+		Warnings:        preparedExec.Warnings,
 	}
 	writeJSON(w, http.StatusOK, response)
 }

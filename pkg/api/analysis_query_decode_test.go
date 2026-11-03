@@ -91,8 +91,8 @@ func TestAnalysisComparisonHandlerRejectsIgnoredRequestedOptionsBeforeHeavyAdmis
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/compare?project_id=proj-a", strings.NewReader(body))
 			s.mux.ServeHTTP(w, r)
-			if w.Code != http.StatusBadRequest || len(analysisPipelineJobs) != 0 {
-				t.Fatal("unsupported comparison entered analytical work", w.Code, w.Body.String(), len(analysisPipelineJobs))
+			if w.Code != http.StatusBadRequest || len(s.semaphores.analysisPipelineJobs) != 0 {
+				t.Fatal("unsupported comparison entered analytical work", w.Code, w.Body.String(), len(s.semaphores.analysisPipelineJobs))
 			}
 		})
 	}

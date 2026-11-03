@@ -3948,6 +3948,16 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			// ramp continues from the current VUsers over the remaining time.
 			resuming = false
 		}
+		if stage.TargetTPS != nil && *stage.TargetTPS > 0 && stage.TargetVUsers == 0 {
+			if !tr.waitTestRunning(ctx, testID) {
+				return
+			}
+			tr.setActiveLoadStage(testID, groupName, index, stage)
+			if !tr.waitTestActiveDuration(ctx, testID, duration) {
+				return
+			}
+			continue
+		}
 		switch stageType {
 		case "ramp_up", "ramp_down":
 			if !tr.waitTestRunning(ctx, testID) {
@@ -4059,6 +4069,14 @@ func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, st
 	if test.GoalConfig != nil && test.GoalConfig.WorkloadShapeConfig != nil && test.GoalConfig.WorkloadShapeConfig.ClosedVUser != nil && test.GoalConfig.WorkloadShapeConfig.SteppedRamp == nil {
 		return
 	}
+	var targetTPS float64
+	kind := "vusers"
+	if stage.TargetTPS != nil && *stage.TargetTPS > 0 {
+		targetTPS = *stage.TargetTPS
+		if stage.TargetVUsers == 0 {
+			kind = "tps"
+		}
+	}
 	for groupIndex := range test.Groups {
 		if test.Groups[groupIndex].Name != groupName {
 			continue
@@ -4068,6 +4086,9 @@ func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, st
 			StageIndex:   index,
 			Name:         stage.Name,
 			TargetVUsers: stage.TargetVUsers,
+			TargetTPS:    targetTPS,
+			Kind:         kind,
+			Warmup:       stage.Warmup,
 			Duration:     stage.Duration,
 			StartedAt:    time.Now().UTC(),
 		}

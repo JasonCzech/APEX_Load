@@ -384,11 +384,17 @@ func elasticSourceField(source map[string]any, field string) any {
 	if value, ok := source[field]; ok {
 		return value
 	}
+	parts := strings.Split(field, ".")
 	var current any = source
-	for _, part := range strings.Split(field, ".") {
+	for i, part := range parts {
 		object, ok := current.(map[string]any)
 		if !ok {
 			return nil
+		}
+		if i > 0 {
+			if value, ok := object[strings.Join(parts[i:], ".")]; ok {
+				return value
+			}
 		}
 		current = object[part]
 	}

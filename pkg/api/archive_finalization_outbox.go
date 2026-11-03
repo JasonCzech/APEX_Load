@@ -986,10 +986,9 @@ func (s *Server) startArchiveFinalizationRetry() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.archiveFinalizationCancel = cancel
-	s.archiveFinalizationDone = make(chan struct{})
-	go func() {
-		defer close(s.archiveFinalizationDone)
+	done := make(chan struct{})
+	if !s.launchBackground(func() {
+		defer close(done)
 		cleanupDone := make(chan struct{})
 		go func() { defer close(cleanupDone); s.runner.runCollectionCacheCleanup(ctx) }()
 		collectionDone := make(chan struct{})
@@ -1056,7 +1055,13 @@ func (s *Server) startArchiveFinalizationRetry() {
 				runSweep()
 			}
 		}
-	}()
+	}) {
+		cancel()
+		close(done)
+		return
+	}
+	s.archiveFinalizationCancel = cancel
+	s.archiveFinalizationDone = done
 }
 
 func (s *Server) wakeArchiveFinalizationRetry() {

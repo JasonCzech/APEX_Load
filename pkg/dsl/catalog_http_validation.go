@@ -125,7 +125,12 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 		}
 	}
 	name := stringAnyValue(request["name"])
-	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
+	rawMethod := strings.TrimSpace(stringAnyValue(request["method"]))
+	rawType := strings.TrimSpace(stringAnyValue(request["type"]))
+	method := strings.ToUpper(firstNonEmptyString(rawMethod, rawType))
+	if rawMethod == "" && strings.EqualFold(rawType, "llm_request") {
+		method = "POST"
+	}
 	target := stringAnyValue(request["target"])
 	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, requestIndex, name)
 	payload, marshalErr := json.Marshal(request)
@@ -194,6 +199,9 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	}
 	if strings.TrimSpace(target) == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", childLabel))
+	}
+	if strings.EqualFold(rawType, "llm_request") && childDecodeErr == nil {
+		issues = append(issues, validateLLMRequestActionParamsIssues(childLabel, decodedChild)...)
 	}
 	// Child requests support body_file the same way top-level actions do; the
 	// engine decodes each child into a dsl.Action whose HTTP protocol uses only

@@ -1052,11 +1052,14 @@ type ErrorHandlingConfig struct {
 	// while a non-nil false is an explicit opt-out that the scenario default must
 	// not silently overturn. Pointer + omitempty keeps an explicit false on the
 	// wire, which a plain bool could never round-trip.
-	ContinueOnError *bool  `json:"continue_on_error,omitempty"`
-	MaxRetries      int    `json:"max_retries,omitempty" jsonschema:"minimum=0,maximum=10"`         // default: 0
-	RetryDelayMs    int    `json:"retry_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default: 1000
-	RetryBackoff    string `json:"retry_backoff,omitempty"`                                         // "fixed", "exponential"
-	SnapshotOnError bool   `json:"snapshot_on_error,omitempty"`                                     // capture req/resp on failure
+	ContinueOnError *bool    `json:"continue_on_error,omitempty"`
+	MaxRetries      int      `json:"max_retries,omitempty" jsonschema:"minimum=0,maximum=10"`         // default: 0
+	RetryDelayMs    int      `json:"retry_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default: 1000
+	RetryBackoff    string   `json:"retry_backoff,omitempty"`                                         // "fixed", "exponential", "retry_after"
+	RetryOn         []string `json:"retry_on,omitempty"`                                              // optional filter: "429", "5xx", "timeout", "network"
+	HonorRetryAfter bool     `json:"honor_retry_after,omitempty"`                                     // wait max(backoff, capped Retry-After) on 429/503
+	RetryAfterMaxMs int      `json:"retry_after_max_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	SnapshotOnError bool     `json:"snapshot_on_error,omitempty"` // capture req/resp on failure
 }
 
 // ContinueOnErrorEnabled reports the effective continue-on-error behavior for a
@@ -1077,47 +1080,73 @@ func (c ErrorHandlingConfig) ContinueOnErrorSet() bool {
 func ContinueOnErrorValue(enabled bool) *bool { return &enabled }
 
 type ThinkTimeConfig struct {
-	MinPercent float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
-	MaxPercent float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
-	Type       string  `json:"type"`
-	MeanMs     float64 `json:"mean_ms" jsonschema:"minimum=0,maximum=3600000"`
-	StdMs      float64 `json:"std_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	MinMs      float64 `json:"min_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	MaxMs      float64 `json:"max_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	Multiplier float64 `json:"multiplier,omitempty" jsonschema:"exclusiveMinimum=0,maximum=100"` // omitted/0 in Go inherits 1; authored JSON must be >0
-	LimitMs    float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // max think time cap (0 = no limit)
-	Ignore     bool    `json:"ignore,omitempty"`                                                 // skip all think times
+	MinPercent   float64 `json:"min_percent,omitempty" jsonschema:"minimum=0,maximum=10000"` // random_percentage: percentage of each recorded delay
+	MaxPercent   float64 `json:"max_percent,omitempty" jsonschema:"minimum=0,maximum=10000"`
+	Type         string  `json:"type"`
+	Distribution string  `json:"distribution,omitempty"` // "uniform" (default) or "exponential"
+	MeanMs       float64 `json:"mean_ms" jsonschema:"minimum=0,maximum=3600000"`
+	StdMs        float64 `json:"std_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	MinMs        float64 `json:"min_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	MaxMs        float64 `json:"max_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	Multiplier   float64 `json:"multiplier,omitempty" jsonschema:"exclusiveMinimum=0,maximum=100"` // omitted/0 in Go inherits 1; authored JSON must be >0
+	LimitMs      float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // max think time cap (0 = no limit)
+	Ignore       bool    `json:"ignore,omitempty"`                                                 // skip all think times
 	// Force applies this delay exactly whatever the script's think-time
 	// settings (ignore, multiplier, limit, percentage) say, as LoadRunner's
 	// lr_force_think_time does. Meaningful on an action's think_time only.
 	Force bool `json:"force,omitempty"`
 }
 
+// PacingRateStage defines a time-bounded open-model arrival rate segment.
+type PacingRateStage struct {
+	DurationSeconds int      `json:"duration_seconds"`
+	TargetTPS       float64  `json:"target_tps"`
+	EndTPS          *float64 `json:"end_tps,omitempty"` // if set, linearly ramps from TargetTPS to EndTPS over DurationSeconds
+	Warmup          bool     `json:"warmup,omitempty"`
+}
+
+// QuotaPacingConfig configures Azure TPM/RPM quota-aware pacing and AIMD probing.
+type QuotaPacingConfig struct {
+	TPM                       int     `json:"tpm,omitempty"`
+	RPM                       int     `json:"rpm,omitempty"`
+	EstimatedTokensPerRequest int     `json:"estimated_tokens_per_request,omitempty"`
+	BurstTokens               int     `json:"burst_tokens,omitempty"`
+	AdaptiveAIMD              bool    `json:"adaptive_aimd,omitempty"`
+	DefaultTokens             int     `json:"default_tokens,omitempty"`
+	HeadroomRatio             float64 `json:"headroom_ratio,omitempty"` // e.g. 0.90 for 90% PTU/quota soak
+}
+
 type PacingConfig struct {
-	Type          string  `json:"type"`                                                             // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps"
-	DelayMs       int     `json:"delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // for fixed_delay
-	MinDelayMs    int     `json:"min_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
-	MaxDelayMs    int     `json:"max_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
-	IntervalMs    int     `json:"interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`     // for fixed_interval
-	MinIntervalMs int     `json:"min_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
-	MaxIntervalMs int     `json:"max_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
-	TPS           float64 `json:"tps,omitempty"`                                                    // for tps mode
+	Type           string             `json:"type"`                                                             // "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps", "quota"
+	DelayMs        int                `json:"delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // for fixed_delay
+	MinDelayMs     int                `json:"min_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
+	MaxDelayMs     int                `json:"max_delay_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`    // for random_delay
+	IntervalMs     int                `json:"interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`     // for fixed_interval
+	MinIntervalMs  int                `json:"min_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
+	MaxIntervalMs  int                `json:"max_interval_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // for random_interval
+	TPS            float64            `json:"tps,omitempty"`                                                    // for tps mode
+	ArrivalProcess string             `json:"arrival_process,omitempty"`                                        // "uniform" (default), "poisson", "gamma"
+	Burstiness     float64            `json:"burstiness,omitempty"`                                             // gamma shape parameter k > 0 (CV^2 = 1/k)
+	Seed           *int64             `json:"seed,omitempty"`
+	RateStages     []PacingRateStage  `json:"rate_stages,omitempty"`
+	Quota          *QuotaPacingConfig `json:"quota,omitempty"`
 }
 
 type DataSource struct {
-	Name           string   `json:"name"`
-	Type           string   `json:"type"` // "csv", "dat", "file"
-	Path           string   `json:"path,omitempty"`
-	InlineData     string   `json:"inline_data,omitempty"` // optional inline CSV/DAT content
-	Encoding       string   `json:"encoding,omitempty"`    // for file inline_data: "text" (default) or "base64"
-	FileName       string   `json:"file_name,omitempty"`   // original asset filename for file data sources
-	ContentType    string   `json:"content_type,omitempty"`
-	StorageRef     string   `json:"storage_ref,omitempty"`  // governed asset reference, e.g. file://...
-	StagedAsset    string   `json:"staged_asset,omitempty"` // controller-staged distributed asset (internal execution boundary)
-	Strategy       string   `json:"strategy"`               // "sequential", "random", "unique", "pop"
-	Delimiter      string   `json:"delimiter,omitempty"`    // default ","; accepts "auto", "comma", "tab"
-	FirstRowHeader bool     `json:"first_row_header"`
-	Columns        []string `json:"columns,omitempty"` // explicit column names if no header
+	Name           string            `json:"name"`
+	Type           string            `json:"type"` // "csv", "dat", "file", "jsonl"
+	Path           string            `json:"path,omitempty"`
+	InlineData     string            `json:"inline_data,omitempty"` // optional inline CSV/DAT/JSONL content
+	Encoding       string            `json:"encoding,omitempty"`    // for file inline_data: "text" (default) or "base64"
+	FileName       string            `json:"file_name,omitempty"`   // original asset filename for file data sources
+	ContentType    string            `json:"content_type,omitempty"`
+	StorageRef     string            `json:"storage_ref,omitempty"`  // governed asset reference, e.g. file://...
+	StagedAsset    string            `json:"staged_asset,omitempty"` // controller-staged distributed asset (internal execution boundary)
+	Strategy       string            `json:"strategy"`               // "sequential", "random", "unique", "pop"
+	Delimiter      string            `json:"delimiter,omitempty"`    // default ","; accepts "auto", "comma", "tab"
+	FirstRowHeader bool              `json:"first_row_header"`
+	Columns        []string          `json:"columns,omitempty"` // explicit column names if no header
+	Fields         map[string]string `json:"fields,omitempty"`  // for jsonl: column name -> JSON path or top-level key
 }
 
 type Parameter struct {
@@ -1231,18 +1260,19 @@ type Action struct {
 	// plus ranked fallback candidates in Metadata; generators never see the
 	// repository. Bare "logicalName" resolves across the project's repositories;
 	// qualified "repoID:logicalName" pins to one repository.
-	ObjectRef    string                 `json:"object_ref,omitempty"`
-	Value        string                 `json:"value,omitempty"`
-	Headers      map[string]string      `json:"headers,omitempty"`
-	HeaderList   HeaderList             `json:"header_list,omitempty"`
-	Body         string                 `json:"body,omitempty"`
-	BodyFile     string                 `json:"body_file,omitempty"`
-	BodyEncoding string                 `json:"body_encoding,omitempty"`
-	Params       map[string]any         `json:"params,omitempty"`
-	WaitFor      *WaitCondition         `json:"wait_for,omitempty"`
-	Sync         *BrowserSyncPolicy     `json:"sync,omitempty"`
-	Capture      *BrowserCaptureOptions `json:"capture,omitempty"`
-	Metadata     map[string]any         `json:"metadata,omitempty"`
+	ObjectRef            string                 `json:"object_ref,omitempty"`
+	Value                string                 `json:"value,omitempty"`
+	Headers              map[string]string      `json:"headers,omitempty"`
+	HeaderList           HeaderList             `json:"header_list,omitempty"`
+	Body                 string                 `json:"body,omitempty"`
+	BodyFile             string                 `json:"body_file,omitempty"`
+	BodyEncoding         string                 `json:"body_encoding,omitempty"`
+	BodyTemplateEncoding string                 `json:"body_template_encoding,omitempty" jsonschema:"enum=,enum=json"`
+	Params               map[string]any         `json:"params,omitempty"`
+	WaitFor              *WaitCondition         `json:"wait_for,omitempty"`
+	Sync                 *BrowserSyncPolicy     `json:"sync,omitempty"`
+	Capture              *BrowserCaptureOptions `json:"capture,omitempty"`
+	Metadata             map[string]any         `json:"metadata,omitempty"`
 	// Attribution is the typed, bounded analytics identity for this action.
 	// Importers and authors should prefer it over ad-hoc metadata keys; legacy
 	// source_path/hierarchy metadata remains readable for compatibility.

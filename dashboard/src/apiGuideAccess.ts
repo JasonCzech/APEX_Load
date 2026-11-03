@@ -221,6 +221,7 @@ export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVis
     case 'capacity':
     case 'ci':
     case 'execution-plans':
+    case 'llm':
     case 'run-calendar':
     case 'scenarios':
     case 'schedules':

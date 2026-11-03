@@ -172,6 +172,7 @@ const COMPANION_ARTICLE_MAP: Record<string, { id: string; section?: string }> = 
   'docs/guides/RETAINED_RESOURCE_INSPECTION.md': { id: 'retained-resource-inspection', section: 'retained-browser-resource-inspection' },
   'docs/guides/BROWSER_INTERACTION_EVIDENCE.md': { id: 'browser-interaction-evidence', section: 'interaction-and-layout-evidence' },
   'docs/guides/BROWSER_HAR_WORKING_OWNERSHIP.md': { id: 'browser-har-ownership' },
+  'docs/LLM_PERFORMANCE_TESTING.md': { id: 'dsl-operator-guide' },
 }
 // The repository is private and Help ships inside the build, so Help never
 // links to GitHub (the repository, its docs site or raw file hosts) or to

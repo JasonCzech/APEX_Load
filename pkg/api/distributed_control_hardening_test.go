@@ -73,14 +73,16 @@ func TestDistributedScaleSerializesControllerTransactionPerTestGroup(t *testing.
 		Groups:           []TestGroup{{Name: "buyers", VUsers: 6}},
 		TotalVUsers:      6,
 		executionBackend: backend,
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {
-				{Group: "buyers", Target: "gen-a", VUsers: 3},
-				{Group: "buyers", Target: "gen-b", VUsers: 3},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {
+					{Group: "buyers", Target: "gen-a", VUsers: 3},
+					{Group: "buyers", Target: "gen-b", VUsers: 3},
+				},
 			},
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
+			remoteTargetStates:    map[string]string{"gen-a": "RUNNING", "gen-b": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
-		remoteTargetStates:    map[string]string{"gen-a": "RUNNING", "gen-b": "RUNNING"},
 	}
 	runner := &TestRunner{
 		tests:     map[string]*ManagedTest{test.ID: test},
@@ -169,15 +171,17 @@ func TestDistributedScaleDifferentGroupsCommitConcurrently(t *testing.T) {
 		Groups:           []TestGroup{{Name: "buyers", VUsers: 3}, {Name: "sellers", VUsers: 4}},
 		TotalVUsers:      7,
 		executionBackend: backend,
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers":  {{Group: "buyers", Target: "gen-buyers", VUsers: 3}},
-			"sellers": {{Group: "sellers", Target: "gen-sellers", VUsers: 4}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers":  {{Group: "buyers", Target: "gen-buyers", VUsers: 3}},
+				"sellers": {{Group: "sellers", Target: "gen-sellers", VUsers: 4}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-buyers":  buyersClient,
+				"gen-sellers": sellersClient,
+			},
+			remoteTargetStates: map[string]string{"gen-buyers": "RUNNING", "gen-sellers": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-buyers":  buyersClient,
-			"gen-sellers": sellersClient,
-		},
-		remoteTargetStates: map[string]string{"gen-buyers": "RUNNING", "gen-sellers": "RUNNING"},
 	}
 	runner := &TestRunner{
 		tests:     map[string]*ManagedTest{test.ID: test},
@@ -317,13 +321,15 @@ func TestDistributedEvacuationRollsBackNewCandidateWhenStopWinsCommit(t *testing
 		executionBackend: backend,
 		Assignment:       &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:           []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 4, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 4}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 4}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": failedClient},
+			remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": failedClient},
-		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 	}
 	hub := NewHub()
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: hub}
@@ -396,7 +402,7 @@ func TestDistributedStopTestContextFansOutWithinParentDeadline(t *testing.T) {
 	backend := newDistributedExecutionBackend(targets, 5*time.Second, nil)
 	// A live run context must not hide the caller's shorter shutdown/API
 	// deadline.
-	test := &ManagedTest{ID: "parallel-stop", Status: "STOPPING", executionCtx: context.Background(), remoteClientsByTarget: clients}
+	test := &ManagedTest{ID: "parallel-stop", Status: "STOPPING", executionCtx: context.Background(), distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: clients}}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()

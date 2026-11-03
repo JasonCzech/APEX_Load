@@ -118,9 +118,11 @@ func TestArmRunContinuityPersistsSealedCheckpoint(t *testing.T) {
 			t.Fatalf("save %s: %v", tc.id, err)
 		}
 		test := &ManagedTest{ID: tc.id, Assignment: &GeneratorAssignmentSettings{FailoverPolicy: tc.policy},
-			remoteTargetStates:           map[string]string{"gen-2:9091": "complete"},
-			remoteArchiveClientsByTarget: map[string]generatorClient{"retired:9091": &adoptionFakeClient{}},
-			pinnedSecrets:                &runPinnedSecretState{},
+			distributedTestRuntime: distributedTestRuntime{
+				remoteTargetStates:           map[string]string{"gen-2:9091": "complete"},
+				remoteArchiveClientsByTarget: map[string]generatorClient{"retired:9091": &adoptionFakeClient{}},
+			},
+			pinnedSecrets: &runPinnedSecretState{},
 		}
 		test.pinnedSecrets.setIfAbsent(map[int]map[string]string{0: {"LOGIN_PASSWORD": "secret-before-rotation"}})
 		runner.armRunContinuity(context.Background(), test, generation, owner, token, shards)

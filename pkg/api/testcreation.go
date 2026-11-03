@@ -2624,8 +2624,14 @@ func validateWorkloadShapeConfig(config *WorkloadShapeConfig, scenarioMode strin
 	if config.GoalDriven != nil {
 		configuredShapes++
 	}
+	if config.CapacitySweep != nil {
+		configuredShapes++
+	}
 	if configuredShapes > 1 {
 		return fmt.Errorf("workload_shape_config cannot contain multiple guided workload shapes")
+	}
+	if config.CapacitySweep != nil {
+		return validateCapacitySweepConfig(config.CapacitySweep)
 	}
 	if config.GoalDriven != nil {
 		if normalizeScenarioMode(scenarioMode) != "goal_oriented" {
@@ -2741,24 +2747,44 @@ func hasGoalSLAThreshold(config *GoalConfig) bool {
 		config.MaxEndToEndLatencyMs != nil ||
 		config.MaxPartitionSkewPct != nil ||
 		config.MaxRedeliveryRatePct != nil ||
-		config.MaxDeadLetterRatePct != nil)
+		config.MaxDeadLetterRatePct != nil ||
+		config.MaxLLMP95TTFTMs != nil ||
+		config.MaxLLMP95TPOTMs != nil ||
+		config.MinLLMOutputTokensPerSec != nil ||
+		config.MinLLMGoodputPct != nil ||
+		config.MaxLLMThrottleRatePct != nil)
 }
 
 func normalizeCreateTestGroups(req CreateTestRequest) ([]CreateGroupEntry, error) {
+	var groups []CreateGroupEntry
 	if len(req.Groups) > 0 {
 		if len(req.Groups) > maxManagedTestGroups {
 			return nil, fmt.Errorf("test contains %d groups; limit is %d", len(req.Groups), maxManagedTestGroups)
 		}
-		return req.Groups, nil
-	}
-	if req.ScriptID != "" {
-		return []CreateGroupEntry{{
+		groups = append([]CreateGroupEntry(nil), req.Groups...)
+	} else if req.ScriptID != "" {
+		groups = []CreateGroupEntry{{
 			ScriptID: req.ScriptID,
 			VUsers:   req.VUsers,
 			RampUp:   req.RampUp,
-		}}, nil
+		}}
+	} else {
+		return nil, fmt.Errorf("at least one group (or script_id) is required")
 	}
-	return nil, fmt.Errorf("at least one group (or script_id) is required")
+	if req.GoalConfig != nil && req.GoalConfig.WorkloadShapeConfig != nil && req.GoalConfig.WorkloadShapeConfig.CapacitySweep != nil {
+		sweep := req.GoalConfig.WorkloadShapeConfig.CapacitySweep
+		stages, _, err := ExpandCapacitySweepStages(sweep)
+		if err != nil {
+			return nil, err
+		}
+		targetGroup := strings.TrimSpace(sweep.Group)
+		for i := range groups {
+			if len(groups[i].Stages) == 0 && (targetGroup == "" || groups[i].Name == targetGroup) {
+				groups[i].Stages = cloneLoadStages(stages)
+			}
+		}
+	}
+	return groups, nil
 }
 
 func (tr *TestRunner) compileManagedTestGroupsLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride) ([]TestGroup, []engine.GroupConfig, int, error) {
@@ -2884,7 +2910,10 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	if vusers > maxManagedTestVUsers {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers cannot exceed %d", index, maxManagedTestVUsers)
 	}
-	allowStageTargetTPS := normalizeScenarioMode(scenarioMode) != "vuser_driven"
+	groupIsOpenModel := (script.Script != nil && dsl.CanonicalWorkloadModel(script.Script.Config.RunLogic.WorkloadModel) == "open") ||
+		(group.RuntimeSettings != nil && group.RuntimeSettings.RunLogic != nil && dsl.CanonicalWorkloadModel(group.RuntimeSettings.RunLogic.WorkloadModel) == "open") ||
+		(runtimeSettings != nil && runtimeSettings.RunLogic != nil && dsl.CanonicalWorkloadModel(runtimeSettings.RunLogic.WorkloadModel) == "open")
+	allowStageTargetTPS := normalizeScenarioMode(scenarioMode) != "vuser_driven" || groupIsOpenModel
 	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index, allowStageTargetTPS)
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, err
@@ -2908,7 +2937,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	}
 	rampUpValue := firstNonEmpty(group.RampUp, derivedRampUp)
 	rampDownValue := firstNonEmpty(group.RampDown, derivedRampDown)
-	stageDriven := normalizeScenarioMode(scenarioMode) == "vuser_driven" && len(group.Stages) > 0
+	stageDriven := normalizeScenarioMode(scenarioMode) == "vuser_driven" && len(group.Stages) > 0 && derivedVUsers > 0
 	if len(group.Stages) > 0 && derivedVUsers > 0 && vusers != derivedVUsers {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers must match the maximum target_vusers from stages (%d)", index, derivedVUsers)
 	}
@@ -3135,6 +3164,44 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			"group[%d]: vuser-driven stages are not supported for open workload scripts; configure TPS pacing without VUser scale stages",
 			index,
 		)
+	}
+	if len(group.Stages) > 0 && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" {
+		if len(scriptCopy.Config.Pacing.RateStages) == 0 {
+			rateStages := make([]dsl.PacingRateStage, 0, len(group.Stages))
+			var prevTPS float64
+			for _, st := range group.Stages {
+				if st.TargetTPS == nil {
+					continue
+				}
+				dur, _ := time.ParseDuration(st.Duration)
+				sec := int(math.Round(dur.Seconds()))
+				if sec <= 0 {
+					sec = 1
+				}
+				stageType := strings.ToLower(strings.TrimSpace(st.Type))
+				if stageType == "ramp_up" || stageType == "ramp_down" {
+					endVal := *st.TargetTPS
+					rateStages = append(rateStages, dsl.PacingRateStage{
+						DurationSeconds: sec,
+						TargetTPS:       prevTPS,
+						EndTPS:          &endVal,
+						Warmup:          st.Warmup,
+					})
+				} else {
+					rateStages = append(rateStages, dsl.PacingRateStage{
+						DurationSeconds: sec,
+						TargetTPS:       *st.TargetTPS,
+						Warmup:          st.Warmup,
+					})
+				}
+				prevTPS = *st.TargetTPS
+			}
+			if len(rateStages) > 0 {
+				scriptCopy.Config.Pacing.Type = "tps"
+				scriptCopy.Config.Pacing.RateStages = rateStages
+				testGroup.stageDriven = true
+			}
+		}
 	}
 	if len(scriptCopy.Actions) == 0 {
 		if issues := validateStoredExecutionScript(&scriptCopy); len(issues) > 0 {

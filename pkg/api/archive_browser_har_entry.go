@@ -85,9 +85,10 @@ func (s *Server) handleGetRunArchiveBrowserHAREntry(w http.ResponseWriter, r *ht
 		writeError(w, http.StatusNotFound, err.Error())
 		return
 	}
+	readPermit := s.browserResourceReadPermitChan()
 	select {
-	case browserResourceReadPermit <- struct{}{}:
-		defer func() { <-browserResourceReadPermit }()
+	case readPermit <- struct{}{}:
+		defer func() { <-readPermit }()
 	default:
 		w.Header().Set("Retry-After", "2")
 		writeError(w, http.StatusServiceUnavailable, "another browser archive read is in progress; retry shortly")

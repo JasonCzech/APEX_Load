@@ -211,7 +211,7 @@ func TestCloudDurationSpellingsDoNotExpandWithCanonicalFacts(t *testing.T) {
 		factor float64
 		valid  bool
 	}{
-		{"Seconds", 1000, true}, {"Milliseconds", 1, true},
+		{"Seconds", 1000, true}, {"Milliseconds", 1, true}, {"MilliSeconds", 1, true},
 		{"seconds", 0, false}, {"s", 0, false}, {"Microseconds", 0, false},
 	} {
 		t.Run(tc.unit, func(t *testing.T) {
@@ -223,5 +223,39 @@ func TestCloudDurationSpellingsDoNotExpandWithCanonicalFacts(t *testing.T) {
 				t.Fatalf("unit=%s factor=%g", unit, factor)
 			}
 		})
+	}
+}
+
+func TestAzureOpenAIMonitorQueryAndFilterValidation(t *testing.T) {
+	q := AzureOpenAIMonitorQuery(
+		"11111111-1111-1111-1111-111111111111",
+		"22222222-2222-2222-2222-222222222222",
+		"/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg-ai/providers/Microsoft.CognitiveServices/accounts/aoai-prod",
+		"workload",
+		"gpt-4o",
+	)
+	if err := validateCloudQuery("azure-monitor", &q); err != nil {
+		t.Fatalf("validateCloudQuery(AzureOpenAIMonitorQuery): %v", err)
+	}
+	if len(q.Metrics) != 6 {
+		t.Fatalf("expected 6 metrics in AzureOpenAIMonitorQuery, got %d", len(q.Metrics))
+	}
+	// Filtered response with metadatavalues and MilliSeconds unit should decode and use Alias.
+	start := time.Date(2026, 10, 1, 1, 0, 0, 0, time.UTC)
+	end := start.Add(5 * time.Minute)
+	body := `{"interval":"PT1M","value":[{"name":{"value":"AzureOpenAITimeToResponse"},"unit":"MilliSeconds","timeseries":[{"metadatavalues":[{"name":{"value":"modeldeploymentname"},"value":"gpt-4o"}],"data":[{"timeStamp":"2026-10-01T01:00:00Z","average":142.5}]}]}]}`
+	points, err := decodeAzureMonitor([]byte(body), q.Metrics[4], start, end)
+	if err != nil || len(points) != 1 {
+		t.Fatalf("decodeAzureMonitor: %v %+v", err, points)
+	}
+	if points[0].MetricName != "azure_openai_time_to_response_ms" || points[0].Unit != "ms" || points[0].Value == nil || *points[0].Value != 142.5 {
+		t.Fatalf("unexpected decoded point: %+v", points[0])
+	}
+	// Unsafe OData filter or filter on CloudWatch should be rejected.
+	bad := q
+	bad.Metrics = append([]CloudMetric(nil), q.Metrics...)
+	bad.Metrics[0].Filter = "ModelDeploymentName eq 'gpt-4o' or 1 eq 1"
+	if err := validateCloudQuery("azure-monitor", &bad); err == nil {
+		t.Fatal("expected unsafe OData filter to be rejected")
 	}
 }

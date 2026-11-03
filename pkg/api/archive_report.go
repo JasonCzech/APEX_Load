@@ -108,6 +108,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	salesforceEPT := newArchiveSalesforceEPTAccumulator()
 	auraParity := newArchiveAuraParityAccumulator(manifest.Provenance.AuraHTTPRequests)
 	web2Migration := newRunArchiveWeb2MigrationAccumulator()
+	llmAccumulator := newArchiveLLMAccumulator(manifest, gateQuantileBudget)
 	var browserArtifactCount int64
 	var actionSummaryCells int
 	quantilesFor := func(values map[string]*archiveQuantileAccumulator, key, dimension string) (*archiveQuantileAccumulator, error) {
@@ -330,6 +331,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		browserIterations.merge(tx)
 		salesforceEPT.merge(tx)
 		auraParity.merge(tx)
+		llmAccumulator.merge(tx)
 		if tx.DNSMs > 0 || tx.ConnectMs > 0 || tx.TLSMs > 0 || tx.TTFBMs > 0 {
 			dependencyKey := tx.DependencyTarget
 			if tx.DependencyType != "" && dependencyKey != "" {
@@ -616,6 +618,31 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	report.ArtifactInventory = buildRunArchiveArtifactInventory(record, manifest)
 
 	window := archivePopulationWindow(manifest)
+	report.LLM = llmAccumulator.finalize(window.Seconds())
+	if report.LLM != nil {
+		var sweepCfg *CapacitySweepConfig
+		if manifest != nil && manifest.Provenance.GoalConfig != nil && manifest.Provenance.GoalConfig.WorkloadShapeConfig != nil {
+			sweepCfg = manifest.Provenance.GoalConfig.WorkloadShapeConfig.CapacitySweep
+		}
+		if len(report.LoadLevelSummaries) >= 2 || sweepCfg != nil {
+			testName := record.TestID
+			if manifest != nil && strings.TrimSpace(manifest.TestName) != "" {
+				testName = manifest.TestName
+			}
+			sweep := BuildCapacitySweepReport(record.TestID, testName, sweepCfg, summaries, llmAccumulator.sweepTxs, nil, nil)
+			if sweep != nil && len(sweep.Levels) > 0 {
+				report.LLM.CapacitySweep = sweep
+			}
+		}
+		if len(report.LLM.ByAction) > 0 {
+			for actionName, llmStats := range report.LLM.ByAction {
+				if stats, ok := report.ByAction[actionName]; ok {
+					stats.LLM = llmStats
+					report.ByAction[actionName] = stats
+				}
+			}
+		}
+	}
 	report.ByUnknown = make(map[string]RunArchiveActionStats)
 	for name, acc := range unknownRecords {
 		stats := acc.finish(window).RunArchiveActionStats
@@ -626,6 +653,9 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	for name, acc := range requests {
 		stats := acc.finish(window).RunArchiveActionStats
 		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["action\x00"+name])
+		if report.LLM != nil && report.LLM.ByAction != nil {
+			stats.LLM = report.LLM.ByAction[name]
+		}
 		report.ByRequest[name] = stats
 	}
 	report.ByTransaction = make(map[string]RunArchiveActionStats)
@@ -663,7 +693,10 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 	for index, summary := range summaries {
 		seconds := archiveSummaryIntervalSeconds(summaries, index)
 		for _, level := range summary.LoadLevels {
-			key := fmt.Sprintf("%s\x00%d\x00%d", level.Group, level.StageIndex, level.TargetVUsers)
+			if level.Warmup {
+				continue
+			}
+			key := fmt.Sprintf("%s\x00%d\x00%d\x00%.4f", level.Group, level.StageIndex, level.TargetVUsers, level.TargetTPS)
 			accumulator := accumulators[key]
 			if accumulator == nil {
 				accumulator = &archiveLoadLevelAccumulator{level: level, durations: engine.NewDurationDistributionMerge()}
@@ -720,7 +753,8 @@ func buildRunArchiveLoadLevelSummaries(summaries []IntervalSummaryRecord) []RunA
 		}
 		result = append(result, RunArchiveLoadLevelSummary{
 			Group: accumulator.level.Group, StageIndex: accumulator.level.StageIndex, Name: accumulator.level.Name,
-			TargetVUsers: accumulator.level.TargetVUsers, ConfiguredDuration: accumulator.level.Duration,
+			TargetVUsers: accumulator.level.TargetVUsers, TargetTPS: accumulator.level.TargetTPS, Kind: accumulator.level.Kind,
+			ConfiguredDuration:      accumulator.level.Duration,
 			ObservedDurationSeconds: observedDuration, Requests: accumulator.requests, Errors: accumulator.errors,
 			ErrorRatePct: errorPct, Throughput: accumulator.tps / weight, P50Ms: p50,
 			P90Ms: p90, P95Ms: p95, P99Ms: p99, PercentileQuality: quality,
@@ -988,8 +1022,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "analysis_zip", "pdf", "docx", "jsonl", "parquet"},
-			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
-			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
+			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",

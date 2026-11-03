@@ -13,7 +13,6 @@ package api
 // never double-notify.
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"sort"
@@ -96,25 +95,8 @@ func (s *Server) startAccessReviewNotifierCadence() {
 	if s == nil || s.store == nil || s.accessReviewNotifyCancel != nil {
 		return
 	}
-	interval := accessReviewNotifyInterval()
-	if interval <= 0 {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.accessReviewNotifyCancel = cancel
-	s.launchBackground(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		lastSignature := ""
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if s.isExecutionLeader() {
-					lastSignature = s.notifyAccessReviewChange(time.Now().UTC(), lastSignature)
-				}
-			}
-		}
+	lastSignature := ""
+	s.accessReviewNotifyCancel = s.startLeaderPeriodicTask(accessReviewNotifyInterval(), func(now time.Time) {
+		lastSignature = s.notifyAccessReviewChange(now, lastSignature)
 	})
 }

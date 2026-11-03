@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -161,6 +162,7 @@ type NetworkLatencyTargetRecord struct {
 }
 
 type IntervalSummaryRecord struct {
+	LLM                      json.RawMessage                        `json:"llm,omitempty"`
 	JavaHTTP                 *protocol.JavaHTTPActions              `json:"java_http,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot    `json:"messaging_progress,omitempty"`
 	Messaging                map[string]*protocol.MessagingSummary  `json:"messaging,omitempty"`

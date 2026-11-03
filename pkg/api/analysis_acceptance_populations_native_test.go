@@ -239,7 +239,7 @@ func TestAnalysisAcceptanceAcceptedRejectionsReconcile(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	// The engine's contract: a finite number is a measurement, a null is an
@@ -514,7 +514,7 @@ func TestAnalysisAcceptanceAPIGoldensAndChunkDuplicateProvenance(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if cur.State != "normalizing" && len(analysisPipelineJobs) == 0 {
+			if cur.State != "normalizing" && len(server.semaphores.analysisPipelineJobs) == 0 {
 				readyIn = cur
 				break
 			}

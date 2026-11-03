@@ -74,18 +74,12 @@ func saveExecutionPlanApprovalWithExecutor(executor testSaveExecutor, approval *
 }
 
 func (s *SQLiteStore) SaveExecutionPlanApprovalIfLeaseTermHeld(approval *ExecutionPlanApproval, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	if err := saveExecutionPlanApprovalWithExecutor(tx, approval); err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		if err := saveExecutionPlanApprovalWithExecutor(tx, approval); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 func (s *SQLiteStore) GetExecutionPlanApproval(id string) (*ExecutionPlanApproval, error) {
@@ -160,19 +154,9 @@ func claimExecutionPlanApprovalWithExecutor(executor testSaveExecutor, id, runID
 }
 
 func (s *SQLiteStore) ClaimExecutionPlanApprovalIfLeaseTermHeld(id, runID string, updatedAt time.Time, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	claimed, err := claimExecutionPlanApprovalWithExecutor(tx, id, runID, updatedAt)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return claimed, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return claimExecutionPlanApprovalWithExecutor(tx, id, runID, updatedAt)
+	})
 }
 
 // UpdateExecutionPlanApprovalResolution atomically resolves a still-pending
@@ -196,19 +180,9 @@ func updateExecutionPlanApprovalResolutionWithExecutor(executor testSaveExecutor
 }
 
 func (s *SQLiteStore) UpdateExecutionPlanApprovalResolutionIfLeaseTermHeld(id, toStatus, resolvedBy, reason string, resolvedAt time.Time, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	updated, err := updateExecutionPlanApprovalResolutionWithExecutor(tx, id, toStatus, resolvedBy, reason, resolvedAt)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return updateExecutionPlanApprovalResolutionWithExecutor(tx, id, toStatus, resolvedBy, reason, resolvedAt)
+	})
 }
 
 // UpdateExecutionPlanApprovalResolutionAndContentHash atomically binds a
@@ -238,19 +212,9 @@ func updateExecutionPlanApprovalResolutionAndContentHashWithExecutor(executor te
 }
 
 func (s *SQLiteStore) UpdateExecutionPlanApprovalResolutionAndContentHashIfLeaseTermHeld(id, toStatus, resolvedBy, reason, contentHash string, resolvedAt time.Time, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	updated, err := updateExecutionPlanApprovalResolutionAndContentHashWithExecutor(tx, id, toStatus, resolvedBy, reason, contentHash, resolvedAt)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return updateExecutionPlanApprovalResolutionAndContentHashWithExecutor(tx, id, toStatus, resolvedBy, reason, contentHash, resolvedAt)
+	})
 }
 
 func scanExecutionPlanApproval(row scanner) (*ExecutionPlanApproval, error) {

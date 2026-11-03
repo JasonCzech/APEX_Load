@@ -175,7 +175,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 			writeError(w, http.StatusConflict, "completed import batch receipt is inconsistent: "+loadErr.Error())
 			return
 		}
-		writeGenericImportBatchCommitResponse(w, stored)
+		writeImportBatchCommitResponse(w, stored)
 		return
 	}
 
@@ -249,7 +249,7 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				writeError(w, http.StatusInternalServerError, "failed to reconcile import batch receipt")
 				return
 			}
-			writeGenericImportBatchCommitResponse(w, stored)
+			writeImportBatchCommitResponse(w, stored)
 			return
 		}
 	}
@@ -488,8 +488,8 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				writeError(w, http.StatusInternalServerError, "failed to reconcile import batch receipt")
 				return
 			}
-			completeGenericImportBatchDraftClaims(s, claims, stored)
-			writeGenericImportBatchCommitResponse(w, stored)
+			completeImportBatchDraftClaims(s, "generic import batch", claims, stored)
+			writeImportBatchCommitResponse(w, stored)
 			return
 		}
 	}
@@ -522,8 +522,8 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "failed to finalize import batch receipt")
 		return
 	}
-	completeGenericImportBatchDraftClaims(s, claims, stored)
-	writeGenericImportBatchCommitResponse(w, stored)
+	completeImportBatchDraftClaims(s, "generic import batch", claims, stored)
+	writeImportBatchCommitResponse(w, stored)
 }
 
 func validateUnattestedCloudTestDraft(script *dsl.Script) error {
@@ -794,31 +794,4 @@ func (s *Server) retainGenericImportBatchSources(
 		}
 	}
 	return true
-}
-
-func completeGenericImportBatchDraftClaims(s *Server, claims []*importDraftAttestationClaim, stored []*StoredScript) {
-	for index, claim := range claims {
-		if claim == nil {
-			continue
-		}
-		if err := s.completeImportDraftAttestation(claim); err != nil {
-			// Assets and their receipt are already durable. Strand this one-shot
-			// claim for expiry instead of letting the handler defer reopen it.
-			claims[index] = nil
-			scriptID := ""
-			if index < len(stored) && stored[index] != nil {
-				scriptID = stored[index].ID
-			}
-			slogImportAttestationCompletionFailure("generic import batch", scriptID, err)
-			continue
-		}
-		claims[index] = nil
-	}
-}
-
-func writeGenericImportBatchCommitResponse(w http.ResponseWriter, stored []*StoredScript) {
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"scripts": maskStoredScripts(stored),
-		"count":   len(stored),
-	})
 }

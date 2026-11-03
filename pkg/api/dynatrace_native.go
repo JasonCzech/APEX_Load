@@ -429,6 +429,7 @@ func (s *Server) handleGetDynatraceOperation(w http.ResponseWriter, r *http.Requ
 		s.resumeDynatraceOperations(context.Background())
 	}
 }
+
 func (s *Server) resumeDynatraceOperations(parent context.Context) {
 	if s.runner == nil || !s.runner.isExecutionLeader() {
 		return
@@ -437,19 +438,21 @@ func (s *Server) resumeDynatraceOperations(parent context.Context) {
 	if !ok {
 		return
 	}
-	ops, err := store.ListDynatraceOperations("", "", 4)
-	if err != nil {
-		return
-	}
-	for _, op := range ops {
-		owner := uuid.NewString()
-		now := time.Now().UTC()
-		claimed, err := store.ClaimDynatraceOperation(op.ID, owner, now, now.Add(time.Minute))
-		if err != nil || !claimed {
-			continue
-		}
-		s.launchBackground(func() { s.executeDirectDynatraceOperation(parent, store, op, owner) })
-	}
+	resumeDirectProviderOperations(
+		s,
+		parent,
+		s.dynatraceInspectionSlotChan(),
+		func(limit int) ([]*storage.DynatraceOperation, error) {
+			return store.ListDynatraceOperations("", "", limit)
+		},
+		nil,
+		func(op *storage.DynatraceOperation, owner string, now, leaseUntil time.Time) (bool, error) {
+			return store.ClaimDynatraceOperation(op.ID, owner, now, leaseUntil)
+		},
+		func(ctx context.Context, op *storage.DynatraceOperation, owner string) {
+			s.executeDirectDynatraceOperation(ctx, store, op, owner)
+		},
+	)
 }
 func (s *Server) executeDirectDynatraceOperation(parent context.Context, store storage.DynatraceOperationStore, op *storage.DynatraceOperation, owner string) {
 	term, err := s.runner.captureExecutionLeaseTerm()

@@ -172,6 +172,7 @@ export interface ScriptActionDefinition {
   body?: string
   body_file?: string
   body_encoding?: string
+  body_template_encoding?: string
   /** multipart/form-data body built at replay with a fresh boundary; replaces body. */
   body_multipart?: ScriptMultipartBody
   params?: Record<string, unknown>
