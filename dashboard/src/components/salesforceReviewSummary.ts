@@ -1,7 +1,37 @@
 // Shared view helpers for SalesforceReview so the dedicated Salesforce import
 // view and the enterprise-archive import view render the broadened API-surface
 // breakdown identically.
-import type { SalesforceReview } from '../types/scriptImports'
+import type { SalesforceNativeRequestReference, SalesforceReview } from '../types/scriptImports'
+import type { SourceReview, SourceReviewMapping } from '../types/scripts'
+
+const ACTION_PATH = /^(?:init|actions|teardown)\[\d+\](?:\.[A-Za-z_]\w*(?:\[\d+\])?)*$/
+const PATH_INDEX = /\[(\d+)\]/g
+const validActionPath = (value: string | undefined) => typeof value === 'string' && value.length <= 4096 && ACTION_PATH.test(value) ? value : ''
+
+// Excluding requests after conversion moves each later action's mapping to a
+// lower index in the same phase, under the same mapping id, and renumbers the
+// requests left inside an http_sequence the same way. A mapping the exclusion
+// could have produced from the recorded path still identifies the captured
+// request: the same phase and field names, with no index higher than before.
+function shiftedTargetPath(original: string, moved: string | undefined): boolean {
+  const target = validActionPath(moved)
+  if (!target || original.replace(PATH_INDEX, '[]') !== target.replace(PATH_INDEX, '[]')) return false
+  const from = Array.from(original.matchAll(PATH_INDEX), match => Number(match[1]))
+  const to = Array.from(target.matchAll(PATH_INDEX), match => Number(match[1]))
+  return from.length === to.length && to.every((index, position) => index <= from[position])
+}
+
+export function exactSourceMapping(reference: SalesforceNativeRequestReference | undefined, review: SourceReview | undefined, positionsShifted: boolean): SourceReviewMapping | undefined {
+  if (!reference) return undefined
+  const originalPath = validActionPath(reference.original_action_path)
+  if (!reference.source_mapping_id || !reference.source_file || !originalPath) return undefined
+  const matches = Array.isArray(review?.mappings) ? review.mappings.filter(mapping => mapping && typeof mapping === 'object' && mapping.id === reference.source_mapping_id) : []
+  const mapping = matches.length === 1 ? matches[0] : undefined
+  if (mapping?.source_file !== reference.source_file) return undefined
+  if (mapping.target_path === originalPath) return mapping
+  return positionsShifted && shiftedTargetPath(originalPath, mapping.target_path) ? mapping : undefined
+}
+
 
 export type SalesforceEndpointKey =
   | 'aura_endpoints' | 'lightning_endpoints' | 'login_flow'

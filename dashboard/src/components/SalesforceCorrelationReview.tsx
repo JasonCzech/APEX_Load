@@ -3,6 +3,7 @@ import type { SourceReview, SourceReviewMapping } from '../types/scripts'
 import type { SalesforceNativePreview, SalesforceNativeRequestReference } from '../types/scriptImports'
 import './SalesforceCorrelationReview.css'
 import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata } from './correlationEvidenceAdmission'
+import { exactSourceMapping } from './salesforceReviewSummary'
 import { useEvidencePage } from './useEvidencePage'
 
 const PAGE_SIZE = 20
@@ -11,30 +12,6 @@ const ACTION_PATH = /^(?:init|actions|teardown)\[\d+\](?:\.[A-Za-z_]\w*(?:\[\d+\
 const count = (value: number | undefined) => Number.isSafeInteger(value) && value! >= 0 ? value! : 0
 const path = (value: string | undefined) => typeof value === 'string' && value.length <= 4096 && ACTION_PATH.test(value) ? value : ''
 
-const PATH_INDEX = /\[(\d+)\]/g
-
-// Excluding requests after conversion moves each later action's mapping to a
-// lower index in the same phase, under the same mapping id, and renumbers the
-// requests left inside an http_sequence the same way. A mapping the exclusion
-// could have produced from the recorded path still identifies the captured
-// request: the same phase and field names, with no index higher than before.
-function shiftedTargetPath(original: string, moved: string | undefined): boolean {
-  const target = path(moved)
-  if (!target || original.replace(PATH_INDEX, '[]') !== target.replace(PATH_INDEX, '[]')) return false
-  const from = Array.from(original.matchAll(PATH_INDEX), match => Number(match[1]))
-  const to = Array.from(target.matchAll(PATH_INDEX), match => Number(match[1]))
-  return from.length === to.length && to.every((index, position) => index <= from[position])
-}
-
-function exactSourceMapping(reference: SalesforceNativeRequestReference, review: SourceReview | undefined, positionsShifted: boolean): SourceReviewMapping | undefined {
-  const originalPath = path(reference.original_action_path)
-  if (!reference.source_mapping_id || !reference.source_file || !originalPath) return undefined
-  const matches = Array.isArray(review?.mappings) ? review.mappings.filter(mapping => mapping && typeof mapping === 'object' && mapping.id === reference.source_mapping_id) : []
-  const mapping = matches.length === 1 ? matches[0] : undefined
-  if (mapping?.source_file !== reference.source_file) return undefined
-  if (mapping.target_path === originalPath) return mapping
-  return positionsShifted && shiftedTargetPath(originalPath, mapping.target_path) ? mapping : undefined
-}
 
 function Reference({ reference, label, review, nativeFinal, positionsShifted, onViewSource }: { reference?: SalesforceNativeRequestReference; label: string; review?: SourceReview; nativeFinal: boolean; positionsShifted: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
   if (!reference) return <p>{label}: captured request reference unavailable.</p>
@@ -83,7 +60,19 @@ function CorrelationMetadata({ correlation }: { correlation: AdmittedCorrelation
 
 // positionsShifted: requests were excluded from the draft after conversion,
 // so source mappings may have moved to lower action indexes.
-export default function SalesforceCorrelationReview({ preview, sourceReview, positionsShifted = false, onViewSource }: { preview?: SalesforceNativePreview; sourceReview?: SourceReview; positionsShifted?: boolean; onViewSource?: (mapping: SourceReviewMapping) => void }) {
+export default function SalesforceCorrelationReview({
+  preview,
+  sourceReview,
+  positionsShifted = false,
+  collapsible = true,
+  onViewSource,
+}: {
+  preview?: SalesforceNativePreview
+  sourceReview?: SourceReview
+  positionsShifted?: boolean
+  collapsible?: boolean
+  onViewSource?: (mapping: SourceReviewMapping) => void
+}) {
   const evidence = useMemo(() => admitNativeCorrelationEvidence(preview), [preview])
   const [page, setPage] = useEvidencePage(preview)
   if (!evidence.present || !evidence.coverage && !evidence.rows.length && !evidence.malformed) return null
@@ -92,6 +81,18 @@ export default function SalesforceCorrelationReview({ preview, sourceReview, pos
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE_SIZE))
   const current = Math.min(page, pageCount - 1)
   const nativeFinal = evidence.nativeFinal
+  const correlationRowsBody = (
+    <>
+      {rows.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map(correlation => <article key={correlation.ordinal} aria-label={`Captured correlation ${correlation.ordinal}`} className="salesforce-correlation-row">
+        <h5>Correlation {correlation.ordinal}{correlation.name ? <>: <code>{correlation.name}</code></> : null}</h5>
+        <p>{correlation.preApplied ? 'Draft replacement applied.' : 'Manual review required.'}{correlation.reviewAction ? ` Review action: ${correlation.reviewAction}.` : ''}</p>
+        <CorrelationMetadata correlation={correlation} />
+        <Reference reference={correlation.producer} label="Producer" review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
+        <Consumers references={correlation.consumers} omitted={correlation.consumersOmitted} review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
+      </article>)}
+      {pageCount > 1 && <div className="salesforce-correlation-pagination"><span>{current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, rows.length)} of {rows.length} correlations</span><button type="button" className="btn btn-secondary btn-sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous correlations</button><button type="button" className="btn btn-secondary btn-sm" disabled={current + 1 >= pageCount} onClick={() => setPage(current + 1)}>Next correlations</button></div>}
+    </>
+  )
   return <section className="salesforce-correlation-review" aria-label="Captured correlation evidence">
     <h4>Captured correlation evidence</h4>
     <p role="status">{coverage?.complete === true && evidence.coverageValid && !evidence.malformed ? 'Reference inspection complete.' : 'Reference inspection incomplete.'}</p>
@@ -111,15 +112,16 @@ export default function SalesforceCorrelationReview({ preview, sourceReview, pos
       {(coverage.details_complete !== true || evidence.malformed || count(coverage.omitted_correlations) > 0 || count(coverage.omitted_consumer_references) > 0 || evidence.omittedRows > 0 || evidence.omittedReferences > 0) && <div role="note"><strong>Detailed evidence incomplete</strong><p>{count(coverage.retained_correlations)} correlation rows retained · {count(coverage.omitted_correlations) + evidence.omittedRows} correlation rows not shown · {count(coverage.retained_consumer_references)} consumer references retained · {count(coverage.omitted_consumer_references) + evidence.omittedReferences} consumer references not shown.</p></div>}
       {coverage.catalog_limited && <p role="note">Reference inspection limits were reached. Missing links remain unresolved.</p>}
     </> : <p>Reference coverage was not retained for this import. Sequence numbers alone cannot establish a source link.</p>}
-    {rows.length > 0 && <details><summary>Review captured correlations ({rows.length})</summary>
-      {rows.slice(current * PAGE_SIZE, (current + 1) * PAGE_SIZE).map(correlation => <article key={correlation.ordinal} aria-label={`Captured correlation ${correlation.ordinal}`} className="salesforce-correlation-row">
-        <h5>Correlation {correlation.ordinal}{correlation.name ? <>: <code>{correlation.name}</code></> : null}</h5>
-        <p>{correlation.preApplied ? 'Draft replacement applied.' : 'Manual review required.'}{correlation.reviewAction ? ` Review action: ${correlation.reviewAction}.` : ''}</p>
-        <CorrelationMetadata correlation={correlation} />
-        <Reference reference={correlation.producer} label="Producer" review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
-        <Consumers references={correlation.consumers} omitted={correlation.consumersOmitted} review={sourceReview} nativeFinal={nativeFinal} positionsShifted={positionsShifted} onViewSource={onViewSource} />
-      </article>)}
-      {pageCount > 1 && <div className="salesforce-correlation-pagination"><span>{current * PAGE_SIZE + 1}–{Math.min((current + 1) * PAGE_SIZE, rows.length)} of {rows.length} correlations</span><button type="button" className="btn btn-secondary btn-sm" disabled={current === 0} onClick={() => setPage(current - 1)}>Previous correlations</button><button type="button" className="btn btn-secondary btn-sm" disabled={current + 1 >= pageCount} onClick={() => setPage(current + 1)}>Next correlations</button></div>}
-    </details>}
+    {rows.length > 0 && (collapsible ? (
+      <details>
+        <summary>Review captured correlations ({rows.length})</summary>
+        {correlationRowsBody}
+      </details>
+    ) : (
+      <div className="salesforce-correlation-list">
+        <h5>Review captured correlations ({rows.length})</h5>
+        {correlationRowsBody}
+      </div>
+    ))}
   </section>
 }

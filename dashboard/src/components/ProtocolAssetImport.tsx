@@ -2,7 +2,7 @@ import { useNavigationGuardRunner, useUnsavedWorkGuard } from '../hooks/Navigati
 import { importSourceName } from '../appTopbar'
 import { ImportConversionDetails, ImportEvidenceFacts } from './ImportConversionDetails'
 import HarCaptureGuideButton from './HarCaptureGuideButton'
-import HarCorrelationStudio from './HarCorrelationStudio'
+import HarCorrelationStudio, { CappedFindingList } from './HarCorrelationStudio'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { importScenarioName, useImportScenario } from './useImportScenario'
@@ -12,17 +12,14 @@ import { handleTabKey } from './tabKeyboard'
 import { carryPreAppliedCorrelations, exclusionRefusedBeforeCommit, filesHaveIdenticalBytes, harShapingApplied, sourceSecretSessionAfterExclusion, statsAfterExclusion, withoutSourceValues } from './ProtocolAssetImportModel'
 import { parseAppViewFromHash, viewToLocationHash } from '../appRouting'
 import './ProtocolAssetImport.css'
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useAsyncTask } from '../hooks/useAsyncTask'
 import { useApi } from '../hooks/useApi'
 import { type BrowserReplayReport, type BrowserReplayStartResponse, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceDomainObservation, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
+import { type AgentforceReview, type AgentforceTransformChange, type AsyncAPIImportResult, type AsyncAPISupportMatrixEntry, type BrokerConfigImportResult, type BrokerConfigSupportMatrixEntry, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixEntry, type DevWebImportResult, type DevWebSupportMatrixEntry, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixEntry, type HARImportResult, type HARImportSummary, type K6ImportResult, type K6SupportMatrixEntry, type MulesoftReview, type OpenAPICorrelation, type OpenAPIImportResult, type OpenAPISupportMatrixEntry, type PostmanImportResult, type PostmanSupportMatrixEntry, type RAMLImportResult, type RAMLSupportMatrixEntry, type SalesforceImportResult, type SalesforceReview, type SecretBindingSelection, type SharedValues, type WSDLImportResult } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
-import AuraOutcomeReview from './AuraOutcomeReview'
-import SalesforceCorrelationReview from './SalesforceCorrelationReview'
-import AuraParameterLocationDetails from './AuraParameterLocationDetails'
 import ImportCoverageButton from './ImportCoverageButton'
 import ImportDropzone from './ImportDropzone'
 import { describeWorking } from './dropIngestFeedback'
@@ -37,7 +34,6 @@ import type { ImportSourceIssueFocus } from './ImportSourceIssueFocus'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { useImportReviewGeneration } from './importReviewGeneration'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
-import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, requirementNeedsSecretBinding, requirementsPreserveDestinationValues, secretBindingRequirementsForScript, updateSecretBindingRequirementNames } from './secretBindingUtils'
 import {
@@ -275,46 +271,6 @@ const sourceImportProtocolTargets: Partial<Record<ImportKind, string[]>> = {
   cloudtest: ['Review-only until fixture-proven'],
   'eventhubs-capture': ['Event Hubs'],
   'broker-config': ['JMS Solace', 'JMS IBM MQ review/mock'],
-}
-
-// A display cap that says what it hides: "Showing K of N" and "Show all N".
-function CappedFindingList<T>({ items, limit, noun, itemKey, renderItem, leading }: {
-  items: readonly T[]
-  limit: number
-  noun: string
-  itemKey: (item: T, index: number) => string
-  renderItem: (item: T) => ReactNode
-  /** Rows always listed ahead of the capped items (such as blockers). */
-  leading?: ReactNode
-}) {
-  const [showAll, setShowAll] = useState(false)
-  const visible = showAll ? items : items.slice(0, limit)
-  return (
-    <>
-      <ul className="sample-import-findings">
-        {leading}
-        {visible.map((item, index) => <li key={itemKey(item, index)}>{renderItem(item)}</li>)}
-      </ul>
-      {items.length > limit && (
-        <div className="sample-import-actions compact">
-          <span className="sample-import-muted">Showing {visible.length} of {items.length} {noun}</span>
-          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={showAll} onClick={() => setShowAll(current => !current)}>
-            {showAll ? `Show first ${limit} ${noun}` : `Show all ${items.length} ${noun}`}
-          </button>
-        </div>
-      )}
-    </>
-  )
-}
-
-// A Salesforce host's imported requests, and every raw HAR entry on it when
-// that differs (filtered static assets and telemetry count only there).
-// After an exclusion the counts still describe the draft as it was converted.
-function salesforceDomainCounts(domain: SalesforceDomainObservation, excludedSinceConversion = false): string {
-  const requests = `${domain.count} request${domain.count === 1 ? '' : 's'} ${excludedSinceConversion ? 'at import' : 'in the draft'}`
-  const harCount = Number.isSafeInteger(domain.har_count) && (domain.har_count || 0) > 0 ? domain.har_count! : undefined
-  if (harCount === undefined || harCount === domain.count) return requests
-  return `${requests} · ${harCount} HAR entr${harCount === 1 ? 'y' : 'ies'}`
 }
 
 function sourceReviewForImport(result?: ProtocolImportResult | null, script?: ScriptDefinition | null): SourceReview | null {
@@ -748,7 +704,6 @@ function RecorderStepMappingReview({ summary }: { summary?: Record<string, unkno
   )
 }
 
-const endpointTotal = salesforceEndpointTotal
 const IMPORT_DRAFT_EXPIRED_MESSAGE = 'This credential-preserving import draft has expired. Re-run the import before saving, editing, or changing it.'
 const EXCLUSION_OUTCOME_UNKNOWN_MESSAGE = 'The exclusion did not answer, so it may have been applied on the server. Re-run the import before saving or changing this draft.'
 // A draft that is not credential-preserving lives only in this review, so an
@@ -3031,6 +2986,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             )} </>}
             title={reviewMode === 'validation' ? 'Validation Review' : 'Review Generated Script'}
             reviewGeneration={reviewScope}
+            subtitleInline={kind === 'har'}
+            showOriginalDiagnostics={kind !== 'har'}
             subtitle={savedResult && !asyncAPIMultiScript ? 'Saved to the script library. Open a saved script above or import more files.' : `${countLabel(actionCount, 'action')} generated from ${generatedFromLabel(kind)}.${reviewMode === 'validation' ? ` This preview came from a dry-run validation; nothing has been saved.${kind === 'har' ? ' A saved validation draft keeps no full source text and cannot move recorded credentials into project secrets; use Inspect & review to save with both.' : ' You can still save the reviewed script if the output looks correct.'}` : ''}`}
             saveLabel={savedResult && !asyncAPIMultiScript ? 'Saved to script library' : asyncAPISelectedSaveLabel || cloudTestSaveLabel || ((kind === 'postman' && postmanSaveMode === 'replace') || (kind === 'openapi' && openAPISaveMode === 'replace') ? 'Replace script' : 'Save draft')}
             script={reviewedScript}
@@ -3087,7 +3044,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
               <RecorderStepMappingReview summary={result.summary as Record<string, unknown> | undefined} />
             )}
 
-            {replayPreflight && (
+            {kind !== 'har' && replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
               </div>
@@ -3335,96 +3292,19 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 stepPositionsStale={excludedSinceConversion > 0}
                 onExcludeBlockedActions={savedResult ? undefined : handleExcludeBlockedActions}
                 recordingStudioHref={recordingStudioHref}
+                preflight={replayPreflight}
+                harSummary={harSummary}
+                sourceReview={sourceReview}
+                excludedCount={excludedSinceConversion}
+                findingListScope={findingListScope}
+                mulesoftReview={mulesoftReview}
+                agentforceReview={agentforceReview}
+                agentforceTransformChanges={agentforceTransformChanges}
+                diagnostics={result?.diagnostics}
+                unsupportedElements={result?.unsupported_elements}
+                reviewSections={result?.review_sections}
+                onViewSource={(mapping, title = 'Captured request', description = 'Inspect the exact original source mapping for this captured request.') => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title, source: mapping.id, description }))}
               />
-            )}
-            {kind === 'har' && harSummary && (
-              <div className="sample-import-review-block">
-                <h4>HAR Artifact Review</h4>
-                <ImportEvidenceFacts facts={[
-                  { label: 'artifact mode', value: harSummary.artifact_mode },
-                  { label: 'sensitivity', value: harSummary.artifact_sensitivity || harSummary.governance?.sensitivity || 'unknown' },
-                  { label: 'retention days', value: harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0 },
-                  ...(harDiff ? [{ label: 'dynamic candidates', value: harDiff.dynamic_candidates }, { label: 'static candidates', value: harDiff.static_candidates }] : [])
-                ]} />
-                {/* Each diff classification is a row of the correlation studio above. */}
-              </div>
-            )}
-            {kind === 'har' && salesforceReview && (
-              <div className="sample-import-review-block">
-                <h4>Salesforce Native Review</h4>
-                {excludedSinceConversion > 0 && (
-                  <p className="sample-import-muted">The request counts below describe the draft as converted; {countLabel(excludedSinceConversion, 'request')} {excludedSinceConversion === 1 ? 'was' : 'were'} excluded from it since.</p>
-                )}
-                <SalesforceCorrelationReview preview={salesforceReview.native_preview} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured correlation request', source: mapping.id, description: 'Inspect the exact original source mapping for this captured request.' }))} />
-                <AuraOutcomeReview report={salesforceReview.aura_outcomes} script={reviewedScript} sourceReview={sourceReview || undefined} positionsShifted={excludedSinceConversion > 0} onViewSource={mapping => setAuraSourceFocus(previous => ({ revision: (previous?.revision || 0) + 1, title: 'Captured Aura request', source: mapping.id, description: 'Inspect the existing source mapping for this captured request.' }))} />
-                <ImportEvidenceFacts facts={[
-                  { label: 'traffic match', value: salesforceReview.detected ? 'Detected' : 'Needs review' },
-                  { label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` },
-                  { label: 'matched requests', value: `${salesforceReview.har_match_coverage?.matched_requests || 0} / ${salesforceReview.har_match_coverage?.imported_requests || 0}` },
-                  { label: 'domains', value: salesforceReview.domains?.length || 0 },
-                  { label: 'Aura calls', value: endpointTotal(salesforceReview, 'aura_endpoints') },
-                  { label: 'Lightning calls', value: endpointTotal(salesforceReview, 'lightning_endpoints') }
-                ]} />
-                {(salesforceReview.domains?.length || 0) > 0 && (
-                  <CappedFindingList
-                    key={`${findingListScope}-sf-domains`}
-                    items={salesforceReview.domains!}
-                    limit={5}
-                    noun="domains"
-                    itemKey={domain => `${domain.host}-${domain.kind}`}
-                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({salesforceDomainCounts(domain, excludedSinceConversion > 0)})</>}
-                  />
-                )}
-                {(salesforceReview.transactions?.length || 0) > 0 && (
-                  <CappedFindingList
-                    key={`${findingListScope}-sf-transactions`}
-                    items={salesforceReview.transactions!}
-                    limit={5}
-                    noun="transactions"
-                    itemKey={tx => `${tx.name}-${tx.source}`}
-                    renderItem={tx => <><strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}</>}
-                  />
-                )}
-                {salesforceApiSurfaceBreakdown(salesforceReview).length > 0 && (
-                  <>
-                    <p className="sample-import-subtitle">API surface</p>
-                    <ul className="sample-import-findings">
-                      {salesforceApiSurfaceBreakdown(salesforceReview).map(surface => (
-                        <li key={surface.key}>
-                          <strong>{surface.label}</strong> {surface.calls} call{surface.calls === 1 ? '' : 's'} across {surface.endpoints} endpoint{surface.endpoints === 1 ? '' : 's'}
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-                {(salesforceReview.parameterizations?.length || 0) > 0 && (
-                  <>
-                    <p className="sample-import-subtitle">Aura parameterization candidates</p>
-                    <CappedFindingList
-                      key={`${findingListScope}-sf-parameterizations`}
-                      items={salesforceReview.parameterizations!}
-                      limit={6}
-                      noun="parameterization candidates"
-                      itemKey={param => param.name}
-                      renderItem={param => <>
-                        <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
-                        {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
-                      </>}
-                    />
-                  </>
-                )}
-                {(salesforceReview.blockers?.length || salesforceReview.next_actions?.length) ? (
-                  <CappedFindingList
-                    key={`${findingListScope}-sf-next-actions`}
-                    items={salesforceReview.next_actions || []}
-                    limit={4}
-                    noun="next actions"
-                    leading={salesforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
-                    itemKey={item => `next-${item}`}
-                    renderItem={item => <><strong>Next action</strong> {item}</>}
-                  />
-                ) : null}
-              </div>
             )}
             {kind === 'raml' && (ramlSummary || stats) && (
               <div className="sample-import-review-block">
@@ -3504,7 +3384,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 )}
               </div>
             )}
-            {mulesoftReview && (
+            {kind !== 'har' && mulesoftReview && (
               <div className="sample-import-review-block">
                 <h4>MuleSoft / Anypoint Review</h4>
                 {(mulesoftReview.domains?.length || 0) > 0 && (
@@ -3546,7 +3426,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 ) : null}
               </div>
             )}
-            {agentforceReview && (
+            {kind !== 'har' && agentforceReview && (
               <div className="sample-import-review-block">
                 <h4>Agentforce Agent API Review {agentforceReview.streaming ? <span className="tag-chip">streaming (SSE)</span> : null}</h4>
                 {agentforceTransformChanges.length > 0 && (
@@ -3597,9 +3477,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 ) : null}
               </div>
             )}
-            <ImportConversionDetails facts={stats ? Object.entries(stats)
-              .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
-              .map(([key, value]) => ({ label: key.replace(/_/g, ' '), value })) : []} />
+            {kind !== 'har' && (
+              <ImportConversionDetails facts={stats ? Object.entries(stats)
+                .filter((entry): entry is [string, number] => typeof entry[1] === 'number')
+                .map(([key, value]) => ({ label: key.replace(/_/g, ' '), value })) : []} />
+            )}
           </ScriptImportReview>
         </div>
       )}

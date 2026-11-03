@@ -1,8 +1,22 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState } from 'react'
-import type { HARDiffClassification, HARDiffReport, HARDiffRequestInput, HARImportStats, SalesforceReview } from '../types/scriptImports'
-import type { ScriptDefinition } from '../types/scripts'
-import { formatUpTo } from '../utils/numberFormat'
-import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata } from './correlationEvidenceAdmission'
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import type {
+  AgentforceReview,
+  AgentforceTransformChange,
+  HARDiffClassification,
+  HARDiffReport,
+  HARDiffRequestInput,
+  HARImportStats,
+  HARImportSummary,
+  ImportReviewSection,
+  MulesoftReview,
+  SalesforceDomainObservation,
+  SalesforceReview,
+} from '../types/scriptImports'
+import type { ReplayPreflight, ScriptDefinition, SourceReview, SourceReviewMapping } from '../types/scripts'
+import { countLabel, formatUpTo } from '../utils/numberFormat'
+import AuraOutcomeReview from './AuraOutcomeReview'
+import AuraParameterLocationDetails from './AuraParameterLocationDetails'
+import { admitNativeCorrelationEvidence, type AdmittedCorrelationMetadata, type AdmittedNativeCorrelation } from './correlationEvidenceAdmission'
 import {
   findBlockedUnexportedBodyActions,
   flattenScriptActions,
@@ -13,9 +27,54 @@ import {
   type FlattenedActionEntry,
   type RequestFieldDraftState,
 } from './harCorrelationStudioModel'
+import { replayPreflightStatusLabel } from './replayPreflightUtils'
+import SalesforceCorrelationReview from './SalesforceCorrelationReview'
+import { exactSourceMapping, salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
+import { handleTabKey } from './tabKeyboard'
+import TabList from './ux/TabList'
 import './HarCorrelationStudio.css'
 
 const formatInteger = (value: number): string => formatUpTo(value, 0)
+
+// A display cap that says what it hides: "Showing K of N" and "Show all N".
+export function CappedFindingList<T>({ items, limit, noun, itemKey, renderItem, leading }: {
+  items: readonly T[]
+  limit: number
+  noun: string
+  itemKey: (item: T, index: number) => string
+  renderItem: (item: T) => ReactNode
+  /** Rows always listed ahead of the capped items (such as blockers). */
+  leading?: ReactNode
+}) {
+  const [showAll, setShowAll] = useState(false)
+  const visible = showAll ? items : items.slice(0, limit)
+  return (
+    <>
+      <ul className="sample-import-findings">
+        {leading}
+        {visible.map((item, index) => <li key={itemKey(item, index)}>{renderItem(item)}</li>)}
+      </ul>
+      {items.length > limit && (
+        <div className="sample-import-actions compact">
+          <span className="sample-import-muted">Showing {visible.length} of {items.length} {noun}</span>
+          <button type="button" className="btn btn-secondary btn-sm" aria-expanded={showAll} onClick={() => setShowAll(current => !current)}>
+            {showAll ? `Show first ${limit} ${noun}` : `Show all ${items.length} ${noun}`}
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+// A Salesforce host's imported requests, and every raw HAR entry on it when
+// that differs (filtered static assets and telemetry count only there).
+// After an exclusion the counts still describe the draft as it was converted.
+function salesforceDomainCounts(domain: SalesforceDomainObservation, excludedSinceConversion = false): string {
+  const requests = `${domain.count} request${domain.count === 1 ? '' : 's'} ${excludedSinceConversion ? 'at import' : 'in the draft'}`
+  const harCount = Number.isSafeInteger(domain.har_count) && (domain.har_count || 0) > 0 ? domain.har_count! : undefined
+  if (harCount === undefined || harCount === domain.count) return requests
+  return `${requests} · ${harCount} HAR entr${harCount === 1 ? 'y' : 'ies'}`
+}
 
 export interface HarCorrelationStudioProps {
   script: ScriptDefinition
@@ -36,9 +95,23 @@ export interface HarCorrelationStudioProps {
   onExcludeBlockedActions?: (options: { actionUids?: string[]; excludeUnexportedBodies?: boolean }) => boolean | void
   /** Where Recording Studio opens, to re-record what the HAR export left out. */
   recordingStudioHref?: string
+  /** Consolidated HAR review props so the Review tab has a single 3-zone layout with zero accordions. */
+  preflight?: ReplayPreflight | null
+  harSummary?: HARImportSummary | null
+  sourceReview?: SourceReview | null
+  excludedCount?: number
+  findingListScope?: string
+  mulesoftReview?: MulesoftReview | null
+  agentforceReview?: AgentforceReview | null
+  agentforceTransformChanges?: readonly AgentforceTransformChange[]
+  diagnostics?: ReadonlyArray<{ code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }>
+  unsupportedElements?: readonly string[]
+  reviewSections?: readonly ImportReviewSection[]
+  onViewSource?: (mapping: SourceReviewMapping, title?: string, description?: string) => void
 }
 
 type StudioFilter = 'all' | 'dynamic' | 'wired' | 'review' | 'release_static'
+type WorkbenchTabId = 'correlations' | 'aura' | 'architecture' | 'provenance' | 'log'
 
 // Salesforce HARs group by the four lifecycle stages a Lightning session goes
 // through; any other HAR groups by where its values come from.
@@ -63,9 +136,18 @@ interface StudioRow {
   needsReview: boolean
   isReleaseStatic: boolean
   producerLabel: string
+  producerMapping?: SourceReviewMapping
   consumerLabel: string
   extractorSummary: string
   guidance: string
+}
+
+interface ConversionLogGroup {
+  key: string
+  severity: 'blocker' | 'warning' | 'info'
+  category: string
+  detail: string
+  count: number
 }
 
 const DEFAULT_VISIBLE_ROWS = 15
@@ -246,11 +328,25 @@ export default function HarCorrelationStudio({
   stepPositionsStale = false,
   onExcludeBlockedActions,
   recordingStudioHref,
+  preflight,
+  harSummary,
+  sourceReview,
+  excludedCount = 0,
+  findingListScope = 'har',
+  mulesoftReview,
+  agentforceReview,
+  agentforceTransformChanges = [],
+  diagnostics = [],
+  unsupportedElements = [],
+  reviewSections = [],
+  onViewSource,
 }: HarCorrelationStudioProps) {
   const headingId = useId()
   const blockerIdPrefix = useId()
+  const workbenchIdPrefix = useId()
   const [filter, setFilter] = useState<StudioFilter>('all')
   const [expanded, setExpanded] = useState(false)
+  const [selectedWorkbenchTab, setSelectedWorkbenchTab] = useState<WorkbenchTabId | null>(null)
 
   // Keyed on the request lists, not the script object: a rename commits a new
   // script object with the same steps and must not re-walk them.
@@ -280,14 +376,18 @@ export default function HarCorrelationStudio({
     return byName
   }, [flattened])
   const isSalesforce = Boolean(salesforceReview?.detected)
+  const admittedCorrelationEvidence = useMemo(
+    () => admitNativeCorrelationEvidence(salesforceReview?.native_preview),
+    [salesforceReview?.native_preview],
+  )
   // The analyzer's rule and evidence for each correlation, by variable name.
   const correlationMetadata = useMemo(() => {
-    const byName = new Map<string, AdmittedCorrelationMetadata>()
-    for (const row of admitNativeCorrelationEvidence(salesforceReview?.native_preview).rows) {
+    const byName = new Map<string, AdmittedNativeCorrelation>()
+    for (const row of admittedCorrelationEvidence.rows) {
       if (row.name && !byName.has(row.name)) byName.set(row.name, row)
     }
     return byName
-  }, [salesforceReview?.native_preview])
+  }, [admittedCorrelationEvidence.rows])
   const uncapturedCookieTokens = useMemo(
     () => Array.from(correlationMetadata.values()).filter(row => row.ruleId === UNCAPTURED_COOKIE_RULE),
     [correlationMetadata],
@@ -393,6 +493,7 @@ export default function HarCorrelationStudio({
           : harDiff?.compared
             ? 'Native rule'
             : 'Single-HAR rule'
+        const producerMapping = exactSourceMapping(metadata?.producer, sourceReview || undefined, stepPositionsStale)
 
         byName.set(varName, {
           key: varName,
@@ -406,6 +507,7 @@ export default function HarCorrelationStudio({
           needsReview,
           isReleaseStatic: isAuraContextRelease,
           producerLabel: `${entry.section} #${entry.seq} · ${entry.action.name || entry.action.target || entry.path}`,
+          producerMapping,
           consumerLabel: consumers.length > 0
             ? `${consumers.length} step${consumers.length === 1 ? '' : 's'} (first: ${consumers[0].section} #${consumers[0].seq})`
             : '0 downstream steps',
@@ -430,6 +532,7 @@ export default function HarCorrelationStudio({
         : hasKnownProducer
           ? 'Dynamic · candidate extractor'
           : 'Dynamic · client/parameter candidate'
+      const producerMapping = exactSourceMapping(metadata?.producer, sourceReview || undefined, stepPositionsStale)
 
       byName.set(varName, {
         key: `diff-${varName}`,
@@ -447,6 +550,7 @@ export default function HarCorrelationStudio({
             ? `A recorded server response${item.matched_descriptor ? ` (${item.matched_descriptor})` : ''}; its step number predates the exclusion`
             : `Step #${item.found_in_step}${item.matched_descriptor ? ` (${item.matched_descriptor})` : ''}`
           : 'Not observed in server response (client nonce/counter or input)',
+        producerMapping,
         consumerLabel: Array.isArray(item.used_in_steps) && item.used_in_steps.length > 0
           ? stepPositionsStale
             ? `${item.used_in_steps.length} recorded step${item.used_in_steps.length === 1 ? '' : 's'} at import`
@@ -488,7 +592,7 @@ export default function HarCorrelationStudio({
     }
 
     return Array.from(byName.values())
-  }, [consumersByVariable, correlationMetadata, dataSources, flattened, harDiff, isSalesforce, phaseCounts.teardown, stepPositionsStale, unhandledInputStates])
+  }, [consumersByVariable, correlationMetadata, dataSources, flattened, harDiff, isSalesforce, phaseCounts.teardown, sourceReview, stepPositionsStale, unhandledInputStates])
 
   const filterCounts = useMemo(() => ({
     all: rows.length,
@@ -523,6 +627,147 @@ export default function HarCorrelationStudio({
     }
     return groups
   }, [visibleRows])
+
+  // Compact Zone 1 governance & match metadata strip (replaces standalone
+  // ReplayPreflightCard, HAR Artifact Review card, and Salesforce fact grid).
+  const metaFacts = useMemo(() => {
+    const items: Array<{ label: string; value: string | number }> = []
+    if (preflight) {
+      const checkLabels = preflight.checks?.map(c => c.label).filter(Boolean).join(', ')
+      items.push({
+        label: 'Preflight',
+        value: `${replayPreflightStatusLabel(preflight)}${checkLabels ? ` (${checkLabels})` : ''}`,
+      })
+    }
+    if (harSummary) {
+      items.push({ label: 'HAR Artifact Review', value: harSummary.artifact_mode })
+      items.push({ label: 'sensitivity', value: harSummary.artifact_sensitivity || harSummary.governance?.sensitivity || 'unknown' })
+      items.push({ label: 'retention days', value: harSummary.retention_days ?? harSummary.governance?.retention_days ?? 0 })
+      if (harDiff) {
+        items.push({ label: 'dynamic candidates', value: harDiff.dynamic_candidates })
+        items.push({ label: 'static candidates', value: harDiff.static_candidates })
+      }
+      if (stats?.filtered_assets !== undefined) {
+        items.push({ label: 'filtered assets', value: funnel.filteredTotal })
+      }
+    }
+    if (salesforceReview) {
+      items.push({ label: 'Salesforce Native Review', value: salesforceReview.detected ? 'Detected' : 'Needs review' })
+      items.push({ label: 'HAR coverage', value: `${Math.round(salesforceReview.har_match_coverage?.coverage_pct || 0)}%` })
+      items.push({ label: 'matched requests', value: `${salesforceReview.har_match_coverage?.matched_requests || 0} / ${salesforceReview.har_match_coverage?.imported_requests || 0}` })
+      items.push({ label: 'domains', value: salesforceReview.domains?.length || 0 })
+      items.push({ label: 'Aura calls', value: salesforceEndpointTotal(salesforceReview, 'aura_endpoints') })
+      items.push({ label: 'Lightning calls', value: salesforceEndpointTotal(salesforceReview, 'lightning_endpoints') })
+    }
+    return items
+  }, [funnel.filteredTotal, harDiff, harSummary, preflight, salesforceReview, stats?.filtered_assets])
+
+  const apiSurface = useMemo(
+    () => (salesforceReview ? salesforceApiSurfaceBreakdown(salesforceReview) : []),
+    [salesforceReview],
+  )
+
+  const groupedConversionLog = useMemo<ConversionLogGroup[]>(() => {
+    const byKey = new Map<string, ConversionLogGroup>()
+    const add = (severity: 'blocker' | 'warning' | 'info', category: string, detail: string) => {
+      const normalizedDetail = detail.trim()
+      if (!normalizedDetail) return
+      const key = `${severity}|${category}|${normalizedDetail.replace(/\b(step|request|entry)\s+#?\d+/gi, '$1 #N')}`
+      const existing = byKey.get(key)
+      if (existing) {
+        existing.count += 1
+      } else {
+        byKey.set(key, { key, severity, category, detail: normalizedDetail, count: 1 })
+      }
+    }
+    for (const diag of diagnostics) {
+      add(diag.severity || 'info', diag.code || diag.element || 'converter', `${diag.detail}${diag.location ? ` (${diag.location})` : ''}`)
+    }
+    for (const warning of warnings || []) {
+      add('warning', 'har_warning', warning)
+    }
+    for (const unsupported of unsupportedElements) {
+      add('warning', 'unsupported_element', unsupported)
+    }
+    for (const section of reviewSections) {
+      const sev: 'blocker' | 'warning' | 'info' = section.severity === 'blocker' ? 'blocker' : section.severity === 'warning' ? 'warning' : 'info'
+      for (const item of section.items || []) {
+        add(sev, section.title || section.key, item)
+      }
+    }
+    return Array.from(byKey.values())
+  }, [diagnostics, reviewSections, unsupportedElements, warnings])
+
+  const auraOutcomes = salesforceReview?.aura_outcomes
+  const hasAuraTab = Boolean(
+    auraOutcomes && (
+      (auraOutcomes.total_batches || 0) > 0
+      || (auraOutcomes.batches?.length || 0) > 0
+      || auraOutcomes.complete === false
+    ),
+  )
+  const auraFailedCount = useMemo(() => {
+    if (!auraOutcomes?.state_counts) return 0
+    return Object.entries(auraOutcomes.state_counts)
+      .reduce((sum, [state, count]) => (state === 'SUCCESS' ? sum : sum + (Number.isSafeInteger(count) && count > 0 ? count : 0)), 0)
+  }, [auraOutcomes?.state_counts])
+
+  const hasProvenanceTab = Boolean(
+    admittedCorrelationEvidence.present && (
+      admittedCorrelationEvidence.coverage
+      || admittedCorrelationEvidence.rows.length > 0
+      || admittedCorrelationEvidence.malformed
+    ),
+  )
+
+  const architectureItemCount = (salesforceReview?.domains?.length || 0)
+    + (salesforceReview?.transactions?.length || 0)
+    + apiSurface.length
+    + (salesforceReview?.parameterizations?.length || 0)
+    + (salesforceReview?.blockers?.length || 0)
+    + (salesforceReview?.next_actions?.length || 0)
+    + (mulesoftReview ? 1 : 0)
+    + (agentforceReview ? 1 : 0)
+  const hasArchitectureTab = architectureItemCount > 0
+
+  const workbenchTabs = useMemo(() => {
+    const tabs: Array<{ id: WorkbenchTabId; label: string; badge: number }> = []
+    if (rows.length > 0 || (!hasAuraTab && !hasProvenanceTab && !hasArchitectureTab && groupedConversionLog.length === 0)) {
+      tabs.push({ id: 'correlations', label: 'Correlations', badge: rows.length })
+    }
+    if (hasAuraTab) {
+      const auraBadge = auraOutcomes?.total_batches || auraOutcomes?.batches?.length || 0
+      tabs.push({ id: 'aura', label: 'Aura outcomes', badge: auraBadge })
+    }
+    if (hasProvenanceTab) {
+      tabs.push({ id: 'provenance', label: 'Captured provenance', badge: admittedCorrelationEvidence.rows.length })
+    }
+    if (hasArchitectureTab) {
+      tabs.push({ id: 'architecture', label: 'Domains & parameters', badge: architectureItemCount })
+    }
+    if (groupedConversionLog.length > 0) {
+      tabs.push({ id: 'log', label: 'Conversion log', badge: groupedConversionLog.length })
+    }
+    return tabs
+  }, [admittedCorrelationEvidence.rows.length, architectureItemCount, auraOutcomes?.batches?.length, auraOutcomes?.total_batches, groupedConversionLog.length, hasArchitectureTab, hasAuraTab, hasProvenanceTab, rows.length])
+
+  const defaultWorkbenchTab = useMemo<WorkbenchTabId>(() => {
+    if ((admittedCorrelationEvidence.coverage?.native_unmapped_consumer_references || 0) > 0 && hasProvenanceTab) {
+      return 'provenance'
+    }
+    if (rows.length > 0) return 'correlations'
+    if (hasAuraTab) return 'aura'
+    if (hasProvenanceTab) return 'provenance'
+    if (hasArchitectureTab) return 'architecture'
+    if (groupedConversionLog.length > 0) return 'log'
+    return 'correlations'
+  }, [admittedCorrelationEvidence.coverage?.native_unmapped_consumer_references, groupedConversionLog.length, hasArchitectureTab, hasAuraTab, hasProvenanceTab, rows.length])
+
+  const activeWorkbenchTab: WorkbenchTabId = selectedWorkbenchTab && workbenchTabs.some(tab => tab.id === selectedWorkbenchTab)
+    ? selectedWorkbenchTab
+    : defaultWorkbenchTab
+
+  const showWorkbenchTabs = workbenchTabs.length > 1
 
   // Excluding a request removes its row and the focused button with it. Keep
   // keyboard users in the list and say what changed.
@@ -561,11 +806,119 @@ export default function HarCorrelationStudio({
     ? <a className="btn btn-secondary btn-sm" href={recordingStudioHref}>Record in Recording Studio</a>
     : null
 
+  const correlationsContent = rows.length > 0 ? (
+    <>
+      <div className="har-studio-filters" role="group" aria-label="Filter correlation studio rows">
+        {([
+          ['all', `All (${filterCounts.all})`],
+          ['wired', `Auto-correlated (${filterCounts.wired})`],
+          ['dynamic', `Dynamic across pair (${filterCounts.dynamic})`],
+          ['review', `Needs review (${filterCounts.review})`],
+          ['release_static', `Release-coupled / static (${filterCounts.release_static})`],
+        ] as const).map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className="har-studio-chip"
+            aria-pressed={filter === key}
+            onClick={() => { setFilter(key); setExpanded(false) }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div
+        className="har-studio-table-region table-responsive"
+        tabIndex={0}
+        role="region"
+        aria-label="Correlation studio classification table"
+      >
+        <table className="har-studio-table">
+          <thead>
+            <tr>
+              <th scope="col">Variable / token</th>
+              <th scope="col">Status</th>
+              <th scope="col">2-HAR comparison</th>
+              <th scope="col">Producer</th>
+              <th scope="col">Consumers</th>
+              <th scope="col">Mechanism &amp; guidance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groupedVisibleRows.map(group => (
+              <Fragment key={group.stage}>
+                <tr className="har-studio-stage-row">
+                  <th colSpan={6} scope="colgroup">{STAGE_TITLES[group.stage]}</th>
+                </tr>
+                {group.items.map(row => (
+                  <tr key={row.key}>
+                    <th scope="row"><code>{row.variableName}</code></th>
+                    <td>
+                      <span className={`har-status-pill har-status-pill--${row.statusKind}`}>
+                        {row.statusLabel}
+                      </span>
+                    </td>
+                    <td>{row.diffStatus}</td>
+                    <td>
+                      <div>{row.producerLabel}</div>
+                      {row.producerMapping && onViewSource && (
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm har-source-inline-btn"
+                          onClick={() => onViewSource(row.producerMapping!, 'Captured correlation request', 'Inspect the exact original source mapping for this captured request.')}
+                        >
+                          View producer source
+                        </button>
+                      )}
+                    </td>
+                    <td>{row.consumerLabel}</td>
+                    <td>
+                      <div><strong>{row.extractorSummary}</strong></div>
+                      <div className="har-funnel-detail">{row.guidance}</div>
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+            {groupedVisibleRows.length === 0 && (
+              <tr>
+                <td colSpan={6}>No correlations match the selected filter.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {harDiff?.unhandled_inputs_truncated && (
+        <p className="har-funnel-detail" role="note">
+          Only the first {formatInteger(harDiff.unhandled_inputs?.length || 0)} changed request fields are listed; more changed between the recordings.
+        </p>
+      )}
+
+      {filteredRows.length > DEFAULT_VISIBLE_ROWS && (
+        <div className="har-studio-expand-row">
+          <span className="har-funnel-detail">
+            Showing {formatInteger(visibleRows.length)} of {formatInteger(filteredRows.length)} correlation items
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setExpanded(current => !current)}
+          >
+            {expanded ? `Show top ${DEFAULT_VISIBLE_ROWS}` : `Show all ${formatInteger(filteredRows.length)} correlations`}
+          </button>
+        </div>
+      )}
+    </>
+  ) : null
+
   return (
     <section className="har-correlation-studio" aria-labelledby={headingId}>
       <h4 id={headingId} ref={studioHeadingRef} tabIndex={-1}>Correlation studio &amp; capture funnel</h4>
       <p className="sr-only" role="status">{exclusionStatus}</p>
 
+      {/* Zone 1: Unified Capture & Readiness Header */}
       <div className="har-capture-funnel" role="group" aria-label="HAR capture conversion funnel">
         <div className="har-funnel-step">
           <span className="har-funnel-label">Captured HAR entries</span>
@@ -600,6 +953,24 @@ export default function HarCorrelationStudio({
         </div>
       </div>
 
+      {metaFacts.length > 0 && (
+        <dl className="import-evidence-facts har-capture-meta-strip" aria-label="HAR governance and match summary">
+          {metaFacts.map(fact => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      {excludedCount > 0 && salesforceReview && (
+        <p className="sample-import-muted">
+          The request counts below describe the draft as converted; {countLabel(excludedCount, 'request')} {excludedCount === 1 ? 'was' : 'were'} excluded from it since.
+        </p>
+      )}
+
+      {/* Zone 2: Consolidated Actionable Readiness Queue */}
       {duplicateFileWarning && (
         <div className="sample-import-warning" role="alert">
           <strong>Identical comparison HAR detected:</strong> {duplicateFileWarning}
@@ -619,6 +990,22 @@ export default function HarCorrelationStudio({
             Chrome and Edge (v130+) leave Set-Cookie headers out of exported HARs, so the __Host-ERIC_* cookie that issues aura.token is not in the capture. The draft extracts it at live replay instead. Record the flow in Recording Studio to capture cookies and full request bodies.
           </p>
           {recordingStudioLink}
+        </div>
+      )}
+
+      {auraFailedCount > 0 && hasAuraTab && activeWorkbenchTab !== 'aura' && (
+        <div className="har-capture-callout" role="note" aria-label="Captured Aura action failures">
+          <strong>{formatInteger(auraFailedCount)} captured Aura action{auraFailedCount === 1 ? '' : 's'} did not succeed inside an HTTP 200 batch.</strong>
+          <p>
+            Salesforce Aura batches return HTTP 200 even when individual sub-actions fail. Inspect the Aura outcomes tab to verify whether the recording captured a clean baseline flow.
+          </p>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setSelectedWorkbenchTab('aura')}
+          >
+            Inspect Aura outcomes ({formatInteger(auraFailedCount)})
+          </button>
         </div>
       )}
 
@@ -680,100 +1067,294 @@ export default function HarCorrelationStudio({
         </div>
       )}
 
-      {rows.length > 0 && (
-        <>
-          <div className="har-studio-filters" role="group" aria-label="Filter correlation studio rows">
-            {([
-              ['all', `All (${filterCounts.all})`],
-              ['wired', `Auto-correlated (${filterCounts.wired})`],
-              ['dynamic', `Dynamic across pair (${filterCounts.dynamic})`],
-              ['review', `Needs review (${filterCounts.review})`],
-              ['release_static', `Release-coupled / static (${filterCounts.release_static})`],
-            ] as const).map(([key, label]) => (
+      {/* Zone 3: Segmented Evidence Workbench (Zero Accordions) */}
+      {showWorkbenchTabs && (
+        <TabList className="har-workbench-tabs" role="tablist" aria-label="HAR review evidence views" onKeyDown={handleTabKey}>
+          {workbenchTabs.map(tab => {
+            const selected = activeWorkbenchTab === tab.id
+            return (
               <button
-                key={key}
+                key={tab.id}
+                id={`${workbenchIdPrefix}-tab-${tab.id}`}
                 type="button"
-                className="har-studio-chip"
-                aria-pressed={filter === key}
-                onClick={() => { setFilter(key); setExpanded(false) }}
+                role="tab"
+                aria-selected={selected}
+                aria-controls={`${workbenchIdPrefix}-panel-${tab.id}`}
+                tabIndex={selected ? 0 : -1}
+                className="har-workbench-tab"
+                onClick={() => setSelectedWorkbenchTab(tab.id)}
               >
-                {label}
+                {tab.label} ({formatInteger(tab.badge)})
               </button>
-            ))}
-          </div>
+            )
+          })}
+        </TabList>
+      )}
 
-          <div
-            className="har-studio-table-region table-responsive"
-            tabIndex={0}
-            role="region"
-            aria-label="Correlation studio classification table"
-          >
+      {workbenchTabs.some(tab => tab.id === 'correlations') && (
+        <div
+          id={showWorkbenchTabs ? `${workbenchIdPrefix}-panel-correlations` : undefined}
+          role={showWorkbenchTabs ? 'tabpanel' : undefined}
+          aria-labelledby={showWorkbenchTabs ? `${workbenchIdPrefix}-tab-correlations` : undefined}
+          hidden={showWorkbenchTabs && activeWorkbenchTab !== 'correlations'}
+          className="har-workbench-panel"
+        >
+          {correlationsContent}
+        </div>
+      )}
+
+      {hasAuraTab && (
+        <div
+          id={showWorkbenchTabs ? `${workbenchIdPrefix}-panel-aura` : undefined}
+          role={showWorkbenchTabs ? 'tabpanel' : undefined}
+          aria-labelledby={showWorkbenchTabs ? `${workbenchIdPrefix}-tab-aura` : undefined}
+          hidden={showWorkbenchTabs && activeWorkbenchTab !== 'aura'}
+          className="har-workbench-panel"
+        >
+          <AuraOutcomeReview
+            collapsible={false}
+            report={salesforceReview?.aura_outcomes}
+            script={script}
+            sourceReview={sourceReview || undefined}
+            positionsShifted={stepPositionsStale}
+            onViewSource={mapping => onViewSource?.(mapping, 'Captured Aura request', 'Inspect the existing source mapping for this captured request.')}
+          />
+        </div>
+      )}
+
+      {hasProvenanceTab && (
+        <div
+          id={showWorkbenchTabs ? `${workbenchIdPrefix}-panel-provenance` : undefined}
+          role={showWorkbenchTabs ? 'tabpanel' : undefined}
+          aria-labelledby={showWorkbenchTabs ? `${workbenchIdPrefix}-tab-provenance` : undefined}
+          hidden={showWorkbenchTabs && activeWorkbenchTab !== 'provenance'}
+          className="har-workbench-panel"
+        >
+          <SalesforceCorrelationReview
+            collapsible={false}
+            preview={salesforceReview?.native_preview}
+            sourceReview={sourceReview || undefined}
+            positionsShifted={stepPositionsStale}
+            onViewSource={mapping => onViewSource?.(mapping, 'Captured correlation request', 'Inspect the exact original source mapping for this captured request.')}
+          />
+        </div>
+      )}
+
+      {hasArchitectureTab && (
+        <div
+          id={showWorkbenchTabs ? `${workbenchIdPrefix}-panel-architecture` : undefined}
+          role={showWorkbenchTabs ? 'tabpanel' : undefined}
+          aria-labelledby={showWorkbenchTabs ? `${workbenchIdPrefix}-tab-architecture` : undefined}
+          hidden={showWorkbenchTabs && activeWorkbenchTab !== 'architecture'}
+          className="har-workbench-panel"
+        >
+          <div className="har-arch-grid">
+            {(salesforceReview?.domains?.length || 0) > 0 && (
+              <div className="har-arch-card">
+                <h5>Salesforce domains ({formatInteger(salesforceReview!.domains!.length)})</h5>
+                <CappedFindingList
+                  key={`${findingListScope}-sf-domains`}
+                  items={salesforceReview!.domains!}
+                  limit={5}
+                  noun="domains"
+                  itemKey={domain => `${domain.host}-${domain.kind}`}
+                  renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({salesforceDomainCounts(domain, excludedCount > 0)})</>}
+                />
+              </div>
+            )}
+
+            {(salesforceReview?.transactions?.length || 0) > 0 && (
+              <div className="har-arch-card">
+                <h5>Synthesized transactions ({formatInteger(salesforceReview!.transactions!.length)})</h5>
+                <CappedFindingList
+                  key={`${findingListScope}-sf-transactions`}
+                  items={salesforceReview!.transactions!}
+                  limit={5}
+                  noun="transactions"
+                  itemKey={tx => `${tx.name}-${tx.source}`}
+                  renderItem={tx => <><strong>{tx.name}</strong> {tx.request_count} request{tx.request_count === 1 ? '' : 's'}{tx.aura_actions ? ` / ${tx.aura_actions} Aura action${tx.aura_actions === 1 ? '' : 's'}` : ''}</>}
+                />
+              </div>
+            )}
+
+            {apiSurface.length > 0 && (
+              <div className="har-arch-card">
+                <h5>API surface</h5>
+                <ul className="sample-import-findings">
+                  {apiSurface.map(surface => (
+                    <li key={surface.key}>
+                      <strong>{surface.label}</strong> {surface.calls} call{surface.calls === 1 ? '' : 's'} across {surface.endpoints} endpoint{surface.endpoints === 1 ? '' : 's'}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {(salesforceReview?.parameterizations?.length || 0) > 0 && (
+              <div className="har-arch-card">
+                <h5>Aura parameterization candidates</h5>
+                <CappedFindingList
+                  key={`${findingListScope}-sf-parameterizations`}
+                  items={salesforceReview!.parameterizations!}
+                  limit={6}
+                  noun="parameterization candidates"
+                  itemKey={param => param.name}
+                  renderItem={param => <>
+                    <strong>{param.param_key}</strong> ({param.kind}) → <code>{param.template}</code>
+                    {param.decoded_field_path && <AuraParameterLocationDetails location={param} />}
+                  </>}
+                />
+              </div>
+            )}
+
+            {(salesforceReview?.blockers?.length || salesforceReview?.next_actions?.length) ? (
+              <div className="har-arch-card">
+                <h5>Readiness &amp; next actions</h5>
+                <CappedFindingList
+                  key={`${findingListScope}-sf-next-actions`}
+                  items={salesforceReview?.next_actions || []}
+                  limit={4}
+                  noun="next actions"
+                  leading={salesforceReview?.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                  itemKey={item => `next-${item}`}
+                  renderItem={item => <><strong>Next action</strong> {item}</>}
+                />
+              </div>
+            ) : null}
+
+            {mulesoftReview && (
+              <div className="har-arch-card">
+                <h5>MuleSoft / Anypoint Review</h5>
+                {(mulesoftReview.domains?.length || 0) > 0 && (
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-domains`}
+                    items={mulesoftReview.domains!}
+                    limit={5}
+                    noun="domains"
+                    itemKey={domain => `${domain.host}-${domain.kind}`}
+                    renderItem={domain => <><strong>{domain.host}</strong> {domain.kind} ({domain.count} request{domain.count === 1 ? '' : 's'})</>}
+                  />
+                )}
+                {(mulesoftReview.policy_findings?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Policies</p>
+                    <ul className="sample-import-findings">
+                      {mulesoftReview.policy_findings!.map((policy, index) => <li key={`policy-${index}`}><strong>{policy.policy}</strong> {policy.detail}</li>)}
+                    </ul>
+                  </>
+                )}
+                {(mulesoftReview.auth_findings?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Auth</p>
+                    <ul className="sample-import-findings">
+                      {mulesoftReview.auth_findings!.map((auth, index) => <li key={`auth-${index}`}><strong>{auth.type}</strong> {auth.detail}</li>)}
+                    </ul>
+                  </>
+                )}
+                {(mulesoftReview.blockers?.length || mulesoftReview.next_actions?.length) ? (
+                  <CappedFindingList
+                    key={`${findingListScope}-mulesoft-next-actions`}
+                    items={mulesoftReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={mulesoftReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
+                ) : null}
+              </div>
+            )}
+
+            {agentforceReview && (
+              <div className="har-arch-card">
+                <h5>Agentforce Agent API Review {agentforceReview.streaming ? <span className="tag-chip">streaming (SSE)</span> : null}</h5>
+                {agentforceTransformChanges.length > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Applied replay-readiness changes ({agentforceTransformChanges.length})</p>
+                    <ul className="sample-import-findings">
+                      {agentforceTransformChanges.map((change, index) => (
+                        <li key={`af-change-${index}`}><strong>{change.step}</strong>{change.action_name ? ` — ${change.action_name}` : ''}: {change.detail}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(agentforceReview.lifecycle?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Conversation lifecycle</p>
+                    <ul className="sample-import-findings">
+                      {agentforceReview.lifecycle!.map((step, index) => (
+                        <li key={`step-${index}`}><strong>{step.step}</strong> {step.method} {step.path}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(agentforceReview.session_vars?.length || 0) > 0 && (
+                  <>
+                    <p className="sample-import-subtitle">Correlation</p>
+                    <ul className="sample-import-findings">
+                      {agentforceReview.session_vars!.map((sessionVar, index) => (
+                        <li key={`var-${index}`}><strong>{sessionVar.name}</strong> {sessionVar.type} <code>{sessionVar.expression}</code></li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+                {(agentforceReview.assertion_hints?.length || 0) > 0 && (
+                  <ul className="sample-import-findings">
+                    {agentforceReview.assertion_hints!.map((hint, index) => <li key={`hint-${index}`}><strong>Assertion</strong> {hint.detail}</li>)}
+                  </ul>
+                )}
+                {(agentforceReview.blockers?.length || agentforceReview.next_actions?.length) ? (
+                  <CappedFindingList
+                    key={`${findingListScope}-agentforce-next-actions`}
+                    items={agentforceReview.next_actions || []}
+                    limit={4}
+                    noun="next actions"
+                    leading={agentforceReview.blockers?.map(item => <li key={`blocker-${item}`}><strong>Blocker</strong> {item}</li>)}
+                    itemKey={item => `next-${item}`}
+                    renderItem={item => <><strong>Next action</strong> {item}</>}
+                  />
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {groupedConversionLog.length > 0 && (
+        <div
+          id={showWorkbenchTabs ? `${workbenchIdPrefix}-panel-log` : undefined}
+          role={showWorkbenchTabs ? 'tabpanel' : undefined}
+          aria-labelledby={showWorkbenchTabs ? `${workbenchIdPrefix}-tab-log` : undefined}
+          hidden={showWorkbenchTabs && activeWorkbenchTab !== 'log'}
+          className="har-workbench-panel"
+        >
+          <div className="har-studio-table-region table-responsive" tabIndex={0} role="region" aria-label="Deduplicated conversion log">
             <table className="har-studio-table">
               <thead>
                 <tr>
-                  <th scope="col">Variable / token</th>
-                  <th scope="col">Status</th>
-                  <th scope="col">2-HAR comparison</th>
-                  <th scope="col">Producer</th>
-                  <th scope="col">Consumers</th>
-                  <th scope="col">Mechanism &amp; guidance</th>
+                  <th scope="col">Severity</th>
+                  <th scope="col">Category / rule</th>
+                  <th scope="col">Occurrences</th>
+                  <th scope="col">Detail</th>
                 </tr>
               </thead>
               <tbody>
-                {groupedVisibleRows.map(group => (
-                  <Fragment key={group.stage}>
-                    <tr className="har-studio-stage-row">
-                      <th colSpan={6} scope="colgroup">{STAGE_TITLES[group.stage]}</th>
-                    </tr>
-                    {group.items.map(row => (
-                      <tr key={row.key}>
-                        <th scope="row"><code>{row.variableName}</code></th>
-                        <td>
-                          <span className={`har-status-pill har-status-pill--${row.statusKind}`}>
-                            {row.statusLabel}
-                          </span>
-                        </td>
-                        <td>{row.diffStatus}</td>
-                        <td>{row.producerLabel}</td>
-                        <td>{row.consumerLabel}</td>
-                        <td>
-                          <div><strong>{row.extractorSummary}</strong></div>
-                          <div className="har-funnel-detail">{row.guidance}</div>
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-                {groupedVisibleRows.length === 0 && (
-                  <tr>
-                    <td colSpan={6}>No correlations match the selected filter.</td>
+                {groupedConversionLog.map(entry => (
+                  <tr key={entry.key}>
+                    <td>
+                      <span className={`har-status-pill har-status-pill--${entry.severity === 'blocker' ? 'review' : entry.severity === 'warning' ? 'warn' : 'static'}`}>
+                        {entry.severity}
+                      </span>
+                    </td>
+                    <td><code>{entry.category}</code></td>
+                    <td>{formatInteger(entry.count)}</td>
+                    <td>{entry.detail}</td>
                   </tr>
-                )}
+                ))}
               </tbody>
             </table>
           </div>
-
-          {harDiff?.unhandled_inputs_truncated && (
-            <p className="har-funnel-detail" role="note">
-              Only the first {formatInteger(harDiff.unhandled_inputs?.length || 0)} changed request fields are listed; more changed between the recordings.
-            </p>
-          )}
-
-          {filteredRows.length > DEFAULT_VISIBLE_ROWS && (
-            <div className="har-studio-expand-row">
-              <span className="har-funnel-detail">
-                Showing {formatInteger(visibleRows.length)} of {formatInteger(filteredRows.length)} correlation items
-              </span>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setExpanded(current => !current)}
-              >
-                {expanded ? `Show top ${DEFAULT_VISIBLE_ROWS}` : `Show all ${formatInteger(filteredRows.length)} correlations`}
-              </button>
-            </div>
-          )}
-        </>
+        </div>
       )}
     </section>
   )

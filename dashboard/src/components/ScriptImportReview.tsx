@@ -457,6 +457,7 @@ interface Props {
   title: string
   reviewGeneration?: string | number
   subtitle?: ReactNode
+  subtitleInline?: boolean
   readinessMessage?: string
   tabbed?: boolean
   onSettingsApplied?: (result: SettingsResult) => void
@@ -561,6 +562,7 @@ export default function ScriptImportReview({
   title,
   reviewGeneration = 0,
   subtitle,
+  subtitleInline = false,
   readinessMessage,
   showCredentials: requestedCredentials = true,
   showDataReview: requestedData = true,
@@ -1067,7 +1069,7 @@ export default function ScriptImportReview({
   const importDraftExpiry = importDraftExpiryStatus(importDraftExpiresAt)
   const importDraftExpired = importDraftExpiry?.expired === true
   const compactHeader = compactReview || tabbed
-  const showSubtitleInline = typeof subtitle === 'string' && /dry-run validation|nothing has been saved/i.test(subtitle)
+  const showSubtitleInline = subtitleInline || (typeof subtitle === 'string' && /dry-run validation|nothing has been saved/i.test(subtitle))
   const hasReviewBlockers = normalizedDiagnostics
     ? reviewSummary.blocking_behaviors > 0
     : actionableReviewIssues.some(issue => issue.severity === 'blocker' || issue.severity === 'error')

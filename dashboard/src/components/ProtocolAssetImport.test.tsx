@@ -4723,7 +4723,7 @@ describe('ProtocolAssetImport', () => {
     const evidence = Array.from(container.querySelectorAll('.import-evidence-facts > div'))
     expect(evidence.find(row => row.querySelector('dt')?.textContent === 'HAR coverage')?.querySelector('dd')?.textContent).toBe('100%')
     expect(evidence.find(row => row.querySelector('dt')?.textContent === 'matched requests')?.querySelector('dd')?.textContent).toBe('2 / 2')
-    expect(container.querySelector<HTMLDetailsElement>('.import-conversion-details')?.open).toBe(false)
+    expect(container.querySelector('.har-stage2-scope details')).toBeNull()
     expect(container.querySelectorAll('.sample-stat')).toHaveLength(0)
 
     // Auto-detect path sends salesforce_native: true.

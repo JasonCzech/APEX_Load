@@ -227,7 +227,7 @@ test('native correlation review preserves exact original source navigation throu
   await expect(original.getByRole('button', { name: 'Record review decision', exact: true })).toHaveCount(0)
   await expect(original.getByRole('button', { name: 'Edit destination in Author', exact: true })).toHaveCount(0)
   await controls.getByRole('tab', { name: /^Review(,|$)/ }).click()
-  if (await evidence.locator('details').first().getAttribute('open') === null) await evidence.getByText(/^Review captured correlations \(\d+\)$/).click()
+  if (await evidence.locator('details').count() > 0 && await evidence.locator('details').first().getAttribute('open') === null) await evidence.getByText(/^Review captured correlations \(\d+\)$/).click()
   await capturedRelationship.getByRole('button', { name: 'View consumer 1 source mapping', exact: true }).click()
   await expect(original.locator('tr[data-mapping-id].active')).toHaveAttribute('data-mapping-id', consumer.source_mapping_id!)
   await expect(original.getByRole('combobox', { name: /^Captured source file/ })).toHaveValue(consumer.source_file!)

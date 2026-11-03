@@ -541,4 +541,141 @@ describe('HarCorrelationStudio', () => {
     act(() => { root.render(<HarCorrelationStudio script={script([1])} onExcludeBlockedActions={accept} />) })
     expect(status()).toBe('')
   })
+
+  it('consolidates HAR preflight, governance, Aura outcomes, provenance, domains, and conversion log into a 3-zone workbench with zero accordions', () => {
+    const script: ScriptDefinition = {
+      name: 'Consolidated Salesforce HAR',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://org.my.salesforce.com' },
+      actions: [
+        {
+          name: '1 - POST aura',
+          type: 'request',
+          method: 'POST',
+          target: '/aura',
+          extractors: [{ name: 'corr_salesforce_sid', type: 'regex', source: 'header', expression: 'sid=([^;]+)' }],
+        },
+      ],
+    }
+    const onViewSource = vi.fn()
+    act(() => {
+      root.render(
+        <HarCorrelationStudio
+          script={script}
+          stats={{ format: 'har', total_requests: 10, filtered_assets: 4, converted_actions: 1, extractors: 1 }}
+          preflight={{
+            valid: true,
+            action_count: 1,
+            expected_action_count: 1,
+            data_source_count: 0,
+            parameter_count: 0,
+            browser_required: false,
+            checks: [{ id: 'har_accounting', label: 'HAR replay accounting', status: 'pass', detail: 'Matched.' }],
+          }}
+          harSummary={{
+            artifact_mode: 'design_har_pair',
+            artifact_sensitivity: 'restricted_har',
+            retention_days: 7,
+          }}
+          sourceReview={{
+            source_files: [{ path: 'sample.har', language: 'json', content: '{}' }],
+            mappings: [{ id: 'map-1', source_file: 'sample.har', start_line: 1, target_path: 'actions[0]', target_kind: 'action', status: 'converted' }],
+          }}
+          salesforceReview={{
+            detected: true,
+            domains: [{ host: 'org.my.salesforce.com', kind: 'lightning', count: 1 }],
+            har_match_coverage: { har_provided: true, imported_requests: 1, matched_requests: 1, coverage_pct: 100 },
+            aura_outcomes: {
+              complete: true,
+              total_batches: 1,
+              inspected_batches: 1,
+              complete_batches: 1,
+              incomplete_batches: 0,
+              omitted_batches: 0,
+              missing_responses: 0,
+              invalid_requests: 0,
+              request_actions: 1,
+              response_actions: 1,
+              matched_actions: 1,
+              batch_limit: 512,
+              analysis_byte_limit: 67108864,
+              state_counts: { ERROR: 1 },
+              issue_counts: { non_success_state: 1 },
+              batches: [{
+                action_sequence: 1,
+                action_path: 'actions[0]',
+                har_entry_id: 1,
+                request_valid: true,
+                analysis: {
+                  success: false,
+                  complete: true,
+                  has_response: true,
+                  request_actions: 1,
+                  response_actions: 1,
+                  matched_actions: 1,
+                  outcomes: [{ ordinal: 1, state: 'ERROR' }],
+                  issues: [{ code: 'non_success_state', ordinal: 1 }],
+                },
+              }],
+            },
+            native_preview: {
+              correlations: [{
+                name: 'corr_salesforce_sid',
+                source: 'header',
+                expression: 'sid=([^;]+)',
+                found_in_seq: 1,
+                rule_id: 'salesforce.frontdoor_sid',
+                producer_reference: { har_entry_id: 1, original_action_path: 'actions[0]', source_mapping_id: 'map-1', source_file: 'sample.har' },
+              }],
+            },
+          }}
+          diagnostics={[
+            { code: 'sf_aura_folded', element: 'aura', detail: 'Folded Aura action at step #1', severity: 'info' },
+            { code: 'sf_aura_folded', element: 'aura', detail: 'Folded Aura action at step #2', severity: 'info' },
+          ]}
+          onViewSource={onViewSource}
+        />,
+      )
+    })
+
+    // Zero <details> accordions anywhere in the consolidated studio
+    expect(container.querySelectorAll('details')).toHaveLength(0)
+
+    // Zone 1 metadata strip combines preflight, artifact governance, and Salesforce match coverage
+    const metaStrip = container.querySelector('.har-capture-meta-strip')!
+    expect(metaStrip.textContent).toContain('Ready (HAR replay accounting)')
+    expect(metaStrip.textContent).toContain('design_har_pair')
+    expect(metaStrip.textContent).toContain('restricted_har')
+    expect(metaStrip.textContent).toContain('100%')
+
+    // Inline producer source link in Correlations table
+    const inlineSourceBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(b => b.textContent === 'View producer source')
+    expect(inlineSourceBtn).toBeTruthy()
+    act(() => { inlineSourceBtn!.click() })
+    expect(onViewSource).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'map-1' }),
+      'Captured correlation request',
+      expect.any(String),
+    )
+
+    // Zone 2 Aura failure readiness callout switches to the Aura outcomes workbench tab
+    const inspectAuraBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(b => b.textContent?.includes('Inspect Aura outcomes (1)'))
+    expect(inspectAuraBtn).toBeTruthy()
+    act(() => { inspectAuraBtn!.click() })
+    const auraTab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(t => t.textContent?.startsWith('Aura outcomes'))!
+    expect(auraTab.getAttribute('aria-selected')).toBe('true')
+
+    // Deduplicated conversion log groups repeated step diagnostics into 1 row with count 2
+    const logTab = Array.from(container.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(t => t.textContent?.startsWith('Conversion log'))!
+    expect(logTab.textContent).toBe('Conversion log (1)')
+    act(() => { logTab.click() })
+    const logRegion = container.querySelector('[aria-label="Deduplicated conversion log"]')!
+    expect(logRegion.textContent).toContain('sf_aura_folded')
+    expect(logRegion.textContent).toContain('2')
+  })
 })

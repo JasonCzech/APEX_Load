@@ -105,11 +105,25 @@ const mib = (value) => value * 1024 * 1024
 // Move only the aggregate JS inventory limits to 9.3 MiB raw and 2.7 MiB gzip
 // (~3.3% and ~3.8% headroom); per-asset, CSS, and every route/startup guard
 // stay unchanged.
+//
+// 2026-11-02 Salesforce HAR & Aura envelope authoring recalibration.
+// Main's Aura envelope editor, draft registry, and grouped debugger problems
+// drawer (d1969918a) plus the consolidated 3-zone HAR Review workbench and
+// component stylesheets (HarCorrelationStudio.css, AuraEnvelopeEditor.css,
+// HarCaptureGuideButton.css, ProtocolAssetImport.css) grow the deferred
+// ScriptEditor chunk to 852.51 KiB raw / 230.57 KiB gzip and aggregate CSS
+// inventory to 1042.5 KiB raw / 189.47 KiB gzip. Initial shell (204.66 KiB
+// gzip), Scripts route (232.71 KiB gzip), Test execution route (424.39 KiB
+// gzip), aggregate JS (9.16 MiB raw / 2.65 MiB gzip), and per-asset CSS
+// (225.93 KiB raw / 36.61 KiB gzip) stay within their existing guards. Move
+// the JS per-asset ceiling to 865 KiB raw / 236 KiB gzip and aggregate CSS
+// inventory to 1065 KiB raw / 194 KiB gzip (~1.5-2.5% headroom); all route
+// and startup guards remain unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(850),
-    maxAssetGzipBytes: kib(230),
+    maxAssetBytes: kib(865),
+    maxAssetGzipBytes: kib(236),
     maxTotalBytes: mib(9.3),
     maxTotalGzipBytes: mib(2.7),
   }),
@@ -117,8 +131,8 @@ export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(236),
     maxAssetGzipBytes: kib(38),
-    maxTotalBytes: kib(1040),
-    maxTotalGzipBytes: kib(190),
+    maxTotalBytes: kib(1065),
+    maxTotalGzipBytes: kib(194),
   }),
 })
 
