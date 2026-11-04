@@ -50,9 +50,14 @@ interface Props {
 // The groups' protocols, for the goal ceilings they can produce; unknown
 // (no group has a known script yet) offers them all.
 function knownGroupProtocols(groups: ReadonlyArray<{ scriptId: string }>, scripts: StoredScript[]): string[] | undefined {
-  const protocols = [...new Set(groups.map(group => {
+  const protocols = [...new Set(groups.flatMap(group => {
     const script = scripts.find(candidate => candidate.id === group.scriptId)
-    return script ? script.protocol || 'http' : ''
+    if (!script) return []
+    const base = script.protocol || 'http'
+    const isLLM = Boolean(
+      script.script?.actions?.some(action => action.type === 'llm_request' || Boolean((action as unknown as Record<string, unknown>).stream_profile))
+    )
+    return isLLM ? [base, 'llm'] : [base]
   }).filter(Boolean))]
   return protocols.length > 0 ? protocols : undefined
 }

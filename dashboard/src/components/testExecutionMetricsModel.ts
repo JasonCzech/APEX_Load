@@ -77,6 +77,16 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     errResourceLimit: rounded(metric.error_breakdown?.resource_limit),
     errSessionLost: rounded(metric.error_breakdown?.session_lost),
     errOther: rounded(metric.error_breakdown?.other),
+    llmTtftP50Ms: roundedOptional(metric.llm?.summary?.p50_ttft_ms),
+    llmTtftP95Ms: roundedOptional(metric.llm?.summary?.p95_ttft_ms),
+    llmTtftP99Ms: roundedOptional(metric.llm?.summary?.p99_ttft_ms),
+    llmTpotP50Ms: roundedOptional(metric.llm?.summary?.p50_tpot_ms),
+    llmTpotP95Ms: roundedOptional(metric.llm?.summary?.p95_tpot_ms),
+    llmItlP99Ms: roundedOptional(metric.llm?.summary?.p99_itl_ms),
+    llmOutputTokensPerSec: roundedOptional(metric.llm?.output_tokens_per_sec),
+    llmInputTokensPerSec: roundedOptional(metric.llm?.input_tokens_per_sec),
+    llmGoodputPct: roundedOptional(metric.llm?.goodput_pct),
+    llmThrottleRatePct: roundedOptional(metric.llm?.throttle_rate_pct),
     ...roundedHistoryValues(resourceImpactHistoryValues(metric.resources)),
   }
 
@@ -457,6 +467,16 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
         p90: summary.p90_ms,
         p95: summary.p95_ms,
         p99: summary.p99_ms,
+        llmTtftP50Ms: roundedOptional(summary.llm?.summary?.p50_ttft_ms),
+        llmTtftP95Ms: roundedOptional(summary.llm?.summary?.p95_ttft_ms),
+        llmTtftP99Ms: roundedOptional(summary.llm?.summary?.p99_ttft_ms),
+        llmTpotP50Ms: roundedOptional(summary.llm?.summary?.p50_tpot_ms),
+        llmTpotP95Ms: roundedOptional(summary.llm?.summary?.p95_tpot_ms),
+        llmItlP99Ms: roundedOptional(summary.llm?.summary?.p99_itl_ms),
+        llmOutputTokensPerSec: roundedOptional(summary.llm?.output_tokens_per_sec),
+        llmInputTokensPerSec: roundedOptional(summary.llm?.input_tokens_per_sec),
+        llmGoodputPct: roundedOptional(summary.llm?.goodput_pct),
+        llmThrottleRatePct: roundedOptional(summary.llm?.throttle_rate_pct),
       }
       if (summary.groups) {
         Object.entries(summary.groups).forEach(([name, groupMetric]) => {

@@ -31,11 +31,11 @@ func newDistributedThresholdTestRunner(t *testing.T) (*TestRunner, *ManagedTest,
 
 	const target = "generator-a"
 	testRun := &ManagedTest{
-		ID:                    "distributed-threshold-freshness",
-		Name:                  "Distributed threshold freshness",
-		Status:                "RUNNING",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		ID:                     "distributed-threshold-freshness",
+		Name:                   "Distributed threshold freshness",
+		Status:                 "RUNNING",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 	runner.tests[testRun.ID] = testRun
 	return runner, testRun, &distributedExecutionBackend{}
@@ -395,8 +395,8 @@ func TestDistributedMetricsLosingRevisionCannotMutateGoalStateOrScale(t *testing
 			MinVUsers:        &minVUsers,
 			MaxVUsers:        &maxVUsers,
 		},
-		goalControl:           &goalControllerState{},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		goalControl:            &goalControllerState{},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 	runner.tests[testRun.ID] = testRun
 
@@ -501,16 +501,18 @@ func TestDistributedGoalScaleAdmissionIsPublicationFenced(t *testing.T) {
 			runner := NewTestRunner(1, NewHub(), nil)
 			scaleSpy := &distributedGoalScaleSpy{}
 			testRun := &ManagedTest{
-				ID:                             "distributed-goal-admission",
-				Status:                         "RUNNING",
-				TotalVUsers:                    10,
-				Groups:                         []TestGroup{{Name: "buyers", VUsers: 10}},
-				executionBackend:               scaleSpy,
-				executionGeneration:            7,
-				remoteControlGeneration:        11,
-				remoteMetricsPublishedRevision: 13,
-				remoteGoalUpdateRunning:        true,
-				remoteGoalUpdateRevision:       13,
+				ID:                  "distributed-goal-admission",
+				Status:              "RUNNING",
+				TotalVUsers:         10,
+				Groups:              []TestGroup{{Name: "buyers", VUsers: 10}},
+				executionBackend:    scaleSpy,
+				executionGeneration: 7,
+				distributedTestRuntime: distributedTestRuntime{
+					remoteControlGeneration:        11,
+					remoteMetricsPublishedRevision: 13,
+					remoteGoalUpdateRunning:        true,
+					remoteGoalUpdateRevision:       13,
+				},
 			}
 			runner.tests[testRun.ID] = testRun
 			publication := distributedMetricsPublication{
@@ -567,8 +569,8 @@ func TestDistributedGoalScaleDropsDecisionSupersededWhileWaitingForAdmission(t *
 			MinVUsers:        &minVUsers,
 			MaxVUsers:        &maxVUsers,
 		},
-		goalControl:           &goalControllerState{},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		goalControl:            &goalControllerState{},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 	runner.tests[testRun.ID] = testRun
 
@@ -650,9 +652,11 @@ func TestDistributedMetricsWinnerCommitsCoalescedTargetErrorWindowsOnce(t *testi
 		Groups:       []TestGroup{{Name: "buyers", VUsers: 10}},
 		GoalConfig:   &GoalConfig{MaxErrorCount: &maxErrors},
 		goalControl:  &goalControllerState{},
-		remoteClientsByTarget: map[string]generatorClient{
-			"generator-a": nil,
-			"generator-b": nil,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{
+				"generator-a": nil,
+				"generator-b": nil,
+			},
 		},
 	}
 	runner.tests[testRun.ID] = testRun
@@ -1060,10 +1064,10 @@ func TestApplyRemoteMetricsBatchAbortedPreservesPopulatedSnapshot(t *testing.T) 
 	backend := &distributedExecutionBackend{}
 	const target = "generator-a"
 	testRun := &ManagedTest{
-		ID:                    "distributed-aborted-terminal",
-		Status:                "RUNNING",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 1}},
-		remoteClientsByTarget: map[string]generatorClient{target: nil},
+		ID:                     "distributed-aborted-terminal",
+		Status:                 "RUNNING",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{target: nil}},
 	}
 
 	running := distributedP99Batch(testRun.ID, 2_000, 900)

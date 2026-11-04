@@ -39,14 +39,18 @@ type CloudQuery struct {
 }
 type CloudMetric struct {
 	Name       string            `json:"name"`
+	Alias      string            `json:"alias,omitempty"`
 	Unit       string            `json:"unit"`
 	Statistic  string            `json:"statistic"` // Average, Minimum, Maximum, Sum
+	Filter     string            `json:"filter,omitempty"`
 	Dimensions map[string]string `json:"dimensions,omitempty"`
 }
 
 var cloudRegion = regexp.MustCompile(`^[a-z]{2}-[a-z]+-[0-9]+$`)
 var cloudAccount = regexp.MustCompile(`^[0-9]{12}$`)
 var cloudUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var cloudAliasPattern = regexp.MustCompile(`^[A-Za-z0-9_.:-]{1,128}$`)
+var azureODataFilter = regexp.MustCompile(`^(ModelDeploymentName|StatusCode|OperationName|ApimSubscriptionId) eq '[A-Za-z0-9._:-]{1,64}'( and (ModelDeploymentName|StatusCode|OperationName|ApimSubscriptionId) eq '[A-Za-z0-9._:-]{1,64}')?$`)
 
 func validateCloudQuery(pack string, q *CloudQuery) error {
 	if q == nil || len(q.Metrics) < 1 || len(q.Metrics) > 8 || strings.TrimSpace(q.Namespace) == "" || len(q.Namespace) > 128 {
@@ -68,15 +72,30 @@ func validateCloudQuery(pack string, q *CloudQuery) error {
 		}
 	}
 	seen := map[string]bool{}
+	seenOutput := map[string]bool{}
 	for _, m := range q.Metrics {
-		if strings.TrimSpace(m.Name) == "" || len(m.Name) > 128 || strings.ContainsAny(m.Name, ",\r\n") || seen[m.Name] || len(m.Dimensions) > 8 {
+		key := m.Name + "\x00" + m.Filter
+		outputName := m.Name
+		if strings.TrimSpace(m.Alias) != "" {
+			if !cloudAliasPattern.MatchString(m.Alias) {
+				return errors.New("invalid cloud metric alias")
+			}
+			outputName = m.Alias
+		}
+		if strings.TrimSpace(m.Name) == "" || len(m.Name) > 128 || strings.ContainsAny(m.Name, ",\r\n") || seen[key] || seenOutput[outputName] || len(m.Dimensions) > 8 {
 			return errors.New("invalid or duplicate cloud metric")
 		}
-		seen[m.Name] = true
+		seen[key] = true
+		seenOutput[outputName] = true
+		if m.Filter != "" {
+			if pack != "azure-monitor" || len(m.Filter) > 256 || !azureODataFilter.MatchString(m.Filter) {
+				return errors.New("cloud metric filter must be a bounded Azure Monitor OData equality clause")
+			}
+		}
 		if m.Statistic != "Average" && m.Statistic != "Minimum" && m.Statistic != "Maximum" && m.Statistic != "Sum" {
 			return errors.New("unsupported cloud metric statistic")
 		}
-		if pack == "cloudwatch" && (m.Unit == "CountPerSecond" || m.Unit == "BytesPerSecond") || pack == "azure-monitor" && (m.Unit == "Count/Second" || m.Unit == "Bytes/Second") {
+		if pack == "cloudwatch" && (m.Unit == "CountPerSecond" || m.Unit == "BytesPerSecond" || m.Unit == "MilliSeconds") || pack == "azure-monitor" && (m.Unit == "Count/Second" || m.Unit == "Bytes/Second") {
 			return errors.New("cloud unit spelling must match the provider")
 		}
 		if _, _, err := cloudUnit(m.Unit); err != nil {
@@ -93,6 +112,9 @@ func validateCloudQuery(pack string, q *CloudQuery) error {
 	}
 	return nil
 }
+func isMillisecondsUnit(unit string) bool {
+	return unit == "Milliseconds" || unit == "MilliSeconds"
+}
 func cloudUnit(unit string) (string, float64, error) {
 	switch unit {
 	case "Percent":
@@ -103,7 +125,7 @@ func cloudUnit(unit string) (string, float64, error) {
 		return "bytes", 1, nil
 	case "Seconds":
 		return analysis.NormalizeUnit("s")
-	case "Milliseconds":
+	case "Milliseconds", "MilliSeconds":
 		return analysis.NormalizeUnit("ms")
 	case "Count/Second", "CountPerSecond":
 		return "count/s", 1, nil
@@ -120,7 +142,15 @@ func cloudPoint(m CloudMetric, at, start, end time.Time, value *float64) (analys
 	if at.Before(start) || !at.Before(end) {
 		return analysis.MetricPoint{}, errors.New("cloud timestamp outside approved window")
 	}
-	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, TimestampUTC: at.UTC(), MetricName: m.Name, Unit: unit, Kind: analysis.KindSummary, Quality: analysis.QualityValid, Dimensions: map[string]string{"statistic": m.Statistic, "period_seconds": "60"}}
+	metricName := m.Name
+	if strings.TrimSpace(m.Alias) != "" {
+		metricName = strings.TrimSpace(m.Alias)
+	}
+	dims := map[string]string{"statistic": m.Statistic, "period_seconds": "60"}
+	if m.Filter != "" {
+		dims["filter"] = m.Filter
+	}
+	p := analysis.MetricPoint{SchemaVersion: analysis.SchemaVersion, TimestampUTC: at.UTC(), MetricName: metricName, Unit: unit, Kind: analysis.KindSummary, Quality: analysis.QualityValid, Dimensions: dims}
 	if value == nil {
 		p.Quality = analysis.QualityMissing
 	} else {
@@ -312,6 +342,9 @@ func collectAzureMonitor(ctx context.Context, client *http.Client, q *CloudQuery
 			aggregation = "Total"
 		}
 		query := url.Values{"api-version": {"2023-10-01"}, "metricnamespace": {q.Namespace}, "metricnames": {m.Name}, "timespan": {start.Format(time.RFC3339) + "/" + end.Format(time.RFC3339)}, "interval": {"PT1M"}, "aggregation": {aggregation}, "top": {"1"}, "AutoAdjustTimegrain": {"false"}}
+		if m.Filter != "" {
+			query.Set("$filter", m.Filter)
+		}
 		endpoint := "https://management.azure.com" + q.ResourceID + "/providers/Microsoft.Insights/metrics?" + query.Encode()
 		body, err := cloudRequest(ctx, client, func() (*http.Request, error) {
 			req, err := http.NewRequest(http.MethodGet, endpoint, nil)
@@ -353,12 +386,17 @@ func decodeAzureMonitor(body []byte, m CloudMetric, start, end time.Time) ([]ana
 		return nil, errors.New("invalid Azure metric response")
 	}
 	result := data.Value[0]
-	if result.Name.Value != m.Name || result.Unit != m.Unit || (result.ErrorCode != "" && result.ErrorCode != "Success") || len(result.Timeseries) > 1 {
+	unitMatch := result.Unit == m.Unit || (isMillisecondsUnit(result.Unit) && isMillisecondsUnit(m.Unit))
+	if result.Name.Value != m.Name || !unitMatch || (result.ErrorCode != "" && result.ErrorCode != "Success") || len(result.Timeseries) > 1 {
 		return nil, errors.New("Azure metric identity, unit or completeness mismatch")
 	}
 	points := []analysis.MetricPoint{}
+	maxMetadata := 0
+	if m.Filter != "" {
+		maxMetadata = 4
+	}
 	for _, series := range result.Timeseries {
-		if len(series.Metadata) > 0 || len(series.Data) > 6 {
+		if len(series.Metadata) > maxMetadata || len(series.Data) > 6 {
 			return nil, errors.New("Azure dimensional or oversized result rejected")
 		}
 		times := map[time.Time]bool{}
@@ -389,4 +427,31 @@ func decodeAzureMonitor(body []byte, m CloudMetric, start, end time.Time) ([]ana
 		}
 	}
 	return points, nil
+}
+
+// AzureOpenAIMonitorQuery constructs the canonical Azure Monitor query template
+// for a Microsoft.CognitiveServices/accounts Azure OpenAI or AI Foundry
+// resource, optionally scoped to a specific ModelDeploymentName.
+func AzureOpenAIMonitorQuery(tenantID, clientID, resourceID, identity, deploymentName string) CloudQuery {
+	deployFilter := ""
+	throttledFilter := "StatusCode eq '429'"
+	if strings.TrimSpace(deploymentName) != "" {
+		deployFilter = "ModelDeploymentName eq '" + strings.TrimSpace(deploymentName) + "'"
+		throttledFilter = deployFilter + " and StatusCode eq '429'"
+	}
+	return CloudQuery{
+		TenantID:   tenantID,
+		ClientID:   clientID,
+		ResourceID: resourceID,
+		Identity:   identity,
+		Namespace:  "Microsoft.CognitiveServices/accounts",
+		Metrics: []CloudMetric{
+			{Name: "AzureOpenAIRequests", Alias: "azure_openai_requests_total", Unit: "Count", Statistic: "Sum", Filter: deployFilter},
+			{Name: "AzureOpenAIRequests", Alias: "azure_openai_requests_429_throttled", Unit: "Count", Statistic: "Sum", Filter: throttledFilter},
+			{Name: "ProcessedPromptTokens", Alias: "azure_openai_prompt_tokens", Unit: "Count", Statistic: "Sum", Filter: deployFilter},
+			{Name: "GeneratedTokens", Alias: "azure_openai_generated_tokens", Unit: "Count", Statistic: "Sum", Filter: deployFilter},
+			{Name: "AzureOpenAITimeToResponse", Alias: "azure_openai_time_to_response_ms", Unit: "MilliSeconds", Statistic: "Average", Filter: deployFilter},
+			{Name: "ProvisionedManagedUtilizationV2", Alias: "azure_openai_provisioned_managed_utilization_v2", Unit: "Percent", Statistic: "Maximum", Filter: deployFilter},
+		},
+	}
 }

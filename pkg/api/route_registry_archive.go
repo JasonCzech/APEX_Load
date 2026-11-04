@@ -123,6 +123,33 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/comparison", "handleGetRunArchiveComparison", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveComparison)
 		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/capacity-sweep", "handleGetRunArchiveCapacitySweep", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveCapacitySweep)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/llm-latency-decomposition", "handleGetRunArchiveLLMLatencyDecomposition", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveLLMLatencyDecomposition)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/llm-samples", "handleExportRunArchiveLLMSamples", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleExportRunArchiveLLMSamples)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/genai-spans/lookup", "handleGenAISpanLookup", viewerProjectAccessWithBodyLimit(resolveTestProjectID, 16<<10), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGenAISpanLookup)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/llm/prompt-datasets/import", "handleImportLLMPromptDataset", editorProjectAccessWithBodyLimit(resolveProjectIDFromQuery, 16<<20), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleImportLLMPromptDataset)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/llm/prompt-datasets/synthesize", "handleSynthesizeLLMPromptDataset", editorProjectAccessWithBodyLimit(resolveProjectIDFromQuery, 64<<10), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleSynthesizeLLMPromptDataset)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/llm/prompt-datasets/calibrate", "handleCalibrateLLMPromptDataset", editorProjectAccessWithBodyLimit(resolveProjectIDFromQuery, 1<<20), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCalibrateLLMPromptDataset)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/llm/capacity-plan", "handleEvaluateLLMCapacityPlan", viewerProjectAccessWithBodyLimit(resolveProjectIDFromQuery, 256<<10), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleEvaluateLLMCapacityPlan)
+		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/llm/compare", "handleCompareLLMRuns", viewerProjectAccessWithBodyLimit(resolveProjectIDFromQuery, 1<<20), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleCompareLLMRuns)
+		}),
 	},
 }, http.MethodGet)
 

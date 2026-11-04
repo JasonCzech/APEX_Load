@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"os"
@@ -107,24 +106,5 @@ func (s *Server) startScheduleOccurrenceRetentionCadence() {
 	if _, ok := s.store.(scheduleOccurrenceRetentionStore); !ok {
 		return
 	}
-	interval := scheduleOccurrenceRetentionInterval()
-	if interval <= 0 {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.scheduleOccurrenceRetentionCancel = cancel
-	s.launchBackground(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if s.isExecutionLeader() {
-					s.pruneScheduleOccurrenceRetention(time.Now().UTC())
-				}
-			}
-		}
-	})
+	s.scheduleOccurrenceRetentionCancel = s.startLeaderPeriodicTask(scheduleOccurrenceRetentionInterval(), s.pruneScheduleOccurrenceRetention)
 }

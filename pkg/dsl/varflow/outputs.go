@@ -122,6 +122,56 @@ func StepOutputs(action dsl.Action) Outputs {
 		// receive the raw action and use its name and args literally or only
 		// log them. Nothing is interpolated.
 		return Outputs{NoReads: true}
+	case "llm_request":
+		var writes []Write
+		seen := make(map[string]struct{})
+		addWrite := func(name string) {
+			if name = strings.TrimSpace(name); name != "" {
+				if _, exists := seen[name]; !exists {
+					seen[name] = struct{}{}
+					writes = append(writes, Write{Name: name})
+				}
+			}
+		}
+		for _, key := range []string{
+			"save_text_as", "save_assistant_text", "save_response_as", "save_as", "response_var",
+			"save_finish_reason_var", "save_finish_reason_as", "finish_reason_var",
+			"save_tool_calls_var", "save_tool_calls_as", "tool_calls_var",
+			"conversation_var", "history_var",
+		} {
+			if name, ok := paramString(action.Params, key); ok {
+				addWrite(name)
+			}
+		}
+		hasExplicitHistoryVar := false
+		for _, key := range []string{"conversation_var", "history_var"} {
+			if name, ok := paramString(action.Params, key); ok && name != "" {
+				hasExplicitHistoryVar = true
+			}
+		}
+		if action.Params != nil {
+			switch conv := action.Params["conversation"].(type) {
+			case bool:
+				if conv && !hasExplicitHistoryVar {
+					addWrite("llm_conversation_history")
+				}
+			case map[string]any:
+				nestedVar := ""
+				if v, ok := paramString(conv, "history_var"); ok && v != "" {
+					nestedVar = v
+				} else if v, ok := paramString(conv, "conversation_var"); ok && v != "" {
+					nestedVar = v
+				}
+				if nestedVar != "" {
+					addWrite(nestedVar)
+				} else if !hasExplicitHistoryVar {
+					addWrite("llm_conversation_history")
+				}
+			}
+		}
+		if len(writes) > 0 {
+			return Outputs{Writes: writes}
+		}
 	}
 	return Outputs{}
 }

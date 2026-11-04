@@ -65,3 +65,30 @@ func writeImportBatchFailure(w http.ResponseWriter, failure *importBatchFailure,
 	}
 	writeError(w, status, message)
 }
+
+func completeImportBatchDraftClaims(s *Server, importKind string, claims []*importDraftAttestationClaim, stored []*StoredScript) {
+	for index, claim := range claims {
+		if claim == nil {
+			continue
+		}
+		if err := s.completeImportDraftAttestation(claim); err != nil {
+			// Assets and their receipt are already durable. Strand this one-shot
+			// claim for expiry instead of letting the handler defer reopen it.
+			claims[index] = nil
+			scriptID := ""
+			if index < len(stored) && stored[index] != nil {
+				scriptID = stored[index].ID
+			}
+			slogImportAttestationCompletionFailure(importKind, scriptID, err)
+			continue
+		}
+		claims[index] = nil
+	}
+}
+
+func writeImportBatchCommitResponse(w http.ResponseWriter, stored []*StoredScript) {
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"scripts": maskStoredScripts(stored),
+		"count":   len(stored),
+	})
+}

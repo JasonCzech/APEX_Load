@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"math"
 	"strings"
@@ -109,6 +110,7 @@ type BaselineMeasurement struct {
 	JavaHTTP             *protocol.JavaHTTPSummary          `json:"java_http,omitempty"`
 	GRPC                 *protocol.GRPCSummary              `json:"grpc,omitempty"`
 	WebSocket            *protocol.WebSocketSummary         `json:"websocket,omitempty"`
+	LLM                  *engine.LLMSummary                 `json:"llm,omitempty"`
 	Samples              int64                              `json:"samples"`
 	Successes            int64                              `json:"successes"`
 	Errors               int64                              `json:"errors"`

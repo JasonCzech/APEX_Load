@@ -17,6 +17,10 @@ func (s *SQLiteStore) SaveExecutionPlan(plan *ExecutionPlan) error {
 }
 
 func saveExecutionPlanWithExecutor(executor testSaveExecutor, plan *ExecutionPlan) error {
+	var originalRevision int64
+	if plan != nil {
+		originalRevision = plan.Revision
+	}
 	entriesJSON, err := prepareExecutionPlanForWrite(plan)
 	if err != nil {
 		return err
@@ -36,13 +40,16 @@ func saveExecutionPlanWithExecutor(executor testSaveExecutor, plan *ExecutionPla
 		plan.ID, plan.ProjectID, plan.Revision, plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
 		plan.TimeslotID, plan.ApplicationID, plan.ReleaseID, plan.OverlapPolicy, plan.Status, plan.CreatedAt, plan.UpdatedAt, DefaultProjectID)
 	if err != nil {
+		plan.Revision = originalRevision
 		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		plan.Revision = originalRevision
 		return err
 	}
 	if affected != 1 {
+		plan.Revision = originalRevision
 		return fmt.Errorf("execution plan %q belongs to a different project", plan.ID)
 	}
 	return nil
@@ -82,22 +89,31 @@ func (s *SQLiteStore) CreateExecutionPlanIfAbsent(plan *ExecutionPlan) (bool, er
 }
 
 func createExecutionPlanIfAbsentWithExecutor(executor testSaveExecutor, plan *ExecutionPlan) (bool, error) {
+	var originalRevision int64
+	if plan != nil {
+		originalRevision = plan.Revision
+	}
 	entriesJSON, err := prepareExecutionPlanForWrite(plan)
 	if err != nil {
 		return false, err
 	}
-	plan.Revision = 1
 	result, err := executor.Exec(`INSERT INTO execution_plans (
 			id, project_id, revision, name, description, entries_json, run_mode, timeslot_id, application_id, release_id, overlap_policy, status, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`,
-		plan.ID, plan.ProjectID, plan.Revision, plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
+		plan.ID, plan.ProjectID, 1, plan.Name, plan.Description, string(entriesJSON), plan.RunMode,
 		plan.TimeslotID, plan.ApplicationID, plan.ReleaseID, plan.OverlapPolicy, plan.Status, plan.CreatedAt, plan.UpdatedAt)
 	if err != nil {
+		plan.Revision = originalRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected == 1, err
+	if err != nil || affected != 1 {
+		plan.Revision = originalRevision
+		return false, err
+	}
+	plan.Revision = 1
+	return true, nil
 }
 
 func (s *SQLiteStore) CompareAndSwapExecutionPlan(plan *ExecutionPlan, expectedRevision int64) (bool, error) {
@@ -132,50 +148,48 @@ func compareAndSwapExecutionPlanWithExecutor(executor testSaveExecutor, plan *Ex
 }
 
 func (s *SQLiteStore) SaveExecutionPlanIfLeaseTermHeld(plan *ExecutionPlan, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	if plan != nil {
+		originalRevision = plan.Revision
 	}
-	defer tx.Rollback()
-	if err := saveExecutionPlanWithExecutor(tx, plan); err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		if err := saveExecutionPlanWithExecutor(tx, plan); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
+	if (err != nil || !changed) && plan != nil {
+		plan.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) CreateExecutionPlanIfAbsentAndLeaseTermHeld(plan *ExecutionPlan, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	if plan != nil {
+		originalRevision = plan.Revision
 	}
-	defer tx.Rollback()
-	created, err := createExecutionPlanIfAbsentWithExecutor(tx, plan)
-	if err != nil || !created {
-		return created, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createExecutionPlanIfAbsentWithExecutor(tx, plan)
+	})
+	if (err != nil || !changed) && plan != nil {
+		plan.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) CompareAndSwapExecutionPlanIfLeaseTermHeld(plan *ExecutionPlan, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	if plan != nil {
+		originalRevision = plan.Revision
 	}
-	defer tx.Rollback()
-	updated, err := compareAndSwapExecutionPlanWithExecutor(tx, plan, expectedRevision)
-	if err != nil || !updated {
-		return updated, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return compareAndSwapExecutionPlanWithExecutor(tx, plan, expectedRevision)
+	})
+	if (err != nil || !changed) && plan != nil {
+		plan.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 const executionPlanSelect = `SELECT id, COALESCE(project_id, ''), COALESCE(revision, 1), name, COALESCE(description, ''),
@@ -339,22 +353,19 @@ func (s *SQLiteStore) DeleteExecutionPlanGuardedIfLeaseTermHeld(id, leaseName, l
 	if id == "" {
 		return "", fmt.Errorf("execution plan id is required")
 	}
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return "", err
-	}
-	defer tx.Rollback()
-	result, err := deleteExecutionPlanGuardedWithExecutor(tx, id)
+	var out ExecutionPlanDeleteResult
+	_, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		result, err := deleteExecutionPlanGuardedWithExecutor(tx, id)
+		if err != nil {
+			return false, err
+		}
+		out = result
+		return result == ExecutionPlanDeleteDeleted, nil
+	})
 	if err != nil {
 		return "", err
 	}
-	if result != ExecutionPlanDeleteDeleted {
-		return result, nil
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
-	return result, nil
+	return out, nil
 }
 
 func (s *SQLiteStore) DeleteExecutionPlanIfLeaseTermHeld(id, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
@@ -362,40 +373,42 @@ func (s *SQLiteStore) DeleteExecutionPlanIfLeaseTermHeld(id, leaseName, leaseOwn
 	if id == "" {
 		return false, fmt.Errorf("execution plan id is required")
 	}
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	if _, err := tx.Exec(`DELETE FROM execution_plan_schedule_occurrences WHERE schedule_id IN (SELECT id FROM execution_plan_schedules WHERE plan_id = ?)`, id); err != nil {
-		return false, err
-	}
-	if _, err := tx.Exec(`DELETE FROM execution_plan_schedules WHERE plan_id = ?`, id); err != nil {
-		return false, err
-	}
-	if _, err := tx.Exec(`DELETE FROM execution_plan_approvals WHERE plan_id = ?`, id); err != nil {
-		return false, err
-	}
-	result, err := tx.Exec(`DELETE FROM execution_plans WHERE id = ?`, id)
-	if err != nil {
-		return false, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return affected == 1, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		if _, err := tx.Exec(`DELETE FROM execution_plan_schedule_occurrences WHERE schedule_id IN (SELECT id FROM execution_plan_schedules WHERE plan_id = ?)`, id); err != nil {
+			return false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM execution_plan_schedules WHERE plan_id = ?`, id); err != nil {
+			return false, err
+		}
+		if _, err := tx.Exec(`DELETE FROM execution_plan_approvals WHERE plan_id = ?`, id); err != nil {
+			return false, err
+		}
+		result, err := tx.Exec(`DELETE FROM execution_plans WHERE id = ?`, id)
+		if err != nil {
+			return false, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		return affected == 1, nil
+	})
 }
 
 func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
+	var originalRevision int64
+	if run != nil {
+		originalRevision = run.Revision
+	}
 	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
 	if err != nil {
+		if run != nil {
+			run.Revision = originalRevision
+		}
 		return err
 	}
 	if err := bindExecutionPlanRunParent(s.db, run); err != nil {
+		run.Revision = originalRevision
 		return err
 	}
 	result, err := s.db.Exec(`INSERT INTO execution_plan_runs (
@@ -410,13 +423,16 @@ func (s *SQLiteStore) SaveExecutionPlanRun(run *ExecutionPlanRun) error {
 		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
 		run.TransitionToken, run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
 	if err != nil {
+		run.Revision = originalRevision
 		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		run.Revision = originalRevision
 		return err
 	}
 	if affected != 1 {
+		run.Revision = originalRevision
 		return fmt.Errorf("execution plan run %q belongs to another plan", run.ID)
 	}
 	return nil
@@ -430,28 +446,38 @@ func (s *SQLiteStore) CreateExecutionPlanRunIfAbsent(run *ExecutionPlanRun) (boo
 }
 
 func createExecutionPlanRunIfAbsentWithExecutor(executor testSaveExecutor, run *ExecutionPlanRun) (bool, error) {
+	var originalRevision int64
+	if run != nil {
+		originalRevision = run.Revision
+	}
 	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
 	if err != nil {
+		if run != nil {
+			run.Revision = originalRevision
+		}
 		return false, err
 	}
 	if err := bindExecutionPlanRunParent(executor, run); err != nil {
+		run.Revision = originalRevision
 		return false, err
 	}
-	run.Revision = 1
 	result, err := executor.Exec(`INSERT INTO execution_plan_runs (
 			id, plan_id, project_id, run_mode, status, entries_json, transition_token, revision, created_at, updated_at, completed_at)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(id) DO NOTHING`,
 		run.ID, run.PlanID, run.ProjectID, run.RunMode, run.Status, string(entriesJSON),
-		run.TransitionToken, run.Revision, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
+		run.TransitionToken, 1, run.CreatedAt, run.UpdatedAt, run.CompletedAt)
 	if err != nil {
+		run.Revision = originalRevision
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || rows != 1 {
+		run.Revision = originalRevision
 		return false, err
 	}
-	return rows == 1, nil
+	run.Revision = 1
+	return true, nil
 }
 
 // CreateExecutionPlanRunIfAbsentAndLeaseTermHeld creates the run anchor only
@@ -459,28 +485,17 @@ func createExecutionPlanRunIfAbsentWithExecutor(executor testSaveExecutor, run *
 // is locked and checked in the same transaction as the insert so a controller
 // from term N cannot cross the side-effect boundary after term N+1 takes over.
 func (s *SQLiteStore) CreateExecutionPlanRunIfAbsentAndLeaseTermHeld(run *ExecutionPlanRun, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" || leaseGeneration == 0 {
-		return false, fmt.Errorf("lease name, owner token, and positive generation are required")
+	var originalRevision int64
+	if run != nil {
+		originalRevision = run.Revision
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createExecutionPlanRunIfAbsentWithExecutor(tx, run)
+	})
+	if (err != nil || !changed) && run != nil {
+		run.Revision = originalRevision
 	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || !held {
-		return false, err
-	}
-	created, err := createExecutionPlanRunIfAbsentWithExecutor(tx, run)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 // CompareAndSwapExecutionPlanRun persists one progress transition without
@@ -491,14 +506,22 @@ func (s *SQLiteStore) CompareAndSwapExecutionPlanRun(run *ExecutionPlanRun, expe
 }
 
 func compareAndSwapExecutionPlanRunWithExecutor(executor testSaveExecutor, run *ExecutionPlanRun, expectedRevision int64) (bool, error) {
+	var originalRevision int64
+	if run != nil {
+		originalRevision = run.Revision
+	}
 	if expectedRevision < 1 {
 		return false, fmt.Errorf("execution plan run expected revision must be positive")
 	}
 	entriesJSON, err := prepareExecutionPlanRunForWrite(run)
 	if err != nil {
+		if run != nil {
+			run.Revision = originalRevision
+		}
 		return false, err
 	}
 	if err := bindExecutionPlanRunParent(executor, run); err != nil {
+		run.Revision = originalRevision
 		return false, err
 	}
 	result, err := executor.Exec(`UPDATE execution_plan_runs SET
@@ -506,44 +529,36 @@ func compareAndSwapExecutionPlanRunWithExecutor(executor testSaveExecutor, run *
 			WHERE id = ? AND plan_id = ? AND project_id = ? AND revision = ?`,
 		run.Status, string(entriesJSON), run.UpdatedAt, run.CompletedAt, run.TransitionToken, run.ID, run.PlanID, run.ProjectID, expectedRevision)
 	if err != nil {
+		run.Revision = originalRevision
 		return false, err
 	}
 	rows, err := result.RowsAffected()
 	if err != nil {
+		run.Revision = originalRevision
 		return false, err
 	}
 	if rows == 1 {
 		run.Revision = expectedRevision + 1
 		return true, nil
 	}
+	run.Revision = originalRevision
 	return false, nil
 }
 
 // CompareAndSwapExecutionPlanRunIfLeaseTermHeld combines the run revision CAS
 // with the durable execution-lease term check in one transaction.
 func (s *SQLiteStore) CompareAndSwapExecutionPlanRunIfLeaseTermHeld(run *ExecutionPlanRun, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" || leaseGeneration == 0 {
-		return false, fmt.Errorf("lease name, owner token, and positive generation are required")
+	var originalRevision int64
+	if run != nil {
+		originalRevision = run.Revision
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return compareAndSwapExecutionPlanRunWithExecutor(tx, run, expectedRevision)
+	})
+	if (err != nil || !changed) && run != nil {
+		run.Revision = originalRevision
 	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || !held {
-		return false, err
-	}
-	updated, err := compareAndSwapExecutionPlanRunWithExecutor(tx, run, expectedRevision)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return changed, err
 }
 
 func prepareExecutionPlanRunForWrite(run *ExecutionPlanRun) ([]byte, error) {

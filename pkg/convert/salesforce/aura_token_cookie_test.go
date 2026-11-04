@@ -298,7 +298,14 @@ func TestUncapturedAuraTokenEvidenceCheckIsLinear(t *testing.T) {
 	if _, err := detectUncapturedAuraTokenCorrelations(observations, map[string]bool{}, newSalesforceCorrelationBudget(), maxSalesforceShapeCorrelations); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(started); elapsed > 3*time.Second {
+	budget := 3 * time.Second
+	if raceDetectorEnabled {
+		// The race leg's instrumented pass has taken 3.5 s on a busy runner;
+		// a quadratic pass over 20,000 tokens would take orders of magnitude
+		// longer.
+		budget = 30 * time.Second
+	}
+	if elapsed := time.Since(started); elapsed > budget {
 		t.Fatalf("20000 tokens took %s, want a linear pass", elapsed)
 	}
 }

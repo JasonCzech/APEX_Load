@@ -35,19 +35,18 @@ const analysisUploadChunk = 4 << 20
 const analysisImportMaxBytes = int64(20 << 30)
 
 // Admission includes staging and durable publication, not only native queries.
-var analysisPipelineJobs = make(chan struct{}, 1)
-
-func admitAnalysisPipeline(w http.ResponseWriter) bool {
+func (s *Server) admitAnalysisPipeline(w http.ResponseWriter) (func(), bool) {
 	if analytics.NativeBusy() {
 		writeError(w, 503, "native analytical ownership is retained; retry after completion")
-		return false
+		return nil, false
 	}
+	slots := s.analysisPipelineSlots()
 	select {
-	case analysisPipelineJobs <- struct{}{}:
-		return true
+	case slots <- struct{}{}:
+		return func() { <-slots }, true
 	default:
 		writeError(w, 503, "an analytical job is already running; retry later")
-		return false
+		return nil, false
 	}
 }
 
@@ -396,7 +395,7 @@ func (s *Server) handleAnalysisUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 503, "upload request authority expired")
 		return
 	}
-	uploadOwner, admitted := acquireAnalysisUploadOwner()
+	uploadOwner, admitted := s.acquireAnalysisUploadOwner()
 	if !admitted {
 		writeError(w, 429, "upload writer capacity unavailable")
 		return
@@ -496,10 +495,11 @@ func analysisScratch() (string, error) {
 }
 
 func (s *Server) handleAnalysisPreview(w http.ResponseWriter, r *http.Request) {
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	_, in := s.loadAnalysisImport(w, r)
 	if in == nil {
 		return
@@ -665,13 +665,14 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 422, fmt.Sprintf("files %q and %q have the same content; create a new import without one of them", first, second))
 		return
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
 	launched := false
 	defer func() {
 		if !launched {
-			<-analysisPipelineJobs
+			releasePipeline()
 		}
 	}()
 	attempts, ok := s.store.(storage.AnalysisAttemptStore)
@@ -714,7 +715,7 @@ func (s *Server) handleAnalysisCommit(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = analytics.BindStagingAttemptScope(dir, in.ID, claimed.Owner)
 	launched = s.launchBackground(func() {
-		defer func() { <-analysisPipelineJobs }()
+		defer releasePipeline()
 		defer stop()
 		s.normalizeAnalysisImportOwned(ctx, store, attempts, *claimed, pipeline, dir)
 	})
@@ -878,10 +879,11 @@ func (s *Server) handleAnalysisDatasetSeries(w http.ResponseWriter, r *http.Requ
 	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), time.Minute)
 	defer cancel()
 	r = r.WithContext(ctx)
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	_, in := s.loadAnalysisImportMetadata(w, r)
 	if in == nil {
 		return

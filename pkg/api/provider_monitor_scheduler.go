@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) startProviderMonitoring() {
-	if s.runner == nil || s.store == nil {
+	if s == nil || s.runner == nil || s.store == nil || s.providerMonitoringCancel != nil {
 		return
 	}
 	store, ok := s.store.(providerMonitorStore)
@@ -20,9 +20,7 @@ func (s *Server) startProviderMonitoring() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.providerMonitoringCancel = cancel
-	s.startElasticCleanup(ctx)
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		retiredEpoch := ""
@@ -153,5 +151,10 @@ func (s *Server) startProviderMonitoring() {
 				}
 			}
 		}
-	})
+	}) {
+		cancel()
+		return
+	}
+	s.providerMonitoringCancel = cancel
+	s.startElasticCleanup(ctx)
 }

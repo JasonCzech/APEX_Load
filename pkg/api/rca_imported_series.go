@@ -52,11 +52,6 @@ const (
 // (tests replace it).
 var rcaNativeAnalysisAvailable = analytics.Available
 
-// rcaImportedReadGate queues the imported reads of concurrent analyses for
-// the native-analysis slot one query at a time, in arrival order, so one
-// analysis reading back to back never starves another polling for the slot.
-var rcaImportedReadGate = make(chan struct{}, 1)
-
 // rcaQueryImportedDataset runs one native series query (tests replace it).
 var rcaQueryImportedDataset = queryAnalysisDataset
 
@@ -267,13 +262,14 @@ datasets:
 			if !deadline.IsZero() {
 				readCtx, cancel = context.WithDeadline(ctx, deadline)
 			}
+			readGate := s.rcaImportedReadGateChan()
 			built, err := rcaReadWithAdmission(readCtx, deadline, rcaImportedAdmissionRetry, func() (*rca.Series, error) {
 				select {
-				case rcaImportedReadGate <- struct{}{}:
+				case readGate <- struct{}{}:
 				case <-readCtx.Done():
 					return nil, errRCAImportedEvidenceBusy
 				}
-				defer func() { <-rcaImportedReadGate }()
+				defer func() { <-readGate }()
 				return s.readImportedSeries(readCtx, snapshot, key, from, to, bucket)
 			})
 			expired := readCtx.Err() != nil

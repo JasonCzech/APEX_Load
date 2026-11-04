@@ -546,7 +546,12 @@ func (a *analyzer) apply(s *state, outputs Outputs, extracted bool) {
 // (vuser_execute.go); native_javascript and live_table merge only their
 // result prefixes, which the join publishes on their own.
 func writesExtractions(action dsl.Action) bool {
-	return dsl.CanonicalActionType(action.Type) == "browser_evaluate_js"
+	switch dsl.CanonicalActionType(action.Type) {
+	case "browser_evaluate_js", "llm_request":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *analyzer) walk(actions []dsl.Action, prefix string, s *state) {
@@ -678,8 +683,10 @@ func (a *analyzer) walk(actions []dsl.Action, prefix string, s *state) {
 			children := sequenceChildActions(action.Params)
 			for childIndex := range children {
 				childPath := fmt.Sprintf("%s.params.requests[%d]", path, childIndex)
-				a.record(children[childIndex], childPath, s, a.config)
+				childOutputs := StepOutputs(children[childIndex])
+				a.recordOutputs(children[childIndex], childOutputs, childPath, s, a.config)
 				a.register(s, children[childIndex].Extractors)
+				a.apply(s, childOutputs, writesExtractions(children[childIndex]))
 			}
 		default:
 			outputs := StepOutputs(*action)
@@ -868,7 +875,7 @@ func relevantHTTPConfigReferences(action dsl.Action, refs configReferences) []st
 func actionUsesHTTPRequestConfig(action dsl.Action) bool {
 	actionType := strings.ToLower(strings.TrimSpace(dsl.CanonicalActionType(action.Type)))
 	switch actionType {
-	case "request", "http_request", "soap_request", "java_http_request":
+	case "request", "http_request", "soap_request", "java_http_request", "llm_request":
 		return true
 	}
 	method := strings.ToUpper(strings.TrimSpace(action.Method))

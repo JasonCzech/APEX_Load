@@ -441,6 +441,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 		e.metrics.SetTargetTPS(e.script.Config.Pacing.TPS)
 		defer iterationRateLimiter.Stop()
 	}
+	quotaPacer := newGroupQuotaPacer(e.script, DataShardConfig{})
 	if isOpenWorkload(e.script) {
 		loopCtx, loopCancel := context.WithCancel(ctx)
 		boundaryCtx, boundaryCancel := context.WithCancel(ctx)
@@ -609,6 +610,7 @@ func (e *Engine) Run(ctx context.Context) (runResult *RunResult, runErr error) {
 				sourceParameters:             e.sourceParameters,
 				sourceSamplers:               e.sourceSamplers,
 				IterationRateLimiter:         iterationRateLimiter,
+				QuotaPacer:                   quotaPacer,
 				Rendezvous:                   rendezvous,
 				ExecutionGoals:               executionGoals,
 				HardStopCtx:                  ctx,
@@ -768,6 +770,9 @@ func (e *Engine) runOpenWorkload(
 ) (*RunResult, error) {
 	start := time.Now()
 	iterationScript := cloneSingleIterationScript(e.script)
+	// The single-iteration clone drops pacing, so the arrival workers share
+	// one quota pacer built from the authored script.
+	quotaPacer := newGroupQuotaPacer(e.script, DataShardConfig{})
 	arrivals, bounded := boundedArrivalLimit(e.script, e.vusers)
 	loopCtx := schedulerCtx
 	var executionGoals *ExecutionGoalLimiter
@@ -797,12 +802,12 @@ func (e *Engine) runOpenWorkload(
 	inFlightLimit := openWorkloadInFlightLimit(e.script)
 	limiter := newInFlightLimiter(inFlightLimit)
 
-	runArrivalScheduler(loopCtx, e.script.Config.Pacing.TPS, func() int {
+	runOpenWorkloadScheduler(loopCtx, e.script.Config.Pacing, DataShardConfig{}, e.script.Config.Pacing.TPS, func() int {
 		if bounded {
 			return arrivals
 		}
 		return 0
-	}(), nil, nil, func() time.Duration { return time.Since(start) }, func(arrival int) {
+	}(), nil, nil, func() time.Duration { return time.Since(start) }, false, func(arrival int) {
 		// Shed the arrival when the in-flight set is saturated: the SUT cannot
 		// keep up, so dropping it protects the generator from unbounded
 		// goroutine growth instead of silently throttling to a closed model.
@@ -873,6 +878,7 @@ func (e *Engine) runOpenWorkload(
 				sourceParameters:             e.sourceParameters,
 				sourceSamplers:               e.sourceSamplers,
 				ExecutionGoals:               executionGoals,
+				QuotaPacer:                   quotaPacer,
 				HardStopCtx:                  hardStopCtx,
 				ActionBoundaryCtx:            actionBoundaryCtx,
 				DataProvider:                 e.data,

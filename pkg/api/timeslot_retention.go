@@ -9,7 +9,6 @@ package api
 // records each prune for traceability.
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"strconv"
@@ -98,24 +97,5 @@ func (s *Server) startTimeslotRetentionCadence() {
 	if timeslotRetentionDays() <= 0 {
 		return
 	}
-	interval := timeslotRetentionInterval()
-	if interval <= 0 {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.timeslotRetentionCancel = cancel
-	s.launchBackground(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if s.isExecutionLeader() {
-					s.pruneTimeslotRetention(time.Now().UTC())
-				}
-			}
-		}
-	})
+	s.timeslotRetentionCancel = s.startLeaderPeriodicTask(timeslotRetentionInterval(), s.pruneTimeslotRetention)
 }

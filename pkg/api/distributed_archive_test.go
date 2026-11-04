@@ -222,27 +222,29 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		TelemetryStatus: &TelemetryRunHealth{Status: "degraded", Severity: "warning", Conditions: []string{"generator_lag"}},
 	}
 	test := &ManagedTest{
-		ID:                    testID,
-		RefKey:                "RUN-20260714-0001",
-		Name:                  "Distributed parity",
-		Status:                "RUNNING",
-		ProjectID:             "project-a",
-		ScenarioID:            "scenario-a",
-		ApplicationID:         "application-a",
-		ReleaseID:             "release-a",
-		CreatedAt:             startedAt.Add(-time.Minute),
-		StartedAt:             &startedAt,
-		Duration:              5 * time.Minute,
-		DurationStr:           "5m",
-		TotalVUsers:           5,
-		GoalConfig:            &GoalConfig{P95LatencyMs: ptr(250.0), TransactionResponseTimeSLAMs: ptr(100.0)},
-		GeneratorShards:       []GeneratorShardSummary{{Group: "checkout", Target: "generator-a", VUsers: 5}},
-		Groups:                []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 5}},
-		LiveMetrics:           live,
-		History:               []*LiveMetrics{live},
-		remoteTarget:          "generator-a",
-		remoteClient:          client,
-		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		ID:              testID,
+		RefKey:          "RUN-20260714-0001",
+		Name:            "Distributed parity",
+		Status:          "RUNNING",
+		ProjectID:       "project-a",
+		ScenarioID:      "scenario-a",
+		ApplicationID:   "application-a",
+		ReleaseID:       "release-a",
+		CreatedAt:       startedAt.Add(-time.Minute),
+		StartedAt:       &startedAt,
+		Duration:        5 * time.Minute,
+		DurationStr:     "5m",
+		TotalVUsers:     5,
+		GoalConfig:      &GoalConfig{P95LatencyMs: ptr(250.0), TransactionResponseTimeSLAMs: ptr(100.0)},
+		GeneratorShards: []GeneratorShardSummary{{Group: "checkout", Target: "generator-a", VUsers: 5}},
+		Groups:          []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 5}},
+		LiveMetrics:     live,
+		History:         []*LiveMetrics{live},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteTarget:          "generator-a",
+			remoteClient:          client,
+			remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		},
 	}
 	initialProvenance := RunArchiveProvenance{
 		ProjectID:   "project-a",
@@ -416,10 +418,12 @@ func TestFetchRemoteArchiveRejectsManifestForDifferentTest(t *testing.T) {
 	client := &archiveStreamingFakeClient{artifacts: map[string]string{"manifest.json": manifestPath}}
 	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    "requested-run",
-		remoteTarget:          "generator-a",
-		remoteClient:          client,
-		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		ID: "requested-run",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteTarget:          "generator-a",
+			remoteClient:          client,
+			remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		},
 	}
 	_, err := backend.fetchRemoteArchiveBundles(&TestRunner{}, test, false)
 	if err == nil || !strings.Contains(err.Error(), "does not match requested test") {
@@ -463,8 +467,10 @@ func TestStageRemoteArchiveRejectsGeneratorManifestCountMismatch(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
 	test := &ManagedTest{
 		ID: testID, Name: "Count mismatch", CreatedAt: time.Now().UTC(),
-		remoteTarget: "generator-a", remoteClient: client,
-		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteTarget: "generator-a", remoteClient: client,
+			remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		},
 	}
 	if _, err := backend.stageRemoteArchive(nil, test, "COMPLETE", "", time.Now().UTC(), true); err == nil || !strings.Contains(err.Error(), "remote transaction count") {
 		t.Fatalf("stageRemoteArchive count mismatch error = %v", err)
@@ -541,9 +547,11 @@ func TestFetchRemoteArchivesStartsTargetsInParallelAndCancelsAsAGroup(t *testing
 	clientB := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: started, release: release}
 	backend := newDistributedExecutionBackend([]string{"generator-a", "generator-b"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                           testID,
-		remoteClientsByTarget:        map[string]generatorClient{"generator-a": clientA},
-		remoteArchiveClientsByTarget: map[string]generatorClient{"generator-b": clientB},
+		ID: testID,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:        map[string]generatorClient{"generator-a": clientA},
+			remoteArchiveClientsByTarget: map[string]generatorClient{"generator-b": clientB},
+		},
 	}
 	done := make(chan error, 1)
 	go func() {
@@ -567,7 +575,7 @@ func TestFetchRemoteArchivesStartsTargetsInParallelAndCancelsAsAGroup(t *testing
 
 	blocked := make(chan struct{})
 	cancelClient := &parallelArchiveClient{archiveStreamingFakeClient: &archiveStreamingFakeClient{artifacts: artifacts}, started: make(chan string, 1), release: blocked}
-	cancelTest := &ManagedTest{ID: testID, remoteClientsByTarget: map[string]generatorClient{"generator-a": cancelClient}}
+	cancelTest := &ManagedTest{ID: testID, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"generator-a": cancelClient}}}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	if _, err := backend.fetchRemoteArchiveBundlesContext(ctx, &TestRunner{}, cancelTest, true); !errors.Is(err, context.Canceled) {
@@ -613,7 +621,7 @@ func TestDistributedArchiveMetadataRetryPreservesCommittedCompleteOutcome(t *tes
 	}}
 	test := &ManagedTest{
 		ID: testID, Name: "Metadata retry", Status: "RUNNING", CreatedAt: now.Add(-time.Minute), ProjectID: storage.DefaultProjectID,
-		remoteTarget: "generator-a", remoteClient: client, remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		distributedTestRuntime: distributedTestRuntime{remoteTarget: "generator-a", remoteClient: client, remoteClientsByTarget: map[string]generatorClient{"generator-a": client}},
 	}
 	runner := NewTestRunner(1, NewHub(), nil)
 	archiveStore := &retryingArchivePersistence{failCalls: durableTransitionAttempts}
@@ -1710,8 +1718,10 @@ func TestStageRemoteArchiveRejectsUnsafeIDBeforeFilesystemOrGeneratorIO(t *testi
 	client := &archiveStreamingFakeClient{artifacts: map[string]string{}}
 	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
 	test := &ManagedTest{
-		ID: "../escape", Name: "unsafe", remoteTarget: "generator-a", remoteClient: client,
-		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		ID: "../escape", Name: "unsafe", distributedTestRuntime: distributedTestRuntime{
+			remoteTarget: "generator-a", remoteClient: client,
+			remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		},
 	}
 
 	if _, err := backend.stageRemoteArchive(nil, test, "FAILED", "unsafe", time.Now(), false); err == nil {
@@ -1756,8 +1766,10 @@ func TestStageRemoteArchiveRejectsLinkedRemoteParentsAndRunRoots(t *testing.T) {
 			client := &archiveStreamingFakeClient{artifacts: map[string]string{}}
 			backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
 			test := &ManagedTest{
-				ID: testID, Name: "linked", remoteTarget: "generator-a", remoteClient: client,
-				remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+				ID: testID, Name: "linked", distributedTestRuntime: distributedTestRuntime{
+					remoteTarget: "generator-a", remoteClient: client,
+					remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+				},
 			}
 
 			if _, err := backend.stageRemoteArchive(nil, test, "FAILED", "linked", time.Now(), false); err == nil {

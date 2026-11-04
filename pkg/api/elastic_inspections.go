@@ -8,7 +8,6 @@ import (
 	"errors"
 	"net/http"
 	"reflect"
-	"strconv"
 	"sync"
 	"time"
 
@@ -181,7 +180,6 @@ func (s *Server) handleGetElasticInspection(w http.ResponseWriter, r *http.Reque
 }
 
 var elasticInspectionCancels sync.Map
-var elasticInspectionSlots = make(chan struct{}, 2)
 
 type elasticInspectionCancelHandle struct {
 	cancel context.CancelFunc
@@ -222,34 +220,23 @@ func (s *Server) resumeElasticInspections(parent context.Context) {
 	if !ok {
 		return
 	}
-	ops, err := store.ListElasticInspections("", "", 4)
-	if err != nil {
-		return
-	}
-	for _, op := range ops {
-		if s.hasUnacceptedElasticCleanup(elasticCleanupInspection, op.ID) {
-			continue
-		}
-		select {
-		case elasticInspectionSlots <- struct{}{}:
-		default:
-			return
-		}
-		owner := uuid.NewString()
-		now := time.Now().UTC()
-		claimed, err := store.ClaimElasticInspection(op.ID, owner, now, now.Add(time.Minute))
-		if err != nil || !claimed {
-			<-elasticInspectionSlots
-			continue
-		}
-		work := op
-		if !s.launchBackground(func() {
-			defer func() { <-elasticInspectionSlots }()
-			s.executeDirectElasticInspection(parent, store, work, owner)
-		}) {
-			<-elasticInspectionSlots
-		}
-	}
+	resumeDirectProviderOperations(
+		s,
+		parent,
+		s.elasticInspectionSlotChan(),
+		func(limit int) ([]*storage.ElasticInspection, error) {
+			return store.ListElasticInspections("", "", limit)
+		},
+		func(op *storage.ElasticInspection) bool {
+			return s.hasUnacceptedElasticCleanup(elasticCleanupInspection, op.ID)
+		},
+		func(op *storage.ElasticInspection, owner string, now, leaseUntil time.Time) (bool, error) {
+			return store.ClaimElasticInspection(op.ID, owner, now, leaseUntil)
+		},
+		func(ctx context.Context, op *storage.ElasticInspection, owner string) {
+			s.executeDirectElasticInspection(ctx, store, op, owner)
+		},
+	)
 }
 func (s *Server) executeDirectElasticInspection(parent context.Context, store storage.ElasticInspectionStore, op *storage.ElasticInspection, owner string) {
 	ctx, cancel := s.runner.executionOperationContext(parent)
@@ -321,13 +308,9 @@ func (s *Server) handlePollElasticInspections(w http.ResponseWriter, r *http.Req
 		writeError(w, 503, err.Error())
 		return
 	}
-	capacity := 2
-	if raw := r.URL.Query().Get("capacity"); raw != "" {
-		capacity, err = strconv.Atoi(raw)
-		if err != nil || capacity < 1 || capacity > 4 {
-			writeError(w, 400, "invalid inspection capacity")
-			return
-		}
+	capacity, ok := parseCollectorInspectionCapacity(w, r, 2, "invalid inspection capacity")
+	if !ok {
+		return
 	}
 	ops, err := store.ListElasticInspections(c.ProjectID, c.ID, capacity)
 	if err != nil {
@@ -342,10 +325,7 @@ func (s *Server) handlePollElasticInspections(w http.ResponseWriter, r *http.Req
 		}
 		now := time.Now().UTC()
 		owner := uuid.NewString()
-		until := now.Add(time.Minute)
-		if op.ExpiresAt.Before(until) {
-			until = op.ExpiresAt
-		}
+		until := collectorInspectionLeaseUntil(now, op.ExpiresAt)
 		claimed, err := store.ClaimElasticInspection(op.ID, owner, now, until)
 		if err != nil || !claimed {
 			continue

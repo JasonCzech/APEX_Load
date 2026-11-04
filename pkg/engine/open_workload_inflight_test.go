@@ -226,3 +226,64 @@ func TestInFlightLimiterShouldWarnOnce(t *testing.T) {
 		t.Fatal("subsequent shouldWarn must return false")
 	}
 }
+
+func TestOpenWorkloadShardTPSSplit(t *testing.T) {
+	script := openWorkloadScript(30)
+	if got := openWorkloadShardTPS(script, DataShardConfig{}); got != 30 {
+		t.Fatalf("unsharded TPS = %v, want 30", got)
+	}
+	if got := openWorkloadShardTPS(script, DataShardConfig{Ordinal: 0, Count: 3}); got != 10 {
+		t.Fatalf("sharded TPS (1 of 3) = %v, want 10", got)
+	}
+	if got := openWorkloadInFlightLimitForShard(script, DataShardConfig{Ordinal: 1, Count: 3}); got != 10*defaultOpenWorkloadInFlightPerTPS {
+		t.Fatalf("sharded in-flight limit = %d, want %d", got, 10*defaultOpenWorkloadInFlightPerTPS)
+	}
+}
+
+func TestMultiGroupOpenWorkloadShardRateSplit(t *testing.T) {
+	const (
+		targetTPS  = 20.0
+		shardCount = 2
+		duration   = 450 * time.Millisecond
+	)
+	runShard := func(ordinal uint32) *MultiGroupRunResult {
+		script := openWorkloadScript(targetTPS)
+		script.Name = "open-sharded"
+		script.Protocol = "stub"
+		script.Actions = []dsl.Action{
+			{Type: "http_request", Name: "ping"},
+		}
+		mge, err := NewMultiGroup(MultiGroupConfig{
+			Duration: duration,
+			Groups: []GroupConfig{
+				{
+					Name:      "open-users",
+					Script:    script,
+					VUsers:    5,
+					DataShard: DataShardConfig{Ordinal: ordinal, Count: shardCount},
+				},
+			},
+		})
+		if err != nil {
+			t.Fatalf("NewMultiGroup shard %d: %v", ordinal, err)
+		}
+		res, err := mge.Run(context.Background())
+		if err != nil {
+			t.Fatalf("Run shard %d: %v", ordinal, err)
+		}
+		return res
+	}
+
+	r0 := runShard(0)
+	r1 := runShard(1)
+	if r0.FinalSnapshot.TargetTPS != targetTPS/shardCount {
+		t.Fatalf("shard 0 TargetTPS = %v, want %v", r0.FinalSnapshot.TargetTPS, targetTPS/shardCount)
+	}
+	totalTx := r0.TotalTransactions + r1.TotalTransactions
+	// Over 450ms at 10 TPS per shard (deadlines 0ms, 100ms, 200ms, 300ms, 400ms),
+	// each shard dispatches ~5 arrivals (total ~10 across 2 shards). Without the
+	// shard split each shard would run at 20 TPS (~9-10 arrivals each, total ~18-20).
+	if totalTx < 6 || totalTx > 14 {
+		t.Fatalf("combined open transactions across %d shards = %d (shard0=%d, shard1=%d), want ~10 (not %dx)", shardCount, totalTx, r0.TotalTransactions, r1.TotalTransactions, shardCount)
+	}
+}

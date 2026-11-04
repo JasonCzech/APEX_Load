@@ -208,7 +208,7 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	}
 	results.NormalizeMs = float64(time.Since(normalizeStart).Microseconds()) / 1000
 	results.Accepted, results.Rejected = current.Accepted, current.Rejected
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if current.State != "ready" || current.Accepted != 2*results.TotalRows || current.Rejected != 0 {
@@ -294,7 +294,7 @@ func TestNativeAnalyticsReferenceBenchmark(t *testing.T) {
 	case <-time.After(30 * time.Second):
 		fail("a cancelled heavy query did not return within 30 s")
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if _, _, code := query(context.Background(), selected, time.Hour, 60); code != 200 {
@@ -364,13 +364,13 @@ func runAnalyticsReferenceFaultTrials(t *testing.T, server *Server, store storag
 	// 1. Multi-job admission contention: hold the single analytical job slot and
 	// verify a concurrent series query is deterministically refused with 503.
 	t0 := time.Now()
-	analysisPipelineJobs <- struct{}{}
+	server.semaphores.analysisPipelineJobs <- struct{}{}
 	body, _ := json.Marshal(analytics.SeriesQuery{Metric: "latency", From: selected, To: selected.Add(time.Hour), BucketSeconds: 60, Aggregation: "avg"})
 	req := httptest.NewRequest("POST", "/api/v1/analysis/datasets/"+datasetID+"/series", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	contendResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(contendResp, req)
-	<-analysisPipelineJobs
+	<-server.semaphores.analysisPipelineJobs
 	record("admission_contention", t0, contendResp.Code == 503, fmt.Sprintf("status=%d", contendResp.Code))
 
 	// 2. Scratch disk exhaustion: request a pipeline reservation whose staging+input
@@ -539,7 +539,7 @@ func TestNativeAnalyticsReferenceFaultTrials(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if current.State != "ready" {

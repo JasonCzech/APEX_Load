@@ -7,15 +7,18 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const (
 	asyncAPIBatchCommitProfile    = "asyncapi"
 	asyncAPIBatchCommitMaxScripts = 1000
 )
+
+var asyncAPIBatchCommitWorkflow = importBatchWorkflow{
+	Profile: asyncAPIBatchCommitProfile,
+	Noun:    "AsyncAPI batch",
+}
 
 type asyncAPIBatchCommitRequest struct {
 	Scripts     []dsl.Script `json:"scripts"`
@@ -93,14 +96,10 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to fingerprint AsyncAPI batch")
 		return
 	}
-	attempt, receiptReplay, err := s.claimDirectImportAttempt(
-		projectID,
-		asyncAPIBatchCommitProfile,
-		operationID,
-		requestDigest,
+	attempt, receiptReplay, ok := s.claimImportBatchReceipt(
+		w, asyncAPIBatchCommitWorkflow, projectID, operationID, requestDigest,
 	)
-	if err != nil {
-		writeAsyncAPIBatchReceiptError(w, err)
+	if !ok {
 		return
 	}
 	if receiptReplay {
@@ -112,7 +111,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			writeError(w, http.StatusConflict, "completed AsyncAPI batch receipt is inconsistent: "+loadErr.Error())
 			return
 		}
-		writeAsyncAPIBatchCommitResponse(w, stored)
+		writeImportBatchCommitResponse(w, stored)
 		return
 	}
 	batch := newImportBatchCommit(s, attempt, updateTargets)
@@ -121,20 +120,9 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			slog.Warn("failed to fully compensate AsyncAPI batch", "error", cleanupErr)
 		}
 	}()
-	assetIdentitySeed := ""
-	if attempt != nil && attempt.receipt != nil {
-		assetIdentitySeed = attempt.receipt.ID
-	} else if operationID != "" {
-		assetIdentitySeed = directImportOperationHash(projectID, asyncAPIBatchCommitProfile, operationID)
-	}
-	plannedIDs := make([]string, len(requestScripts))
-	for index := range plannedIDs {
-		if assetIdentitySeed == "" {
-			plannedIDs[index] = uuid.NewString()
-		} else {
-			plannedIDs[index] = deterministicDirectImportAssetID(assetIdentitySeed, "script", index)
-		}
-	}
+	plannedIDs := importBatchPlannedAssetIDs(
+		attempt, asyncAPIBatchCommitWorkflow, projectID, operationID, len(requestScripts),
+	)
 	for index, target := range updateTargets {
 		if target != nil {
 			plannedIDs[index] = target.ScriptID
@@ -147,17 +135,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 	// exists before the save, so its presence proves nothing; recovery
 	// compares exact content after preparation instead.
 	if attempt != nil && !attempt.created && !updatesExisting {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior AsyncAPI batch")
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusConflict, "AsyncAPI batch receipt ownership was lost; retry the save")
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "the prior AsyncAPI batch is still finalizing; retry the save")
+		if !s.fenceImportBatchAdoption(w, asyncAPIBatchCommitWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", nil, nil)
@@ -173,7 +151,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 				writeError(w, http.StatusInternalServerError, "failed to reconcile AsyncAPI batch receipt")
 				return
 			}
-			writeAsyncAPIBatchCommitResponse(w, stored)
+			writeImportBatchCommitResponse(w, stored)
 			return
 		}
 	}
@@ -266,17 +244,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 	keepUpdatedScriptNames(prepared, updates)
 
 	if attempt != nil && !attempt.created {
-		if recoverErr := s.recoverExpiredLibraryImportClaims(); recoverErr != nil {
-			writeError(w, http.StatusInternalServerError, "failed to recover prior AsyncAPI batch")
-			return
-		}
-		if renewErr := attempt.renew(); renewErr != nil {
-			writeError(w, http.StatusConflict, "AsyncAPI batch receipt ownership was lost; retry the save")
-			return
-		}
-		if fenceErr := s.fenceDirectImportAssetAdoption(attempt, projectID, plannedIDs, ""); fenceErr != nil {
-			w.Header().Set("Retry-After", "2")
-			writeError(w, http.StatusConflict, "the prior AsyncAPI batch is still finalizing; retry the save")
+		if !s.fenceImportBatchAdoption(w, asyncAPIBatchCommitWorkflow, attempt, projectID, plannedIDs, "") {
 			return
 		}
 		stored, _, loadErr := batch.loadRecovery(projectID, plannedIDs, "", prepared, updateTargets)
@@ -289,8 +257,8 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 				writeError(w, http.StatusInternalServerError, "failed to reconcile AsyncAPI batch receipt")
 				return
 			}
-			completeAsyncAPIBatchDraftClaims(s, claims, stored)
-			writeAsyncAPIBatchCommitResponse(w, stored)
+			completeImportBatchDraftClaims(s, "asyncapi batch", claims, stored)
+			writeImportBatchCommitResponse(w, stored)
 			return
 		}
 	}
@@ -307,8 +275,8 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "failed to finalize AsyncAPI batch receipt")
 		return
 	}
-	completeAsyncAPIBatchDraftClaims(s, claims, stored)
-	writeAsyncAPIBatchCommitResponse(w, stored)
+	completeImportBatchDraftClaims(s, "asyncapi batch", claims, stored)
+	writeImportBatchCommitResponse(w, stored)
 }
 
 func validateDirectImportOperationID(raw string) (string, error) {
@@ -322,41 +290,4 @@ func validateDirectImportOperationID(raw string) (string, error) {
 		}
 	}
 	return operationID, nil
-}
-
-func writeAsyncAPIBatchReceiptError(w http.ResponseWriter, err error) {
-	switch {
-	case errors.Is(err, storage.ErrDirectImportReceiptBusy):
-		w.Header().Set("Retry-After", "2")
-		writeError(w, http.StatusConflict, "this AsyncAPI batch save is already in progress")
-	case errors.Is(err, storage.ErrDirectImportReceiptConflict):
-		writeError(w, http.StatusConflict, "operation_id was already used for a different AsyncAPI batch")
-	default:
-		writeError(w, http.StatusInternalServerError, "failed to reserve AsyncAPI batch")
-	}
-}
-
-func completeAsyncAPIBatchDraftClaims(s *Server, claims []*importDraftAttestationClaim, stored []*StoredScript) {
-	for index, claim := range claims {
-		if claim == nil {
-			continue
-		}
-		if err := s.completeImportDraftAttestation(claim); err != nil {
-			claims[index] = nil
-			scriptID := ""
-			if index < len(stored) && stored[index] != nil {
-				scriptID = stored[index].ID
-			}
-			slog.Warn("failed to finalize AsyncAPI import draft capability", "script_id", scriptID, "error", err)
-			continue
-		}
-		claims[index] = nil
-	}
-}
-
-func writeAsyncAPIBatchCommitResponse(w http.ResponseWriter, stored []*StoredScript) {
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"scripts": maskStoredScripts(stored),
-		"count":   len(stored),
-	})
 }

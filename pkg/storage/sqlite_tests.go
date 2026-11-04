@@ -50,50 +50,21 @@ func (s *SQLiteStore) CreateTestIfAbsent(test *TestRecord) (bool, error) {
 // the controller execution lease. A stale controller can neither insert a new
 // row nor turn an ID collision into an update of a successor-owned run.
 func (s *SQLiteStore) CreateTestIfAbsentIfLeaseHeld(test *TestRecord, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
 	if test == nil {
 		return false, fmt.Errorf("test is required")
 	}
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	created, err := s.createTestIfAbsentWithExecutor(tx, test)
-	if err != nil || !created {
-		return created, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		return s.createTestIfAbsentWithExecutor(tx, test)
+	})
 }
 
 func (s *SQLiteStore) CreateTestIfAbsentIfLeaseTermHeld(test *TestRecord, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
 	if test == nil {
 		return false, fmt.Errorf("test is required")
 	}
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	created, err := s.createTestIfAbsentWithExecutor(tx, test)
-	if err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return s.createTestIfAbsentWithExecutor(tx, test)
+	})
 }
 
 type testSaveExecutor interface {
@@ -567,33 +538,15 @@ func validateScenarioProjectPlacement(executor testSaveExecutor, scenarioID, pro
 // a process name), so a late callback cannot write after another epoch takes
 // over or after the same process reacquires leadership.
 func (s *SQLiteStore) SaveTestIfLeaseHeld(test *TestRecord, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
 	if test == nil {
 		return false, fmt.Errorf("test is required")
 	}
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil {
-		return false, err
-	}
-	if !held {
-		return false, nil
-	}
-	if err := s.saveTestWithExecutor(tx, test); err != nil {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		if err := s.saveTestWithExecutor(tx, test); err != nil {
+			return false, err
+		}
+		return true, nil
+	})
 }
 
 // SaveTestInitialProvenance writes only the immutable start-of-run evidence.
@@ -606,28 +559,9 @@ func (s *SQLiteStore) SaveTestInitialProvenance(id, projectID string, provenance
 // SaveTestInitialProvenanceIfLeaseHeld combines the targeted write and HA
 // execution-lease check in one transaction.
 func (s *SQLiteStore) SaveTestInitialProvenanceIfLeaseHeld(id, projectID string, provenance any, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	saved, err := saveTestInitialProvenanceWithExecutor(tx, id, projectID, provenance)
-	if err != nil || !saved {
-		return saved, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		return saveTestInitialProvenanceWithExecutor(tx, id, projectID, provenance)
+	})
 }
 
 func saveTestInitialProvenanceWithExecutor(executor testSaveExecutor, id, projectID string, provenance any) (bool, error) {
@@ -676,28 +610,9 @@ func (s *SQLiteStore) RepairTestRuntimeSnapshot(id, projectID, materializationKe
 // the execution-epoch fence. A standby or stale leader therefore cannot scrub a
 // replacement row or mutate the active leader's durable snapshot.
 func (s *SQLiteStore) RepairTestRuntimeSnapshotIfLeaseHeld(id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	repaired, err := repairTestRuntimeSnapshotWithExecutor(tx, id, projectID, materializationKey, startTime, groups, runtimeSettings)
-	if err != nil || !repaired {
-		return repaired, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		return repairTestRuntimeSnapshotWithExecutor(tx, id, projectID, materializationKey, startTime, groups, runtimeSettings)
+	})
 }
 
 func repairTestRuntimeSnapshotWithExecutor(executor testSaveExecutor, id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any) (bool, error) {
@@ -756,28 +671,9 @@ func (s *SQLiteStore) UpdateTestVUserScale(update TestVUserScaleUpdate) (bool, e
 // UpdateTestVUserScale. A controller that has lost the execution epoch can no
 // longer publish workload changes for a run it used to own.
 func (s *SQLiteStore) UpdateTestVUserScaleIfLeaseHeld(update TestVUserScaleUpdate, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	updated, err := updateTestVUserScaleWithExecutor(tx, update)
-	if err != nil || !updated {
-		return updated, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		return updateTestVUserScaleWithExecutor(tx, update)
+	})
 }
 
 func updateTestVUserScaleWithExecutor(executor testSaveExecutor, update TestVUserScaleUpdate) (bool, error) {
@@ -1445,28 +1341,15 @@ func (s *SQLiteStore) AdvanceTestExecutionGenerationIfLeaseTermHeld(id, leaseNam
 	if strings.TrimSpace(id) == "" || leaseName == "" || leaseOwnerID == "" || generation == 0 {
 		return false, errors.New("test id and a complete execution lease term are required")
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseTermHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID, generation)
-	if err != nil || !held {
-		return false, err
-	}
-	result, err := tx.Exec(`UPDATE tests SET execution_generation = ? WHERE id = ? AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING') AND COALESCE(execution_generation, 0) <= ?`,
-		int64(generation), id, int64(generation))
-	if err != nil {
-		return false, err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil || affected != 1 {
-		return false, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return s.withLeaseTermTx(leaseName, leaseOwnerID, generation, func(tx *storeTx) (bool, error) {
+		result, err := tx.Exec(`UPDATE tests SET execution_generation = ? WHERE id = ? AND status IN ('INITIALIZING', 'STARTING', 'RUNNING', 'PAUSED', 'STOPPING') AND COALESCE(execution_generation, 0) <= ?`,
+			int64(generation), id, int64(generation))
+		if err != nil {
+			return false, err
+		}
+		affected, err := result.RowsAffected()
+		return err == nil && affected == 1, err
+	})
 }
 
 func (s *SQLiteStore) updateTestContinuityCheckpointIfLeaseHeld(id string, expected *string, checkpoint, leaseName, leaseOwnerID string) (TestStatusTransitionResult, error) {
@@ -2003,14 +1886,18 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		if !record.ControllerReceivedAt.IsZero() {
 			controllerReceivedAt = record.ControllerReceivedAt
 		}
+		var llmJSON any
+		if trimmed := strings.TrimSpace(string(record.LLM)); trimmed != "" && trimmed != "null" {
+			llmJSON = trimmed
+		}
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			native_evidence_json, java_http_json, messaging_json, messaging_progress_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
+			native_evidence_json, llm_json, java_http_json, messaging_json, messaging_progress_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
 			dropped_results_available, dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -2025,6 +1912,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			record.P95Ms,
 			record.P99Ms,
 			nativeJSON,
+			llmJSON,
 			nullableJavaHTTPJSON(record.JavaHTTP),
 			nullableMessagingJSON(record.Messaging),
 			nullableMessagingProgressJSON(record.MessagingProgress),
@@ -2173,6 +2061,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		p95_ms,
 		p99_ms,
 		native_evidence_json,
+		llm_json,
 		java_http_json,
 		messaging_json,
 		messaging_progress_json,
@@ -2213,7 +2102,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 	history := make([]any, 0)
 	for rows.Next() {
 		var record IntervalSummaryRecord
-		var javaHTTPJSON, messagingJSON, messagingProgressJSON sql.NullString
+		var llmJSON, javaHTTPJSON, messagingJSON, messagingProgressJSON sql.NullString
 		var transactionsJSON sql.NullString
 		var byRegionJSON sql.NullString
 		var browserJSON sql.NullString
@@ -2248,6 +2137,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&record.P95Ms,
 			&record.P99Ms,
 			&nativeJSON,
+			&llmJSON,
 			&javaHTTPJSON,
 			&messagingJSON,
 			&messagingProgressJSON,
@@ -2276,6 +2166,9 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			if err := json.Unmarshal([]byte(nativeJSON.String), &record.NativeEvidence); err != nil {
 				return nil, err
 			}
+		}
+		if llmJSON.Valid && strings.TrimSpace(llmJSON.String) != "" && strings.TrimSpace(llmJSON.String) != "null" {
+			record.LLM = json.RawMessage(strings.TrimSpace(llmJSON.String))
 		}
 		record.JavaHTTP = protocol.ParseJavaHTTPActionsJSON(javaHTTPJSON.String)
 		record.Messaging = decodeMessagingHistoryJSON(messagingJSON.String)
@@ -2395,6 +2288,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		SampleAgeMs              float64   `json:"sample_age_ms,omitempty"`
 	}
 	type summaryEnvelope struct {
+		LLM                 json.RawMessage                       `json:"llm,omitempty"`
 		JavaHTTP            json.RawMessage                       `json:"java_http,omitempty"`
 		Messaging           json.RawMessage                       `json:"messaging,omitempty"`
 		MessagingProgress   json.RawMessage                       `json:"messaging_progress,omitempty"`
@@ -2427,7 +2321,12 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 	if err := json.Unmarshal(payload, &summary); err != nil {
 		return IntervalSummaryRecord{}, err
 	}
+	var llmRaw json.RawMessage
+	if trimmed := strings.TrimSpace(string(summary.LLM)); trimmed != "" && trimmed != "null" {
+		llmRaw = json.RawMessage(trimmed)
+	}
 	record := IntervalSummaryRecord{
+		LLM:                 llmRaw,
 		JavaHTTP:            protocol.ParseJavaHTTPActionsJSON(string(summary.JavaHTTP)),
 		Messaging:           decodeMessagingHistoryJSON(string(summary.Messaging)),
 		MessagingProgress:   decodeMessagingProgressHistoryJSON(string(summary.MessagingProgress)),

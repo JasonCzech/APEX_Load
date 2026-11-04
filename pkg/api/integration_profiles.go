@@ -260,6 +260,17 @@ func (s *Server) handleListInfrastructureMonitorPacks(w http.ResponseWriter, r *
 				Evidence:     []string{"pkg/api/runner.go", "docs/ROADMAP.md#protocol-telemetry-parity"},
 				SetupActions: []string{"Publish broker metrics with queue.* or broker.* prefixes for root-cause correlation."},
 			},
+			{
+				ID:           "gpu-inference",
+				Name:         "GPU Inference Serving",
+				Status:       "supported",
+				Source:       "curated Prometheus inference packs (vLLM, NIM, TGI, Triton/TRT-LLM, DCGM, OTel GenAI) and Azure Monitor",
+				ResourceType: "gpu_inference",
+				Signals:      []string{"KV-cache usage", "sequence preemptions", "scheduler waiting queue", "GPU compute utilization", "HBM memory bandwidth", "server prefill/decode latency"},
+				Profiles:     []MonitoringReadinessProfile{gpuInferenceMonitoringProfile()},
+				Evidence:     []string{"pkg/prometheus/packs.go", "/api/v1/monitoring/prometheus-packs", "/api/v1/tests/{id}/archive/llm-latency-decomposition"},
+				SetupActions: []string{"Select a curated inference Prometheus pack (vllm, nim, tgi, triton-trtllm, dcgm-basic, dcgm-profiling, otel-genai) when creating a Prometheus monitor source.", "For Azure OpenAI, configure an azure-monitor collector target with the CognitiveServices OpenAI metric template."},
+			},
 		},
 		Evidence: []string{"docs/COMPETITIVE_COMPARISON.md#k6", "docs/COMPETITIVE_COMPARISON.md#support-matrix"},
 	})

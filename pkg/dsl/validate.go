@@ -17,6 +17,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/internal/bodyencoding"
+	"github.com/jasonczech/apexload/pkg/internal/templatedjson"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
@@ -678,7 +679,14 @@ func ValidateWorkloadSettingsIssues(runLogic RunLogicConfig, pacing PacingConfig
 		if CanonicalPacingType(pacing.Type) != "tps" {
 			issues = append(issues, "open workloads require config.pacing.type to be tps")
 		}
-		if pacing.TPS <= 0 || math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) {
+		hasPositiveRateStage := false
+		for _, st := range pacing.RateStages {
+			if st.TargetTPS > 0 || (st.EndTPS != nil && *st.EndTPS > 0) {
+				hasPositiveRateStage = true
+				break
+			}
+		}
+		if (pacing.TPS <= 0 || math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0)) && !hasPositiveRateStage {
 			issues = append(issues, "open workloads require config.pacing.tps to be finite and greater than zero")
 		}
 	}
@@ -687,8 +695,8 @@ func ValidateWorkloadSettingsIssues(runLogic RunLogicConfig, pacing PacingConfig
 
 func validatePacingResourceIssues(pacing PacingConfig) []string {
 	var issues []string
-	if !isAllowedValue(CanonicalPacingType(pacing.Type), "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps") {
-		issues = append(issues, "config.pacing.type must be none, fixed_delay, random_delay, fixed_interval, random_interval, or tps")
+	if !isAllowedValue(CanonicalPacingType(pacing.Type), "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps", "quota") {
+		issues = append(issues, "config.pacing.type must be none, fixed_delay, random_delay, fixed_interval, random_interval, tps, or quota")
 	}
 	for _, field := range []struct {
 		name  string
@@ -716,13 +724,43 @@ func validatePacingResourceIssues(pacing PacingConfig) []string {
 	} else if math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) || pacing.TPS > MaxPacingTPS {
 		issues = append(issues, fmt.Sprintf("config.pacing.tps must be finite and must not exceed %d", MaxPacingTPS))
 	}
+	if proc := strings.ToLower(strings.TrimSpace(pacing.ArrivalProcess)); proc != "" {
+		if !isAllowedValue(proc, "uniform", "poisson", "gamma") {
+			issues = append(issues, "config.pacing.arrival_process must be uniform, poisson, or gamma")
+		}
+		if proc == "gamma" && (pacing.Burstiness <= 0 || math.IsNaN(pacing.Burstiness) || math.IsInf(pacing.Burstiness, 0) || pacing.Burstiness > 1000) {
+			issues = append(issues, "config.pacing.burstiness must be finite and between 0 (exclusive) and 1000 when arrival_process is gamma")
+		}
+	}
+	for i, st := range pacing.RateStages {
+		if st.DurationSeconds <= 0 || st.DurationSeconds > MaxConfiguredProtocolTimeoutMS/1000 {
+			issues = append(issues, fmt.Sprintf("config.pacing.rate_stages[%d].duration_seconds must be between 1 and %d", i, MaxConfiguredProtocolTimeoutMS/1000))
+		}
+		if st.TargetTPS < 0 || math.IsNaN(st.TargetTPS) || math.IsInf(st.TargetTPS, 0) || st.TargetTPS > MaxPacingTPS {
+			issues = append(issues, fmt.Sprintf("config.pacing.rate_stages[%d].target_tps must be finite and between 0 and %d", i, MaxPacingTPS))
+		}
+		if st.EndTPS != nil && (*st.EndTPS < 0 || math.IsNaN(*st.EndTPS) || math.IsInf(*st.EndTPS, 0) || *st.EndTPS > MaxPacingTPS) {
+			issues = append(issues, fmt.Sprintf("config.pacing.rate_stages[%d].end_tps must be finite and between 0 and %d", i, MaxPacingTPS))
+		}
+	}
+	if q := pacing.Quota; q != nil {
+		if q.TPM < 0 || q.RPM < 0 || q.DefaultTokens < 0 || q.EstimatedTokensPerRequest < 0 || q.BurstTokens < 0 {
+			issues = append(issues, "config.pacing.quota values must be non-negative")
+		}
+		if math.IsNaN(q.HeadroomRatio) || math.IsInf(q.HeadroomRatio, 0) || q.HeadroomRatio < 0 || q.HeadroomRatio > 1 {
+			issues = append(issues, "config.pacing.quota.headroom_ratio must be between 0 and 1")
+		}
+	}
 	return issues
 }
 
 func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []string {
 	var issues []string
-	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "recorded", "random_percentage", "gaussian", "normal", "uniform") {
-		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, recorded, random_percentage, gaussian, normal, or uniform", label))
+	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "recorded", "random_percentage", "gaussian", "normal", "uniform", "exponential") {
+		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, recorded, random_percentage, gaussian, normal, uniform, or exponential", label))
+	}
+	if think.Distribution != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Distribution)), "uniform", "exponential") {
+		issues = append(issues, fmt.Sprintf("%s.distribution must be uniform or exponential", label))
 	}
 	for _, field := range []struct {
 		name  string
@@ -765,8 +803,16 @@ func validateErrorHandlingResourceIssues(config ErrorHandlingConfig) []string {
 	if config.RetryDelayMs < 0 || config.RetryDelayMs > MaxConfiguredProtocolTimeoutMS {
 		issues = append(issues, fmt.Sprintf("config.error_handling.retry_delay_ms must be between 0 and %d", MaxConfiguredProtocolTimeoutMS))
 	}
-	if config.RetryBackoff != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(config.RetryBackoff)), "fixed", "exponential") {
-		issues = append(issues, "config.error_handling.retry_backoff must be fixed or exponential")
+	if config.RetryBackoff != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(config.RetryBackoff)), "fixed", "exponential", "retry_after") {
+		issues = append(issues, "config.error_handling.retry_backoff must be fixed, exponential, or retry_after")
+	}
+	if config.RetryAfterMaxMs < 0 || config.RetryAfterMaxMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("config.error_handling.retry_after_max_ms must be between 0 and %d", MaxConfiguredProtocolTimeoutMS))
+	}
+	for i, cond := range config.RetryOn {
+		if !isAllowedValue(strings.ToLower(strings.TrimSpace(cond)), "429", "5xx", "timeout", "network") {
+			issues = append(issues, fmt.Sprintf("config.error_handling.retry_on[%d] must be 429, 5xx, timeout, or network", i))
+		}
 	}
 	return issues
 }
@@ -934,6 +980,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	issues = append(issues, validateMultipartBodyIssues(protocol, path, action)...)
 	issues = append(issues, validateBase64BodyEncodingIssues(path, action)...)
 	issues = append(issues, validateCEscapedBodyEncodingIssues(path, action)...)
+	issues = append(issues, validateBodyTemplateEncodingIssues(path, action)...)
 	issues = append(issues, validateExtractorIssues(protocol, path, action)...)
 	if protocol == "http" || protocol == "soap" || protocol == "java_http" {
 		issues = append(issues, validateHTTPActionBoundsIssues(path, action)...)
@@ -977,6 +1024,12 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
+	}
+	if strings.EqualFold(strings.TrimSpace(action.Type), "llm_request") {
+		if protocol != "http" {
+			return append(issues, fmt.Sprintf("%s: llm_request is supported only by the http protocol", actionLabel(path, action)))
+		}
+		return append(issues, rebased(validateLLMRequestActionIssues(index, action))...)
 	}
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
 		return issues
@@ -1085,6 +1138,29 @@ func validateCEscapedBodyEncodingIssues(path string, action Action) []string {
 	return nil
 }
 
+func validateBodyTemplateEncodingIssues(path string, action Action) []string {
+	enc := strings.ToLower(strings.TrimSpace(action.BodyTemplateEncoding))
+	if enc == "" {
+		return nil
+	}
+	label := actionLabel(path, action)
+	if enc != "json" {
+		return []string{fmt.Sprintf("%s: unsupported body_template_encoding %q (supported: json)", label, action.BodyTemplateEncoding)}
+	}
+	if strings.TrimSpace(action.Body) == "" || strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") {
+		return nil
+	}
+	matches := runIdentityTemplatePattern.FindAllStringIndex(action.Body, -1)
+	if _, err := templatedjson.ClassifyOccurrences(action.Body, matches); err != nil {
+		return []string{fmt.Sprintf("%s: body_template_encoding json: %v", label, err)}
+	}
+	skeleton, ok := templatedjson.NullExpressions([]byte(action.Body), nil)
+	if !ok || !json.Valid(skeleton) {
+		return []string{fmt.Sprintf("%s: body_template_encoding json requires a valid JSON template skeleton", label)}
+	}
+	return nil
+}
+
 func validateBodyFileIssues(path string, action Action) []string {
 	if strings.TrimSpace(action.BodyFile) == "" {
 		return nil
@@ -1124,7 +1200,7 @@ func validateDataSourceIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("%s %q: staged_asset cannot be combined with inline_data, path, or storage_ref", label, name))
 			}
 		}
-		if !source.FirstRowHeader && len(source.Columns) > 0 && strings.TrimSpace(source.InlineData) != "" {
+		if sourceType != "jsonl" && !source.FirstRowHeader && len(source.Columns) > 0 && strings.TrimSpace(source.InlineData) != "" {
 			first := strings.SplitN(strings.ReplaceAll(source.InlineData, "\r\n", "\n"), "\n", 2)[0]
 			delimiter := ","
 			if source.Delimiter == "\t" || strings.EqualFold(source.Delimiter, "tab") {
@@ -1142,7 +1218,7 @@ func validateDataSourceIssues(script *Script) []string {
 			}
 		}
 		switch sourceType {
-		case "", "csv", "dat":
+		case "", "csv", "dat", "jsonl":
 			continue
 		case "file":
 			if !fileDataSourceHasContent(source) {

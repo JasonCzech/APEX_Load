@@ -205,6 +205,9 @@ func runTest() {
 			if len(result.JavaVMPlacements) > 0 {
 				out["java_vm"] = result.JavaVMPlacements
 			}
+			if result.FinalSnapshot.LLM != nil && result.FinalSnapshot.LLM.Requests > 0 {
+				out["llm"] = result.FinalSnapshot.LLM.NumbersOnly()
+			}
 		} else if apiResult != nil {
 			if apiResult.TestID != "" {
 				out["test_id"] = apiResult.TestID
@@ -218,6 +221,9 @@ func runTest() {
 			out["tps"] = apiResult.FinalSnapshot.TPS
 			if versions := httpVersionSummaryJSON(apiResult.FinalSnapshot.HTTPVersions); versions != nil {
 				out["http_versions"] = versions
+			}
+			if apiResult.FinalSnapshot.LLM != nil && apiResult.FinalSnapshot.LLM.Requests > 0 {
+				out["llm"] = apiResult.FinalSnapshot.LLM.NumbersOnly()
 			}
 		}
 
@@ -258,6 +264,17 @@ func runTest() {
 		}
 		for _, line := range javaVMSummaryLines(result.JavaVMPlacements) {
 			fmt.Println(line)
+		}
+		if snap.LLM != nil && snap.LLM.Requests > 0 {
+			fmt.Printf("  LLM Requests: %d (completed=%d, failed=%d, throttled_429=%d, truncated=%d, refused=%d)\n",
+				snap.LLM.Requests, snap.LLM.SuccessfulRequests, snap.LLM.FailedRequests,
+				snap.LLM.ThrottledRequests, snap.LLM.TruncatedRequests, snap.LLM.ContentFilterRequests)
+			fmt.Printf("  LLM TTFT ms:  p50=%.1f p95=%.1f p99=%.1f\n",
+				snap.LLM.P50TTFTMs, snap.LLM.P95TTFTMs, snap.LLM.P99TTFTMs)
+			fmt.Printf("  LLM TPOT ms:  p50=%.1f p95=%.1f p99=%.1f\n",
+				snap.LLM.P50TPOTMs, snap.LLM.P95TPOTMs, snap.LLM.P99TPOTMs)
+			fmt.Printf("  LLM Tokens:   prompt=%d completion=%d total=%d\n",
+				snap.LLM.PromptTokens, snap.LLM.CompletionTokens, snap.LLM.TotalTokens)
 		}
 	} else if apiResult != nil {
 		fmt.Printf("  Duration:     %s\n", apiResult.Duration.Round(time.Millisecond))

@@ -199,3 +199,19 @@ func sectionsMention(sections []scriptImportReviewSection, needle string) bool {
 	}
 	return false
 }
+
+func TestHandleImportSampleHonorsLLMTransformQueryParam(t *testing.T) {
+	srv := NewServer(ServerConfig{})
+	body := `{"name":"LLM Sample","format":"curl","content":"curl -X POST https://api.openai.com/v1/chat/completions -H 'Content-Type: application/json' -d '{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}'"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample?llm_transform=true", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	srv.handleImportSample(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"type":"llm_request"`) {
+		t.Fatalf("expected llm_request action after ?llm_transform=true, got: %s", rec.Body.String())
+	}
+}

@@ -84,13 +84,15 @@ func seriesNodes(s Series) []string {
 }
 
 // symptomKind is the symptom an anomaly on a transaction or action series
-// is: rising latency or errors, or falling throughput; "" otherwise.
+// is: rising latency, TTFT, TPOT or errors, or falling throughput; "" otherwise.
 func symptomKind(a Anomaly, s Series) string {
 	if !strings.HasPrefix(s.ID, NodeTransaction+"/") && !strings.HasPrefix(s.ID, NodeAction+"/") {
 		return ""
 	}
 	switch kind := measures(s); {
 	case kind == signatures.KindLatency && a.Direction == DirectionIncrease,
+		kind == signatures.KindTTFT && a.Direction == DirectionIncrease,
+		kind == signatures.KindTPOT && a.Direction == DirectionIncrease,
 		kind == signatures.KindErrors && a.Direction == DirectionIncrease,
 		kind == signatures.KindThroughput && a.Direction == DirectionDecrease:
 		return kind
@@ -228,7 +230,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 		}
 		for _, s := range series {
 			evidence := measures(s)
-			if evidence == "" || !s.External() && !strings.HasPrefix(s.ID, NodeDependency+"/") || !judged.Judged(symptom.Scope, s.ID) {
+			if evidence == "" || (!s.External() && !strings.HasPrefix(s.ID, NodeDependency+"/") && evidence != signatures.KindRateLimit) || !judged.Judged(symptom.Scope, s.ID) {
 				continue
 			}
 			available := ctx.Available[evidence]
@@ -243,7 +245,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 			s := byID[a.Series]
 			evidence := measures(s)
 			if a.ID == symptom.ID || a.Scope != symptom.Scope || evidence == "" || symptomKind(a, s) != "" ||
-				evidence == signatures.KindLatency || evidence == signatures.KindErrors || evidence == signatures.KindThroughput {
+				evidence == signatures.KindLatency || evidence == signatures.KindTTFT || evidence == signatures.KindTPOT || evidence == signatures.KindErrors || evidence == signatures.KindThroughput {
 				continue
 			}
 			if a.Onset.Before(windowStart) || a.Onset.After(symptom.End) {

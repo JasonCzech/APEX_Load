@@ -83,16 +83,18 @@ func TestStoppingRunCountsTheWindowInTransitAndTheFinalDrain(t *testing.T) {
 	started := time.Now()
 	run := &ManagedTest{
 		ID: testID, Name: testID, Status: "RUNNING", StartedAt: &started, Duration: time.Minute,
-		Groups:                       []TestGroup{{Name: "buyers", VUsers: 1}},
-		executionGeneration:          generation,
-		executionCtx:                 runCtx,
-		cancel:                       cancel,
-		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream},
-		remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{},
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
-		remoteLifecycleCtx:           runCtx,
-		remoteActivated:              true,
-		executionBackend:             backend,
+		Groups:              []TestGroup{{Name: "buyers", VUsers: 1}},
+		executionGeneration: generation,
+		executionCtx:        runCtx,
+		cancel:              cancel,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream},
+			remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{},
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+			remoteLifecycleCtx:           runCtx,
+			remoteActivated:              true,
+		},
+		executionBackend: backend,
 	}
 	runner.mu.Lock()
 	runner.tests[run.ID] = run
@@ -167,7 +169,7 @@ func TestStoppingRunCountsTheWindowInTransitAndTheFinalDrain(t *testing.T) {
 func TestDistributedMetricsWindowOwnership(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	stream := &generatorrpc.MetricsStream{}
-	run := &ManagedTest{ID: "window-ownership", Status: "RUNNING", remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream}}
+	run := &ManagedTest{ID: "window-ownership", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream}}}
 	runner.tests[run.ID] = run
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

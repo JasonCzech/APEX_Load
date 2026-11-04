@@ -29,6 +29,11 @@ const goalNumericFields = [
   'max_partition_skew_pct',
   'max_redelivery_rate_pct',
   'max_dead_letter_rate_pct',
+  'max_llm_p95_ttft_ms',
+  'max_llm_p95_tpot_ms',
+  'min_llm_output_tokens_per_sec',
+  'min_llm_goodput_pct',
+  'max_llm_throttle_rate_pct',
 ] as const satisfies ReadonlyArray<keyof GoalConfig>
 
 const slaThresholdFields = [
@@ -44,6 +49,11 @@ const slaThresholdFields = [
   'max_partition_skew_pct',
   'max_redelivery_rate_pct',
   'max_dead_letter_rate_pct',
+  'max_llm_p95_ttft_ms',
+  'max_llm_p95_tpot_ms',
+  'min_llm_output_tokens_per_sec',
+  'min_llm_goodput_pct',
+  'max_llm_throttle_rate_pct',
 ] as const satisfies ReadonlyArray<keyof GoalConfig>
 
 export function hasGoalModeConfiguration(goalConfig: GoalConfig): boolean {
@@ -147,6 +157,21 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
   }
   if (isInvalidNumber(goalConfig.max_dead_letter_rate_pct, value => value < 0 || value > 100)) {
     return 'Goal-oriented scenarios require max dead-letter rate % to be between 0 and 100'
+  }
+  if (isInvalidNumber(goalConfig.max_llm_p95_ttft_ms, value => value <= 0)) {
+    return 'Goal-oriented scenarios require max LLM P95 TTFT to be greater than 0 ms'
+  }
+  if (isInvalidNumber(goalConfig.max_llm_p95_tpot_ms, value => value <= 0)) {
+    return 'Goal-oriented scenarios require max LLM P95 TPOT to be greater than 0 ms'
+  }
+  if (isInvalidNumber(goalConfig.min_llm_output_tokens_per_sec, value => value <= 0)) {
+    return 'Goal-oriented scenarios require min LLM output tokens/s to be greater than 0'
+  }
+  if (isInvalidNumber(goalConfig.min_llm_goodput_pct, value => value < 0 || value > 100)) {
+    return 'Goal-oriented scenarios require min LLM goodput % to be between 0 and 100'
+  }
+  if (isInvalidNumber(goalConfig.max_llm_throttle_rate_pct, value => value < 0 || value > 100)) {
+    return 'Goal-oriented scenarios require max LLM throttle rate % to be between 0 and 100'
   }
   if (goalConfig.sla_breach_window && parseDurationToSeconds(goalConfig.sla_breach_window) <= 0) {
     return 'Goal-oriented scenarios require a valid SLA breach window duration'

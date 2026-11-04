@@ -2816,6 +2816,56 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: determined from the request"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/llm/capacity-plan",
+      "operationId": "handleEvaluateLLMCapacityPlan",
+      "summary": "Evaluate LLM Capacity Plan",
+      "category": "Llm",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/llm/compare",
+      "operationId": "handleCompareLLMRuns",
+      "summary": "Compare LLM Runs",
+      "category": "Llm",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/llm/prompt-datasets/calibrate",
+      "operationId": "handleCalibrateLLMPromptDataset",
+      "summary": "Calibrate LLM Prompt Dataset",
+      "category": "Llm",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/llm/prompt-datasets/import",
+      "operationId": "handleImportLLMPromptDataset",
+      "summary": "Import LLM Prompt Dataset",
+      "category": "Llm",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/llm/prompt-datasets/synthesize",
+      "operationId": "handleSynthesizeLLMPromptDataset",
+      "summary": "Synthesize LLM Prompt Dataset",
+      "category": "Llm",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/monitoring/collectors",
       "operationId": "handleListMonitoringCollectors",
@@ -3194,6 +3244,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/prometheus-packs",
+      "operationId": "handleGetPrometheusMetricPacks",
+      "summary": "Get Prometheus Metric Packs",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
       "method": "GET",
@@ -6967,6 +7027,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/capacity-sweep",
+      "operationId": "handleGetRunArchiveCapacitySweep",
+      "summary": "Get Run Archive Capacity Sweep",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive/comparison",
       "operationId": "handleGetRunArchiveComparison",
       "summary": "Get Run Archive Comparison",
@@ -6996,10 +7066,40 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/archive/genai-spans/lookup",
+      "operationId": "handleGenAISpanLookup",
+      "summary": "Gen AI Span Lookup",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/tests/{id}/archive/journeys",
       "operationId": "handleGetRunArchiveJourneys",
       "summary": "Get Run Archive Journeys",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/llm-latency-decomposition",
+      "operationId": "handleGetRunArchiveLLMLatencyDecomposition",
+      "summary": "Get Run Archive LLM Latency Decomposition",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/llm-samples",
+      "operationId": "handleExportRunArchiveLLMSamples",
+      "summary": "Export Run Archive LLM Samples",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,

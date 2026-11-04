@@ -119,6 +119,14 @@ const mib = (value) => value * 1024 * 1024
 // the JS per-asset ceiling to 865 KiB raw / 236 KiB gzip and aggregate CSS
 // inventory to 1065 KiB raw / 194 KiB gzip (~1.5-2.5% headroom); all route
 // and startup guards remain unchanged.
+//
+// 2026-11-04 LLM performance testing. PR #322's live LLM tab, signals card,
+// goal flags and metric mappers took the Test execution route from 424.39 KiB
+// to 426.34 KiB gzip. The regression was fixed rather than budgeted: the
+// signals card and the graph wall's LLM tiles load only for a run that sends
+// LLM requests, and the run monitor sources editor loads the Prometheus
+// source fields only for a prometheus-query source (route 420.44 KiB).
+// Every limit stays as it was.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',

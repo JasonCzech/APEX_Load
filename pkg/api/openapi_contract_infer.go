@@ -241,6 +241,12 @@ var openAPICrossPackageDirectories = map[string]string{
 	"sample":          "convert/sample",
 	"storage":         "storage",
 	"elastic":         "elastic",
+	"compare":         "llmperf/compare",
+	"dataset":         "llmperf/dataset",
+	"econ":            "llmperf/econ",
+	"plan":            "llmperf/plan",
+	"synth":           "llmperf/synth",
+	"rca":             "rca",
 }
 
 func addOpenAPICrossPackageTypeDefinitions(apiDir string, typeDefinitions map[string]ast.Expr) error {

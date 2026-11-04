@@ -174,6 +174,11 @@ describe('CreateTestGoalSettings', () => {
       ['Max Partition Skew %', '10', 'max_partition_skew_pct', 10],
       ['Max Redelivery Rate %', '1.5', 'max_redelivery_rate_pct', 1.5],
       ['Max Dead-Letter Rate %', '0.5', 'max_dead_letter_rate_pct', 0.5],
+      ['Max LLM P95 TTFT (ms)', '400', 'max_llm_p95_ttft_ms', 400],
+      ['Max LLM P95 TPOT (ms)', '25', 'max_llm_p95_tpot_ms', 25],
+      ['Min LLM Output (tok/s)', '120', 'min_llm_output_tokens_per_sec', 120],
+      ['Min LLM Goodput (%)', '95', 'min_llm_goodput_pct', 95],
+      ['Max LLM 429 Throttle Rate (%)', '5', 'max_llm_throttle_rate_pct', 5],
     ] as const
 
     await act(async () => {
@@ -209,17 +214,21 @@ describe('CreateTestGoalSettings', () => {
     await render(['kafka'])
     expect(labels()).toContain('Max Dead-Letter Rate %')
     expect(labels()).not.toContain('Max CLS')
+    await render(['http', 'llm'])
+    expect(labels()).toContain('Max LLM P95 TTFT (ms)')
+    expect(labels()).toContain('Min LLM Goodput (%)')
     // A ceiling saved earlier stays, so it can be seen and cleared.
     await render(['http'], { max_cls: 0.2 })
     expect(labels()).toContain('Max CLS')
     // Protocols not known yet: every ceiling is offered.
     await render(undefined)
-    expect(labels()).toHaveLength(12)
+    expect(labels()).toHaveLength(17)
   })
 
   it('treats protocol names without regard to case or space', () => {
     expect(goalCeilingApplies('browser', [' Browser '])).toBe(true)
     expect(goalCeilingApplies('messaging', ['JMS'])).toBe(true)
+    expect(goalCeilingApplies('llm', [' LLM '])).toBe(true)
     expect(goalCeilingApplies('messaging', ['http'])).toBe(false)
     expect(goalCeilingApplies('any', [])).toBe(true)
   })

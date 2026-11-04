@@ -351,6 +351,10 @@ const CurrentRequestCountsVersion = 1
 // attributes transactions to groups only when every batch does.
 const CurrentGroupTransactionsVersion = 1
 
+// CurrentLLMSummaryVersion marks batches whose action metrics carry
+// mergeable LLMSummary sketches (MetricsBatch.LlmSummaryVersion).
+const CurrentLLMSummaryVersion = 1
+
 // requestCounts are attempted requests, failed ones included, and the
 // failed ones.
 type requestCounts struct {
@@ -1843,7 +1847,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, FeaturePreparationReadinessV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	features := []string{dsl.FeatureParallelLoopControlV1, dsl.FeatureOpenArrivalV2, dsl.FeatureDataJSONLV1, dsl.FeatureLLMInferenceV1, dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, FeaturePreparationReadinessV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	if http3ExecutionError() == nil {
 		// Only a generator whose operator enabled HTTP/3 and whose build
 		// carries the transport may receive exact-3 work.
@@ -2795,6 +2799,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		ActionMetricsVersion:          aggregates.NativeVersion,
 		RequestCountsVersion:          CurrentRequestCountsVersion,
 		GroupTransactionsVersion:      CurrentGroupTransactionsVersion,
+		LlmSummaryVersion:             CurrentLLMSummaryVersion,
 		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:                 metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
@@ -3649,6 +3654,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 		out = append(out, MetricAggregate{
 			DurationDigest:   engine.CloneTDigestSnapshot(metrics.DurationDigest),
 			DurationSketch:   engine.CloneDurationSketchSnapshot(metrics.DurationSketch),
+			LLM:              metrics.LLM.Clone(),
 			JavaHTTP:         javaHTTPSummaryForCount(engineJavaHTTPSummary(metrics.ServerTelemetry), metrics.Count),
 			Messaging:        engineMessagingSummary(metrics.ServerTelemetry),
 			MessagingVersion: messagingSummaryVersion(metrics.ServerTelemetry),
@@ -3952,11 +3958,13 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		}
 	}
 	javaUncounted := false
+	llmUncounted := false
 	for _, value := range values {
 		if value.Count == 0 {
 			continue
 		}
 		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
+		llmUncounted = llmUncounted || LLMPeerUncounted(value.LLM)
 		if out.Name == "" {
 			out.Name = value.Name
 		}
@@ -3965,6 +3973,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		count := float64(value.Count)
 		out.Count += value.Count
 		out.Errors += value.Errors
+		engine.MergeLLMSummary(&out.LLM, value.LLM)
 		protocol.MergeJavaHTTPSummary(&out.JavaHTTP, javaHTTPSummaryForCount(value.JavaHTTP, value.Count))
 		protocol.MergeMessagingSummary(&out.Messaging, value.Messaging)
 		weightedAvgMs += value.AvgMs * count
@@ -3989,6 +3998,9 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	}
 	if javaUncounted {
 		out.JavaHTTP.ForgetPopulation()
+	}
+	if llmUncounted && out.LLM != nil {
+		out.LLM.Incomplete = true
 	}
 	out.JavaHTTP = javaHTTPSummaryForCount(out.JavaHTTP, out.Count)
 	out.MessagingVersion = 1

@@ -80,7 +80,7 @@ export interface HarCorrelationStudioProps {
   script: ScriptDefinition
   stats?: Partial<HARImportStats> & Record<string, unknown>
   /** The conversion's warnings, which name the recording profile's drops. */
-  warnings?: readonly string[]
+  warnings?: readonly string[] | null
   harDiff?: HARDiffReport
   salesforceReview?: SalesforceReview | null
   duplicateFileWarning?: string
@@ -104,9 +104,10 @@ export interface HarCorrelationStudioProps {
   mulesoftReview?: MulesoftReview | null
   agentforceReview?: AgentforceReview | null
   agentforceTransformChanges?: readonly AgentforceTransformChange[]
-  diagnostics?: ReadonlyArray<{ code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }>
-  unsupportedElements?: readonly string[]
-  reviewSections?: readonly ImportReviewSection[]
+  // The import API serializes an empty list as null.
+  diagnostics?: ReadonlyArray<{ code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string }> | null
+  unsupportedElements?: readonly string[] | null
+  reviewSections?: readonly ImportReviewSection[] | null
   onViewSource?: (mapping: SourceReviewMapping, title?: string, description?: string) => void
 }
 
@@ -680,16 +681,16 @@ export default function HarCorrelationStudio({
         byKey.set(key, { key, severity, category, detail: normalizedDetail, count: 1 })
       }
     }
-    for (const diag of diagnostics) {
+    for (const diag of diagnostics ?? []) {
       add(diag.severity || 'info', diag.code || diag.element || 'converter', `${diag.detail}${diag.location ? ` (${diag.location})` : ''}`)
     }
     for (const warning of warnings || []) {
       add('warning', 'har_warning', warning)
     }
-    for (const unsupported of unsupportedElements) {
+    for (const unsupported of unsupportedElements ?? []) {
       add('warning', 'unsupported_element', unsupported)
     }
-    for (const section of reviewSections) {
+    for (const section of reviewSections ?? []) {
       const sev: 'blocker' | 'warning' | 'info' = section.severity === 'blocker' ? 'blocker' : section.severity === 'warning' ? 'warning' : 'info'
       for (const item of section.items || []) {
         add(sev, section.title || section.key, item)

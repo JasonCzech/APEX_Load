@@ -297,6 +297,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.ErrorMessage = "http action is required"
 		return result, nil
 	}
+	// The closure reads action when it runs, so it sees the prepared
+	// llm_request below; every later return reaches it.
+	defer func() { stampLLMFailureDiagnostics(action, h.resolveURL, result) }()
+	if strings.EqualFold(strings.TrimSpace(action.Type), "llm_request") {
+		prepared, err := prepareLLMRequestAction(action, h.resolveURL(action.Target))
+		if err != nil {
+			result.StatusCode = http.StatusBadRequest
+			result.ErrorMessage = err.Error()
+			result.Duration = time.Since(result.StartTime)
+			result.ProtocolEvidence = buildHTTPProtocolEvidence(action, result)
+			return result, nil
+		}
+		action = prepared
+	}
 	if err := validateHTTPActionBounds(action); err != nil {
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
@@ -502,6 +516,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	for _, header := range effectiveHeaders {
 		addRequestHeader(req, header.Name, header.Value)
 	}
+	if strings.EqualFold(strings.TrimSpace(action.Type), "llm_request") && strings.TrimSpace(req.Header.Get("Content-Type")) == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if contentEncoding != "" && len(wireBody) > 0 {
 		// The header names the compression replay applied, whatever the step
 		// authored.
@@ -695,8 +712,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	}
 	if action.TimeoutMs > 0 {
 		client.Timeout = time.Duration(action.TimeoutMs) * time.Millisecond
-	} else if sseRequestedByParams(action.Params) {
-		streamTimeout, err := protocol.BoundedMilliseconds(action.Params["stream_timeout_ms"], defaultSSEStreamTimeout, MaxConfiguredTimeout)
+	} else if sseRequestedByParams(action.Params) || isLLMAction(action) {
+		defaultStreamTimeout := defaultSSEStreamTimeout
+		if isLLMAction(action) {
+			defaultStreamTimeout = defaultLLMStreamTimeout
+		}
+		streamTimeout, err := protocol.BoundedMilliseconds(action.Params["stream_timeout_ms"], defaultStreamTimeout, MaxConfiguredTimeout)
 		if err != nil {
 			result.ErrorMessage = fmt.Sprintf("stream_timeout_ms %v", err)
 			return result, nil
@@ -884,15 +905,26 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	captureLease := processHTTPResponseCaptureBudget.lease()
 	defer captureLease.release()
 
+	result.RetryAfter = parseRetryAfterHeader(resp.Header, time.Now())
 	bodyReadStart := time.Now()
 	var (
 		n             int64
 		bodyReadErr   error
 		sseFirstEvent time.Duration
 		sseEventCount int
+		sseResult     sseReadResult
+		llmObs        *llmStreamObserver
 	)
+	defer func() {
+		if llmObs != nil {
+			llmObs.close()
+		}
+	}()
 	maxBody := httpMaxBodyBytes(action.Params)
-	isEventStream := shouldReadSSE(resp.Header.Get("Content-Type"), action.Params)
+	respContentType := resp.Header.Get("Content-Type")
+	llmActive := isLLMAction(action)
+	isNDJSON := shouldReadNDJSON(respContentType, action.Params)
+	isEventStream := shouldReadSSE(respContentType, action.Params) || isNDJSON
 	decoderLimit := maxBody
 	if isEventStream && sseMaxBodyBytes(action.Params) < decoderLimit {
 		decoderLimit = sseMaxBodyBytes(action.Params)
@@ -904,8 +936,23 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	decoder, decodeErr := contentdecode.NewReader(ctx, resp.Body, encodings, contentdecode.DefaultLimits(decoderLimit))
 	if decodeErr != nil {
 		bodyReadErr = decodeErr
+	} else if isEventStream && llmActive && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var err error
+		sseResult, llmObs, err = readLLMStreamResponse(ctx, decoder, respContentType, action.Params, targetURL, result.StartTime, captureLease)
+		_, writeErr := (&responseCaptureWriter{buffer: buf, lease: captureLease}).Write(sseResult.Body)
+		sseFirstEvent = sseResult.FirstEvent
+		sseEventCount = sseResult.EventCount
+		bodyReadErr = err
+		if bodyReadErr == nil {
+			bodyReadErr = writeErr
+		}
 	} else if isEventStream {
-		sseResult, err := readSSEResponse(ctx, decoder, action.Params, result.StartTime, captureLease)
+		var err error
+		if isNDJSON {
+			sseResult, err = readNDJSONResponse(ctx, decoder, action.Params, result.StartTime, captureLease)
+		} else {
+			sseResult, err = readSSEResponse(ctx, decoder, action.Params, result.StartTime, captureLease)
+		}
 		_, writeErr := (&responseCaptureWriter{buffer: buf, lease: captureLease}).Write(sseResult.Body)
 		sseFirstEvent = sseResult.FirstEvent
 		sseEventCount = sseResult.EventCount
@@ -974,6 +1021,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.BytesReceived = receivedOnWire()
 		reused, rCount, rDur := applyTraceTelemetry()
 		result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
+		if llmObs != nil {
+			if result.ServerTelemetry == nil {
+				result.ServerTelemetry = &protocol.ServerTelemetry{}
+			}
+			result.ServerTelemetry.LLM = finalizeStreamLLMDiagnostics(llmObs, sseResult, bodyReadErr, requestBody, resp.Header, resp.StatusCode, result.Duration, action.Params, result)
+		}
 		result.Success = false
 		result.ErrorMessage = fixedResponseReadError(bodyReadErr)
 		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
@@ -1023,6 +1076,23 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	if bodyReadErr != nil {
 		result.Success = false
 		result.ErrorMessage = bodyReadErr.Error()
+	}
+	if llmObs != nil {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.LLM = finalizeStreamLLMDiagnostics(llmObs, sseResult, nil, requestBody, resp.Header, resp.StatusCode, result.Duration, action.Params, result)
+	} else if llmActive {
+		if result.ServerTelemetry == nil {
+			result.ServerTelemetry = &protocol.ServerTelemetry{}
+		}
+		result.ServerTelemetry.LLM = analyzeNonStreamingLLMResponse(resolveActionLLMDialect(action.Params, targetURL), requestBody, buf.Bytes(), resp.Header, resp.StatusCode, result.Duration, action.Params, result)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			result.ServerTelemetry.ThrottledRequests++
+		}
+	}
+	if llmObs != nil && resp.StatusCode == http.StatusTooManyRequests && result.ServerTelemetry != nil {
+		result.ServerTelemetry.ThrottledRequests++
 	}
 	result.CorrelationID = explicitCorrelationID
 	if result.CorrelationID == "" {
@@ -1699,7 +1769,7 @@ func correlationIDFromHeaders(headers map[string]string) string {
 }
 
 func correlationIDFromHTTPHeader(headers http.Header) string {
-	for _, key := range []string{"X-Correlation-Id", "X-Request-Id", "Traceparent", "X-Amzn-Trace-Id", "Correlation-Id", "Request-Id"} {
+	for _, key := range []string{"X-Correlation-Id", "X-Request-Id", "Apim-Request-Id", "X-Ms-Client-Request-Id", "Traceparent", "X-Amzn-Trace-Id", "Correlation-Id", "Request-Id"} {
 		if value := strings.TrimSpace(headers.Get(key)); value != "" {
 			return value
 		}

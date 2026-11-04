@@ -34,9 +34,16 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 		schedule.UpdatedAt = time.Now()
 	}
 	schedule.ProjectID = normalizeProjectID(schedule.ProjectID)
+	originalRevision := schedule.Revision
 	if schedule.Revision < 1 {
 		schedule.Revision = 1
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			schedule.Revision = originalRevision
+		}
+	}()
 	governanceJSON, err := json.Marshal(schedule.Governance)
 	if err != nil {
 		return fmt.Errorf("marshal scenario schedule governance: %w", err)
@@ -89,13 +96,35 @@ func (s *SQLiteStore) SaveScenarioSchedule(schedule *ScenarioSchedule) error {
 	if affected != 1 {
 		return fmt.Errorf("scenario schedule %q belongs to another scenario or project", schedule.ID)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 // SaveScenarioScheduleWithApproval commits the schedule revision and its
 // pending approval as one durable unit. This prevents a crash or partial write
 // from leaving pending_approval_id dangling.
 func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedule, approval *ScenarioScheduleApproval, expectedRevision int) (bool, error) {
+	var originalScheduleRev, originalApprovalRev int
+	if schedule != nil {
+		originalScheduleRev = schedule.Revision
+	}
+	if approval != nil {
+		originalApprovalRev = approval.ScheduleRevision
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if schedule != nil {
+				schedule.Revision = originalScheduleRev
+			}
+			if approval != nil {
+				approval.ScheduleRevision = originalApprovalRev
+			}
+		}
+	}()
 	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
 		return false, err
@@ -171,12 +200,17 @@ func (s *SQLiteStore) SaveScenarioScheduleWithApproval(schedule *ScenarioSchedul
 	if err := tx.Commit(); err != nil {
 		return false, err
 	}
+	committed = true
 	return true, nil
 }
 
 // CreateScenarioScheduleIfAbsent creates a schedule without replacing an
 // existing row. This is the create half of the schedule CAS contract.
 func (s *SQLiteStore) CreateScenarioScheduleIfAbsent(schedule *ScenarioSchedule) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -184,20 +218,34 @@ func (s *SQLiteStore) CreateScenarioScheduleIfAbsent(schedule *ScenarioSchedule)
 	defer tx.Rollback()
 	created, err := createScenarioScheduleIfAbsentWithExecutor(tx, schedule)
 	if err != nil || !created {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return created, err
 	}
 	if err := tx.Commit(); err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return false, err
 	}
 	return true, nil
 }
 
 func createScenarioScheduleIfAbsentWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
 	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return false, err
 	}
 	if err := bindScenarioScheduleParent(executor, schedule); err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	result, err := executor.Exec(`INSERT INTO scenario_schedules (id, scenario_id, project_id, revision, name, cron_expr, timezone, release_id, timeslot_id, run_name_template, enabled, approval_policy, missed_run_policy, conflict_summary, next_required_action, pending_approval_id, owner_subject, owner_display_name, governance_json, blackout_windows_json, maintenance_windows_json, availability_windows_json, analysis_policy_selections_json, last_run_test_id, last_run_at, next_run_at, disabled_from, disabled_until, last_error, created_at, updated_at)
@@ -206,13 +254,15 @@ func createScenarioScheduleIfAbsentWithExecutor(executor testSaveExecutor, sched
 		schedule.ID, schedule.ScenarioID, schedule.ProjectID, schedule.Revision, schedule.Name, schedule.CronExpr, schedule.Timezone, nullableString(schedule.ReleaseID), schedule.TimeslotID, schedule.RunNameTemplate, schedule.Enabled, schedule.ApprovalPolicy, schedule.MissedRunPolicy, schedule.ConflictSummary, schedule.NextRequiredAction, schedule.PendingApprovalID, schedule.OwnerSubject, schedule.OwnerDisplayName, governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON,
 		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.CreatedAt, schedule.UpdatedAt)
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	if err != nil {
+	if err != nil || affected != 1 {
+		schedule.Revision = originalRevision
 		return false, err
 	}
-	return affected == 1, nil
+	return true, nil
 }
 
 // UpdateScenarioScheduleIfRevision updates only an existing row whose revision
@@ -229,6 +279,9 @@ func (s *SQLiteStore) UpdateScenarioScheduleIfRevision(schedule *ScenarioSchedul
 	defer tx.Rollback()
 	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
 	if err != nil || !updated {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return updated, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -241,14 +294,23 @@ func (s *SQLiteStore) UpdateScenarioScheduleIfRevision(schedule *ScenarioSchedul
 }
 
 func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, schedule *ScenarioSchedule, expectedRevision int) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
 	governanceJSON, blackoutJSON, maintenanceJSON, availabilityJSON, analysisPolicySelectionsJSON, err := prepareScenarioSchedule(schedule)
 	if err != nil {
+		if schedule != nil {
+			schedule.Revision = originalRevision
+		}
 		return false, err
 	}
 	if expectedRevision < 1 {
+		schedule.Revision = originalRevision
 		return false, errors.New("expected scenario schedule revision must be positive")
 	}
 	if err := bindScenarioScheduleParent(executor, schedule); err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	nextRevision := expectedRevision + 1
@@ -257,13 +319,16 @@ func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, sch
 		nullableString(schedule.LastRunTestID), schedule.LastRunAt, schedule.NextRunAt, schedule.DisabledFrom, schedule.DisabledUntil, schedule.LastError, schedule.UpdatedAt,
 		schedule.ID, schedule.ScenarioID, schedule.ProjectID, expectedRevision)
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		schedule.Revision = originalRevision
 		return false, err
 	}
 	if affected != 1 {
+		schedule.Revision = originalRevision
 		return false, nil
 	}
 	schedule.Revision = nextRevision
@@ -276,80 +341,59 @@ func updateScenarioScheduleIfRevisionWithExecutor(executor testSaveExecutor, sch
 // leadership while blocked in storage therefore cannot create or advance
 // schedule state after a successor takes over.
 func (s *SQLiteStore) CreateScenarioScheduleIfAbsentAndLeaseHeld(schedule *ScenarioSchedule, leaseName, leaseOwnerID string) (bool, error) {
-	return s.mutateScenarioScheduleIfLeaseHeld(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
+	changed, err := s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
 		return createScenarioScheduleIfAbsentWithExecutor(tx, schedule)
 	})
+	if (err != nil || !changed) && schedule != nil {
+		schedule.Revision = originalRevision
+	}
+	return changed, err
 }
 
 func (s *SQLiteStore) UpdateScenarioScheduleIfRevisionAndLeaseHeld(schedule *ScenarioSchedule, expectedRevision int, leaseName, leaseOwnerID string) (bool, error) {
-	originalRevision := schedule.Revision
-	changed, err := s.mutateScenarioScheduleIfLeaseHeld(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
+	}
+	changed, err := s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
 		return updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
 	})
-	if err != nil || !changed {
+	if (err != nil || !changed) && schedule != nil {
 		schedule.Revision = originalRevision
 	}
 	return changed, err
 }
 
 func (s *SQLiteStore) CreateScenarioScheduleIfAbsentAndLeaseTermHeld(schedule *ScenarioSchedule, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	created, err := createScenarioScheduleIfAbsentWithExecutor(tx, schedule)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createScenarioScheduleIfAbsentWithExecutor(tx, schedule)
+	})
+	if (err != nil || !changed) && schedule != nil {
+		schedule.Revision = originalRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) UpdateScenarioScheduleIfRevisionAndLeaseTermHeld(schedule *ScenarioSchedule, expectedRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	originalRevision := schedule.Revision
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int
+	if schedule != nil {
+		originalRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
-	if err != nil || !updated {
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedRevision)
+	})
+	if (err != nil || !changed) && schedule != nil {
 		schedule.Revision = originalRevision
-		return updated, err
 	}
-	if err := tx.Commit(); err != nil {
-		schedule.Revision = originalRevision
-		return false, err
-	}
-	return true, nil
-}
-
-func (s *SQLiteStore) mutateScenarioScheduleIfLeaseHeld(leaseName, leaseOwnerID string, mutate func(*storeTx) (bool, error)) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
-	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	changed, err := mutate(tx)
-	if err != nil || !changed {
-		return changed, err
-	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func prepareScenarioSchedule(schedule *ScenarioSchedule) (string, string, string, string, string, error) {
@@ -628,22 +672,19 @@ func (s *SQLiteStore) DeleteScenarioScheduleGuardedIfLeaseTermHeld(id, leaseName
 	if id == "" {
 		return "", errors.New("scenario schedule id is required")
 	}
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return "", err
-	}
-	defer tx.Rollback()
-	result, err := deleteScenarioScheduleGuardedWithExecutor(tx, id)
+	var out ScheduleDeleteResult
+	_, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		result, err := deleteScenarioScheduleGuardedWithExecutor(tx, id)
+		if err != nil {
+			return false, err
+		}
+		out = result
+		return result == ScheduleDeleteDeleted, nil
+	})
 	if err != nil {
 		return "", err
 	}
-	if result != ScheduleDeleteDeleted {
-		return result, nil
-	}
-	if err := tx.Commit(); err != nil {
-		return "", err
-	}
-	return result, nil
+	return out, nil
 }
 
 const scenarioScheduleOccurrenceColumns = `id, schedule_id, scenario_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1),
@@ -652,20 +693,36 @@ const scenarioScheduleOccurrenceColumns = `id, schedule_id, scenario_id, COALESC
 	FROM scenario_schedule_occurrences`
 
 func (s *SQLiteStore) SaveScenarioScheduleOccurrence(occurrence *ScenarioScheduleOccurrence) error {
+	var originalRevision int64
+	var originalScheduleRevision int
 	expectedRevision := int64(1)
-	if occurrence != nil && occurrence.Revision > 0 {
-		expectedRevision = occurrence.Revision
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+		if occurrence.Revision > 0 {
+			expectedRevision = occurrence.Revision
+		}
 	}
 	created, err := s.CreateScenarioScheduleOccurrenceIfAbsent(occurrence)
 	if err != nil || created {
 		return err
 	}
-	occurrence.Revision = expectedRevision
+	if occurrence != nil {
+		occurrence.Revision = expectedRevision
+	}
 	updated, err := s.CompareAndSwapScenarioScheduleOccurrence(occurrence, expectedRevision)
 	if err != nil {
+		if occurrence != nil {
+			occurrence.Revision = originalRevision
+			occurrence.ScheduleRevision = originalScheduleRevision
+		}
 		return err
 	}
 	if !updated {
+		if occurrence != nil {
+			occurrence.Revision = originalRevision
+			occurrence.ScheduleRevision = originalScheduleRevision
+		}
 		return errors.New("scenario schedule occurrence changed or was deleted concurrently")
 	}
 	return nil
@@ -708,24 +765,39 @@ func (s *SQLiteStore) CreateScenarioScheduleOccurrenceIfAbsent(occurrence *Scena
 }
 
 func createScenarioScheduleOccurrenceIfAbsentWithExecutor(executor testSaveExecutor, occurrence *ScenarioScheduleOccurrence) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if err := bindScenarioScheduleOccurrenceParent(executor, occurrence); err != nil {
 		return false, err
 	}
 	if err := prepareScenarioScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	occurrence.Revision = 1
 	result, err := executor.Exec(`INSERT INTO scenario_schedule_occurrences (id, schedule_id, scenario_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, test_id, approval_id, conflict_summary, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
 		occurrence.ID, occurrence.ScheduleID, occurrence.ScenarioID, occurrence.ProjectID, occurrence.ScheduleRevision,
-		occurrence.Revision, occurrence.TransitionToken, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status,
+		1, occurrence.TransitionToken, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status,
 		occurrence.ReasonCode, nullableString(occurrence.TestID), occurrence.ApprovalID, occurrence.ConflictSummary, occurrence.CreatedAt, occurrence.UpdatedAt)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected > 0, err
+	if err != nil || affected <= 0 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
+		return false, err
+	}
+	occurrence.Revision = 1
+	return true, nil
 }
 
 // ClaimScenarioScheduleOccurrenceIfCurrent is the scheduler-only create path.
@@ -737,13 +809,20 @@ func (s *SQLiteStore) ClaimScenarioScheduleOccurrenceIfCurrent(occurrence *Scena
 }
 
 func claimScenarioScheduleOccurrenceIfCurrentWithExecutor(executor testSaveExecutor, occurrence *ScenarioScheduleOccurrence) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if err := bindScenarioScheduleOccurrenceParent(executor, occurrence); err != nil {
 		return false, err
 	}
 	if err := prepareScenarioScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
-	occurrence.Revision = 1
 	result, err := executor.Exec(`INSERT INTO scenario_schedule_occurrences (id, schedule_id, scenario_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, test_id, approval_id, conflict_summary, created_at, updated_at)
 		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		FROM scenario_schedules
@@ -753,46 +832,56 @@ func claimScenarioScheduleOccurrenceIfCurrentWithExecutor(executor testSaveExecu
 			AND next_run_at = ?
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
 		occurrence.ID, occurrence.ScheduleID, occurrence.ScenarioID, occurrence.ProjectID, occurrence.ScheduleRevision,
-		occurrence.Revision, occurrence.TransitionToken, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status,
+		1, occurrence.TransitionToken, occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status,
 		occurrence.ReasonCode, nullableString(occurrence.TestID), occurrence.ApprovalID, occurrence.ConflictSummary, occurrence.CreatedAt, occurrence.UpdatedAt,
 		occurrence.ScheduleID, occurrence.ScheduleRevision, true, occurrence.PlannedAt)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
-	return affected > 0, err
+	if err != nil || affected <= 0 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
+		return false, err
+	}
+	occurrence.Revision = 1
+	return true, nil
 }
 
 func (s *SQLiteStore) CreateScenarioScheduleOccurrenceIfAbsentAndLeaseTermHeld(occurrence *ScenarioScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	created, err := createScenarioScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return createScenarioScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) ClaimScenarioScheduleOccurrenceIfCurrentAndLeaseTermHeld(occurrence *ScenarioScheduleOccurrence, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	created, err := claimScenarioScheduleOccurrenceIfCurrentWithExecutor(tx, occurrence)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return claimScenarioScheduleOccurrenceIfCurrentWithExecutor(tx, occurrence)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return created, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) CompareAndSwapScenarioScheduleOccurrence(occurrence *ScenarioScheduleOccurrence, expectedRevision int64) (bool, error) {
@@ -800,6 +889,12 @@ func (s *SQLiteStore) CompareAndSwapScenarioScheduleOccurrence(occurrence *Scena
 }
 
 func compareAndSwapScenarioScheduleOccurrenceWithExecutor(executor testSaveExecutor, occurrence *ScenarioScheduleOccurrence, expectedRevision int64) (bool, error) {
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
+	}
 	if expectedRevision < 1 {
 		return false, errors.New("scenario schedule occurrence expected revision must be positive")
 	}
@@ -807,6 +902,8 @@ func compareAndSwapScenarioScheduleOccurrenceWithExecutor(executor testSaveExecu
 		return false, err
 	}
 	if err := prepareScenarioScheduleOccurrence(occurrence); err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	result, err := executor.Exec(`UPDATE scenario_schedule_occurrences SET
@@ -815,10 +912,14 @@ func compareAndSwapScenarioScheduleOccurrenceWithExecutor(executor testSaveExecu
 		occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, nullableString(occurrence.TestID), occurrence.ApprovalID,
 		occurrence.ConflictSummary, occurrence.TransitionToken, occurrence.UpdatedAt, occurrence.ID, occurrence.ScheduleID, occurrence.PlannedAt, expectedRevision)
 	if err != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil || affected != 1 {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 		return false, err
 	}
 	occurrence.Revision = expectedRevision + 1
@@ -826,19 +927,20 @@ func compareAndSwapScenarioScheduleOccurrenceWithExecutor(executor testSaveExecu
 }
 
 func (s *SQLiteStore) CompareAndSwapScenarioScheduleOccurrenceIfLeaseTermHeld(occurrence *ScenarioScheduleOccurrence, expectedRevision int64, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	defer tx.Rollback()
-	updated, err := compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
-	if err != nil {
-		return false, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		return compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return updated, nil
+	return changed, err
 }
 
 // ResolveScenarioScheduleOccurrenceIfLeaseTermHeld atomically changes an
@@ -846,35 +948,46 @@ func (s *SQLiteStore) CompareAndSwapScenarioScheduleOccurrenceIfLeaseTermHeld(oc
 // in the execution-lease transaction closes the crash window where a resolved
 // occurrence could be left unreachable behind a future next_run_at.
 func (s *SQLiteStore) ResolveScenarioScheduleOccurrenceIfLeaseTermHeld(occurrence *ScenarioScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ScenarioSchedule, expectedScheduleRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
-	originalScheduleRevision := schedule.Revision
-	originalOccurrenceRevision := occurrence.Revision
-	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
-	if err != nil || tx == nil {
-		return false, err
+	var originalScheduleRevision int
+	if schedule != nil {
+		originalScheduleRevision = schedule.Revision
 	}
-	defer tx.Rollback()
-	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
-	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		return updated, err
+	var originalOccurrenceRevision int64
+	var originalOccurrenceScheduleRevision int
+	if occurrence != nil {
+		originalOccurrenceRevision = occurrence.Revision
+		originalOccurrenceScheduleRevision = occurrence.ScheduleRevision
 	}
-	updated, err = compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
-	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
-		return updated, err
+	changed, err := s.withLeaseTermTx(leaseName, leaseOwnerID, leaseGeneration, func(tx *storeTx) (bool, error) {
+		updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+		if err != nil || !updated {
+			return updated, err
+		}
+		return compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	})
+	if err != nil || !changed {
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 	}
-	if err := tx.Commit(); err != nil {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) ResolveScenarioScheduleOccurrence(occurrence *ScenarioScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ScenarioSchedule, expectedScheduleRevision int) (bool, error) {
-	originalScheduleRevision := schedule.Revision
-	originalOccurrenceRevision := occurrence.Revision
+	var originalScheduleRevision int
+	if schedule != nil {
+		originalScheduleRevision = schedule.Revision
+	}
+	var originalOccurrenceRevision int64
+	var originalOccurrenceScheduleRevision int
+	if occurrence != nil {
+		originalOccurrenceRevision = occurrence.Revision
+		originalOccurrenceScheduleRevision = occurrence.ScheduleRevision
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -885,52 +998,57 @@ func (s *SQLiteStore) ResolveScenarioScheduleOccurrence(occurrence *ScenarioSche
 		updated, err = compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
 	}
 	if err != nil || !updated {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 		return updated, err
 	}
 	if err := tx.Commit(); err != nil {
-		schedule.Revision = originalScheduleRevision
-		occurrence.Revision = originalOccurrenceRevision
+		if schedule != nil {
+			schedule.Revision = originalScheduleRevision
+		}
+		if occurrence != nil {
+			occurrence.Revision = originalOccurrenceRevision
+			occurrence.ScheduleRevision = originalOccurrenceScheduleRevision
+		}
 		return false, err
 	}
 	return true, nil
 }
 
 func (s *SQLiteStore) SaveScenarioScheduleOccurrenceIfLeaseHeld(occurrence *ScenarioScheduleOccurrence, leaseName, leaseOwnerID string) (bool, error) {
-	leaseName = strings.TrimSpace(leaseName)
-	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
-	if leaseName == "" || leaseOwnerID == "" {
-		return false, errors.New("lease name and owner token are required")
+	var originalRevision int64
+	var originalScheduleRevision int
+	if occurrence != nil {
+		originalRevision = occurrence.Revision
+		originalScheduleRevision = occurrence.ScheduleRevision
 	}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return false, err
-	}
-	defer tx.Rollback()
-	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
-	if err != nil || !held {
-		return false, err
-	}
-	expectedRevision := occurrence.Revision
-	if expectedRevision < 1 {
-		expectedRevision = 1
-	}
-	created, err := createScenarioScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
-	if err != nil {
-		return false, err
-	}
-	if !created {
-		occurrence.Revision = expectedRevision
-		updated, updateErr := compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
-		if updateErr != nil || !updated {
-			return false, updateErr
+	changed, err := s.withLeaseOwnerTx(leaseName, leaseOwnerID, func(tx *storeTx) (bool, error) {
+		expectedRevision := int64(1)
+		if occurrence != nil && occurrence.Revision > 0 {
+			expectedRevision = occurrence.Revision
 		}
+		created, err := createScenarioScheduleOccurrenceIfAbsentWithExecutor(tx, occurrence)
+		if err != nil {
+			return false, err
+		}
+		if !created {
+			if occurrence != nil {
+				occurrence.Revision = expectedRevision
+			}
+			return compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedRevision)
+		}
+		return true, nil
+	})
+	if (err != nil || !changed) && occurrence != nil {
+		occurrence.Revision = originalRevision
+		occurrence.ScheduleRevision = originalScheduleRevision
 	}
-	if err := tx.Commit(); err != nil {
-		return false, err
-	}
-	return true, nil
+	return changed, err
 }
 
 func (s *SQLiteStore) GetScenarioScheduleOccurrence(id string) (*ScenarioScheduleOccurrence, error) {
@@ -1149,10 +1267,15 @@ func (s *SQLiteStore) DeleteScenarioScheduleOccurrenceGuarded(id string) (Schedu
 }
 
 func (s *SQLiteStore) SaveScenarioScheduleApproval(approval *ScenarioScheduleApproval) error {
+	var originalScheduleRevision int
+	if approval != nil {
+		originalScheduleRevision = approval.ScheduleRevision
+	}
 	if err := bindScenarioScheduleApprovalParent(s.db, approval); err != nil {
 		return err
 	}
 	if err := prepareScenarioScheduleApproval(approval); err != nil {
+		approval.ScheduleRevision = originalScheduleRevision
 		return err
 	}
 	result, err := s.db.Exec(`INSERT INTO scenario_schedule_approvals (id, schedule_id, scenario_id, project_id, schedule_revision, policy, status, requested_by, requested_at, resolved_by, resolved_at, decision_reason, required_role, created_at, updated_at)
@@ -1166,13 +1289,16 @@ func (s *SQLiteStore) SaveScenarioScheduleApproval(approval *ScenarioScheduleApp
 			AND scenario_schedule_approvals.project_id=excluded.project_id`,
 		approval.ID, approval.ScheduleID, approval.ScenarioID, approval.ProjectID, approval.ScheduleRevision, approval.Policy, approval.Status, approval.RequestedBy, approval.RequestedAt, approval.ResolvedBy, approval.ResolvedAt, approval.DecisionReason, approval.RequiredRole, approval.CreatedAt, approval.UpdatedAt)
 	if err != nil {
+		approval.ScheduleRevision = originalScheduleRevision
 		return err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
+		approval.ScheduleRevision = originalScheduleRevision
 		return err
 	}
 	if affected != 1 {
+		approval.ScheduleRevision = originalScheduleRevision
 		return errors.New("schedule approval belongs to another schedule")
 	}
 	return nil

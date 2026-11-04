@@ -233,3 +233,120 @@ func (r *timeoutAfterPayloadReadCloser) Read(p []byte) (int, error) {
 func (r *timeoutAfterPayloadReadCloser) Close() error {
 	return nil
 }
+
+func TestReadSSEResponseStripsAtMostOneLeadingSpace(t *testing.T) {
+	payload := "data:  two leading and one trailing \n\n"
+	res := readSSEFromString(t, payload, nil)
+	events := parseSSEEvents(res.Body)
+	if len(events) != 1 {
+		t.Fatalf("events = %d, want 1", len(events))
+	}
+	want := " two leading and one trailing "
+	if events[0].Data != want {
+		t.Fatalf("event.Data = %q, want %q", events[0].Data, want)
+	}
+}
+
+func TestReadSSEResponseStopOnDataAndRequireStopEvent(t *testing.T) {
+	payload := "data: {\"token\":\"a\"}\n\ndata: [DONE]\n\ndata: {\"token\":\"ignored\"}\n\n"
+	res := readSSEFromString(t, payload, map[string]any{
+		"stop_on_data":       "[DONE]",
+		"require_stop_event": true,
+	})
+	if res.EventCount != 2 || res.EndReason != EndReasonStopOnData || !res.StoppedCleanly {
+		t.Fatalf("unexpected SSE stop result: %+v", res)
+	}
+
+	// Truncated stream without [DONE] must fail when require_stop_event is true.
+	truncBody := io.NopCloser(strings.NewReader("data: {\"token\":\"a\"}\n\n"))
+	truncRes, err := readSSEResponse(context.Background(), truncBody, map[string]any{
+		"stop_on_data":       "[DONE]",
+		"require_stop_event": true,
+	}, time.Now())
+	if err == nil {
+		t.Fatalf("expected truncated SSE stream to fail when require_stop_event=true, got %+v", truncRes)
+	}
+
+	// Stream timeout after events must also fail when require_stop_event is true.
+	reader, writer := io.Pipe()
+	defer writer.Close()
+	go func() {
+		_, _ = writer.Write([]byte("data: {\"token\":\"a\"}\n\n"))
+		time.Sleep(150 * time.Millisecond)
+		_ = writer.Close()
+	}()
+	_, err = readSSEResponse(context.Background(), reader, map[string]any{
+		"stop_on_data":       "[DONE]",
+		"require_stop_event": true,
+		"stream_timeout_ms":  20,
+	}, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("expected stream timeout with require_stop_event=true to fail, got %v", err)
+	}
+}
+
+func TestReadNDJSONResponse(t *testing.T) {
+	payload := "{\"token\":\"hello \",\"done\":false}\n{\"token\":\"world\",\"done\":true}\n"
+	var seen int
+	res, err := readNDJSONResponseWithOptions(context.Background(), io.NopCloser(strings.NewReader(payload)), sseReadOptions{
+		RequireStopEvent: true,
+		Timeout:          time.Second,
+		OnEvent: func(ev sseEvent, _ time.Time) (bool, error) {
+			seen++
+			return strings.Contains(ev.Data, `"done":true`), nil
+		},
+	}, time.Now())
+	if err != nil {
+		t.Fatalf("readNDJSONResponseWithOptions: %v", err)
+	}
+	if res.EventCount != 2 || seen != 2 || !res.StoppedCleanly {
+		t.Fatalf("unexpected NDJSON result: %+v (seen=%d)", res, seen)
+	}
+}
+
+func FuzzSSEParseRoundTrip(f *testing.F) {
+	f.Add("event: token\ndata:  hello world \n\n")
+	f.Add("data: line1\ndata: line2\nid: 42\n\n")
+	f.Fuzz(func(t *testing.T, input string) {
+		if len(input) > 4096 {
+			return
+		}
+		events := parseSSEEvents([]byte(input))
+		var buf bytes.Buffer
+		for _, ev := range events {
+			if strings.ContainsAny(ev.Event, "\r\n") || strings.ContainsAny(ev.ID, "\r\n") || strings.Contains(ev.Data, "\r") {
+				return
+			}
+			if ev.Data == "" {
+				return
+			}
+			writeSSEEvent(&buf, ev)
+		}
+		roundTripped := parseSSEEvents(buf.Bytes())
+		if len(roundTripped) != len(events) {
+			t.Fatalf("round-trip count = %d, want %d", len(roundTripped), len(events))
+		}
+		for i := range events {
+			if roundTripped[i] != events[i] {
+				t.Fatalf("event[%d] = %#v, want %#v", i, roundTripped[i], events[i])
+			}
+		}
+	})
+}
+
+func BenchmarkSSEWriteAndSize(b *testing.B) {
+	ev := sseEvent{
+		Event: "message",
+		ID:    "1",
+		Data:  "{\"id\":\"chatcmpl-1\",\"choices\":[{\"delta\":{\"content\":\" token\"}}]}",
+	}
+	var out bytes.Buffer
+	out.Grow(256)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		out.Reset()
+		_ = sseEncodedEventSize(ev)
+		writeSSEEvent(&out, ev)
+	}
+}

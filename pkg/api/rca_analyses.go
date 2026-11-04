@@ -982,6 +982,9 @@ func (s *Server) handleCancelRCAAnalysis(w http.ResponseWriter, r *http.Request)
 // rcaJobRunner returns the shared leased-job runner for root-cause analyses,
 // or nil when the store keeps no analyses.
 func (s *Server) rcaJobRunner() *leasedJobRunner[storage.RCAAnalysis] {
+	if s == nil {
+		return nil
+	}
 	store, ok := s.store.(storage.RCAStore)
 	if !ok {
 		return nil
@@ -1018,13 +1021,24 @@ func (s *Server) wakeRCAWorker() {
 // startRCAAnalysisWorker runs queued analyses on the execution leader, at
 // most two at a time.
 func (s *Server) startRCAAnalysisWorker() {
+	if s == nil || s.rcaCancel != nil {
+		return
+	}
 	jobs := s.rcaJobRunner()
 	if jobs == nil || s.runner == nil {
 		return
 	}
 	jobCancel := jobs.start(s)
+	if jobCancel == nil {
+		return
+	}
 	admissionCancel := s.startRCAAutoAdmissionWorker()
-	s.rcaCancel = func() { admissionCancel(); jobCancel() }
+	s.rcaCancel = func() {
+		if admissionCancel != nil {
+			admissionCancel()
+		}
+		jobCancel()
+	}
 }
 
 // runNextRCAAnalysis claims the next queued analysis and runs it. claimed is

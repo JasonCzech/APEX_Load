@@ -1,6 +1,6 @@
 # Protocol Support
 
-Current support boundaries and evidence for web/API, browser and mobile, messaging, Java Vuser, and SAP GUI execution.
+Current support boundaries and evidence for web/API, LLM inference (`llm_request` — see [LLM_PERFORMANCE_TESTING.md](LLM_PERFORMANCE_TESTING.md)), browser and mobile, messaging, Java Vuser, and SAP GUI execution.
 
 
 ## Web/API Execution Support Matrix

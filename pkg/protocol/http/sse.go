@@ -30,6 +30,22 @@ const (
 	hardSSEMaxBodyBytes    int64 = 8 << 20 // 8 MiB
 )
 
+// StreamEndReason classifies why an SSE or NDJSON stream reader stopped.
+type StreamEndReason string
+
+const (
+	EndReasonEOF             StreamEndReason = "eof"
+	EndReasonStopOnEvent     StreamEndReason = "stop_on_event"
+	EndReasonStopOnData      StreamEndReason = "stop_on_data"
+	EndReasonMaxEvents       StreamEndReason = "max_events"
+	EndReasonCallbackStop    StreamEndReason = "callback_stop"
+	EndReasonTimeout         StreamEndReason = "timeout"
+	EndReasonContextCanceled StreamEndReason = "context_canceled"
+	EndReasonError           StreamEndReason = "error"
+)
+
+var errStreamStopRequested = errors.New("stream stop requested by observer")
+
 type sseEvent struct {
 	Event string
 	Data  string
@@ -37,15 +53,60 @@ type sseEvent struct {
 }
 
 type sseReadResult struct {
-	Body       []byte
-	BytesRead  int64
-	FirstEvent time.Duration
-	EventCount int
+	Body           []byte
+	BytesRead      int64
+	FirstEvent     time.Duration
+	EventCount     int
+	EndReason      StreamEndReason
+	StoppedCleanly bool
+}
+
+type sseReadOptions struct {
+	MaxEvents        int
+	StopOnEvent      string
+	StopOnData       string
+	RequireStopEvent bool
+	MaxBodyBytes     int64
+	MaxRetainedBytes int64 // if > 0, caps retained Body bytes (sliding tail) while allowing BytesRead up to MaxBodyBytes
+	Timeout          time.Duration
+	OnEvent          func(event sseEvent, now time.Time) (stop bool, err error)
+}
+
+func resolveSSEReadOptions(params map[string]any, defaultTimeout time.Duration) (sseReadOptions, error) {
+	if defaultTimeout <= 0 {
+		defaultTimeout = defaultSSEStreamTimeout
+	}
+	timeout, timeoutErr := protocol.BoundedMilliseconds(params["stream_timeout_ms"], defaultTimeout, MaxConfiguredTimeout)
+	if timeoutErr != nil {
+		return sseReadOptions{}, fmt.Errorf("stream_timeout_ms %w", timeoutErr)
+	}
+	return sseReadOptions{
+		MaxEvents:        sseParamInt(params, "max_events", 0),
+		StopOnEvent:      strings.TrimSpace(sseParamString(params, "stop_on_event")),
+		StopOnData:       strings.TrimSpace(sseParamString(params, "stop_on_data")),
+		RequireStopEvent: sseParamBool(params, "require_stop_event", false),
+		MaxBodyBytes:     sseMaxBodyBytes(params),
+		Timeout:          timeout,
+	}, nil
 }
 
 func shouldReadSSE(contentType string, params map[string]any) bool {
 	if isSSEContentType(contentType) {
 		return true
+	}
+	if params == nil {
+		return false
+	}
+	if mode, ok := params["stream_mode"].(string); ok {
+		switch strings.ToLower(strings.TrimSpace(mode)) {
+		case "none", "false", "0", "no":
+			return false
+		case "sse", "event_stream", "text/event-stream":
+			if b, hasStream := params["stream"].(bool); hasStream && !b {
+				return false
+			}
+			return true
+		}
 	}
 	value, ok := params["stream"]
 	if !ok {
@@ -70,7 +131,7 @@ func sseRequestedByParams(params map[string]any) bool {
 	if _, present := params["stream_timeout_ms"]; present {
 		return true
 	}
-	return shouldReadSSE("", params)
+	return shouldReadSSE("", params) || shouldReadNDJSON("", params)
 }
 
 func isSSEContentType(value string) bool {
@@ -81,14 +142,29 @@ func isSSEContentType(value string) bool {
 	return strings.EqualFold(mediaType, "text/event-stream")
 }
 
-func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]any, start time.Time, leases ...*responseCaptureLease) (sseReadResult, error) {
-	maxEvents := sseParamInt(params, "max_events", 0)
-	stopOnEvent := strings.TrimSpace(sseParamString(params, "stop_on_event"))
-	maxBodyBytes := sseMaxBodyBytes(params)
-	timeout, timeoutErr := protocol.BoundedMilliseconds(params["stream_timeout_ms"], defaultSSEStreamTimeout, MaxConfiguredTimeout)
-	if timeoutErr != nil {
-		return sseReadResult{}, fmt.Errorf("stream_timeout_ms %w", timeoutErr)
+// trimSSEFieldValue strips at most one leading U+0020 SPACE after the colon,
+// per the WHATWG Server-Sent Events specification.
+func trimSSEFieldValue(raw string) string {
+	if len(raw) > 0 && raw[0] == ' ' {
+		return raw[1:]
 	}
+	return raw
+}
+
+func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]any, start time.Time, leases ...*responseCaptureLease) (sseReadResult, error) {
+	opts, err := resolveSSEReadOptions(params, defaultSSEStreamTimeout)
+	if err != nil {
+		return sseReadResult{EndReason: EndReasonError}, err
+	}
+	return readSSEResponseWithOptions(ctx, body, opts, start, leases...)
+}
+
+func readSSEResponseWithOptions(ctx context.Context, body io.ReadCloser, opts sseReadOptions, start time.Time, leases ...*responseCaptureLease) (sseReadResult, error) {
+	maxBodyBytes := opts.MaxBodyBytes
+	if maxBodyBytes <= 0 || maxBodyBytes > hardSSEMaxBodyBytes {
+		maxBodyBytes = defaultSSEMaxBodyBytes
+	}
+	timeout := opts.Timeout
 
 	var timedOut atomic.Bool
 	done := make(chan struct{})
@@ -129,40 +205,102 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 	var out bytes.Buffer
 	var result sseReadResult
 	var current sseEvent
-	var dataLines []string
+	dataLines := make([]string, 0, 4)
 	var dispatchErr error
 	observe := protocol.StreamChunkObserver(ctx)
+
+	appendRetainedEvent := func(ev sseEvent, encodedSize int64) bool {
+		if opts.MaxRetainedBytes > 0 {
+			// Sliding tail retention for bounded raw tail (e.g. 64 KiB in LLM mode).
+			if encodedSize > opts.MaxRetainedBytes {
+				out.Reset()
+				var tmp bytes.Buffer
+				writeSSEEvent(&tmp, ev)
+				b := tmp.Bytes()
+				out.Write(b[int64(len(b))-opts.MaxRetainedBytes:])
+				return true
+			}
+			if int64(out.Len())+encodedSize > opts.MaxRetainedBytes {
+				keep := int(opts.MaxRetainedBytes - encodedSize)
+				existing := out.Bytes()
+				if keep <= 0 {
+					out.Reset()
+				} else if keep < len(existing) {
+					shifted := append([]byte(nil), existing[len(existing)-keep:]...)
+					out.Reset()
+					out.Write(shifted)
+				}
+			}
+			writeSSEEvent(&out, ev)
+			return true
+		}
+		if encodedSize > maxBodyBytes-int64(out.Len()) {
+			dispatchErr = fmt.Errorf("SSE retained event body exceeds %d byte limit", maxBodyBytes)
+			return false
+		}
+		if !captureLease.reserve(encodedSize) {
+			dispatchErr = captureLease.exhaustedError()
+			return false
+		}
+		writeSSEEvent(&out, ev)
+		return true
+	}
+
 	dispatch := func() bool {
 		if current.Event == "" && current.ID == "" && len(dataLines) == 0 {
 			return false
 		}
-		current.Data = strings.Join(dataLines, "\n")
+		if len(dataLines) == 1 {
+			current.Data = dataLines[0]
+		} else if len(dataLines) > 1 {
+			current.Data = strings.Join(dataLines, "\n")
+		}
 		encodedSize := sseEncodedEventSize(current)
-		if encodedSize > maxBodyBytes-int64(out.Len()) {
-			dispatchErr = fmt.Errorf("SSE retained event body exceeds %d byte limit", maxBodyBytes)
+		if !appendRetainedEvent(current, encodedSize) {
+			result.EndReason = EndReasonError
 			return true
 		}
-		if !captureLease.reserve(encodedSize) {
-			dispatchErr = captureLease.exhaustedError()
-			return true
-		}
-		writeSSEEvent(&out, current)
 		if observe != nil {
 			observe(current.Data)
 		}
+		now := time.Now()
 		result.EventCount++
 		if result.FirstEvent == 0 {
-			result.FirstEvent = time.Since(start)
+			result.FirstEvent = now.Sub(start)
 		}
 		stop := false
-		if maxEvents > 0 && result.EventCount >= maxEvents {
-			stop = true
+		if opts.OnEvent != nil {
+			cbStop, cbErr := opts.OnEvent(current, now)
+			if cbErr != nil {
+				dispatchErr = cbErr
+				result.EndReason = EndReasonError
+				current = sseEvent{}
+				dataLines = dataLines[:0]
+				return true
+			}
+			if cbStop {
+				stop = true
+				result.EndReason = EndReasonCallbackStop
+				result.StoppedCleanly = true
+			}
 		}
-		if stopOnEvent != "" && current.Event == stopOnEvent {
+		if !stop && opts.StopOnData != "" && (current.Data == opts.StopOnData || strings.TrimSpace(current.Data) == opts.StopOnData) {
 			stop = true
+			result.EndReason = EndReasonStopOnData
+			result.StoppedCleanly = true
+		}
+		if !stop && opts.StopOnEvent != "" && current.Event == opts.StopOnEvent {
+			stop = true
+			result.EndReason = EndReasonStopOnEvent
+			result.StoppedCleanly = true
+		}
+		if !stop && opts.MaxEvents > 0 && result.EventCount >= opts.MaxEvents {
+			stop = true
+			result.EndReason = EndReasonMaxEvents
+			result.StoppedCleanly = !opts.RequireStopEvent
 		}
 		current = sseEvent{}
-		dataLines = nil
+		dataLines = dataLines[:0]
 		return stop
 	}
 
@@ -172,6 +310,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			result.BytesRead += int64(len(line))
 			if result.BytesRead > maxBodyBytes {
 				result.Body = out.Bytes()
+				result.EndReason = EndReasonError
 				return result, fmt.Errorf("SSE response exceeds %d byte limit", maxBodyBytes)
 			}
 			line = strings.TrimRight(line, "\r\n")
@@ -182,6 +321,9 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 					if dispatchErr != nil {
 						return result, dispatchErr
 					}
+					if opts.RequireStopEvent && !result.StoppedCleanly {
+						return result, fmt.Errorf("SSE stream stopped at %s before required stop event", result.EndReason)
+					}
 					return result, nil
 				}
 			case strings.HasPrefix(line, ":"):
@@ -189,7 +331,7 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			case strings.HasPrefix(line, "event:"):
 				current.Event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 			case strings.HasPrefix(line, "data:"):
-				dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+				dataLines = append(dataLines, trimSSEFieldValue(strings.TrimPrefix(line, "data:")))
 			case strings.HasPrefix(line, "id:"):
 				current.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
 			}
@@ -202,10 +344,22 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 			if dispatchErr != nil {
 				return result, dispatchErr
 			}
+			if result.StoppedCleanly {
+				return result, nil
+			}
 			switch {
 			case errors.Is(err, io.EOF):
+				result.EndReason = EndReasonEOF
+				if opts.RequireStopEvent {
+					return result, fmt.Errorf("SSE stream ended before required stop event")
+				}
+				result.StoppedCleanly = true
 				return result, nil
 			case timedOut.Load():
+				result.EndReason = EndReasonTimeout
+				if opts.RequireStopEvent {
+					return result, fmt.Errorf("SSE stream timed out after %s before required stop event", timeout)
+				}
 				// stream_timeout_ms is a bounded collection window: reaching it
 				// after collecting events is a successful end-of-collection (the
 				// standard SSE sampling pattern against an endpoint that streams
@@ -216,28 +370,33 @@ func readSSEResponse(ctx context.Context, body io.ReadCloser, params map[string]
 				}
 				return result, fmt.Errorf("SSE stream timed out after %s", timeout)
 			case ctx.Err() != nil:
+				result.EndReason = EndReasonContextCanceled
 				return result, ctx.Err()
 			case contentdecode.Kind(err) != "":
+				result.EndReason = EndReasonError
 				return result, err // A malformed compressed trailer is not a collection window.
 			default:
-				// A premature CLIENT/transport read timeout (http.Client.Timeout, a
-				// read deadline, a mid-stream connection reset) is NOT the intended
-				// stream_timeout_ms collection window (handled above) — it truncates
-				// the sample unexpectedly, so it must surface as an error even when
-				// some events were collected. Only after ruling that out does an
-				// events-collected result count as a successful read.
 				if isSSEPrematureReadTimeout(err) {
+					result.EndReason = EndReasonError
+					return result, err
+				}
+				if opts.RequireStopEvent {
+					result.EndReason = EndReasonError
 					return result, err
 				}
 				if result.EventCount > 0 {
+					result.EndReason = EndReasonEOF
 					return result, nil
 				}
+				result.EndReason = EndReasonError
 				return result, err
 			}
 		}
 	}
 }
 
+// sseEncodedEventSize computes the canonical serialized byte length of event
+// without allocating a slice via strings.Split.
 func sseEncodedEventSize(event sseEvent) int64 {
 	size := int64(1) // terminating blank line
 	if event.Event != "" {
@@ -247,9 +406,8 @@ func sseEncodedEventSize(event sseEvent) int64 {
 		size += int64(len("id: ") + len(event.ID) + 1)
 	}
 	if event.Data != "" {
-		for _, line := range strings.Split(event.Data, "\n") {
-			size += int64(len("data: ") + len(line) + 1)
-		}
+		lines := int64(1 + strings.Count(event.Data, "\n"))
+		size += lines*int64(len("data: ")) + int64(len(event.Data)) + 1
 	}
 	return size
 }
@@ -271,6 +429,7 @@ func isSSEPrematureReadTimeout(err error) bool {
 		strings.Contains(lower, "timeout awaiting response")
 }
 
+// writeSSEEvent writes event in canonical SSE format without allocating a slice via strings.Split.
 func writeSSEEvent(out *bytes.Buffer, event sseEvent) {
 	if event.Event != "" {
 		out.WriteString("event: ")
@@ -283,17 +442,25 @@ func writeSSEEvent(out *bytes.Buffer, event sseEvent) {
 		out.WriteByte('\n')
 	}
 	if event.Data != "" {
-		for _, line := range strings.Split(event.Data, "\n") {
+		rest := event.Data
+		for {
+			nl := strings.IndexByte(rest, '\n')
+			if nl < 0 {
+				out.WriteString("data: ")
+				out.WriteString(rest)
+				out.WriteByte('\n')
+				break
+			}
 			out.WriteString("data: ")
-			out.WriteString(line)
+			out.WriteString(rest[:nl])
 			out.WriteByte('\n')
+			rest = rest[nl+1:]
 		}
 	}
 	out.WriteByte('\n')
 }
 
 func parseSSEEvents(body []byte) []sseEvent {
-	lines := strings.Split(strings.ReplaceAll(string(body), "\r\n", "\n"), "\n")
 	events := make([]sseEvent, 0)
 	var current sseEvent
 	var dataLines []string
@@ -306,7 +473,17 @@ func parseSSEEvents(body []byte) []sseEvent {
 		current = sseEvent{}
 		dataLines = nil
 	}
-	for _, line := range lines {
+	rest := string(body)
+	for len(rest) > 0 {
+		var line string
+		if nl := strings.IndexByte(rest, '\n'); nl >= 0 {
+			line = rest[:nl]
+			rest = rest[nl+1:]
+		} else {
+			line = rest
+			rest = ""
+		}
+		line = strings.TrimSuffix(line, "\r")
 		switch {
 		case line == "":
 			dispatch()
@@ -315,7 +492,7 @@ func parseSSEEvents(body []byte) []sseEvent {
 		case strings.HasPrefix(line, "event:"):
 			current.Event = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
 		case strings.HasPrefix(line, "data:"):
-			dataLines = append(dataLines, strings.TrimSpace(strings.TrimPrefix(line, "data:")))
+			dataLines = append(dataLines, trimSSEFieldValue(strings.TrimPrefix(line, "data:")))
 		case strings.HasPrefix(line, "id:"):
 			current.ID = strings.TrimSpace(strings.TrimPrefix(line, "id:"))
 		}
@@ -428,6 +605,24 @@ func sseParamInt(params map[string]any, key string, fallback int) int {
 		parsed, err := strconv.Atoi(strings.TrimSpace(value))
 		if err == nil {
 			return parsed
+		}
+	}
+	return fallback
+}
+
+func sseParamBool(params map[string]any, key string, fallback bool) bool {
+	if params == nil {
+		return fallback
+	}
+	switch value := params[key].(type) {
+	case bool:
+		return value
+	case string:
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "true", "1", "yes":
+			return true
+		case "false", "0", "no":
+			return false
 		}
 	}
 	return fallback

@@ -71,6 +71,16 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	// otherwise empty sample) at the end of every stopped run. LoadRunner
 	// likewise leaves work caught in progress at stop out of the results.
 	if !result.Success && vu.cutOffByStop(result.ErrorMessage) {
+		if result.ProtocolEvidence != nil {
+			delete(result.ProtocolEvidence, "__llm_assistant_text")
+			if len(result.ProtocolEvidence) == 0 {
+				result.ProtocolEvidence = nil
+			}
+		}
+		if !result.BusinessTransaction && result.SampleKind != "child" && result.DependencyType != "websocket" {
+			vu.lastLLMConversationAction = nil
+			vu.lastLLMConversationTurn = nil
+		}
 		return nil
 	}
 	if vu.Script != nil && len(vu.Script.Config.Results.CSVExports) > 0 {
@@ -100,7 +110,12 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
+	vu.noteSourceTransactionLLM(result)
+	convErr := vu.appendLLMConversationTurn(result)
 	extractionErr := vu.mergeExtractions(result)
+	if extractionErr == nil && convErr != nil {
+		extractionErr = convErr
+	}
 	if err := extractionErr; err != nil {
 		result.Success = false
 		result.ExtractionsIncomplete = true
@@ -883,6 +898,27 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		)
 		defer func() {
 			actionSpan.SetAttributes(attribute.Int("apexload.action.attempts", attemptCount))
+			if finalResult != nil && finalResult.ServerTelemetry != nil && finalResult.ServerTelemetry.LLM != nil {
+				llmDiag := finalResult.ServerTelemetry.LLM
+				if llmDiag.Model != "" {
+					actionSpan.SetAttributes(
+						attribute.String("gen_ai.request.model", apptelemetry.BoundedIdentifier(llmDiag.Model)),
+						attribute.String("gen_ai.response.model", apptelemetry.BoundedIdentifier(llmDiag.Model)),
+					)
+				}
+				if llmDiag.PromptTokens > 0 {
+					actionSpan.SetAttributes(attribute.Int("gen_ai.usage.input_tokens", llmDiag.PromptTokens))
+				}
+				if llmDiag.CompletionTokens > 0 {
+					actionSpan.SetAttributes(attribute.Int("gen_ai.usage.output_tokens", llmDiag.CompletionTokens))
+				}
+				if llmDiag.FinishReason != "" {
+					actionSpan.SetAttributes(attribute.StringSlice("gen_ai.response.finish_reasons", []string{apptelemetry.BoundedIdentifier(llmDiag.FinishReason)}))
+				}
+				if llmDiag.TTFTMs > 0 {
+					actionSpan.SetAttributes(attribute.Float64("gen_ai.server.time_to_first_token", llmDiag.TTFTMs/1000.0))
+				}
+			}
 			if finalErr != nil {
 				actionSpan.SetAttributes(attribute.String("error.type", apptelemetry.BoundedIdentifier(fmt.Sprintf("%T", finalErr))))
 				actionSpan.SetStatus(codes.Error, "protocol action failed")
@@ -920,8 +956,8 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		return nil, fmt.Errorf("retry_delay_ms must be between 0 and %d", dsl.MaxConfiguredProtocolTimeoutMS)
 	}
 	retryBackoff := strings.ToLower(strings.TrimSpace(errCfg.RetryBackoff))
-	if retryBackoff != "" && retryBackoff != "fixed" && retryBackoff != "exponential" {
-		return nil, fmt.Errorf("retry_backoff must be fixed or exponential")
+	if retryBackoff != "" && retryBackoff != "fixed" && retryBackoff != "exponential" && retryBackoff != "retry_after" {
+		return nil, fmt.Errorf("retry_backoff must be fixed, exponential, or retry_after")
 	}
 	maxAttempts := 1 + errCfg.MaxRetries
 	// Persistent Java Vuser lifecycle calls are stateful boundaries, not
@@ -953,6 +989,8 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		}
 	}
 	var lastResult *protocol.Result
+	throttledAttempts := 0
+	var totalRetryWaitMs float64
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		attemptCount = attempt + 1
 		if invocation != 0 {
@@ -964,6 +1002,13 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 			if retryBackoff == "exponential" {
 				delay = boundedRetryBackoff(baseRetryDelay, attempt)
 			}
+			if (errCfg.HonorRetryAfter || retryBackoff == "retry_after") && lastResult != nil && lastResult.RetryAfter > 0 {
+				ra := min(lastResult.RetryAfter, retryAfterCap(errCfg))
+				if ra > delay {
+					delay = ra
+				}
+			}
+			waitStart := time.Now()
 			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
@@ -974,6 +1019,7 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 				return lastResult, ctx.Err()
 			case <-timer.C:
 			}
+			totalRetryWaitMs += float64(time.Since(waitStart)) / float64(time.Millisecond)
 			// The failed attempt will never be returned once its backoff completes.
 			// Zero the raw replay-only exchange before the next protocol call can
 			// overwrite lastResult and leave the discarded evidence reachable.
@@ -1006,7 +1052,22 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 				return emit(child)
 			}
 		}
+		quotaStart := time.Now()
+		reservedQuotaTokens, quotaOK := vu.waitLLMQuota(ctx, action)
+		if vu.QuotaPacer != nil && protocol.IsLLMAction(action) {
+			waited := time.Since(quotaStart)
+			vu.llmQuotaWait += waited
+			// Only waits that queued are worth an interval; the cap would
+			// otherwise fill with admissions that took no time.
+			if vu.trackQuotaWaitIntervals && waited >= time.Millisecond {
+				vu.noteQuotaWaitIntervals(timeInterval{quotaStart, quotaStart.Add(waited)})
+			}
+		}
+		if !quotaOK {
+			return lastResult, ctx.Err()
+		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
+		vu.observeLLMQuota(action, reservedQuotaTokens, result)
 		if err != nil {
 			if vu.unredactedDebug && result != nil {
 				vu.captureFailedRetryDebug(result)
@@ -1044,6 +1105,12 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 			}
 			result.Attempt = attempt + 1
 		}
+		if result.StatusCode == 429 || (result.ServerTelemetry != nil && result.ServerTelemetry.LLM != nil && result.ServerTelemetry.LLM.Throttled) {
+			throttledAttempts++
+		}
+		result.Attempts = attemptCount
+		result.ThrottledAttempts = throttledAttempts
+		result.RetryWaitMs = totalRetryWaitMs
 		applyProtocolResultSourceMetadata(result, action.Metadata)
 		applyProtocolResultAttribution(result, action)
 		applyMessageDetailRequest(result, action)
@@ -1072,9 +1139,40 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 		if errCfg.MaxRetries == 0 {
 			return result, nil
 		}
+		if len(errCfg.RetryOn) > 0 && !shouldRetryResultOn(result, errCfg.RetryOn) {
+			return result, nil
+		}
 	}
 
 	return lastResult, nil
+}
+
+func shouldRetryResultOn(result *protocol.Result, retryOn []string) bool {
+	if result == nil {
+		return false
+	}
+	lowerErr := strings.ToLower(result.ErrorMessage)
+	for _, raw := range retryOn {
+		switch strings.ToLower(strings.TrimSpace(raw)) {
+		case "429":
+			if result.StatusCode == 429 || (result.ServerTelemetry != nil && result.ServerTelemetry.LLM != nil && result.ServerTelemetry.LLM.Throttled) {
+				return true
+			}
+		case "5xx":
+			if result.StatusCode >= 500 && result.StatusCode <= 599 {
+				return true
+			}
+		case "timeout":
+			if result.StatusCode == 408 || result.StatusCode == 504 || strings.Contains(lowerErr, "timeout") || strings.Contains(lowerErr, "deadline exceeded") {
+				return true
+			}
+		case "network":
+			if result.StatusCode == 0 && (strings.Contains(lowerErr, "connection") || strings.Contains(lowerErr, "eof") || strings.Contains(lowerErr, "reset") || strings.Contains(lowerErr, "dial") || strings.Contains(lowerErr, "network")) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Capture only for debugger replay before credential classification clears the
@@ -1147,6 +1245,19 @@ func actionTypeForTrace(action *protocol.Action) string {
 		return strings.ToLower(strings.TrimSpace(action.Type))
 	}
 	return strings.ToLower(strings.TrimSpace(action.Method))
+}
+
+// defaultRetryAfterCap bounds a server's Retry-After when the script sets no
+// retry_after_max_ms.
+const defaultRetryAfterCap = 60 * time.Second
+
+// retryAfterCap is the longest wait a Retry-After header can impose, on the
+// retry path and as a quota pacer cooldown alike.
+func retryAfterCap(errCfg dsl.ErrorHandlingConfig) time.Duration {
+	if errCfg.RetryAfterMaxMs > 0 {
+		return time.Duration(errCfg.RetryAfterMaxMs) * time.Millisecond
+	}
+	return defaultRetryAfterCap
 }
 
 func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
@@ -1335,7 +1446,11 @@ func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
 			child.Type = child.Method
 		}
 		if child.Method == "" {
-			child.Method = child.Type
+			if strings.EqualFold(strings.TrimSpace(child.Type), "llm_request") {
+				child.Method = "POST"
+			} else {
+				child.Method = child.Type
+			}
 		}
 		childMetadata := make(map[string]any, len(child.Metadata)+2)
 		for key, metadataValue := range child.Metadata {
@@ -1392,7 +1507,27 @@ func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) 
 	target.BytesSent += source.BytesSent
 	target.BytesReceived += source.BytesReceived
 	target.StatusCode = source.StatusCode
+	var prevLLM *protocol.LLMDiagnostics
+	if target.ServerTelemetry != nil && target.ServerTelemetry.LLM != nil {
+		prevLLM = target.ServerTelemetry.LLM
+	}
 	target.ServerTelemetry = source.ServerTelemetry
+	if prevLLM != nil || (source.ServerTelemetry != nil && source.ServerTelemetry.LLM != nil) {
+		var merged *protocol.LLMDiagnostics
+		if prevLLM != nil {
+			protocol.MergeLLMHopDiagnostics(&merged, prevLLM)
+		}
+		if source.ServerTelemetry != nil && source.ServerTelemetry.LLM != nil {
+			protocol.MergeLLMHopDiagnostics(&merged, source.ServerTelemetry.LLM)
+		}
+		if target.ServerTelemetry == nil {
+			target.ServerTelemetry = &protocol.ServerTelemetry{LLM: merged}
+		} else {
+			stCopy := *target.ServerTelemetry
+			stCopy.LLM = merged
+			target.ServerTelemetry = &stCopy
+		}
+	}
 	target.SourceStepID = source.SourceStepID
 	target.SourceStepIndex = source.SourceStepIndex
 	target.SourceAction = source.SourceAction

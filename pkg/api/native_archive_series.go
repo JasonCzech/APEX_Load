@@ -102,10 +102,11 @@ func (s *Server) handleNativeArchiveSeries(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	load := func(id string) (NativeArchiveSeries, error) {

@@ -42,6 +42,10 @@ recording-agent:
 collector-agent:
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-collector-agent ./cmd/apexload-collector-agent
 
+.PHONY: apexllm-target
+apexllm-target:
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexllm-target ./cmd/apexllm-target
+
 package-recording-agent:
 	./scripts/package-recording-agent.sh
 

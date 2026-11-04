@@ -626,7 +626,6 @@ func (s *Server) startAuthoringReceiptOutcomeJanitor() {
 	}
 	purge(time.Now())
 	ctx, cancel := context.WithCancel(context.Background())
-	s.receiptOutcomeCleanupCancel = cancel
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(time.Hour)
 		defer ticker.Stop()
@@ -640,8 +639,9 @@ func (s *Server) startAuthoringReceiptOutcomeJanitor() {
 		}
 	}) {
 		cancel()
-		s.receiptOutcomeCleanupCancel = nil
+		return
 	}
+	s.receiptOutcomeCleanupCancel = cancel
 }
 
 func (s *Server) startGrafanaImportSessionJanitor() {
@@ -652,7 +652,6 @@ func (s *Server) startGrafanaImportSessionJanitor() {
 		slog.Warn("failed to prune expired Grafana import sessions", "error", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.grafanaSessionCleanupCancel = cancel
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -668,6 +667,7 @@ func (s *Server) startGrafanaImportSessionJanitor() {
 		}
 	}) {
 		cancel()
-		s.grafanaSessionCleanupCancel = nil
+		return
 	}
+	s.grafanaSessionCleanupCancel = cancel
 }

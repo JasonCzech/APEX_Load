@@ -39,9 +39,9 @@ func TestProcessorPauseScopeUsesImmutableAdmissionAndLegacyPlans(t *testing.T) {
 		{name: "modern compacted", test: &ManagedTest{Groups: []TestGroup{{Name: "consumer", Protocol: "eventhubs"}}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a", RuntimeResourceClaim: claim(1)}}}, want: map[string]bool{"a": true}},
 		{name: "legacy zero floor consuming plan", test: &ManagedTest{Groups: []TestGroup{consumer}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a"}}}, want: map[string]bool{"a": true}},
 		{name: "producer-only processor configuration", test: &ManagedTest{Groups: []TestGroup{producer}, GeneratorShards: []GeneratorShardSummary{{Group: "producer", Target: "a"}}}, want: map[string]bool{}},
-		{name: "invalid zero claim cannot override legacy duplicate", test: &ManagedTest{Groups: []TestGroup{consumer}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a", RuntimeResourceClaim: claim(0)}}, remoteGroupShards: map[string][]GeneratorShardSummary{"consumer": {{Group: "consumer", Target: "a"}}}}, fail: true},
-		{name: "retired unavailable source", test: &ManagedTest{Groups: []TestGroup{{Name: "consumer", Protocol: "eventhubs"}}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a"}}, remoteTargetStates: map[string]string{"a": "evacuated"}}, want: map[string]bool{}},
-		{name: "completed processor", test: &ManagedTest{Groups: []TestGroup{consumer}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a", RuntimeResourceClaim: claim(1)}}, remoteTargetStates: map[string]string{"a": "COMPLETE"}}, want: map[string]bool{}},
+		{name: "invalid zero claim cannot override legacy duplicate", test: &ManagedTest{Groups: []TestGroup{consumer}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a", RuntimeResourceClaim: claim(0)}}, distributedTestRuntime: distributedTestRuntime{remoteGroupShards: map[string][]GeneratorShardSummary{"consumer": {{Group: "consumer", Target: "a"}}}}}, fail: true},
+		{name: "retired unavailable source", test: &ManagedTest{Groups: []TestGroup{{Name: "consumer", Protocol: "eventhubs"}}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a"}}, distributedTestRuntime: distributedTestRuntime{remoteTargetStates: map[string]string{"a": "evacuated"}}}, want: map[string]bool{}},
+		{name: "completed processor", test: &ManagedTest{Groups: []TestGroup{consumer}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a", RuntimeResourceClaim: claim(1)}}, distributedTestRuntime: distributedTestRuntime{remoteTargetStates: map[string]string{"a": "COMPLETE"}}}, want: map[string]bool{}},
 		{name: "unconfirmed legacy script", test: &ManagedTest{Groups: []TestGroup{{Name: "consumer", Protocol: "eventhubs"}}, GeneratorShards: []GeneratorShardSummary{{Group: "consumer", Target: "a"}}}, fail: true},
 		{name: "missing topology", test: &ManagedTest{Groups: []TestGroup{consumer}}, fail: true},
 	} {
@@ -150,7 +150,7 @@ func TestProcessorPausePreflightsAllPeersBeforeMutation(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"a", "b"}, time.Second, nil)
 	runner := NewTestRunner(1, NewHub(), nil)
 	claim := pauseScopeClaim(1)
-	test := &ManagedTest{ID: "mixed", remoteClientsByTarget: map[string]generatorClient{"a": a, "b": b}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: claim}, {Target: "b", RuntimeResourceClaim: claim}}}
+	test := &ManagedTest{ID: "mixed", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"a": a, "b": b}}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: claim}, {Target: "b", RuntimeResourceClaim: claim}}}
 	used, err := backend.applyAcknowledgedPauseControl(runner, test, true)
 	if !used || err == nil {
 		t.Fatalf("used=%v err=%v", used, err)
@@ -177,7 +177,7 @@ func TestProcessorPauseRequiresProofAndCompensatesMissingProof(t *testing.T) {
 			client := newPauseProofGeneratorClient(t, peer)
 			backend := newDistributedExecutionBackend([]string{"a"}, time.Second, nil)
 			runner := NewTestRunner(1, NewHub(), nil)
-			test := &ManagedTest{ID: "processor", remoteClientsByTarget: map[string]generatorClient{"a": client}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: pauseScopeClaim(1)}}}
+			test := &ManagedTest{ID: "processor", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"a": client}}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: pauseScopeClaim(1)}}}
 			used, err := backend.applyAcknowledgedPauseControl(runner, test, true)
 			var uncertain *distributedPauseUncertainError
 			if !used || (err != nil) != tc.wantError || errors.As(err, &uncertain) != tc.wantUncertain {
@@ -242,7 +242,7 @@ func TestProcessorPauseSkipsRetainedTerminalArchivePeers(t *testing.T) {
 				a, b := newPauseProofGeneratorClient(t, active), newPauseProofGeneratorClient(t, retired)
 				backend := newDistributedExecutionBackend([]string{"retired", "active"}, time.Second, nil)
 				runner := NewTestRunner(1, NewHub(), nil)
-				testRun := &ManagedTest{ID: "retained-archive", remoteClientsByTarget: map[string]generatorClient{"active": a, "retired": b}, GeneratorShards: []GeneratorShardSummary{{Group: "workers", Target: "active", RuntimeResourceClaim: pauseScopeClaim(1)}, {Group: "workers", Target: "retired", RuntimeResourceClaim: pauseScopeClaim(1)}}, remoteTargetStates: map[string]string{"active": "RUNNING", "retired": state}}
+				testRun := &ManagedTest{ID: "retained-archive", GeneratorShards: []GeneratorShardSummary{{Group: "workers", Target: "active", RuntimeResourceClaim: pauseScopeClaim(1)}, {Group: "workers", Target: "retired", RuntimeResourceClaim: pauseScopeClaim(1)}}, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"active": a, "retired": b}, remoteTargetStates: map[string]string{"active": "RUNNING", "retired": state}}}
 				used, err := backend.applyAcknowledgedPauseControl(runner, testRun, pause)
 				if !used || err != nil {
 					t.Fatalf("used=%t err=%v", used, err)
@@ -263,7 +263,7 @@ func TestProcessorPauseRejectsMalformedAdmissionBeforeMutation(t *testing.T) {
 		mutate(claim)
 		backend := newDistributedExecutionBackend([]string{"a"}, time.Second, nil)
 		runner := NewTestRunner(1, NewHub(), nil)
-		testRun := &ManagedTest{ID: "invalid-admission", Groups: []TestGroup{{Name: "workers", Protocol: "eventhubs"}}, remoteClientsByTarget: map[string]generatorClient{"a": client}, GeneratorShards: []GeneratorShardSummary{{Group: "workers", Target: "a", RuntimeResourceClaim: claim}}}
+		testRun := &ManagedTest{ID: "invalid-admission", Groups: []TestGroup{{Name: "workers", Protocol: "eventhubs"}}, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"a": client}}, GeneratorShards: []GeneratorShardSummary{{Group: "workers", Target: "a", RuntimeResourceClaim: claim}}}
 		used, err := backend.applyAcknowledgedPauseControl(runner, testRun, true)
 		if !used || err == nil || len(peer.snapshotCalls()) != 0 || testRun.remotePauseOperationSequence != 0 {
 			t.Fatalf("used=%t err=%v calls=%v seq=%d", used, err, peer.snapshotCalls(), testRun.remotePauseOperationSequence)
@@ -276,7 +276,7 @@ func TestProcessorPauseRechecksPeerCompletionDuringFanout(t *testing.T) {
 	for _, moment := range []string{"preflight", "before request", "request rejection", "compensation"} {
 		t.Run(moment, func(t *testing.T) {
 			runner := NewTestRunner(1, NewHub(), nil)
-			run := &ManagedTest{ID: "finishing-peer", remoteTargetStates: map[string]string{"a": "RUNNING", "b": "RUNNING"}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: pauseScopeClaim(1)}, {Target: "b", RuntimeResourceClaim: pauseScopeClaim(1)}}}
+			run := &ManagedTest{ID: "finishing-peer", distributedTestRuntime: distributedTestRuntime{remoteTargetStates: map[string]string{"a": "RUNNING", "b": "RUNNING"}}, GeneratorShards: []GeneratorShardSummary{{Target: "a", RuntimeResourceClaim: pauseScopeClaim(1)}, {Target: "b", RuntimeResourceClaim: pauseScopeClaim(1)}}}
 			finish := func() { runner.mu.Lock(); run.remoteTargetStates["b"] = "COMPLETE"; runner.mu.Unlock() }
 			a := &pauseProofGenerator{features: []string{protocol.FeatureEventHubsProcessorPauseV1, generatorrpc.FeatureMessagingRuntimeQuiescenceV1}, proof: &yes}
 			b := &pauseProofGenerator{features: a.features, proof: &yes, unassigned: true}

@@ -430,3 +430,191 @@ func compileGeneratedSchema(t *testing.T) (*jsonschema.Schema, error) {
 	}
 	return compiler.Compile("dsl.schema.json")
 }
+
+func TestLLMRequestDialectAliasesAndStreamProfileSchemaParity(t *testing.T) {
+	schema, err := compileGeneratedSchema(t)
+	if err != nil {
+		t.Fatalf("compileGeneratedSchema: %v", err)
+	}
+
+	allDialects := append([]string{}, dsl.LLMDialectNames...)
+	allDialects = append(allDialects, dsl.LLMDialectAliases...)
+
+	for _, dialect := range allDialects {
+		doc := map[string]any{
+			"name":     "llm-alias-" + dialect,
+			"protocol": "http",
+			"config":   map[string]any{"base_url": "https://api.example.com"},
+			"actions": []map[string]any{
+				{
+					"name":   "infer",
+					"type":   "llm_request",
+					"target": "/v1/chat/completions",
+					"params": map[string]any{
+						"dialect": dialect,
+						"prompt":  "Hello",
+					},
+				},
+			},
+		}
+		raw, err := json.Marshal(doc)
+		if err != nil {
+			t.Fatalf("marshal %s: %v", dialect, err)
+		}
+		var script dsl.Script
+		if err := json.Unmarshal(raw, &script); err != nil {
+			t.Fatalf("unmarshal %s: %v", dialect, err)
+		}
+		if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
+			t.Errorf("dialect %q failed ValidateScriptIssues: %v", dialect, issues)
+		}
+		instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("UnmarshalJSON %s: %v", dialect, err)
+		}
+		if err := schema.Validate(instance); err != nil {
+			t.Errorf("dialect %q failed JSON Schema validation: %v", dialect, err)
+		}
+	}
+
+	// Custom stream_profile object + llm_request inside http_sequence.
+	customDoc := map[string]any{
+		"name":     "llm-custom-stream-profile-and-sequence",
+		"protocol": "http",
+		"config":   map[string]any{"base_url": "https://api.example.com"},
+		"actions": []map[string]any{
+			{
+				"name":   "custom_stream",
+				"type":   "llm_request",
+				"target": "/v1/stream",
+				"params": map[string]any{
+					"dialect": "custom",
+					"prompt":  "Hello",
+					"stream_profile": map[string]any{
+						"preset":      "openai_chat",
+						"delta_path":  "$.choices[0].delta.content",
+						"finish_path": "$.choices[0].finish_reason",
+						"usage_path":  "$.usage",
+					},
+				},
+			},
+			{
+				"name": "rag_sequence",
+				"type": "http_sequence",
+				"params": map[string]any{
+					"requests": []map[string]any{
+						{
+							"name":   "hop1_embed",
+							"type":   "llm_request",
+							"target": "/v1/chat/completions",
+							"params": map[string]any{
+								"dialect": "azure_openai_chat",
+								"prompt":  "Summarize context",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	raw, err := json.Marshal(customDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var script dsl.Script
+	if err := json.Unmarshal(raw, &script); err != nil {
+		t.Fatal(err)
+	}
+	if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
+		t.Fatalf("custom stream_profile / http_sequence llm_request failed ValidateScriptIssues: %v", issues)
+	}
+	instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(instance); err != nil {
+		t.Fatalf("custom stream_profile / http_sequence llm_request failed JSON Schema validation: %v", err)
+	}
+
+	// Verify conversation object/bool, stream_mode, and extraction aliases pass both Go and JSON Schema validation.
+	convDoc := map[string]any{
+		"name":     "llm-conversation-and-aliases",
+		"protocol": "http",
+		"config":   map[string]any{"base_url": "https://api.example.com"},
+		"actions": []map[string]any{
+			{
+				"name":   "conv_turn",
+				"type":   "llm_request",
+				"target": "/v1/chat/completions",
+				"params": map[string]any{
+					"stream_mode":           "sse",
+					"system_prompt":         "You are helpful.",
+					"ignore_eos":            true,
+					"golden_prompt_id":      "gp-1",
+					"save_as":               "reply_text",
+					"save_finish_reason_as": "fin_reason",
+					"save_tool_calls_as":    "tool_calls",
+					"conversation": map[string]any{
+						"history_var":         "chat_hist",
+						"max_turns":           4,
+						"max_context_tokens":  2048,
+						"max_history_bytes":   16384,
+						"truncation_strategy": "sliding_window",
+					},
+				},
+			},
+			{
+				"name":   "conv_bool_turn",
+				"type":   "llm_request",
+				"target": "/v1/chat/completions",
+				"params": map[string]any{
+					"conversation": true,
+				},
+			},
+		},
+	}
+	convRaw, err := json.Marshal(convDoc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var convScript dsl.Script
+	if err := json.Unmarshal(convRaw, &convScript); err != nil {
+		t.Fatal(err)
+	}
+	if issues := dsl.ValidateScriptIssues(&convScript); len(issues) > 0 {
+		t.Fatalf("conversation llm_request failed ValidateScriptIssues: %v", issues)
+	}
+	convInstance, err := jsonschema.UnmarshalJSON(bytes.NewReader(convRaw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(convInstance); err != nil {
+		t.Fatalf("conversation llm_request failed JSON Schema validation: %v", err)
+	}
+
+	// Verify invalid conversation config is rejected by ValidateScriptIssues.
+	badConvScript := dsl.Script{
+		Name:     "bad-conv",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://api.example.com"},
+		Actions: []dsl.Action{
+			{
+				Name:   "bad_turn",
+				Type:   "llm_request",
+				Target: "/v1/chat/completions",
+				Params: map[string]any{
+					"prompt": "hi",
+					"conversation": map[string]any{
+						"max_turns":           -1,
+						"max_history_bytes":   999999,
+						"truncation_strategy": "invalid_strategy",
+					},
+				},
+			},
+		},
+	}
+	badIssues := dsl.ValidateScriptIssues(&badConvScript)
+	if len(badIssues) < 3 {
+		t.Fatalf("expected >= 3 validation issues for invalid conversation config, got %v", badIssues)
+	}
+}

@@ -19,8 +19,22 @@ CONTRACTS_SOURCE = ROOT / "docs/contracts/agent-v1"
 CONTRACTS_OUTPUT = ROOT / "mcp/apexload_mcp/contracts"
 # Start with common read/start workflows. Names, descriptions, guards, and
 # conditional-save adapters remain curated in tools.py. Aliases share schemas.
-WORKFLOWS = {("GET", "/scripts/{id}"), ("GET", "/scenarios/{id}"),
-             ("GET", "/tests"), ("POST", "/tests/{id}/start")}
+WORKFLOWS = {
+    ("GET", "/scripts/{id}"),
+    ("GET", "/scenarios/{id}"),
+    ("GET", "/tests"),
+    ("POST", "/tests/{id}/start"),
+    ("GET", "/monitoring/prometheus-packs"),
+    ("POST", "/llm/prompt-datasets/import"),
+    ("POST", "/llm/prompt-datasets/synthesize"),
+    ("POST", "/llm/prompt-datasets/calibrate"),
+    ("POST", "/llm/capacity-plan"),
+    ("POST", "/llm/compare"),
+    ("GET", "/tests/{id}/archive/capacity-sweep"),
+    ("GET", "/tests/{id}/archive/llm-latency-decomposition"),
+    ("GET", "/tests/{id}/archive/llm-samples"),
+    ("POST", "/tests/{id}/archive/genai-spans/lookup"),
+}
 
 
 def selected_paths(source: Path, paths: set[str]) -> dict:

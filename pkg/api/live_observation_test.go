@@ -91,7 +91,7 @@ func TestDistributedObservationRequiresEveryContributor(t *testing.T) {
 		{name: "clock in future", second: now.Add(time.Second).UnixMilli(), want: time.Unix(0, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			run := &ManagedTest{remoteClientsByTarget: map[string]generatorClient{"a": nil, "b": nil}, remoteTargetStates: map[string]string{}}
+			run := &ManagedTest{distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"a": nil, "b": nil}, remoteTargetStates: map[string]string{}}}
 			if tc.removed {
 				run.remoteTargetStates["b"] = remoteTargetStateEvacuated
 			}
@@ -112,7 +112,7 @@ func TestDistributedObservationRequiresEveryContributor(t *testing.T) {
 
 func TestDistributedObservationPipelinePreservesSilentShardEvidence(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	run := &ManagedTest{ID: "freshness-run", Status: "RUNNING", remoteClientsByTarget: map[string]generatorClient{"a": nil, "b": nil}}
+	run := &ManagedTest{ID: "freshness-run", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"a": nil, "b": nil}}}
 	runner := &TestRunner{tests: map[string]*ManagedTest{run.ID: run}}
 	backend := &distributedExecutionBackend{}
 	old := now.Add(-time.Minute)

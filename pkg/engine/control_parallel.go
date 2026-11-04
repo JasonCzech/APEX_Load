@@ -20,6 +20,8 @@ const (
 type parallelBranchResult struct {
 	index                      int
 	name                       string
+	started, completed         time.Time
+	quotaWaits                 []timeInterval
 	variables                  map[string]string
 	extracted                  map[string]int
 	err                        error
@@ -59,14 +61,25 @@ func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, ph
 	// that transaction's trace, and otherwise the branches share the block's.
 	ctx, endTransactionRoot := vu.correlationContext(ctx, &protocol.Action{Name: action.Name})
 	defer endTransactionRoot()
-	success := vu.runParallelBranches(ctx, action.Control, phase)
+	success, idleWindows := vu.runParallelBranchesTimed(ctx, action.Control, phase)
+	// The block's sample leaves out the time its branches only queued for
+	// quota; the enclosing transactions and iteration do too, and so does an
+	// enclosing parallel block when this one runs in a branch.
+	var idleQuota time.Duration
+	for _, window := range idleWindows {
+		idleQuota += window.end.Sub(window.start)
+	}
+	vu.llmQuotaWait += idleQuota
+	if vu.trackQuotaWaitIntervals {
+		vu.noteQuotaWaitIntervals(idleWindows...)
+	}
 	result := &protocol.Result{
 		ActionName:   action.Name,
 		Group:        vu.Group,
 		Region:       vu.Region,
 		Phase:        phase,
 		StartTime:    started,
-		Duration:     time.Since(started),
+		Duration:     max(0, time.Since(started)-idleQuota),
 		Success:      success,
 		AuthoredStep: vu.currentBrowserAuthoredStep(),
 	}
@@ -82,17 +95,24 @@ func (vu *VUser) executeParallelBlock(ctx context.Context, action dsl.Action, ph
 }
 
 func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFlow, phase string) bool {
+	success, _ := vu.runParallelBranchesTimed(ctx, control, phase)
+	return success
+}
+
+// runParallelBranchesTimed runs the branches and also returns the windows
+// when some branch queued for quota and none was busy.
+func (vu *VUser) runParallelBranchesTimed(ctx context.Context, control *dsl.ControlFlow, phase string) (bool, []timeInterval) {
 	if vu == nil || vu.Script == nil || control == nil || len(control.Branches) < 2 {
-		return false
+		return false, nil
 	}
 	if vu.runtimeCredentialRedactionError() != nil {
-		return false
+		return false, nil
 	}
 	if !parallelActionsRuntimeSafe(control.Branches) {
-		return false
+		return false, nil
 	}
 	if safety, ok := vu.Proto.(protocol.ParallelSafetyProvider); !ok || !safety.ParallelSafe() {
-		return false
+		return false, nil
 	}
 	concurrency := control.Concurrency
 	if concurrency <= 0 {
@@ -124,10 +144,15 @@ func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFl
 		}()
 	}
 	wg.Wait()
+	spans := make([]quotaWaitSpan, 0, len(results))
+	for _, result := range results {
+		spans = append(spans, quotaWaitSpan{start: result.started, end: result.completed, waits: result.quotaWaits})
+	}
+	idleWindows := idleQuotaWindows(spans)
 	for _, result := range results {
 		if result.publicationRedactionFailed {
 			vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential redaction capacity exceeded"))
-			return false
+			return false, idleWindows
 		}
 	}
 	success := true
@@ -144,11 +169,12 @@ func (vu *VUser) runParallelBranches(ctx context.Context, control *dsl.ControlFl
 			}
 		}
 	}
-	return success
+	return success, idleWindows
 }
 
 func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.ParallelBranch, phase string) (result parallelBranchResult) {
-	result = parallelBranchResult{index: index, name: strings.TrimSpace(branch.Name)}
+	result = parallelBranchResult{index: index, name: strings.TrimSpace(branch.Name), started: time.Now()}
+	defer func() { result.completed = time.Now() }()
 	if err := vu.runtimeCredentialRedactionError(); err != nil {
 		result.err, result.failed = err, true
 		return
@@ -193,6 +219,9 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		SnapshotStore:                vu.SnapshotStore,
 		PauseControl:                 vu.PauseControl,
 		IterationRateLimiter:         vu.IterationRateLimiter,
+		QuotaPacer:                   vu.QuotaPacer,
+		trackQuotaWaitIntervals:      vu.QuotaPacer != nil,
+		quotaPauseBypass:             vu.quotaPauseBypass,
 		Rendezvous:                   vu.Rendezvous,
 		ExecutionGoals:               vu.ExecutionGoals,
 		HardStopCtx:                  vu.HardStopCtx,
@@ -273,6 +302,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 	result.failed = result.failed || sink.failed.Load()
 	result.variables = branchVU.Variables
 	result.extracted = branchVU.extractedVariables
+	result.quotaWaits = branchVU.llmQuotaWaitIntervals
 	return
 }
 

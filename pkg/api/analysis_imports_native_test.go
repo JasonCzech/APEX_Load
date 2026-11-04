@@ -99,7 +99,7 @@ func TestAnalysisNativeImportLifecycle(t *testing.T) {
 		t.Fatalf("normalization: %+v", updated)
 	}
 	// Wait for the worker to release staging admission after durable publication.
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	r = timeslotRequest(t, server, "POST", dataset+"/series", analytics.SeriesQuery{Metric: "latency", From: time.UnixMilli(1700000000000), To: time.UnixMilli(1700000010000), BucketSeconds: 10, Aggregation: "p95"})

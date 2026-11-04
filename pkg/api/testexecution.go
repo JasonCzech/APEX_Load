@@ -3825,12 +3825,29 @@ func (tr *TestRunner) startStageSchedules(ctx context.Context, test *ManagedTest
 	}
 }
 
+// rateStageDriven reports a group whose stages are open-model arrival-rate
+// stages. The generators' arrival scheduler runs them from the script's rate
+// stages; the controller's stage schedule only labels the active level and
+// never scales the group's users, which an open workload does not support.
+func (g TestGroup) rateStageDriven() bool {
+	return g.script != nil && dsl.CanonicalWorkloadModel(g.script.Config.RunLogic.WorkloadModel) == "open"
+}
+
 func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, groupName string, stages []storage.LoadStage, activeOffset time.Duration, mge *engine.MultiGroupEngine) {
 	// The schedule belongs to the run that started it; its direct scale calls
 	// re-check that at the commit boundary so a successor published under the
 	// same ID never inherits them.
 	tr.mu.RLock()
 	owner := tr.tests[testID]
+	rateDriven := false
+	if owner != nil {
+		for _, group := range owner.Groups {
+			if group.Name == groupName {
+				rateDriven = group.rateStageDriven()
+				break
+			}
+		}
+	}
 	tr.mu.RUnlock()
 	ownsRun := func(current *ManagedTest) error {
 		if err := ctx.Err(); err != nil {
@@ -3879,7 +3896,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			}
 		}
 	}
-	if mge == nil && !resuming {
+	if mge == nil && !resuming && !rateDriven {
 		// Distributed generators expose initial-ramp readiness through the typed
 		// scale precondition rather than a local ScalingReady channel. Probe the
 		// already-configured target and retry only that transient sentinel before
@@ -3948,6 +3965,16 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			// ramp continues from the current VUsers over the remaining time.
 			resuming = false
 		}
+		if rateDriven || stage.TargetTPS != nil && *stage.TargetTPS > 0 && stage.TargetVUsers == 0 {
+			if !tr.waitTestRunning(ctx, testID) {
+				return
+			}
+			tr.setActiveLoadStage(testID, groupName, index, stage)
+			if !tr.waitTestActiveDuration(ctx, testID, duration) {
+				return
+			}
+			continue
+		}
 		switch stageType {
 		case "ramp_up", "ramp_down":
 			if !tr.waitTestRunning(ctx, testID) {
@@ -4013,7 +4040,7 @@ func (tr *TestRunner) runStageSchedule(ctx context.Context, testID string, group
 			return
 		}
 	}
-	if tr.closedVUserStopsAfterStageSchedule(testID, groupName) {
+	if !rateDriven && tr.closedVUserStopsAfterStageSchedule(testID, groupName) {
 		if !tr.waitTestRunning(ctx, testID) {
 			return
 		}
@@ -4059,6 +4086,14 @@ func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, st
 	if test.GoalConfig != nil && test.GoalConfig.WorkloadShapeConfig != nil && test.GoalConfig.WorkloadShapeConfig.ClosedVUser != nil && test.GoalConfig.WorkloadShapeConfig.SteppedRamp == nil {
 		return
 	}
+	var targetTPS float64
+	kind := "vusers"
+	if stage.TargetTPS != nil && *stage.TargetTPS > 0 {
+		targetTPS = *stage.TargetTPS
+		if stage.TargetVUsers == 0 {
+			kind = "tps"
+		}
+	}
 	for groupIndex := range test.Groups {
 		if test.Groups[groupIndex].Name != groupName {
 			continue
@@ -4068,6 +4103,9 @@ func (tr *TestRunner) setActiveLoadStage(testID, groupName string, index int, st
 			StageIndex:   index,
 			Name:         stage.Name,
 			TargetVUsers: stage.TargetVUsers,
+			TargetTPS:    targetTPS,
+			Kind:         kind,
+			Warmup:       stage.Warmup,
 			Duration:     stage.Duration,
 			StartedAt:    time.Now().UTC(),
 		}

@@ -90,7 +90,7 @@ func importRCACPUDataset(t *testing.T, server *Server, store any, project, run, 
 	if current.State != "ready" {
 		t.Fatalf("normalization: %+v", current)
 	}
-	for deadline := time.Now().Add(10 * time.Second); len(analysisPipelineJobs) > 0 && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
+	for deadline := time.Now().Add(10 * time.Second); len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline); time.Sleep(time.Millisecond) {
 	}
 	if associated := request(http.MethodPut, "/api/v1/analysis/datasets/"+in.ID+"/association", map[string]any{"revision": current.Revision, "run_id": run}); associated.Code != http.StatusOK {
 		t.Fatalf("association: %d %s", associated.Code, associated.Body.String())

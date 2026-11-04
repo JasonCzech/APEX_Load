@@ -377,6 +377,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 			sample.AttachEffectiveSettings(s, result.EffectiveSettings)
 			return nil
 		},
+		LLMTransform: importreview.LLMTransformRequested(r),
 	}
 	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
 	if err != nil {

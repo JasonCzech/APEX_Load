@@ -3,7 +3,7 @@ import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
 import { settingsHref } from './settingsNavigation'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -29,6 +29,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import StatTile from './StatTile'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import PrometheusPanelCard from './PrometheusPanelCard'
 import ContinuousStackedArea from './ContinuousStackedArea'
 import {
@@ -71,6 +72,7 @@ import {
   isResponsePercentileChart,
   isStatTileChart,
   buildImportedDashboardCharts,
+  buildLLMCharts,
   latestRouteLatencyValues,
   presetExemptChartIds,
   loadImpactHeatmapChart,
@@ -142,6 +144,9 @@ import {
   writeStoredString,
 } from '../utils/browserStorage'
 
+// Only a run that sends LLM requests shows its live LLM signals.
+const LiveLLMChartSignals = lazy(() => import('./LiveLLMSignals').then(module => ({ default: module.LiveLLMChartSignals })))
+
 interface Props {
   filteredData: MetricsHistoryPoint[]
   expandedChart: string | null
@@ -191,7 +196,7 @@ interface Props {
 }
 
 type ChartDropPosition = 'before' | 'after'
-export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'prometheus' | 'imported'
+export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'llm' | 'prometheus' | 'imported'
 export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
 type ChartCardElement = HTMLElement | null
@@ -225,11 +230,13 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'test_results', label: 'Live Metrics' },
   { id: 'under_load', label: 'Under Load' },
   { id: 'infrastructure', label: 'Infrastructure' },
+  { id: 'llm', label: 'LLM' },
   { id: 'prometheus', label: 'Prometheus' },
   { id: 'imported', label: 'Dashboards' },
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
+const llmChartIds = new Set(['llm_ttft', 'llm_tpot', 'llm_tokens'])
 const noTransactionNames: string[] = []
 // The graphs whose rows are the run total, its groups and its transactions.
 const seriesChartIds = new Set(['tps', 'latency', 'errors'])
@@ -254,6 +261,7 @@ function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
   if (isPrometheusChart(chart)) return 'prometheus'
   if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return 'under_load'
   if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
+  if (llmChartIds.has(chart.id)) return 'llm'
   return 'test_results'
 }
 
@@ -743,7 +751,13 @@ export default function TestExecutionCharts({
       )
     ))
     .map(chart => chart.id), [loadImpactGraphCharts])
-  const allChartConfigs = useMemo(() => [...chartConfigs, ...prometheusGraphCharts, ...importedDashboardCharts, ...loadImpactGraphCharts], [loadImpactGraphCharts, prometheusGraphCharts, importedDashboardCharts])
+  const hasLLMData = useMemo(
+    () => Boolean(latestMetrics?.llm?.summary?.requests)
+      || filteredData.some(point => point.llmOutputTokensPerSec !== undefined || point.llmTtftP95Ms !== undefined),
+    [filteredData, latestMetrics],
+  )
+  const llmCharts = useMemo(() => buildLLMCharts(hasLLMData), [hasLLMData])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...llmCharts, ...prometheusGraphCharts, ...importedDashboardCharts, ...loadImpactGraphCharts], [llmCharts, loadImpactGraphCharts, prometheusGraphCharts, importedDashboardCharts])
   const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
   const allChartIdSignature = allChartIds.join('|')
   const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
@@ -1031,6 +1045,7 @@ export default function TestExecutionCharts({
   const showPrometheusTab = prometheusAvailable ?? prometheusGraphCharts.length > 0
   const showImportedTab = importedDashboardsAvailable ?? importedDashboardCharts.length > 0
   const visibleGraphGroupTabs = graphGroupTabs.filter(tab => {
+    if (tab.id === 'llm') return hasLLMData
     if (tab.id === 'prometheus') return showPrometheusTab
     if (tab.id === 'imported') return showImportedTab
     return true
@@ -1177,7 +1192,7 @@ export default function TestExecutionCharts({
   }
 
   const contextChart = chartMenu ? displayedCharts.find(chart => chart.id === chartMenu.chartId) : undefined
-  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0, imported: 0 }
+  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, llm: 0, prometheus: 0, imported: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
@@ -2857,6 +2872,10 @@ export default function TestExecutionCharts({
           {`Open-model load shed — ${(latestMetrics?.telemetry?.shedded_arrivals ?? 0).toLocaleString()} arrival${(latestMetrics?.telemetry?.shedded_arrivals ?? 0) === 1 ? '' : 's'} dropped because the system under test could not keep up with the offered rate. In-flight workers are capped to protect the generator, so effective throughput is below target — lower the TPS or raise run_logic.max_in_flight.`}
         </p>
       )}
+
+      {hasLLMData && <LazyLoadBoundary title="The LLM live signals could not be loaded.">
+        <Suspense fallback={null}><LiveLLMChartSignals latestMetrics={latestMetrics} latest={latest} showTiles={!enableGraphGroupTabs || activeGraphGroupTab === 'llm'} /></Suspense>
+      </LazyLoadBoundary>}
 
       {paginateGraphs && displayModeCharts.length > 0 && (
         <nav className="archive-pagination-bar graph-pagination-bar" aria-label="Graph pages">

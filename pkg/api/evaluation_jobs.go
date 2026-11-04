@@ -417,6 +417,9 @@ func (s *Server) handleDeleteEvaluationJob(w http.ResponseWriter, r *http.Reques
 // evaluationJobRunner returns the shared leased-job runner for evaluations,
 // or nil when the store keeps none.
 func (s *Server) evaluationJobRunner() *leasedJobRunner[storage.EvaluationJob] {
+	if s == nil {
+		return nil
+	}
 	store, ok := s.store.(storage.EvaluationJobStore)
 	if !ok {
 		return nil
@@ -449,6 +452,9 @@ func (s *Server) wakeEvaluationWorker() {
 }
 
 func (s *Server) startEvaluationWorker() {
+	if s == nil || s.evaluationCancel != nil {
+		return
+	}
 	jobs := s.evaluationJobRunner()
 	if jobs == nil || s.runner == nil {
 		return

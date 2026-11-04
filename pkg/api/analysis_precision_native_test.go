@@ -36,7 +36,7 @@ func TestAnalysisPrecisionReviewCommitAndHistoricalQuery(t *testing.T) {
 		until := time.Now().Add(15 * time.Second)
 		for time.Now().Before(until) {
 			in := load()
-			if in.State != "normalizing" && len(analysisPipelineJobs) == 0 {
+			if in.State != "normalizing" && len(server.semaphores.analysisPipelineJobs) == 0 {
 				if in.State != want {
 					t.Fatalf("state %s, want %s: %s", in.State, want, in.Error)
 				}

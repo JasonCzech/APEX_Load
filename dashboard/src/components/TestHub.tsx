@@ -1073,7 +1073,12 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
 	const groupProtocols = useMemo(() => {
 		const protocols = [...new Set(formGroups.flatMap(group => {
 			const script = findScriptById(scripts, group.script_id)
-			return script ? scriptProtocols(script) : []
+			if (!script) return []
+			const base = scriptProtocols(script)
+			const isLLM = Boolean(
+				script.script?.actions?.some(action => action.type === 'llm_request' || Boolean((action as unknown as Record<string, unknown>).stream_profile))
+			)
+			return isLLM ? [...base, 'llm'] : base
 		}))]
 		return protocols.length > 0 ? protocols : undefined
 	}, [formGroups, scripts])

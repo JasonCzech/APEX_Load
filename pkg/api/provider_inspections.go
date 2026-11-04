@@ -4,7 +4,6 @@ import (
 	"crypto/ed25519"
 	"github.com/jasonczech/apexload/pkg/collectoragent"
 	"net/http"
-	"strconv"
 	"time"
 )
 
@@ -22,13 +21,9 @@ func (s *Server) handlePollProviderInspections(w http.ResponseWriter, r *http.Re
 		writeError(w, 503, err.Error())
 		return
 	}
-	capacity := 4
-	if raw := r.URL.Query().Get("capacity"); raw != "" {
-		capacity, err = strconv.Atoi(raw)
-		if err != nil || capacity < 1 || capacity > 4 {
-			writeError(w, 400, "inspection capacity must be between 1 and 4")
-			return
-		}
+	capacity, ok := parseCollectorInspectionCapacity(w, r, 4, "inspection capacity must be between 1 and 4")
+	if !ok {
+		return
 	}
 	jobs, err := s.pollPrometheusInspections(r, c, capacity, key)
 	if err != nil {

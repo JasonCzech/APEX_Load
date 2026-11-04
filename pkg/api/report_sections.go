@@ -568,6 +568,7 @@ var reportSectionLabels = map[string]string{
 	"evidence_tiers":       "Evidence tiers",
 	"artifact_integrity":   "Artifact integrity",
 	"report_authorship":    "Report authorship",
+	"llm_performance":      "LLM inference performance",
 	"protocol_diagnostics": "Protocol diagnostics",
 }
 
@@ -610,6 +611,9 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
 	"soap": func(d *runArchiveHTMLReportData) bool {
 		return len(d.SOAPOperationRows)+len(d.SOAPFaultCodeRows)+len(d.SOAPFaultBuckets)+len(d.SOAPPayloadBuckets) > 0
+	},
+	"llm_performance": func(d *runArchiveHTMLReportData) bool {
+		return d.Report != nil && d.Report.LLM != nil && d.Report.LLM.TotalRequests > 0
 	},
 	"protocol_diagnostics": func(d *runArchiveHTMLReportData) bool {
 		return !slices.Contains(protocolReportLines(d.Report), protocolReportNoSamples)
@@ -1159,6 +1163,12 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			}
 			return nil
 		}})
+
+	// --- LLM inference performance -----------------------------------------
+	add(reportSectionRenderer{ID: "llm_performance", Label: "LLM inference performance",
+		PDF: pdfLLMPerformanceLines,
+		CSV: csvLLMPerformanceRows,
+	})
 
 	// --- Network phases ----------------------------------------------------
 	add(reportSectionRenderer{ID: "network_phases", Label: "Network Phase Breakdown",

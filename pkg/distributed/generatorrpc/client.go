@@ -226,7 +226,10 @@ type MetricsBatch struct {
 	RequestCountsVersion uint32
 	// GroupTransactionsVersion is 1 when the groups carry their transactions
 	// (GroupMetric.TransactionMetrics); 0 from an older generator.
-	GroupTransactionsVersion   uint32
+	GroupTransactionsVersion uint32
+	// LLMSummaryVersion is 1 when action metrics carry mergeable LLMSummary
+	// sketches; 0 from an older generator.
+	LLMSummaryVersion          uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
@@ -382,6 +385,7 @@ type GroupMetric struct {
 }
 
 type MetricAggregate struct {
+	LLM              *engine.LLMSummary
 	JavaHTTP         *protocol.JavaHTTPSummary
 	Messaging        *protocol.MessagingSummary
 	MessagingVersion uint32
@@ -2010,6 +2014,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		ActionMetricsVersion:        batch.GetActionMetricsVersion(),
 		RequestCountsVersion:        batch.GetRequestCountsVersion(),
 		GroupTransactionsVersion:    batch.GetGroupTransactionsVersion(),
+		LLMSummaryVersion:           batch.GetLlmSummaryVersion(),
 		PropertyMetrics:             metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:               metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                     browserMetricsFromProto(batch.GetBrowserMetrics()),
@@ -2341,6 +2346,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		TPS:              value.GetTps(),
 		DurationDigest:   tdigestSnapshotFromProto(value.GetDurationDigest()),
 		DurationSketch:   durationSketchSnapshotFromProto(value.GetDurationSketch()),
+		LLM:              llmSummaryFromProto(value.GetLlm()),
 		JavaHTTP:         javaHTTPSummaryForCount(javaHTTPSummaryFromProto(value.GetJavaHttp()), value.GetCount()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
@@ -2411,6 +2417,7 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		Tps:                  value.TPS,
 		DurationDigest:       tdigestSnapshotToProto(value.DurationDigest),
 		DurationSketch:       durationSketchSnapshotToProto(value.DurationSketch),
+		Llm:                  llmSummaryToProto(value.LLM),
 		JavaHttp:             javaHTTPSummaryToProto(javaHTTPSummaryForCount(value.JavaHTTP, value.Count)),
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,

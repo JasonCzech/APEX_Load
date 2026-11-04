@@ -28,6 +28,7 @@ kept for planning or audit context only.
 | [HELP_DSL_OPERATOR_GUIDE.md](HELP_DSL_OPERATOR_GUIDE.md) | Current | Canonical DSL templating, execution, examples, and migration guidance for LoadRunner and JMeter operators |
 | [RECORDING_PROFILES.md](RECORDING_PROFILES.md) | Current | Project recording profiles and VuGen recording-option mappings |
 | [AI_ASSISTED_WORKFLOWS.md](AI_ASSISTED_WORKFLOWS.md) | Current | Governed deterministic assisted-authoring workflows, MCP server integration, and API contract |
+| [LLM_PERFORMANCE_TESTING.md](LLM_PERFORMANCE_TESTING.md) | Current | LLM inference benchmarking (`llm_request`), TTFT/TPOT/ITL telemetry, capacity sweeps, latency decomposition, A/B comparisons, and `signatures.v2` RCA |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
 
 ## Operations and deployment

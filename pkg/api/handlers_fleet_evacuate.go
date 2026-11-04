@@ -195,11 +195,8 @@ func decodeOptionalJSONBodyWithStrictness(w http.ResponseWriter, r *http.Request
 		return true
 	}
 	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
-	if disallowUnknownFields {
-		decoder.DisallowUnknownFields()
-	}
-	if err := decoder.Decode(dst); err != nil {
+	err := decodeSingleJSONValue(json.NewDecoder(r.Body), dst, disallowUnknownFields)
+	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return true
 		}
@@ -209,15 +206,6 @@ func decodeOptionalJSONBodyWithStrictness(w http.ResponseWriter, r *http.Request
 			return false
 		}
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		return false
-	}
-	var trailing any
-	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
-		if err == nil {
-			writeError(w, http.StatusBadRequest, "invalid request body: multiple JSON values are not allowed")
-		} else {
-			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid request body: %v", err))
-		}
 		return false
 	}
 	return true

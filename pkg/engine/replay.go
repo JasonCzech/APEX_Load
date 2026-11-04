@@ -678,16 +678,17 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 		continueOnError = *opts.ContinueOnError
 	}
 	globalThinkCfg := protocol.ThinkTimeConfig{
-		Type:       script.Config.ThinkTime.Type,
-		MinPercent: script.Config.ThinkTime.MinPercent,
-		MaxPercent: script.Config.ThinkTime.MaxPercent,
-		MeanMs:     script.Config.ThinkTime.MeanMs,
-		StdMs:      script.Config.ThinkTime.StdMs,
-		MinMs:      script.Config.ThinkTime.MinMs,
-		MaxMs:      script.Config.ThinkTime.MaxMs,
-		Multiplier: script.Config.ThinkTime.Multiplier,
-		LimitMs:    script.Config.ThinkTime.LimitMs,
-		Ignore:     script.Config.ThinkTime.Ignore,
+		Type:         script.Config.ThinkTime.Type,
+		Distribution: script.Config.ThinkTime.Distribution,
+		MinPercent:   script.Config.ThinkTime.MinPercent,
+		MaxPercent:   script.Config.ThinkTime.MaxPercent,
+		MeanMs:       script.Config.ThinkTime.MeanMs,
+		StdMs:        script.Config.ThinkTime.StdMs,
+		MinMs:        script.Config.ThinkTime.MinMs,
+		MaxMs:        script.Config.ThinkTime.MaxMs,
+		Multiplier:   script.Config.ThinkTime.Multiplier,
+		LimitMs:      script.Config.ThinkTime.LimitMs,
+		Ignore:       script.Config.ThinkTime.Ignore,
 	}
 
 	vu.onAsyncResult = func(result *protocol.Result, raw *ReplayActionEvent) {

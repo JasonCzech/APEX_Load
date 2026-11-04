@@ -715,6 +715,9 @@ message MetricsBatch {
   repeated string live_browser_interactions_json = 42;
   repeated LiveJourneyEvent live_journey_events = 43;
   LiveBrowserTruncation live_browser_truncation = 44;
+  // llm_summary_version is 1 when each MetricAggregate in action_metrics
+  // populates its typed LLMSummary for LLM actions. Older generators send 0.
+  uint32 llm_summary_version = 45;
 }
 
 message BrowserAuthoredStep {
@@ -894,6 +897,95 @@ message MetricAggregate {
   // samples contributing to bytes_sent and bytes_received.
   string byte_evidence = 24;
   int64 byte_samples = 25;
+  LLMSummary llm = 26;
+}
+
+message LLMBandSummary {
+  string band = 1;
+  int64 requests = 2;
+  int64 streamed_requests = 3;
+  int64 prompt_tokens = 4;
+  int64 completion_tokens = 5;
+  DurationSketchSnapshot ttft_sketch = 6;
+  DurationSketchSnapshot tpot_sketch = 7;
+  DurationSketchSnapshot e2e_sketch = 8;
+  double avg_ttft_ms = 9;
+  double p50_ttft_ms = 10;
+  double p95_ttft_ms = 11;
+  double p99_ttft_ms = 12;
+  double avg_tpot_ms = 13;
+  double p50_tpot_ms = 14;
+  double p95_tpot_ms = 15;
+  double p99_tpot_ms = 16;
+  double avg_e2e_ms = 17;
+  double p95_e2e_ms = 18;
+}
+
+message LLMSummary {
+  int64 requests = 1;
+  int64 successful_requests = 2;
+  int64 streamed_requests = 3;
+  int64 failed_requests = 4;
+  int64 throttled_requests = 5;
+  int64 throttled_attempts = 6;
+  double total_retry_wait_ms = 7;
+  int64 truncated_requests = 8;
+  int64 empty_output_requests = 9;
+  int64 content_filter_requests = 10;
+  int64 http_200_error_requests = 11;
+  int64 schema_failed_requests = 12;
+  int64 tokens_estimated_requests = 13;
+  int64 prompt_tokens = 14;
+  int64 completion_tokens = 15;
+  int64 reasoning_tokens = 16;
+  int64 cached_tokens = 17;
+  int64 total_tokens = 18;
+  int64 tool_calls_count = 19;
+  map<string, int64> finish_reasons = 20;
+  map<string, int64> models = 21;
+  map<string, int64> dialects = 22;
+  DurationSketchSnapshot ttft_sketch = 23;
+  DurationSketchSnapshot first_visible_token_sketch = 24;
+  DurationSketchSnapshot tpot_sketch = 25;
+  DurationSketchSnapshot e2e_sketch = 26;
+  JavaHTTPDurationDistribution itl_ms = 27;
+  double avg_ttft_ms = 28;
+  double p50_ttft_ms = 29;
+  double p90_ttft_ms = 30;
+  double p95_ttft_ms = 31;
+  double p99_ttft_ms = 32;
+  double avg_first_visible_token_ms = 33;
+  double p50_first_visible_token_ms = 34;
+  double p95_first_visible_token_ms = 35;
+  double p99_first_visible_token_ms = 36;
+  double avg_tpot_ms = 37;
+  double p50_tpot_ms = 38;
+  double p90_tpot_ms = 39;
+  double p95_tpot_ms = 40;
+  double p99_tpot_ms = 41;
+  double avg_itl_ms = 42;
+  double p50_itl_ms = 43;
+  double p90_itl_ms = 44;
+  double p95_itl_ms = 45;
+  double p99_itl_ms = 46;
+  double avg_e2e_ms = 47;
+  double p50_e2e_ms = 48;
+  double p90_e2e_ms = 49;
+  double p95_e2e_ms = 50;
+  double p99_e2e_ms = 51;
+  int64 server_queue_samples = 52;
+  double server_queue_sum_ms = 53;
+  double avg_server_queue_ms = 54;
+  int64 server_prefill_samples = 55;
+  double server_prefill_sum_ms = 56;
+  double avg_server_prefill_ms = 57;
+  int64 server_decode_samples = 58;
+  double server_decode_sum_ms = 59;
+  double avg_server_decode_ms = 60;
+  optional int64 min_ratelimit_remaining_tokens = 61;
+  optional int64 min_ratelimit_remaining_requests = 62;
+  map<string, LLMBandSummary> by_input_band = 63;
+  bool incomplete = 64;
 }
 
 message TraceExemplar {

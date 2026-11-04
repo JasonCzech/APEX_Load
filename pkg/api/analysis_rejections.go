@@ -28,10 +28,11 @@ func (s *Server) handleAnalysisRejections(w http.ResponseWriter, r *http.Request
 		writeError(w, 409, "artifact ownership mismatch")
 		return
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Minute)
 	defer cancel()
 	dir, err := analysisScratch()

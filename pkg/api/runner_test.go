@@ -1960,6 +1960,55 @@ func TestCompileManagedTestGroupRejectsOpenWorkloadVUserStages(t *testing.T) {
 	}
 }
 
+// An open-model group's stages compile to arrival-rate stages. A ramp_down
+// without target_tps ramps the rate to zero, as a user ramp-down without a
+// target ramps to zero users: it used to be dropped, which pulled every later
+// rate stage forward of the controller's level labels.
+func TestCompileManagedTestGroupOpenWorkloadRateStages(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-open-rate", Name: "Open Rate", Protocol: "http", Version: "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://example.com",
+			RunLogic: dsl.RunLogicConfig{WorkloadModel: "open"},
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 10},
+		},
+		Actions: []dsl.Action{{Name: "step", Type: "GET", Target: "/orders"}},
+	})
+	tps := func(v float64) *float64 { return &v }
+	group, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-open-rate",
+		Stages: []storage.LoadStage{
+			{Type: "ramp_up", Duration: "10s", TargetTPS: tps(20)},
+			{Type: "ramp_down", Duration: "5s", TargetTPS: tps(5)},
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	if !group.stageDriven || !group.rateStageDriven() || len(engineGroup.Script.Config.Pacing.RateStages) != 2 {
+		t.Fatalf("want a rate-stage-driven group with two rate stages, got stageDriven=%v rate=%v stages=%+v", group.stageDriven, group.rateStageDriven(), engineGroup.Script.Config.Pacing.RateStages)
+	}
+	_, engineGroup, err = runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-open-rate",
+		Stages: []storage.LoadStage{
+			{Type: "ramp_up", Duration: "10s", TargetTPS: tps(20)},
+			{Type: "ramp_down", Duration: "30s"},
+			{Type: "ramp_up", Duration: "5s", TargetTPS: tps(5)},
+		},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("compile with a TPS-less ramp_down: %v", err)
+	}
+	stages := engineGroup.Script.Config.Pacing.RateStages
+	if len(stages) != 3 || stages[1].DurationSeconds != 30 || stages[1].TargetTPS != 20 || stages[1].EndTPS == nil || *stages[1].EndTPS != 0 || stages[2].TargetTPS != 0 {
+		t.Fatalf("the TPS-less ramp_down must ramp 20 TPS to zero over its 30s and the next stage start from zero, got %+v", stages)
+	}
+	if engineGroup.VUsers <= 0 {
+		t.Fatalf("an open-model group keeps a positive user count, got %d", engineGroup.VUsers)
+	}
+}
+
 func TestCompileManagedTestGroupLockedAppliesHeadlessOverrideWithoutMutatingStoredScript(t *testing.T) {
 	hub := NewHub()
 	runner := NewTestRunner(1, hub, nil)

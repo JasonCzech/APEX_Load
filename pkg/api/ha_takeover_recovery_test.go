@@ -219,8 +219,10 @@ func armedContinueRun(id string, generation uint64, client generatorClient) (*Ma
 		continuityArmedGeneration: generation,
 		executionCtx:              ctx,
 		cancel:                    cancel,
-		remoteClient:              client,
-		remoteClientsByTarget:     map[string]generatorClient{"gen-a:9091": client},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClient:          client,
+			remoteClientsByTarget: map[string]generatorClient{"gen-a:9091": client},
+		},
 	}, ctx
 }
 
@@ -457,7 +459,7 @@ func TestAwaitRunsFinalizedWaitsForOwnedRunCleanup(t *testing.T) {
 	runCtx, runCancel := context.WithCancel(context.Background())
 	defer runCancel()
 	client := &startupLifecycleFakeClient{accept: true}
-	stopping := &ManagedTest{ID: "stopping", Status: "STOPPING", executionCtx: runCtx, cancel: runCancel, remoteClientsByTarget: map[string]generatorClient{"gen-a": client}}
+	stopping := &ManagedTest{ID: "stopping", Status: "STOPPING", executionCtx: runCtx, cancel: runCancel, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": client}}}
 	runner.mu.Lock()
 	runner.tests[stopping.ID] = stopping
 	runner.tests["handed-off"] = &ManagedTest{ID: "handed-off", Status: "RUNNING", executionCtx: runCtx, cancel: runCancel, continuityHandoff: true}
@@ -471,7 +473,7 @@ func TestAwaitRunsFinalizedWaitsForOwnedRunCleanup(t *testing.T) {
 	// failed); waiting cannot finalize it, so it must not hold the lease.
 	owned["stop-failed"] = &ManagedTest{ID: "stop-failed", Status: "RUNNING", executionCtx: runCtx, cancel: runCancel}
 	// A run finalizing on its own stays RUNNING, and must still be waited for.
-	selfFinalizing := &ManagedTest{ID: "self-finalizing", Status: "RUNNING", executionCtx: runCtx, cancel: runCancel, remoteFinalizing: true}
+	selfFinalizing := &ManagedTest{ID: "self-finalizing", Status: "RUNNING", executionCtx: runCtx, cancel: runCancel, distributedTestRuntime: distributedTestRuntime{remoteFinalizing: true}}
 	owned[selfFinalizing.ID] = selfFinalizing
 	runner.mu.Lock()
 	runner.tests["stop-failed"] = owned["stop-failed"]

@@ -162,9 +162,12 @@ type archiveTransactionEvent struct {
 	// HTTP version facts of a native HTTP action; the full receipt stays in
 	// protocol_evidence. HTTPVersion is the negotiated wire version (empty
 	// for a cache hit or a request that got no response).
-	HTTPVersion         string `json:"http_version,omitempty"`
-	HTTPVersionFallback string `json:"http_version_fallback,omitempty"`
-	AttemptCount        int    `json:"attempt_count,omitempty"`
+	HTTPVersion         string  `json:"http_version,omitempty"`
+	HTTPVersionFallback string  `json:"http_version_fallback,omitempty"`
+	AttemptCount        int     `json:"attempt_count,omitempty"`
+	Attempts            int     `json:"attempts,omitempty"`
+	ThrottledAttempts   int     `json:"throttled_attempts,omitempty"`
+	RetryWaitMs         float64 `json:"retry_wait_ms,omitempty"`
 }
 
 type archiveResourceSample struct {
@@ -1190,6 +1193,9 @@ func (w *archiveRecorder) RecordResult(result *protocol.Result) error {
 		event.TraceLinksTruncated = result.TraceLinksTruncated
 	}
 	event.HTTPVersion, event.HTTPVersionFallback, event.AttemptCount = protocol.ArchiveHTTPVersionFields(result)
+	event.Attempts = result.Attempts
+	event.ThrottledAttempts = result.ThrottledAttempts
+	event.RetryWaitMs = result.RetryWaitMs
 	if len(event.Extractions) != len(result.Extractions) {
 		event.ExtractionsIncomplete = true
 	}

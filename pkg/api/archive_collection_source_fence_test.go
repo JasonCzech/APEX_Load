@@ -78,7 +78,7 @@ func TestArchiveCollectionStopsOnLeadershipLoss(t *testing.T) {
 	runner := &TestRunner{leadership: leader}
 	started := make(chan time.Time, 1)
 	client := &deadlineArchiveClient{started: started}
-	run := &ManagedTest{ID: "loss-during-collection", remoteClientsByTarget: map[string]generatorClient{"source": client}}
+	run := &ManagedTest{ID: "loss-during-collection", distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"source": client}}}
 	dir := filepath.Join(root, "remote", run.ID)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)

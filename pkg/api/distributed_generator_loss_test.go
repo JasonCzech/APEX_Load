@@ -47,12 +47,14 @@ func TestFailedRunCollectsASurvivingGeneratorStillWritingItsArchive(t *testing.T
 	const id = "surviving-generator-finalizing"
 	survivor := &finalizingArchiveClient{archiveStreamingFakeClient: coverageArchiveClient(t, id), finalizing: 3}
 	run := &ManagedTest{ID: id, Name: "Loss", Status: "FAILED", CreatedAt: time.Now().UTC(),
-		remoteClientsByTarget: map[string]generatorClient{"gen-a:1": survivor, "gen-b:1": &startupLifecycleFakeClient{}},
 		GeneratorShards: []GeneratorShardSummary{
 			{Group: "Store_Browse", Target: "gen-a:1", VUsers: 3},
 			{Group: "Store_Cart", Target: "gen-b:1", VUsers: 3},
 		},
-		remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{"gen-a:1": {GeneratorID: "gen-a"}, "gen-b:1": {GeneratorID: "gen-b"}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a:1": survivor, "gen-b:1": &startupLifecycleFakeClient{}},
+			remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{"gen-a:1": {GeneratorID: "gen-a"}, "gen-b:1": {GeneratorID: "gen-b"}},
+		},
 	}
 	runner := NewTestRunner(1, nil, nil)
 	runner.tests[id] = run
@@ -163,10 +165,10 @@ func TestArchiveMissingSourcesMessageSaysWhatIsLeft(t *testing.T) {
 func TestGeneratorFailureMessageNamesTheGenerator(t *testing.T) {
 	started := time.Date(2026, 10, 12, 10, 0, 0, 0, time.UTC)
 	run := &ManagedTest{
-		StartedAt:                    &started,
-		GeneratorShards:              []GeneratorShardSummary{{Group: "Store_Cart", Target: "gen-b:1"}, {Group: "Store_Cart", Target: "gen-b:1"}, {Group: "Store_Browse", Target: "gen-a:1"}},
-		remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{"gen-b:1": {GeneratorID: "gen-b"}},
-		DataPools:                    []storage.ScenarioDataPoolBinding{{Alias: "work", AccessMode: "live"}, {Alias: "customers", AccessMode: "read_only"}},
+		StartedAt:              &started,
+		GeneratorShards:        []GeneratorShardSummary{{Group: "Store_Cart", Target: "gen-b:1"}, {Group: "Store_Cart", Target: "gen-b:1"}, {Group: "Store_Browse", Target: "gen-a:1"}},
+		distributedTestRuntime: distributedTestRuntime{remoteMetricsBatchesByTarget: map[string]generatorrpc.MetricsBatch{"gen-b:1": {GeneratorID: "gen-b"}}},
+		DataPools:              []storage.ScenarioDataPoolBinding{{Alias: "work", AccessMode: "live"}, {Alias: "customers", AccessMode: "read_only"}},
 	}
 	backend := newDistributedExecutionBackend([]string{"gen-b:1|region=us-west"}, time.Second, nil)
 	got := backend.remoteTargetFailureMessageLocked(run, "gen-b:1", "failed", "generator shut down before test completion", started.Add(98*time.Second))

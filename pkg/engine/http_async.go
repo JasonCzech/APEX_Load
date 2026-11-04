@@ -73,6 +73,9 @@ type asyncConversation struct {
 	onChunk    []dsl.Action
 	cancel     context.CancelFunc
 	done       chan struct{}
+	// quotaPauseBypass is the starting step's teardown bypass, read by the
+	// worker instead of the VUser's field, which teardown resets.
+	quotaPauseBypass bool
 	// stopRequested is set when a callback stops a conversation; the stop
 	// completes after the running dispatch.
 	stopRequested bool
@@ -203,7 +206,7 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 	if pattern != asyncOnce && vu.async.running(false) >= MaxAsyncConversations {
 		return fmt.Errorf("a virtual user runs at most %d async conversations", MaxAsyncConversations)
 	}
-	conversation := &asyncConversation{id: id, scriptID: scriptID, pattern: pattern, interval: interval, request: request, done: make(chan struct{})}
+	conversation := &asyncConversation{id: id, scriptID: scriptID, pattern: pattern, interval: interval, request: request, quotaPauseBypass: vu.quotaPauseBypass, done: make(chan struct{})}
 	if action.Control != nil {
 		for _, branch := range action.Control.Branches {
 			switch branch.Name {
@@ -236,7 +239,19 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 		// held by the server, so they start in the background.
 		started := time.Now()
 		first := conversation.current()
-		result, err := vu.Proto.Execute(ctx, first)
+		reserved, quotaOK := vu.waitLLMQuota(ctx, first)
+		var firstQuotaWait time.Duration
+		if vu.QuotaPacer != nil {
+			firstQuotaWait = time.Since(started)
+		}
+		var result *protocol.Result
+		var err error
+		if quotaOK {
+			result, err = vu.Proto.Execute(ctx, first)
+			vu.observeLLMQuota(first, reserved, result)
+		} else {
+			err = context.Cause(ctx)
+		}
 		if result == nil {
 			result = &protocol.Result{ActionName: first.Name, StartTime: started, Duration: time.Since(started)}
 		}
@@ -245,7 +260,13 @@ func (vu *VUser) startAsyncConversation(ctx context.Context, action dsl.Action) 
 			result.ErrorMessage = err.Error()
 		}
 		conversation.push(asyncItem{result: result})
-		if err := vu.applyAsyncResults(ctx, conversation); err != nil {
+		err = vu.applyAsyncResults(ctx, conversation)
+		// The start step, an engine action with no sample of its own, leaves
+		// the first request's quota wait out of the open transactions and the
+		// iteration here, after the callbacks have taken their own steps'.
+		vu.llmQuotaWait += firstQuotaWait
+		vu.takeLLMQuotaWait()
+		if err != nil {
 			cancel()
 			vu.forgetAsyncConversation(id)
 			return err
@@ -328,7 +349,12 @@ func (vu *VUser) executeAsyncRequest(ctx context.Context, conversation *asyncCon
 			result = &protocol.Result{ActionName: action.Name, StartTime: started, Duration: time.Since(started), Success: false, ErrorMessage: fmt.Sprintf("async request panicked: %v", recovered)}
 		}
 	}()
+	reserved, quotaOK := vu.waitLLMQuotaBypass(ctx, action, conversation.quotaPauseBypass)
+	if !quotaOK {
+		return &protocol.Result{ActionName: action.Name, StartTime: started, Duration: time.Since(started), Success: false, ErrorMessage: context.Cause(ctx).Error()}
+	}
 	result, err := vu.Proto.Execute(ctx, action)
+	vu.observeLLMQuota(action, reserved, result)
 	if result == nil {
 		result = &protocol.Result{ActionName: action.Name, StartTime: started, Duration: time.Since(started)}
 	}

@@ -19,10 +19,9 @@ import (
 
 const browserResourceReadTimeout = 10 * time.Second
 
-// One heavy scan per process bounds the retained-record/parser/selection memory
+// One heavy scan per Server bounds the retained-record/parser/selection memory
 // while native analytical workers may share the controller. Admission failures
 // are explicit; no queue or process-local state becomes archive authority.
-var browserResourceReadPermit = make(chan struct{}, 1)
 var errBrowserResourceForbidden = errors.New("browser resource access is no longer authorized")
 
 type browserResourceArchiveIdentityStore interface {
@@ -171,9 +170,10 @@ func (s *Server) readBrowserResourcePage(r *http.Request, options browserResourc
 			return nil, errBrowserResourceReadChanged
 		}
 	}
+	readPermit := s.browserResourceReadPermitChan()
 	select {
-	case browserResourceReadPermit <- struct{}{}:
-		defer func() { <-browserResourceReadPermit }()
+	case readPermit <- struct{}{}:
+		defer func() { <-readPermit }()
 	default:
 		return nil, errBrowserResourceUnavailable
 	}

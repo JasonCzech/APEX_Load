@@ -280,6 +280,9 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if req.Settings.RecordingProfiles == nil {
 		req.Settings.RecordingProfiles = project.Settings.RecordingProfiles
 	}
+	if req.Settings.LLMDeployments == nil {
+		req.Settings.LLMDeployments = project.Settings.LLMDeployments
+	}
 	// The telemetry opt-ins change only through their own route
 	// (PUT /projects/{id}/telemetry-policy, audited there): a settings form
 	// resending a stale copy must never revert one.
@@ -452,6 +455,20 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 	}
 	if err := validateGitHubActionsPolicy(settings.GitHub.Actions); err != nil {
 		return err
+	}
+	for _, dep := range settings.LLMDeployments {
+		if strings.TrimSpace(dep.ID) == "" && strings.TrimSpace(dep.Name) == "" {
+			return errProjectSettings("llm_deployments entries must specify an id or name")
+		}
+		mode := strings.ToLower(strings.TrimSpace(dep.BillingMode))
+		switch mode {
+		case "", "gpu_hourly", "token_api", "ptu_hourly":
+		default:
+			return errProjectSettings(`llm_deployments.billing_mode must be "gpu_hourly", "token_api", or "ptu_hourly"`)
+		}
+		if dep.GPUCount < 0 || dep.PTUCount < 0 || dep.GPUCostPerHourUSD < 0 || dep.PTUCostPerHourUSD < 0 || dep.InputCostPer1MUSD < 0 || dep.CachedInputCost1MUSD < 0 || dep.OutputCostPer1MUSD < 0 {
+			return errProjectSettings("llm_deployments counts and rates must be non-negative")
+		}
 	}
 	if len(settings.RedactionRules) == 0 {
 		return nil

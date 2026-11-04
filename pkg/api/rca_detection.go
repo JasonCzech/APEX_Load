@@ -200,6 +200,7 @@ func archiveDetectionInput(ctx context.Context, record *storage.RunArchiveRecord
 		transactions = newRCASeriesReader(limit, budget.MaxSeriesPoints)
 		joint = newRCASeriesReader(limit, budget.MaxSeriesPoints)
 	}
+	addSummaryLLMSeries(transactions, archiveIdentityScope(manifest), summaries)
 	input.Limitations = append(input.Limitations, limitations...)
 	if limit >= 0 {
 		limit = max(0, limit-len(transactions.series))
@@ -252,7 +253,8 @@ type transactionSeries struct {
 }
 
 type transactionTemplates struct {
-	latency, errorRate, throughput rca.Series
+	latency, errorRate, throughput               rca.Series
+	ttft, tpot, outputTokensPerSec, throttleRate rca.Series
 }
 
 type distributionInterval struct {
@@ -279,11 +281,19 @@ func (t *transactionSeries) templatesFor(name string, bucket time.Duration) (*tr
 			nodes = []string{rca.ActionNodeID(labels[0])}
 		}
 	}
-	series := func(suffix, kind, unit, inputKind string) rca.Series {
-		return rca.Series{ID: t.dimension + "/" + name + "/" + suffix, Kind: kind, Unit: unit, Observation: rca.ObservationInterval, Bucket: bucket, Evidence: evidence,
+	series := func(suffix, kind, measures, unit, inputKind string) rca.Series {
+		return rca.Series{ID: t.dimension + "/" + name + "/" + suffix, Kind: kind, Measures: measures, Unit: unit, Observation: rca.ObservationInterval, Bucket: bucket, Evidence: evidence,
 			Nodes: slices.Clone(nodes), Identity: rcaRunSeriesIdentity(t.scope, t.dimension, name, suffix, unit, inputKind, bucket)}
 	}
-	created := &transactionTemplates{latency: series("p95_ms", rca.SeriesLatency, "ms", analysis.KindObservation), errorRate: series("error_rate", rca.SeriesErrorRate, "%", analysis.KindCounter), throughput: series("throughput", rca.SeriesThroughput, "1/s", analysis.KindCounter)}
+	created := &transactionTemplates{
+		latency:            series("p95_ms", rca.SeriesLatency, "", "ms", analysis.KindObservation),
+		errorRate:          series("error_rate", rca.SeriesErrorRate, "", "%", analysis.KindCounter),
+		throughput:         series("throughput", rca.SeriesThroughput, "", "1/s", analysis.KindCounter),
+		ttft:               series("ttft_p95_ms", rca.SeriesLatency, signatures.KindTTFT, "ms", analysis.KindObservation),
+		tpot:               series("tpot_p95_ms", rca.SeriesLatency, signatures.KindTPOT, "ms", analysis.KindObservation),
+		outputTokensPerSec: series("output_tokens_per_s", rca.SeriesThroughput, signatures.KindThroughput, "tokens/s", analysis.KindCounter),
+		throttleRate:       series("throttle_rate", rca.SeriesErrorRate, signatures.KindRateLimit, "%", analysis.KindCounter),
+	}
 	t.templates[name] = created
 	index, _ := slices.BinarySearch(t.names, name)
 	t.names = slices.Insert(t.names, index, name)
@@ -316,6 +326,98 @@ func (t *transactionSeries) add(r IntervalDistributionRecord, current distributi
 		}
 		t.reader.add(&templates.errorRate, rca.SeriesPoint{At: current.start, Value: errorRate, Valid: counted})
 		t.reader.add(&templates.throughput, rca.SeriesPoint{At: current.start, Value: float64(metric.Count) / r.WindowSeconds, Valid: true})
+		if ok, streamed, ttftP95, tpotP95, outTokSec, throttlePct := extractIntervalLLMValues(metric.LLM, r.WindowSeconds); ok {
+			t.reader.add(&templates.ttft, rca.SeriesPoint{At: current.start, Value: ttftP95, Valid: streamed && finiteNonNegative(ttftP95)})
+			t.reader.add(&templates.tpot, rca.SeriesPoint{At: current.start, Value: tpotP95, Valid: streamed && finiteNonNegative(tpotP95)})
+			t.reader.add(&templates.outputTokensPerSec, rca.SeriesPoint{At: current.start, Value: outTokSec, Valid: finiteNonNegative(outTokSec)})
+			t.reader.add(&templates.throttleRate, rca.SeriesPoint{At: current.start, Value: throttlePct, Valid: finiteNonNegative(throttlePct)})
+		}
+	}
+}
+
+func extractIntervalLLMValues(m *LiveLLMMetrics, windowSec float64) (ok, streamed bool, ttftP95, tpotP95, outTokSec, throttlePct float64) {
+	if m == nil {
+		return false, false, 0, 0, 0, 0
+	}
+	sub := m.IntervalSummary
+	if sub == nil {
+		sub = m.Summary
+	}
+	reqs := m.IntervalRequests
+	if sub != nil && sub.Requests > reqs {
+		reqs = sub.Requests
+	}
+	if reqs <= 0 {
+		return false, false, 0, 0, 0, 0
+	}
+	if sub != nil {
+		streamed = sub.StreamedRequests > 0 || sub.P95TTFTMs > 0 || sub.P95TPOTMs > 0
+		ttftP95 = sub.P95TTFTMs
+		tpotP95 = sub.P95TPOTMs
+	}
+	outTokSec = m.IntervalOutputTokensPerSec
+	if outTokSec <= 0 {
+		outTokSec = m.OutputTokensPerSec
+	}
+	if outTokSec <= 0 && sub != nil && windowSec > 0 {
+		outTokSec = float64(sub.CompletionTokens) / windowSec
+	}
+	throttlePct = m.ThrottleRatePct
+	if throttlePct <= 0 && sub != nil && sub.Requests > 0 {
+		throttlePct = float64(sub.ThrottledRequests) / float64(sub.Requests) * 100
+	}
+	return true, streamed, ttftP95, tpotP95, outTokSec, throttlePct
+}
+
+// addSummaryLLMSeries emits run-level LLM interval series (ttft_p95_ms,
+// tpot_p95_ms, output_tokens_per_s, throttle_rate) when interval summaries
+// carry LLM metrics and per-key interval distributions did not already record
+// them.
+func addSummaryLLMSeries(reader *rcaSeriesReader, scope rcaIdentityScope, summaries []IntervalSummaryRecord) {
+	if reader == nil || len(summaries) == 0 {
+		return
+	}
+	for id := range reader.series {
+		if strings.HasSuffix(id, "/ttft_p95_ms") {
+			return
+		}
+	}
+	hasLLM := false
+	for _, s := range summaries {
+		if ok, _, _, _, _, _ := extractIntervalLLMValues(s.LLM, s.SampleWindowSeconds); ok {
+			hasLLM = true
+			break
+		}
+	}
+	if !hasLLM {
+		return
+	}
+	dimension, key := "transaction", "llm"
+	for _, id := range slices.Sorted(maps.Keys(reader.series)) {
+		parts := strings.SplitN(id, "/", 3)
+		if len(parts) == 3 && (parts[0] == "transaction" || parts[0] == "action") {
+			dimension, key = parts[0], parts[1]
+			break
+		}
+	}
+	windows := archiveIntervalWindows(summaries)
+	if len(windows) == 0 {
+		return
+	}
+	bucket := windows[0].end.Sub(windows[0].start)
+	ts := newTransactionSeries(dimension, scope, -1, reader.maxPoints)
+	ts.reader = reader
+	templates, _ := ts.templatesFor(key, bucket)
+	for _, w := range windows {
+		s := summaries[w.summary]
+		ok, streamed, ttftP95, tpotP95, outTokSec, throttlePct := extractIntervalLLMValues(s.LLM, w.end.Sub(w.start).Seconds())
+		if !ok {
+			continue
+		}
+		reader.add(&templates.ttft, rca.SeriesPoint{At: w.start, Value: ttftP95, Valid: streamed && finiteNonNegative(ttftP95)})
+		reader.add(&templates.tpot, rca.SeriesPoint{At: w.start, Value: tpotP95, Valid: streamed && finiteNonNegative(tpotP95)})
+		reader.add(&templates.outputTokensPerSec, rca.SeriesPoint{At: w.start, Value: outTokSec, Valid: finiteNonNegative(outTokSec)})
+		reader.add(&templates.throttleRate, rca.SeriesPoint{At: w.start, Value: throttlePct, Valid: finiteNonNegative(throttlePct)})
 	}
 }
 

@@ -1132,7 +1132,6 @@ func (s *Server) startProtectedSourceSecretSessionJanitor() {
 		slog.Warn("failed to prune expired protected source secret sessions", "error", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.sourceSecretCleanupCancel = cancel
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -1148,8 +1147,9 @@ func (s *Server) startProtectedSourceSecretSessionJanitor() {
 		}
 	}) {
 		cancel()
-		s.sourceSecretCleanupCancel = nil
+		return
 	}
+	s.sourceSecretCleanupCancel = cancel
 }
 
 func clearSourceSecretSession(session *sourceSecretSession) {

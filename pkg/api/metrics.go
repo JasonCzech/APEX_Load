@@ -218,6 +218,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		}
 	}
 
+	live.LLM = buildLiveLLMMetricsFromEngineActions(snap.ByAction, snap.Window)
 	live.Messaging = protocol.CloneMessagingSummaries(live.Messaging)
 	live.NativeEvidence = nativeIntervalEvidence(live, actions, true, snap.Window.Seconds())
 	if snap.ByActionProperty != nil {
@@ -651,6 +652,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.ActiveRuntimeSeconds = activeRuntimeSecondsLocked(test, now)
 	live.LoadLevels = activeLoadLevelsLocked(test)
 	test.runTotals.apply(live, test.History)
+	updateTestLLMRollingWindowLocked(test, live)
 	if live.HTTPVersions != nil {
 		// The builders have no run; evaluate the finding against its
 		// declared expectation.
@@ -1233,6 +1235,7 @@ func (tr *TestRunner) evaluateGoalControllerSnapshotLocked(test *ManagedTest, li
 // evaluation for callers that already hold tr.mu (the terminal reconciliation
 // path needs evaluation and copy-on-write installation to be atomic).
 func (tr *TestRunner) evaluateGoalControllerSnapshotAssumingLocked(test *ManagedTest, live *LiveMetrics, groupVUsers map[string]int, requireLoadReady bool) (goalControllerUpdate, bool) {
+	updateTestLLMRollingWindowLocked(test, live)
 	applyRuntimeGoalTargetsToLiveMetrics(test, live)
 	if test.ScenarioMode == "goal_oriented" && test.GoalConfig != nil {
 		// The goal window takes every running sample, an initial ramp's too

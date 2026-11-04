@@ -3,6 +3,7 @@ package importreview
 import (
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/convert/agentforce"
+	"github.com/jasonczech/apexload/pkg/convert/llmapi"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"net/http"
@@ -162,5 +163,61 @@ func AgentforceTransformRequested(r *http.Request) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func LLMTransformRequested(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("llm_transform"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func AttachLLMAPIReview(script *dsl.Script, source string, sections []ScriptImportReviewSection, transform bool) []ScriptImportReviewSection {
+	review := llmapi.Analyze(script)
+	if !review.Detected {
+		return sections
+	}
+	var changes []llmapi.Change
+	if transform && script != nil {
+		changes = llmapi.Transform(script)
+	}
+	if script != nil {
+		preserved := EnsureScriptImportPreserved(script, source)
+		preserved["llm_api_review"] = review
+		if len(changes) > 0 {
+			preserved["llm_api_transform"] = changes
+		}
+	}
+	return append(sections, LLMAPIReviewSection(review, changes))
+}
+
+func LLMAPIReviewSection(review *llmapi.Review, changes []llmapi.Change) ScriptImportReviewSection {
+	items := make([]string, 0, len(review.Calls)+len(changes))
+	for _, call := range review.Calls {
+		mode := "non-streaming"
+		if call.Stream {
+			mode = "streaming"
+		}
+		items = append(items, fmt.Sprintf("LLM call: %s — dialect=%s (%s) target=%s", call.ActionName, call.Dialect, mode, call.Target))
+	}
+	for _, ch := range changes {
+		items = append(items, fmt.Sprintf("Applied (%s): %s — %s", ch.Step, ch.ActionName, ch.Detail))
+	}
+	summary := fmt.Sprintf("Detected %d LLM inference call(s) across dialect(s) %s.", len(review.Calls), strings.Join(review.Dialects, ", "))
+	if len(changes) > 0 {
+		summary += fmt.Sprintf(" Applied %d llm_request upgrade/redaction change(s).", len(changes))
+	}
+	return ScriptImportReviewSection{
+		Key:      "llm_api_review",
+		Title:    "LLM Inference API Review",
+		Severity: "info",
+		Summary:  summary,
+		Items:    items,
 	}
 }

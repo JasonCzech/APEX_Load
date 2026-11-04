@@ -152,6 +152,15 @@ func TestPublishedArchiveSourceFenceAndReceiptReplacement(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The run's own lock must survive retirement as the same inode. Other
+	// runs' locks may share the namespace (a run's background retry, which
+	// reads the process environment, can lock there), so it is checked by
+	// identity, not by counting the directory.
+	lockPath := filepath.Join(resolveArchiveRoot(), "_source_locks", sha256BytesHex([]byte(record.TestID))+".lock")
+	lockBefore, err := os.Lstat(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
 	defer cancel()
 	err = runner.retirePublishedArchiveSource(ctx, candidate, time.Now().Add(time.Hour), time.Minute)
@@ -162,9 +171,9 @@ func TestPublishedArchiveSourceFenceAndReceiptReplacement(t *testing.T) {
 	if err := runner.retirePublishedArchiveSource(context.Background(), candidate, time.Now().Add(time.Hour), time.Minute); err != nil {
 		t.Fatal(err)
 	}
-	locks, err := os.ReadDir(filepath.Join(resolveArchiveRoot(), "_source_locks"))
-	if err != nil || len(locks) != 1 {
-		t.Fatalf("lock inode was removed: %v %v", locks, err)
+	lockAfter, err := os.Lstat(lockPath)
+	if err != nil || !os.SameFile(lockBefore, lockAfter) {
+		t.Fatalf("lock inode was removed or replaced: %v", err)
 	}
 }
 

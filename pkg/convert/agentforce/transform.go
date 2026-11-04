@@ -299,10 +299,11 @@ func ensureSSE(action *dsl.Action) bool {
 		action.Params = map[string]any{}
 	}
 	for key, value := range map[string]any{
-		"stream":            "sse",
-		"stop_on_event":     "EndOfTurn",
-		"max_events":        200,
-		"stream_timeout_ms": 60000,
+		"stream":             "sse",
+		"stop_on_event":      "EndOfTurn",
+		"require_stop_event": true,
+		"max_events":         200,
+		"stream_timeout_ms":  60000,
 	} {
 		if _, ok := action.Params[key]; !ok {
 			action.Params[key] = value

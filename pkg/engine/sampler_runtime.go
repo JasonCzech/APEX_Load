@@ -200,3 +200,13 @@ func (vu *VUser) sourceSampleDuration(start time.Time, result *protocol.Result) 
 	}
 	return time.Since(start)
 }
+
+// actionSampleDuration is an action transaction's duration: its elapsed time
+// less excluded client-side waits (quota pacing), unless the sample timing is
+// the request's own duration.
+func (vu *VUser) actionSampleDuration(start time.Time, result *protocol.Result, excluded time.Duration) time.Duration {
+	if result != nil && vu.Script.Config.JMeter != nil && vu.Script.Config.JMeter.SampleTiming != "" {
+		return result.Duration
+	}
+	return max(0, time.Since(start)-excluded)
+}

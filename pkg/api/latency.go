@@ -35,8 +35,6 @@ const (
 	latencyDNSLookupTimeout     = 2 * time.Second
 )
 
-var latencyRouteProbeSlots = make(chan struct{}, maxConcurrentRouteProbes)
-
 func (tr *TestRunner) measureNetworkLatency(ctx context.Context, test *ManagedTest, _ *LiveMetrics) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -876,7 +874,7 @@ func (tr *TestRunner) routeMetadataForLatencyTargetContext(ctx context.Context, 
 		return entry.hops, entry.status
 	}
 
-	hops, status := measureLatencyRouteContext(ctx, target)
+	hops, status := measureLatencyRouteWithSlots(ctx, target, tr.latencyRouteProbeSlotChan())
 	if status != "busy" {
 		tr.storeLatencyRouteCacheEntry(target, latencyRouteCacheEntry{
 			hops:      hops,
@@ -885,6 +883,20 @@ func (tr *TestRunner) routeMetadataForLatencyTargetContext(ctx context.Context, 
 		})
 	}
 	return hops, status
+}
+
+var defaultLatencyRouteProbeSlots = make(chan struct{}, maxConcurrentRouteProbes)
+
+func (tr *TestRunner) latencyRouteProbeSlotChan() chan struct{} {
+	if tr == nil {
+		return defaultLatencyRouteProbeSlots
+	}
+	tr.latencyRouteProbeSlotsOnce.Do(func() {
+		if tr.latencyRouteProbeSlots == nil {
+			tr.latencyRouteProbeSlots = make(chan struct{}, maxConcurrentRouteProbes)
+		}
+	})
+	return tr.latencyRouteProbeSlots
 }
 
 func (tr *TestRunner) storeLatencyRouteCacheEntry(target string, entry latencyRouteCacheEntry) {
@@ -949,12 +961,19 @@ func measureLatencyRoute(target string) (int, string) {
 }
 
 func measureLatencyRouteContext(parent context.Context, target string) (int, string) {
+	return measureLatencyRouteWithSlots(parent, target, nil)
+}
+
+func measureLatencyRouteWithSlots(parent context.Context, target string, slots chan struct{}) (int, string) {
 	if !validLatencyRouteTarget(target) {
 		return 0, "unavailable"
 	}
+	if slots == nil {
+		slots = defaultLatencyRouteProbeSlots
+	}
 	select {
-	case latencyRouteProbeSlots <- struct{}{}:
-		defer func() { <-latencyRouteProbeSlots }()
+	case slots <- struct{}{}:
+		defer func() { <-slots }()
 	default:
 		return 0, "busy"
 	}

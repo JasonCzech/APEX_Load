@@ -180,6 +180,16 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 		} else {
 			cloned.GRPC.Method = scrub.ValueLabel(cloned.GRPC.Method, policy)
 		}
+		cloned.LLM = cloned.LLM.Clone()
+		if !cloned.LLM.Valid() {
+			cloned.LLM = nil
+		} else if cloned.LLM != nil {
+			cloned.LLM.Model = scrub.ValueLabel(cloned.LLM.Model, policy)
+			cloned.LLM.Dialect = scrub.ValueLabel(cloned.LLM.Dialect, policy)
+			cloned.LLM.FinishReason = scrub.ValueLabel(cloned.LLM.FinishReason, policy)
+			cloned.LLM.ErrorCode = scrub.ValueLabel(cloned.LLM.ErrorCode, policy)
+			cloned.LLM.Region = scrub.ValueLabel(cloned.LLM.Region, policy)
+		}
 		cloned.SubscriptionID = scrub.ValueLabel(cloned.SubscriptionID, policy)
 		if cloned.AcknowledgementMs != nil {
 			v := *cloned.AcknowledgementMs

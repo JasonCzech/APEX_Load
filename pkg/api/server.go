@@ -377,6 +377,130 @@ type Server struct {
 	// exit judge (analysis_writer_ownership.go); nil uses the real process.
 	analysisWriterOwnership atomic.Pointer[analysisWriterOwnershipRuntime]
 	analysisWriterCursor    analysisWriterInventoryCursor
+
+	semaphoresOnce sync.Once
+	semaphores     serverSemaphores
+}
+
+type serverSemaphores struct {
+	latencyRouteProbeSlots    chan struct{}
+	brunoInspectConcurrency   chan struct{}
+	analysisPipelineJobs      chan struct{}
+	elasticInspectionSlots    chan struct{}
+	harComparisonSlots        chan struct{}
+	browserResourceReadPermit chan struct{}
+	analysisUploadWriterSlots chan struct{}
+	rcaImportedReadGate       chan struct{}
+	enterpriseImportGate      chan struct{}
+	prometheusInspectionSlots chan struct{}
+	dynatraceInspectionSlots  chan struct{}
+}
+
+func newServerSemaphores() serverSemaphores {
+	return serverSemaphores{
+		latencyRouteProbeSlots:    make(chan struct{}, maxConcurrentRouteProbes),
+		brunoInspectConcurrency:   make(chan struct{}, 1),
+		analysisPipelineJobs:      make(chan struct{}, 1),
+		elasticInspectionSlots:    make(chan struct{}, 2),
+		harComparisonSlots:        make(chan struct{}, 2),
+		browserResourceReadPermit: make(chan struct{}, 1),
+		analysisUploadWriterSlots: make(chan struct{}, 16),
+		rcaImportedReadGate:       make(chan struct{}, 1),
+		enterpriseImportGate:      make(chan struct{}, 2),
+		prometheusInspectionSlots: make(chan struct{}, 2),
+		dynatraceInspectionSlots:  make(chan struct{}, 2),
+	}
+}
+
+var defaultServerSemaphores = newServerSemaphores()
+
+func (s *Server) ensureSemaphores() *serverSemaphores {
+	if s == nil {
+		return &defaultServerSemaphores
+	}
+	s.semaphoresOnce.Do(func() {
+		defaults := newServerSemaphores()
+		if s.semaphores.latencyRouteProbeSlots == nil {
+			s.semaphores.latencyRouteProbeSlots = defaults.latencyRouteProbeSlots
+		}
+		if s.semaphores.brunoInspectConcurrency == nil {
+			s.semaphores.brunoInspectConcurrency = defaults.brunoInspectConcurrency
+		}
+		if s.semaphores.analysisPipelineJobs == nil {
+			s.semaphores.analysisPipelineJobs = defaults.analysisPipelineJobs
+		}
+		if s.semaphores.elasticInspectionSlots == nil {
+			s.semaphores.elasticInspectionSlots = defaults.elasticInspectionSlots
+		}
+		if s.semaphores.harComparisonSlots == nil {
+			s.semaphores.harComparisonSlots = defaults.harComparisonSlots
+		}
+		if s.semaphores.browserResourceReadPermit == nil {
+			s.semaphores.browserResourceReadPermit = defaults.browserResourceReadPermit
+		}
+		if s.semaphores.analysisUploadWriterSlots == nil {
+			s.semaphores.analysisUploadWriterSlots = defaults.analysisUploadWriterSlots
+		}
+		if s.semaphores.rcaImportedReadGate == nil {
+			s.semaphores.rcaImportedReadGate = defaults.rcaImportedReadGate
+		}
+		if s.semaphores.enterpriseImportGate == nil {
+			s.semaphores.enterpriseImportGate = defaults.enterpriseImportGate
+		}
+		if s.semaphores.prometheusInspectionSlots == nil {
+			s.semaphores.prometheusInspectionSlots = defaults.prometheusInspectionSlots
+		}
+		if s.semaphores.dynatraceInspectionSlots == nil {
+			s.semaphores.dynatraceInspectionSlots = defaults.dynatraceInspectionSlots
+		}
+	})
+	return &s.semaphores
+}
+
+func (s *Server) brunoInspectSlots() chan struct{} {
+	return s.ensureSemaphores().brunoInspectConcurrency
+}
+
+func (s *Server) analysisPipelineSlots() chan struct{} {
+	return s.ensureSemaphores().analysisPipelineJobs
+}
+
+func (s *Server) elasticInspectionSlotChan() chan struct{} {
+	return s.ensureSemaphores().elasticInspectionSlots
+}
+
+func (s *Server) harComparisonSlotChan() chan struct{} {
+	if harComparisonSlots != defaultHARComparisonSlots {
+		return harComparisonSlots
+	}
+	return s.ensureSemaphores().harComparisonSlots
+}
+
+func (s *Server) browserResourceReadPermitChan() chan struct{} {
+	return s.ensureSemaphores().browserResourceReadPermit
+}
+
+func (s *Server) analysisUploadWriterSlotChan() chan struct{} {
+	if s == nil {
+		return analysisUploadWriterSlots
+	}
+	return s.ensureSemaphores().analysisUploadWriterSlots
+}
+
+func (s *Server) rcaImportedReadGateChan() chan struct{} {
+	return s.ensureSemaphores().rcaImportedReadGate
+}
+
+func (s *Server) enterpriseImportGateChan() chan struct{} {
+	return s.ensureSemaphores().enterpriseImportGate
+}
+
+func (s *Server) prometheusInspectionSlotChan() chan struct{} {
+	return s.ensureSemaphores().prometheusInspectionSlots
+}
+
+func (s *Server) dynatraceInspectionSlotChan() chan struct{} {
+	return s.ensureSemaphores().dynatraceInspectionSlots
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -688,7 +812,9 @@ func NewServer(cfg ServerConfig) *Server {
 		shutdownDone:            make(chan struct{}),
 		staticFS:                StaticFS,
 		tracing:                 cfg.TracingStatus,
+		semaphores:              newServerSemaphores(),
 	}
+	runner.latencyRouteProbeSlots = s.semaphores.latencyRouteProbeSlots
 	s.configureReplaySessionReservations()
 	runner.prometheusPrepare = s.verifyPreparedPrometheus
 	runner.dynatracePrepare = s.verifyPreparedDynatrace
@@ -889,144 +1015,72 @@ func (s *Server) captureStartupAuthSettings() {
 	s.authRuntimeMu.Unlock()
 }
 
+func (s *Server) specializedProjectScopedAuth(
+	profileName string,
+	projectLookup requestProjectLookup,
+	featureID string,
+	extraOpts ...authMiddlewareOption,
+) func(http.Handler) http.Handler {
+	access := mustSpecializedRouteAccessProfile(profileName)
+	opts := make([]authMiddlewareOption, 0, 2+len(extraOpts))
+	opts = append(opts, withAuthAuditRecorder(s), withLocalAuthGeneration(s.activeLocalAuthGeneration))
+	opts = append(opts, extraOpts...)
+	mw := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
+		s.authSettingsForRequest,
+		s.store,
+		s.cache,
+		access.GlobalRoles,
+		access.ProjectRoles,
+		projectLookup,
+		opts...,
+	))
+	if featureID != "" {
+		mw = s.domainFeatureScopedAuth(mw, featureID, projectLookup)
+	}
+	return mw
+}
+
 func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins, s.authSettingsForRequest)
 	log := loggingMiddleware
 	baseAuth := authMiddleware(s.authSettingsForRequest, s.store, s.cache, withAuthAuditRecorder(s), withLocalAuthGeneration(s.activeLocalAuthGeneration), withDebugAuthSettings(s.debugHTTPAuthSettings))
 	auth := s.projectMutationCoordinatedAuth(baseAuth)
-	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
 	ciAuth := s.ciAuthMiddleware(baseAuth)
 	ciMutationAuth := s.projectMutationCoordinatedAuth(ciAuth)
-	recorderViewAccess := mustSpecializedRouteAccessProfile("recorderViewAuth")
-	recorderCreateAccess := mustSpecializedRouteAccessProfile("recorderCreateAuth")
-	recorderSessionViewAccess := mustSpecializedRouteAccessProfile("recorderSessionViewAuth")
-	recorderSessionEditAccess := mustSpecializedRouteAccessProfile("recorderSessionEditAuth")
-	browserReplaySessionViewAccess := mustSpecializedRouteAccessProfile("browserReplaySessionViewAuth")
-	browserReplaySessionEditAccess := mustSpecializedRouteAccessProfile("browserReplaySessionEditAuth")
-	scriptDebugSessionViewAccess := mustSpecializedRouteAccessProfile("scriptDebugSessionViewAuth")
-	scriptDebugSessionEditAccess := mustSpecializedRouteAccessProfile("scriptDebugSessionEditAuth")
-	browserRecordingCreateAccess := mustSpecializedRouteAccessProfile("browserRecordingCreateAuth")
-	browserRecordingSessionViewAccess := mustSpecializedRouteAccessProfile("browserRecordingSessionViewAuth")
-	browserRecordingSessionEditAccess := mustSpecializedRouteAccessProfile("browserRecordingSessionEditAuth")
-	recorderViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		recorderViewAccess.GlobalRoles,
-		recorderViewAccess.ProjectRoles,
-		resolveRecorderListProjectID,
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	recorderCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		recorderCreateAccess.GlobalRoles,
-		recorderCreateAccess.ProjectRoles,
-		resolveRecorderCreateProjectID,
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	recorderSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		recorderSessionViewAccess.GlobalRoles,
-		recorderSessionViewAccess.ProjectRoles,
-		resolveRecorderSessionProjectID(s.recorder),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	recorderSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		recorderSessionEditAccess.GlobalRoles,
-		recorderSessionEditAccess.ProjectRoles,
-		resolveRecorderSessionProjectID(s.recorder),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	browserReplaySessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		browserReplaySessionViewAccess.GlobalRoles,
-		browserReplaySessionViewAccess.ProjectRoles,
-		resolveBrowserReplaySessionProjectID(s.browserReplay, s.replayArtifacts),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	browserReplaySessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		browserReplaySessionEditAccess.GlobalRoles,
-		browserReplaySessionEditAccess.ProjectRoles,
-		resolveBrowserReplaySessionProjectID(s.browserReplay, s.replayArtifacts),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	scriptDebugSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		scriptDebugSessionViewAccess.GlobalRoles,
-		scriptDebugSessionViewAccess.ProjectRoles,
-		resolveScriptDebugSessionProjectID(s.scriptDebug),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-		withDebugAuthSettings(s.debugHTTPAuthSettings),
-	))
-	scriptDebugSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		scriptDebugSessionEditAccess.GlobalRoles,
-		scriptDebugSessionEditAccess.ProjectRoles,
-		resolveScriptDebugSessionProjectID(s.scriptDebug),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-		withDebugAuthSettings(s.debugHTTPAuthSettings),
-	))
-	browserRecordingCreateAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		browserRecordingCreateAccess.GlobalRoles,
-		browserRecordingCreateAccess.ProjectRoles,
-		resolveRecorderCreateProjectID,
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	browserRecordingSessionViewAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		browserRecordingSessionViewAccess.GlobalRoles,
-		browserRecordingSessionViewAccess.ProjectRoles,
-		resolveBrowserRecordingSessionProjectID(s),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	browserRecordingSessionEditAuth := s.projectMutationCoordinatedAuth(projectScopedAuthMiddleware(
-		s.authSettingsForRequest,
-		s.store,
-		s.cache,
-		browserRecordingSessionEditAccess.GlobalRoles,
-		browserRecordingSessionEditAccess.ProjectRoles,
-		resolveBrowserRecordingSessionProjectID(s),
-		withAuthAuditRecorder(s),
-		withLocalAuthGeneration(s.activeLocalAuthGeneration),
-	))
-	recorderViewAuth = s.domainFeatureScopedAuth(recorderViewAuth, "script_builder.browser_recording", resolveRecorderListProjectID)
-	recorderCreateAuth = s.domainFeatureScopedAuth(recorderCreateAuth, "script_builder.browser_recording", resolveRecorderCreateProjectID)
-	recorderSessionViewAuth = s.domainFeatureScopedAuth(recorderSessionViewAuth, "script_builder.browser_recording", resolveRecorderSessionProjectID(s.recorder))
-	recorderSessionEditAuth = s.domainFeatureScopedAuth(recorderSessionEditAuth, "script_builder.browser_recording", resolveRecorderSessionProjectID(s.recorder))
-	browserRecordingCreateAuth = s.domainFeatureScopedAuth(browserRecordingCreateAuth, "script_builder.browser_recording", resolveRecorderCreateProjectID)
-	browserRecordingSessionViewAuth = s.domainFeatureScopedAuth(browserRecordingSessionViewAuth, "script_builder.browser_recording", resolveBrowserRecordingSessionProjectID(s))
-	browserRecordingSessionEditAuth = s.domainFeatureScopedAuth(browserRecordingSessionEditAuth, "script_builder.browser_recording", resolveBrowserRecordingSessionProjectID(s))
+	const browserRecordingFeature = "script_builder.browser_recording"
+	recorderSessionLookup := resolveRecorderSessionProjectID(s.recorder)
+	browserReplaySessionLookup := resolveBrowserReplaySessionProjectID(s.browserReplay, s.replayArtifacts)
+	scriptDebugSessionLookup := resolveScriptDebugSessionProjectID(s.scriptDebug)
+	browserRecordingSessionLookup := resolveBrowserRecordingSessionProjectID(s)
+	recorderViewAuth := s.specializedProjectScopedAuth("recorderViewAuth", resolveRecorderListProjectID, browserRecordingFeature)
+	recorderCreateAuth := s.specializedProjectScopedAuth("recorderCreateAuth", resolveRecorderCreateProjectID, browserRecordingFeature)
+	recorderSessionViewAuth := s.specializedProjectScopedAuth("recorderSessionViewAuth", recorderSessionLookup, browserRecordingFeature)
+	recorderSessionEditAuth := s.specializedProjectScopedAuth("recorderSessionEditAuth", recorderSessionLookup, browserRecordingFeature)
+	browserReplaySessionViewAuth := s.specializedProjectScopedAuth("browserReplaySessionViewAuth", browserReplaySessionLookup, "")
+	browserReplaySessionEditAuth := s.specializedProjectScopedAuth("browserReplaySessionEditAuth", browserReplaySessionLookup, "")
+	scriptDebugSessionViewAuth := s.specializedProjectScopedAuth("scriptDebugSessionViewAuth", scriptDebugSessionLookup, "", withDebugAuthSettings(s.debugHTTPAuthSettings))
+	scriptDebugSessionEditAuth := s.specializedProjectScopedAuth("scriptDebugSessionEditAuth", scriptDebugSessionLookup, "", withDebugAuthSettings(s.debugHTTPAuthSettings))
+	browserRecordingCreateAuth := s.specializedProjectScopedAuth("browserRecordingCreateAuth", resolveRecorderCreateProjectID, browserRecordingFeature)
+	browserRecordingSessionViewAuth := s.specializedProjectScopedAuth("browserRecordingSessionViewAuth", browserRecordingSessionLookup, browserRecordingFeature)
+	browserRecordingSessionEditAuth := s.specializedProjectScopedAuth("browserRecordingSessionEditAuth", browserRecordingSessionLookup, browserRecordingFeature)
+	standardRouteMiddleware := apiRouteMiddlewareStack{
+		cors: cors,
+		log:  log,
+		auth: auth,
+		specialized: map[string]func(http.Handler) http.Handler{
+			"recorderViewAuth":                recorderViewAuth,
+			"recorderCreateAuth":              recorderCreateAuth,
+			"recorderSessionViewAuth":         recorderSessionViewAuth,
+			"recorderSessionEditAuth":         recorderSessionEditAuth,
+			"browserReplaySessionViewAuth":    browserReplaySessionViewAuth,
+			"browserReplaySessionEditAuth":    browserReplaySessionEditAuth,
+			"scriptDebugSessionViewAuth":      scriptDebugSessionViewAuth,
+			"scriptDebugSessionEditAuth":      scriptDebugSessionEditAuth,
+			"browserRecordingCreateAuth":      browserRecordingCreateAuth,
+			"browserRecordingSessionViewAuth": browserRecordingSessionViewAuth,
+			"browserRecordingSessionEditAuth": browserRecordingSessionEditAuth,
+		},
+	}
 
 	// Controller-native GitHub Actions discovery, authentication, and run API.
 	s.mux.Handle("GET /.well-known/apexload-ci", cors(log(http.HandlerFunc(s.handleCIWellKnown))))
@@ -2397,108 +2451,33 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 
 	// With listeners drained and load stopped, tear down background components.
-	if s.usageCancel != nil {
-		s.usageCancel()
-		s.usageCancel = nil
-	}
-	if s.auditRetentionCancel != nil {
-		s.auditRetentionCancel()
-		s.auditRetentionCancel = nil
-	}
-	if s.timeslotRetentionCancel != nil {
-		s.timeslotRetentionCancel()
-		s.timeslotRetentionCancel = nil
-	}
-	if s.scheduleOccurrenceRetentionCancel != nil {
-		s.scheduleOccurrenceRetentionCancel()
-		s.scheduleOccurrenceRetentionCancel = nil
-	}
-	if s.brunoSessionCleanupCancel != nil {
-		s.brunoSessionCleanupCancel()
-		s.brunoSessionCleanupCancel = nil
-	}
-	if s.grafanaSessionCleanupCancel != nil {
-		s.grafanaSessionCleanupCancel()
-		s.grafanaSessionCleanupCancel = nil
-	}
-	if s.receiptOutcomeCleanupCancel != nil {
-		s.receiptOutcomeCleanupCancel()
-		s.receiptOutcomeCleanupCancel = nil
-	}
-	if s.sourceSecretCleanupCancel != nil {
-		s.sourceSecretCleanupCancel()
-		s.sourceSecretCleanupCancel = nil
-	}
-	if s.replayArtifactCleanupCancel != nil {
-		s.replayArtifactCleanupCancel()
-		s.replayArtifactCleanupCancel = nil
-		if s.replayArtifactCleanupDone != nil {
-			select {
-			case <-s.replayArtifactCleanupDone:
-			case <-ctx.Done():
-			}
-			s.replayArtifactCleanupDone = nil
-		}
-	}
-	if s.archiveCleanupCancel != nil {
-		s.archiveCleanupCancel()
-		s.archiveCleanupCancel = nil
-		if s.archiveCleanupDone != nil {
-			select {
-			case <-s.archiveCleanupDone:
-			case <-ctx.Done():
-			}
-			s.archiveCleanupDone = nil
-		}
-	}
-	if s.providerMonitoringCancel != nil {
-		s.providerMonitoringCancel()
-		s.providerMonitoringCancel = nil
-	}
-	if s.evaluationCancel != nil {
-		s.evaluationCancel()
-		s.evaluationCancel = nil
-	}
-	if s.rcaCancel != nil {
-		s.rcaCancel()
-		s.rcaCancel = nil
-	}
-	if s.archiveFinalizationCancel != nil {
-		s.archiveFinalizationCancel()
-		s.archiveFinalizationCancel = nil
-		if s.archiveFinalizationDone != nil {
-			select {
-			case <-s.archiveFinalizationDone:
-			case <-ctx.Done():
-			}
-			s.archiveFinalizationDone = nil
-		}
-	}
+	cancelBackgroundSlots(
+		&s.usageCancel,
+		&s.auditRetentionCancel,
+		&s.timeslotRetentionCancel,
+		&s.scheduleOccurrenceRetentionCancel,
+		&s.brunoSessionCleanupCancel,
+		&s.grafanaSessionCleanupCancel,
+		&s.receiptOutcomeCleanupCancel,
+		&s.sourceSecretCleanupCancel,
+	)
+	stopBackgroundWorkerWithDone(ctx, &s.replayArtifactCleanupCancel, &s.replayArtifactCleanupDone)
+	stopBackgroundWorkerWithDone(ctx, &s.archiveCleanupCancel, &s.archiveCleanupDone)
+	cancelBackgroundSlots(
+		&s.providerMonitoringCancel,
+		&s.evaluationCancel,
+		&s.rcaCancel,
+	)
+	stopBackgroundWorkerWithDone(ctx, &s.archiveFinalizationCancel, &s.archiveFinalizationDone)
 	s.stopRemoteRunCleanupRetry(ctx)
-	if s.telemetryNotificationCancel != nil {
-		s.telemetryNotificationCancel()
-		s.telemetryNotificationCancel = nil
-	}
-	if s.accessReviewNotifyCancel != nil {
-		s.accessReviewNotifyCancel()
-		s.accessReviewNotifyCancel = nil
-	}
-	if s.ciChecksCancel != nil {
-		s.ciChecksCancel()
-		s.ciChecksCancel = nil
-	}
-	if s.fanoutCancel != nil {
-		s.fanoutCancel()
-		s.fanoutCancel = nil
-	}
-	if s.discoveryCancel != nil {
-		s.discoveryCancel()
-		s.discoveryCancel = nil
-	}
-	if s.generatorInventoryCancel != nil {
-		s.generatorInventoryCancel()
-		s.generatorInventoryCancel = nil
-	}
+	cancelBackgroundSlots(
+		&s.telemetryNotificationCancel,
+		&s.accessReviewNotifyCancel,
+		&s.ciChecksCancel,
+		&s.fanoutCancel,
+		&s.discoveryCancel,
+		&s.generatorInventoryCancel,
+	)
 	if s.fanoutSub != nil {
 		_ = s.fanoutSub.Close()
 		s.fanoutSub = nil
@@ -2539,6 +2518,59 @@ func (s *Server) shutdown(ctx context.Context) error {
 	s.closeElasticOnShutdown(ctx)
 	s.clearBoundAddrs()
 	return shutdownErr
+}
+
+func cancelBackgroundSlots(slots ...*context.CancelFunc) {
+	for _, slot := range slots {
+		if slot != nil && *slot != nil {
+			(*slot)()
+			*slot = nil
+		}
+	}
+}
+
+func stopBackgroundWorkerWithDone(ctx context.Context, cancelSlot *context.CancelFunc, doneSlot *chan struct{}) {
+	if cancelSlot == nil || *cancelSlot == nil {
+		return
+	}
+	(*cancelSlot)()
+	*cancelSlot = nil
+	if doneSlot != nil && *doneSlot != nil {
+		select {
+		case <-*doneSlot:
+		case <-ctx.Done():
+		}
+		*doneSlot = nil
+	}
+}
+
+// startLeaderPeriodicTask launches a Server-owned background ticker that invokes
+// step(time.Now().UTC()) on each tick when the Server is the execution leader.
+// If the Server is nil, interval is non-positive, or shutdown has already begun,
+// it cancels the context immediately and returns nil.
+func (s *Server) startLeaderPeriodicTask(interval time.Duration, step func(now time.Time)) context.CancelFunc {
+	if s == nil || interval <= 0 || step == nil {
+		return nil
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if !s.launchBackground(func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if s.isExecutionLeader() {
+					step(time.Now().UTC())
+				}
+			}
+		}
+	}) {
+		cancel()
+		return nil
+	}
+	return cancel
 }
 
 // closeReplayManagers begins both independent manager drains together and
@@ -2633,7 +2665,7 @@ func (s *Server) waitForBackground(ctx context.Context) error {
 }
 
 func (s *Server) startCacheFanout() {
-	if s == nil || s.cache == nil || s.hub == nil {
+	if s == nil || s.cache == nil || s.hub == nil || s.fanoutCancel != nil {
 		return
 	}
 	info := s.cache.Info()
@@ -2647,9 +2679,7 @@ func (s *Server) startCacheFanout() {
 		slog.Warn("redis fanout subscription unavailable", "err", err)
 		return
 	}
-	s.fanoutCancel = cancel
-	s.fanoutSub = sub
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		for payload := range sub.Messages() {
 			var envelope websocketFanoutEnvelope
 			if err := json.Unmarshal(payload, &envelope); err != nil {
@@ -2675,7 +2705,13 @@ func (s *Server) startCacheFanout() {
 			}
 			s.hub.broadcastLocal(broadcast)
 		}
-	})
+	}) {
+		cancel()
+		_ = sub.Close()
+		return
+	}
+	s.fanoutCancel = cancel
+	s.fanoutSub = sub
 }
 
 func (s *Server) startUsageAccountingSnapshotCadence() {
@@ -2683,8 +2719,7 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.usageCancel = cancel
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		// Poll settings at a small fixed cadence so enabling, disabling, or
 		// changing the snapshot interval takes effect without a restart.
 		ticker := time.NewTicker(time.Second)
@@ -2735,7 +2770,11 @@ func (s *Server) startUsageAccountingSnapshotCadence() {
 				lastCapture = now
 			}
 		}
-	})
+	}) {
+		cancel()
+		return
+	}
+	s.usageCancel = cancel
 }
 
 // generatorInventoryRefreshInterval keeps the cached fleet inventory well within
@@ -2771,8 +2810,7 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.generatorInventoryCancel = cancel
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		// Prime the cache immediately so the first gate after startup sees live
 		// data, then refresh on the cadence.
 		s.refreshGeneratorInventory(ctx)
@@ -2786,7 +2824,11 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 				s.refreshGeneratorInventory(ctx)
 			}
 		}
-	})
+	}) {
+		cancel()
+		return
+	}
+	s.generatorInventoryCancel = cancel
 }
 
 // refreshGeneratorInventory performs one bounded, panic-safe inventory probe for

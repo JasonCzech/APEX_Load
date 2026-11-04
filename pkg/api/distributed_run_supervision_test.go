@@ -126,7 +126,7 @@ func TestRunSupervisionKeeperCleanupCannotClearReplacementKeeper(t *testing.T) {
 	backend := &distributedExecutionBackend{requireRunSupervision: true, timeout: time.Second, runSupervisionTTL: 60 * time.Second, runSupervisionRenew: time.Hour}
 	var token [generatorrpc.RunSupervisionTokenSize]byte
 	copy(token[:], bytes.Repeat([]byte{3}, len(token)))
-	test := &ManagedTest{ID: "run", Status: "RUNNING", remoteRunSupervisionToken: token}
+	test := &ManagedTest{ID: "run", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteRunSupervisionToken: token}}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
 	stopOld := backend.startRunSupervisionKeeper(context.Background(), runner, test, nil, 1, "owner", token)
@@ -167,8 +167,10 @@ func TestFenceRunSupervisionTargetFailsClosedWhenClaimWorkerIgnoresCancellation(
 		return acceptedRunSupervisionClaim(60 * time.Second), nil
 	}}
 	test := &ManagedTest{
-		ID: "run", Status: "RUNNING", remoteRunSupervisionToken: token,
-		remoteClientsByTarget: map[string]generatorClient{"source": client},
+		ID: "run", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{
+			remoteRunSupervisionToken: token,
+			remoteClientsByTarget:     map[string]generatorClient{"source": client},
+		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 	stopKeeper := backend.startRunSupervisionKeeper(context.Background(), runner, test, nil, 1, "owner", token)
@@ -221,14 +223,16 @@ func TestLeadershipLossUsesTokenFencedStopAndJoinsKeeper(t *testing.T) {
 		},
 	}
 	test := &ManagedTest{
-		ID:                                   "run",
-		Status:                               "RUNNING",
-		executionGeneration:                  17,
-		remoteClientsByTarget:                map[string]generatorClient{"generator": client},
-		remoteRunSupervisionToken:            token,
-		remoteRunSupervisionCancel:           keeperCancel,
-		remoteRunSupervisionDone:             keeperDone,
-		remoteRunSupervisionKeeperGeneration: 5,
+		ID:                  "run",
+		Status:              "RUNNING",
+		executionGeneration: 17,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:                map[string]generatorClient{"generator": client},
+			remoteRunSupervisionToken:            token,
+			remoteRunSupervisionCancel:           keeperCancel,
+			remoteRunSupervisionDone:             keeperDone,
+			remoteRunSupervisionKeeperGeneration: 5,
+		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -276,19 +280,23 @@ func TestLeadershipLossStuckKeeperDoesNotSuppressTokenFencedStops(t *testing.T) 
 	copy(healthyToken[:], bytes.Repeat([]byte{8}, len(healthyToken)))
 	stuck := &ManagedTest{
 		ID: "stuck", Status: "RUNNING", executionGeneration: 21,
-		remoteClientsByTarget:      map[string]generatorClient{"stuck-generator": newClient()},
-		remoteRunSupervisionToken:  stuckToken,
-		remoteRunSupervisionCancel: func() {},
-		remoteRunSupervisionDone:   make(chan struct{}),
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:      map[string]generatorClient{"stuck-generator": newClient()},
+			remoteRunSupervisionToken:  stuckToken,
+			remoteRunSupervisionCancel: func() {},
+			remoteRunSupervisionDone:   make(chan struct{}),
+		},
 	}
 	healthyDone := make(chan struct{})
 	close(healthyDone)
 	healthy := &ManagedTest{
 		ID: "healthy", Status: "RUNNING", executionGeneration: 22,
-		remoteClientsByTarget:      map[string]generatorClient{"healthy-generator": newClient()},
-		remoteRunSupervisionToken:  healthyToken,
-		remoteRunSupervisionCancel: func() {},
-		remoteRunSupervisionDone:   healthyDone,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:      map[string]generatorClient{"healthy-generator": newClient()},
+			remoteRunSupervisionToken:  healthyToken,
+			remoteRunSupervisionCancel: func() {},
+			remoteRunSupervisionDone:   healthyDone,
+		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{stuck.ID: stuck, healthy.ID: healthy}}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)

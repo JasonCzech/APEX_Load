@@ -696,6 +696,56 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 </table>
 {{end}}
 
+{{define "llm_performance"}}
+<h2>{{sectionTitle "llm_performance"}}</h2>
+{{with .Report.LLM}}
+<p class="section-copy">Framed as <strong>prefill</strong> (Time to First Token, TTFT — prompt ingestion and KV-cache population) versus <strong>decode</strong> (Time per Output Token, TPOT, and Inter-Token Latency, ITL — autoregressive generation). ITL percentiles are approximate (log-linear histogram, ~10% bin width).</p>
+<div class="overview">
+  <div class="metric"><span class="metric-label">LLM requests</span><span class="metric-value">{{hint .TotalRequests}}</span></div>
+  <div class="metric"><span class="metric-label">Prefill TTFT p95</span><span class="metric-value">{{approx .TTFT.PercentileQuality}}{{msValue .TTFT.P95Ms}} ms</span></div>
+  <div class="metric"><span class="metric-label">Decode TPOT p95</span><span class="metric-value">{{approx .TPOT.PercentileQuality}}{{msValue .TPOT.P95Ms}} ms</span></div>
+  <div class="metric"><span class="metric-label">ITL approx p95</span><span class="metric-value">{{approx .ITL.PercentileQuality}}{{msValue .ITL.P95Ms}} ms</span></div>
+  <div class="metric"><span class="metric-label">Output tokens/s</span><span class="metric-value">{{formatFloat .OutputTokensPerSec}}</span></div>
+  <div class="metric"><span class="metric-label">Goodput</span><span class="metric-value">{{formatPercent .GoodputPct}}</span></div>
+  <div class="metric"><span class="metric-label">Throttle rate (429)</span><span class="metric-value">{{formatPercent .ThrottleRatePct}}</span></div>
+  <div class="metric"><span class="metric-label">Truncation rate</span><span class="metric-value">{{formatPercent .TruncationRatePct}}</span></div>
+</div>
+<h3>Prefill vs decode latency distribution</h3>
+<table>
+  <thead><tr><th>Phase</th><th class="num">Samples</th><th class="num">Mean (ms)</th><th class="num">p50 (ms)</th><th class="num">p90 (ms)</th><th class="num">p95 (ms)</th><th class="num">p99 (ms)</th><th class="num">Max (ms)</th></tr></thead>
+  <tbody>
+    <tr><td>Prefill — Time to First Token (TTFT)</td><td class="num">{{hint .TTFT.Samples}}</td><td class="num">{{msValue .TTFT.MeanMs}}</td><td class="num">{{approx .TTFT.PercentileQuality}}{{msValue .TTFT.P50Ms}}</td><td class="num">{{approx .TTFT.PercentileQuality}}{{msValue .TTFT.P90Ms}}</td><td class="num">{{approx .TTFT.PercentileQuality}}{{msValue .TTFT.P95Ms}}</td><td class="num">{{approx .TTFT.PercentileQuality}}{{msValue .TTFT.P99Ms}}</td><td class="num">{{msValue .TTFT.MaxMs}}</td></tr>
+    <tr><td>Decode — Time per Output Token (TPOT)</td><td class="num">{{hint .TPOT.Samples}}</td><td class="num">{{msValue .TPOT.MeanMs}}</td><td class="num">{{approx .TPOT.PercentileQuality}}{{msValue .TPOT.P50Ms}}</td><td class="num">{{approx .TPOT.PercentileQuality}}{{msValue .TPOT.P90Ms}}</td><td class="num">{{approx .TPOT.PercentileQuality}}{{msValue .TPOT.P95Ms}}</td><td class="num">{{approx .TPOT.PercentileQuality}}{{msValue .TPOT.P99Ms}}</td><td class="num">{{msValue .TPOT.MaxMs}}</td></tr>
+    <tr><td>Decode — Inter-Token Latency (ITL, approx)</td><td class="num">{{hint .ITL.Samples}}</td><td class="num">{{msValue .ITL.MeanMs}}</td><td class="num">{{approx .ITL.PercentileQuality}}{{msValue .ITL.P50Ms}}</td><td class="num">{{approx .ITL.PercentileQuality}}{{msValue .ITL.P90Ms}}</td><td class="num">{{approx .ITL.PercentileQuality}}{{msValue .ITL.P95Ms}}</td><td class="num">{{approx .ITL.PercentileQuality}}{{msValue .ITL.P99Ms}}</td><td class="num">{{msValue .ITL.MaxMs}}</td></tr>
+    <tr><td>End-to-End Generation (E2E)</td><td class="num">{{hint .E2E.Samples}}</td><td class="num">{{msValue .E2E.MeanMs}}</td><td class="num">{{approx .E2E.PercentileQuality}}{{msValue .E2E.P50Ms}}</td><td class="num">{{approx .E2E.PercentileQuality}}{{msValue .E2E.P90Ms}}</td><td class="num">{{approx .E2E.PercentileQuality}}{{msValue .E2E.P95Ms}}</td><td class="num">{{approx .E2E.PercentileQuality}}{{msValue .E2E.P99Ms}}</td><td class="num">{{msValue .E2E.MaxMs}}</td></tr>
+  </tbody>
+</table>
+{{if .ByLengthBand}}
+<h3>Prompt length band breakdown</h3>
+<table>
+  <thead><tr><th>Length band</th><th class="num">Requests</th><th class="num">Mean prompt tok</th><th class="num">Mean output tok</th><th class="num">TTFT p50 (ms)</th><th class="num">TTFT p95 (ms)</th><th class="num">TPOT p95 (ms)</th><th class="num">E2E p95 (ms)</th></tr></thead>
+  <tbody>
+    {{range .ByLengthBand}}
+    <tr><td>{{.Label}}</td><td class="num">{{hint .Requests}}</td><td class="num">{{f0 .MeanPromptTokens}}</td><td class="num">{{f0 .MeanCompletionTokens}}</td><td class="num">{{msValue .TTFT.P50Ms}}</td><td class="num">{{msValue .TTFT.P95Ms}}</td><td class="num">{{msValue .TPOT.P95Ms}}</td><td class="num">{{msValue .E2E.P95Ms}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{if .GoldenPromptDrift}}
+<h3>Golden-prompt drift check</h3>
+<p class="section-copy">Deterministic canary prompts ({{.GoldenPromptDrift.CheckedPrompts}} checked, {{.GoldenPromptDrift.DriftedPrompts}} drifted · status: <strong>{{tokenLabel .GoldenPromptDrift.Status}}</strong>).</p>
+<table>
+  <thead><tr><th>Prompt action</th><th class="num">Samples</th><th class="num">Distinct hashes</th><th class="num">Min/max output tok</th><th>Status</th><th>Detail</th></tr></thead>
+  <tbody>
+    {{range .GoldenPromptDrift.Items}}
+    <tr><td>{{.Name}}</td><td class="num">{{hint .Samples}}</td><td class="num">{{.ObservedHashes}}</td><td class="num">{{.MinCompletionTokens}} / {{.MaxCompletionTokens}}</td><td>{{if .Drifted}}Drifted{{else}}Stable{{end}}</td><td>{{.Detail}}</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
+{{else}}<p class="muted">No LLM inference telemetry was captured for this run.</p>{{end}}
+{{end}}
+
 {{define "network_phases"}}
 <h2>{{sectionTitle "network_phases"}}</h2>
 {{if gt .Report.NetworkPhases.Samples 0}}
