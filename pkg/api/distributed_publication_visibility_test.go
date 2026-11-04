@@ -42,7 +42,7 @@ func TestDistributedCompletionVisibleWhilePublicationPending(t *testing.T) {
 	store := &gatedPublicationStore{SQLiteStore: sqlite, entered: make(chan struct{}), release: make(chan struct{})}
 	runner := NewTestRunner(1, NewHub(), sqliteOverlay(store))
 	now := time.Now().UTC()
-	test := &ManagedTest{ID: "publication-visibility", Name: "publication visibility", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, remoteFinalizing: true, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0}}
+	test := &ManagedTest{ID: "publication-visibility", Name: "publication visibility", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, distributedTestRuntime: distributedTestRuntime{remoteFinalizing: true}, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0}}
 	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +184,7 @@ func TestDistributedPublicationRetryKeepsHeldJointBatches(t *testing.T) {
 		t.Error("the publication retry worker did not stop")
 	}()
 	now := time.Now().UTC()
-	test := &ManagedTest{ID: "publication-retry-joint", Name: "publication retry", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, remoteFinalizing: true, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0},
+	test := &ManagedTest{ID: "publication-retry-joint", Name: "publication retry", ProjectID: storage.DefaultProjectID, Status: "RUNNING", CreatedAt: now, distributedTestRuntime: distributedTestRuntime{remoteFinalizing: true}, LiveMetrics: &LiveMetrics{Timestamp: now, ActiveVUsers: 0},
 		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator", Sequence: 5}}, pendingJointBytes: 256}
 	if err := store.SQLiteStore.SaveTest(&storage.TestRecord{ID: test.ID, Name: test.Name, ProjectID: test.ProjectID, Status: test.Status, StartTime: now}); err != nil {
 		t.Fatal(err)

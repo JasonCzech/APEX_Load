@@ -58,6 +58,26 @@ type leaseFencedTestDeletePersistence interface {
 	DeleteTestIfLeaseHeld(id, leaseName, leaseOwnerID string) (storage.LeaseFencedDeleteResult, error)
 }
 
+type leaseFencedTestSavePersistence interface {
+	SaveTestIfLeaseHeld(test *storage.TestRecord, leaseName, leaseOwnerID string) (bool, error)
+}
+
+type atomicRunMonitorTestPersistence interface {
+	SaveTestWithRunMonitors(test *storage.TestRecord, leaseName, leaseOwnerID string, terminal bool) (bool, error)
+}
+
+type shakeoutTransitionTestPersistence interface {
+	TransitionTestFromShakeout(transition storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error)
+}
+
+type activeTestStatusPersistence interface {
+	UpdateTestStatusIfActive(id string, status string, endTime *time.Time, errStr string) (storage.TestStatusTransitionResult, error)
+}
+
+type leaseFencedActiveTestStatusPersistence interface {
+	UpdateTestStatusIfActiveAndLeaseHeld(id string, status string, endTime *time.Time, errStr, leaseName, leaseOwnerID string) (storage.TestStatusTransitionResult, error)
+}
+
 type leaseFencedProjectDeletePersistence interface {
 	DeleteProjectIfLeaseHeld(id, leaseName, leaseOwnerID string) (storage.LeaseFencedDeleteResult, error)
 }
@@ -449,6 +469,8 @@ type TestRunner struct {
 	archiveAttachedHook              func(testID string)
 	telemetryNotificationPublication func(context.Context, string, *RunArchiveManifest) (storage.TelemetryNotificationPublication, error)
 	routeCache                       map[string]latencyRouteCacheEntry
+	latencyRouteProbeSlotsOnce       sync.Once
+	latencyRouteProbeSlots           chan struct{}
 	// importPublicationSnapshot is installed by Server after construction. It
 	// reads the durable direct-import journal and returns assets that have been
 	// created but whose containing batch has not committed. Keeping the callback
@@ -771,45 +793,10 @@ type ManagedTest struct {
 	latencyProbeInFlight  bool
 	latencyEndpointsCache latencyEndpointCache
 	latencyProbeSamples   map[string][]latencyProbeSample
-	remoteTarget          string
-	remoteClient          generatorClient
-	remoteMetricsStream   *generatorrpc.MetricsStream
-	remoteGroupTargets    map[string]string
-	remoteGroupShards     map[string][]GeneratorShardSummary
-	remoteClientsByTarget map[string]generatorClient
-	// remoteThroughputCaps is each generator's last accepted throughput-cap
-	// share by "target\x00group", so unchanged shares are not re-sent.
-	remoteThroughputCaps map[string]float64
-	// remoteArchiveClientsByTarget retains positively stopped evacuation
-	// sources for the final archive merge. They are deliberately excluded from
-	// active topology and every mutable-control fan-out.
-	remoteArchiveClientsByTarget     map[string]generatorClient
-	remoteMetricsStreamsByTarget     map[string]*generatorrpc.MetricsStream
-	remoteMetricsBatchesByTarget     map[string]generatorrpc.MetricsBatch
-	remoteTransactionResponseTimeSLA map[string]*transactionResponseTimeSLAAccumulator
-	// remoteTransactionResponseTimeSLALegacyByTarget retains cumulative
-	// controller-side counters for generators that do not yet publish the
-	// cumulative SLA contract. Keeping these counters per target lets a rolling
-	// upgrade merge legacy transaction windows with upgraded generator counters
-	// without either double-counting or discarding prior evidence.
-	remoteTransactionResponseTimeSLALegacyByTarget map[string]map[string]*transactionResponseTimeSLAAccumulator
-	remoteTargetStates                             map[string]string
-	remoteFinalizing                               bool
-	remoteWorkloadCompleted                        bool
-	remoteLifecycleCtx                             context.Context
-	remoteLifecycleCancel                          context.CancelFunc
-	remoteStopFinalizerRunning                     bool
-	remoteMetricsLastPublishedAt                   time.Time
-	remoteMetricsFlushScheduled                    bool
-	// remoteMetricsStoredRevisionByTarget is the accepted revision of each
-	// target's latest stored window, and remoteMetricsGateRevision the
-	// accepted revision at the gate's last publication: a target has a new
-	// window when its stored revision is the greater.
-	remoteMetricsStoredRevisionByTarget map[string]uint64
-	remoteMetricsGateRevision           uint64
-	// Accepted/published revisions and the gate make distributed aggregate
-	// publication monotonic when per-target consumers finish out of order.
-	remoteMetricsAcceptedRevision uint64
+
+	// Distributed remote execution runtime state (managed by distributedBackend
+	// via prepareDistributedRuntimeState and its rollback helper).
+	distributedTestRuntime
 	// pendingJointPublications hold the joint evidence of source batches
 	// accepted since the last published point (B5); the next installed
 	// publication carries them (pendingJointBytes estimates their size).
@@ -820,32 +807,10 @@ type ManagedTest struct {
 	// jointHeldFromStart is set when this controller starts the distributed
 	// run, so it has held every batch accepted since; a run it loaded after a
 	// restart, or adopted, cannot know what another controller held.
-	pendingJointPublications        []*storage.NativePublicationEvidence
-	pendingJointBytes               int64
-	jointPublicationsDropped        int64
-	jointHeldFromStart              bool
-	remoteMetricsPublishedRevision  uint64
-	remoteMetricsPublishGate        chan struct{}
-	remoteGoalAcceptedErrorWindows  map[string]distributedGoalErrorAccumulator
-	remoteGoalPublishedErrorWindows map[string]distributedGoalErrorAccumulator
-	remoteGoalUpdateRunning         bool
-	remoteGoalUpdateRevision        uint64
-	// remoteSecretSnapshots are bounded, run-lifetime-only controller snapshots
-	// shared by initial and evacuation assignments. They are never serialized.
-	remoteSecretSnapshots map[string]distributedRunSecretSnapshot
-	// remoteActivated is set only after every assigned generator acknowledges
-	// CommitWork. The durable RUNNING transition intentionally precedes those
-	// acknowledgements, so non-stop controls must remain closed while this is
-	// false to avoid mutating a partially committed fleet.
-	remoteActivated                      bool
-	remoteActivationPending              bool
-	remoteControlGeneration              uint64
-	remotePauseOperationSequence         uint64
-	remoteRunSupervisionToken            [generatorrpc.RunSupervisionTokenSize]byte
-	remoteRunSupervisionCancel           context.CancelFunc
-	remoteRunSupervisionDone             chan struct{}
-	remoteRunSupervisionKeeperGeneration uint64
-	remoteRunSupervisionFencedTargets    map[string]bool
+	pendingJointPublications []*storage.NativePublicationEvidence
+	pendingJointBytes        int64
+	jointPublicationsDropped int64
+	jointHeldFromStart       bool
 	// executionFence is the scheduler-lease owner token captured by the epoch
 	// that created/claimed this run. It is intentionally process-private and is
 	// checked transactionally for every production full-row save.
@@ -902,12 +867,77 @@ type ManagedTest struct {
 	// local run, from accepted generator windows for a distributed one) so
 	// dashboards can show a run's error rate instead of the last second's.
 	runTotals      runTotalsAccumulator
+	llmWindow      llmRollingWindow
 	ciSLAEvaluated bool
 	ciSLABreached  bool
 	ciSLADetails   []string
 	// initialArchiveProvenance is an immutable, masked start-of-run snapshot.
 	// Persisting it keeps distributed finalization honest across restart/failover.
 	initialArchiveProvenance *RunArchiveProvenance
+}
+
+type distributedTestRuntime struct {
+	remoteTarget          string
+	remoteClient          generatorClient
+	remoteMetricsStream   *generatorrpc.MetricsStream
+	remoteGroupTargets    map[string]string
+	remoteGroupShards     map[string][]GeneratorShardSummary
+	remoteClientsByTarget map[string]generatorClient
+	// remoteThroughputCaps is each generator's last accepted throughput-cap
+	// share by "target\x00group", so unchanged shares are not re-sent.
+	remoteThroughputCaps map[string]float64
+	// remoteArchiveClientsByTarget retains positively stopped evacuation
+	// sources for the final archive merge. They are deliberately excluded from
+	// active topology and every mutable-control fan-out.
+	remoteArchiveClientsByTarget     map[string]generatorClient
+	remoteMetricsStreamsByTarget     map[string]*generatorrpc.MetricsStream
+	remoteMetricsBatchesByTarget     map[string]generatorrpc.MetricsBatch
+	remoteTransactionResponseTimeSLA map[string]*transactionResponseTimeSLAAccumulator
+	// remoteTransactionResponseTimeSLALegacyByTarget retains cumulative
+	// controller-side counters for generators that do not yet publish the
+	// cumulative SLA contract. Keeping these counters per target lets a rolling
+	// upgrade merge legacy transaction windows with upgraded generator counters
+	// without either double-counting or discarding prior evidence.
+	remoteTransactionResponseTimeSLALegacyByTarget map[string]map[string]*transactionResponseTimeSLAAccumulator
+	remoteTargetStates                             map[string]string
+	remoteFinalizing                               bool
+	remoteWorkloadCompleted                        bool
+	remoteLifecycleCtx                             context.Context
+	remoteLifecycleCancel                          context.CancelFunc
+	remoteStopFinalizerRunning                     bool
+	remoteMetricsLastPublishedAt                   time.Time
+	remoteMetricsFlushScheduled                    bool
+	// remoteMetricsStoredRevisionByTarget is the accepted revision of each
+	// target's latest stored window, and remoteMetricsGateRevision the
+	// accepted revision at the gate's last publication: a target has a new
+	// window when its stored revision is the greater.
+	remoteMetricsStoredRevisionByTarget map[string]uint64
+	remoteMetricsGateRevision           uint64
+	// Accepted/published revisions and the gate make distributed aggregate
+	// publication monotonic when per-target consumers finish out of order.
+	remoteMetricsAcceptedRevision   uint64
+	remoteMetricsPublishedRevision  uint64
+	remoteMetricsPublishGate        chan struct{}
+	remoteGoalAcceptedErrorWindows  map[string]distributedGoalErrorAccumulator
+	remoteGoalPublishedErrorWindows map[string]distributedGoalErrorAccumulator
+	remoteGoalUpdateRunning         bool
+	remoteGoalUpdateRevision        uint64
+	// remoteSecretSnapshots are bounded, run-lifetime-only controller snapshots
+	// shared by initial and evacuation assignments. They are never serialized.
+	remoteSecretSnapshots map[string]distributedRunSecretSnapshot
+	// remoteActivated is set only after every assigned generator acknowledges
+	// CommitWork. The durable RUNNING transition intentionally precedes those
+	// acknowledgements, so non-stop controls must remain closed while this is
+	// false to avoid mutating a partially committed fleet.
+	remoteActivated                      bool
+	remoteActivationPending              bool
+	remoteControlGeneration              uint64
+	remotePauseOperationSequence         uint64
+	remoteRunSupervisionToken            [generatorrpc.RunSupervisionTokenSize]byte
+	remoteRunSupervisionCancel           context.CancelFunc
+	remoteRunSupervisionDone             chan struct{}
+	remoteRunSupervisionKeeperGeneration uint64
+	remoteRunSupervisionFencedTargets    map[string]bool
 }
 
 type TestSparklinePoint struct {
@@ -1063,6 +1093,7 @@ type RunLogicGoalSnapshot struct {
 }
 
 type LiveMetrics struct {
+	LLM                 *LiveLLMMetrics                       `json:"llm,omitempty"`
 	JavaHTTP            *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments    *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress   *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
@@ -1425,35 +1456,40 @@ type LatencyTarget struct {
 }
 
 type GoalStatus struct {
-	Mode                      string     `json:"mode"`
-	CurrentTPS                float64    `json:"current_tps"`
-	CurrentTotalVUsers        int        `json:"current_total_vusers"`
-	TargetAverageTPS          *float64   `json:"target_average_tps,omitempty"`
-	MaxErrorCount             *int       `json:"max_error_count,omitempty"`
-	MinVUsers                 *int       `json:"min_vusers,omitempty"`
-	MaxVUsers                 *int       `json:"max_vusers,omitempty"`
-	SuggestedTotalVUsers      int        `json:"suggested_total_vusers,omitempty"`
-	LastScaleDirection        string     `json:"last_scale_direction,omitempty"`
-	LastScaleReason           string     `json:"last_scale_reason,omitempty"`
-	LastScaleAt               *time.Time `json:"last_scale_at,omitempty"`
-	LatencyBreached           bool       `json:"latency_breached,omitempty"`
-	ErrorBreached             bool       `json:"error_breached,omitempty"`
-	ServerProcessingBreached  bool       `json:"server_processing_breached,omitempty"`
-	TransferBreached          bool       `json:"transfer_breached,omitempty"`
-	ErrorCountBreached        bool       `json:"error_count_breached,omitempty"`
-	LCPBreached               bool       `json:"lcp_breached,omitempty"`
-	INPBreached               bool       `json:"inp_breached,omitempty"`
-	CLSBreached               bool       `json:"cls_breached,omitempty"`
-	ThrottledRequestsBreached bool       `json:"throttled_requests_breached,omitempty"`
-	EndToEndLatencyBreached   bool       `json:"end_to_end_latency_breached,omitempty"`
-	PartitionSkewBreached     bool       `json:"partition_skew_breached,omitempty"`
-	RedeliveryRateBreached    bool       `json:"redelivery_rate_breached,omitempty"`
-	DeadLetterRateBreached    bool       `json:"dead_letter_rate_breached,omitempty"`
-	BreachActive              bool       `json:"breach_active,omitempty"`
-	BreachDurationSec         int        `json:"breach_duration_sec,omitempty"`
-	StopTriggered             bool       `json:"stop_triggered,omitempty"`
-	StopReason                string     `json:"stop_reason,omitempty"`
-	LiveTableNote             string     `json:"live_table_note,omitempty"` // consumers idling on an empty live table, and whether scale-up is held
+	Mode                          string     `json:"mode"`
+	CurrentTPS                    float64    `json:"current_tps"`
+	CurrentTotalVUsers            int        `json:"current_total_vusers"`
+	TargetAverageTPS              *float64   `json:"target_average_tps,omitempty"`
+	MaxErrorCount                 *int       `json:"max_error_count,omitempty"`
+	MinVUsers                     *int       `json:"min_vusers,omitempty"`
+	MaxVUsers                     *int       `json:"max_vusers,omitempty"`
+	SuggestedTotalVUsers          int        `json:"suggested_total_vusers,omitempty"`
+	LastScaleDirection            string     `json:"last_scale_direction,omitempty"`
+	LastScaleReason               string     `json:"last_scale_reason,omitempty"`
+	LastScaleAt                   *time.Time `json:"last_scale_at,omitempty"`
+	LatencyBreached               bool       `json:"latency_breached,omitempty"`
+	ErrorBreached                 bool       `json:"error_breached,omitempty"`
+	ServerProcessingBreached      bool       `json:"server_processing_breached,omitempty"`
+	TransferBreached              bool       `json:"transfer_breached,omitempty"`
+	ErrorCountBreached            bool       `json:"error_count_breached,omitempty"`
+	LCPBreached                   bool       `json:"lcp_breached,omitempty"`
+	INPBreached                   bool       `json:"inp_breached,omitempty"`
+	CLSBreached                   bool       `json:"cls_breached,omitempty"`
+	ThrottledRequestsBreached     bool       `json:"throttled_requests_breached,omitempty"`
+	EndToEndLatencyBreached       bool       `json:"end_to_end_latency_breached,omitempty"`
+	PartitionSkewBreached         bool       `json:"partition_skew_breached,omitempty"`
+	RedeliveryRateBreached        bool       `json:"redelivery_rate_breached,omitempty"`
+	DeadLetterRateBreached        bool       `json:"dead_letter_rate_breached,omitempty"`
+	LLMP95TTFTBreached            bool       `json:"llm_p95_ttft_breached,omitempty"`
+	LLMP95TPOTBreached            bool       `json:"llm_p95_tpot_breached,omitempty"`
+	LLMOutputTokensPerSecBreached bool       `json:"llm_output_tokens_per_sec_breached,omitempty"`
+	LLMGoodputBreached            bool       `json:"llm_goodput_breached,omitempty"`
+	LLMThrottleRateBreached       bool       `json:"llm_throttle_rate_breached,omitempty"`
+	BreachActive                  bool       `json:"breach_active,omitempty"`
+	BreachDurationSec             int        `json:"breach_duration_sec,omitempty"`
+	StopTriggered                 bool       `json:"stop_triggered,omitempty"`
+	StopReason                    string     `json:"stop_reason,omitempty"`
+	LiveTableNote                 string     `json:"live_table_note,omitempty"` // consumers idling on an empty live table, and whether scale-up is held
 }
 
 type GoalTargetStatus struct {
@@ -2189,6 +2225,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		execution:                    localExecutionBackend{},
 		notifier:                     newNotificationDispatcher(nil),
 		routeCache:                   make(map[string]latencyRouteCacheEntry),
+		latencyRouteProbeSlots:       make(chan struct{}, maxConcurrentRouteProbes),
 	}
 	if assignments, ok := store.(storage.LibraryAssignmentStore); ok {
 		tr.libraryAssignmentStore = assignments
@@ -2535,6 +2572,8 @@ type GoalDrivenGroupDefinition = runcontract.GoalDrivenGroupDefinition
 
 type GoalDrivenConfig = runcontract.GoalDrivenConfig
 
+type CapacitySweepConfig = runcontract.CapacitySweepConfig
+
 type WorkloadShapeConfig = runcontract.WorkloadShapeConfig
 
 type ActiveLoadLevel struct {
@@ -2542,6 +2581,9 @@ type ActiveLoadLevel struct {
 	StageIndex   int       `json:"stage_index"`
 	Name         string    `json:"name,omitempty"`
 	TargetVUsers int       `json:"target_vusers"`
+	TargetTPS    float64   `json:"target_tps,omitempty"`
+	Kind         string    `json:"kind,omitempty"`
+	Warmup       bool      `json:"warmup,omitempty"`
 	Duration     string    `json:"duration"`
 	StartedAt    time.Time `json:"started_at"`
 }

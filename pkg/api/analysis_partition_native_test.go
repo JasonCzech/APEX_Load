@@ -100,7 +100,7 @@ func nativePartitionImportFixture(t *testing.T) (*Server, *storage.AnalysisImpor
 		if err != nil {
 			t.Fatal(err)
 		}
-		if current.State != "normalizing" && len(analysisPipelineJobs) == 0 {
+		if current.State != "normalizing" && len(server.semaphores.analysisPipelineJobs) == 0 {
 			break
 		}
 		if time.Now().After(deadline) {

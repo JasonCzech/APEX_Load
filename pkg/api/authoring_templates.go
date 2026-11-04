@@ -135,10 +135,11 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 							"Accept":        "text/event-stream",
 						}
 						action.Params = map[string]any{
-							"stream":            "sse",
-							"stop_on_event":     "EndOfTurn",
-							"max_events":        200,
-							"stream_timeout_ms": 60000,
+							"stream":             "sse",
+							"stop_on_event":      "EndOfTurn",
+							"require_stop_event": true,
+							"max_events":         200,
+							"stream_timeout_ms":  60000,
 						}
 						action.Body = `{"message":{"sequenceId":{{fn.timestamp.unix()}},"type":"Text","text":"{{env.AGENT_PROMPT}}"},"variables":[]}`
 						action.Extractors = []dsl.Extractor{
@@ -522,6 +523,326 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 			Tags:                []string{"devweb", "migration", "api"},
 			Script:              importedHTTPTemplateScript("DevWeb API Migration Starter", "devweb", "DevWeb Step"),
 			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 10, RampUp: "1m", Iterations: 1},
+		},
+		{
+			ID:          "llm-openai-compatible-streaming",
+			Name:        "OpenAI-Compatible LLM Streaming (vLLM / TGI / NIM)",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Streaming chat completion benchmark for vLLM, TGI, NVIDIA NIM, or Ollama with TTFT/TPOT/ITL measurement and JSON-safe prompt templating.",
+			Tags:        []string{"llm", "openai", "vllm", "tgi", "nim", "sse", "streaming"},
+			Script: dsl.Script{
+				Name:     "OpenAI-Compatible LLM Streaming",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.LLM_BASE_URL}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "Stream Chat Completion", func(action *dsl.Action) {
+						action.Target = "/v1/chat/completions"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.LLM_MODEL}}","messages":[{"role":"system","content":"You are a concise assistant."},{"role":"user","content":"{{env.LLM_PROMPT}}"}],"max_tokens":256,"temperature":0.2,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":   "openai_chat",
+							"stream_mode":   "sse",
+							"model":         "{{env.LLM_MODEL}}",
+							"include_usage": true,
+							"save_text_as":  "assistant_reply",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 16, RampUp: "1m", Iterations: 1},
+		},
+		{
+			ID:          "llm-azure-openai-streaming",
+			Name:        "Azure OpenAI / AI Foundry Streaming",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Azure OpenAI streaming chat completion with Entra ID client_credentials token acquisition (scope https://cognitiveservices.azure.com/.default), Retry-After 429 pacing, and content-filter detection.",
+			Tags:        []string{"llm", "azure", "azure-openai", "foundry", "entra", "sse"},
+			Script: dsl.Script{
+				Name:     "Azure OpenAI Streaming",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+					ErrorHandling: dsl.ErrorHandlingConfig{
+						MaxRetries:      3,
+						RetryDelayMs:    1000,
+						RetryBackoff:    "retry_after",
+						HonorRetryAfter: true,
+						RetryAfterMaxMs: 60000,
+						RetryOn:         []string{"429", "5xx"},
+					},
+				},
+				Init: []dsl.Action{
+					templateAction("http_oauth2_token", "Acquire Azure Entra Token", func(action *dsl.Action) {
+						action.Params = map[string]any{
+							"token_url":     "https://login.microsoftonline.com/{{env.AZURE_TENANT_ID}}/oauth2/v2.0/token",
+							"grant_type":    "client_credentials",
+							"client_id":     "{{env.AZURE_CLIENT_ID}}",
+							"client_secret": "{{secret.AZURE_CLIENT_SECRET}}",
+							"scope":         "https://cognitiveservices.azure.com/.default",
+							"save_as":       "azure_ad_token",
+						}
+					}),
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "Azure OpenAI Chat Stream", func(action *dsl.Action) {
+						action.Target = "/openai/deployments/{{env.AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{var.azure_ad_token}}",
+							"api-key":       "{{secret.AZURE_OPENAI_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"messages":[{"role":"system","content":"You are an enterprise assistant."},{"role":"user","content":"{{env.LLM_PROMPT}}"}],"max_tokens":256,"temperature":0.2,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":   "azure_openai",
+							"stream_mode":   "sse",
+							"model":         "{{env.AZURE_OPENAI_DEPLOYMENT}}",
+							"include_usage": true,
+							"save_text_as":  "assistant_reply",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "10m", VUsers: 12, RampUp: "2m", Iterations: 1},
+		},
+		{
+			ID:          "llm-rag-agent-flow",
+			Name:        "RAG & Agent Multi-Hop LLM Flow",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Multi-hop AI application flow combining vector retrieval, context-augmented LLM synthesis, and follow-up turn inside an enclosing business transaction.",
+			Tags:        []string{"llm", "rag", "agent", "multi-turn"},
+			Script: dsl.Script{
+				Name:     "RAG & Agent Multi-Hop LLM Flow",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.LLM_BASE_URL}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+				},
+				Actions: []dsl.Action{
+					httpTemplateAction("POST", "Retrieve Vector Context", "/v1/embeddings", func(action *dsl.Action) {
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+							"Content-Type":  "application/json",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.EMBEDDING_MODEL}}","input":"{{env.USER_QUERY}}"}`
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+					templateAction("llm_request", "Synthesize RAG Answer", func(action *dsl.Action) {
+						action.Target = "/v1/chat/completions"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.LLM_MODEL}}","messages":[{"role":"system","content":"Answer using the retrieved context."},{"role":"user","content":"{{env.USER_QUERY}}"}],"max_tokens":384,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":            "openai_chat",
+							"stream_mode":            "sse",
+							"model":                  "{{env.LLM_MODEL}}",
+							"save_text_as":           "rag_answer",
+							"save_finish_reason_var": "rag_finish_reason",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "5m", VUsers: 10, RampUp: "1m", Iterations: 1},
+		},
+		{
+			ID:          "azure-openai-quota-probe",
+			Name:        "Azure OpenAI TPM/RPM Quota Probe",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Probes sustainable Azure OpenAI Tokens-Per-Minute (TPM) and Requests-Per-Minute (RPM) limits while honoring Retry-After headers and capturing x-ratelimit-remaining-tokens.",
+			Tags:        []string{"llm", "azure-openai", "quota", "rate-limit", "tpm"},
+			Script: dsl.Script{
+				Name:     "Azure OpenAI Quota Probe",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 200},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+					ErrorHandling: dsl.ErrorHandlingConfig{
+						MaxRetries:      4,
+						RetryDelayMs:    1000,
+						RetryBackoff:    "retry_after",
+						HonorRetryAfter: true,
+						RetryAfterMaxMs: 60000,
+						RetryOn:         []string{"429"},
+					},
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "Probe Azure Deployment Quota", func(action *dsl.Action) {
+						action.Target = "/openai/deployments/{{env.AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Headers = map[string]string{
+							"api-key": "{{secret.AZURE_OPENAI_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"messages":[{"role":"user","content":"{{env.LLM_PROMPT}}"}],"max_tokens":128,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect": "azure_openai",
+							"stream_mode": "sse",
+							"model":       "{{env.AZURE_OPENAI_DEPLOYMENT}}",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "10m", VUsers: 20, RampUp: "2m", Iterations: 1},
+		},
+		{
+			ID:          "azure-ptu-soak-90pct",
+			Name:        "Azure OpenAI PTU 90% Utilization Soak",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Steady-state soak test for Azure OpenAI Provisioned Throughput Units (PTU) targeting 90% utilization with spillover and TTFT tail monitoring.",
+			Tags:        []string{"llm", "azure-openai", "ptu", "soak"},
+			Script: dsl.Script{
+				Name:     "Azure OpenAI PTU 90% Utilization Soak",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250},
+					Pacing:    dsl.PacingConfig{Type: "tps", TPS: 5},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+					ErrorHandling: dsl.ErrorHandlingConfig{
+						MaxRetries:      2,
+						RetryDelayMs:    1000,
+						RetryBackoff:    "retry_after",
+						HonorRetryAfter: true,
+						RetryOn:         []string{"429", "5xx"},
+					},
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "PTU Sustained Chat Stream", func(action *dsl.Action) {
+						action.Target = "/openai/deployments/{{env.AZURE_PTU_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Headers = map[string]string{
+							"api-key": "{{secret.AZURE_OPENAI_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"messages":[{"role":"system","content":"Respond concisely and accurately."},{"role":"user","content":"{{env.LLM_PROMPT}}"}],"max_tokens":256,"temperature":0,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect": "azure_openai",
+							"stream_mode": "sse",
+							"model":       "{{env.AZURE_PTU_DEPLOYMENT}}",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "30m", VUsers: 24, RampUp: "3m", Iterations: 1},
+		},
+		{
+			ID:          "llm-ab-concurrent",
+			Name:        "Concurrent A/B Model & Engine Comparison",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Parametrized LLM request script designed to run concurrently across two scenario groups (Variant A vs Variant B) against identical prompt distributions.",
+			Tags:        []string{"llm", "ab-comparison", "benchmark"},
+			Script: dsl.Script{
+				Name:     "Concurrent A/B Model Comparison",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.LLM_BASE_URL}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 300},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "Candidate Model Stream", func(action *dsl.Action) {
+						action.Target = "/v1/chat/completions"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.CANDIDATE_MODEL}}","messages":[{"role":"user","content":"{{env.LLM_PROMPT}}"}],"max_tokens":256,"temperature":0,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":  "openai_chat",
+							"stream_mode":  "sse",
+							"model":        "{{env.CANDIDATE_MODEL}}",
+							"save_text_as": "candidate_reply",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "10m", VUsers: 16, RampUp: "1m", Iterations: 1},
+		},
+		{
+			ID:          "rag-chat-journey",
+			Name:        "Multi-Turn RAG Chat Journey",
+			Protocol:    "http",
+			UseCase:     "llm_inference",
+			Description: "Multi-turn conversational RAG journey that accumulates assistant replies across turns within each VUser iteration and rolls up per-hop LLM token and TTFT telemetry.",
+			Tags:        []string{"llm", "rag", "conversation", "journey"},
+			Script: dsl.Script{
+				Name:     "Multi-Turn RAG Chat Journey",
+				Version:  "1.0.0",
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					BaseURL:   "{{env.LLM_BASE_URL}}",
+					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+					Pacing:    dsl.PacingConfig{Type: "none"},
+					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
+				},
+				Actions: []dsl.Action{
+					templateAction("llm_request", "Turn 1 — Initial Question", func(action *dsl.Action) {
+						action.Target = "/v1/chat/completions"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.LLM_MODEL}}","messages":[{"role":"system","content":"You are a technical support assistant."},{"role":"user","content":"{{env.TURN_1_PROMPT}}"}],"max_tokens":256,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":  "openai_chat",
+							"stream_mode":  "sse",
+							"model":        "{{env.LLM_MODEL}}",
+							"save_text_as": "turn1_reply",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+					templateAction("llm_request", "Turn 2 — Follow-Up Clarification", func(action *dsl.Action) {
+						action.Target = "/v1/chat/completions"
+						action.Headers = map[string]string{
+							"Authorization": "Bearer {{secret.LLM_API_KEY}}",
+						}
+						action.BodyTemplateEncoding = "json"
+						action.Body = `{"model":"{{env.LLM_MODEL}}","messages":[{"role":"system","content":"You are a technical support assistant."},{"role":"user","content":"{{env.TURN_1_PROMPT}}"},{"role":"assistant","content":"{{var.turn1_reply}}"},{"role":"user","content":"{{env.TURN_2_PROMPT}}"}],"max_tokens":256,"stream":true,"stream_options":{"include_usage":true}}`
+						action.Params = map[string]any{
+							"llm_dialect":  "openai_chat",
+							"stream_mode":  "sse",
+							"model":        "{{env.LLM_MODEL}}",
+							"save_text_as": "turn2_reply",
+						}
+						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
+					}),
+				},
+			},
+			RecommendedScenario: AuthoringTemplateScenario{Duration: "10m", VUsers: 12, RampUp: "2m", Iterations: 1},
 		},
 	}
 }

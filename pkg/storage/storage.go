@@ -7,6 +7,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/llmperf/econ"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
@@ -914,6 +915,7 @@ type LoadStage struct {
 	Duration     string   `json:"duration"`
 	TargetVUsers int      `json:"target_vusers,omitempty"`
 	TargetTPS    *float64 `json:"target_tps,omitempty"`
+	Warmup       bool     `json:"warmup,omitempty"`
 }
 
 type ScenarioSchedule struct {
@@ -1207,6 +1209,8 @@ type ProjectSettings struct {
 	// RecordingProfiles are the project's saved recording options, applied
 	// by the proxy and browser recorders and HAR imports.
 	RecordingProfiles []recordingprofile.Profile `json:"recording_profiles,omitempty"`
+	// LLMDeployments holds user-configured LLM deployment cost profiles (WP5.3).
+	LLMDeployments []econ.DeploymentSpec `json:"llm_deployments,omitempty"`
 }
 
 // ProjectFeatureFlags are explicit preview opt-ins. They default false so a

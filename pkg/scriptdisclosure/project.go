@@ -825,6 +825,7 @@ func runeAfter(value string, offset int) (rune, bool) {
 func isDisclosureSchemaDiscriminator(key string) bool {
 	switch normalizeName(key) {
 	case "version", "protocol", "type", "method", "bodyencoding",
+		"bodytemplateencoding", "streammode", "llmdialect",
 		"format", "encoding", "strategy", "mode", "scope", "operator",
 		"op", "severity", "disposition", "status", "phase", "kind",
 		"sourceformat", "compatibilityversion", "sandbox",

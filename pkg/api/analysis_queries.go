@@ -185,10 +185,11 @@ func (s *Server) handleAnalysisComparison(w http.ResponseWriter, r *http.Request
 		writeError(w, 400, err.Error())
 		return
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(withAnalysisArtifactSelections(r.Context()), time.Minute)
 	defer cancel()
 	requested := q

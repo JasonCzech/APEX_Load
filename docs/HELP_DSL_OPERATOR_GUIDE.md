@@ -2,7 +2,7 @@
 
 You already know the important work: reproduce a user journey, vary its data, correlate responses, check business outcomes, and apply a realistic workload. APEX Load expresses that journey as a structured JSON script. **DSL** means **domain-specific language**: here, a vocabulary of test actions and settings. You do not need to write Go or manage goroutines to author a test.
 
-Use this guide to understand and adapt a script. Use the [DSL action reference](DSL_ACTION_REFERENCE.md) to look up exact action fields. For a first run against a local sample service, start with [Your first test](HELP_CENTER.md#build-and-run-your-first-test).
+Use this guide to understand and adapt a script. Use the [DSL action reference](DSL_ACTION_REFERENCE.md) to look up exact action fields, and [LLM_PERFORMANCE_TESTING.md](LLM_PERFORMANCE_TESTING.md) for `llm_request` streaming and prompt-dataset authoring. For a first run against a local sample service, start with [Your first test](HELP_CENTER.md#build-and-run-your-first-test).
 
 ## Translate familiar concepts
 

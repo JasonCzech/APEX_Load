@@ -19,7 +19,7 @@ func isOpenWorkload(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	tps := script.Config.Pacing.TPS
+	tps := maxConfiguredOpenTPS(script.Config.Pacing)
 	return dsl.CanonicalWorkloadModel(script.Config.RunLogic.WorkloadModel) == "open" && dsl.CanonicalPacingType(script.Config.Pacing.Type) == "tps" && tps > 0 && !math.IsNaN(tps) && !math.IsInf(tps, 0)
 }
 
@@ -43,14 +43,32 @@ const maxOpenWorkloadCatchUpBurst = 1024
 // otherwise a generous ceiling proportional to the offered TPS is derived.
 // Returns 0 (unbounded) only when no ceiling can be derived (TPS unknown), which
 // does not occur for a valid open workload (isOpenWorkload requires TPS > 0).
+func openWorkloadShardTPS(script *dsl.Script, shard DataShardConfig) float64 {
+	if script == nil {
+		return 0
+	}
+	tps := maxConfiguredOpenTPS(script.Config.Pacing)
+	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
+		return 0
+	}
+	if shard.Count > 1 {
+		return tps / float64(shard.Count)
+	}
+	return tps
+}
+
 func openWorkloadInFlightLimit(script *dsl.Script) int {
+	return openWorkloadInFlightLimitForShard(script, DataShardConfig{})
+}
+
+func openWorkloadInFlightLimitForShard(script *dsl.Script, shard DataShardConfig) int {
 	if script == nil {
 		return 0
 	}
 	if explicit := script.Config.RunLogic.MaxInFlight; explicit > 0 {
 		return min(explicit, dsl.MaxOpenWorkloadInFlight)
 	}
-	tps := script.Config.Pacing.TPS
+	tps := openWorkloadShardTPS(script, shard)
 	if tps <= 0 {
 		return 0
 	}

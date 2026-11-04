@@ -65,7 +65,7 @@ const REFERENCE_PATTERN = /\{\{[\t\n\f\r ]*(var|param)\.([a-zA-Z0-9_.-]+)/g
 // action has depth 1), so every script the server accepts is walked in full.
 const MAX_ACTION_DEPTH = 64
 const LEGACY_ACTION_TYPE_PREFIX = 'loadrunner_'
-const HTTP_REQUEST_ACTION_TYPES = new Set(['request', 'http_request', 'soap_request', 'java_http_request'])
+const HTTP_REQUEST_ACTION_TYPES = new Set(['request', 'http_request', 'soap_request', 'java_http_request', 'llm_request'])
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'])
 // The protocol families whose adapter is, or sends through, the HTTP adapter.
 const PLACEHOLDER_PROTOCOL_FAMILIES = new Set(['http', 'soap', 'java_http'])
@@ -396,6 +396,40 @@ export function stepOutputs(action: ScriptActionDefinition): StepOutputs {
     case 'rendezvous':
       // The runtime uses their name and args literally or only logs them.
       return { noReads: true }
+    case 'llm_request': {
+      const writes: NonNullable<StepOutputs['writes']> = []
+      const seen = new Set<string>()
+      const addWrite = (raw: string | null | undefined) => {
+        const name = (raw || '').trim()
+        if (name && !seen.has(name)) {
+          seen.add(name)
+          writes.push({ name })
+        }
+      }
+      for (const key of [
+        'save_text_as', 'save_assistant_text', 'save_response_as', 'save_as', 'response_var',
+        'save_finish_reason_var', 'save_finish_reason_as', 'finish_reason_var',
+        'save_tool_calls_var', 'save_tool_calls_as', 'tool_calls_var',
+        'conversation_var', 'history_var',
+      ]) {
+        addWrite(paramString(params, key))
+      }
+      const hasExplicitHistoryVar = Boolean(paramString(params, 'conversation_var') || paramString(params, 'history_var'))
+      const conv = params?.conversation
+      if (conv === true && !hasExplicitHistoryVar) {
+        addWrite('llm_conversation_history')
+      } else if (conv && typeof conv === 'object' && !Array.isArray(conv)) {
+        const convRecord = conv as Record<string, unknown>
+        const nestedVar = paramString(convRecord, 'history_var') || paramString(convRecord, 'conversation_var')
+        if (nestedVar) {
+          addWrite(nestedVar)
+        } else if (!hasExplicitHistoryVar) {
+          addWrite('llm_conversation_history')
+        }
+      }
+      if (writes.length > 0) return { writes }
+      break
+    }
   }
   return {}
 }
@@ -590,7 +624,10 @@ function relevantConfigReferences(action: ScriptActionDefinition, refs: ConfigRe
 // writesExtractions: the runtime merges a browser evaluate result as an
 // extraction; native_javascript and live_table merge only their result
 // prefixes, which a parallel join publishes on their own.
-const writesExtractions = (action: ScriptActionDefinition) => canonicalActionType(text(action.type)) === 'browser_evaluate_js'
+const writesExtractions = (action: ScriptActionDefinition) => {
+  const canonical = canonicalActionType(text(action.type))
+  return canonical === 'browser_evaluate_js' || canonical === 'llm_request'
+}
 
 const emptyFlowState = (): FlowState => ({ available: new Set(), saveAll: new Set(), parameterNames: new Set(), rowPrefixes: new Set(), dataSources: new Set(), resultPrefixes: new Set(), extracted: new Set() })
 
@@ -863,8 +900,10 @@ export function analyzeVariableReadiness(script: ScriptDefinition, seeded?: Reco
           // target there), and its own extractors never execute.
           recordOutputs(action, sequenceWrapperOutputs(action), state, shellConfig)
           sequenceChildren(action.params).forEach(child => {
-            record(child, state, config)
+            const childOutputs = stepOutputs(child)
+            recordOutputs(child, childOutputs, state, config)
             register(state, child.extractors)
+            apply(state, childOutputs, writesExtractions(child))
           })
           return
         default: {

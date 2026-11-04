@@ -46,6 +46,9 @@ type MetricsCollector struct {
 	// httpVersions counts every HTTP action since the start of the run; only
 	// the aggregation goroutine touches it.
 	httpVersions protocol.HTTPVersionMix
+	// llmSummary accumulates run-to-date LLM inference telemetry across windows;
+	// only the aggregation goroutine touches it.
+	llmSummary *LLMSummary
 	// collectionTick is closed after each collection tick, once that tick's
 	// snapshot (if any) is stored, and replaced lazily: every waiter wakes.
 	collectionTickMu sync.Mutex
@@ -169,6 +172,9 @@ type MetricsSnapshot struct {
 	// HTTPVersions is the run-to-date HTTP version mix (nil before the first
 	// HTTP action); unlike the window fields it is cumulative.
 	HTTPVersions *protocol.HTTPVersionMix `json:"http_versions,omitempty"`
+	// LLM is the run-to-date LLM inference summary (nil before the first LLM
+	// action); like HTTPVersions it is cumulative across windows.
+	LLM *LLMSummary `json:"llm,omitempty"`
 }
 
 // TransactionResponseTimeSLACompliance is a cumulative, successful-sample-only
@@ -372,6 +378,7 @@ type ActionMetrics struct {
 	LastStatusCode   int
 	LastErrorAt      time.Time
 	ServerTelemetry  *ServerTelemetrySummary `json:"server_telemetry,omitempty"`
+	LLM              *LLMSummary             `json:"llm,omitempty"`
 	AvgDNSMs         float64                 `json:"avg_dns_ms,omitempty"`
 	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
 	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
@@ -947,6 +954,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 				snap.ByAction[actionName] = am
 			}
 			mergeActionResult(am, r)
+			ObserveLLMAction(&am.LLM, r)
 			recordTraceExemplar(am, r)
 			recordDurationSample(actionDigests, actionDurationSum, actionName, r.Duration)
 
@@ -1146,6 +1154,12 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])
+		if am.LLM != nil {
+			MergeLLMSummary(&mc.llmSummary, am.LLM)
+		}
+	}
+	if mc.llmSummary != nil {
+		snap.LLM = mc.llmSummary.Clone()
 	}
 	for name, am := range snap.ByTransaction {
 		finalizeActionMetrics(am, transactionDurationSum[name], transactionDigests[name])
@@ -1309,6 +1323,7 @@ func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, 
 	metrics.AvgTLSMs /= divisor
 	metrics.AvgTTFBMs /= divisor
 	finalizeServerTelemetrySummary(metrics.ServerTelemetry)
+	FinalizeLLMSummary(metrics.LLM)
 }
 
 const maxCorrelationSamplesPerAction = 3

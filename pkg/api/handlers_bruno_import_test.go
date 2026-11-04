@@ -1192,8 +1192,8 @@ func inspectBrunoJSON(t *testing.T, server *Server, source []byte, syncScriptID 
 
 func TestBrunoInspectReturnsRetryable429WhenInspectionSlotIsBusy(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
-	brunoInspectConcurrency <- struct{}{}
-	defer func() { <-brunoInspectConcurrency }()
+	server.semaphores.brunoInspectConcurrency <- struct{}{}
+	defer func() { <-server.semaphores.brunoInspectConcurrency }()
 
 	payload, err := json.Marshal(brunoInspectJSONRequest{
 		ProjectID: brunoImportTestProject,

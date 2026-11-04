@@ -125,6 +125,7 @@ func (s *Server) importSalesforce(w http.ResponseWriter, r *http.Request, import
 			importreview.EnsureScriptImportActionUIDs(s)
 			return nil
 		},
+		LLMTransform: importreview.LLMTransformRequested(r),
 	}
 	augmented, err := draft.AugmentWithAgentforceTransformChecked(agentforceTransform)
 	if err != nil {

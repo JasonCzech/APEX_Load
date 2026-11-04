@@ -529,8 +529,10 @@ func TestFailClosedDistributedCommitBroadcastsStoppingBeforeRemoteStop(t *testin
 	test := &ManagedTest{
 		ID: "commit-ordering", Status: "RUNNING", executionGeneration: 7,
 		executionCtx: ctx, cancel: cancel,
-		remoteClientsByTarget: map[string]generatorClient{"generator": client},
-		remoteTargetStates:    map[string]string{"generator": "RUNNING"},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{"generator": client},
+			remoteTargetStates:    map[string]string{"generator": "RUNNING"},
+		},
 	}
 	runner.tests[test.ID] = test
 	backend := newDistributedExecutionBackend([]string{"generator"}, 100*time.Millisecond, nil)

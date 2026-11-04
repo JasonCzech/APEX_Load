@@ -99,7 +99,7 @@ func commitNativeAnalysisMapping(t *testing.T, server *Server, store storage.Sto
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	for len(analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
+	for len(server.semaphores.analysisPipelineJobs) > 0 && time.Now().Before(deadline) {
 		time.Sleep(time.Millisecond)
 	}
 	if current.State != "ready" {

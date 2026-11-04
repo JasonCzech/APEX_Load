@@ -432,9 +432,12 @@ type TransactionEvent struct {
 	// HTTP version facts of a native HTTP action; the full receipt stays in
 	// protocol_evidence. HTTPVersion is the negotiated wire version (empty
 	// for a cache hit or a request that got no response).
-	HTTPVersion         string `json:"http_version,omitempty"`
-	HTTPVersionFallback string `json:"http_version_fallback,omitempty"`
-	AttemptCount        int    `json:"attempt_count,omitempty"`
+	HTTPVersion         string  `json:"http_version,omitempty"`
+	HTTPVersionFallback string  `json:"http_version_fallback,omitempty"`
+	AttemptCount        int     `json:"attempt_count,omitempty"`
+	Attempts            int     `json:"attempts,omitempty"`
+	ThrottledAttempts   int     `json:"throttled_attempts,omitempty"`
+	RetryWaitMs         float64 `json:"retry_wait_ms,omitempty"`
 
 	// ExtractionDigests are the business-key digests of mapped extractions,
 	// computed from the raw values before scrubbing.
@@ -500,6 +503,7 @@ type ResourceSample struct {
 }
 
 type IntervalSummaryRecord struct {
+	LLM                      *LiveLLMMetrics                       `json:"llm,omitempty"`
 	JavaHTTP                 *protocol.JavaHTTPActions             `json:"java_http,omitempty"`
 	BrowserDocuments         *protocol.BrowserDocumentSummary      `json:"browser_documents,omitempty"`
 	MessagingProgress        *protocol.MessagingProgressSnapshot   `json:"messaging_progress,omitempty"`
@@ -689,6 +693,7 @@ type RunArchiveReport struct {
 	AuraParity                        []AuraParityTransaction                        `json:"aura_parity,omitempty"`
 	Web2Migration                     *RunArchiveWeb2MigrationEvidence               `json:"web2_migration,omitempty"`
 	OracleDB                          *RunArchiveOracleDBEvidence                    `json:"oracle_db,omitempty"`
+	LLM                               *RunArchiveLLMSummary                          `json:"llm,omitempty"`
 	ResourcePeaks                     RunArchiveResourcePeaks                        `json:"resource_peaks"`
 	// ReleaseTrend is the compact release-over-release trend for this run (this run
 	// vs the immediately prior run in the same release). It is nil by default:
@@ -746,6 +751,8 @@ type RunArchiveLoadLevelSummary struct {
 	StageIndex              int     `json:"stage_index"`
 	Name                    string  `json:"name"`
 	TargetVUsers            int     `json:"target_vusers"`
+	TargetTPS               float64 `json:"target_tps,omitempty"`
+	Kind                    string  `json:"kind,omitempty"`
 	ConfiguredDuration      string  `json:"configured_duration"`
 	ObservedDurationSeconds float64 `json:"observed_duration_seconds"`
 	Requests                int64   `json:"requests"`
@@ -1105,6 +1112,7 @@ type RunArchiveActionStats struct {
 	JavaHTTP           *protocol.JavaHTTPSummary    `json:"java_http,omitempty"`
 	GRPC               *protocol.GRPCSummary        `json:"grpc,omitempty"`
 	WebSocket          *protocol.WebSocketSummary   `json:"websocket,omitempty"`
+	LLM                *RunArchiveActionLLMStats    `json:"llm,omitempty"`
 	DiagnosticFindings []protocol.DiagnosticFinding `json:"diagnostic_findings,omitempty"`
 	Transactions       int64                        `json:"transactions"`
 	Errors             int64                        `json:"errors"`

@@ -35,6 +35,7 @@
           "Accept": "application/json"
         },
         "body": "{\"model\":\"{{env.OPENAI_MODEL}}\",\"input\":\"Reply with the single word pong. Request suffix: {{param.request_suffix}}\",\"max_output_tokens\":32}",
+        "body_template_encoding": "json",
         "extractors": [
           {
             "name": "openai_request_id",

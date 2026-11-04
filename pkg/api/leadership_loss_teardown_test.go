@@ -113,17 +113,19 @@ func TestLeadershipLossTeardownStopsRuntimeWithoutLifecyclePersistence(t *testin
 	runCtx, runCancel := context.WithCancel(context.Background())
 	client := &startupLifecycleFakeClient{accept: true}
 	test := &ManagedTest{
-		ID:                    "leadership-loss-runtime",
-		Name:                  "Leadership loss runtime",
-		Status:                "RUNNING",
-		ProjectID:             storage.DefaultProjectID,
-		CreatedAt:             time.Now().UTC(),
-		executionCtx:          runCtx,
-		cancel:                runCancel,
-		executionFence:        oldToken,
-		remoteClient:          client,
-		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
-		jointHeldFromStart:    true,
+		ID:             "leadership-loss-runtime",
+		Name:           "Leadership loss runtime",
+		Status:         "RUNNING",
+		ProjectID:      storage.DefaultProjectID,
+		CreatedAt:      time.Now().UTC(),
+		executionCtx:   runCtx,
+		cancel:         runCancel,
+		executionFence: oldToken,
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClient:          client,
+			remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+		},
+		jointHeldFromStart: true,
 		// Joint batches held for the next point (B5).
 		pendingJointPublications: []*storage.NativePublicationEvidence{{SourceID: "generator-a", Sequence: 4}},
 		pendingJointBytes:        512,

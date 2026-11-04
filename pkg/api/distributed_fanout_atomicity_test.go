@@ -92,9 +92,9 @@ func TestDistributedStopFanoutErrorIsFailClosedAfterDispatch(t *testing.T) {
 	clientB := &fanoutAtomicityClient{stopErr: stopErr}
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    "partial-stop",
-		Status:                "STOPPING",
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
+		ID:                     "partial-stop",
+		Status:                 "STOPPING",
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB}},
 	}
 	runner := &TestRunner{}
 
@@ -123,12 +123,12 @@ func TestRunnerKeepsStoppingAfterPartialDistributedStop(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	executionCtx, cancelExecution := context.WithCancel(context.Background())
 	test := &ManagedTest{
-		ID:                    "runner-partial-stop",
-		Status:                "RUNNING",
-		executionBackend:      backend,
-		executionCtx:          executionCtx,
-		cancel:                cancelExecution,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
+		ID:                     "runner-partial-stop",
+		Status:                 "RUNNING",
+		executionBackend:       backend,
+		executionCtx:           executionCtx,
+		cancel:                 cancelExecution,
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB}},
 	}
 	runner := &TestRunner{
 		tests:     map[string]*ManagedTest{test.ID: test},
@@ -181,8 +181,10 @@ func TestAcknowledgedDistributedStopEscalatesAndLeavesStopping(t *testing.T) {
 	test := &ManagedTest{
 		ID: "acked-stop-finalizes", Status: "RUNNING", executionBackend: backend,
 		executionCtx: executionCtx, cancel: cancelExecution,
-		remoteLifecycleCtx: lifecycleCtx, remoteLifecycleCancel: cancelLifecycle,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteLifecycleCtx: lifecycleCtx, remoteLifecycleCancel: cancelLifecycle,
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
 
@@ -232,7 +234,7 @@ func TestRunnerAbortFirstDistributedFanoutIsForceful(t *testing.T) {
 	test := &ManagedTest{
 		ID: "runner-first-force-abort", Status: "RUNNING", executionBackend: backend,
 		executionCtx: executionCtx, cancel: cancelExecution,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": client}},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
 
@@ -266,7 +268,7 @@ func TestAmbiguousStopThenAbortRetryNeverDowngradesForce(t *testing.T) {
 	test := &ManagedTest{
 		ID: "runner-stop-upgraded-to-abort", Status: "RUNNING", executionBackend: backend,
 		executionCtx: executionCtx, cancel: cancelExecution,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": client}},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
 
@@ -318,10 +320,10 @@ func TestDistributedAdjustDurationRetriesCompensationForEveryAttemptedTarget(t *
 	}
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    "partial-duration",
-		Status:                "RUNNING",
-		Duration:              time.Minute,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB},
+		ID:                     "partial-duration",
+		Status:                 "RUNNING",
+		Duration:               time.Minute,
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": clientA, "gen-b": clientB}},
 	}
 	runner := &TestRunner{}
 

@@ -69,40 +69,21 @@ type ScriptDebugSessionResponse struct {
 
 func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *http.Request) {
 	var req ScriptDebugStartRequest
-	if r.Body == nil || r.ContentLength == 0 {
-		writeError(w, http.StatusBadRequest, "request body is required")
+	if !requireNonEmptyReplayBody(w, r) {
 		return
 	}
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
-	if req.Script == nil {
-		writeError(w, http.StatusBadRequest, "script is required")
-		return
-	}
-	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if !bindDraftReplayRequestScript(w, req.Script, req.ProjectID) {
 		return
 	}
 	s.handleStartScriptDebugRequest(w, r, "", req.Script, req)
 }
 
 func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	stored, ok := s.runner.GetScript(id)
+	stored, ok := s.loadAuthorizedReplayStoredScript(w, r)
 	if !ok {
-		writeError(w, http.StatusNotFound, "script not found")
-		return
-	}
-	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
-		return
-	}
-	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 
@@ -111,47 +92,24 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	script := stored.Script
-	if req.Script != nil {
-		script = req.Script
-		if script.ID == "" {
-			script.ID = stored.ID
-		}
-		if script.Name == "" {
-			script.Name = stored.Name
-		}
-		var resolveErr error
-		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
-		if resolveErr != nil {
-			writeError(w, http.StatusBadRequest, resolveErr.Error())
-			return
-		}
-	} else {
-		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
-	}
-	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
+	if !ok {
 		return
 	}
+	req.trustedPreservedImport = trustedPreservedImport
 
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
 
 func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *http.Request) {
 	var req ScriptDebugStartRequest
-	if r.Body == nil || r.ContentLength == 0 {
-		writeError(w, http.StatusBadRequest, "request body is required")
+	if !requireNonEmptyReplayBody(w, r) {
 		return
 	}
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
-	if req.Script == nil {
-		writeError(w, http.StatusBadRequest, "script is required")
-		return
-	}
-	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	if !bindDraftReplayRequestScript(w, req.Script, req.ProjectID) {
 		return
 	}
 	req.Mode = "replay"
@@ -159,21 +117,8 @@ func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	stored, ok := s.runner.GetScript(id)
+	stored, ok := s.loadAuthorizedReplayStoredScript(w, r)
 	if !ok {
-		writeError(w, http.StatusNotFound, "script not found")
-		return
-	}
-	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
-		return
-	}
-	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
-		writeError(w, http.StatusConflict, err.Error())
-		return
-	}
-	if err := storedScriptReplayGateError(stored.Script); err != nil {
-		s.writeStoredScriptReplayGate(w, stored.Script, err)
 		return
 	}
 
@@ -182,28 +127,11 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	script := stored.Script
-	if req.Script != nil {
-		script = req.Script
-		if script.ID == "" {
-			script.ID = stored.ID
-		}
-		if script.Name == "" {
-			script.Name = stored.Name
-		}
-		var resolveErr error
-		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
-		if resolveErr != nil {
-			writeError(w, http.StatusBadRequest, resolveErr.Error())
-			return
-		}
-	} else {
-		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
-	}
-	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
+	if !ok {
 		return
 	}
+	req.trustedPreservedImport = trustedPreservedImport
 	req.Mode = "replay"
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
@@ -246,64 +174,28 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		req.RuntimeProfile = &profile
 	}
 	script = applyScriptDebugOverrides(script, req)
-	submitted := script
-	var prepared bool
-	script, prepared = prepareTransientExecutableScript(
-		w,
-		script,
-		req.trustedPreservedImport,
-	)
-	if !prepared {
+	preparedExec, ok := s.prepareReplayOrDebugExecution(r.Context(), w, replayExecutionPrepOptions{
+		ScriptID:               id,
+		Script:                 script,
+		ReplaySessionID:        req.ReplaySessionID,
+		RunID:                  req.RunID,
+		ValidateRunID:          true,
+		TrustedPreservedImport: req.trustedPreservedImport,
+		LiveTableSeeds:         req.LiveTableSeeds,
+		Variables:              req.Variables,
+		ComputeActionDigest:    true,
+		ExtraWarnings:          scriptDebugParityWarnings,
+		CheckArchivedScript:    true,
+	})
+	if !ok {
 		return
 	}
-	actionGraphDigest, digestErr := scriptCorrelationActionGraphDigest(script)
-	if digestErr != nil {
-		writeError(w, http.StatusInternalServerError, "failed to identify replay action graph")
-		return
-	}
-	req.ActionGraphDigest = actionGraphDigest
-	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
-	if resolvedScript != nil {
-		script = resolvedScript
-	}
-	script, prepared = prepareTransientExecutableScript(
-		w,
-		script,
-		req.trustedPreservedImport,
-	)
-	if !prepared {
-		return
-	}
-	issues := append(
-		s.transientStaticIssues(submitted, script, req.trustedPreservedImport),
-		refIssues...,
-	)
-	warnings := append(validationWarnings(script), refWarnings...)
-	warnings = append(warnings, scriptDebugParityWarnings(script)...)
-	if !s.prepareReplayLiveTables(r.Context(), w, script, req.LiveTableSeeds) {
-		return
-	}
-	secretResolver := s.runner.secretResolverForScript(script)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
-	if !preflight.Valid {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"script_id": id,
-			"valid":     preflight.Valid,
-			"issues":    issues,
-			"warnings":  warnings,
-			"preflight": preflight,
-		})
-		return
-	}
-
-	if id != "" {
-		if err := s.runner.checkArchivedExecution("", []string{id}); err != nil {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-	}
-	req.Preflight = preflight
-	req.SecretResolver = secretResolver
+	script = preparedExec.Script
+	req.ActionGraphDigest = preparedExec.ActionGraphDigest
+	req.Preflight = preparedExec.Preflight
+	req.SecretResolver = preparedExec.SecretResolver
+	warnings := preparedExec.Warnings
+	preflight := preparedExec.Preflight
 	req.executionContext, req.releaseExecutionContext = s.runner.executionOperationContext(context.Background())
 	session, err := s.scriptDebug.StartChecked(id, script, req)
 	if err != nil {

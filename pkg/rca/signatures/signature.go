@@ -12,26 +12,33 @@ import (
 
 // Version identifies the signature set; it is part of every analysis's
 // frozen inputs.
-const Version = "signatures.v1"
+const Version = "signatures.v2"
 
 // Evidence kinds: what a series measures.
 const (
-	KindLatency     = "latency"
-	KindErrors      = "errors"
-	KindThroughput  = "throughput"
-	KindCPU         = "cpu"
-	KindMemory      = "memory"
-	KindGC          = "gc"
-	KindPool        = "pool"
-	KindConsumerLag = "consumer_lag"
-	KindRebalance   = "rebalance"
-	KindDeadLetters = "dead_letters"
-	KindRetries     = "retries"
-	KindScaling     = "scaling"
-	KindDBWait      = "db_wait"
-	KindDNS         = "dns"
-	KindConnect     = "connect"
-	KindTLS         = "tls"
+	KindLatency        = "latency"
+	KindErrors         = "errors"
+	KindThroughput     = "throughput"
+	KindCPU            = "cpu"
+	KindMemory         = "memory"
+	KindGC             = "gc"
+	KindPool           = "pool"
+	KindConsumerLag    = "consumer_lag"
+	KindRebalance      = "rebalance"
+	KindDeadLetters    = "dead_letters"
+	KindRetries        = "retries"
+	KindScaling        = "scaling"
+	KindDBWait         = "db_wait"
+	KindDNS            = "dns"
+	KindConnect        = "connect"
+	KindTLS            = "tls"
+	KindKVCache        = "kv_cache"
+	KindGPUCompute     = "gpu_compute"
+	KindInferenceQueue = "inference_queue"
+	KindPreemption     = "preemption"
+	KindRateLimit      = "rate_limit"
+	KindTTFT           = "ttft"
+	KindTPOT           = "tpot"
 )
 
 // Directions an anomaly moves in.
@@ -230,8 +237,12 @@ func All() []Signature {
 	return []Signature{
 		ResourcePressure, GarbageCollection, PoolExhaustion, ConsumerLag, Rebalance,
 		DeadLetters, Retries, ColdStart, DatabaseWait, NetworkPhase,
+		KVCacheSaturation, GPUComputeSaturation, InferenceQueueing, RateLimited,
 	}
 }
 
 // symptomsOfService are the symptoms a service-side cause explains.
 var symptomsOfService = []string{KindLatency, KindErrors, KindThroughput}
+
+// symptomsOfInference are the symptoms an inference-serving cause explains.
+var symptomsOfInference = []string{KindLatency, KindErrors, KindThroughput, KindTTFT, KindTPOT}

@@ -76,6 +76,9 @@ type IntervalDistributionMetric struct {
 	// DurationSketch is the version 2 distribution of the same durations;
 	// intervals recorded before it carry only the t-digest.
 	DurationSketch *engine.DurationSketchSnapshot `json:"duration_sketch,omitempty"`
+	// LLM carries interval-level TTFT, TPOT, token throughput and throttle
+	// rate when the key executed LLM requests in the interval.
+	LLM *LiveLLMMetrics `json:"llm,omitempty"`
 }
 
 // persistIntervalDistributionArchive writes interval_distributions.jsonl once,

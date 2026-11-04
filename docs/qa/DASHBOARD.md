@@ -26,10 +26,10 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | AKS cutover gates passed | 0 | 0 | 10 |
 | Tier-0 assertions GREEN | 0 | 12 | 12 |
 | Tier-0 assertions PARTIAL/MISSING | 12 | 0 | 0 |
-| Playwright spec files | 3 | 97 | assertion-driven |
+| Playwright spec files | 3 | 98 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
-| Packages with no test file | 6 | 10 | 3 |
+| Packages with no test file | 6 | 12 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 2 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |
@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 775 | 0 | 0 | 775 |
+| 785 | 0 | 0 | 785 |
 
 ## Last verified executions
 

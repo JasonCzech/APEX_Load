@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -121,14 +120,12 @@ func (s *Server) projectTableAudit(r *http.Request, project, table, action strin
 }
 
 func decodeProjectTableBody(w http.ResponseWriter, r *http.Request, out any) bool {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(out); err != nil {
-		writeError(w, 400, "invalid project live table request fields or body size")
-		return false
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		writeError(w, 400, "request must contain one JSON object")
+	if err := decodeStrictJSONDecoder(json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)), out); err != nil {
+		if errors.Is(err, errTrailingJSONValue) {
+			writeError(w, 400, "request must contain one JSON object")
+		} else {
+			writeError(w, 400, "invalid project live table request fields or body size")
+		}
 		return false
 	}
 	return true

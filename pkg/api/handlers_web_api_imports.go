@@ -100,43 +100,68 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 	}
 	augmented := draft.Augment(r)
 	result.Warnings = augmented.Warnings
-	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
-		[]*dsl.Script{result.Script}, protectedRequirements, nil,
-	)
-	if credentialReviewErr != nil {
-		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
-	}
-	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
+	s.writeProtectedCandidateImportResponse(
+		w,
 		r,
 		"openapi",
 		result.Script,
-		protectedRequirements,
 		importCandidateSource{Bytes: importReq.Data, Format: "openapi"},
+		&result.Warnings,
+		scriptImportResponseOptions{
+			Result:                result,
+			Warnings:              result.Warnings,
+			Stats:                 result.Stats,
+			Summary:               result.Summary,
+			Diagnostics:           result.Unsupported,
+			UnsupportedElements:   result.Unsupported.Strings(),
+			Correlations:          result.Correlations,
+			ReviewSections:        augmented.Sections,
+			SourceReview:          result.SourceReview,
+			Parameterization:      buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
+			Preflight:             augmented.Preflight,
+			ProtectedRequirements: protectedRequirements,
+		},
 	)
-	reusesCandidateForDraftAttestation := attachImportCandidateDraftAttestation(
-		result.Script,
-		"openapi",
+}
+
+func (s *Server) writeProtectedCandidateImportResponse(
+	w http.ResponseWriter,
+	r *http.Request,
+	profile string,
+	script *dsl.Script,
+	candidateSource importCandidateSource,
+	warnings *[]string,
+	options scriptImportResponseOptions,
+) {
+	options.Script = script
+	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
+		[]*dsl.Script{script}, options.ProtectedRequirements, nil,
+	)
+	if credentialReviewErr != nil {
+		const credentialWarning = "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration."
+		if warnings != nil {
+			*warnings = append(*warnings, credentialWarning)
+			options.Warnings = *warnings
+		} else {
+			options.Warnings = append(options.Warnings, credentialWarning)
+		}
+	}
+	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
+		r,
+		profile,
+		script,
+		options.ProtectedRequirements,
+		candidateSource,
+	)
+	options.PreparedCredentialReview = preparedCredentialReview
+	options.CredentialReviewPrepared = true
+	options.SkipDraftAttestation = attachImportCandidateDraftAttestation(
+		script,
+		profile,
 		sessionID,
 		sessionErr,
 	)
-	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:                   result,
-		Script:                   result.Script,
-		Warnings:                 result.Warnings,
-		Stats:                    result.Stats,
-		Summary:                  result.Summary,
-		Diagnostics:              result.Unsupported,
-		UnsupportedElements:      result.Unsupported.Strings(),
-		Correlations:             result.Correlations,
-		ReviewSections:           augmented.Sections,
-		SourceReview:             result.SourceReview,
-		Parameterization:         buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
-		Preflight:                augmented.Preflight,
-		ProtectedRequirements:    protectedRequirements,
-		PreparedCredentialReview: preparedCredentialReview,
-		CredentialReviewPrepared: true,
-		SkipDraftAttestation:     reusesCandidateForDraftAttestation,
-	})
+	response := s.newScriptImportResponseWithSourceSecrets(r, options)
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
 	writeScriptImportResponse(w, http.StatusOK, response)
 }
@@ -409,15 +434,10 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		Sections:         buildPostmanReviewSections(result),
 		Warnings:         result.Warnings,
 		Accounting:       result.Accounting(),
+		LLMTransform:     importreview.LLMTransformRequested(r),
 	}
 	augmented := draft.AugmentWithAgentforceTransform(agentforceTransform)
 	result.Warnings = augmented.Warnings
-	preparedCredentialReview, credentialReviewErr := prepareImportCredentialReview(
-		[]*dsl.Script{result.Script}, protectedRequirements, nil,
-	)
-	if credentialReviewErr != nil {
-		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
-	}
 	protectedSource := postman.BuildProtectedSourceBundle(
 		importReq.CollectionFileName,
 		importReq.Data,
@@ -425,39 +445,28 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		importReq.EnvironmentData,
 	)
 	defer clear(protectedSource)
-	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
+	s.writeProtectedCandidateImportResponse(
+		w,
 		r,
 		"postman",
 		result.Script,
-		protectedRequirements,
 		importCandidateSource{Bytes: protectedSource, Format: "postman"},
+		&result.Warnings,
+		scriptImportResponseOptions{
+			Result:                result,
+			Warnings:              result.Warnings,
+			Stats:                 result.Stats,
+			Summary:               result.Summary,
+			Diagnostics:           result.Unsupported,
+			UnsupportedElements:   result.Unsupported.Strings(),
+			ReviewSections:        augmented.Sections,
+			SourceReview:          result.SourceReview,
+			Correlations:          result.Correlations,
+			Parameterization:      buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
+			Preflight:             augmented.Preflight,
+			ProtectedRequirements: protectedRequirements,
+		},
 	)
-	reusesCandidateForDraftAttestation := attachImportCandidateDraftAttestation(
-		result.Script,
-		"postman",
-		sessionID,
-		sessionErr,
-	)
-	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:                   result,
-		Script:                   result.Script,
-		Warnings:                 result.Warnings,
-		Stats:                    result.Stats,
-		Summary:                  result.Summary,
-		Diagnostics:              result.Unsupported,
-		UnsupportedElements:      result.Unsupported.Strings(),
-		ReviewSections:           augmented.Sections,
-		SourceReview:             result.SourceReview,
-		Correlations:             result.Correlations,
-		Parameterization:         buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
-		Preflight:                augmented.Preflight,
-		ProtectedRequirements:    protectedRequirements,
-		PreparedCredentialReview: preparedCredentialReview,
-		CredentialReviewPrepared: true,
-		SkipDraftAttestation:     reusesCandidateForDraftAttestation,
-	})
-	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
-	writeScriptImportResponse(w, http.StatusOK, response)
 }
 
 func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request) {

@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
+	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -163,6 +166,9 @@ func loadFileDataSource(src dsl.DataSource, assets map[string][]byte) (*fileData
 }
 
 func loadDataSource(src dsl.DataSource, assets map[string][]byte) (*dataSource, error) {
+	if strings.EqualFold(strings.TrimSpace(src.Type), "jsonl") {
+		return loadJSONLDataSource(src, assets)
+	}
 	readerSource, err := openDataSourceReader(src, assets)
 	if err != nil {
 		return nil, err
@@ -265,6 +271,190 @@ func loadDataSource(src dsl.DataSource, assets map[string][]byte) (*dataSource, 
 	}
 
 	return ds, nil
+}
+
+func loadJSONLDataSource(src dsl.DataSource, assets map[string][]byte) (*dataSource, error) {
+	readerSource, err := openDataSourceReader(src, assets)
+	if err != nil {
+		return nil, err
+	}
+	defer readerSource.Close()
+
+	content, err := fileasset.ReadAllLimited(readerSource)
+	if err != nil {
+		return nil, fmt.Errorf("read JSONL data source: %w", err)
+	}
+	lines := bytes.Split(content, []byte{'\n'})
+	parsedObjects := make([]map[string]any, 0, min(len(lines), 1024))
+	discoveredKeys := make(map[string]struct{})
+	for lineIdx, rawLine := range lines {
+		line := bytes.TrimSpace(rawLine)
+		if len(line) == 0 {
+			continue
+		}
+		if len(parsedObjects) >= maxDataSourceRecords {
+			return nil, fmt.Errorf("JSONL exceeds %d record limit", maxDataSourceRecords)
+		}
+		var obj map[string]any
+		dec := json.NewDecoder(bytes.NewReader(line))
+		dec.UseNumber()
+		if err := dec.Decode(&obj); err != nil {
+			return nil, fmt.Errorf("parse JSONL line %d: %w", lineIdx+1, err)
+		}
+		for k := range obj {
+			discoveredKeys[k] = struct{}{}
+		}
+		parsedObjects = append(parsedObjects, obj)
+	}
+	if len(parsedObjects) == 0 {
+		return nil, fmt.Errorf("file is empty")
+	}
+
+	var columns []string
+	fieldPaths := make(map[string]string)
+	if len(src.Fields) > 0 {
+		for col, path := range src.Fields {
+			col = strings.TrimSpace(col)
+			if col == "" {
+				continue
+			}
+			columns = append(columns, col)
+			fieldPaths[col] = strings.TrimSpace(path)
+		}
+		sort.Strings(columns)
+	} else if len(src.Columns) > 0 {
+		for _, col := range src.Columns {
+			col = strings.TrimSpace(col)
+			if col == "" {
+				continue
+			}
+			columns = append(columns, col)
+			fieldPaths[col] = col
+		}
+	} else {
+		for k := range discoveredKeys {
+			columns = append(columns, k)
+			fieldPaths[k] = k
+		}
+		sort.Strings(columns)
+	}
+	if len(columns) > maxDataSourceColumns {
+		return nil, fmt.Errorf("JSONL record exceeds %d column limit", maxDataSourceColumns)
+	}
+	cellCount := len(parsedObjects) * len(columns)
+	if cellCount > maxDataSourceCells {
+		return nil, fmt.Errorf("JSONL exceeds %d parsed-cell limit", maxDataSourceCells)
+	}
+
+	rows := make([][]string, len(parsedObjects))
+	columnValues := make(map[string][]string, len(columns))
+	for _, col := range columns {
+		columnValues[col] = make([]string, len(parsedObjects))
+	}
+	for rowIdx, obj := range parsedObjects {
+		row := make([]string, len(columns))
+		for colIdx, col := range columns {
+			val := extractJSONLField(obj, fieldPaths[col])
+			row[colIdx] = val
+			columnValues[col][rowIdx] = val
+		}
+		rows[rowIdx] = row
+	}
+
+	strategy := strings.TrimSpace(src.Strategy)
+	if strategy == "" {
+		strategy = "sequential"
+	}
+	switch strategy {
+	case "sequential", "random", "unique", "pop":
+	default:
+		return nil, fmt.Errorf("unsupported data source strategy %q", strategy)
+	}
+
+	return &dataSource{
+		name:         src.Name,
+		columns:      columns,
+		rows:         rows,
+		columnValues: columnValues,
+		strategy:     strategy,
+		inputBytes:   int64(len(content)),
+		cellCount:    int64(cellCount),
+	}, nil
+}
+
+func extractJSONLField(root map[string]any, path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.TrimPrefix(path, "$.")
+	path = strings.TrimPrefix(path, "$")
+	if path == "" {
+		return ""
+	}
+	var cur any = root
+	if v, ok := root[path]; ok {
+		cur = v
+	} else {
+		parts := strings.Split(path, ".")
+		for _, part := range parts {
+			if cur == nil {
+				return ""
+			}
+			for {
+				bracketIdx := strings.IndexByte(part, '[')
+				if bracketIdx < 0 {
+					if m, ok := cur.(map[string]any); ok {
+						cur = m[part]
+					} else {
+						return ""
+					}
+					break
+				}
+				key := part[:bracketIdx]
+				rest := part[bracketIdx+1:]
+				closeIdx := strings.IndexByte(rest, ']')
+				if closeIdx < 0 {
+					return ""
+				}
+				idxStr := rest[:closeIdx]
+				part = rest[closeIdx+1:]
+				if key != "" {
+					if m, ok := cur.(map[string]any); ok {
+						cur = m[key]
+					} else {
+						return ""
+					}
+				}
+				idx, err := strconv.Atoi(idxStr)
+				if err != nil || idx < 0 {
+					return ""
+				}
+				arr, ok := cur.([]any)
+				if !ok || idx >= len(arr) {
+					return ""
+				}
+				cur = arr[idx]
+				if part == "" {
+					break
+				}
+			}
+		}
+	}
+	if cur == nil {
+		return ""
+	}
+	switch v := cur.(type) {
+	case string:
+		return v
+	case json.Number:
+		return v.String()
+	case bool:
+		return strconv.FormatBool(v)
+	default:
+		b, err := json.Marshal(v)
+		if err != nil {
+			return fmt.Sprint(v)
+		}
+		return string(b)
+	}
 }
 
 func resolveDataSourceDelimiter(src dsl.DataSource, content string) rune {

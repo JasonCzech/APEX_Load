@@ -114,6 +114,27 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 				}
 			}
 		}
+		if config.WorkloadShapeConfig.CapacitySweep != nil {
+			sweep := *config.WorkloadShapeConfig.CapacitySweep
+			sweep.Levels = append([]float64(nil), sweep.Levels...)
+			if sweep.SLOTTFTMs != nil {
+				v := *sweep.SLOTTFTMs
+				sweep.SLOTTFTMs = &v
+			}
+			if sweep.SLOTPOTMs != nil {
+				v := *sweep.SLOTPOTMs
+				sweep.SLOTPOTMs = &v
+			}
+			if sweep.SLOE2EMs != nil {
+				v := *sweep.SLOE2EMs
+				sweep.SLOE2EMs = &v
+			}
+			if sweep.MinGoodputPct != nil {
+				v := *sweep.MinGoodputPct
+				sweep.MinGoodputPct = &v
+			}
+			shape.CapacitySweep = &sweep
+		}
 	}
 	if config.TargetAverageTPS != nil {
 		value := *config.TargetAverageTPS
@@ -183,6 +204,38 @@ func cloneGoalConfig(config *GoalConfig) *GoalConfig {
 		value := *config.MaxDeadLetterRatePct
 		clone.MaxDeadLetterRatePct = &value
 	}
+	if config.MaxLLMP95TTFTMs != nil {
+		value := *config.MaxLLMP95TTFTMs
+		clone.MaxLLMP95TTFTMs = &value
+	}
+	if config.MaxLLMP95TPOTMs != nil {
+		value := *config.MaxLLMP95TPOTMs
+		clone.MaxLLMP95TPOTMs = &value
+	}
+	if config.MinLLMOutputTokensPerSec != nil {
+		value := *config.MinLLMOutputTokensPerSec
+		clone.MinLLMOutputTokensPerSec = &value
+	}
+	if config.MinLLMGoodputPct != nil {
+		value := *config.MinLLMGoodputPct
+		clone.MinLLMGoodputPct = &value
+	}
+	if config.MaxLLMThrottleRatePct != nil {
+		value := *config.MaxLLMThrottleRatePct
+		clone.MaxLLMThrottleRatePct = &value
+	}
+	if config.LLMSLOTTFTTargetMs != nil {
+		value := *config.LLMSLOTTFTTargetMs
+		clone.LLMSLOTTFTTargetMs = &value
+	}
+	if config.LLMSLOTPOTTargetMs != nil {
+		value := *config.LLMSLOTPOTTargetMs
+		clone.LLMSLOTPOTTargetMs = &value
+	}
+	if config.LLMSLOE2ETargetMs != nil {
+		value := *config.LLMSLOE2ETargetMs
+		clone.LLMSLOE2ETargetMs = &value
+	}
 	return &clone
 }
 
@@ -214,6 +267,11 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxPartitionSkewPct != nil ||
 		config.MaxRedeliveryRatePct != nil ||
 		config.MaxDeadLetterRatePct != nil ||
+		config.MaxLLMP95TTFTMs != nil ||
+		config.MaxLLMP95TPOTMs != nil ||
+		config.MinLLMOutputTokensPerSec != nil ||
+		config.MinLLMGoodputPct != nil ||
+		config.MaxLLMThrottleRatePct != nil ||
 		len(config.TransactionRules) > 0 ||
 		config.StopOnSLABreach ||
 		config.StopOnMaxErrors
@@ -250,6 +308,9 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		status.LiveTableNote = state.liveTableNote
 	}
 
+	hasLLMSamples := live.LLM != nil && live.LLM.Summary != nil && live.LLM.Summary.Requests > 0
+	hasLLMStreamSamples := hasLLMSamples && live.LLM.Summary.StreamedRequests > 0
+
 	breaches := goalBreachSet{
 		latency: config.P95LatencyMs != nil && live.P95Ms > *config.P95LatencyMs,
 		errors:  config.MaxErrorPct != nil && live.ErrorPct > *config.MaxErrorPct,
@@ -275,6 +336,11 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		deadLetterRate: hasServerTelemetryBreach(live, config.MaxDeadLetterRatePct, func(summary *ServerTelemetrySummary) float64 {
 			return summary.DeadLetterRatePct
 		}),
+		llmP95TTFT:            config.MaxLLMP95TTFTMs != nil && hasLLMStreamSamples && live.LLM.Summary.P95TTFTMs > *config.MaxLLMP95TTFTMs,
+		llmP95TPOT:            config.MaxLLMP95TPOTMs != nil && hasLLMStreamSamples && live.LLM.Summary.P95TPOTMs > *config.MaxLLMP95TPOTMs,
+		llmOutputTokensPerSec: config.MinLLMOutputTokensPerSec != nil && hasLLMSamples && live.LLM.OutputTokensPerSec < *config.MinLLMOutputTokensPerSec,
+		llmGoodput:            config.MinLLMGoodputPct != nil && hasLLMSamples && live.LLM.GoodputPct < *config.MinLLMGoodputPct,
+		llmThrottleRate:       config.MaxLLMThrottleRatePct != nil && hasLLMSamples && live.LLM.ThrottleRatePct > *config.MaxLLMThrottleRatePct,
 	}
 	status.LatencyBreached = breaches.latency
 	status.ErrorBreached = breaches.errors
@@ -289,10 +355,17 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 	status.PartitionSkewBreached = breaches.partitionSkew
 	status.RedeliveryRateBreached = breaches.redeliveryRate
 	status.DeadLetterRateBreached = breaches.deadLetterRate
+	status.LLMP95TTFTBreached = breaches.llmP95TTFT
+	status.LLMP95TPOTBreached = breaches.llmP95TPOT
+	status.LLMOutputTokensPerSecBreached = breaches.llmOutputTokensPerSec
+	status.LLMGoodputBreached = breaches.llmGoodput
+	status.LLMThrottleRateBreached = breaches.llmThrottleRate
 	status.BreachActive = breaches.latency || breaches.errors || breaches.serverProcessing || breaches.transfer ||
 		breaches.lcp || breaches.inp || breaches.cls ||
 		breaches.throttledRequests || breaches.endToEndLatency || breaches.partitionSkew ||
-		breaches.redeliveryRate || breaches.deadLetterRate
+		breaches.redeliveryRate || breaches.deadLetterRate ||
+		breaches.llmP95TTFT || breaches.llmP95TPOT || breaches.llmOutputTokensPerSec ||
+		breaches.llmGoodput || breaches.llmThrottleRate
 
 	if status.BreachActive {
 		if state != nil && state.breachStartedAt == nil {
@@ -876,19 +949,24 @@ func goalBreachWindow(config *GoalConfig) time.Duration {
 // goalBreachSet captures which SLA thresholds are currently exceeded so stop
 // decisions and reason strings derive from one evaluation pass.
 type goalBreachSet struct {
-	latency           bool
-	errors            bool
-	serverProcessing  bool
-	transfer          bool
-	errorCount        bool
-	lcp               bool
-	inp               bool
-	cls               bool
-	throttledRequests bool
-	endToEndLatency   bool
-	partitionSkew     bool
-	redeliveryRate    bool
-	deadLetterRate    bool
+	latency               bool
+	errors                bool
+	serverProcessing      bool
+	transfer              bool
+	errorCount            bool
+	lcp                   bool
+	inp                   bool
+	cls                   bool
+	throttledRequests     bool
+	endToEndLatency       bool
+	partitionSkew         bool
+	redeliveryRate        bool
+	deadLetterRate        bool
+	llmP95TTFT            bool
+	llmP95TPOT            bool
+	llmOutputTokensPerSec bool
+	llmGoodput            bool
+	llmThrottleRate       bool
 }
 
 // totalServerTelemetryThrottles sums the run-total throttle/ServerBusy/quota
@@ -955,6 +1033,16 @@ func goalStopReason(breaches goalBreachSet) string {
 		return "messaging redelivery rate SLA breached"
 	case breaches.deadLetterRate:
 		return "messaging dead-letter rate SLA breached"
+	case breaches.llmP95TTFT:
+		return "LLM p95 TTFT SLA breached"
+	case breaches.llmP95TPOT:
+		return "LLM p95 TPOT SLA breached"
+	case breaches.llmOutputTokensPerSec:
+		return "LLM output token throughput SLA breached"
+	case breaches.llmGoodput:
+		return "LLM goodput SLA breached"
+	case breaches.llmThrottleRate:
+		return "LLM throttle rate SLA breached"
 	default:
 		return "SLA breached"
 	}

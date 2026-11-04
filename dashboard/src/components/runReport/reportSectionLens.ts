@@ -62,6 +62,7 @@ const SECTION_ALIASES: Record<string, string> = {
   transaction_details: 'diagnostics',
   archive_analysis: 'diagnostics',
   web2_migration: 'diagnostics',
+  llm_inference: 'diagnostics',
 }
 
 const FALLBACK_PROFILE_SECTIONS: Record<ReportLens, string[]> = {

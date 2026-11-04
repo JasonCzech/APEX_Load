@@ -376,6 +376,9 @@ func (w *runArchiveWriter) RecordResult(result *protocol.Result) error {
 	}
 	applySentTraceContext(&event, result.TraceContext)
 	event.HTTPVersion, event.HTTPVersionFallback, event.AttemptCount = protocol.ArchiveHTTPVersionFields(result)
+	event.Attempts = result.Attempts
+	event.ThrottledAttempts = result.ThrottledAttempts
+	event.RetryWaitMs = result.RetryWaitMs
 	if len(result.TraceLinks) > 0 || result.TraceLinksTruncated {
 		event.TraceLinks = append([]protocol.TraceLink(nil), result.TraceLinks...)
 		event.TraceLinksTruncated = result.TraceLinksTruncated
@@ -543,6 +546,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	}
 	activeRuntimeSeconds := live.ActiveRuntimeSeconds
 	record := IntervalSummaryRecord{
+		LLM:                      live.LLM.Clone(),
 		JavaHTTP:                 live.JavaHTTP.Retained(),
 		MessagingProgress:        live.MessagingProgress.Clone(),
 		Messaging:                protocol.CloneMessagingSummaries(live.Messaging),

@@ -1643,7 +1643,7 @@ func requiredProtocolRuntimeFeature(script *dsl.Script) string {
 	external := []string{}
 	for _, feature := range strings.Split(required, "+") {
 		switch feature {
-		case "", dsl.FeatureParallelLoopControlV1, dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1,
+		case "", dsl.FeatureParallelLoopControlV1, dsl.FeatureOpenArrivalV2, dsl.FeatureDataJSONLV1, dsl.FeatureLLMInferenceV1, dsl.FeaturePropertyAnalyticsV1, dsl.FeatureLRFidelityV1, FeatureControlParallelV1, FeatureMessageDetailCaptureV1, FeatureMessageDetailControlParallelV1,
 			// Process-level: checked by http3StagingError, not by the
 			// protocol instance's runtime capabilities.
 			dsl.FeatureNativeHTTP3V1, dsl.FeatureHTTP3UpgradeV1:

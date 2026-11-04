@@ -10,7 +10,6 @@ package api
 // double-prune. A meta audit event records each prune for traceability.
 
 import (
-	"context"
 	"log/slog"
 	"os"
 	"strconv"
@@ -96,24 +95,5 @@ func (s *Server) startAuditRetentionCadence() {
 	if auditRetentionDays() <= 0 {
 		return
 	}
-	interval := auditRetentionInterval()
-	if interval <= 0 {
-		return
-	}
-	ctx, cancel := context.WithCancel(context.Background())
-	s.auditRetentionCancel = cancel
-	s.launchBackground(func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if s.isExecutionLeader() {
-					s.pruneAuditRetention(time.Now().UTC())
-				}
-			}
-		}
-	})
+	s.auditRetentionCancel = s.startLeaderPeriodicTask(auditRetentionInterval(), s.pruneAuditRetention)
 }

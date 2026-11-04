@@ -6,25 +6,38 @@ import (
 	"fmt"
 	"io"
 	"math"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type transactionSLAAccumulator struct {
-	ackSamples      int64
-	maxAck          float64
-	invalidDuration bool
-	invalidBytes    bool
-	lagSamples      int64
-	offsetSamples   int64
-	maxLag          float64
-	maxOffset       float64
-	count           int64
-	errors          int64
-	bytesSent       int64
-	bytesReceived   int64
-	durationTotal   float64
-	durationMin     float64
-	durationMax     float64
-	durations       *archiveQuantileAccumulator
+	ackSamples          int64
+	maxAck              float64
+	invalidDuration     bool
+	invalidBytes        bool
+	lagSamples          int64
+	offsetSamples       int64
+	maxLag              float64
+	maxOffset           float64
+	count               int64
+	errors              int64
+	bytesSent           int64
+	bytesReceived       int64
+	durationTotal       float64
+	durationMin         float64
+	durationMax         float64
+	durations           *archiveQuantileAccumulator
+	llmCount            int64
+	llmStreamedCount    int64
+	llmTPOTCount        int64
+	llmSuccessCount     int64
+	llmGoodputCount     int64
+	llmThrottledCount   int64
+	llmTruncatedCount   int64
+	llmCompletionTokens int64
+	ttfts               *archiveQuantileAccumulator
+	tpots               *archiveQuantileAccumulator
+	itls                protocol.DiagnosticDistribution
 }
 
 // applyTransactionSLARules evaluates exact-name rules only after the complete
@@ -76,7 +89,12 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			}
 			a := stats[i]
 			if a == nil {
-				a = &transactionSLAAccumulator{durationMin: math.Inf(1), durations: newArchiveGateQuantileAccumulator(quantileBudget)}
+				a = &transactionSLAAccumulator{
+					durationMin: math.Inf(1),
+					durations:   newArchiveGateQuantileAccumulator(quantileBudget),
+					ttfts:       newArchiveGateQuantileAccumulator(quantileBudget),
+					tpots:       newArchiveGateQuantileAccumulator(quantileBudget),
+				}
 				stats[i] = a
 			}
 			a.count++
@@ -92,6 +110,52 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 				if telemetry.ConsumerOffsetLagObserved && telemetry.ConsumerOffsetLag >= 0 && telemetry.ConsumerOffsetLag <= 1<<53 {
 					a.offsetSamples++
 					a.maxOffset = math.Max(a.maxOffset, float64(telemetry.ConsumerOffsetLag))
+				}
+				if llm := telemetry.LLM; llm != nil {
+					a.llmCount++
+					throttled := llm.Throttled || event.StatusCode == 429
+					if throttled {
+						a.llmThrottledCount++
+					}
+					if llm.Truncated {
+						a.llmTruncatedCount++
+					}
+					if llm.CompletionTokens > 0 {
+						a.llmCompletionTokens += int64(llm.CompletionTokens)
+					}
+					if event.Success && !throttled {
+						a.llmSuccessCount++
+						good := true
+						if rule.SLOTTFTMs != nil && *rule.SLOTTFTMs > 0 && (llm.TTFTMs <= 0 || llm.TTFTMs > *rule.SLOTTFTMs) {
+							good = false
+						}
+						if rule.SLOTPOTMs != nil && *rule.SLOTPOTMs > 0 && (llm.TPOTMs <= 0 || llm.TPOTMs > *rule.SLOTPOTMs) {
+							good = false
+						}
+						e2e := llm.E2EMs
+						if e2e <= 0 {
+							e2e = event.DurationMs
+						}
+						if rule.SLOE2EMs != nil && *rule.SLOE2EMs > 0 && (e2e <= 0 || e2e > *rule.SLOE2EMs) {
+							good = false
+						}
+						if good {
+							a.llmGoodputCount++
+						}
+						if llm.Stream {
+							a.llmStreamedCount++
+							if llm.TTFTMs > 0 && finiteComparison(llm.TTFTMs) {
+								a.ttfts.Add(llm.TTFTMs)
+							}
+							if llm.TPOTMs > 0 && finiteComparison(llm.TPOTMs) {
+								a.llmTPOTCount++
+								a.tpots.Add(llm.TPOTMs)
+							}
+							if llm.ITLDistribution != nil && llm.ITLDistribution.Count > 0 {
+								a.itls.Merge(*llm.ITLDistribution)
+							}
+						}
+					}
 				}
 			}
 			if !event.Success {
@@ -172,7 +236,12 @@ func goalConfigHasArchiveIndependentSLA(config *GoalConfig) bool {
 		config.MaxEndToEndLatencyMs != nil ||
 		config.MaxPartitionSkewPct != nil ||
 		config.MaxRedeliveryRatePct != nil ||
-		config.MaxDeadLetterRatePct != nil)
+		config.MaxDeadLetterRatePct != nil ||
+		config.MaxLLMP95TTFTMs != nil ||
+		config.MaxLLMP95TPOTMs != nil ||
+		config.MinLLMOutputTokensPerSec != nil ||
+		config.MinLLMGoodputPct != nil ||
+		config.MaxLLMThrottleRatePct != nil)
 }
 
 func transactionRulesFromManifest(manifest *RunArchiveManifest) []TransactionSLARule {
@@ -219,6 +288,12 @@ func evaluateTransactionSLARule(rule TransactionSLARule, stats *transactionSLAAc
 	switch rule.Metric {
 	case "p90_duration_ms", "p95_duration_ms", "p99_duration_ms":
 		result.PercentileQuality = stats.durations.PercentileQuality()
+	case "p50_ttft_ms", "p90_ttft_ms", "p95_ttft_ms", "p99_ttft_ms":
+		result.PercentileQuality = stats.ttfts.PercentileQuality()
+	case "p90_tpot_ms", "p95_tpot_ms", "p99_tpot_ms":
+		result.PercentileQuality = stats.tpots.PercentileQuality()
+	case "p95_itl_ms", "p99_itl_ms":
+		result.PercentileQuality = "approximate_log_histogram_10pct"
 	}
 	if compareTransactionSLA(observed, rule.Comparator, rule.Threshold) {
 		result.Status = "pass"
@@ -293,6 +368,71 @@ func transactionSLAMetricValue(metric string, stats *transactionSLAAccumulator, 
 		return stats.durationMax, !stats.invalidDuration
 	case "error_rate_pct":
 		return float64(stats.errors) * 100 / float64(stats.count), true
+	case "p50_ttft_ms":
+		if stats.llmStreamedCount <= 0 {
+			return 0, false
+		}
+		return stats.ttfts.Quantile(0.50), true
+	case "p90_ttft_ms":
+		if stats.llmStreamedCount <= 0 {
+			return 0, false
+		}
+		return stats.ttfts.Quantile(0.90), true
+	case "p95_ttft_ms":
+		if stats.llmStreamedCount <= 0 {
+			return 0, false
+		}
+		return stats.ttfts.Quantile(0.95), true
+	case "p99_ttft_ms":
+		if stats.llmStreamedCount <= 0 {
+			return 0, false
+		}
+		return stats.ttfts.Quantile(0.99), true
+	case "p90_tpot_ms":
+		if stats.llmTPOTCount <= 0 {
+			return 0, false
+		}
+		return stats.tpots.Quantile(0.90), true
+	case "p95_tpot_ms":
+		if stats.llmTPOTCount <= 0 {
+			return 0, false
+		}
+		return stats.tpots.Quantile(0.95), true
+	case "p99_tpot_ms":
+		if stats.llmTPOTCount <= 0 {
+			return 0, false
+		}
+		return stats.tpots.Quantile(0.99), true
+	case "p95_itl_ms":
+		if stats.itls.Count <= 0 {
+			return 0, false
+		}
+		return stats.itls.Quantile(0.95)
+	case "p99_itl_ms":
+		if stats.itls.Count <= 0 {
+			return 0, false
+		}
+		return stats.itls.Quantile(0.99)
+	case "output_tokens_per_sec":
+		if runSeconds <= 0 || stats.llmCount <= 0 {
+			return 0, false
+		}
+		return float64(stats.llmCompletionTokens) / runSeconds, true
+	case "goodput_pct":
+		if stats.llmCount <= 0 {
+			return 0, false
+		}
+		return float64(stats.llmGoodputCount) * 100 / float64(stats.llmCount), true
+	case "throttle_rate_pct":
+		if stats.llmCount <= 0 {
+			return 0, false
+		}
+		return float64(stats.llmThrottledCount) * 100 / float64(stats.llmCount), true
+	case "truncation_rate_pct":
+		if stats.llmCount <= 0 {
+			return 0, false
+		}
+		return float64(stats.llmTruncatedCount) * 100 / float64(stats.llmCount), true
 	default:
 		return 0, false
 	}

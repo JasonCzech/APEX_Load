@@ -197,13 +197,16 @@ func (d *generatorDiscovery) loop(ctx context.Context) {
 }
 
 func (s *Server) startGeneratorDiscovery() {
-	if s == nil || s.generatorDiscovery == nil {
+	if s == nil || s.generatorDiscovery == nil || s.discoveryCancel != nil {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	if !s.launchBackground(func() { s.generatorDiscovery.loop(ctx) }) {
+		cancel()
+		return
+	}
 	s.discoveryCancel = cancel
 	slog.Info("generator DNS discovery enabled",
 		"services", len(s.generatorDiscovery.specs),
 		"interval", s.generatorDiscovery.interval)
-	s.launchBackground(func() { s.generatorDiscovery.loop(ctx) })
 }

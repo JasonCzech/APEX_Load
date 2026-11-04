@@ -613,6 +613,12 @@ export function chartPrimaryYAxisLabel(chart: ChartConfig) {
       return 'Impact metrics'
     case 'network_latency':
       return 'Route latency (ms)'
+    case 'llm_ttft':
+      return 'TTFT (ms)'
+    case 'llm_tpot':
+      return 'TPOT / ITL (ms)'
+    case 'llm_tokens':
+      return 'Tokens / s'
     case LOAD_IMPACT_PERCENTILES_CHART_ID:
       return 'Response time (ms)'
     default:
@@ -681,6 +687,49 @@ export function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactCh
     .map(chart => chart.id)
 }
 
+export const llmChartConfigs: ChartConfig[] = [
+  {
+    id: 'llm_ttft',
+    title: 'LLM Time to First Token (ms)',
+    type: 'area-multi',
+    keys: [
+      { k: 'llmTtftP50Ms', n: 'P50 TTFT', c: 'var(--chart-5)' },
+      { k: 'llmTtftP95Ms', n: 'P95 TTFT', c: 'var(--chart-2)' },
+      { k: 'llmTtftP99Ms', n: 'P99 TTFT', c: 'var(--chart-4)' },
+    ],
+    domain: [0, 'auto'],
+  },
+  {
+    id: 'llm_tpot',
+    title: 'LLM Inter-Token Latency & TPOT (ms)',
+    type: 'area-multi',
+    keys: [
+      { k: 'llmTpotP50Ms', n: 'P50 TPOT', c: 'var(--chart-1)' },
+      { k: 'llmTpotP95Ms', n: 'P95 TPOT', c: 'var(--chart-3)' },
+      { k: 'llmItlP99Ms', n: 'P99 ITL', c: 'var(--chart-6)' },
+    ],
+    domain: [0, 'auto'],
+  },
+  {
+    id: 'llm_tokens',
+    title: 'LLM Token Throughput (tok/s)',
+    type: 'area-multi',
+    keys: [
+      { k: 'llmOutputTokensPerSec', n: 'Output tok/s', c: 'var(--chart-2)' },
+      { k: 'llmInputTokensPerSec', n: 'Input tok/s', c: 'var(--chart-5)' },
+    ],
+    domain: [0, 'auto'],
+  },
+]
+
+export function isLLMChart(chart: ChartConfig): boolean {
+  return chart.id === 'llm_ttft' || chart.id === 'llm_tpot' || chart.id === 'llm_tokens'
+}
+
+export function buildLLMCharts(hasLLMData: boolean): ChartConfig[] {
+  return hasLLMData ? llmChartConfigs : []
+}
+
 // presetExemptChartIds returns the ids of charts built dynamically at runtime
 // (the Prometheus pack; imported dashboard panels once they are wired in). Monitor
 // presets curate only the *static* chartConfigs list, so chartStateForMonitorPreset
@@ -688,7 +737,7 @@ export function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactCh
 // default visible instead — the same exemption loadImpactDefaultVisibleChartIds
 // already applies to load-impact charts.
 export function presetExemptChartIds(charts: ChartConfig[]): string[] {
-  return charts.filter(chart => isPrometheusChart(chart) || isImportedDashboardChart(chart)).map(chart => chart.id)
+  return charts.filter(chart => isPrometheusChart(chart) || isImportedDashboardChart(chart) || isLLMChart(chart)).map(chart => chart.id)
 }
 
 export const monitorPresets = [
@@ -1608,11 +1657,13 @@ export function chartMetricRows(
     default: {
       const keyedUnit = chart.id === 'cpu'
         ? '%'
-        : chart.id === 'tx_network_phases'
+        : chart.id === 'tx_network_phases' || chart.id === 'llm_ttft' || chart.id === 'llm_tpot'
           ? 'ms'
-          : chart.id === 'error_taxonomy'
-            ? 'errors'
-            : 'MB'
+          : chart.id === 'llm_tokens'
+            ? 'tok/s'
+            : chart.id === 'error_taxonomy'
+              ? 'errors'
+              : 'MB'
       rows = chart.keys
         ? chart.keys.map(key => ({ key: key.k, label: key.n, color: key.c, unit: keyedUnit }))
         : chart.dataKey

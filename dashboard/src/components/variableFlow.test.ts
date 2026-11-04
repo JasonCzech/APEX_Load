@@ -163,6 +163,8 @@ describe('stepOutputs', () => {
     ['source_metric only logs', { name: 'm', type: 'source_metric', target: '', params: { args: ['m', '{{var.x}}'] } }, { noReads: true }],
     ['source_runtime uses its args literally', { name: 'r', type: 'source_runtime', target: '', params: { function: 'lr_exit', args: ['{{var.x}}'] } }, { noReads: true }],
     ['rendezvous uses its key literally', { name: 'r', type: 'rendezvous', target: '', params: { key: '{{var.x}}' } }, { noReads: true }],
+    ['llm_request outputs and conversation history', { name: 'llm', type: 'llm_request', target: '/v1/chat/completions', params: { save_as: 'reply', save_finish_reason_as: 'reason', save_tool_calls_as: 'tools', conversation: { history_var: 'chat_hist' } } }, { writes: [{ name: 'reply' }, { name: 'reason' }, { name: 'tools' }, { name: 'chat_hist' }] }],
+    ['llm_request conversation true default history', { name: 'llm', type: 'llm_request', target: '/v1/chat/completions', params: { conversation: true } }, { writes: [{ name: 'llm_conversation_history' }] }],
     ['requests are not modeled', { name: 'r', type: 'request', target: '/{{var.x}}' }, {}],
   ])('%s', (_name, action, want) => {
     expect(stepOutputs(action)).toEqual(want)

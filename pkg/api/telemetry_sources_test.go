@@ -232,8 +232,10 @@ func TestTelemetryPublicationIsCountedWhileTheStreamOwnsItsTarget(t *testing.T) 
 	runner := NewTestRunner(1, NewHub(), nil)
 	stream := &generatorrpc.MetricsStream{}
 	test := &ManagedTest{
-		ID: "observe-run", Status: "RUNNING", executionGeneration: 7, remoteControlGeneration: 1,
-		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream},
+		ID: "observe-run", Status: "RUNNING", executionGeneration: 7, distributedTestRuntime: distributedTestRuntime{
+			remoteControlGeneration:      1,
+			remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": stream},
+		},
 	}
 	runner.mu.Lock()
 	runner.tests[test.ID] = test

@@ -965,6 +965,14 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 			result.ServerTelemetry.GRPC = result.ServerTelemetry.GRPC.Clone()
 			result.ServerTelemetry.GRPC.Method = scrubSensitiveTextWithConfig(result.ServerTelemetry.GRPC.Method, config)
 		}
+		if result.ServerTelemetry.LLM != nil {
+			result.ServerTelemetry.LLM = result.ServerTelemetry.LLM.Clone()
+			result.ServerTelemetry.LLM.Model = scrubSensitiveTextWithConfig(result.ServerTelemetry.LLM.Model, config)
+			result.ServerTelemetry.LLM.Dialect = scrubSensitiveTextWithConfig(result.ServerTelemetry.LLM.Dialect, config)
+			result.ServerTelemetry.LLM.FinishReason = scrubSensitiveTextWithConfig(result.ServerTelemetry.LLM.FinishReason, config)
+			result.ServerTelemetry.LLM.ErrorCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.LLM.ErrorCode, config)
+			result.ServerTelemetry.LLM.Region = scrubSensitiveTextWithConfig(result.ServerTelemetry.LLM.Region, config)
+		}
 		result.ServerTelemetry.RequestSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.RequestSizeClass, config)
 		result.ServerTelemetry.ResponseSizeClass = scrubSensitiveTextWithConfig(result.ServerTelemetry.ResponseSizeClass, config)
 		result.ServerTelemetry.SOAPFaultCode = scrubSensitiveTextWithConfig(result.ServerTelemetry.SOAPFaultCode, config)

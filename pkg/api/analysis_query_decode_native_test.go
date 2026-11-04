@@ -29,7 +29,7 @@ func TestNativeSeriesHandlerRejectsIgnoredOptionsAndForeignRequestedScope(t *tes
 			w := httptest.NewRecorder()
 			r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
 			s.mux.ServeHTTP(w, r)
-			if w.Code != http.StatusBadRequest || len(analysisPipelineJobs) != 0 {
+			if w.Code != http.StatusBadRequest || len(s.semaphores.analysisPipelineJobs) != 0 {
 				t.Fatal("unsupported series option reached native work", w.Code, w.Body.String())
 			}
 			current, err := store.GetAnalysisImport(in.ID)

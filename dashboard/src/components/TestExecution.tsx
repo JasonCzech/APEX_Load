@@ -780,7 +780,7 @@ export default function TestExecution({
           importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
-          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable}
+          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable || Boolean((latestMetrics ?? test?.live_metrics)?.llm?.summary?.requests) || filteredData.some(point => point.llmOutputTokensPerSec !== undefined || point.llmTtftP95Ms !== undefined)}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
@@ -988,7 +988,7 @@ export default function TestExecution({
           importedDashboardsAvailable={importedDashboardsAvailable}
           importedDashboardsLoading={importedDashboardsLoading}
           importedDashboardsError={importedDashboardsError}
-          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable}
+          enableGraphGroupTabs={prometheusAvailable || importedDashboardsAvailable || Boolean((latestMetrics ?? test?.live_metrics)?.llm?.summary?.requests) || filteredData.some(point => point.llmOutputTokensPerSec !== undefined || point.llmTtftP95Ms !== undefined)}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}

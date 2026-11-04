@@ -47,7 +47,7 @@ func TestSameLeaderEvacuationAttestationEligibility(t *testing.T) {
 		{"incomplete local runtime", "STOPPING", true, nil, cancel, uncertainEvacuationReasonPrefix + "replacement restarted", raw, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			candidate := &ManagedTest{Status: tc.status, remoteFinalizing: tc.finalizing, executionCtx: tc.ctx, cancel: tc.cancel, Error: tc.reason, continuityCheckpoint: tc.checkpoint}
+			candidate := &ManagedTest{Status: tc.status, distributedTestRuntime: distributedTestRuntime{remoteFinalizing: tc.finalizing}, executionCtx: tc.ctx, cancel: tc.cancel, Error: tc.reason, continuityCheckpoint: tc.checkpoint}
 			if got := interruptedEvacuationAwaitingProofLocked(candidate); got != tc.want {
 				t.Fatalf("eligible=%v, want %v", got, tc.want)
 			}

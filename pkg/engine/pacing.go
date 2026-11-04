@@ -89,7 +89,12 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 
 	var ms float64
 
-	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
+	mode := strings.ToLower(strings.TrimSpace(cfg.Type))
+	if strings.EqualFold(strings.TrimSpace(cfg.Distribution), "exponential") {
+		mode = "exponential"
+	}
+
+	switch mode {
 	case "fixed", "recorded":
 		ms = cfg.MeanMs
 
@@ -115,6 +120,22 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 			ms = lo
 		} else {
 			ms = lo + rand.Float64()*(hi-lo)
+		}
+
+	case "exponential":
+		mean := cfg.MeanMs
+		if mean <= 0 && (cfg.MinMs > 0 || cfg.MaxMs > 0) {
+			mean = (cfg.MinMs + cfg.MaxMs) / 2.0
+		}
+		if mean <= 0 {
+			return 0
+		}
+		ms = rand.ExpFloat64() * mean
+		if cfg.MinMs > 0 && ms < cfg.MinMs {
+			ms = cfg.MinMs
+		}
+		if cfg.MaxMs > 0 && ms > cfg.MaxMs*4.0 {
+			ms = cfg.MaxMs * 4.0
 		}
 
 	default:
@@ -514,10 +535,10 @@ func tokenBucketTokensForElapsed(elapsed time.Duration, interval time.Duration) 
 // resolveActionThinkTime applies a global recorded-percentage policy to each
 // recorded action delay. Explicit action distributions retain their own mode.
 func resolveActionThinkTime(global protocol.ThinkTimeConfig, action dsl.ThinkTimeConfig) protocol.ThinkTimeConfig {
-	if action.Type == "" {
+	if action.Type == "" && action.Distribution == "" {
 		return global
 	}
-	cfg := protocol.ThinkTimeConfig{Type: action.Type, MeanMs: action.MeanMs, StdMs: action.StdMs, MinMs: action.MinMs, MaxMs: action.MaxMs, MinPercent: action.MinPercent, MaxPercent: action.MaxPercent, Multiplier: action.Multiplier, LimitMs: action.LimitMs, Ignore: action.Ignore}
+	cfg := protocol.ThinkTimeConfig{Type: action.Type, Distribution: action.Distribution, MeanMs: action.MeanMs, StdMs: action.StdMs, MinMs: action.MinMs, MaxMs: action.MaxMs, MinPercent: action.MinPercent, MaxPercent: action.MaxPercent, Multiplier: action.Multiplier, LimitMs: action.LimitMs, Ignore: action.Ignore}
 	if action.Force {
 		// A forced delay (lr_force_think_time) ignores the script's think-time
 		// policy entirely: no percentage sampling, multiplier, cap or ignore.

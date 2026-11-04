@@ -819,17 +819,19 @@ func TestEvacuateGeneratorEndpointDryRunListsImpactedShards(t *testing.T) {
 		Status:     "RUNNING",
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 4}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {
-				{Group: "buyers", Target: "gen-a:9090", VUsers: 2},
-				{Group: "buyers", Target: "gen-b:9090", VUsers: 2},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {
+					{Group: "buyers", Target: "gen-a:9090", VUsers: 2},
+					{Group: "buyers", Target: "gen-b:9090", VUsers: 2},
+				},
 			},
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
+				"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+			},
+			remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
-			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
-		},
-		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
 	}
 	server.runner.mu.Lock()
 	server.runner.tests[test.ID] = test
@@ -865,14 +867,16 @@ func TestEvacuateGeneratorPreflightRefusalDoesNotDrain(t *testing.T) {
 		Status:     "RUNNING",
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "browser", Protocol: "browser", VUsers: 1}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"browser": {{Group: "browser", Target: "gen-a:9090", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"browser": {{Group: "browser", Target: "gen-a:9090", VUsers: 1}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
+				"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+			},
+			remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-a:9090": newEvacuationFakeGeneratorClient("gen-a:9090"),
-			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
-		},
-		remoteTargetStates: map[string]string{"gen-a:9090": "RUNNING"},
 	}
 	server.runner.mu.Lock()
 	server.runner.tests[test.ID] = test

@@ -4,7 +4,7 @@ import LazyLoadBoundary from './LazyLoadBoundary'
 import type { TelemetryPolicySegmentReceipt } from '../types/telemetryPolicy'
 import TelemetryStageDistributions from './TelemetryStageDistributions'
 import TelemetryAcceptanceVerdict from './TelemetryAcceptanceVerdict'
-import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, RunArchiveHTTPVersionMix, TelemetryHealth, TestSummary, TxMetrics } from '../types'
+import { BrowserDeviceLiveMetrics, BrowserLiveMetrics, CapacityAdvisory, GoalStatus, GroupLiveMetrics, LiveCapacityStatus, LiveLLMMetrics, RunArchiveHTTPVersionMix, TelemetryHealth, TestSummary, TxMetrics } from '../types'
 import { formatTimeCompact } from '../utils/timeUtils'
 import { browserMetricRecord, finiteBrowserMetric, formatBrowserSampleCount, formatBrowserEngineLabel, formatDevicePlatformLabel } from './browserBreakdownModel'
 import BrowserUXAssessment from './BrowserUXAssessment'
@@ -28,8 +28,20 @@ function loadTelemetryPolicySegments() {
 }
 const TelemetryPolicySegmentList = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryPolicySegmentList })))
 const TelemetryBudgetChange = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryBudgetChange })))
+// Only a run that sends LLM requests shows its live LLM signals.
+const LiveLLMSignalsCard = lazy(() => import('./LiveLLMSignals').then(module => ({ default: module.LiveLLMSignalsCard })))
+
+// The LLM goals a goal-oriented run can set, each with its breach flag.
+const llmGoalFlags = [
+  ['max_llm_p95_ttft_ms', 'llm_p95_ttft_breached', 'LLM P95 TTFT'],
+  ['max_llm_p95_tpot_ms', 'llm_p95_tpot_breached', 'LLM P95 TPOT'],
+  ['min_llm_output_tokens_per_sec', 'llm_output_tokens_per_sec_breached', 'LLM output tok/s'],
+  ['min_llm_goodput_pct', 'llm_goodput_breached', 'LLM goodput'],
+  ['max_llm_throttle_rate_pct', 'llm_throttle_rate_breached', 'LLM throttle rate'],
+] as const
 
 interface LiveMetricsSummary {
+  llm?: LiveLLMMetrics
   browser_documents?: BrowserDocumentSummary | null
   tps?: number
   target_tps?: number
@@ -45,6 +57,10 @@ interface LiveMetricsSummary {
   capacity_status?: LiveCapacityStatus
   by_region?: Record<string, TxMetrics>
   http_versions?: RunArchiveHTTPVersionMix
+  resources?: {
+    cpu_process_pct?: number
+    container_cpu_usage_pct?: number
+  }
 }
 
 interface Props {
@@ -575,6 +591,12 @@ export default function TestExecutionStatusPanels({
         <BrowserDocumentEvidencePanel summary={metrics?.browser_documents} summaryMode="live-history" />
       </>)}
 
+      {metrics?.llm?.summary && metrics.llm.summary.requests > 0 && <LazyLoadBoundary title="The LLM inference signals could not be loaded.">
+        <Suspense fallback={null}><LiveLLMSignalsCard llm={metrics.llm}
+          cpuPct={Math.max(metrics.resources?.container_cpu_usage_pct ?? 0, metrics.resources?.cpu_process_pct ?? 0)}
+          droppedResults={metrics.telemetry?.dropped_results ?? 0} /></Suspense>
+      </LazyLoadBoundary>}
+
       {isGoalOriented && (
         <div className="goal-status-card">
           <div className="goal-status-header">
@@ -698,6 +720,11 @@ export default function TestExecutionStatusPanels({
                 Dead-letter rate {goalStatus?.dead_letter_rate_breached ? 'breached' : 'healthy'}
               </span>
             )}
+            {llmGoalFlags.map(([configKey, breachedKey, label]) => test.goal_config?.[configKey] !== undefined && (
+              <span key={configKey} className={`goal-flag ${goalStatus?.[breachedKey] ? 'alert' : ''}`}>
+                {label} {goalStatus?.[breachedKey] ? 'breached' : 'healthy'}
+              </span>
+            ))}
             <span className="goal-flag neutral">
               Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
             </span>

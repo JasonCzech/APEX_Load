@@ -373,6 +373,7 @@ func (run *vuserRun) prepareIteration() (ready, skipped bool) {
 
 	// Reload data row at the start of each iteration
 	if run.iteration > 0 {
+		run.vu.resetLLMConversations()
 		cleanupBindings := run.vu.currentDataBindings()
 		if err := run.vu.loadDataRow(); err != nil {
 			// Main execution stops; teardown still needs the last completed
@@ -479,6 +480,9 @@ func (run *vuserRun) runIterationActions() bool {
 	run.iterTxStart = time.Now()
 	run.iterTxDuration = time.Duration(0)
 	run.vu.iterationThinkTime = 0
+	// A quota wait belongs to the action that queued it; none crosses an
+	// iteration.
+	run.vu.llmQuotaWait = 0
 	run.iterTransactionSource = nil
 	run.iterTxRecorded = false
 
@@ -578,7 +582,10 @@ func (run *vuserRun) runTeardown() {
 	// paused while stopping must neither hold teardown at the pause gate nor
 	// freeze teardown think time in the run's active-time clock.
 	run.vu.PauseControl = nil
+	// Nor may a paused quota pacer hold teardown's LLM actions.
+	run.vu.quotaPauseBypass = true
 	run.vu.runLifecycleActions(tctx, run.vu.Script.Teardown, "teardown", true, run.logger, run.logCfg, run.cfg.ErrorHandling)
+	run.vu.quotaPauseBypass = false
 	run.vu.PauseControl = pauseControl
 	tcancel()
 }
@@ -763,7 +770,9 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 			}
 			return flowNext, false
 		}
-		if !run.vu.executeParallelBlock(run.iterCtx, action, "action") {
+		ok := run.vu.executeParallelBlock(run.iterCtx, action, "action")
+		run.vu.takeLLMQuotaWait()
+		if !ok {
 			run.iterSuccess = false
 			if !run.continueOnError {
 				run.failIteration()
@@ -855,6 +864,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		}
 		run.vu.markUserWorkStarted()
 		result, err := run.vu.executeHTTPSequenceAction(run.iterCtx, action, run.cfg.ErrorHandling, claimRequestTransaction)
+		run.vu.takeLLMQuotaWait()
 		if errors.Is(err, errTransactionGoalReached) {
 			run.restoreIterationBoundary()
 			return flowTeardown, false
@@ -968,6 +978,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		return nil
 	})
 	releasePause()
+	quotaWait := run.vu.takeLLMQuotaWait()
 	run.vu.acceptWebSocketCallback(action, result, err)
 	if err != nil {
 		if knownBusinessTransactionEmitter {
@@ -979,7 +990,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 				// The automatic action slot was claimed before protocol
 				// execution. Preserve one metric for that consumed slot even
 				// when an additional streamed child is refused by the goal.
-				run.vu.recordAbandonedTransaction(action.Name, time.Since(actionTxStart), nil)
+				run.vu.recordAbandonedTransaction(action.Name, max(0, time.Since(actionTxStart)-quotaWait), nil)
 				run.restoreIterationBoundary()
 			}
 			return flowTeardown, false
@@ -988,7 +999,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 		run.logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
 		run.iterSuccess = false
 		if run.actionTxMode {
-			run.vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+			run.vu.recordTransaction(action.Name, max(0, time.Since(actionTxStart)-quotaWait), false, nil)
 			run.restoreIterationBoundary()
 		}
 		if !run.continueOnError {
@@ -1004,7 +1015,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 			run.restoreIterationBoundary()
 		}
 		if run.actionTxMode {
-			run.vu.recordAbandonedTransaction(action.Name, run.vu.sourceSampleDuration(actionTxStart, result), result)
+			run.vu.recordAbandonedTransaction(action.Name, run.vu.actionSampleDuration(actionTxStart, result, quotaWait), result)
 			run.restoreIterationBoundary()
 		}
 		return flowTeardown, false
@@ -1028,7 +1039,7 @@ func (run *vuserRun) runLeaf(actionRef *dsl.Action, depth int) (actionFlow, bool
 
 	// Record auto-transaction for this action
 	if run.actionTxMode {
-		run.vu.recordTransaction(action.Name, run.vu.sourceSampleDuration(actionTxStart, result), result.Success, result)
+		run.vu.recordTransaction(action.Name, run.vu.actionSampleDuration(actionTxStart, result, quotaWait), result.Success, result)
 		run.restoreIterationBoundary()
 	}
 

@@ -25,11 +25,10 @@ import (
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
-var enterpriseImportGate = make(chan struct{}, 2)
-
-func acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
+func (s *Server) acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
+	gate := s.enterpriseImportGateChan()
 	select {
-	case enterpriseImportGate <- struct{}{}:
+	case gate <- struct{}{}:
 		return true
 	default:
 		writeError(w, http.StatusTooManyRequests, "enterprise archive conversion capacity is busy")
@@ -40,7 +39,7 @@ func acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
 	}
 }
 
-func releaseEnterpriseImportSlot() { <-enterpriseImportGate }
+func (s *Server) releaseEnterpriseImportSlot() { <-s.enterpriseImportGateChan() }
 
 // mergedArchiveEntryKey normalizes an archive entry name for MATCHING only.
 // The original name is what gets written back out.
@@ -66,10 +65,10 @@ func hasWindowsDriveLetterPrefix(name string) bool {
 }
 
 func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
-	if !acquireEnterpriseImportSlot(r, w) {
+	if !s.acquireEnterpriseImportSlot(r, w) {
 		return
 	}
-	defer releaseEnterpriseImportSlot()
+	defer s.releaseEnterpriseImportSlot()
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return
@@ -99,10 +98,10 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r *http.Request) {
-	if !acquireEnterpriseImportSlot(r, w) {
+	if !s.acquireEnterpriseImportSlot(r, w) {
 		return
 	}
-	defer releaseEnterpriseImportSlot()
+	defer s.releaseEnterpriseImportSlot()
 	importReq, ok := readEnterpriseArchiveImportRequest(w, r)
 	if !ok {
 		return

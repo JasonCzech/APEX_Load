@@ -1391,7 +1391,423 @@ export interface TransactionEvent {
   }
 }
 
+export interface LLMPercentileSet {
+  p50: number
+  p90?: number
+  p95: number
+  p99: number
+  max?: number
+}
+
+export interface LLMBandSummary {
+  band: string
+  requests: number
+  streamed_requests?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  avg_ttft_ms?: number
+  p50_ttft_ms?: number
+  p95_ttft_ms?: number
+  p99_ttft_ms?: number
+  avg_tpot_ms?: number
+  p50_tpot_ms?: number
+  p95_tpot_ms?: number
+  p99_tpot_ms?: number
+  avg_e2e_ms?: number
+  p95_e2e_ms?: number
+  summary?: LLMSummary
+}
+
+export interface LLMSummary {
+  requests: number
+  successful_requests?: number
+  streamed_requests?: number
+  streaming_requests?: number
+  failed_requests?: number
+  throttled_requests?: number
+  throttled_429?: number
+  throttled_attempts?: number
+  total_retry_wait_ms?: number
+  truncated_requests?: number
+  truncated?: number
+  refused?: number
+  stalls?: number
+  tool_calls?: number
+  empty_output_requests?: number
+  content_filter_requests?: number
+  http_200_error_requests?: number
+  schema_failed_requests?: number
+  tokens_estimated_requests?: number
+  tokens_estimated?: boolean
+  prompt_tokens?: number
+  completion_tokens?: number
+  output_tokens?: number
+  reasoning_tokens?: number
+  cached_tokens?: number
+  cache_hit_ratio?: number
+  total_tokens?: number
+  tool_calls_count?: number
+  system_output_tps?: number
+  ttft_ms?: LLMPercentileSet
+  tpot_ms?: LLMPercentileSet
+  itl_max_ms?: LLMPercentileSet
+  e2e_ms?: LLMPercentileSet
+  output_tps?: LLMPercentileSet
+  finish_reasons?: Record<string, number>
+  models?: Record<string, number>
+  dialects?: Record<string, number>
+  avg_ttft_ms?: number
+  p50_ttft_ms?: number
+  p90_ttft_ms?: number
+  p95_ttft_ms?: number
+  p99_ttft_ms?: number
+  avg_first_visible_token_ms?: number
+  p50_first_visible_token_ms?: number
+  p95_first_visible_token_ms?: number
+  p99_first_visible_token_ms?: number
+  avg_tpot_ms?: number
+  p50_tpot_ms?: number
+  p90_tpot_ms?: number
+  p95_tpot_ms?: number
+  p99_tpot_ms?: number
+  avg_itl_ms?: number
+  p50_itl_ms?: number
+  p90_itl_ms?: number
+  p95_itl_ms?: number
+  p99_itl_ms?: number
+  avg_e2e_ms?: number
+  p50_e2e_ms?: number
+  p90_e2e_ms?: number
+  p95_e2e_ms?: number
+  p99_e2e_ms?: number
+  avg_server_queue_ms?: number
+  avg_server_prefill_ms?: number
+  avg_server_decode_ms?: number
+  min_ratelimit_remaining_tokens?: number
+  min_ratelimit_remaining_requests?: number
+  by_input_band?: Record<string, LLMBandSummary>
+  incomplete?: boolean
+}
+
+export interface LiveLLMMetrics {
+  rolling_window_seconds?: number
+  interval_requests?: number
+  interval_output_tokens_per_sec?: number
+  interval_input_tokens_per_sec?: number
+  output_tokens_per_sec?: number
+  input_tokens_per_sec?: number
+  total_tokens_per_sec?: number
+  goodput_pct?: number
+  throttle_rate_pct?: number
+  truncation_rate_pct?: number
+  incomplete?: boolean
+  summary?: LLMSummary
+  interval_summary?: LLMSummary
+  by_action?: Record<string, LLMSummary>
+}
+
+export interface RunArchiveLLMLatencyQuantiles {
+  samples?: number
+  mean_ms?: number
+  min_ms?: number
+  max_ms?: number
+  p50_ms?: number
+  p90_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+  percentile_quality?: string
+}
+
+export interface RunArchiveLLMITLSummary extends RunArchiveLLMLatencyQuantiles {
+  stall_count?: number
+  max_stall_ms?: number
+}
+
+export interface LLMGoldenPromptVarianceRow {
+  prompt_id?: string
+  name?: string
+  samples: number
+  baseline_hash?: string
+  observed_hashes?: number
+  distinct_output_hashes?: number
+  drifted?: boolean
+  drift_detected?: boolean
+  detail?: string
+  length_drift_ratio?: number
+  min_output_chars?: number
+  max_output_chars?: number
+  avg_output_chars?: number
+  min_completion_tokens?: number
+  max_completion_tokens?: number
+  avg_completion_tokens?: number
+  mean_output_tokens?: number
+  min_output_tokens?: number
+  max_output_tokens?: number
+  stddev_output_tokens?: number
+  cv?: number
+}
+
+export interface CapacitySweepLevelPoint {
+  level_index?: number
+  stage_index?: number
+  name: string
+  group?: string
+  offered_load: number
+  achieved_tps: number
+  requests: number
+  errors: number
+  error_pct?: number
+  error_rate_pct?: number
+  throttled_429?: number
+  throttle_rate_pct: number
+  truncation_rate_pct?: number
+  goodput_pct: number
+  goodput_tps?: number
+  good_output_tokens_per_s?: number
+  output_tokens_per_s?: number
+  system_output_tokens_per_sec?: number
+  per_user_output_tokens_per_sec?: number
+  input_tokens_per_s?: number
+  ttft_p50_ms: number
+  ttft_p95_ms: number
+  ttft_p99_ms: number
+  tpot_p50_ms: number
+  tpot_p95_ms: number
+  tpot_p99_ms: number
+  e2e_p50_ms?: number
+  e2e_p95_ms?: number
+  e2e_p99_ms?: number
+  p50_ms?: number
+  p95_ms?: number
+  p99_ms?: number
+  slo_compliant?: boolean
+  meets_slo?: boolean
+  slo_breaches?: string[]
+  server_kv_cache_peak_pct?: number
+  server_gpu_util_avg_pct?: number
+  server_queue_depth_peak?: number
+  server_queue_depth_avg?: number
+  cost_per_million_output_tokens_usd?: number
+  cost_per_1k_good_requests_usd?: number
+  cost_per_good_request_usd?: number
+  hourly_effective_cost_usd?: number
+}
+
+export interface CapacitySweepReport {
+  test_id: string
+  test_name?: string
+  mode: string
+  slo_ttft_ms?: number
+  slo_tpot_ms?: number
+  slo_e2e_ms?: number
+  min_goodput_pct?: number
+  levels: CapacitySweepLevelPoint[]
+  knee?: {
+    level_index?: number
+    load: number
+    load_unit?: string
+    metric?: string
+    ttft_p95_ms?: number
+    slope_before: number
+    slope_after: number
+    r_squared?: number
+    reason?: string
+  }
+  knee_note?: string
+  max_sustainable_rate?: {
+    stage_index?: number
+    offered_load: number
+    achieved_tps?: number
+    goodput_tps?: number
+    goodput_pct?: number
+    good_output_tokens_per_s?: number
+    system_output_tokens_per_sec?: number
+    ttft_p95_ms?: number
+    tpot_p95_ms?: number
+    p95_ms?: number
+  }
+}
+
+export interface LLMLatencyDecomposition {
+  test_id: string
+  samples?: number
+  total_requests?: number
+  streamed_requests?: number
+  server_telemetry_samples?: number
+  server_coverage_pct?: number
+  network_gateway_avg_ms: number
+  server_queue_avg_ms?: number
+  server_avg_queue_ms?: number
+  prefill_avg_ms?: number
+  server_avg_prefill_ms?: number
+  decode_avg_ms?: number
+  server_avg_decode_ms?: number
+  client_avg_decode_ms?: number
+  total_e2e_avg_ms?: number
+  client_avg_e2e_ms?: number
+  client_avg_ttft_ms?: number
+  source: string
+  warnings?: string[]
+  concurrency_estimate?: {
+    arrival_rate_per_s: number
+    avg_service_seconds: number
+    estimated_in_flight: number
+    prefill_in_flight: number
+    decode_in_flight: number
+  }
+}
+
+export interface LLMCompareMetricDiff {
+  metric: string
+  baseline: number
+  candidate: number
+  delta: number
+  delta_pct: number
+  ci95_low?: number
+  ci95_high?: number
+  significant: boolean
+  direction: 'improved' | 'regressed' | 'neutral'
+}
+
+export interface LLMCompareResult {
+  baseline_test_id: string
+  candidate_test_id: string
+  baseline_model?: string
+  candidate_model?: string
+  workload_digest_matched: boolean
+  workload_warning?: string
+  output_length_drift_pct: number
+  output_length_drift_flag: boolean
+  input_length_drift_pct: number
+  input_length_drift_flag: boolean
+  metrics: LLMCompareMetricDiff[]
+  warnings?: string[]
+}
+
+export interface RunArchiveActionLLMStats extends Partial<LLMSummary> {
+  name?: string
+  requests: number
+  streamed_requests?: number
+  successful_requests?: number
+  throttled_requests?: number
+  truncated_requests?: number
+  empty_requests?: number
+  refused_requests?: number
+  tool_call_requests?: number
+  good_requests?: number
+  goodput_pct?: number
+  throttle_rate_pct?: number
+  truncation_rate_pct?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  cached_tokens?: number
+  reasoning_tokens?: number
+  mean_prompt_tokens?: number
+  mean_completion_tokens?: number
+  cache_hit_rate_pct?: number
+  output_tokens_per_sec?: number
+  ttft?: RunArchiveLLMLatencyQuantiles
+  tpot?: RunArchiveLLMLatencyQuantiles
+  e2e?: RunArchiveLLMLatencyQuantiles
+  itl?: RunArchiveLLMITLSummary
+}
+
+export interface RunArchiveLLMLengthBandStats extends LLMBandSummary {
+  label?: string
+  mean_prompt_tokens?: number
+  mean_completion_tokens?: number
+  ttft?: RunArchiveLLMLatencyQuantiles
+  tpot?: RunArchiveLLMLatencyQuantiles
+  e2e?: RunArchiveLLMLatencyQuantiles
+}
+
+export interface RunArchiveLLMReport {
+  total_requests?: number
+  streamed_requests?: number
+  successful_requests?: number
+  error_requests?: number
+  throttled_requests?: number
+  truncated_requests?: number
+  empty_requests?: number
+  refused_requests?: number
+  tool_call_requests?: number
+  fallback_requests?: number
+  total_retries?: number
+  total_throttled_attempts?: number
+  total_retry_wait_ms?: number
+  tokens_estimated_requests?: number
+  estimated_token_share_pct?: number
+  good_requests?: number
+  good_output_tokens_per_sec?: number
+  prompt_tokens?: number
+  completion_tokens?: number
+  total_tokens?: number
+  cached_tokens?: number
+  reasoning_tokens?: number
+  mean_prompt_tokens?: number
+  mean_completion_tokens?: number
+  requests_per_sec?: number
+  duration_seconds?: number
+  output_tokens_per_sec?: number
+  input_tokens_per_sec?: number
+  total_tokens_per_sec?: number
+  goodput_pct?: number
+  throttle_rate_pct?: number
+  truncation_rate_pct?: number
+  empty_rate_pct?: number
+  refusal_rate_pct?: number
+  error_rate_pct?: number
+  empty_output_rate_pct?: number
+  schema_failure_rate_pct?: number
+  cache_hit_rate_pct?: number
+  reasoning_token_share_pct?: number
+  tokens_estimated?: boolean
+  slo_ttft_ms?: number
+  slo_tpot_ms?: number
+  slo_e2e_ms?: number
+  slo_ttft_target_ms?: number
+  slo_tpot_target_ms?: number
+  slo_e2e_target_ms?: number
+  ttft?: RunArchiveLLMLatencyQuantiles
+  first_content?: RunArchiveLLMLatencyQuantiles
+  tpot?: RunArchiveLLMLatencyQuantiles
+  e2e?: RunArchiveLLMLatencyQuantiles
+  itl?: RunArchiveLLMITLSummary
+  finish_reasons?: Record<string, number>
+  summary?: LLMSummary
+  by_action?: Record<string, RunArchiveActionLLMStats>
+  by_group?: Record<string, RunArchiveActionLLMStats>
+  by_model?: Record<string, RunArchiveActionLLMStats>
+  by_length_band?: RunArchiveLLMLengthBandStats[]
+  by_input_band?: RunArchiveLLMLengthBandStats[] | Record<string, RunArchiveLLMLengthBandStats>
+  golden_prompt_drift?: {
+    checked_prompts?: number
+    drifted_prompts?: number
+    status?: string
+    items?: LLMGoldenPromptVarianceRow[]
+  }
+  golden_prompt_variance?: LLMGoldenPromptVarianceRow[]
+  golden_prompts?: LLMGoldenPromptVarianceRow[]
+  economics?: {
+    deployment_id?: string
+    deployment_name?: string
+    billing_mode?: string
+    total_run_cost_usd?: number
+    hourly_infra_cost_usd?: number
+    cost_per_1m_output_tokens_usd?: number
+    cost_per_1m_input_tokens_usd?: number
+    cost_per_1k_requests_usd?: number
+    cost_per_1k_goodput_requests_usd?: number
+    effective_output_tokens_per_gpu_second?: number
+    prefix_cache_savings_usd?: number
+  }
+  capacity_sweep?: CapacitySweepReport
+  latency_decomposition?: LLMLatencyDecomposition
+  comparison?: LLMCompareResult
+}
+
 export interface IntervalSummaryRecord {
+  llm?: LiveLLMMetrics
   browser_documents?: BrowserDocumentSummary | null
   timestamp: string
   test_id: string
@@ -1815,6 +2231,8 @@ export interface RunArchiveReport {
   /** Beside a document summary: soft (same-document) navigations are not measured. */
   browser_soft_navigation?: 'unsupported'
   messaging_progress?: MessagingProgressSnapshot
+  llm?: RunArchiveLLMReport
+  llm_inference?: RunArchiveLLMReport
   monitor_diagnostics?: import('./types/runMonitoring').RunMonitorDiagnostic[]
   monitor_rule_results?: import('./types/runMonitoring').MonitorRuleResult[]
   outcome?: IntegrationOutcome
@@ -2438,6 +2856,7 @@ export type TestStatus =
   | 'PAUSED'
 
 export interface LiveMetrics {
+  llm?: LiveLLMMetrics
   java_http?: import('./types/javaHttp').JavaHTTPActions
   /** Run-to-date HTTP version mix (cumulative, unlike the window fields). */
   http_versions?: RunArchiveHTTPVersionMix
@@ -3166,6 +3585,17 @@ export interface MetricsHistoryPoint {
   errResourceLimit?: number
   errSessionLost?: number
   errOther?: number
+  // LLM inference time-series metrics
+  llmTtftP50Ms?: number
+  llmTtftP95Ms?: number
+  llmTtftP99Ms?: number
+  llmTpotP50Ms?: number
+  llmTpotP95Ms?: number
+  llmItlP99Ms?: number
+  llmOutputTokensPerSec?: number
+  llmInputTokensPerSec?: number
+  llmGoodputPct?: number
+  llmThrottleRatePct?: number
   // Marks an unobserved interval with a value-less spacer row. Runtime graphs
   // may connect its surrounding samples without filling the missing values.
   isGapBoundary?: number

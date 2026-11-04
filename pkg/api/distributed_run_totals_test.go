@@ -35,11 +35,11 @@ func distributedRunTotalsBatch(testID string, sequence int64, count, errors int6
 func TestDistributedRunTotalsCountEveryAcceptedWindowOnce(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
 	run := &ManagedTest{
-		ID:                    "distributed-run-totals",
-		Name:                  "Distributed run totals",
-		Status:                "RUNNING",
-		Groups:                []TestGroup{{Name: "buyers", VUsers: 2}},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": nil, "gen-b": nil},
+		ID:                     "distributed-run-totals",
+		Name:                   "Distributed run totals",
+		Status:                 "RUNNING",
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"gen-a": nil, "gen-b": nil}},
 	}
 	runner.tests[run.ID] = run
 	backend := &distributedExecutionBackend{}
@@ -90,7 +90,7 @@ func TestDistributedRunTotalsCountEveryAcceptedWindowOnce(t *testing.T) {
 func distributedRunTotalsRun(t *testing.T, id string, groups []TestGroup, targets ...string) (*TestRunner, *ManagedTest, *distributedExecutionBackend) {
 	t.Helper()
 	runner := NewTestRunner(1, NewHub(), nil)
-	run := &ManagedTest{ID: id, Name: id, Status: "RUNNING", Groups: groups, remoteClientsByTarget: map[string]generatorClient{}}
+	run := &ManagedTest{ID: id, Name: id, Status: "RUNNING", Groups: groups, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{}}}
 	for _, target := range targets {
 		run.remoteClientsByTarget[target] = nil
 	}

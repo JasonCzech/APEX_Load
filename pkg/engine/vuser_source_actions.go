@@ -384,7 +384,8 @@ type sourceTransactionRuntimeState struct {
 	// trace is this transaction's own trace when it opened with no other
 	// transaction open and the run enabled trace context. It is a pointer so
 	// the state stays comparable.
-	trace *sourceTransactionTrace
+	trace     *sourceTransactionTrace
+	llmRollup *protocol.LLMDiagnostics
 }
 
 type sourceTransactionTrace struct {
@@ -943,7 +944,18 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		prevAuthoredAction := vu.currentAuthoredAction
 		vu.currentAuthoredAction = nil
 		defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
-		vu.recordTransactionSpan(endName, duration, success, sourceTransactionSourceResult(endName, status, state.startedAt, state.authoredStep), state.startedAt)
+		txSource := sourceTransactionSourceResult(endName, status, state.startedAt, state.authoredStep)
+		if state.llmRollup != nil {
+			if txSource == nil {
+				txSource = &protocol.Result{
+					ActionName: nameWithoutSpaces(endName),
+					StartTime:  state.startedAt,
+					Success:    success,
+				}
+			}
+			txSource.ServerTelemetry = &protocol.ServerTelemetry{LLM: state.llmRollup}
+		}
+		vu.recordTransactionSpan(endName, duration, success, txSource, state.startedAt)
 		vu.Variables[sourceTransactionStatusKey(endName)] = strconv.FormatBool(success)
 		return nil
 	case "lr_set_transaction_status":
@@ -1040,6 +1052,21 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			function = "<missing>"
 		}
 		return fmt.Errorf("%s is not a supported native source-transaction function", function)
+	}
+}
+
+func nameWithoutSpaces(s string) string {
+	return strings.TrimSpace(s)
+}
+
+func (vu *VUser) noteSourceTransactionLLM(result *protocol.Result) {
+	if vu == nil || result == nil || result.BusinessTransaction || result.ServerTelemetry == nil || result.ServerTelemetry.LLM == nil {
+		return
+	}
+	for _, state := range vu.sourceTransactions {
+		if state != nil {
+			protocol.MergeLLMHopDiagnostics(&state.llmRollup, result.ServerTelemetry.LLM)
+		}
 	}
 }
 

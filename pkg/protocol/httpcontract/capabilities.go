@@ -727,6 +727,9 @@ func ResolveMethod(explicitMethod, actionType string) string {
 	if strings.TrimSpace(actionType) == "" {
 		return nethttp.MethodGet
 	}
+	if strings.EqualFold(strings.TrimSpace(actionType), "llm_request") {
+		return nethttp.MethodPost
+	}
 	return NormalizeMethod(actionType)
 }
 

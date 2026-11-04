@@ -746,6 +746,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -790,6 +791,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -900,9 +902,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -1099,12 +1104,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -1147,6 +1157,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -1186,6 +1197,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -1244,6 +1256,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -1288,6 +1301,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -1377,6 +1391,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -1421,6 +1436,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -2267,6 +2283,33 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -2569,6 +2612,33 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples"?: number;
                 "version"?: number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -2873,6 +2943,33 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -3175,6 +3272,33 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples"?: number;
                 "version"?: number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -3479,6 +3603,33 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -3781,6 +3932,33 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples"?: number;
                 "version"?: number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -4087,6 +4265,33 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -4389,6 +4594,33 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples"?: number;
                 "version"?: number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
               }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
@@ -4693,6 +4925,33 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null;
               "max_response_ms"?: number;
               "messaging"?: ({
                 "dimensions"?: Array<Record<string, unknown>>;
@@ -4987,11 +5246,233 @@ export interface operations {
               "verified"?: boolean;
               "verified_at"?: string;
             }) | null;
+            "llm"?: ({
+              "by_action"?: Record<string, ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null>;
+              "by_length_band"?: Array<{
+                "band"?: string;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "label"?: string;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "prompt_tokens"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "ttft"?: Record<string, unknown>;
+              }>;
+              "by_model"?: Record<string, ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e"?: Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl"?: Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests"?: number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot"?: Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft"?: Record<string, unknown>;
+              }) | null>;
+              "cache_hit_rate_pct"?: number;
+              "cached_tokens"?: number;
+              "capacity_sweep"?: ({
+                "golden_drift"?: (Record<string, unknown>) | null;
+                "knee"?: (Record<string, unknown>) | null;
+                "knee_note"?: string;
+                "levels"?: Array<Record<string, unknown>>;
+                "max_sustainable_rate"?: (Record<string, unknown>) | null;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "pareto_frontier"?: Array<Record<string, unknown>>;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "test_id"?: string;
+                "test_name"?: string;
+              }) | null;
+              "completion_tokens"?: number;
+              "e2e"?: {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+              };
+              "economics"?: ({
+                "billing_mode"?: string;
+                "cost_per_1k_goodput_requests_usd"?: number;
+                "cost_per_1k_requests_usd"?: number;
+                "cost_per_1m_input_tokens_usd"?: number;
+                "cost_per_1m_output_tokens_usd"?: number;
+                "deployment_id"?: string;
+                "deployment_name"?: string;
+                "effective_output_tokens_per_gpu_second"?: number;
+                "hourly_infra_cost_usd"?: number;
+                "prefix_cache_savings_usd"?: number;
+                "total_run_cost_usd"?: number;
+              }) | null;
+              "empty_rate_pct"?: number;
+              "empty_requests"?: number;
+              "error_rate_pct"?: number;
+              "error_requests"?: number;
+              "estimated_token_share_pct"?: number;
+              "fallback_requests"?: number;
+              "finish_reasons"?: Record<string, number>;
+              "first_content"?: {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+              };
+              "golden_prompt_drift"?: ({
+                "checked_prompts"?: number;
+                "drifted_prompts"?: number;
+                "items"?: Array<Record<string, unknown>>;
+                "status"?: string;
+              }) | null;
+              "good_output_tokens_per_sec"?: number;
+              "good_requests"?: number;
+              "goodput_pct"?: number;
+              "input_tokens_per_sec"?: number;
+              "itl"?: {
+                "distribution"?: (Record<string, unknown>) | null;
+                "max_ms"?: number;
+                "max_stall_ms"?: number;
+                "mean_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+                "stall_count"?: number;
+              };
+              "latency_decomposition"?: ({
+                "basis"?: string;
+                "client_avg_decode_ms"?: number;
+                "client_avg_e2e_ms"?: number;
+                "client_avg_ttft_ms"?: number;
+                "decode_share_pct"?: number;
+                "network_gateway_avg_ms"?: number;
+                "network_gateway_share_pct"?: number;
+                "prefill_share_pct"?: number;
+                "queue_share_pct"?: number;
+                "server_avg_decode_ms"?: number;
+                "server_avg_prefill_ms"?: number;
+                "server_avg_queue_ms"?: number;
+                "server_coverage_pct"?: number;
+                "server_telemetry_samples"?: number;
+                "shared_server_warning"?: boolean;
+                "source"?: string;
+                "streamed_requests"?: number;
+                "test_id"?: string;
+                "total_requests"?: number;
+                "warnings"?: Array<string>;
+              }) | null;
+              "mean_completion_tokens"?: number;
+              "mean_prompt_tokens"?: number;
+              "output_tokens_per_sec"?: number;
+              "prompt_tokens"?: number;
+              "reasoning_tokens"?: number;
+              "refusal_rate_pct"?: number;
+              "refused_requests"?: number;
+              "requests_per_sec"?: number;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
+              "streamed_requests"?: number;
+              "successful_requests"?: number;
+              "throttle_rate_pct"?: number;
+              "throttled_requests"?: number;
+              "tokens_estimated_requests"?: number;
+              "tool_call_requests"?: number;
+              "total_requests"?: number;
+              "total_retries"?: number;
+              "total_retry_wait_ms"?: number;
+              "total_throttled_attempts"?: number;
+              "total_tokens"?: number;
+              "total_tokens_per_sec"?: number;
+              "tpot"?: {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+              };
+              "truncated_requests"?: number;
+              "truncation_rate_pct"?: number;
+              "ttft"?: {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+              };
+            }) | null;
             "load_level_summaries"?: Array<{
               "configured_duration"?: string;
               "error_rate_pct"?: number;
               "errors"?: number;
               "group"?: string;
+              "kind"?: string;
               "name"?: string;
               "observed_duration_seconds"?: number;
               "p50_ms"?: number;
@@ -5002,6 +5483,7 @@ export interface operations {
               "percentile_quality"?: string;
               "requests"?: number;
               "stage_index"?: number;
+              "target_tps"?: number;
               "target_vusers"?: number;
               "throughput"?: number;
             }>;
@@ -5971,6 +6453,7 @@ export interface operations {
                 "samples"?: number;
                 "version"?: number;
               }) | null;
+              "llm"?: (Record<string, unknown>) | null;
               "max_response_ms"?: number;
               "messaging"?: (Record<string, unknown>) | null;
               "min_response_ms"?: number;
@@ -6322,6 +6805,7 @@ export interface operations {
                 "completeness_pct"?: number;
                 "deltas"?: (Record<string, unknown>) | null;
                 "error_pct"?: number;
+                "llm"?: (Record<string, unknown>) | null;
                 "metric_population"?: string;
                 "peak_active_vusers"?: number;
                 "peak_tps"?: number;
@@ -6339,6 +6823,7 @@ export interface operations {
                 "completeness_pct"?: number;
                 "deltas"?: (Record<string, unknown>) | null;
                 "error_pct"?: number;
+                "llm"?: (Record<string, unknown>) | null;
                 "metric_population"?: string;
                 "peak_active_vusers"?: number;
                 "peak_tps"?: number;
@@ -6355,6 +6840,9 @@ export interface operations {
                 "avg_response_pct_delta"?: number;
                 "completeness_delta"?: number;
                 "error_pct_delta"?: number;
+                "goodput_pct_delta"?: number;
+                "p95_tpot_ms_delta"?: number;
+                "p95_ttft_ms_delta"?: number;
                 "peak_tps_delta"?: number;
               }) | null;
               "has_baseline"?: boolean;
@@ -6470,7 +6958,12 @@ export interface operations {
               }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
-              "coverage"?: Array<Record<string, unknown>>;
+              "coverage"?: Array<{
+                "detail"?: string;
+                "evidence"?: string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status"?: string;
+              }>;
               "engine"?: string;
               "hypotheses"?: Array<{
                 "chain"?: Array<string>;
@@ -6868,7 +7361,45 @@ export interface operations {
               "total_count"?: number;
               "transaction"?: string;
             }>;
-            "validity"?: (Record<string, unknown>) | null;
+            "validity"?: ({
+              "anomalies"?: Array<{
+                "end"?: string;
+                "kind"?: string;
+                "start"?: string;
+                "value"?: number;
+              }>;
+              "intervals_judged"?: number;
+              "limitations"?: Array<string>;
+              "missing_fraction"?: number;
+              "reasons"?: Array<string>;
+              "rules"?: {
+                "cpu_pct"?: number;
+                "dropped_fraction"?: number;
+                "missing_fraction"?: number;
+                "steal_pct"?: number;
+                "sustain_intervals"?: number;
+                "throttled_fraction"?: number;
+              };
+              "rules_version"?: string;
+              "shared_data"?: Array<{
+                "empty_outcomes"?: number;
+                "incomplete"?: boolean;
+                "recovery_gaps"?: number;
+                "redeliveries"?: number;
+                "table_id"?: string;
+                "throttled"?: number;
+                "unknown_outcomes"?: number;
+                "wait_count"?: number;
+                "wait_total_ns"?: number;
+              }>;
+              "verdict"?: string;
+              "windows"?: Array<{
+                "end"?: string;
+                "findings"?: Array<Record<string, unknown>>;
+                "start"?: string;
+                "verdict"?: string;
+              }>;
+            }) | null;
             "verdict"?: ({
               "conditional"?: boolean;
               "explanation"?: string;
@@ -6988,9 +7519,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -7083,12 +7617,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -7141,6 +7693,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -7262,6 +7815,9 @@ export interface operations {
                 "enabled"?: boolean;
                 "error_rate_pct"?: number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -7271,10 +7827,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -7313,10 +7874,14 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: (Record<string, unknown>) | null;
                 "closed_vuser"?: (Record<string, unknown>) | null;
                 "goal_driven"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -7441,9 +8006,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -7510,12 +8078,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -7543,6 +8116,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -7658,6 +8232,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -7702,6 +8277,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -7812,9 +8388,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -8011,12 +8590,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -8059,6 +8643,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -8098,6 +8683,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -8156,6 +8742,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -8200,6 +8787,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -8289,6 +8877,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -8333,6 +8922,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -8506,6 +9096,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -8550,6 +9141,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -8660,9 +9252,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -8859,12 +9454,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -8907,6 +9507,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -8946,6 +9547,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -9004,6 +9606,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -9048,6 +9651,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -9137,6 +9741,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -9181,6 +9786,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -9256,6 +9862,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -9300,6 +9907,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -9410,9 +10018,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -9609,12 +10220,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -9657,6 +10273,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -9696,6 +10313,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -9754,6 +10372,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -9798,6 +10417,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -9887,6 +10507,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -9931,6 +10552,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -15591,6 +16213,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -15635,6 +16258,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -15745,9 +16369,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -15944,12 +16571,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -15992,6 +16624,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -16031,6 +16664,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -16089,6 +16723,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -16133,6 +16768,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -16222,6 +16858,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -16266,6 +16903,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -16501,6 +17139,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -16545,6 +17184,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -16655,9 +17295,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -16854,12 +17497,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -16902,6 +17550,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -16941,6 +17590,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -16999,6 +17649,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -17043,6 +17694,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17132,6 +17784,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -17176,6 +17829,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17228,6 +17882,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -17272,6 +17927,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17382,9 +18038,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -17581,12 +18240,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -17629,6 +18293,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17668,6 +18333,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -17726,6 +18392,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -17770,6 +18437,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17859,6 +18527,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -17903,6 +18572,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -17964,6 +18634,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -18076,9 +18747,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -18275,12 +18949,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -18320,6 +18999,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -18359,6 +19039,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -18395,6 +19076,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -18474,6 +19156,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -18543,6 +19226,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -18655,9 +19339,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -18854,12 +19541,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -18899,6 +19591,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -18938,6 +19631,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -18974,6 +19668,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -19053,6 +19748,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -19154,6 +19850,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -19198,6 +19895,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -19308,9 +20006,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -19507,12 +20208,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -19555,6 +20261,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -19594,6 +20301,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -19652,6 +20360,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -19696,6 +20405,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -19785,6 +20495,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -19829,6 +20540,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -19863,6 +20575,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -19975,9 +20688,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -20174,12 +20890,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -20219,6 +20940,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -20258,6 +20980,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -20294,6 +21017,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -20373,6 +21097,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -20477,6 +21202,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -20521,6 +21247,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -20631,9 +21358,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -20830,12 +21560,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -20878,6 +21613,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -20917,6 +21653,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -20975,6 +21712,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -21019,6 +21757,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -21108,6 +21847,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -21152,6 +21892,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -21505,6 +22246,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -21514,10 +22258,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -21556,10 +22305,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -21652,9 +22405,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -21721,12 +22477,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -21754,6 +22515,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -22126,6 +22888,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22170,6 +22933,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -22280,9 +23044,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -22479,12 +23246,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -22527,6 +23299,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -22566,6 +23339,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -22624,6 +23398,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22668,6 +23443,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -22757,6 +23533,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22801,6 +23578,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -22851,6 +23629,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -22895,6 +23674,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -23005,9 +23785,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -23204,12 +23987,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -23252,6 +24040,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -23291,6 +24080,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -23349,6 +24139,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -23393,6 +24184,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -23482,6 +24274,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -23526,6 +24319,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -23712,6 +24506,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -23773,6 +24568,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -23809,6 +24605,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -23881,6 +24678,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -24079,6 +24877,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -24123,6 +24922,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -24233,9 +25033,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -24432,12 +25235,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -24480,6 +25288,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -24519,6 +25328,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -24577,6 +25387,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -24621,6 +25432,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -24710,6 +25522,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -24754,6 +25567,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -24978,6 +25792,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25039,6 +25854,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -25075,6 +25891,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25147,6 +25964,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25189,6 +26007,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25250,6 +26069,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -25286,6 +26106,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25358,6 +26179,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -25659,6 +26481,9 @@ export interface operations {
                 "duration": string;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -25668,10 +26493,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -25795,6 +26625,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -25804,10 +26637,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -25846,10 +26684,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -25992,9 +26845,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -26087,12 +26943,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -26145,6 +27019,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -26382,9 +27257,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -26451,12 +27329,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -26480,6 +27363,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -26521,6 +27405,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
@@ -26809,6 +27694,9 @@ export interface operations {
                 "duration": string;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -26818,10 +27706,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -26945,6 +27838,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -26954,10 +27850,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -26996,10 +27897,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -27142,9 +28058,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -27237,12 +28156,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -27295,6 +28232,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -27532,9 +28470,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -27601,12 +28542,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -27630,6 +28576,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -27671,6 +28618,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
@@ -27929,6 +28877,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -27988,6 +28937,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -28024,6 +28974,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -28096,6 +29047,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -28172,6 +29124,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28216,6 +29169,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -28326,9 +29280,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -28525,12 +29482,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -28573,6 +29535,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -28612,6 +29575,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -28670,6 +29634,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28714,6 +29679,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -28803,6 +29769,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -28847,6 +29814,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -29022,6 +29990,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -29081,6 +30050,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -29117,6 +30087,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -29189,6 +30160,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -29265,6 +30237,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -29309,6 +30282,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -29419,9 +30393,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -29618,12 +30595,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -29666,6 +30648,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -29705,6 +30688,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -29763,6 +30747,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -29807,6 +30792,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -29896,6 +30882,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -29940,6 +30927,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -30113,6 +31101,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -30157,6 +31146,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -30267,9 +31257,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -30466,12 +31459,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -30514,6 +31512,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -30553,6 +31552,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -30611,6 +31611,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -30655,6 +31656,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -30744,6 +31746,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -30788,6 +31791,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -31396,6 +32400,68 @@ export interface operations {
       };
     };
   };
+  "handleCalibrateLLMPromptDataset": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "project_id"?: string;
+          "samples"?: Array<{
+            "chars"?: number;
+            "text"?: string;
+            "tokens"?: number;
+          }>;
+          "test_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "bytes_per_token": number;
+            "sample_count": number;
+            "source": string;
+            "total_chars": number;
+            "total_tokens": number;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleCancelElasticInspection": {
     parameters: {
       "path": {
@@ -31502,12 +32568,295 @@ export interface operations {
             "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
-            "assessment"?: (Record<string, unknown>) | null;
+            "assessment"?: ({
+              "acceptance": {
+                "details": Array<string>;
+                "status": string;
+              };
+              "analysis_id": string;
+              "anomalies": Array<{
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "direction": string;
+                "effect": number;
+                "end": string;
+                "evidence": Array<Record<string, unknown>>;
+                "id": string;
+                "level": string;
+                "onset": string;
+                "onset_uncertainty_ns": number;
+                "peak_z": number;
+                "recovered": boolean;
+                "scope": string;
+                "series": string;
+                "unit": string;
+              }>;
+              "browser_baseline"?: ({
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "excluded"?: Record<string, number>;
+                "limitations": Array<{
+                  "code": string;
+                  "detail"?: string;
+                }>;
+                "params": {
+                  "cls_floor": number;
+                  "level_tolerance": number;
+                  "max_results": number;
+                  "metric_floors"?: Record<string, number>;
+                  "min_baseline_buckets": number;
+                  "sigma": number;
+                  "timing_floor_fraction": number;
+                  "timing_floor_ms": number;
+                  "version": string;
+                };
+                "policy"?: string;
+                "policy_sha256"?: string;
+                "results": Array<{
+                  "baseline": Record<string, unknown>;
+                  "baseline_buckets": number;
+                  "baseline_mean"?: number;
+                  "baseline_samples": number;
+                  "baseline_stddev"?: number;
+                  "caveats"?: Array<string>;
+                  "current": number;
+                  "current_buckets": number;
+                  "current_samples": number;
+                  "detail"?: string;
+                  "device_profile"?: string;
+                  "direction"?: string;
+                  "effect"?: number;
+                  "effect_floor"?: number;
+                  "engine"?: string;
+                  "evidence": Array<Record<string, unknown>>;
+                  "expected_high"?: number;
+                  "expected_low"?: number;
+                  "frame_scope"?: string;
+                  "group"?: string;
+                  "id": string;
+                  "level": string;
+                  "level_start": string;
+                  "lifecycle_phase"?: string;
+                  "metric": string;
+                  "reason"?: string;
+                  "series": string;
+                  "state": string;
+                  "unit": string;
+                  "z"?: number;
+                }>;
+                "status": string;
+                "version": string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy": string;
+                "reasons"?: Array<string>;
+                "rejected"?: Array<{
+                  "digest"?: string;
+                  "reasons": Array<string>;
+                  "test_id": string;
+                }>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "version": string;
+              }) | null;
+              "budget": {
+                "max_exemplars": number;
+                "max_graph_edges": number;
+                "max_graph_nodes": number;
+                "max_heap_bytes": number;
+                "max_series": number;
+                "max_series_points": number;
+                "max_wall_time_ns": number;
+              };
+              "capacity": Array<{
+                "knee"?: (number) | null;
+                "levels": Array<Record<string, unknown>>;
+                "load_unit": string;
+                "reason"?: string;
+                "series": string;
+                "slope_after": number;
+                "slope_before": number;
+              }>;
+              "coverage": Array<{
+                "detail"?: string;
+                "evidence": string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status": string;
+              }>;
+              "detection": {
+                "levels": Array<{
+                  "end": string;
+                  "rate"?: number;
+                  "start": string;
+                  "vusers"?: number;
+                }>;
+                "params": {
+                  "confirm_buckets": number;
+                  "cusum_h": number;
+                  "cusum_k": number;
+                  "error_rate_floor_pct": number;
+                  "latency_floor_ms": number;
+                  "level_settle_ns": number;
+                  "level_tolerance": number;
+                  "mad_scale": number;
+                  "max_anomalies": number;
+                  "max_baseline_buckets": number;
+                  "max_gap_buckets": number;
+                  "max_spikes": number;
+                  "min_baseline_buckets": number;
+                  "min_baseline_buckets_floor": number;
+                  "min_baseline_span_ns": number;
+                  "recovery_buckets": number;
+                  "relative_floor": number;
+                  "score_floor": number;
+                  "throughput_floor_per_s": number;
+                  "unit_floor": number;
+                  "version": string;
+                };
+                "params_version": string;
+                "series_evaluated": number;
+                "series_excluded": number;
+                "spikes": Array<{
+                  "at": string;
+                  "level": string;
+                  "scope": string;
+                  "series": string;
+                  "value": number;
+                  "z": number;
+                }>;
+                "status": string;
+              };
+              "graph": {
+                "aliases"?: Record<string, string>;
+                "cycles": Array<Array<string>>;
+                "edges": Array<{
+                  "ambiguous"?: boolean;
+                  "confidence": string;
+                  "from": string;
+                  "id": string;
+                  "kind": string;
+                  "provenance": string;
+                  "revision"?: string;
+                  "to": string;
+                  "used": boolean;
+                }>;
+                "nodes": Array<{
+                  "attributes"?: Record<string, string>;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "provider"?: string;
+                  "type"?: string;
+                }>;
+                "schema": string;
+              };
+              "hypotheses": Array<{
+                "chain": Array<Record<string, unknown>>;
+                "competing": Array<string>;
+                "confidence": string;
+                "confidence_reasons": Array<string>;
+                "contradicting": Array<Record<string, unknown>>;
+                "falsification": string;
+                "id": string;
+                "limitations": Array<string>;
+                "nodes": Array<string>;
+                "rank": number;
+                "score": number;
+                "signature": string;
+                "supporting": Array<Record<string, unknown>>;
+                "symptoms": Array<string>;
+              }>;
+              "inputs": {
+                "archive": string;
+                "baseline"?: string;
+                "browser_selection"?: string;
+                "engine": string;
+                "evidence_revision": number;
+                "mapping"?: string;
+                "policy"?: string;
+                "signature_set"?: string;
+              };
+              "limitations": Array<{
+                "code": string;
+                "detail"?: string;
+              }>;
+              "littles_law": Array<{
+                "arrival_rate_per_s"?: number;
+                "depth"?: number;
+                "eligible": boolean;
+                "end"?: string;
+                "predicted_depth"?: number;
+                "queue": string;
+                "ratio"?: number;
+                "reason"?: string;
+                "residence_s"?: number;
+                "start"?: string;
+              }>;
+              "outcome": string;
+              "revision": number;
+              "schema_version": string;
+              "validity": {
+                "anomalies": Array<{
+                  "end": string;
+                  "kind": string;
+                  "start": string;
+                  "value": number;
+                }>;
+                "intervals_judged": number;
+                "limitations": Array<string>;
+                "missing_fraction": number;
+                "reasons": Array<string>;
+                "rules": {
+                  "cpu_pct": number;
+                  "dropped_fraction": number;
+                  "missing_fraction": number;
+                  "steal_pct": number;
+                  "sustain_intervals": number;
+                  "throttled_fraction": number;
+                };
+                "rules_version": string;
+                "shared_data"?: Array<{
+                  "empty_outcomes": number;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "redeliveries": number;
+                  "table_id": string;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
+                }>;
+                "verdict": string;
+                "windows": Array<{
+                  "end": string;
+                  "findings": Array<Record<string, unknown>>;
+                  "start": string;
+                  "verdict": string;
+                }>;
+              };
+            }) | null;
             "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
-            "inputs"?: (Record<string, unknown>) | null;
+            "inputs"?: ({
+              "archive": string;
+              "baseline"?: string;
+              "browser_selection"?: string;
+              "engine": string;
+              "evidence_revision": number;
+              "mapping"?: string;
+              "policy"?: string;
+              "signature_set"?: string;
+            }) | null;
             "origin"?: string;
             "presented": boolean;
             "revision"?: number;
@@ -31964,6 +33313,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32025,6 +33375,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -32061,6 +33412,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32133,6 +33485,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32237,6 +33590,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32349,9 +33703,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -32548,12 +33905,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -32593,6 +33955,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -32632,6 +33995,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -32668,6 +34032,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32747,6 +34112,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -32898,6 +34264,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33010,9 +34377,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -33209,12 +34579,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -33254,6 +34629,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -33293,6 +34669,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -33329,6 +34706,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33408,6 +34786,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33577,6 +34956,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33638,6 +35018,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -33674,6 +35055,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33746,6 +35128,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -33825,6 +35208,99 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleCompareLLMRuns": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "baseline"?: {
+            "cache_hit_ratio"?: number;
+            "e2e_p50_ms"?: number;
+            "e2e_p95_ms"?: number;
+            "e2e_p99_ms"?: number;
+            "interval_tpot_p95_ms"?: Array<number>;
+            "interval_ttft_p95_ms"?: Array<number>;
+            "model"?: string;
+            "output_tokens"?: number;
+            "output_tps_p50"?: number;
+            "prompt_tokens"?: number;
+            "requests"?: number;
+            "system_output_tps"?: number;
+            "test_id"?: string;
+            "throttled_429"?: number;
+            "tpot_p50_ms"?: number;
+            "tpot_p95_ms"?: number;
+            "tpot_p99_ms"?: number;
+            "truncated"?: number;
+            "ttft_p50_ms"?: number;
+            "ttft_p95_ms"?: number;
+            "ttft_p99_ms"?: number;
+            "workload_digest"?: string;
+          };
+          "baseline_group"?: string;
+          "baseline_test_id"?: string;
+          "candidate"?: {
+            "cache_hit_ratio"?: number;
+            "e2e_p50_ms"?: number;
+            "e2e_p95_ms"?: number;
+            "e2e_p99_ms"?: number;
+            "interval_tpot_p95_ms"?: Array<number>;
+            "interval_ttft_p95_ms"?: Array<number>;
+            "model"?: string;
+            "output_tokens"?: number;
+            "output_tps_p50"?: number;
+            "prompt_tokens"?: number;
+            "requests"?: number;
+            "system_output_tps"?: number;
+            "test_id"?: string;
+            "throttled_429"?: number;
+            "tpot_p50_ms"?: number;
+            "tpot_p95_ms"?: number;
+            "tpot_p99_ms"?: number;
+            "truncated"?: number;
+            "ttft_p50_ms"?: number;
+            "ttft_p95_ms"?: number;
+            "ttft_p99_ms"?: number;
+            "workload_digest"?: string;
+          };
+          "candidate_group"?: string;
+          "candidate_test_id"?: string;
+          "seed"?: number;
+          "test_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -34073,9 +35549,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -34342,12 +35821,30 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               };
@@ -34420,6 +35917,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -35128,6 +36626,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -35172,6 +36671,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -35282,9 +36782,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -35481,12 +36984,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -35529,6 +37037,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -35568,6 +37077,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -35626,6 +37136,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -35670,6 +37181,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -35759,6 +37271,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -35803,6 +37316,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -35867,6 +37381,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -35911,6 +37426,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -36021,9 +37537,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -36220,12 +37739,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -36268,6 +37792,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -36307,6 +37832,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -36365,6 +37891,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -36409,6 +37936,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -36498,6 +38026,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -36542,6 +38071,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -37002,6 +38532,72 @@ export interface operations {
                   "sample_limit_reached"?: boolean;
                   "samples": number;
                   "version": number;
+                }) | null;
+                "llm"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
                 }) | null;
                 "max": number;
                 "mean": number;
@@ -37571,6 +39167,72 @@ export interface operations {
                   "samples": number;
                   "version": number;
                 }) | null;
+                "llm"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -37703,8 +39365,28 @@ export interface operations {
             }) | null;
             "warnings": Array<string>;
             "workload"?: ({
-              "baselines": Record<string, Record<string, unknown>>;
-              "current": Record<string, unknown>;
+              "baselines": Record<string, {
+                "achieved_throughput"?: ({
+                  "baseline_tps": number;
+                  "current_tps": number;
+                }) | null;
+                "mix_distance"?: (number) | null;
+                "reasons": Array<string>;
+                "status": string;
+              }>;
+              "current": {
+                "groups": Record<string, {
+                  "arrival_model": string;
+                  "levels": Array<number>;
+                  "pacing"?: string;
+                  "script_digest"?: string;
+                  "unit": string;
+                }>;
+                "population"?: string;
+                "runtime_digest"?: string;
+                "source": string;
+                "version": number;
+              };
             }) | null;
           }) | null;
         };
@@ -40648,6 +42330,20 @@ export interface operations {
               "path_template"?: string;
               "require_pull_request"?: boolean;
             };
+            "llm_deployments"?: Array<{
+              "as_of_date"?: string;
+              "billing_mode"?: string;
+              "cached_input_cost_1m_usd"?: number;
+              "gpu_cost_per_hour_usd"?: number;
+              "gpu_count"?: number;
+              "id"?: string;
+              "input_cost_per_1m_usd"?: number;
+              "model"?: string;
+              "name"?: string;
+              "output_cost_per_1m_usd"?: number;
+              "ptu_cost_per_hour_usd"?: number;
+              "ptu_count"?: number;
+            }>;
             "max_concurrent_tests"?: number;
             "max_test_duration_minutes"?: number;
             "max_vusers"?: number;
@@ -41507,6 +43203,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -41516,10 +43215,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -41558,10 +43262,14 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: (Record<string, unknown>) | null;
               "closed_vuser"?: (Record<string, unknown>) | null;
               "goal_driven"?: (Record<string, unknown>) | null;
               "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -41696,9 +43404,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -41765,12 +43476,17 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: (Record<string, unknown>) | null;
+              "rate_stages"?: Array<Record<string, unknown>>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -41798,6 +43514,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -41927,6 +43644,9 @@ export interface operations {
                 "enabled"?: boolean;
                 "error_rate_pct"?: number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -41936,10 +43656,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -41978,10 +43703,14 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: (Record<string, unknown>) | null;
                 "closed_vuser"?: (Record<string, unknown>) | null;
                 "goal_driven"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -42115,9 +43844,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -42184,12 +43916,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -42217,6 +43954,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -42815,6 +44553,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -42824,10 +44565,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -42866,10 +44612,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -42884,10 +44634,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -43093,6 +44846,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -43326,6 +45084,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -43846,6 +45620,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -44108,13 +45887,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -44607,9 +46405,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -44676,12 +46477,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -44709,6 +46515,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -45065,6 +46872,7 @@ export interface operations {
             "body_multipart"?: ({
               "parts"?: Array<Record<string, unknown>>;
             }) | null;
+            "body_template_encoding"?: string;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -45109,6 +46917,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -45137,6 +46946,7 @@ export interface operations {
             "content_type"?: string;
             "delimiter"?: string;
             "encoding"?: string;
+            "fields"?: Record<string, string>;
             "file_name"?: string;
             "first_row_header"?: boolean;
             "inline_data"?: string;
@@ -45168,6 +46978,7 @@ export interface operations {
             "body_multipart"?: ({
               "parts"?: Array<Record<string, unknown>>;
             }) | null;
+            "body_template_encoding"?: string;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -45212,6 +47023,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -45293,6 +47105,7 @@ export interface operations {
             "body_multipart"?: ({
               "parts"?: Array<Record<string, unknown>>;
             }) | null;
+            "body_template_encoding"?: string;
             "capture"?: ({
               "full_page"?: boolean;
               "html"?: boolean;
@@ -45337,6 +47150,7 @@ export interface operations {
             }) | null;
             "target"?: string;
             "think_time"?: {
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -45536,6 +47350,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -45545,10 +47362,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -45587,10 +47409,25 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: ({
+                "group"?: string;
+                "levels"?: Array<number>;
+                "measure_duration"?: string;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "stop_on_slo_breach"?: boolean;
+                "warmup_duration"?: string;
+              }) | null;
               "closed_vuser"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -45695,9 +47532,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -45764,12 +47604,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -45793,6 +47638,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -45833,6 +47679,7 @@ export interface operations {
               "target_tps"?: (number) | null;
               "target_vusers"?: number;
               "type"?: string;
+              "warmup"?: boolean;
             }>;
             "start_offset"?: string;
             "transaction_response_time_sla_ms"?: (number) | null;
@@ -45946,9 +47793,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -46041,12 +47891,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -46099,6 +47967,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -46397,6 +48266,9 @@ export interface operations {
                 "duration": string;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -46406,10 +48278,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -46533,6 +48410,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -46542,10 +48422,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -46584,10 +48469,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -46730,9 +48630,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -46825,12 +48728,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -46883,6 +48804,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -47120,9 +49042,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -47189,12 +49114,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -47218,6 +49148,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -47259,6 +49190,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
@@ -47707,6 +49639,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -47764,6 +49697,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -47914,9 +49848,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -48165,12 +50102,25 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -48229,6 +50179,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -48286,6 +50237,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -48353,6 +50305,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -48410,6 +50363,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -48508,6 +50462,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -48565,6 +50520,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -48692,6 +50648,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -48751,6 +50708,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -48787,6 +50745,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -48859,6 +50818,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -48935,6 +50895,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -48979,6 +50940,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -49089,9 +51051,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -49288,12 +51253,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -49336,6 +51306,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -49375,6 +51346,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -49433,6 +51405,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -49477,6 +51450,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -49566,6 +51540,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -49610,6 +51585,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -49875,6 +51851,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -49884,10 +51863,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -49926,10 +51910,25 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: ({
+                "group"?: string;
+                "levels"?: Array<number>;
+                "measure_duration"?: string;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "stop_on_slo_breach"?: boolean;
+                "warmup_duration"?: string;
+              }) | null;
               "closed_vuser"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -50034,9 +52033,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -50103,12 +52105,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -50132,6 +52139,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -50172,6 +52180,7 @@ export interface operations {
               "target_tps"?: (number) | null;
               "target_vusers"?: number;
               "type"?: string;
+              "warmup"?: boolean;
             }>;
             "start_offset"?: string;
             "transaction_response_time_sla_ms"?: (number) | null;
@@ -50294,9 +52303,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -50389,12 +52401,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -50447,6 +52477,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -51692,6 +53723,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -51701,10 +53735,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -51743,10 +53782,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -51771,10 +53825,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -51879,9 +53936,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -51948,12 +54008,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -51977,6 +54042,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -52019,6 +54085,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -52267,6 +54334,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -52529,13 +54601,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -54014,6 +56235,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -54296,13 +56522,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -56309,9 +58749,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -56404,12 +58847,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -56462,6 +58923,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -59257,6 +61719,9 @@ export interface operations {
                 "enabled"?: boolean;
                 "error_rate_pct"?: number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -59266,10 +61731,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -59308,10 +61778,14 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: (Record<string, unknown>) | null;
                 "closed_vuser"?: (Record<string, unknown>) | null;
                 "goal_driven"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -59436,9 +61910,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -59505,12 +61982,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -59538,6 +62020,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -59976,6 +62459,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -59985,10 +62471,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -60027,10 +62518,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -60155,9 +62650,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -60224,12 +62722,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -60257,6 +62760,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -60599,6 +63103,9 @@ export interface operations {
                 "enabled"?: boolean;
                 "error_rate_pct"?: number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -60608,10 +63115,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -60650,10 +63162,14 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold"?: number;
                 "transaction"?: string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: (Record<string, unknown>) | null;
                 "closed_vuser"?: (Record<string, unknown>) | null;
                 "goal_driven"?: (Record<string, unknown>) | null;
                 "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -60778,9 +63294,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -60847,12 +63366,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -60880,6 +63404,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -61318,6 +63843,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -61327,10 +63855,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -61369,10 +63902,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -61497,9 +64034,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -61566,12 +64106,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -61599,6 +64144,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -63801,6 +66347,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -63810,10 +66359,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -63852,10 +66406,25 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: ({
+                "group"?: string;
+                "levels"?: Array<number>;
+                "measure_duration"?: string;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "stop_on_slo_breach"?: boolean;
+                "warmup_duration"?: string;
+              }) | null;
               "closed_vuser"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -63960,9 +66529,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -64029,12 +66601,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -64058,6 +66635,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -64098,6 +66676,7 @@ export interface operations {
               "target_tps"?: (number) | null;
               "target_vusers"?: number;
               "type"?: string;
+              "warmup"?: boolean;
             }>;
             "start_offset"?: string;
             "transaction_response_time_sla_ms"?: (number) | null;
@@ -64220,9 +66799,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -64315,12 +66897,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -64373,6 +66973,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -64661,10 +67262,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -64769,9 +67373,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -64838,12 +67445,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -64867,6 +67479,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -64909,6 +67522,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -65145,6 +67759,89 @@ export interface operations {
       };
     };
   };
+  "handleEvaluateLLMCapacityPlan": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "current_replicas"?: number;
+          "deployment"?: ({
+            "as_of_date"?: string;
+            "billing_mode"?: string;
+            "cached_input_cost_1m_usd"?: number;
+            "gpu_cost_per_hour_usd"?: number;
+            "gpu_count"?: number;
+            "id"?: string;
+            "input_cost_per_1m_usd"?: number;
+            "model"?: string;
+            "name"?: string;
+            "output_cost_per_1m_usd"?: number;
+            "ptu_cost_per_hour_usd"?: number;
+            "ptu_count"?: number;
+          }) | null;
+          "headroom_pct"?: number;
+          "mean_e2e_ms"?: number;
+          "requests_per_user_per_min"?: number;
+          "sla"?: {
+            "max_error_rate_pct"?: number;
+            "max_tpot_p95_ms"?: number;
+            "max_ttft_p95_ms"?: number;
+          };
+          "steps"?: Array<{
+            "achieved_tps"?: number;
+            "error_rate_pct"?: number;
+            "goodput_tps"?: number;
+            "name"?: string;
+            "offered_tps"?: number;
+            "sla_breach_reasons"?: Array<string>;
+            "sla_breached"?: boolean;
+            "step_index"?: number;
+            "system_output_tps"?: number;
+            "throttled_429_pct"?: number;
+            "tpot_p50_ms"?: number;
+            "tpot_p95_ms"?: number;
+            "tpot_p99_ms"?: number;
+            "ttft_p50_ms"?: number;
+            "ttft_p95_ms"?: number;
+            "ttft_p99_ms"?: number;
+          }>;
+          "target_output_tps"?: number;
+          "target_peak_tps"?: number;
+          "target_users"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleEventHubsCaptureSupportMatrix": {
     parameters?: never;
     requestBody?: never;
@@ -65202,6 +67899,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -65246,6 +67944,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -65356,9 +68055,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -65555,12 +68257,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -65603,6 +68310,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -65642,6 +68350,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -65700,6 +68409,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -65744,6 +68454,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -65833,6 +68544,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -65877,6 +68589,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -65960,6 +68673,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -66004,6 +68718,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -66114,9 +68829,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -66313,12 +69031,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -66361,6 +69084,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -66400,6 +69124,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -66458,6 +69183,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -66502,6 +69228,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -66591,6 +69318,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -66635,6 +69363,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -66996,6 +69725,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -67040,6 +69770,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -67150,9 +69881,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -67349,12 +70083,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -67397,6 +70136,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -67436,6 +70176,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -67494,6 +70235,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -67538,6 +70280,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -67627,6 +70370,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -67671,6 +70415,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -67840,6 +70585,38 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleExportRunArchiveLLMSamples": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "format"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+          "application/x-ndjson": string;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -68369,6 +71146,112 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGenAISpanLookup": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "action"?: string;
+          "limit"?: number;
+          "model"?: string;
+          "trace_ids"?: Array<string>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "matched_transactions": number;
+            "matches": Array<{
+              "action_name": string;
+              "client_completion_tokens"?: number;
+              "client_e2e_ms"?: number;
+              "client_finish_reason"?: string;
+              "client_model"?: string;
+              "client_prompt_tokens"?: number;
+              "client_tpot_ms"?: number;
+              "client_ttft_ms"?: number;
+              "dialect"?: string;
+              "input_token_delta"?: number;
+              "output_token_delta"?: number;
+              "server_input_tokens"?: number;
+              "server_model"?: string;
+              "server_output_tokens"?: number;
+              "spans": Array<{
+                "duration_ms"?: number;
+                "finish_reasons"?: Array<string>;
+                "gen_ai_system"?: string;
+                "input_tokens"?: number;
+                "operation_name"?: string;
+                "output_tokens"?: number;
+                "request_model"?: string;
+                "response_model"?: string;
+                "service_name"?: string;
+                "source_name"?: string;
+                "source_provider": string;
+                "span_id"?: string;
+                "span_name"?: string;
+                "timestamp"?: string;
+                "trace_id": string;
+              }>;
+              "status_code"?: number;
+              "timestamp": string;
+              "trace_id": string;
+            }>;
+            "queried_sources"?: Array<string>;
+            "spans": Array<{
+              "duration_ms"?: number;
+              "finish_reasons"?: Array<string>;
+              "gen_ai_system"?: string;
+              "input_tokens"?: number;
+              "operation_name"?: string;
+              "output_tokens"?: number;
+              "request_model"?: string;
+              "response_model"?: string;
+              "service_name"?: string;
+              "source_name"?: string;
+              "source_provider": string;
+              "span_id"?: string;
+              "span_name"?: string;
+              "timestamp"?: string;
+              "trace_id": string;
+            }>;
+            "test_id": string;
+            "trace_ids": Array<string>;
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -69092,6 +71975,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -69136,6 +72020,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -69246,9 +72131,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -69445,12 +72333,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -69493,6 +72386,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -69532,6 +72426,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -69590,6 +72485,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -69634,6 +72530,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -69723,6 +72620,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -69767,6 +72665,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -70177,6 +73076,72 @@ export interface operations {
                   "sample_limit_reached"?: boolean;
                   "samples": number;
                   "version": number;
+                }) | null;
+                "llm"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
                 }) | null;
                 "max": number;
                 "mean": number;
@@ -70746,6 +73711,72 @@ export interface operations {
                   "samples": number;
                   "version": number;
                 }) | null;
+                "llm"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
                 "max": number;
                 "mean": number;
                 "mean_statistic"?: string;
@@ -70878,8 +73909,28 @@ export interface operations {
             }) | null;
             "warnings": Array<string>;
             "workload"?: ({
-              "baselines": Record<string, Record<string, unknown>>;
-              "current": Record<string, unknown>;
+              "baselines": Record<string, {
+                "achieved_throughput"?: ({
+                  "baseline_tps": number;
+                  "current_tps": number;
+                }) | null;
+                "mix_distance"?: (number) | null;
+                "reasons": Array<string>;
+                "status": string;
+              }>;
+              "current": {
+                "groups": Record<string, {
+                  "arrival_model": string;
+                  "levels": Array<number>;
+                  "pacing"?: string;
+                  "script_digest"?: string;
+                  "unit": string;
+                }>;
+                "population"?: string;
+                "runtime_digest"?: string;
+                "source": string;
+                "version": number;
+              };
             }) | null;
           }) | null;
           "text/csv": string;
@@ -74435,6 +77486,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -74697,13 +77753,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -76178,6 +79383,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -76460,13 +79670,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -78700,6 +82124,20 @@ export interface operations {
                 "path_template"?: string;
                 "require_pull_request"?: boolean;
               };
+              "llm_deployments"?: Array<{
+                "as_of_date"?: string;
+                "billing_mode": string;
+                "cached_input_cost_1m_usd"?: number;
+                "gpu_cost_per_hour_usd"?: number;
+                "gpu_count"?: number;
+                "id": string;
+                "input_cost_per_1m_usd"?: number;
+                "model"?: string;
+                "name": string;
+                "output_cost_per_1m_usd"?: number;
+                "ptu_cost_per_hour_usd"?: number;
+                "ptu_count"?: number;
+              }>;
               "max_concurrent_tests"?: number;
               "max_test_duration_minutes"?: number;
               "max_vusers"?: number;
@@ -79088,6 +82526,45 @@ export interface operations {
       };
     };
   };
+  "handleGetPrometheusMetricPacks": {
+    parameters: {
+      "query"?: {
+        "pack"?: string;
+        "pod_label"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetPrometheusOperation": {
     parameters: {
       "path": {
@@ -79191,12 +82668,295 @@ export interface operations {
             "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
-            "assessment"?: (Record<string, unknown>) | null;
+            "assessment"?: ({
+              "acceptance": {
+                "details": Array<string>;
+                "status": string;
+              };
+              "analysis_id": string;
+              "anomalies": Array<{
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "direction": string;
+                "effect": number;
+                "end": string;
+                "evidence": Array<Record<string, unknown>>;
+                "id": string;
+                "level": string;
+                "onset": string;
+                "onset_uncertainty_ns": number;
+                "peak_z": number;
+                "recovered": boolean;
+                "scope": string;
+                "series": string;
+                "unit": string;
+              }>;
+              "browser_baseline"?: ({
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "excluded"?: Record<string, number>;
+                "limitations": Array<{
+                  "code": string;
+                  "detail"?: string;
+                }>;
+                "params": {
+                  "cls_floor": number;
+                  "level_tolerance": number;
+                  "max_results": number;
+                  "metric_floors"?: Record<string, number>;
+                  "min_baseline_buckets": number;
+                  "sigma": number;
+                  "timing_floor_fraction": number;
+                  "timing_floor_ms": number;
+                  "version": string;
+                };
+                "policy"?: string;
+                "policy_sha256"?: string;
+                "results": Array<{
+                  "baseline": Record<string, unknown>;
+                  "baseline_buckets": number;
+                  "baseline_mean"?: number;
+                  "baseline_samples": number;
+                  "baseline_stddev"?: number;
+                  "caveats"?: Array<string>;
+                  "current": number;
+                  "current_buckets": number;
+                  "current_samples": number;
+                  "detail"?: string;
+                  "device_profile"?: string;
+                  "direction"?: string;
+                  "effect"?: number;
+                  "effect_floor"?: number;
+                  "engine"?: string;
+                  "evidence": Array<Record<string, unknown>>;
+                  "expected_high"?: number;
+                  "expected_low"?: number;
+                  "frame_scope"?: string;
+                  "group"?: string;
+                  "id": string;
+                  "level": string;
+                  "level_start": string;
+                  "lifecycle_phase"?: string;
+                  "metric": string;
+                  "reason"?: string;
+                  "series": string;
+                  "state": string;
+                  "unit": string;
+                  "z"?: number;
+                }>;
+                "status": string;
+                "version": string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy": string;
+                "reasons"?: Array<string>;
+                "rejected"?: Array<{
+                  "digest"?: string;
+                  "reasons": Array<string>;
+                  "test_id": string;
+                }>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "version": string;
+              }) | null;
+              "budget": {
+                "max_exemplars": number;
+                "max_graph_edges": number;
+                "max_graph_nodes": number;
+                "max_heap_bytes": number;
+                "max_series": number;
+                "max_series_points": number;
+                "max_wall_time_ns": number;
+              };
+              "capacity": Array<{
+                "knee"?: (number) | null;
+                "levels": Array<Record<string, unknown>>;
+                "load_unit": string;
+                "reason"?: string;
+                "series": string;
+                "slope_after": number;
+                "slope_before": number;
+              }>;
+              "coverage": Array<{
+                "detail"?: string;
+                "evidence": string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status": string;
+              }>;
+              "detection": {
+                "levels": Array<{
+                  "end": string;
+                  "rate"?: number;
+                  "start": string;
+                  "vusers"?: number;
+                }>;
+                "params": {
+                  "confirm_buckets": number;
+                  "cusum_h": number;
+                  "cusum_k": number;
+                  "error_rate_floor_pct": number;
+                  "latency_floor_ms": number;
+                  "level_settle_ns": number;
+                  "level_tolerance": number;
+                  "mad_scale": number;
+                  "max_anomalies": number;
+                  "max_baseline_buckets": number;
+                  "max_gap_buckets": number;
+                  "max_spikes": number;
+                  "min_baseline_buckets": number;
+                  "min_baseline_buckets_floor": number;
+                  "min_baseline_span_ns": number;
+                  "recovery_buckets": number;
+                  "relative_floor": number;
+                  "score_floor": number;
+                  "throughput_floor_per_s": number;
+                  "unit_floor": number;
+                  "version": string;
+                };
+                "params_version": string;
+                "series_evaluated": number;
+                "series_excluded": number;
+                "spikes": Array<{
+                  "at": string;
+                  "level": string;
+                  "scope": string;
+                  "series": string;
+                  "value": number;
+                  "z": number;
+                }>;
+                "status": string;
+              };
+              "graph": {
+                "aliases"?: Record<string, string>;
+                "cycles": Array<Array<string>>;
+                "edges": Array<{
+                  "ambiguous"?: boolean;
+                  "confidence": string;
+                  "from": string;
+                  "id": string;
+                  "kind": string;
+                  "provenance": string;
+                  "revision"?: string;
+                  "to": string;
+                  "used": boolean;
+                }>;
+                "nodes": Array<{
+                  "attributes"?: Record<string, string>;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "provider"?: string;
+                  "type"?: string;
+                }>;
+                "schema": string;
+              };
+              "hypotheses": Array<{
+                "chain": Array<Record<string, unknown>>;
+                "competing": Array<string>;
+                "confidence": string;
+                "confidence_reasons": Array<string>;
+                "contradicting": Array<Record<string, unknown>>;
+                "falsification": string;
+                "id": string;
+                "limitations": Array<string>;
+                "nodes": Array<string>;
+                "rank": number;
+                "score": number;
+                "signature": string;
+                "supporting": Array<Record<string, unknown>>;
+                "symptoms": Array<string>;
+              }>;
+              "inputs": {
+                "archive": string;
+                "baseline"?: string;
+                "browser_selection"?: string;
+                "engine": string;
+                "evidence_revision": number;
+                "mapping"?: string;
+                "policy"?: string;
+                "signature_set"?: string;
+              };
+              "limitations": Array<{
+                "code": string;
+                "detail"?: string;
+              }>;
+              "littles_law": Array<{
+                "arrival_rate_per_s"?: number;
+                "depth"?: number;
+                "eligible": boolean;
+                "end"?: string;
+                "predicted_depth"?: number;
+                "queue": string;
+                "ratio"?: number;
+                "reason"?: string;
+                "residence_s"?: number;
+                "start"?: string;
+              }>;
+              "outcome": string;
+              "revision": number;
+              "schema_version": string;
+              "validity": {
+                "anomalies": Array<{
+                  "end": string;
+                  "kind": string;
+                  "start": string;
+                  "value": number;
+                }>;
+                "intervals_judged": number;
+                "limitations": Array<string>;
+                "missing_fraction": number;
+                "reasons": Array<string>;
+                "rules": {
+                  "cpu_pct": number;
+                  "dropped_fraction": number;
+                  "missing_fraction": number;
+                  "steal_pct": number;
+                  "sustain_intervals": number;
+                  "throttled_fraction": number;
+                };
+                "rules_version": string;
+                "shared_data"?: Array<{
+                  "empty_outcomes": number;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "redeliveries": number;
+                  "table_id": string;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
+                }>;
+                "verdict": string;
+                "windows": Array<{
+                  "end": string;
+                  "findings": Array<Record<string, unknown>>;
+                  "start": string;
+                  "verdict": string;
+                }>;
+              };
+            }) | null;
             "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
-            "inputs"?: (Record<string, unknown>) | null;
+            "inputs"?: ({
+              "archive": string;
+              "baseline"?: string;
+              "browser_selection"?: string;
+              "engine": string;
+              "evidence_revision": number;
+              "mapping"?: string;
+              "policy"?: string;
+              "signature_set"?: string;
+            }) | null;
             "origin"?: string;
             "presented": boolean;
             "revision"?: number;
@@ -79379,12 +83139,295 @@ export interface operations {
             "analysis_enabled": boolean;
             "analysis_id"?: string;
             "archive_changed"?: boolean;
-            "assessment"?: (Record<string, unknown>) | null;
+            "assessment"?: ({
+              "acceptance": {
+                "details": Array<string>;
+                "status": string;
+              };
+              "analysis_id": string;
+              "anomalies": Array<{
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "direction": string;
+                "effect": number;
+                "end": string;
+                "evidence": Array<Record<string, unknown>>;
+                "id": string;
+                "level": string;
+                "onset": string;
+                "onset_uncertainty_ns": number;
+                "peak_z": number;
+                "recovered": boolean;
+                "scope": string;
+                "series": string;
+                "unit": string;
+              }>;
+              "browser_baseline"?: ({
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "excluded"?: Record<string, number>;
+                "limitations": Array<{
+                  "code": string;
+                  "detail"?: string;
+                }>;
+                "params": {
+                  "cls_floor": number;
+                  "level_tolerance": number;
+                  "max_results": number;
+                  "metric_floors"?: Record<string, number>;
+                  "min_baseline_buckets": number;
+                  "sigma": number;
+                  "timing_floor_fraction": number;
+                  "timing_floor_ms": number;
+                  "version": string;
+                };
+                "policy"?: string;
+                "policy_sha256"?: string;
+                "results": Array<{
+                  "baseline": Record<string, unknown>;
+                  "baseline_buckets": number;
+                  "baseline_mean"?: number;
+                  "baseline_samples": number;
+                  "baseline_stddev"?: number;
+                  "caveats"?: Array<string>;
+                  "current": number;
+                  "current_buckets": number;
+                  "current_samples": number;
+                  "detail"?: string;
+                  "device_profile"?: string;
+                  "direction"?: string;
+                  "effect"?: number;
+                  "effect_floor"?: number;
+                  "engine"?: string;
+                  "evidence": Array<Record<string, unknown>>;
+                  "expected_high"?: number;
+                  "expected_low"?: number;
+                  "frame_scope"?: string;
+                  "group"?: string;
+                  "id": string;
+                  "level": string;
+                  "level_start": string;
+                  "lifecycle_phase"?: string;
+                  "metric": string;
+                  "reason"?: string;
+                  "series": string;
+                  "state": string;
+                  "unit": string;
+                  "z"?: number;
+                }>;
+                "status": string;
+                "version": string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy": string;
+                "reasons"?: Array<string>;
+                "rejected"?: Array<{
+                  "digest"?: string;
+                  "reasons": Array<string>;
+                  "test_id": string;
+                }>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "version": string;
+              }) | null;
+              "budget": {
+                "max_exemplars": number;
+                "max_graph_edges": number;
+                "max_graph_nodes": number;
+                "max_heap_bytes": number;
+                "max_series": number;
+                "max_series_points": number;
+                "max_wall_time_ns": number;
+              };
+              "capacity": Array<{
+                "knee"?: (number) | null;
+                "levels": Array<Record<string, unknown>>;
+                "load_unit": string;
+                "reason"?: string;
+                "series": string;
+                "slope_after": number;
+                "slope_before": number;
+              }>;
+              "coverage": Array<{
+                "detail"?: string;
+                "evidence": string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status": string;
+              }>;
+              "detection": {
+                "levels": Array<{
+                  "end": string;
+                  "rate"?: number;
+                  "start": string;
+                  "vusers"?: number;
+                }>;
+                "params": {
+                  "confirm_buckets": number;
+                  "cusum_h": number;
+                  "cusum_k": number;
+                  "error_rate_floor_pct": number;
+                  "latency_floor_ms": number;
+                  "level_settle_ns": number;
+                  "level_tolerance": number;
+                  "mad_scale": number;
+                  "max_anomalies": number;
+                  "max_baseline_buckets": number;
+                  "max_gap_buckets": number;
+                  "max_spikes": number;
+                  "min_baseline_buckets": number;
+                  "min_baseline_buckets_floor": number;
+                  "min_baseline_span_ns": number;
+                  "recovery_buckets": number;
+                  "relative_floor": number;
+                  "score_floor": number;
+                  "throughput_floor_per_s": number;
+                  "unit_floor": number;
+                  "version": string;
+                };
+                "params_version": string;
+                "series_evaluated": number;
+                "series_excluded": number;
+                "spikes": Array<{
+                  "at": string;
+                  "level": string;
+                  "scope": string;
+                  "series": string;
+                  "value": number;
+                  "z": number;
+                }>;
+                "status": string;
+              };
+              "graph": {
+                "aliases"?: Record<string, string>;
+                "cycles": Array<Array<string>>;
+                "edges": Array<{
+                  "ambiguous"?: boolean;
+                  "confidence": string;
+                  "from": string;
+                  "id": string;
+                  "kind": string;
+                  "provenance": string;
+                  "revision"?: string;
+                  "to": string;
+                  "used": boolean;
+                }>;
+                "nodes": Array<{
+                  "attributes"?: Record<string, string>;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "provider"?: string;
+                  "type"?: string;
+                }>;
+                "schema": string;
+              };
+              "hypotheses": Array<{
+                "chain": Array<Record<string, unknown>>;
+                "competing": Array<string>;
+                "confidence": string;
+                "confidence_reasons": Array<string>;
+                "contradicting": Array<Record<string, unknown>>;
+                "falsification": string;
+                "id": string;
+                "limitations": Array<string>;
+                "nodes": Array<string>;
+                "rank": number;
+                "score": number;
+                "signature": string;
+                "supporting": Array<Record<string, unknown>>;
+                "symptoms": Array<string>;
+              }>;
+              "inputs": {
+                "archive": string;
+                "baseline"?: string;
+                "browser_selection"?: string;
+                "engine": string;
+                "evidence_revision": number;
+                "mapping"?: string;
+                "policy"?: string;
+                "signature_set"?: string;
+              };
+              "limitations": Array<{
+                "code": string;
+                "detail"?: string;
+              }>;
+              "littles_law": Array<{
+                "arrival_rate_per_s"?: number;
+                "depth"?: number;
+                "eligible": boolean;
+                "end"?: string;
+                "predicted_depth"?: number;
+                "queue": string;
+                "ratio"?: number;
+                "reason"?: string;
+                "residence_s"?: number;
+                "start"?: string;
+              }>;
+              "outcome": string;
+              "revision": number;
+              "schema_version": string;
+              "validity": {
+                "anomalies": Array<{
+                  "end": string;
+                  "kind": string;
+                  "start": string;
+                  "value": number;
+                }>;
+                "intervals_judged": number;
+                "limitations": Array<string>;
+                "missing_fraction": number;
+                "reasons": Array<string>;
+                "rules": {
+                  "cpu_pct": number;
+                  "dropped_fraction": number;
+                  "missing_fraction": number;
+                  "steal_pct": number;
+                  "sustain_intervals": number;
+                  "throttled_fraction": number;
+                };
+                "rules_version": string;
+                "shared_data"?: Array<{
+                  "empty_outcomes": number;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "redeliveries": number;
+                  "table_id": string;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
+                }>;
+                "verdict": string;
+                "windows": Array<{
+                  "end": string;
+                  "findings": Array<Record<string, unknown>>;
+                  "start": string;
+                  "verdict": string;
+                }>;
+              };
+            }) | null;
             "auto_analyze"?: boolean;
             "completed_at"?: (string) | null;
             "created_at"?: (string) | null;
             "error"?: string;
-            "inputs"?: (Record<string, unknown>) | null;
+            "inputs"?: ({
+              "archive": string;
+              "baseline"?: string;
+              "browser_selection"?: string;
+              "engine": string;
+              "evidence_revision": number;
+              "mapping"?: string;
+              "policy"?: string;
+              "signature_set"?: string;
+            }) | null;
             "origin"?: string;
             "presented": boolean;
             "revision"?: number;
@@ -79576,7 +83619,281 @@ export interface operations {
         content: {
           "application/json": {
             "analysis_id": string;
-            "assessment": Record<string, unknown>;
+            "assessment": {
+              "acceptance": {
+                "details": Array<string>;
+                "status": string;
+              };
+              "analysis_id": string;
+              "anomalies": Array<{
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "direction": string;
+                "effect": number;
+                "end": string;
+                "evidence": Array<Record<string, unknown>>;
+                "id": string;
+                "level": string;
+                "onset": string;
+                "onset_uncertainty_ns": number;
+                "peak_z": number;
+                "recovered": boolean;
+                "scope": string;
+                "series": string;
+                "unit": string;
+              }>;
+              "browser_baseline"?: ({
+                "baseline": {
+                  "qualification"?: string;
+                  "reasons"?: Array<string>;
+                  "test_id"?: string;
+                };
+                "excluded"?: Record<string, number>;
+                "limitations": Array<{
+                  "code": string;
+                  "detail"?: string;
+                }>;
+                "params": {
+                  "cls_floor": number;
+                  "level_tolerance": number;
+                  "max_results": number;
+                  "metric_floors"?: Record<string, number>;
+                  "min_baseline_buckets": number;
+                  "sigma": number;
+                  "timing_floor_fraction": number;
+                  "timing_floor_ms": number;
+                  "version": string;
+                };
+                "policy"?: string;
+                "policy_sha256"?: string;
+                "results": Array<{
+                  "baseline": Record<string, unknown>;
+                  "baseline_buckets": number;
+                  "baseline_mean"?: number;
+                  "baseline_samples": number;
+                  "baseline_stddev"?: number;
+                  "caveats"?: Array<string>;
+                  "current": number;
+                  "current_buckets": number;
+                  "current_samples": number;
+                  "detail"?: string;
+                  "device_profile"?: string;
+                  "direction"?: string;
+                  "effect"?: number;
+                  "effect_floor"?: number;
+                  "engine"?: string;
+                  "evidence": Array<Record<string, unknown>>;
+                  "expected_high"?: number;
+                  "expected_low"?: number;
+                  "frame_scope"?: string;
+                  "group"?: string;
+                  "id": string;
+                  "level": string;
+                  "level_start": string;
+                  "lifecycle_phase"?: string;
+                  "metric": string;
+                  "reason"?: string;
+                  "series": string;
+                  "state": string;
+                  "unit": string;
+                  "z"?: number;
+                }>;
+                "status": string;
+                "version": string;
+              }) | null;
+              "browser_selection"?: ({
+                "inventory_count": number;
+                "policy": string;
+                "reasons"?: Array<string>;
+                "rejected"?: Array<{
+                  "digest"?: string;
+                  "reasons": Array<string>;
+                  "test_id": string;
+                }>;
+                "selected_digest"?: string;
+                "selected_test_id"?: string;
+                "status": string;
+                "version": string;
+              }) | null;
+              "budget": {
+                "max_exemplars": number;
+                "max_graph_edges": number;
+                "max_graph_nodes": number;
+                "max_heap_bytes": number;
+                "max_series": number;
+                "max_series_points": number;
+                "max_wall_time_ns": number;
+              };
+              "capacity": Array<{
+                "knee"?: (number) | null;
+                "levels": Array<Record<string, unknown>>;
+                "load_unit": string;
+                "reason"?: string;
+                "series": string;
+                "slope_after": number;
+                "slope_before": number;
+              }>;
+              "coverage": Array<{
+                "detail"?: string;
+                "evidence": string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status": string;
+              }>;
+              "detection": {
+                "levels": Array<{
+                  "end": string;
+                  "rate"?: number;
+                  "start": string;
+                  "vusers"?: number;
+                }>;
+                "params": {
+                  "confirm_buckets": number;
+                  "cusum_h": number;
+                  "cusum_k": number;
+                  "error_rate_floor_pct": number;
+                  "latency_floor_ms": number;
+                  "level_settle_ns": number;
+                  "level_tolerance": number;
+                  "mad_scale": number;
+                  "max_anomalies": number;
+                  "max_baseline_buckets": number;
+                  "max_gap_buckets": number;
+                  "max_spikes": number;
+                  "min_baseline_buckets": number;
+                  "min_baseline_buckets_floor": number;
+                  "min_baseline_span_ns": number;
+                  "recovery_buckets": number;
+                  "relative_floor": number;
+                  "score_floor": number;
+                  "throughput_floor_per_s": number;
+                  "unit_floor": number;
+                  "version": string;
+                };
+                "params_version": string;
+                "series_evaluated": number;
+                "series_excluded": number;
+                "spikes": Array<{
+                  "at": string;
+                  "level": string;
+                  "scope": string;
+                  "series": string;
+                  "value": number;
+                  "z": number;
+                }>;
+                "status": string;
+              };
+              "graph": {
+                "aliases"?: Record<string, string>;
+                "cycles": Array<Array<string>>;
+                "edges": Array<{
+                  "ambiguous"?: boolean;
+                  "confidence": string;
+                  "from": string;
+                  "id": string;
+                  "kind": string;
+                  "provenance": string;
+                  "revision"?: string;
+                  "to": string;
+                  "used": boolean;
+                }>;
+                "nodes": Array<{
+                  "attributes"?: Record<string, string>;
+                  "id": string;
+                  "kind": string;
+                  "label": string;
+                  "provider"?: string;
+                  "type"?: string;
+                }>;
+                "schema": string;
+              };
+              "hypotheses": Array<{
+                "chain": Array<Record<string, unknown>>;
+                "competing": Array<string>;
+                "confidence": string;
+                "confidence_reasons": Array<string>;
+                "contradicting": Array<Record<string, unknown>>;
+                "falsification": string;
+                "id": string;
+                "limitations": Array<string>;
+                "nodes": Array<string>;
+                "rank": number;
+                "score": number;
+                "signature": string;
+                "supporting": Array<Record<string, unknown>>;
+                "symptoms": Array<string>;
+              }>;
+              "inputs": {
+                "archive": string;
+                "baseline"?: string;
+                "browser_selection"?: string;
+                "engine": string;
+                "evidence_revision": number;
+                "mapping"?: string;
+                "policy"?: string;
+                "signature_set"?: string;
+              };
+              "limitations": Array<{
+                "code": string;
+                "detail"?: string;
+              }>;
+              "littles_law": Array<{
+                "arrival_rate_per_s"?: number;
+                "depth"?: number;
+                "eligible": boolean;
+                "end"?: string;
+                "predicted_depth"?: number;
+                "queue": string;
+                "ratio"?: number;
+                "reason"?: string;
+                "residence_s"?: number;
+                "start"?: string;
+              }>;
+              "outcome": string;
+              "revision": number;
+              "schema_version": string;
+              "validity": {
+                "anomalies": Array<{
+                  "end": string;
+                  "kind": string;
+                  "start": string;
+                  "value": number;
+                }>;
+                "intervals_judged": number;
+                "limitations": Array<string>;
+                "missing_fraction": number;
+                "reasons": Array<string>;
+                "rules": {
+                  "cpu_pct": number;
+                  "dropped_fraction": number;
+                  "missing_fraction": number;
+                  "steal_pct": number;
+                  "sustain_intervals": number;
+                  "throttled_fraction": number;
+                };
+                "rules_version": string;
+                "shared_data"?: Array<{
+                  "empty_outcomes": number;
+                  "incomplete": boolean;
+                  "recovery_gaps": number;
+                  "redeliveries": number;
+                  "table_id": string;
+                  "throttled": number;
+                  "unknown_outcomes": number;
+                  "wait_count": number;
+                  "wait_total_ns": number;
+                }>;
+                "verdict": string;
+                "windows": Array<{
+                  "end": string;
+                  "findings": Array<Record<string, unknown>>;
+                  "start": string;
+                  "verdict": string;
+                }>;
+              };
+            };
             "evidence"?: (unknown) | null;
             "evidence_revision": number;
             "excerpts": Array<{
@@ -79963,9 +84280,21 @@ export interface operations {
                 "avg_response_pct_delta": number;
                 "completeness_delta": number;
                 "error_pct_delta": number;
+                "goodput_pct_delta"?: number;
+                "p95_tpot_ms_delta"?: number;
+                "p95_ttft_ms_delta"?: number;
                 "peak_tps_delta": number;
               }) | null;
               "error_pct": number;
+              "llm"?: ({
+                "cost_per_million_usd"?: number;
+                "goodput_pct"?: number;
+                "output_tokens_per_sec"?: number;
+                "p95_tpot_ms"?: number;
+                "p95_ttft_ms"?: number;
+                "throttle_rate_pct"?: number;
+                "workload_digest"?: string;
+              }) | null;
               "metric_population"?: string;
               "peak_active_vusers": number;
               "peak_tps": number;
@@ -80482,6 +84811,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -80491,10 +84823,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -80533,10 +84870,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -80551,10 +84892,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -80760,6 +85104,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -80993,6 +85342,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -81513,6 +85878,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -81775,13 +86145,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -82274,9 +86663,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -82343,12 +86735,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -82376,6 +86773,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -83481,6 +87879,167 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveCapacitySweep": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "format"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "golden_drift"?: ({
+              "cases"?: Array<{
+                "drift_detected": boolean;
+                "hash_mismatch": boolean;
+                "high_load_hash": string;
+                "high_load_tokens": number;
+                "length_ratio": number;
+                "low_load_hash": string;
+                "low_load_tokens": number;
+                "prompt_key": string;
+                "schema_failure"?: boolean;
+              }>;
+              "drift_rate_pct": number;
+              "drifted_prompts": number;
+              "evaluated_prompts": number;
+            }) | null;
+            "knee"?: ({
+              "load": number;
+              "load_unit": string;
+              "metric": string;
+              "reason"?: string;
+              "slope_after": number;
+              "slope_before": number;
+            }) | null;
+            "knee_note"?: string;
+            "levels": Array<{
+              "achieved_tps": number;
+              "cost_per_good_request_usd"?: (number) | null;
+              "cost_per_million_output_tokens_usd"?: (number) | null;
+              "error_rate_pct": number;
+              "errors": number;
+              "goodput_pct": number;
+              "goodput_tps": number;
+              "group": string;
+              "hourly_effective_cost_usd"?: (number) | null;
+              "itl_p95_ms": number;
+              "itl_p99_ms": number;
+              "meets_slo": boolean;
+              "name": string;
+              "observed_duration_seconds": number;
+              "offered_load": number;
+              "p50_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "pareto_optimal"?: boolean;
+              "per_user_output_tokens_per_sec": number;
+              "requests": number;
+              "server_gpu_util_avg_pct"?: (number) | null;
+              "server_kv_cache_peak_pct"?: (number) | null;
+              "server_preemptions"?: (number) | null;
+              "server_queue_depth_avg"?: (number) | null;
+              "slo_breaches"?: Array<string>;
+              "stage_index": number;
+              "system_output_tokens_per_sec": number;
+              "target_tps"?: number;
+              "target_vusers"?: number;
+              "throttle_rate_pct": number;
+              "tpot_p50_ms": number;
+              "tpot_p95_ms": number;
+              "tpot_p99_ms": number;
+              "truncation_rate_pct": number;
+              "ttft_p50_ms": number;
+              "ttft_p95_ms": number;
+              "ttft_p99_ms": number;
+            }>;
+            "max_sustainable_rate"?: ({
+              "achieved_tps": number;
+              "goodput_pct": number;
+              "goodput_tps": number;
+              "offered_load": number;
+              "p95_ms": number;
+              "stage_index": number;
+              "system_output_tokens_per_sec": number;
+              "tpot_p95_ms": number;
+              "ttft_p95_ms": number;
+            }) | null;
+            "min_goodput_pct"?: (number) | null;
+            "mode": string;
+            "pareto_frontier"?: Array<{
+              "achieved_tps": number;
+              "cost_per_good_request_usd"?: (number) | null;
+              "cost_per_million_output_tokens_usd"?: (number) | null;
+              "error_rate_pct": number;
+              "errors": number;
+              "goodput_pct": number;
+              "goodput_tps": number;
+              "group": string;
+              "hourly_effective_cost_usd"?: (number) | null;
+              "itl_p95_ms": number;
+              "itl_p99_ms": number;
+              "meets_slo": boolean;
+              "name": string;
+              "observed_duration_seconds": number;
+              "offered_load": number;
+              "p50_ms": number;
+              "p95_ms": number;
+              "p99_ms": number;
+              "pareto_optimal"?: boolean;
+              "per_user_output_tokens_per_sec": number;
+              "requests": number;
+              "server_gpu_util_avg_pct"?: (number) | null;
+              "server_kv_cache_peak_pct"?: (number) | null;
+              "server_preemptions"?: (number) | null;
+              "server_queue_depth_avg"?: (number) | null;
+              "slo_breaches"?: Array<string>;
+              "stage_index": number;
+              "system_output_tokens_per_sec": number;
+              "target_tps"?: number;
+              "target_vusers"?: number;
+              "throttle_rate_pct": number;
+              "tpot_p50_ms": number;
+              "tpot_p95_ms": number;
+              "tpot_p99_ms": number;
+              "truncation_rate_pct": number;
+              "ttft_p50_ms": number;
+              "ttft_p95_ms": number;
+              "ttft_p99_ms": number;
+            }>;
+            "slo_e2e_ms"?: (number) | null;
+            "slo_tpot_ms"?: (number) | null;
+            "slo_ttft_ms"?: (number) | null;
+            "test_id": string;
+            "test_name": string;
+          }) | null;
+          "text/csv": string;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveComparison": {
     parameters: {
       "path": {
@@ -83709,6 +88268,60 @@ export interface operations {
         };
       };
       "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRunArchiveLLMLatencyDecomposition": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "basis": string;
+            "client_avg_decode_ms": number;
+            "client_avg_e2e_ms": number;
+            "client_avg_ttft_ms": number;
+            "decode_share_pct": number;
+            "network_gateway_avg_ms": number;
+            "network_gateway_share_pct": number;
+            "prefill_share_pct": number;
+            "queue_share_pct": number;
+            "server_avg_decode_ms": number;
+            "server_avg_prefill_ms": number;
+            "server_avg_queue_ms": number;
+            "server_coverage_pct": number;
+            "server_telemetry_samples": number;
+            "shared_server_warning"?: boolean;
+            "source": string;
+            "streamed_requests": number;
+            "test_id": string;
+            "total_requests": number;
+            "warnings"?: Array<string>;
+          }) | null;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -84130,6 +88743,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -84139,10 +88755,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -84181,10 +88802,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -84226,10 +88851,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -84465,9 +89093,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -84534,12 +89165,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -84567,6 +89203,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -84746,7 +89383,19 @@ export interface operations {
                   "start_offset"?: string;
                 };
               }) | null;
-              "workload"?: (Record<string, unknown>) | null;
+              "workload"?: ({
+                "groups": Record<string, {
+                  "arrival_model": string;
+                  "levels": Array<number>;
+                  "pacing"?: string;
+                  "script_digest"?: string;
+                  "unit": string;
+                }>;
+                "population"?: string;
+                "runtime_digest"?: string;
+                "source": string;
+                "version": number;
+              }) | null;
             }) | null;
             "interval_distribution_count"?: number;
             "interval_distributions_file"?: string;
@@ -85149,6 +89798,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -85158,10 +89810,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -85200,10 +89857,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -85245,10 +89906,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -85484,9 +90148,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -85553,12 +90220,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -85586,6 +90258,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -85765,7 +90438,19 @@ export interface operations {
                   "start_offset"?: string;
                 };
               }) | null;
-              "workload"?: (Record<string, unknown>) | null;
+              "workload"?: ({
+                "groups": Record<string, {
+                  "arrival_model": string;
+                  "levels": Array<number>;
+                  "pacing"?: string;
+                  "script_digest"?: string;
+                  "unit": string;
+                }>;
+                "population"?: string;
+                "runtime_digest"?: string;
+                "source": string;
+                "version": number;
+              }) | null;
             };
             "provider_lookup_count"?: number;
             "provider_lookups_file"?: string;
@@ -86013,6 +90698,9 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               };
@@ -86439,6 +91127,7 @@ export interface operations {
                     "samples": number;
                     "version": number;
                   }) | null;
+                  "llm"?: (Record<string, unknown>) | null;
                   "max": number;
                   "mean": number;
                   "mean_statistic"?: string;
@@ -86995,6 +91684,7 @@ export interface operations {
                     "samples": number;
                     "version": number;
                   }) | null;
+                  "llm"?: (Record<string, unknown>) | null;
                   "max": number;
                   "mean": number;
                   "mean_statistic"?: string;
@@ -87122,8 +91812,19 @@ export interface operations {
               }) | null;
               "warnings": Array<string>;
               "workload"?: ({
-                "baselines": Record<string, Record<string, unknown>>;
-                "current": Record<string, unknown>;
+                "baselines": Record<string, {
+                  "achieved_throughput"?: (Record<string, unknown>) | null;
+                  "mix_distance"?: (number) | null;
+                  "reasons": Array<string>;
+                  "status": string;
+                }>;
+                "current": {
+                  "groups": Record<string, Record<string, unknown>>;
+                  "population"?: string;
+                  "runtime_digest"?: string;
+                  "source": string;
+                  "version": number;
+                };
               }) | null;
             }) | null;
             "browser_authored_pages"?: ({
@@ -87614,6 +92315,75 @@ export interface operations {
                 "samples": number;
                 "version": number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -87924,6 +92694,75 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples": number;
                 "version": number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -88236,6 +93075,75 @@ export interface operations {
                 "samples": number;
                 "version": number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -88546,6 +93454,75 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples": number;
                 "version": number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -88858,6 +93835,75 @@ export interface operations {
                 "samples": number;
                 "version": number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -89168,6 +94214,75 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples": number;
                 "version": number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -89482,6 +94597,75 @@ export interface operations {
                 "samples": number;
                 "version": number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -89792,6 +94976,75 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples": number;
                 "version": number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -90104,6 +95357,75 @@ export interface operations {
                 "samples": number;
                 "version": number;
               }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null;
               "max_response_ms": number;
               "messaging"?: ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -90406,11 +95728,463 @@ export interface operations {
               "verified": boolean;
               "verified_at": string;
             }) | null;
+            "llm"?: ({
+              "by_action"?: Record<string, ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null>;
+              "by_length_band"?: Array<{
+                "band": string;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "label": string;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "prompt_tokens"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }>;
+              "by_model"?: Record<string, ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": {
+                  "distribution"?: (Record<string, unknown>) | null;
+                  "max_ms"?: number;
+                  "max_stall_ms"?: number;
+                  "mean_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                  "stall_count"?: number;
+                };
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": {
+                  "max_ms"?: number;
+                  "mean_ms"?: number;
+                  "min_ms"?: number;
+                  "p50_ms"?: number;
+                  "p90_ms"?: number;
+                  "p95_ms"?: number;
+                  "p99_ms"?: number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+              }) | null>;
+              "cache_hit_rate_pct"?: number;
+              "cached_tokens"?: number;
+              "capacity_sweep"?: ({
+                "golden_drift"?: ({
+                  "cases"?: Array<Record<string, unknown>>;
+                  "drift_rate_pct": number;
+                  "drifted_prompts": number;
+                  "evaluated_prompts": number;
+                }) | null;
+                "knee"?: ({
+                  "load": number;
+                  "load_unit": string;
+                  "metric": string;
+                  "reason"?: string;
+                  "slope_after": number;
+                  "slope_before": number;
+                }) | null;
+                "knee_note"?: string;
+                "levels": Array<{
+                  "achieved_tps": number;
+                  "cost_per_good_request_usd"?: (number) | null;
+                  "cost_per_million_output_tokens_usd"?: (number) | null;
+                  "error_rate_pct": number;
+                  "errors": number;
+                  "goodput_pct": number;
+                  "goodput_tps": number;
+                  "group": string;
+                  "hourly_effective_cost_usd"?: (number) | null;
+                  "itl_p95_ms": number;
+                  "itl_p99_ms": number;
+                  "meets_slo": boolean;
+                  "name": string;
+                  "observed_duration_seconds": number;
+                  "offered_load": number;
+                  "p50_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "pareto_optimal"?: boolean;
+                  "per_user_output_tokens_per_sec": number;
+                  "requests": number;
+                  "server_gpu_util_avg_pct"?: (number) | null;
+                  "server_kv_cache_peak_pct"?: (number) | null;
+                  "server_preemptions"?: (number) | null;
+                  "server_queue_depth_avg"?: (number) | null;
+                  "slo_breaches"?: Array<string>;
+                  "stage_index": number;
+                  "system_output_tokens_per_sec": number;
+                  "target_tps"?: number;
+                  "target_vusers"?: number;
+                  "throttle_rate_pct": number;
+                  "tpot_p50_ms": number;
+                  "tpot_p95_ms": number;
+                  "tpot_p99_ms": number;
+                  "truncation_rate_pct": number;
+                  "ttft_p50_ms": number;
+                  "ttft_p95_ms": number;
+                  "ttft_p99_ms": number;
+                }>;
+                "max_sustainable_rate"?: ({
+                  "achieved_tps": number;
+                  "goodput_pct": number;
+                  "goodput_tps": number;
+                  "offered_load": number;
+                  "p95_ms": number;
+                  "stage_index": number;
+                  "system_output_tokens_per_sec": number;
+                  "tpot_p95_ms": number;
+                  "ttft_p95_ms": number;
+                }) | null;
+                "min_goodput_pct"?: (number) | null;
+                "mode": string;
+                "pareto_frontier"?: Array<{
+                  "achieved_tps": number;
+                  "cost_per_good_request_usd"?: (number) | null;
+                  "cost_per_million_output_tokens_usd"?: (number) | null;
+                  "error_rate_pct": number;
+                  "errors": number;
+                  "goodput_pct": number;
+                  "goodput_tps": number;
+                  "group": string;
+                  "hourly_effective_cost_usd"?: (number) | null;
+                  "itl_p95_ms": number;
+                  "itl_p99_ms": number;
+                  "meets_slo": boolean;
+                  "name": string;
+                  "observed_duration_seconds": number;
+                  "offered_load": number;
+                  "p50_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "pareto_optimal"?: boolean;
+                  "per_user_output_tokens_per_sec": number;
+                  "requests": number;
+                  "server_gpu_util_avg_pct"?: (number) | null;
+                  "server_kv_cache_peak_pct"?: (number) | null;
+                  "server_preemptions"?: (number) | null;
+                  "server_queue_depth_avg"?: (number) | null;
+                  "slo_breaches"?: Array<string>;
+                  "stage_index": number;
+                  "system_output_tokens_per_sec": number;
+                  "target_tps"?: number;
+                  "target_vusers"?: number;
+                  "throttle_rate_pct": number;
+                  "tpot_p50_ms": number;
+                  "tpot_p95_ms": number;
+                  "tpot_p99_ms": number;
+                  "truncation_rate_pct": number;
+                  "ttft_p50_ms": number;
+                  "ttft_p95_ms": number;
+                  "ttft_p99_ms": number;
+                }>;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "test_id": string;
+                "test_name": string;
+              }) | null;
+              "completion_tokens"?: number;
+              "e2e": {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples": number;
+              };
+              "economics"?: ({
+                "billing_mode": string;
+                "cost_per_1k_goodput_requests_usd": number;
+                "cost_per_1k_requests_usd": number;
+                "cost_per_1m_input_tokens_usd": number;
+                "cost_per_1m_output_tokens_usd": number;
+                "deployment_id"?: string;
+                "deployment_name"?: string;
+                "effective_output_tokens_per_gpu_second"?: number;
+                "hourly_infra_cost_usd"?: number;
+                "prefix_cache_savings_usd"?: number;
+                "total_run_cost_usd": number;
+              }) | null;
+              "empty_rate_pct"?: number;
+              "empty_requests"?: number;
+              "error_rate_pct"?: number;
+              "error_requests"?: number;
+              "estimated_token_share_pct"?: number;
+              "fallback_requests"?: number;
+              "finish_reasons"?: Record<string, number>;
+              "first_content"?: {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples": number;
+              };
+              "golden_prompt_drift"?: ({
+                "checked_prompts": number;
+                "drifted_prompts": number;
+                "items"?: Array<{
+                  "baseline_hash"?: string;
+                  "detail"?: string;
+                  "drifted"?: boolean;
+                  "length_drift_ratio"?: number;
+                  "max_completion_tokens"?: number;
+                  "min_completion_tokens"?: number;
+                  "name": string;
+                  "observed_hashes": number;
+                  "samples": number;
+                }>;
+                "status": string;
+              }) | null;
+              "good_output_tokens_per_sec"?: number;
+              "good_requests"?: number;
+              "goodput_pct"?: number;
+              "input_tokens_per_sec"?: number;
+              "itl": {
+                "distribution"?: ({
+                  "buckets": Array<number>;
+                  "count": number;
+                  "max": number;
+                  "min": number;
+                  "sum": number;
+                }) | null;
+                "max_ms"?: number;
+                "max_stall_ms"?: number;
+                "mean_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples": number;
+                "stall_count"?: number;
+              };
+              "latency_decomposition"?: ({
+                "basis": string;
+                "client_avg_decode_ms": number;
+                "client_avg_e2e_ms": number;
+                "client_avg_ttft_ms": number;
+                "decode_share_pct": number;
+                "network_gateway_avg_ms": number;
+                "network_gateway_share_pct": number;
+                "prefill_share_pct": number;
+                "queue_share_pct": number;
+                "server_avg_decode_ms": number;
+                "server_avg_prefill_ms": number;
+                "server_avg_queue_ms": number;
+                "server_coverage_pct": number;
+                "server_telemetry_samples": number;
+                "shared_server_warning"?: boolean;
+                "source": string;
+                "streamed_requests": number;
+                "test_id": string;
+                "total_requests": number;
+                "warnings"?: Array<string>;
+              }) | null;
+              "mean_completion_tokens"?: number;
+              "mean_prompt_tokens"?: number;
+              "output_tokens_per_sec"?: number;
+              "prompt_tokens"?: number;
+              "reasoning_tokens"?: number;
+              "refusal_rate_pct"?: number;
+              "refused_requests"?: number;
+              "requests_per_sec"?: number;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
+              "streamed_requests"?: number;
+              "successful_requests"?: number;
+              "throttle_rate_pct"?: number;
+              "throttled_requests"?: number;
+              "tokens_estimated_requests"?: number;
+              "tool_call_requests"?: number;
+              "total_requests": number;
+              "total_retries"?: number;
+              "total_retry_wait_ms"?: number;
+              "total_throttled_attempts"?: number;
+              "total_tokens"?: number;
+              "total_tokens_per_sec"?: number;
+              "tpot": {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples": number;
+              };
+              "truncated_requests"?: number;
+              "truncation_rate_pct"?: number;
+              "ttft": {
+                "max_ms"?: number;
+                "mean_ms"?: number;
+                "min_ms"?: number;
+                "p50_ms"?: number;
+                "p90_ms"?: number;
+                "p95_ms"?: number;
+                "p99_ms"?: number;
+                "percentile_quality"?: string;
+                "samples": number;
+              };
+            }) | null;
             "load_level_summaries"?: Array<{
               "configured_duration": string;
               "error_rate_pct": number;
               "errors": number;
               "group": string;
+              "kind"?: string;
               "name": string;
               "observed_duration_seconds": number;
               "p50_ms": number;
@@ -90421,6 +96195,7 @@ export interface operations {
               "percentile_quality"?: string;
               "requests": number;
               "stage_index": number;
+              "target_tps"?: number;
               "target_vusers": number;
               "throughput": number;
             }>;
@@ -90728,6 +96503,9 @@ export interface operations {
                 }>;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -90737,10 +96515,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -90963,7 +96746,13 @@ export interface operations {
                   "warnings"?: Array<string>;
                   "window"?: Record<string, unknown>;
                 }) | null;
-                "workload"?: (Record<string, unknown>) | null;
+                "workload"?: ({
+                  "groups": Record<string, Record<string, unknown>>;
+                  "population"?: string;
+                  "runtime_digest"?: string;
+                  "source": string;
+                  "version": number;
+                }) | null;
               }) | null;
               "interval_distribution_count"?: number;
               "interval_distributions_file"?: string;
@@ -91247,6 +97036,9 @@ export interface operations {
                 }>;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -91256,10 +97048,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -91482,7 +97279,13 @@ export interface operations {
                   "warnings"?: Array<string>;
                   "window"?: Record<string, unknown>;
                 }) | null;
-                "workload"?: (Record<string, unknown>) | null;
+                "workload"?: ({
+                  "groups": Record<string, Record<string, unknown>>;
+                  "population"?: string;
+                  "runtime_digest"?: string;
+                  "source": string;
+                  "version": number;
+                }) | null;
               };
               "provider_lookup_count"?: number;
               "provider_lookups_file"?: string;
@@ -91727,6 +97530,9 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 };
@@ -92037,6 +97843,33 @@ export interface operations {
                 "sample_limit_reached"?: boolean;
                 "samples": number;
                 "version": number;
+              }) | null;
+              "llm"?: ({
+                "cache_hit_rate_pct"?: number;
+                "cached_tokens"?: number;
+                "completion_tokens"?: number;
+                "e2e": Record<string, unknown>;
+                "empty_requests"?: number;
+                "good_requests"?: number;
+                "goodput_pct"?: number;
+                "itl": Record<string, unknown>;
+                "mean_completion_tokens"?: number;
+                "mean_prompt_tokens"?: number;
+                "name"?: string;
+                "output_tokens_per_sec"?: number;
+                "prompt_tokens"?: number;
+                "reasoning_tokens"?: number;
+                "refused_requests"?: number;
+                "requests": number;
+                "streamed_requests"?: number;
+                "successful_requests"?: number;
+                "throttle_rate_pct"?: number;
+                "throttled_requests"?: number;
+                "tool_call_requests"?: number;
+                "tpot": Record<string, unknown>;
+                "truncated_requests"?: number;
+                "truncation_rate_pct"?: number;
+                "ttft": Record<string, unknown>;
               }) | null;
               "max_response_ms": number;
               "messaging"?: ({
@@ -92418,9 +98251,21 @@ export interface operations {
                   "avg_response_pct_delta": number;
                   "completeness_delta": number;
                   "error_pct_delta": number;
+                  "goodput_pct_delta"?: number;
+                  "p95_tpot_ms_delta"?: number;
+                  "p95_ttft_ms_delta"?: number;
                   "peak_tps_delta": number;
                 }) | null;
                 "error_pct": number;
+                "llm"?: ({
+                  "cost_per_million_usd"?: number;
+                  "goodput_pct"?: number;
+                  "output_tokens_per_sec"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "throttle_rate_pct"?: number;
+                  "workload_digest"?: string;
+                }) | null;
                 "metric_population"?: string;
                 "peak_active_vusers": number;
                 "peak_tps": number;
@@ -92441,9 +98286,21 @@ export interface operations {
                   "avg_response_pct_delta": number;
                   "completeness_delta": number;
                   "error_pct_delta": number;
+                  "goodput_pct_delta"?: number;
+                  "p95_tpot_ms_delta"?: number;
+                  "p95_ttft_ms_delta"?: number;
                   "peak_tps_delta": number;
                 }) | null;
                 "error_pct": number;
+                "llm"?: ({
+                  "cost_per_million_usd"?: number;
+                  "goodput_pct"?: number;
+                  "output_tokens_per_sec"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "throttle_rate_pct"?: number;
+                  "workload_digest"?: string;
+                }) | null;
                 "metric_population"?: string;
                 "peak_active_vusers": number;
                 "peak_tps": number;
@@ -92460,6 +98317,9 @@ export interface operations {
                 "avg_response_pct_delta": number;
                 "completeness_delta": number;
                 "error_pct_delta": number;
+                "goodput_pct_delta"?: number;
+                "p95_tpot_ms_delta"?: number;
+                "p95_ttft_ms_delta"?: number;
                 "peak_tps_delta": number;
               }) | null;
               "has_baseline": boolean;
@@ -92566,7 +98426,11 @@ export interface operations {
                 "policy"?: string;
                 "reasons"?: Array<string>;
                 "receipt_digest"?: string;
-                "rejected"?: Array<Record<string, unknown>>;
+                "rejected"?: Array<{
+                  "digest"?: string;
+                  "reasons": Array<string>;
+                  "test_id": string;
+                }>;
                 "selected_digest"?: string;
                 "selected_test_id"?: string;
                 "status": string;
@@ -92575,7 +98439,12 @@ export interface operations {
               }) | null;
               "completed_at"?: (string) | null;
               "confidence"?: string;
-              "coverage"?: Array<Record<string, unknown>>;
+              "coverage"?: Array<{
+                "detail"?: string;
+                "evidence": string;
+                "sources"?: Array<Record<string, unknown>>;
+                "status": string;
+              }>;
               "engine"?: string;
               "hypotheses": Array<{
                 "chain"?: Array<string>;
@@ -93050,7 +98919,45 @@ export interface operations {
               "total_count": number;
               "transaction": string;
             }>;
-            "validity"?: (Record<string, unknown>) | null;
+            "validity"?: ({
+              "anomalies": Array<{
+                "end": string;
+                "kind": string;
+                "start": string;
+                "value": number;
+              }>;
+              "intervals_judged": number;
+              "limitations": Array<string>;
+              "missing_fraction": number;
+              "reasons": Array<string>;
+              "rules": {
+                "cpu_pct": number;
+                "dropped_fraction": number;
+                "missing_fraction": number;
+                "steal_pct": number;
+                "sustain_intervals": number;
+                "throttled_fraction": number;
+              };
+              "rules_version": string;
+              "shared_data"?: Array<{
+                "empty_outcomes": number;
+                "incomplete": boolean;
+                "recovery_gaps": number;
+                "redeliveries": number;
+                "table_id": string;
+                "throttled": number;
+                "unknown_outcomes": number;
+                "wait_count": number;
+                "wait_total_ns": number;
+              }>;
+              "verdict": string;
+              "windows": Array<{
+                "end": string;
+                "findings": Array<Record<string, unknown>>;
+                "start": string;
+                "verdict": string;
+              }>;
+            }) | null;
             "verdict"?: ({
               "conditional": boolean;
               "explanation": string;
@@ -93632,6 +99539,9 @@ export interface operations {
                 "duration": string;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -93641,10 +99551,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -93768,6 +99683,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -93777,10 +99695,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -93819,10 +99742,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -93965,9 +99903,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -94060,12 +100001,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -94118,6 +100077,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -94355,9 +100315,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -94424,12 +100387,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -94453,6 +100421,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -94494,6 +100463,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
@@ -94674,6 +100644,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -94683,10 +100656,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -94725,10 +100703,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -94853,9 +100835,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -94922,12 +100907,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -94955,6 +100945,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -95286,6 +101277,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -95345,6 +101337,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -95381,6 +101374,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -95453,6 +101447,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -95529,6 +101524,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -95573,6 +101569,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -95683,9 +101680,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -95882,12 +101882,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -95930,6 +101935,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -95969,6 +101975,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -96027,6 +102034,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -96071,6 +102079,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -96160,6 +102169,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -96204,6 +102214,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -96261,6 +102272,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -96305,6 +102317,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -96414,9 +102427,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -96613,12 +102629,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -96661,6 +102682,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -96699,6 +102721,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -96757,6 +102780,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -96801,6 +102825,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -96890,6 +102915,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -96934,6 +102960,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -100220,6 +106247,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -100229,10 +106259,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -100271,10 +106306,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -100299,10 +106349,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -100407,9 +106460,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -100476,12 +106532,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -100505,6 +106566,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -100547,6 +106609,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -100795,6 +106858,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -101057,13 +107125,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -102542,6 +108759,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -102824,13 +109046,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -104837,9 +111273,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -104932,12 +111371,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -104990,6 +111447,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -105517,9 +111975,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -105612,12 +112073,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -105670,6 +112149,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -105848,9 +112328,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -105943,12 +112426,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -106001,6 +112502,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -106165,9 +112667,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -106260,12 +112765,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -106318,6 +112841,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -106482,9 +113006,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -106577,12 +113104,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -106635,6 +113180,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -106879,6 +113425,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -106888,10 +113437,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -106930,10 +113484,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -106943,10 +113501,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -107078,9 +113639,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -107147,12 +113711,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -107180,6 +113749,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -107405,6 +113975,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -107414,10 +113987,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -107456,10 +114034,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -107469,10 +114051,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -107604,9 +114189,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -107673,12 +114261,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -107706,6 +114299,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -108146,9 +114740,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -108215,12 +114812,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -108244,6 +114846,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -108285,6 +114888,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "vusers"?: number;
@@ -110116,6 +116720,52 @@ export interface operations {
       };
     };
   };
+  "handleImportLLMPromptDataset": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "bytes_per_token"?: number;
+          "format"?: string;
+          "max_records"?: number;
+          "max_turns"?: number;
+          "payload"?: string;
+          "project_id"?: string;
+          "scrub_pii"?: (boolean) | null;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleImportOpenAPI": {
     parameters: {
       "query"?: {
@@ -110594,6 +117244,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -110638,6 +117289,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -110748,9 +117400,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -110947,12 +117602,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -110995,6 +117655,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -111034,6 +117695,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -111092,6 +117754,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -111136,6 +117799,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -111225,6 +117889,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -111269,6 +117934,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -111326,6 +117992,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -111370,6 +118037,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -111480,9 +118148,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -111679,12 +118350,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -111727,6 +118403,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -111766,6 +118443,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -111824,6 +118502,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -111868,6 +118547,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -111957,6 +118637,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -112001,6 +118682,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -116446,6 +123128,7 @@ export interface operations {
                     "body_encoding"?: string;
                     "body_file"?: string;
                     "body_multipart"?: (Record<string, unknown>) | null;
+                    "body_template_encoding"?: string;
                     "capture"?: (Record<string, unknown>) | null;
                     "control"?: (Record<string, unknown>) | null;
                     "extractors"?: Array<Record<string, unknown>>;
@@ -116505,6 +123188,7 @@ export interface operations {
                     "content_type"?: string;
                     "delimiter"?: string;
                     "encoding"?: string;
+                    "fields"?: Record<string, string>;
                     "file_name"?: string;
                     "first_row_header": boolean;
                     "inline_data"?: string;
@@ -116541,6 +123225,7 @@ export interface operations {
                     "body_encoding"?: string;
                     "body_file"?: string;
                     "body_multipart"?: (Record<string, unknown>) | null;
+                    "body_template_encoding"?: string;
                     "capture"?: (Record<string, unknown>) | null;
                     "control"?: (Record<string, unknown>) | null;
                     "extractors"?: Array<Record<string, unknown>>;
@@ -116613,6 +123298,7 @@ export interface operations {
                     "body_encoding"?: string;
                     "body_file"?: string;
                     "body_multipart"?: (Record<string, unknown>) | null;
+                    "body_template_encoding"?: string;
                     "capture"?: (Record<string, unknown>) | null;
                     "control"?: (Record<string, unknown>) | null;
                     "extractors"?: Array<Record<string, unknown>>;
@@ -116689,6 +123375,7 @@ export interface operations {
                   "body_multipart"?: ({
                     "parts": Array<Record<string, unknown>>;
                   }) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: ({
                     "full_page"?: boolean;
                     "html"?: boolean;
@@ -116733,6 +123420,7 @@ export interface operations {
                   }) | null;
                   "target": string;
                   "think_time"?: {
+                    "distribution"?: string;
                     "force"?: boolean;
                     "ignore"?: boolean;
                     "limit_ms"?: number;
@@ -116843,9 +123531,12 @@ export interface operations {
                   "error_handling"?: {
                     "continue_on_error"?: (boolean) | null;
                     "fail_transaction_on_error_message"?: (boolean) | null;
+                    "honor_retry_after"?: boolean;
                     "max_retries"?: number;
+                    "retry_after_max_ms"?: number;
                     "retry_backoff"?: string;
                     "retry_delay_ms"?: number;
+                    "retry_on"?: Array<string>;
                     "snapshot_on_error"?: boolean;
                   };
                   "eventhubs"?: {
@@ -117042,12 +123733,17 @@ export interface operations {
                     "trace_carrier"?: string;
                   };
                   "pacing"?: {
+                    "arrival_process"?: string;
+                    "burstiness"?: number;
                     "delay_ms"?: number;
                     "interval_ms"?: number;
                     "max_delay_ms"?: number;
                     "max_interval_ms"?: number;
                     "min_delay_ms"?: number;
                     "min_interval_ms"?: number;
+                    "quota"?: (Record<string, unknown>) | null;
+                    "rate_stages"?: Array<Record<string, unknown>>;
+                    "seed"?: (number) | null;
                     "tps"?: number;
                     "type": string;
                   };
@@ -117090,6 +123786,7 @@ export interface operations {
                     "ws_security"?: (Record<string, unknown>) | null;
                   };
                   "think_time"?: {
+                    "distribution"?: string;
                     "force"?: boolean;
                     "ignore"?: boolean;
                     "limit_ms"?: number;
@@ -117129,6 +123826,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -117187,6 +123885,7 @@ export interface operations {
                   "body_multipart"?: ({
                     "parts": Array<Record<string, unknown>>;
                   }) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: ({
                     "full_page"?: boolean;
                     "html"?: boolean;
@@ -117231,6 +123930,7 @@ export interface operations {
                   }) | null;
                   "target": string;
                   "think_time"?: {
+                    "distribution"?: string;
                     "force"?: boolean;
                     "ignore"?: boolean;
                     "limit_ms"?: number;
@@ -117320,6 +124020,7 @@ export interface operations {
                   "body_multipart"?: ({
                     "parts": Array<Record<string, unknown>>;
                   }) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: ({
                     "full_page"?: boolean;
                     "html"?: boolean;
@@ -117364,6 +124065,7 @@ export interface operations {
                   }) | null;
                   "target": string;
                   "think_time"?: {
+                    "distribution"?: string;
                     "force"?: boolean;
                     "ignore"?: boolean;
                     "limit_ms"?: number;
@@ -125963,6 +132665,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -125972,10 +132677,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -126014,10 +132724,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -126042,10 +132767,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -126150,9 +132878,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -126219,12 +132950,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -126248,6 +132984,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -126290,6 +133027,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -126538,6 +133276,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -126800,13 +133543,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -128285,6 +135177,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -128567,13 +135464,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -130580,9 +137691,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -130675,12 +137789,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -130733,6 +137865,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -131442,6 +138575,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -131451,10 +138587,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -131493,10 +138634,14 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: (Record<string, unknown>) | null;
               "closed_vuser"?: (Record<string, unknown>) | null;
               "goal_driven"?: (Record<string, unknown>) | null;
               "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -131631,9 +138776,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -131700,12 +138848,17 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: (Record<string, unknown>) | null;
+              "rate_stages"?: Array<Record<string, unknown>>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -131733,6 +138886,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -133532,6 +140686,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -133576,6 +140731,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -133686,9 +140842,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -133885,12 +141044,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -133933,6 +141097,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -133972,6 +141137,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -134030,6 +141196,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -134074,6 +141241,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -134163,6 +141331,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -134207,6 +141376,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -134533,6 +141703,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -134577,6 +141748,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -134687,9 +141859,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -134886,12 +142061,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -134934,6 +142114,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -134973,6 +142154,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -135031,6 +142213,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -135075,6 +142258,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -135164,6 +142348,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -135208,6 +142393,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -135273,6 +142459,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -135317,6 +142504,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -135427,9 +142615,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -135626,12 +142817,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -135674,6 +142870,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -135713,6 +142910,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -135771,6 +142969,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -135815,6 +143014,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -135904,6 +143104,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -135948,6 +143149,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -136082,6 +143284,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -136126,6 +143329,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -136236,9 +143440,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -136435,12 +143642,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -136483,6 +143695,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -136522,6 +143735,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -136580,6 +143794,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -136624,6 +143839,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -136713,6 +143929,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -136757,6 +143974,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -137140,6 +144358,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -137184,6 +144403,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -137294,9 +144514,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -137493,12 +144716,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -137541,6 +144769,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -137580,6 +144809,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -137638,6 +144868,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -137682,6 +144913,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -137771,6 +145003,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -137815,6 +145048,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -137867,6 +145101,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -137911,6 +145146,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -138021,9 +145257,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -138220,12 +145459,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -138268,6 +145512,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -138307,6 +145552,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -138365,6 +145611,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -138409,6 +145656,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -138498,6 +145746,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -138542,6 +145791,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -138603,6 +145853,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -138715,9 +145966,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -138914,12 +146168,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -138959,6 +146218,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -138998,6 +146258,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -139034,6 +146295,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -139113,6 +146375,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -139182,6 +146445,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -139294,9 +146558,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -139493,12 +146760,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -139538,6 +146810,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -139577,6 +146850,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -139613,6 +146887,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -139692,6 +146967,7 @@ export interface operations {
                 "body_encoding"?: string;
                 "body_file"?: string;
                 "body_multipart"?: (Record<string, unknown>) | null;
+                "body_template_encoding"?: string;
                 "capture"?: (Record<string, unknown>) | null;
                 "control"?: (Record<string, unknown>) | null;
                 "extractors"?: Array<Record<string, unknown>>;
@@ -139776,6 +147052,7 @@ export interface operations {
             "content_type"?: string;
             "delimiter"?: string;
             "encoding"?: string;
+            "fields"?: Record<string, string>;
             "file_name"?: string;
             "first_row_header"?: boolean;
             "inline_data"?: string;
@@ -140213,6 +147490,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -140257,6 +147535,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -140367,9 +147646,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -140566,12 +147848,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -140614,6 +147901,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -140653,6 +147941,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -140711,6 +148000,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -140755,6 +148045,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -140844,6 +148135,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -140888,6 +148180,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -140938,6 +148231,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -140982,6 +148276,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -141092,9 +148387,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -141291,12 +148589,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -141339,6 +148642,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -141378,6 +148682,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -141436,6 +148741,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -141480,6 +148786,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -141569,6 +148876,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -141613,6 +148921,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -141799,6 +149108,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -141860,6 +149170,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -141896,6 +149207,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -141968,6 +149280,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -143400,6 +150713,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -143444,6 +150758,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -143554,9 +150869,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -143753,12 +151071,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -143801,6 +151124,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -143840,6 +151164,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -143898,6 +151223,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -143942,6 +151268,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -144031,6 +151358,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -144075,6 +151403,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -144132,6 +151461,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -144176,6 +151506,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -144285,9 +151616,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -144484,12 +151818,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -144532,6 +151871,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -144570,6 +151910,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -144628,6 +151969,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -144672,6 +152014,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -144761,6 +152104,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -144805,6 +152149,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -144855,6 +152200,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -144899,6 +152245,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -145009,9 +152356,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -145208,12 +152558,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -145256,6 +152611,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -145295,6 +152651,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -145353,6 +152710,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -145397,6 +152755,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -145486,6 +152845,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -145530,6 +152890,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -146372,6 +153733,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -146381,10 +153745,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -146423,10 +153792,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -146441,10 +153814,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -146650,6 +154026,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -146883,6 +154264,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -147403,6 +154800,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -147665,13 +155067,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -148164,9 +155585,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -148233,12 +155657,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -148266,6 +155695,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -148980,6 +156410,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -148989,10 +156422,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -149031,10 +156469,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -149049,10 +156491,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -149258,6 +156703,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -149491,6 +156941,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -150011,6 +157477,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -150273,13 +157744,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -150772,9 +158262,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -150841,12 +158334,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -150874,6 +158372,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -151588,6 +159087,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -151597,10 +159099,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -151639,10 +159146,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -151657,10 +159168,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -151866,6 +159380,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -152099,6 +159618,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -152619,6 +160154,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -152881,13 +160421,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -153380,9 +160939,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -153449,12 +161011,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -153482,6 +161049,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -154196,6 +161764,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -154205,10 +161776,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -154247,10 +161823,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -154265,10 +161845,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -154474,6 +162057,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -154707,6 +162295,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -155227,6 +162831,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -155489,13 +163098,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -155988,9 +163616,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -156057,12 +163688,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -156090,6 +163726,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -156804,6 +164441,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -156813,10 +164453,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -156855,10 +164500,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -156873,10 +164522,13 @@ export interface operations {
                 "active_stage"?: ({
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }) | null;
                 "assignment"?: ({
                   "failover_policy"?: string;
@@ -157082,6 +164734,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -157315,6 +164972,22 @@ export interface operations {
                 }) | null;
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
+                }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
                 }) | null;
                 "load_levels"?: Array<Record<string, unknown>>;
                 "messaging"?: Record<string, (Record<string, unknown>) | null>;
@@ -157835,6 +165508,11 @@ export interface operations {
                   "latency_breached"?: boolean;
                   "lcp_breached"?: boolean;
                   "live_table_note"?: string;
+                  "llm_goodput_breached"?: boolean;
+                  "llm_output_tokens_per_sec_breached"?: boolean;
+                  "llm_p95_tpot_breached"?: boolean;
+                  "llm_p95_ttft_breached"?: boolean;
+                  "llm_throttle_rate_breached"?: boolean;
                   "max_error_count"?: (number) | null;
                   "max_vusers"?: (number) | null;
                   "min_vusers"?: (number) | null;
@@ -158097,13 +165775,32 @@ export interface operations {
                 "latency"?: ({
                   "targets": Array<Record<string, unknown>>;
                 }) | null;
+                "llm"?: ({
+                  "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                  "goodput_pct"?: number;
+                  "incomplete"?: boolean;
+                  "input_tokens_per_sec"?: number;
+                  "interval_input_tokens_per_sec"?: number;
+                  "interval_output_tokens_per_sec"?: number;
+                  "interval_requests"?: number;
+                  "interval_summary"?: (Record<string, unknown>) | null;
+                  "output_tokens_per_sec"?: number;
+                  "rolling_window_seconds"?: number;
+                  "summary"?: (Record<string, unknown>) | null;
+                  "throttle_rate_pct"?: number;
+                  "total_tokens_per_sec"?: number;
+                  "truncation_rate_pct"?: number;
+                }) | null;
                 "load_levels"?: Array<{
                   "duration": string;
                   "group": string;
+                  "kind"?: string;
                   "name"?: string;
                   "stage_index": number;
                   "started_at": string;
+                  "target_tps"?: number;
                   "target_vusers": number;
+                  "warmup"?: boolean;
                 }>;
                 "messaging"?: Record<string, ({
                   "dimensions": Array<Record<string, unknown>>;
@@ -158596,9 +166293,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -158665,12 +166365,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -158698,6 +166403,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -159085,6 +166791,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -159129,6 +166836,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -159239,9 +166947,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -159438,12 +167149,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -159486,6 +167202,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -159525,6 +167242,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -159583,6 +167301,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -159627,6 +167346,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -159716,6 +167436,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -159760,6 +167481,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -159923,6 +167645,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -159967,6 +167690,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -160077,9 +167801,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -160276,12 +168003,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -160324,6 +168056,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -160363,6 +168096,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -160421,6 +168155,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -160465,6 +168200,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -160554,6 +168290,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -160598,6 +168335,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -160645,16 +168383,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -161947,6 +169675,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -161956,10 +169687,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -161998,10 +169734,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -162026,10 +169777,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -162134,9 +169888,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -162203,12 +169960,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -162232,6 +169994,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -162274,6 +170037,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -162522,6 +170286,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -162784,13 +170553,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -164269,6 +172187,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -164551,13 +172474,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -166564,9 +174701,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -166659,12 +174799,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -166717,6 +174875,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -169655,6 +177814,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -169699,6 +177859,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -169809,9 +177970,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -170008,12 +178172,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -170056,6 +178225,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -170095,6 +178265,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -170153,6 +178324,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -170197,6 +178369,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -170286,6 +178459,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -170330,6 +178504,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -171535,9 +179710,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -171604,12 +179782,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -171633,6 +179816,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -171733,6 +179917,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -171845,9 +180030,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -172044,12 +180232,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -172089,6 +180282,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -172128,6 +180322,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -172164,6 +180359,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -172243,6 +180439,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -172350,6 +180547,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -172394,6 +180592,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -172504,9 +180703,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -172703,12 +180905,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -172751,6 +180958,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -172790,6 +180998,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -172848,6 +181057,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -172892,6 +181102,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -172981,6 +181192,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -173025,6 +181237,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -173122,6 +181335,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -173183,6 +181397,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -173219,6 +181434,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -173291,6 +181507,7 @@ export interface operations {
               "body_encoding"?: string;
               "body_file"?: string;
               "body_multipart"?: (Record<string, unknown>) | null;
+              "body_template_encoding"?: string;
               "capture"?: (Record<string, unknown>) | null;
               "control"?: (Record<string, unknown>) | null;
               "extractors"?: Array<Record<string, unknown>>;
@@ -174409,6 +182626,9 @@ export interface operations {
                   "enabled": boolean;
                   "error_rate_pct": number;
                 }) | null;
+                "llm_slo_e2e_ms"?: (number) | null;
+                "llm_slo_tpot_ms"?: (number) | null;
+                "llm_slo_ttft_ms"?: (number) | null;
                 "max_avg_server_processing_ms"?: (number) | null;
                 "max_avg_transfer_ms"?: (number) | null;
                 "max_cls"?: (number) | null;
@@ -174418,10 +182638,15 @@ export interface operations {
                 "max_error_pct"?: (number) | null;
                 "max_inp_ms"?: (number) | null;
                 "max_lcp_ms"?: (number) | null;
+                "max_llm_p95_tpot_ms"?: (number) | null;
+                "max_llm_p95_ttft_ms"?: (number) | null;
+                "max_llm_throttle_rate_pct"?: (number) | null;
                 "max_partition_skew_pct"?: (number) | null;
                 "max_redelivery_rate_pct"?: (number) | null;
                 "max_throttled_requests"?: (number) | null;
                 "max_vusers"?: (number) | null;
+                "min_llm_goodput_pct"?: (number) | null;
+                "min_llm_output_tokens_per_sec"?: (number) | null;
                 "min_vusers"?: (number) | null;
                 "monitor_rules"?: Array<{
                   "backend"?: string;
@@ -174460,10 +182685,14 @@ export interface operations {
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
                   "threshold": number;
                   "transaction": string;
                 }>;
                 "workload_shape_config"?: ({
+                  "capacity_sweep"?: (Record<string, unknown>) | null;
                   "closed_vuser"?: (Record<string, unknown>) | null;
                   "goal_driven"?: (Record<string, unknown>) | null;
                   "stepped_ramp"?: (Record<string, unknown>) | null;
@@ -174588,9 +182817,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -174657,12 +182889,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -174690,6 +182927,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -175084,6 +183322,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -175128,6 +183367,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -175238,9 +183478,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -175437,12 +183680,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -175485,6 +183733,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -175524,6 +183773,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -175582,6 +183832,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -175626,6 +183877,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -175715,6 +183967,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -175759,6 +184012,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -176674,6 +184928,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -176718,6 +184973,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -176828,9 +185084,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -177027,12 +185286,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -177075,6 +185339,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -177114,6 +185379,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -177172,6 +185438,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -177216,6 +185483,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -177305,6 +185573,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -177349,6 +185618,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -178098,11 +186368,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -178403,6 +186668,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -178447,6 +186713,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -178557,9 +186824,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -178756,12 +187026,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -178804,6 +187079,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -178843,6 +187119,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -178901,6 +187178,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -178945,6 +187223,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -179034,6 +187313,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -179078,6 +187358,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -180108,6 +188389,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -180152,6 +188434,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -180262,9 +188545,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -180461,12 +188747,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -180509,6 +188800,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -180548,6 +188840,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -180606,6 +188899,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -180650,6 +188944,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -180739,6 +189034,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -180783,6 +189079,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -181622,11 +189919,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "404": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -181814,6 +190106,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -181858,6 +190151,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -181968,9 +190262,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -182167,12 +190464,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -182215,6 +190517,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -182254,6 +190557,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -182312,6 +190616,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -182356,6 +190661,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -182445,6 +190751,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -182489,6 +190796,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -183519,6 +191827,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -183563,6 +191872,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -183673,9 +191983,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -183872,12 +192185,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -183920,6 +192238,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -183959,6 +192278,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -184017,6 +192337,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -184061,6 +192382,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -184150,6 +192472,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -184194,6 +192517,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -185029,11 +193353,6 @@ export interface operations {
         };
       };
       "403": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -189346,6 +197665,55 @@ export interface operations {
       };
     };
   };
+  "handleSynthesizeLLMPromptDataset": {
+    parameters?: never;
+    requestBody: {
+      content: {
+        "application/json": {
+          "bytes_per_token"?: number;
+          "count"?: number;
+          "distribution"?: string;
+          "expected_output_tokens"?: number;
+          "max_input_tokens"?: number;
+          "mean_input_tokens"?: number;
+          "min_input_tokens"?: number;
+          "seed"?: number;
+          "shared_prefix_tokens"?: number;
+          "std_input_tokens"?: number;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleSystemReadiness": {
     parameters?: never;
     requestBody?: never;
@@ -191186,6 +199554,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -191195,10 +199566,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -191237,10 +199613,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -191265,10 +199656,13 @@ export interface operations {
               "active_stage"?: ({
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }) | null;
               "assignment"?: ({
                 "failover_policy"?: string;
@@ -191373,9 +199767,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -191442,12 +199839,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -191471,6 +199873,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -191513,6 +199916,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "target_duration"?: string;
@@ -191761,6 +200165,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -192023,13 +200432,162 @@ export interface operations {
               "latency"?: ({
                 "targets": Array<Record<string, unknown>>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, (Record<string, unknown>) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -193508,6 +202066,11 @@ export interface operations {
                 "latency_breached"?: boolean;
                 "lcp_breached"?: boolean;
                 "live_table_note"?: string;
+                "llm_goodput_breached"?: boolean;
+                "llm_output_tokens_per_sec_breached"?: boolean;
+                "llm_p95_tpot_breached"?: boolean;
+                "llm_p95_ttft_breached"?: boolean;
+                "llm_throttle_rate_breached"?: boolean;
                 "max_error_count"?: (number) | null;
                 "max_vusers"?: (number) | null;
                 "min_vusers"?: (number) | null;
@@ -193790,13 +202353,227 @@ export interface operations {
                   "ttfb_ms"?: number;
                 }>;
               }) | null;
+              "llm"?: ({
+                "by_action"?: Record<string, ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null>;
+                "goodput_pct"?: number;
+                "incomplete"?: boolean;
+                "input_tokens_per_sec"?: number;
+                "interval_input_tokens_per_sec"?: number;
+                "interval_output_tokens_per_sec"?: number;
+                "interval_requests"?: number;
+                "interval_summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "output_tokens_per_sec"?: number;
+                "rolling_window_seconds"?: number;
+                "summary"?: ({
+                  "avg_e2e_ms"?: number;
+                  "avg_first_visible_token_ms"?: number;
+                  "avg_itl_ms"?: number;
+                  "avg_server_decode_ms"?: number;
+                  "avg_server_prefill_ms"?: number;
+                  "avg_server_queue_ms"?: number;
+                  "avg_tpot_ms"?: number;
+                  "avg_ttft_ms"?: number;
+                  "by_input_band"?: Record<string, (Record<string, unknown>) | null>;
+                  "cached_tokens"?: number;
+                  "completion_tokens"?: number;
+                  "content_filter_requests"?: number;
+                  "dialects"?: Record<string, number>;
+                  "e2e_sketch"?: (Record<string, unknown>) | null;
+                  "empty_output_requests"?: number;
+                  "failed_requests"?: number;
+                  "finish_reasons"?: Record<string, number>;
+                  "first_visible_token_sketch"?: (Record<string, unknown>) | null;
+                  "http_200_error_requests"?: number;
+                  "incomplete"?: boolean;
+                  "itl_ms"?: (Record<string, unknown>) | null;
+                  "min_ratelimit_remaining_requests"?: (number) | null;
+                  "min_ratelimit_remaining_tokens"?: (number) | null;
+                  "models"?: Record<string, number>;
+                  "p50_e2e_ms"?: number;
+                  "p50_first_visible_token_ms"?: number;
+                  "p50_itl_ms"?: number;
+                  "p50_tpot_ms"?: number;
+                  "p50_ttft_ms"?: number;
+                  "p90_e2e_ms"?: number;
+                  "p90_itl_ms"?: number;
+                  "p90_tpot_ms"?: number;
+                  "p90_ttft_ms"?: number;
+                  "p95_e2e_ms"?: number;
+                  "p95_first_visible_token_ms"?: number;
+                  "p95_itl_ms"?: number;
+                  "p95_tpot_ms"?: number;
+                  "p95_ttft_ms"?: number;
+                  "p99_e2e_ms"?: number;
+                  "p99_first_visible_token_ms"?: number;
+                  "p99_itl_ms"?: number;
+                  "p99_tpot_ms"?: number;
+                  "p99_ttft_ms"?: number;
+                  "prompt_tokens"?: number;
+                  "reasoning_tokens"?: number;
+                  "requests": number;
+                  "schema_failed_requests"?: number;
+                  "server_decode_samples"?: number;
+                  "server_decode_sum_ms"?: number;
+                  "server_prefill_samples"?: number;
+                  "server_prefill_sum_ms"?: number;
+                  "server_queue_samples"?: number;
+                  "server_queue_sum_ms"?: number;
+                  "streamed_requests"?: number;
+                  "successful_requests"?: number;
+                  "throttled_attempts"?: number;
+                  "throttled_requests"?: number;
+                  "tokens_estimated_requests"?: number;
+                  "tool_calls_count"?: number;
+                  "total_retry_wait_ms"?: number;
+                  "total_tokens"?: number;
+                  "tpot_sketch"?: (Record<string, unknown>) | null;
+                  "truncated_requests"?: number;
+                  "ttft_sketch"?: (Record<string, unknown>) | null;
+                }) | null;
+                "throttle_rate_pct"?: number;
+                "total_tokens_per_sec"?: number;
+                "truncation_rate_pct"?: number;
+              }) | null;
               "load_levels"?: Array<{
                 "duration": string;
                 "group": string;
+                "kind"?: string;
                 "name"?: string;
                 "stage_index": number;
                 "started_at": string;
+                "target_tps"?: number;
                 "target_vusers": number;
+                "warmup"?: boolean;
               }>;
               "messaging"?: Record<string, ({
                 "dimensions": Array<Record<string, unknown>>;
@@ -195803,9 +204580,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -195898,12 +204678,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -195956,6 +204754,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -196529,6 +205328,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -196573,6 +205373,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -196683,9 +205484,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -196882,12 +205686,17 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -196930,6 +205739,7 @@ export interface operations {
                 "ws_security"?: (Record<string, unknown>) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -196969,6 +205779,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -197027,6 +205838,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -197071,6 +205883,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -197160,6 +205973,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -197204,6 +206018,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -197267,6 +206082,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -197311,6 +206127,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -197421,9 +206238,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -197620,12 +206440,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -197668,6 +206493,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -197707,6 +206533,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -197765,6 +206592,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -197809,6 +206637,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -197898,6 +206727,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -197942,6 +206772,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -200230,6 +209061,20 @@ export interface operations {
               "path_template"?: string;
               "require_pull_request"?: boolean;
             };
+            "llm_deployments"?: Array<{
+              "as_of_date"?: string;
+              "billing_mode"?: string;
+              "cached_input_cost_1m_usd"?: number;
+              "gpu_cost_per_hour_usd"?: number;
+              "gpu_count"?: number;
+              "id"?: string;
+              "input_cost_per_1m_usd"?: number;
+              "model"?: string;
+              "name"?: string;
+              "output_cost_per_1m_usd"?: number;
+              "ptu_cost_per_hour_usd"?: number;
+              "ptu_count"?: number;
+            }>;
             "max_concurrent_tests"?: number;
             "max_test_duration_minutes"?: number;
             "max_vusers"?: number;
@@ -200326,6 +209171,20 @@ export interface operations {
                 "path_template"?: string;
                 "require_pull_request"?: boolean;
               };
+              "llm_deployments"?: Array<{
+                "as_of_date"?: string;
+                "billing_mode": string;
+                "cached_input_cost_1m_usd"?: number;
+                "gpu_cost_per_hour_usd"?: number;
+                "gpu_count"?: number;
+                "id": string;
+                "input_cost_per_1m_usd"?: number;
+                "model"?: string;
+                "name": string;
+                "output_cost_per_1m_usd"?: number;
+                "ptu_cost_per_hour_usd"?: number;
+                "ptu_count"?: number;
+              }>;
               "max_concurrent_tests"?: number;
               "max_test_duration_minutes"?: number;
               "max_vusers"?: number;
@@ -200698,6 +209557,20 @@ export interface operations {
                 "path_template"?: string;
                 "require_pull_request"?: boolean;
               };
+              "llm_deployments"?: Array<{
+                "as_of_date"?: string;
+                "billing_mode": string;
+                "cached_input_cost_1m_usd"?: number;
+                "gpu_cost_per_hour_usd"?: number;
+                "gpu_count"?: number;
+                "id": string;
+                "input_cost_per_1m_usd"?: number;
+                "model"?: string;
+                "name": string;
+                "output_cost_per_1m_usd"?: number;
+                "ptu_cost_per_hour_usd"?: number;
+                "ptu_count"?: number;
+              }>;
               "max_concurrent_tests"?: number;
               "max_test_duration_minutes"?: number;
               "max_vusers"?: number;
@@ -201213,6 +210086,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -201222,10 +210098,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -201264,10 +210145,25 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: ({
+                "group"?: string;
+                "levels"?: Array<number>;
+                "measure_duration"?: string;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "stop_on_slo_breach"?: boolean;
+                "warmup_duration"?: string;
+              }) | null;
               "closed_vuser"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -201372,9 +210268,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -201441,12 +210340,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -201470,6 +210374,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -201510,6 +210415,7 @@ export interface operations {
               "target_tps"?: (number) | null;
               "target_vusers"?: number;
               "type"?: string;
+              "warmup"?: boolean;
             }>;
             "start_offset"?: string;
             "transaction_response_time_sla_ms"?: (number) | null;
@@ -201623,9 +210529,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -201718,12 +210627,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -201776,6 +210703,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -202072,6 +211000,9 @@ export interface operations {
                 "duration": string;
                 "goal_config"?: ({
                   "early_stop"?: (Record<string, unknown>) | null;
+                  "llm_slo_e2e_ms"?: (number) | null;
+                  "llm_slo_tpot_ms"?: (number) | null;
+                  "llm_slo_ttft_ms"?: (number) | null;
                   "max_avg_server_processing_ms"?: (number) | null;
                   "max_avg_transfer_ms"?: (number) | null;
                   "max_cls"?: (number) | null;
@@ -202081,10 +211012,15 @@ export interface operations {
                   "max_error_pct"?: (number) | null;
                   "max_inp_ms"?: (number) | null;
                   "max_lcp_ms"?: (number) | null;
+                  "max_llm_p95_tpot_ms"?: (number) | null;
+                  "max_llm_p95_ttft_ms"?: (number) | null;
+                  "max_llm_throttle_rate_pct"?: (number) | null;
                   "max_partition_skew_pct"?: (number) | null;
                   "max_redelivery_rate_pct"?: (number) | null;
                   "max_throttled_requests"?: (number) | null;
                   "max_vusers"?: (number) | null;
+                  "min_llm_goodput_pct"?: (number) | null;
+                  "min_llm_output_tokens_per_sec"?: (number) | null;
                   "min_vusers"?: (number) | null;
                   "monitor_rules"?: Array<Record<string, unknown>>;
                   "p95_latency_ms"?: (number) | null;
@@ -202208,6 +211144,9 @@ export interface operations {
                 "enabled": boolean;
                 "error_rate_pct": number;
               }) | null;
+              "llm_slo_e2e_ms"?: (number) | null;
+              "llm_slo_tpot_ms"?: (number) | null;
+              "llm_slo_ttft_ms"?: (number) | null;
               "max_avg_server_processing_ms"?: (number) | null;
               "max_avg_transfer_ms"?: (number) | null;
               "max_cls"?: (number) | null;
@@ -202217,10 +211156,15 @@ export interface operations {
               "max_error_pct"?: (number) | null;
               "max_inp_ms"?: (number) | null;
               "max_lcp_ms"?: (number) | null;
+              "max_llm_p95_tpot_ms"?: (number) | null;
+              "max_llm_p95_ttft_ms"?: (number) | null;
+              "max_llm_throttle_rate_pct"?: (number) | null;
               "max_partition_skew_pct"?: (number) | null;
               "max_redelivery_rate_pct"?: (number) | null;
               "max_throttled_requests"?: (number) | null;
               "max_vusers"?: (number) | null;
+              "min_llm_goodput_pct"?: (number) | null;
+              "min_llm_output_tokens_per_sec"?: (number) | null;
               "min_vusers"?: (number) | null;
               "monitor_rules"?: Array<{
                 "backend"?: string;
@@ -202259,10 +211203,25 @@ export interface operations {
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
                 "threshold": number;
                 "transaction": string;
               }>;
               "workload_shape_config"?: ({
+                "capacity_sweep"?: ({
+                  "group"?: string;
+                  "levels": Array<number>;
+                  "measure_duration": string;
+                  "min_goodput_pct"?: (number) | null;
+                  "mode"?: string;
+                  "slo_e2e_ms"?: (number) | null;
+                  "slo_tpot_ms"?: (number) | null;
+                  "slo_ttft_ms"?: (number) | null;
+                  "stop_on_slo_breach"?: boolean;
+                  "warmup_duration"?: string;
+                }) | null;
                 "closed_vuser"?: ({
                   "groups"?: Record<string, Record<string, unknown>>;
                   "scenario"?: (Record<string, unknown>) | null;
@@ -202405,9 +211364,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -202500,12 +211462,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -202558,6 +211538,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -202795,9 +211776,12 @@ export interface operations {
                 "error_handling"?: ({
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 }) | null;
                 "http"?: ({
@@ -202864,12 +211848,17 @@ export interface operations {
                 }) | null;
                 "log_level"?: string;
                 "pacing"?: ({
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 }) | null;
@@ -202893,6 +211882,7 @@ export interface operations {
                   "workload_model"?: string;
                 }) | null;
                 "think_time"?: ({
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -202934,6 +211924,7 @@ export interface operations {
                 "target_tps"?: (number) | null;
                 "target_vusers"?: number;
                 "type": string;
+                "warmup"?: boolean;
               }>;
               "start_offset"?: string;
               "transaction_response_time_sla_ms"?: (number) | null;
@@ -203529,6 +212520,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -203586,6 +212578,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -203736,9 +212729,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -203987,12 +212983,25 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -204051,6 +213060,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -204108,6 +213118,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -204175,6 +213186,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -204232,6 +213244,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -204330,6 +213343,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -204387,6 +213401,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -204511,6 +213526,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -204570,6 +213586,7 @@ export interface operations {
                   "content_type"?: string;
                   "delimiter"?: string;
                   "encoding"?: string;
+                  "fields"?: Record<string, string>;
                   "file_name"?: string;
                   "first_row_header": boolean;
                   "inline_data"?: string;
@@ -204606,6 +213623,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -204678,6 +213696,7 @@ export interface operations {
                   "body_encoding"?: string;
                   "body_file"?: string;
                   "body_multipart"?: (Record<string, unknown>) | null;
+                  "body_template_encoding"?: string;
                   "capture"?: (Record<string, unknown>) | null;
                   "control"?: (Record<string, unknown>) | null;
                   "extractors"?: Array<Record<string, unknown>>;
@@ -204754,6 +213773,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -204798,6 +213818,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -204908,9 +213929,12 @@ export interface operations {
                 "error_handling"?: {
                   "continue_on_error"?: (boolean) | null;
                   "fail_transaction_on_error_message"?: (boolean) | null;
+                  "honor_retry_after"?: boolean;
                   "max_retries"?: number;
+                  "retry_after_max_ms"?: number;
                   "retry_backoff"?: string;
                   "retry_delay_ms"?: number;
+                  "retry_on"?: Array<string>;
                   "snapshot_on_error"?: boolean;
                 };
                 "eventhubs"?: {
@@ -205107,12 +214131,17 @@ export interface operations {
                   "trace_carrier"?: string;
                 };
                 "pacing"?: {
+                  "arrival_process"?: string;
+                  "burstiness"?: number;
                   "delay_ms"?: number;
                   "interval_ms"?: number;
                   "max_delay_ms"?: number;
                   "max_interval_ms"?: number;
                   "min_delay_ms"?: number;
                   "min_interval_ms"?: number;
+                  "quota"?: (Record<string, unknown>) | null;
+                  "rate_stages"?: Array<Record<string, unknown>>;
+                  "seed"?: (number) | null;
                   "tps"?: number;
                   "type": string;
                 };
@@ -205155,6 +214184,7 @@ export interface operations {
                   "ws_security"?: (Record<string, unknown>) | null;
                 };
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -205194,6 +214224,7 @@ export interface operations {
                 "content_type"?: string;
                 "delimiter"?: string;
                 "encoding"?: string;
+                "fields"?: Record<string, string>;
                 "file_name"?: string;
                 "first_row_header": boolean;
                 "inline_data"?: string;
@@ -205252,6 +214283,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -205296,6 +214328,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -205385,6 +214418,7 @@ export interface operations {
                 "body_multipart"?: ({
                   "parts": Array<Record<string, unknown>>;
                 }) | null;
+                "body_template_encoding"?: string;
                 "capture"?: ({
                   "full_page"?: boolean;
                   "html"?: boolean;
@@ -205429,6 +214463,7 @@ export interface operations {
                 }) | null;
                 "target": string;
                 "think_time"?: {
+                  "distribution"?: string;
                   "force"?: boolean;
                   "ignore"?: boolean;
                   "limit_ms"?: number;
@@ -209487,9 +218522,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -209586,12 +218624,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -209639,6 +218695,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -209814,9 +218871,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -209909,12 +218969,30 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<{
+                  "duration_seconds": number;
+                  "end_tps"?: (number) | null;
+                  "target_tps": number;
+                  "warmup"?: boolean;
+                }>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type": string;
               }) | null;
@@ -209967,6 +219045,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -210256,6 +219335,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header": boolean;
               "inline_data"?: string;
@@ -210408,6 +219488,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -210465,6 +219546,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -210615,9 +219697,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -210866,12 +219951,25 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -210930,6 +220028,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -210987,6 +220086,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -211054,6 +220154,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -211111,6 +220212,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -211209,6 +220311,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -211266,6 +220369,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -211686,6 +220790,9 @@ export interface operations {
               "enabled"?: boolean;
               "error_rate_pct"?: number;
             }) | null;
+            "llm_slo_e2e_ms"?: (number) | null;
+            "llm_slo_tpot_ms"?: (number) | null;
+            "llm_slo_ttft_ms"?: (number) | null;
             "max_avg_server_processing_ms"?: (number) | null;
             "max_avg_transfer_ms"?: (number) | null;
             "max_cls"?: (number) | null;
@@ -211695,10 +220802,15 @@ export interface operations {
             "max_error_pct"?: (number) | null;
             "max_inp_ms"?: (number) | null;
             "max_lcp_ms"?: (number) | null;
+            "max_llm_p95_tpot_ms"?: (number) | null;
+            "max_llm_p95_ttft_ms"?: (number) | null;
+            "max_llm_throttle_rate_pct"?: (number) | null;
             "max_partition_skew_pct"?: (number) | null;
             "max_redelivery_rate_pct"?: (number) | null;
             "max_throttled_requests"?: (number) | null;
             "max_vusers"?: (number) | null;
+            "min_llm_goodput_pct"?: (number) | null;
+            "min_llm_output_tokens_per_sec"?: (number) | null;
             "min_vusers"?: (number) | null;
             "monitor_rules"?: Array<{
               "backend"?: string;
@@ -211737,10 +220849,25 @@ export interface operations {
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
+              "slo_e2e_ms"?: (number) | null;
+              "slo_tpot_ms"?: (number) | null;
+              "slo_ttft_ms"?: (number) | null;
               "threshold"?: number;
               "transaction"?: string;
             }>;
             "workload_shape_config"?: ({
+              "capacity_sweep"?: ({
+                "group"?: string;
+                "levels"?: Array<number>;
+                "measure_duration"?: string;
+                "min_goodput_pct"?: (number) | null;
+                "mode"?: string;
+                "slo_e2e_ms"?: (number) | null;
+                "slo_tpot_ms"?: (number) | null;
+                "slo_ttft_ms"?: (number) | null;
+                "stop_on_slo_breach"?: boolean;
+                "warmup_duration"?: string;
+              }) | null;
               "closed_vuser"?: ({
                 "groups"?: Record<string, Record<string, unknown>>;
                 "scenario"?: (Record<string, unknown>) | null;
@@ -211845,9 +220972,12 @@ export interface operations {
               "error_handling"?: ({
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               }) | null;
               "http"?: ({
@@ -211914,12 +221044,17 @@ export interface operations {
               }) | null;
               "log_level"?: string;
               "pacing"?: ({
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: (Record<string, unknown>) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               }) | null;
@@ -211943,6 +221078,7 @@ export interface operations {
                 "workload_model"?: string;
               }) | null;
               "think_time"?: ({
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -211983,6 +221119,7 @@ export interface operations {
               "target_tps"?: (number) | null;
               "target_vusers"?: number;
               "type"?: string;
+              "warmup"?: boolean;
             }>;
             "start_offset"?: string;
             "transaction_response_time_sla_ms"?: (number) | null;
@@ -212096,9 +221233,12 @@ export interface operations {
             "error_handling"?: ({
               "continue_on_error"?: (boolean) | null;
               "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
               "max_retries"?: number;
+              "retry_after_max_ms"?: number;
               "retry_backoff"?: string;
               "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
               "snapshot_on_error"?: boolean;
             }) | null;
             "http"?: ({
@@ -212191,12 +221331,30 @@ export interface operations {
             }) | null;
             "log_level"?: string;
             "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
               "delay_ms"?: number;
               "interval_ms"?: number;
               "max_delay_ms"?: number;
               "max_interval_ms"?: number;
               "min_delay_ms"?: number;
               "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
               "tps"?: number;
               "type"?: string;
             }) | null;
@@ -212249,6 +221407,7 @@ export interface operations {
               "workload_model"?: string;
             }) | null;
             "think_time"?: ({
+              "distribution"?: string;
               "force"?: boolean;
               "ignore"?: boolean;
               "limit_ms"?: number;
@@ -212737,6 +221896,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -212794,6 +221954,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -212944,9 +222105,12 @@ export interface operations {
               "error_handling"?: {
                 "continue_on_error"?: (boolean) | null;
                 "fail_transaction_on_error_message"?: (boolean) | null;
+                "honor_retry_after"?: boolean;
                 "max_retries"?: number;
+                "retry_after_max_ms"?: number;
                 "retry_backoff"?: string;
                 "retry_delay_ms"?: number;
+                "retry_on"?: Array<string>;
                 "snapshot_on_error"?: boolean;
               };
               "eventhubs"?: {
@@ -213195,12 +222359,25 @@ export interface operations {
                 "trace_carrier"?: string;
               };
               "pacing"?: {
+                "arrival_process"?: string;
+                "burstiness"?: number;
                 "delay_ms"?: number;
                 "interval_ms"?: number;
                 "max_delay_ms"?: number;
                 "max_interval_ms"?: number;
                 "min_delay_ms"?: number;
                 "min_interval_ms"?: number;
+                "quota"?: ({
+                  "adaptive_aimd"?: boolean;
+                  "burst_tokens"?: number;
+                  "default_tokens"?: number;
+                  "estimated_tokens_per_request"?: number;
+                  "headroom_ratio"?: number;
+                  "rpm"?: number;
+                  "tpm"?: number;
+                }) | null;
+                "rate_stages"?: Array<Record<string, unknown>>;
+                "seed"?: (number) | null;
                 "tps"?: number;
                 "type"?: string;
               };
@@ -213259,6 +222436,7 @@ export interface operations {
                 }) | null;
               };
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -213316,6 +222494,7 @@ export interface operations {
               "content_type"?: string;
               "delimiter"?: string;
               "encoding"?: string;
+              "fields"?: Record<string, string>;
               "file_name"?: string;
               "first_row_header"?: boolean;
               "inline_data"?: string;
@@ -213383,6 +222562,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -213440,6 +222620,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -213538,6 +222719,7 @@ export interface operations {
               "body_multipart"?: ({
                 "parts"?: Array<Record<string, unknown>>;
               }) | null;
+              "body_template_encoding"?: string;
               "capture"?: ({
                 "full_page"?: boolean;
                 "html"?: boolean;
@@ -213595,6 +222777,7 @@ export interface operations {
               }) | null;
               "target"?: string;
               "think_time"?: {
+                "distribution"?: string;
                 "force"?: boolean;
                 "ignore"?: boolean;
                 "limit_ms"?: number;
@@ -215265,6 +224448,21 @@ export interface paths {
   "/api/v1/library/results/{id}/archive": {
     "get": operations["handleLibraryResultArchive"];
   };
+  "/api/v1/llm/capacity-plan": {
+    "post": operations["handleEvaluateLLMCapacityPlan"];
+  };
+  "/api/v1/llm/compare": {
+    "post": operations["handleCompareLLMRuns"];
+  };
+  "/api/v1/llm/prompt-datasets/calibrate": {
+    "post": operations["handleCalibrateLLMPromptDataset"];
+  };
+  "/api/v1/llm/prompt-datasets/import": {
+    "post": operations["handleImportLLMPromptDataset"];
+  };
+  "/api/v1/llm/prompt-datasets/synthesize": {
+    "post": operations["handleSynthesizeLLMPromptDataset"];
+  };
   "/api/v1/monitoring/collectors": {
     "get": operations["handleListMonitoringCollectors"];
     "post": operations["handleCreateMonitoringCollector"];
@@ -215362,6 +224560,9 @@ export interface paths {
   };
   "/api/v1/monitoring/packs": {
     "get": operations["handleListInfrastructureMonitorPacks"];
+  };
+  "/api/v1/monitoring/prometheus-packs": {
+    "get": operations["handleGetPrometheusMetricPacks"];
   };
   "/api/v1/monitoring/prometheus/graphs": {
     "get": operations["handlePrometheusGraphs"];
@@ -216354,6 +225555,9 @@ export interface paths {
   "/api/v1/tests/{id}/archive/business-keys/lookup": {
     "post": operations["handleBusinessKeyLookup"];
   };
+  "/api/v1/tests/{id}/archive/capacity-sweep": {
+    "get": operations["handleGetRunArchiveCapacitySweep"];
+  };
   "/api/v1/tests/{id}/archive/comparison": {
     "get": operations["handleGetRunArchiveComparison"];
   };
@@ -216363,8 +225567,17 @@ export interface paths {
   "/api/v1/tests/{id}/archive/files/{name}": {
     "get": operations["handleDownloadRunArchiveArtifact"];
   };
+  "/api/v1/tests/{id}/archive/genai-spans/lookup": {
+    "post": operations["handleGenAISpanLookup"];
+  };
   "/api/v1/tests/{id}/archive/journeys": {
     "get": operations["handleGetRunArchiveJourneys"];
+  };
+  "/api/v1/tests/{id}/archive/llm-latency-decomposition": {
+    "get": operations["handleGetRunArchiveLLMLatencyDecomposition"];
+  };
+  "/api/v1/tests/{id}/archive/llm-samples": {
+    "get": operations["handleExportRunArchiveLLMSamples"];
   };
   "/api/v1/tests/{id}/archive/manifest": {
     "get": operations["handleGetRunArchiveManifest"];

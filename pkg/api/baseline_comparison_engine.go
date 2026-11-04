@@ -23,6 +23,7 @@ type baselineTransactionAccumulator struct {
 	javaHTTPActions int64
 	grpc            *protocolmetrics.GRPCSummary
 	websocket       *protocolmetrics.WebSocketSummary
+	llm             *engine.LLMSummary
 	count, errors   int64
 	total, min, max float64
 	digest          *engine.DurationSketch
@@ -223,6 +224,14 @@ func (s *Server) readBaselineComparisonRun(ctx context.Context, t *ManagedTest, 
 				}
 				protocolmetrics.MergeGRPCDiagnostic(&a.grpc, tx.ServerTelemetry.GRPC)
 				protocolmetrics.MergeWebSocketDiagnostic(&a.websocket, tx.ServerTelemetry.WebSocket)
+				if tx.ServerTelemetry.LLM != nil {
+					engine.ObserveLLMAction(&a.llm, &protocolmetrics.Result{
+						Success:         tx.Success && tx.StatusCode < 400 && tx.ErrorMessage == "",
+						StatusCode:      tx.StatusCode,
+						Duration:        time.Duration(tx.DurationMs * float64(time.Millisecond)),
+						ServerTelemetry: tx.ServerTelemetry,
+					})
+				}
 			}
 			if !tx.Success {
 				a.errors++
@@ -274,6 +283,9 @@ func baselineTransactionMeasurement(r *baselineComparisonRun, k baselineTransact
 	}
 	m.GRPC = a.grpc.Clone()
 	m.WebSocket = a.websocket.Clone()
+	if a.llm != nil && a.llm.Requests > 0 {
+		m.LLM = a.llm.Clone()
+	}
 	if a.digest.Count() > 0 {
 		m.Mean = a.total / float64(m.Successes)
 		m.Min = a.min
@@ -614,6 +626,12 @@ func buildBaselineFindings(out *BaselineComparisonSnapshot) {
 								add("WebSocket message throughput", float64(a.WebSocket.MessagesReceived)/currentSeconds, float64(v.WebSocket.MessagesReceived)/baselineSeconds, out.Policy.ThroughputPct, 0, a.WebSocket.MessagesReceived >= 100 && v.WebSocket.MessagesReceived >= 100 && a.WebSocket.Samples == a.Samples && v.WebSocket.Samples == v.Samples)
 							}
 						}
+					}
+					if a.LLM != nil && v.LLM != nil && a.LLM.StreamedRequests > 0 && v.LLM.StreamedRequests > 0 {
+						llmEnough := a.LLM.StreamedRequests >= 30 && v.LLM.StreamedRequests >= 30 &&
+							(out.Workload == nil || out.Workload.Baselines[b.ID].Status == rca.BaselineQualified)
+						add("LLM TTFT P95", a.LLM.P95TTFTMs, v.LLM.P95TTFTMs, out.Policy.LatencyPct, out.Policy.LatencyMs, llmEnough)
+						add("LLM TPOT P95", a.LLM.P95TPOTMs, v.LLM.P95TPOTMs, out.Policy.LatencyPct, out.Policy.LatencyMs, llmEnough)
 					}
 					if a.Successes > 0 && v.Successes > 0 {
 						add("successful P95", a.P95, v.P95, out.Policy.LatencyPct, out.Policy.LatencyMs, enough)

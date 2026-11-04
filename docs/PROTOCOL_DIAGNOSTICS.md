@@ -8,7 +8,9 @@ archives can omit this field; omission means unavailable.
 The non-messaging protocol telemetry matrix (`docs/qa/PROTOCOL_TELEMETRY_MATRIX.md`)
 records local Java HTTP, gRPC and WebSocket fixtures, propagation checks and
 remaining qualification limits. Explicit unsupported Java HTTP body encodings
-are rejected before target traffic, including nil and empty bodies.
+are rejected before target traffic, including nil and empty bodies. For LLM
+inference diagnostics (`server_telemetry.llm`, TTFT, TPOT, ITL histograms, and
+token throughput), see [LLM_PERFORMANCE_TESTING.md](LLM_PERFORMANCE_TESTING.md).
 
 ## Measurement semantics
 

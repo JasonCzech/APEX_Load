@@ -45,6 +45,9 @@ type ImportDraft struct {
 	// Stage 2 domain/protocol augmentation (Salesforce, MuleSoft, Agentforce)
 	// and before Stage 4 reference finalization, validation, and preflight.
 	BeforeFinalize func(primary *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error
+	// LLMTransform upgrades detected LLM HTTP calls to llm_request actions and
+	// scrubs captured credentials into {{secret.llm_api_key}}.
+	LLMTransform bool
 }
 
 type ImportAugmentation struct {
@@ -61,6 +64,9 @@ type ImportAugmentation struct {
 }
 
 func (d *ImportDraft) Augment(r *http.Request) ImportAugmentation {
+	if r != nil && LLMTransformRequested(r) {
+		d.LLMTransform = true
+	}
 	return d.AugmentWithAgentforceTransform(AgentforceTransformRequested(r))
 }
 
@@ -92,6 +98,7 @@ func (d *ImportDraft) AugmentWithAgentforceTransformChecked(agentforceTransform 
 	// pre-transform one.
 	nativeSalesforceReview := TrustedNativeSalesforceReview(Primary)
 	protocolSections = AttachAgentforceReview(Primary, d.Source, protocolSections, agentforceTransform)
+	protocolSections = AttachLLMAPIReview(Primary, d.Source, protocolSections, d.LLMTransform)
 	if d.BeforeFinalize != nil && Primary != nil {
 		if err := d.BeforeFinalize(Primary, &d.Warnings, &d.Unsupported); err != nil {
 			return ImportAugmentation{}, err

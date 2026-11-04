@@ -904,7 +904,7 @@ func newLiteralReplacer(replacements map[string]string) *strings.Replacer {
 	if len(values) == 0 {
 		return nil
 	}
-	pairs := make([]string, 0, len(values)*2)
+	var pairs []string
 	for _, raw := range values {
 		pairs = append(pairs, raw, replacements[raw])
 	}

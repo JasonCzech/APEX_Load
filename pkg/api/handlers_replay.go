@@ -60,53 +60,57 @@ type ReplayScriptRequest struct {
 	trustedPreservedImport bool
 }
 
-func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request) {
-	var req ReplayScriptRequest
+func requireNonEmptyReplayBody(w http.ResponseWriter, r *http.Request) bool {
 	if r.Body == nil || r.ContentLength == 0 {
 		writeError(w, http.StatusBadRequest, "request body is required")
-		return
+		return false
 	}
-	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
-		return
-	}
-	if req.Script == nil {
-		writeError(w, http.StatusBadRequest, "script is required")
-		return
-	}
-	if err := bindDraftScriptProject(req.Script, req.ProjectID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	s.handleReplayRequestContext(r.Context(), w, "", req.Script, req)
+	return true
 }
 
-func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
+func bindDraftReplayRequestScript(w http.ResponseWriter, script *dsl.Script, projectID string) bool {
+	if script == nil {
+		writeError(w, http.StatusBadRequest, "script is required")
+		return false
+	}
+	if err := bindDraftScriptProject(script, projectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return false
+	}
+	return true
+}
+
+func (s *Server) loadAuthorizedReplayStoredScript(w http.ResponseWriter, r *http.Request) (*StoredScript, bool) {
 	id := r.PathValue("id")
 	stored, ok := s.runner.GetScript(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script not found")
-		return
+		return nil, false
 	}
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
-		return
+		return nil, false
 	}
 	if err := s.runner.checkArchivedExecution("", []string{stored.ID}); err != nil {
 		writeError(w, http.StatusConflict, err.Error())
-		return
+		return nil, false
 	}
 	if err := storedScriptReplayGateError(stored.Script); err != nil {
 		s.writeStoredScriptReplayGate(w, stored.Script, err)
-		return
+		return nil, false
 	}
+	return stored, true
+}
 
-	var req ReplayScriptRequest
-	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
-		return
-	}
-
+func (s *Server) bindStoredReplayRequestScript(
+	w http.ResponseWriter,
+	stored *StoredScript,
+	candidate *dsl.Script,
+	requestProjectID string,
+) (*dsl.Script, bool, bool) {
 	script := stored.Script
-	if req.Script != nil {
-		script = req.Script
+	var trustedPreservedImport bool
+	if candidate != nil {
+		script = candidate
 		if script.ID == "" {
 			script.ID = stored.ID
 		}
@@ -114,20 +118,142 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 			script.Name = stored.Name
 		}
 		var resolveErr error
-		script, req.trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
+		script, trustedPreservedImport, resolveErr = resolveStoredReplayImportScript(script, stored.Script, s.runner.preservedImportEditOptions())
 		if resolveErr != nil {
 			writeError(w, http.StatusBadRequest, resolveErr.Error())
-			return
+			return nil, false, false
 		}
 	} else {
-		req.trustedPreservedImport = isCredentialPreservingImport(stored.Script)
+		trustedPreservedImport = isCredentialPreservingImport(stored.Script)
 	}
-	if err := bindStoredScriptProject(script, stored.Script.ProjectID, req.ProjectID); err != nil {
+	if err := bindStoredScriptProject(script, stored.Script.ProjectID, requestProjectID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false, false
+	}
+	return script, trustedPreservedImport, true
+}
+
+type replayExecutionPrepOptions struct {
+	ScriptID               string
+	Script                 *dsl.Script
+	ReplaySessionID        string
+	RunID                  string
+	ValidateRunID          bool
+	TrustedPreservedImport bool
+	LiveTableSeeds         []engine.LiveTableSandboxSeed
+	Variables              map[string]string
+	ComputeActionDigest    bool
+	ExtraWarnings          func(*dsl.Script) []string
+	RequireBrowserProtocol bool
+	CheckArchivedScript    bool
+}
+
+type preparedReplayExecution struct {
+	Script            *dsl.Script
+	Issues            []string
+	Warnings          []string
+	Preflight         *ReplayPreflight
+	SecretResolver    engine.SecretResolver
+	ActionGraphDigest string
+}
+
+func (s *Server) prepareReplayOrDebugExecution(
+	ctx context.Context,
+	w http.ResponseWriter,
+	opts replayExecutionPrepOptions,
+) (*preparedReplayExecution, bool) {
+	if !s.requireExecutionLeader(w) {
+		return nil, false
+	}
+	if err := validateExternalReplaySessionID(opts.ReplaySessionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	if opts.ValidateRunID {
+		if err := validateDebugRunIdentity(opts.RunID); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, false
+		}
+	}
+	script, issues, warnings, actionGraphDigest, prepared := s.prepareClassicReplayScriptWithDigest(
+		w,
+		opts.Script,
+		opts.ComputeActionDigest,
+		opts.TrustedPreservedImport,
+	)
+	if !prepared {
+		return nil, false
+	}
+	if opts.ExtraWarnings != nil {
+		warnings = append(warnings, opts.ExtraWarnings(script)...)
+	}
+	if !s.prepareReplayLiveTables(ctx, w, script, opts.LiveTableSeeds) {
+		return nil, false
+	}
+	secretResolver := s.runner.secretResolverForScript(script)
+	preflight := buildReplayPreflight(script, opts.Variables, issues, warnings, secretResolver)
+	if !preflight.Valid {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"script_id": opts.ScriptID,
+			"valid":     preflight.Valid,
+			"issues":    issues,
+			"warnings":  warnings,
+			"preflight": preflight,
+		})
+		return nil, false
+	}
+	if opts.RequireBrowserProtocol && script.Protocol != "browser" {
+		writeError(w, http.StatusBadRequest, "browser replay requires script.protocol to be browser")
+		return nil, false
+	}
+	if opts.CheckArchivedScript && opts.ScriptID != "" {
+		if err := s.runner.checkArchivedExecution("", []string{opts.ScriptID}); err != nil {
+			writeError(w, http.StatusConflict, err.Error())
+			return nil, false
+		}
+	}
+	return &preparedReplayExecution{
+		Script:            script,
+		Issues:            issues,
+		Warnings:          warnings,
+		Preflight:         preflight,
+		SecretResolver:    secretResolver,
+		ActionGraphDigest: actionGraphDigest,
+	}, true
+}
+
+func (s *Server) handleReplayDraftScript(w http.ResponseWriter, r *http.Request) {
+	var req ReplayScriptRequest
+	if !requireNonEmptyReplayBody(w, r) {
+		return
+	}
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
+	}
+	if !bindDraftReplayRequestScript(w, req.Script, req.ProjectID) {
+		return
+	}
+	s.handleReplayRequestContext(r.Context(), w, "", req.Script, req)
+}
+
+func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
+	stored, ok := s.loadAuthorizedReplayStoredScript(w, r)
+	if !ok {
 		return
 	}
 
-	s.handleReplayRequestContext(r.Context(), w, id, script, req)
+	var req ReplayScriptRequest
+	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
+		return
+	}
+
+	script, trustedPreservedImport, ok := s.bindStoredReplayRequestScript(w, stored, req.Script, req.ProjectID)
+	if !ok {
+		return
+	}
+	req.trustedPreservedImport = trustedPreservedImport
+
+	s.handleReplayRequestContext(r.Context(), w, stored.ID, script, req)
 }
 
 func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
@@ -148,38 +274,21 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		writeError(w, http.StatusRequestTimeout, "classic replay request was canceled")
 		return
 	}
-	if !s.requireExecutionLeader(w) {
+	preparedExec, ok := s.prepareReplayOrDebugExecution(requestCtx, w, replayExecutionPrepOptions{
+		ScriptID:               id,
+		Script:                 script,
+		ReplaySessionID:        req.ReplaySessionID,
+		TrustedPreservedImport: req.trustedPreservedImport,
+		LiveTableSeeds:         req.LiveTableSeeds,
+		Variables:              req.Variables,
+	})
+	if !ok {
 		return
 	}
-	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	var issues, warnings []string
-	var prepared bool
-	script, issues, warnings, prepared = s.prepareClassicReplayScript(
-		w,
-		script,
-		req.trustedPreservedImport,
-	)
-	if !prepared {
-		return
-	}
-	if !s.prepareReplayLiveTables(requestCtx, w, script, req.LiveTableSeeds) {
-		return
-	}
-	secretResolver := s.runner.secretResolverForScript(script)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
-	if !preflight.Valid {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"script_id": id,
-			"valid":     preflight.Valid,
-			"issues":    issues,
-			"warnings":  warnings,
-			"preflight": preflight,
-		})
-		return
-	}
+	script = preparedExec.Script
+	warnings := preparedExec.Warnings
+	secretResolver := preparedExec.SecretResolver
+	preflight := preparedExec.Preflight
 
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
@@ -288,13 +397,32 @@ func (s *Server) prepareClassicReplayScript(
 	trustedPreservedImport ...bool,
 ) (*dsl.Script, []string, []string, bool) {
 	trusted := len(trustedPreservedImport) > 0 && trustedPreservedImport[0]
+	preparedScript, issues, warnings, _, ok := s.prepareClassicReplayScriptWithDigest(w, script, false, trusted)
+	return preparedScript, issues, warnings, ok
+}
+
+func (s *Server) prepareClassicReplayScriptWithDigest(
+	w http.ResponseWriter,
+	script *dsl.Script,
+	computeDigest bool,
+	trusted bool,
+) (*dsl.Script, []string, []string, string, bool) {
 	preparedScript, prepared := prepareTransientExecutableScript(
 		w,
 		script,
 		trusted,
 	)
 	if !prepared {
-		return nil, nil, nil, false
+		return nil, nil, nil, "", false
+	}
+	var actionGraphDigest string
+	if computeDigest {
+		var digestErr error
+		actionGraphDigest, digestErr = scriptCorrelationActionGraphDigest(preparedScript)
+		if digestErr != nil {
+			writeError(w, http.StatusInternalServerError, "failed to identify replay action graph")
+			return nil, nil, nil, "", false
+		}
 	}
 	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, preparedScript)
 	if resolvedScript != nil {
@@ -306,14 +434,14 @@ func (s *Server) prepareClassicReplayScript(
 		trusted,
 	)
 	if !prepared {
-		return nil, nil, nil, false
+		return nil, nil, nil, "", false
 	}
 	issues := append(
 		s.transientStaticIssues(script, preparedScript, trusted),
 		refIssues...,
 	)
 	warnings := append(validationWarnings(preparedScript), refWarnings...)
-	return preparedScript, issues, warnings, true
+	return preparedScript, issues, warnings, actionGraphDigest, true
 }
 
 // replayExecutionFenceError preserves the more specific replay-session lease

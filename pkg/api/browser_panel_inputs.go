@@ -543,10 +543,11 @@ func (s *Server) validateSavedBrowserPanelInputs(w http.ResponseWriter, r *http.
 	if len(browserQueries) == 0 && len(generalQueries) == 0 {
 		return true
 	}
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return false
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	load := func(id string, q storage.AnalyticsQuery) (NativeArchiveSeries, error) {

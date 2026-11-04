@@ -32,18 +32,20 @@ func TestDistributedControlsRejectUntilFleetActivation(t *testing.T) {
 			runner := NewTestRunner(2, NewHub(), nil)
 			startedAt := now
 			test := &ManagedTest{
-				ID:                      "activation-" + tc.name,
-				Name:                    "activation gate",
-				Status:                  tc.status,
-				ProjectID:               storage.DefaultProjectID,
-				Duration:                time.Minute,
-				DurationStr:             time.Minute.String(),
-				Groups:                  []TestGroup{{Name: "buyers", VUsers: 1}},
-				TotalVUsers:             1,
-				StartedAt:               &startedAt,
-				executionBackend:        backend,
-				remoteActivated:         false,
-				remoteActivationPending: true,
+				ID:               "activation-" + tc.name,
+				Name:             "activation gate",
+				Status:           tc.status,
+				ProjectID:        storage.DefaultProjectID,
+				Duration:         time.Minute,
+				DurationStr:      time.Minute.String(),
+				Groups:           []TestGroup{{Name: "buyers", VUsers: 1}},
+				TotalVUsers:      1,
+				StartedAt:        &startedAt,
+				executionBackend: backend,
+				distributedTestRuntime: distributedTestRuntime{
+					remoteActivated:         false,
+					remoteActivationPending: true,
+				},
 			}
 			if tc.status == "PAUSED" {
 				pausedAt := now
@@ -68,21 +70,21 @@ func TestScaleAndGoalControlWaitForLoadWindowAndPause(t *testing.T) {
 	now := time.Now().UTC()
 	startedAt := now
 	test := &ManagedTest{
-		ID:              "load-readiness",
-		Name:            "load readiness",
-		Status:          "RUNNING",
-		ProjectID:       storage.DefaultProjectID,
-		ScenarioMode:    "goal_oriented",
-		StartDelay:      "1m",
-		Duration:        5 * time.Minute,
-		DurationStr:     (5 * time.Minute).String(),
-		Groups:          []TestGroup{{Name: "buyers", VUsers: 1}},
-		TotalVUsers:     1,
-		StartedAt:       &startedAt,
-		GoalConfig:      &GoalConfig{TargetAverageTPS: &targetTPS},
-		goalControl:     &goalControllerState{},
-		multiEngine:     &engine.MultiGroupEngine{},
-		remoteActivated: true,
+		ID:                     "load-readiness",
+		Name:                   "load readiness",
+		Status:                 "RUNNING",
+		ProjectID:              storage.DefaultProjectID,
+		ScenarioMode:           "goal_oriented",
+		StartDelay:             "1m",
+		Duration:               5 * time.Minute,
+		DurationStr:            (5 * time.Minute).String(),
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}},
+		TotalVUsers:            1,
+		StartedAt:              &startedAt,
+		GoalConfig:             &GoalConfig{TargetAverageTPS: &targetTPS},
+		goalControl:            &goalControllerState{},
+		multiEngine:            &engine.MultiGroupEngine{},
+		distributedTestRuntime: distributedTestRuntime{remoteActivated: true},
 	}
 	runner.tests[test.ID] = test
 
@@ -129,14 +131,14 @@ func TestThrottledRemoteMetricsDoNotAdvanceGoalErrorsWhilePaused(t *testing.T) {
 	now := time.Now().UTC()
 	startedAt := now.Add(-time.Minute)
 	test := &ManagedTest{
-		ID:               "paused-remote-errors",
-		Status:           "PAUSED",
-		ScenarioMode:     "goal_oriented",
-		GoalConfig:       &GoalConfig{TargetAverageTPS: &targetTPS},
-		goalControl:      &goalControllerState{},
-		StartedAt:        &startedAt,
-		executionBackend: backend,
-		remoteActivated:  true,
+		ID:                     "paused-remote-errors",
+		Status:                 "PAUSED",
+		ScenarioMode:           "goal_oriented",
+		GoalConfig:             &GoalConfig{TargetAverageTPS: &targetTPS},
+		goalControl:            &goalControllerState{},
+		StartedAt:              &startedAt,
+		executionBackend:       backend,
+		distributedTestRuntime: distributedTestRuntime{remoteActivated: true},
 	}
 	runner.tests[test.ID] = test
 

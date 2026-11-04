@@ -36,6 +36,7 @@
           "Accept": "application/json"
         },
         "body": "{\"model\":\"{{env.XAI_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"{{data.prompts.system_prompt}}\"},{\"role\":\"user\",\"content\":\"{{data.prompts.user_prompt}}\"}],\"max_tokens\":{{data.prompts.max_tokens}},\"temperature\":{{data.prompts.temperature}}}",
+        "body_template_encoding": "json",
         "extractors": [
           {
             "name": "grok_response_id",

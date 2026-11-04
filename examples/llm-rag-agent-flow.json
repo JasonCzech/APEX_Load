@@ -1,0 +1,65 @@
+{
+  "name": "LLM RAG & Agent Multi-Hop Flow (apexllm-target)",
+  "version": "1.0.0",
+  "protocol": "http",
+  "config": {
+    "base_url": "{{env.LLM_BASE_URL}}",
+    "think_time": {
+      "type": "fixed",
+      "mean_ms": 250
+    },
+    "pacing": {
+      "type": "none"
+    },
+    "run_logic": {
+      "iterations": 1,
+      "auto_transactions": "per_action"
+    }
+  },
+  "actions": [
+    {
+      "name": "Embed User Query",
+      "type": "POST",
+      "method": "POST",
+      "target": "/v1/embeddings",
+      "headers": {
+        "Authorization": "Bearer {{secret.LLM_API_KEY}}",
+        "Content-Type": "application/json"
+      },
+      "body_template_encoding": "json",
+      "body": "{\"model\":\"text-embedding-3-small\",\"input\":\"{{env.USER_QUERY}}\"}",
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    },
+    {
+      "name": "Synthesize Grounded Answer",
+      "type": "llm_request",
+      "method": "POST",
+      "target": "/v1/chat/completions",
+      "headers": {
+        "Authorization": "Bearer {{secret.LLM_API_KEY}}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream"
+      },
+      "body_template_encoding": "json",
+      "body": "{\"model\":\"{{env.LLM_MODEL}}\",\"messages\":[{\"role\":\"system\",\"content\":\"Answer using retrieved context.\"},{\"role\":\"user\",\"content\":\"{{env.USER_QUERY}}\"}],\"max_tokens\":192,\"stream\":true,\"stream_options\":{\"include_usage\":true}}",
+      "params": {
+        "llm_dialect": "openai_chat",
+        "stream_mode": "sse",
+        "model": "{{env.LLM_MODEL}}",
+        "save_text_as": "rag_answer",
+        "save_finish_reason_var": "rag_finish_reason"
+      },
+      "assertions": [
+        {
+          "type": "status_code",
+          "expected": 200
+        }
+      ]
+    }
+  ]
+}

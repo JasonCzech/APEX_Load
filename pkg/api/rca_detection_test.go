@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/monitorprovider"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -545,5 +546,39 @@ func TestRCABaselineComparesNetworkPhases(t *testing.T) {
 		if c.Evidence == "detection_series" && !strings.Contains(c.Detail, "1 dependency timing series") {
 			t.Fatalf("coverage %+v", c)
 		}
+	}
+}
+
+func TestRCADetectionLLMSeriesAndGPUReadinessProfile(t *testing.T) {
+	reader := newRCASeriesReader(-1, 100)
+	base := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	summaries := []IntervalSummaryRecord{
+		{
+			Timestamp:           base.Add(10 * time.Second),
+			SampleWindowSeconds: 10,
+			LLM: &LiveLLMMetrics{
+				IntervalRequests:           20,
+				IntervalOutputTokensPerSec: 420,
+				ThrottleRatePct:            5,
+				IntervalSummary: &engine.LLMSummary{
+					Requests:         20,
+					StreamedRequests: 20,
+					P95TTFTMs:        125,
+					P95TPOTMs:        18,
+				},
+			},
+		},
+	}
+	addSummaryLLMSeries(reader, rcaIdentityScope{project: "default", scenario: "sc-1"}, summaries)
+	for _, suffix := range []string{"ttft_p95_ms", "tpot_p95_ms", "output_tokens_per_s", "throttle_rate"} {
+		id := "transaction/llm/" + suffix
+		s := reader.series[id]
+		if s == nil || len(s.Points) != 1 || !s.Points[0].Valid {
+			t.Fatalf("missing or invalid LLM RCA series %s: %+v", id, s)
+		}
+	}
+	profile := gpuInferenceMonitoringProfile()
+	if profile.ID != "gpu-inference" || len(profile.RequiredMetrics) < 5 {
+		t.Fatalf("unexpected gpuInferenceMonitoringProfile: %+v", profile)
 	}
 }

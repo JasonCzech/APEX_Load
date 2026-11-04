@@ -13,6 +13,7 @@ type apiRouteMiddlewareProfile uint8
 const (
 	apiRouteMiddlewarePublic apiRouteMiddlewareProfile = iota
 	apiRouteMiddlewareAuthenticated
+	apiRouteMiddlewareSpecialized
 )
 
 type apiRouteHandlerBinder func(*Server) http.Handler
@@ -21,12 +22,13 @@ type apiRouteHandlerBinder func(*Server) http.Handler
 // registry. The legacy registrations in server.go can be moved one domain at a
 // time without changing their HTTP contracts.
 type apiRouteSpec struct {
-	Method            string
-	Path              string
-	HandlerIdentity   string
-	Handler           apiRouteHandlerBinder
-	Access            *accessRequirement
-	MiddlewareProfile apiRouteMiddlewareProfile
+	Method                    string
+	Path                      string
+	HandlerIdentity           string
+	Handler                   apiRouteHandlerBinder
+	Access                    *accessRequirement
+	MiddlewareProfile         apiRouteMiddlewareProfile
+	SpecializedAuthMiddleware string
 	// RequestTimeout starts before authentication/project resolution. Zero retains
 	// the existing route behavior; contextual readers must still honor cancellation.
 	RequestTimeout time.Duration
@@ -42,9 +44,10 @@ type apiRouteCatalog struct {
 }
 
 type apiRouteMiddlewareStack struct {
-	cors func(http.Handler) http.Handler
-	log  func(http.Handler) http.Handler
-	auth func(http.Handler) http.Handler
+	cors        func(http.Handler) http.Handler
+	log         func(http.Handler) http.Handler
+	auth        func(http.Handler) http.Handler
+	specialized map[string]func(http.Handler) http.Handler
 }
 
 func newPublicAPIRoute(method, path, handlerIdentity string, handler apiRouteHandlerBinder) apiRouteSpec {
@@ -66,6 +69,17 @@ func newAuthenticatedAPIRoute(method, path, handlerIdentity string, requirement 
 		Access:                             &requirement,
 		MiddlewareProfile:                  apiRouteMiddlewareAuthenticated,
 		DocumentDerivedServiceAccountScope: true,
+	}
+}
+
+func newSpecializedAPIRoute(method, path, handlerIdentity, specializedAuthMiddleware string, handler apiRouteHandlerBinder) apiRouteSpec {
+	return apiRouteSpec{
+		Method:                    method,
+		Path:                      path,
+		HandlerIdentity:           handlerIdentity,
+		Handler:                   handler,
+		MiddlewareProfile:         apiRouteMiddlewareSpecialized,
+		SpecializedAuthMiddleware: specializedAuthMiddleware,
 	}
 }
 
@@ -91,6 +105,12 @@ func (s *Server) registerAPIRouteCatalog(catalog apiRouteCatalog, stack apiRoute
 			handler = stack.cors(stack.log(withAPIRouteRequestTimeout(handler, route.RequestTimeout)))
 		case apiRouteMiddlewareAuthenticated:
 			handler = stack.cors(stack.log(withAPIRouteRequestTimeout(stack.auth(handler), route.RequestTimeout)))
+		case apiRouteMiddlewareSpecialized:
+			mw, ok := stack.specialized[route.SpecializedAuthMiddleware]
+			if !ok || mw == nil {
+				panic("api: missing specialized route middleware " + route.SpecializedAuthMiddleware)
+			}
+			handler = stack.cors(stack.log(withAPIRouteRequestTimeout(mw(handler), route.RequestTimeout)))
 		default:
 			panic("api: unsupported route middleware profile")
 		}

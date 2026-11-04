@@ -130,9 +130,9 @@ func TestBrowserHAREntryOmissionsCoverageAndAdmission(t *testing.T) {
 
 	server, _, _ := harDownloadFixture(t)
 	path := "/api/v1/tests/har-download-run/archive/browser/har-entry?request_id=" + syntheticUncoveredGeneration + "-request-7"
-	browserResourceReadPermit <- struct{}{}
+	server.semaphores.browserResourceReadPermit <- struct{}{}
 	reply := harDownloadRequest(t, server, path, "har-editor", harEditor)
-	<-browserResourceReadPermit
+	<-server.semaphores.browserResourceReadPermit
 	if reply.Code != http.StatusServiceUnavailable || reply.Header().Get("Retry-After") == "" {
 		t.Fatalf("a scan while another runs: %d %s", reply.Code, reply.Body.String())
 	}

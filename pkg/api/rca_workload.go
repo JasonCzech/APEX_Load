@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"math"
 	"strings"
 	"time"
 
@@ -113,7 +114,30 @@ func workloadGroup(g TestGroup, script *dsl.Script) rca.WorkloadGroup {
 		// The open model's arrival rate is its offered load; pacing carries only
 		// the remaining policy.
 		group.Unit = rca.LoadUnitTPS
-		appendLevel(pacing.TPS)
+		if len(pacing.RateStages) > 0 {
+			for i, st := range pacing.RateStages {
+				if st.Warmup {
+					continue
+				}
+				// A long ramp compiles to pieces along one line; the points
+				// where they join are not levels.
+				if i == 0 || !rateStageContinuesRamp(pacing.RateStages[i-1], st) {
+					appendLevel(st.TargetTPS)
+				}
+				if st.EndTPS != nil && (i+1 == len(pacing.RateStages) || !rateStageContinuesRamp(st, pacing.RateStages[i+1])) {
+					appendLevel(*st.EndTPS)
+				}
+			}
+			pacing.RateStages = nil
+		} else if rateStages {
+			for _, stage := range g.Stages {
+				if !stage.Warmup && stage.TargetTPS != nil {
+					appendLevel(*stage.TargetTPS)
+				}
+			}
+		} else {
+			appendLevel(pacing.TPS)
+		}
 		pacing.TPS = 0
 	case rateStages:
 		// Goal-oriented stages offer a target rate that the controller meets by
@@ -195,4 +219,18 @@ func achievedComparisonTPS(summaries []IntervalSummaryRecord, started time.Time)
 		return 0
 	}
 	return total / seconds
+}
+
+// rateStageContinuesRamp reports a ramp piece that carries on the previous
+// one's ramp at the same slope.
+func rateStageContinuesRamp(prev, next dsl.PacingRateStage) bool {
+	if prev.EndTPS == nil || next.EndTPS == nil || prev.Warmup != next.Warmup || prev.DurationSeconds <= 0 || next.DurationSeconds <= 0 {
+		return false
+	}
+	if math.Abs(next.TargetTPS-*prev.EndTPS) > 1e-9*max(1, math.Abs(next.TargetTPS)) {
+		return false
+	}
+	prevSlope := (*prev.EndTPS - prev.TargetTPS) / float64(prev.DurationSeconds)
+	nextSlope := (*next.EndTPS - next.TargetTPS) / float64(next.DurationSeconds)
+	return math.Abs(prevSlope-nextSlope) <= 1e-9*max(1, math.Abs(prevSlope))
 }

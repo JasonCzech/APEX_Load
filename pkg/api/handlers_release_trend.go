@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/llmperf/econ"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -217,9 +218,45 @@ func (s *Server) attachIdentityNames(report *RunArchiveReport) {
 	}
 	prov := report.Manifest.Provenance
 	names := RunArchiveIdentityNames{}
-	if id := strings.TrimSpace(prov.ProjectID); id != "" {
-		if p, err := s.store.GetProject(id); err == nil && p != nil {
-			names.Project = p.Name
+	projectID := strings.TrimSpace(prov.ProjectID)
+	if projectID == "" && s.runner != nil && strings.TrimSpace(report.Manifest.TestID) != "" {
+		if test, ok := s.archiveDomainService().GetTestSummary(strings.TrimSpace(report.Manifest.TestID)); ok && test != nil {
+			projectID = strings.TrimSpace(test.ProjectID)
+		}
+	}
+	if projectID != "" {
+		if p, err := s.store.GetProject(normalizeProjectID(projectID)); err == nil && p != nil {
+			if strings.TrimSpace(prov.ProjectID) != "" {
+				names.Project = p.Name
+			}
+			if report.LLM != nil && report.LLM.TotalRequests > 0 && report.LLM.Economics == nil && len(p.Settings.LLMDeployments) > 0 {
+				selected := p.Settings.LLMDeployments[0]
+				for modelName := range report.LLM.ByModel {
+					matched := false
+					for _, dep := range p.Settings.LLMDeployments {
+						if strings.EqualFold(strings.TrimSpace(dep.Model), modelName) ||
+							strings.EqualFold(strings.TrimSpace(dep.ID), modelName) ||
+							strings.EqualFold(strings.TrimSpace(dep.Name), modelName) {
+							selected = dep
+							matched = true
+							break
+						}
+					}
+					if matched {
+						break
+					}
+				}
+				summary := econ.Evaluate(selected, econ.RunObservation{
+					DurationSeconds: transactionSLARunSeconds(report.Manifest),
+					Requests:        report.LLM.TotalRequests,
+					GoodputRequests: report.LLM.GoodRequests,
+					PromptTokens:    report.LLM.PromptTokens,
+					CachedTokens:    report.LLM.CachedTokens,
+					OutputTokens:    report.LLM.CompletionTokens,
+					SystemOutputTPS: report.LLM.OutputTokensPerSec,
+				})
+				report.LLM.Economics = &summary
+			}
 		}
 	}
 	if id := strings.TrimSpace(prov.ApplicationID); id != "" {

@@ -55,6 +55,33 @@ func isStoredTestTransitionCancelled(err error) bool {
 		errors.Is(err, errNotExecutionLeader)
 }
 
+func (tr *TestRunner) requireClaimedTestExecutionFence(executionFence, testID string) (string, error) {
+	fence := strings.TrimSpace(executionFence)
+	if fence == "" {
+		return "", fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, testID)
+	}
+	return fence, nil
+}
+
+func (tr *TestRunner) requireCurrentExecutionFenceToken() (string, error) {
+	token := strings.TrimSpace(tr.currentExecutionFenceToken())
+	if token == "" {
+		return "", errNotExecutionLeader
+	}
+	return token, nil
+}
+
+func mapTestStatusTransitionResult(result storage.TestStatusTransitionResult, missingErr, fencedErr error) error {
+	switch result {
+	case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
+		return nil
+	case storage.TestStatusTransitionMissing:
+		return missingErr
+	default:
+		return fencedErr
+	}
+}
+
 // retryDurableTransition absorbs short storage interruptions without allowing a
 // terminal state to become visible only in memory. The bound is intentionally
 // small: execution goroutines may wait briefly for durability, but cannot hang
@@ -1299,9 +1326,9 @@ func (tr *TestRunner) persistManagedTestRuntimeRepair(test *ManagedTest) error {
 		err      error
 	)
 	if tr.durableExecutionFence {
-		token := tr.currentExecutionFenceToken()
-		if token == "" {
-			return errNotExecutionLeader
+		token, tokenErr := tr.requireCurrentExecutionFenceToken()
+		if tokenErr != nil {
+			return tokenErr
 		}
 		repaired, err = store.RepairTestRuntimeSnapshotIfLeaseHeld(
 			test.ID, test.ProjectID, test.MaterializationKey, test.CreatedAt,
@@ -1355,12 +1382,19 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		if startOffset > test.Duration {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, startOffset, test.Duration)
 		}
-		stageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0
+		// As at compile: user stages drive a vuser_driven group that sets
+		// target_vusers, and in any mode an open-model group runs the rate
+		// stages its stages compiled to.
+		userStageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0 && maxStageTargetVUsers(group.Stages) > 0
+		stageDriven := userStageDriven || group.rateStageDriven() && rateStagesDerivedFromStages(group.script, group.Stages)
 		initialVUsers := group.VUsers
 		engineRampUp := rampUp
 		engineRampDown := rampDown
 		allowZeroVUsers := false
-		if stageDriven {
+		// As at compile, only stages that set target_vusers scale the users.
+		// Open-model rate stages keep the group's users (an open workload
+		// needs a positive count) while their schedule still runs.
+		if userStageDriven {
 			initialVUsers = stagedInitialVUsers(group.Stages, group.VUsers)
 			engineRampUp = 0
 			engineRampDown = 0
@@ -1713,6 +1747,12 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		Browser:             browserSummaryRecordToLiveMetrics(record.Browser),
 		BrowserByDevice:     browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 		Latency:             networkLatencyRecordToLiveMetrics(record.Latency),
+	}
+	if len(record.LLM) > 0 {
+		var llm LiveLLMMetrics
+		if err := json.Unmarshal(record.LLM, &llm); err == nil {
+			live.LLM = &llm
+		}
 	}
 	if record.DroppedResultsAvailable || record.DroppedResults > 0 || record.WebsocketClients > 0 || record.WebsocketDroppedMessages > 0 || record.WebsocketDroppedEvents > 0 || !record.CollectedAt.IsZero() || !record.GeneratorPublishedAt.IsZero() || !record.ControllerReceivedAt.IsZero() || !record.PublishedAt.IsZero() || record.SampleAgeMs > 0 || record.GeneratorProcessingLagMs > 0 || record.TransportLagMs > 0 || record.ControllerFanoutLagMs > 0 {
 		live.Telemetry = &TelemetryHealth{
@@ -2186,9 +2226,9 @@ func (tr *TestRunner) persistManagedTestVUserScale(test *ManagedTest) error {
 		if !ok {
 			return tr.saveManagedTestRecord(test)
 		}
-		fence := strings.TrimSpace(test.executionFence)
-		if fence == "" {
-			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, test.ID)
+		fence, err := tr.requireClaimedTestExecutionFence(test.executionFence, test.ID)
+		if err != nil {
+			return err
 		}
 		var updated bool
 		if err := tr.trackDurableWrite(func() error {
@@ -2266,9 +2306,7 @@ func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, 
 		}
 	}
 	if monitoring {
-		store, ok := tr.testStore.(interface {
-			SaveTestWithRunMonitors(*storage.TestRecord, string, string, bool) (bool, error)
-		})
+		store, ok := tr.testStore.(atomicRunMonitorTestPersistence)
 		if !ok {
 			return fmt.Errorf("run monitoring requires atomic execution persistence")
 		}
@@ -2294,16 +2332,15 @@ func (tr *TestRunner) saveManagedTestRecordSnapshot(record *storage.TestRecord, 
 		return nil
 	}
 	if tr.durableExecutionFence {
-		if strings.TrimSpace(executionFence) == "" {
-			return fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, record.ID)
+		fence, err := tr.requireClaimedTestExecutionFence(executionFence, record.ID)
+		if err != nil {
+			return err
 		}
-		store, ok := tr.testStore.(interface {
-			SaveTestIfLeaseHeld(*storage.TestRecord, string, string) (bool, error)
-		})
+		store, ok := tr.testStore.(leaseFencedTestSavePersistence)
 		if !ok {
 			return fmt.Errorf("test persistence does not support execution-lease fencing")
 		}
-		saved, err := store.SaveTestIfLeaseHeld(record, executionLeaseName, executionFence)
+		saved, err := store.SaveTestIfLeaseHeld(record, executionLeaseName, fence)
 		if err != nil {
 			return err
 		}
@@ -2322,9 +2359,7 @@ func (tr *TestRunner) persistManagedTestShakeoutTransition(transition storage.Te
 	if tr == nil || tr.testStore == nil {
 		return nil
 	}
-	store, ok := tr.testStore.(interface {
-		TransitionTestFromShakeout(storage.TestShakeoutTransition) (storage.TestStatusTransitionResult, error)
-	})
+	store, ok := tr.testStore.(shakeoutTransitionTestPersistence)
 	if !ok {
 		return errors.New("test persistence does not support conditional shakeout transitions")
 	}
@@ -2332,14 +2367,7 @@ func (tr *TestRunner) persistManagedTestShakeoutTransition(transition storage.Te
 	if err != nil {
 		return err
 	}
-	switch result {
-	case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
-		return nil
-	case storage.TestStatusTransitionMissing:
-		return errStoredTestMissing
-	default:
-		return errStoredTestTransitionFenced
-	}
+	return mapTestStatusTransitionResult(result, errStoredTestMissing, errStoredTestTransitionFenced)
 }
 
 // buildManagedTestRecordForSave preserves immutable compiled group snapshots
@@ -2424,10 +2452,11 @@ func (tr *TestRunner) persistInitialArchiveProvenance(test *ManagedTest, provena
 	var saved bool
 	var err error
 	if durableFence {
-		if executionFence == "" {
-			return RunArchiveProvenance{}, fmt.Errorf("%w: test %s has no claimed execution epoch", errNotExecutionLeader, id)
+		fence, fenceErr := tr.requireClaimedTestExecutionFence(executionFence, id)
+		if fenceErr != nil {
+			return RunArchiveProvenance{}, fenceErr
 		}
-		saved, err = store.SaveTestInitialProvenanceIfLeaseHeld(id, projectID, stored, executionLeaseName, executionFence)
+		saved, err = store.SaveTestInitialProvenanceIfLeaseHeld(id, projectID, stored, executionLeaseName, fence)
 	} else {
 		saved, err = store.SaveTestInitialProvenance(id, projectID, stored)
 	}
@@ -2551,9 +2580,9 @@ func (tr *TestRunner) deleteStoredTest(id string) (storage.LeaseFencedDeleteResu
 		return storage.LeaseFencedDeleteDeleted, nil
 	}
 	if tr.durableExecutionFence {
-		leaseOwnerID := tr.currentExecutionFenceToken()
-		if leaseOwnerID == "" {
-			return storage.LeaseFencedDeleteFenced, errNotExecutionLeader
+		leaseOwnerID, err := tr.requireCurrentExecutionFenceToken()
+		if err != nil {
+			return storage.LeaseFencedDeleteFenced, err
 		}
 		store, ok := tr.testStore.(leaseFencedTestDeletePersistence)
 		if !ok {
@@ -2645,9 +2674,7 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence stri
 		if strings.TrimSpace(executionFence) == "" {
 			return errNotExecutionLeader
 		}
-		store, ok := tr.testStore.(interface {
-			UpdateTestStatusIfActiveAndLeaseHeld(string, string, *time.Time, string, string, string) (storage.TestStatusTransitionResult, error)
-		})
+		store, ok := tr.testStore.(leaseFencedActiveTestStatusPersistence)
 		if !ok {
 			return fmt.Errorf("test persistence does not support execution-lease-fenced lifecycle transitions")
 		}
@@ -2659,18 +2686,13 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence stri
 		}); err != nil {
 			return err
 		}
-		switch result {
-		case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
-			return nil
-		case storage.TestStatusTransitionMissing:
-			return fmt.Errorf("%w: %s", errStoredTestMissing, testID)
-		default:
-			return fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, testID)
-		}
+		return mapTestStatusTransitionResult(
+			result,
+			fmt.Errorf("%w: %s", errStoredTestMissing, testID),
+			fmt.Errorf("%w: test %s belongs to an expired execution epoch", errNotExecutionLeader, testID),
+		)
 	}
-	if store, ok := tr.testStore.(interface {
-		UpdateTestStatusIfActive(string, string, *time.Time, string) (storage.TestStatusTransitionResult, error)
-	}); ok {
+	if store, ok := tr.testStore.(activeTestStatusPersistence); ok {
 		var result storage.TestStatusTransitionResult
 		if err := retryDurableTransition(func() error {
 			var err error
@@ -2679,14 +2701,11 @@ func (tr *TestRunner) persistStoredTestStatus(testID string, executionFence stri
 		}); err != nil {
 			return err
 		}
-		switch result {
-		case storage.TestStatusTransitionUpdated, storage.TestStatusTransitionUnchanged:
-			return nil
-		case storage.TestStatusTransitionMissing:
-			return fmt.Errorf("%w: %s", errStoredTestMissing, testID)
-		default:
-			return fmt.Errorf("%w: test %s has a newer state", errStoredTestTransitionFenced, testID)
-		}
+		return mapTestStatusTransitionResult(
+			result,
+			fmt.Errorf("%w: %s", errStoredTestMissing, testID),
+			fmt.Errorf("%w: test %s has a newer state", errStoredTestTransitionFenced, testID),
+		)
 	}
 	return retryDurableTransition(func() error {
 		return tr.testStore.UpdateTestStatus(testID, status, endTime, errStr)

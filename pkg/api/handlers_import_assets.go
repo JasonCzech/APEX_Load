@@ -105,9 +105,13 @@ func (s *Server) handleUploadImportAsset(w http.ResponseWriter, r *http.Request)
 		}
 		storageRef = (&url.URL{Scheme: "file", Path: path}).String()
 	}
+	sourceType := "file"
+	if strings.EqualFold(filepath.Ext(fileName), ".jsonl") {
+		sourceType = "jsonl"
+	}
 	source := dsl.DataSource{
 		Name:        name,
-		Type:        "file",
+		Type:        sourceType,
 		FileName:    fileName,
 		ContentType: contentType,
 		StorageRef:  storageRef,

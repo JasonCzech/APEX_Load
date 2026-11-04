@@ -509,11 +509,13 @@ func TestDistributedEvacuationRefusesUnsafeLifecycleWindows(t *testing.T) {
 				StartedAt:  &tc.started,
 				Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 				Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 1, script: &dsl.Script{Protocol: "http"}}},
-				remoteGroupShards: map[string][]GeneratorShardSummary{
-					"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 1}},
+				distributedTestRuntime: distributedTestRuntime{
+					remoteGroupShards: map[string][]GeneratorShardSummary{
+						"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 1}},
+					},
+					remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+					remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 				},
-				remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
-				remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 			}
 			runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 			impacts, err := backend.EvacuateGenerator(runner, test, "gen-a", true, "review")
@@ -617,22 +619,24 @@ func TestDistributedEvacuateGeneratorRefusesMergeOntoExistingGroupShard(t *testi
 		StartedAt:  &started,
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "buyers", Protocol: "http", VUsers: 9}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {
-				{Group: "buyers", Target: "gen-a:9090", VUsers: 3},
-				{Group: "buyers", Target: "gen-b:9090", VUsers: 3},
-				{Group: "buyers", Target: "gen-c:9090", VUsers: 3},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {
+					{Group: "buyers", Target: "gen-a:9090", VUsers: 3},
+					{Group: "buyers", Target: "gen-b:9090", VUsers: 3},
+					{Group: "buyers", Target: "gen-c:9090", VUsers: 3},
+				},
 			},
-		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-a:9090": clients["gen-a:9090"],
-			"gen-b:9090": clients["gen-b:9090"],
-			"gen-c:9090": clients["gen-c:9090"],
-		},
-		remoteTargetStates: map[string]string{
-			"gen-a:9090": "RUNNING",
-			"gen-b:9090": "RUNNING",
-			"gen-c:9090": "RUNNING",
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-a:9090": clients["gen-a:9090"],
+				"gen-b:9090": clients["gen-b:9090"],
+				"gen-c:9090": clients["gen-c:9090"],
+			},
+			remoteTargetStates: map[string]string{
+				"gen-a:9090": "RUNNING",
+				"gen-b:9090": "RUNNING",
+				"gen-c:9090": "RUNNING",
+			},
 		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
@@ -666,15 +670,17 @@ func TestDistributedEvacuateGeneratorRefusesReplacementAlreadyHostingDifferentGr
 			{Name: "buyers", Protocol: "http", VUsers: 3},
 			{Name: "admins", Protocol: "http", VUsers: 2},
 		},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
-			"admins": {{Group: "admins", Target: "gen-b", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+				"admins": {{Group: "admins", Target: "gen-b", VUsers: 2}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-a": newEvacuationFakeGeneratorClient("gen-a"),
+				"gen-b": healthyParticipant,
+			},
+			remoteTargetStates: map[string]string{"gen-a": "RUNNING", "gen-b": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-a": newEvacuationFakeGeneratorClient("gen-a"),
-			"gen-b": healthyParticipant,
-		},
-		remoteTargetStates: map[string]string{"gen-a": "RUNNING", "gen-b": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
@@ -710,11 +716,13 @@ func TestDistributedEvacuationResponseLossAndRollbackFailureStopsWholeRun(t *tes
 		StartedAt:  &started,
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+			remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
-		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
@@ -771,12 +779,14 @@ func TestFailClosedUncertainEvacuationPreservesStoppedParticipantArchive(t *test
 		},
 	}
 	test := &ManagedTest{
-		ID:                    testID,
-		Name:                  "Fail-closed evidence",
-		Status:                "RUNNING",
-		CreatedAt:             time.Now().Add(-time.Minute),
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
-		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+		ID:        testID,
+		Name:      "Fail-closed evidence",
+		Status:    "RUNNING",
+		CreatedAt: time.Now().Add(-time.Minute),
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+			remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
+		},
 	}
 	runner := NewTestRunner(1, nil, nil)
 	runner.mu.Lock()
@@ -841,11 +851,13 @@ func TestPublicGeneratorLossReasonCannotBypassSourceStopFence(t *testing.T) {
 		StartedAt:  &started,
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: false},
 		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+			remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
-		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 	configureEvacuationExecutionLease(runner, test, 84, "hostile-reason/84", 2*time.Second)
@@ -930,11 +942,13 @@ func TestFailClosedGeneratorLossEvacuationWaitsForUnfencedSource(t *testing.T) {
 		StartedAt:  &started,
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 3, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 3}},
+			},
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
+			remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": source},
-		remoteTargetStates:    map[string]string{"gen-a": "RUNNING"},
 	}
 	runner := NewTestRunner(1, NewHub(), nil)
 	runner.tests[test.ID] = test
@@ -1064,13 +1078,15 @@ func TestGeneratorLossEvacuationSurvivesDeadSourceAndKeepsTheRunOnItsReplacement
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+			remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
-		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 	}
 	hub := NewHub()
 	go hub.Run()
@@ -1186,11 +1202,11 @@ func TestLostGeneratorEpochFenceAbortsWhenTheRunStopsWaitingForTheLeaseTTL(t *te
 	executionCtx, cancelExecution := context.WithCancel(context.Background())
 	defer cancelExecution()
 	test := &ManagedTest{
-		ID:                      "run-lost-generator-fence",
-		Status:                  "RUNNING",
-		executionCtx:            executionCtx,
-		executionGeneration:     17,
-		remoteControlGeneration: 4,
+		ID:                     "run-lost-generator-fence",
+		Status:                 "RUNNING",
+		executionCtx:           executionCtx,
+		executionGeneration:    17,
+		distributedTestRuntime: distributedTestRuntime{remoteControlGeneration: 4},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, leadership: leadership}
 
@@ -1231,14 +1247,16 @@ func TestDistributedEvacuateGeneratorRefusesBrowserGroups(t *testing.T) {
 		Status:     "RUNNING",
 		Assignment: &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:     []TestGroup{{Name: "browser", Protocol: "browser", VUsers: 2}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"browser": {
-				{Group: "browser", Target: "gen-a:9090", VUsers: 1},
-				{Group: "browser", Target: "gen-b:9090", VUsers: 1},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"browser": {
+					{Group: "browser", Target: "gen-a:9090", VUsers: 1},
+					{Group: "browser", Target: "gen-b:9090", VUsers: 1},
+				},
 			},
+			remoteClientsByTarget: map[string]generatorClient{"gen-a:9090": clientA, "gen-b:9090": clientB},
+			remoteTargetStates:    map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
 		},
-		remoteClientsByTarget: map[string]generatorClient{"gen-a:9090": clientA, "gen-b:9090": clientB},
-		remoteTargetStates:    map[string]string{"gen-a:9090": "RUNNING", "gen-b:9090": "RUNNING"},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
@@ -1257,11 +1275,13 @@ func TestDistributedEvacuateGeneratorRefusesBrowserGroups(t *testing.T) {
 func TestFailDistributedTestOnStreamErrorIgnoresEvacuatedTarget(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a:9090", "gen-b:9090"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                 "run-evacuated-stream",
-		Status:             "RUNNING",
-		remoteTargetStates: map[string]string{"gen-a:9090": "operator_evacuate", "gen-b:9090": "RUNNING"},
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+		ID:     "run-evacuated-stream",
+		Status: "RUNNING",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteTargetStates: map[string]string{"gen-a:9090": "operator_evacuate", "gen-b:9090": "RUNNING"},
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-b:9090": newEvacuationFakeGeneratorClient("gen-b:9090"),
+			},
 		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
@@ -1282,10 +1302,10 @@ func TestFailDistributedTestOnStreamErrorIgnoresEvacuatedTarget(t *testing.T) {
 func TestFailDistributedTestOnStreamErrorDoesNotReenterEvacuationForTransitionalTarget(t *testing.T) {
 	backend := newDistributedExecutionBackend([]string{"gen-a", "gen-b"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                 "run-evacuating-stream",
-		Status:             "RUNNING",
-		Assignment:         &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
-		remoteTargetStates: map[string]string{"gen-a": remoteTargetStateEvacuating, "gen-b": "RUNNING"},
+		ID:                     "run-evacuating-stream",
+		Status:                 "RUNNING",
+		Assignment:             &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
+		distributedTestRuntime: distributedTestRuntime{remoteTargetStates: map[string]string{"gen-a": remoteTargetStateEvacuating, "gen-b": "RUNNING"}},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}}
 
@@ -1460,13 +1480,15 @@ func runEvacuationProvisionScenarioWithOptions(t *testing.T, continuity bool, ch
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 4, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 4}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 4}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": failedClient},
+			remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": failedClient},
-		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 	}
 	hub := NewHub()
 	go hub.Run()
@@ -1849,16 +1871,18 @@ func TestDistributedEvacuationIgnoresSoleSourceTerminalUntilReplacementCommit(t 
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+			remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": sourceStream},
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+			remoteLifecycleCtx:           runCtx,
+			remoteActivated:              true,
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
-		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"gen-a": sourceStream},
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
-		remoteLifecycleCtx:           runCtx,
-		remoteActivated:              true,
-		executionBackend:             backend,
+		executionBackend: backend,
 	}
 	configureEvacuationExecutionLease(runner, test, executionGeneration, executionLeaseOwner, 10*time.Second)
 	runner.mu.Lock()
@@ -1984,16 +2008,18 @@ func TestGeneratorLossEvacuationKeepsStagedReplacementEpochWithoutTheFleetKeeper
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+			remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
+			remoteLifecycleCtx:           runCtx,
+			remoteActivated:              true,
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
-		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
-		remoteLifecycleCtx:           runCtx,
-		remoteActivated:              true,
-		executionBackend:             backend,
+		executionBackend: backend,
 	}
 	hub := NewHub()
 	go hub.Run()
@@ -2112,13 +2138,15 @@ func TestDistributedEvacuationCommitFailureAfterSourceFenceFailsClosed(t *testin
 		cancel:       cancel,
 		Assignment:   &GeneratorAssignmentSettings{TolerateGeneratorLoss: true},
 		Groups:       []TestGroup{{Name: "buyers", ScriptID: script.ID, ScriptName: script.Name, Protocol: "http", VUsers: 2, script: script}},
-		remoteGroupShards: map[string][]GeneratorShardSummary{
-			"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteGroupShards: map[string][]GeneratorShardSummary{
+				"buyers": {{Group: "buyers", Target: "gen-a", VUsers: 2}},
+			},
+			remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
+			remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
+			remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
+			remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 		},
-		remoteClientsByTarget:        map[string]generatorClient{"gen-a": source},
-		remoteMetricsStreamsByTarget: make(map[string]*generatorrpc.MetricsStream),
-		remoteMetricsBatchesByTarget: make(map[string]generatorrpc.MetricsBatch),
-		remoteTargetStates:           map[string]string{"gen-a": "RUNNING"},
 	}
 	hub := NewHub()
 	go hub.Run()

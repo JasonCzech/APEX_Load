@@ -33,10 +33,11 @@ func analysisPrecisionAcknowledgement(in *storage.AnalysisImport, mapping analys
 }
 
 func (s *Server) handleAnalysisPrecisionReview(w http.ResponseWriter, r *http.Request) {
-	if !admitAnalysisPipeline(w) {
+	releasePipeline, ok := s.admitAnalysisPipeline(w)
+	if !ok {
 		return
 	}
-	defer func() { <-analysisPipelineJobs }()
+	defer releasePipeline()
 	_, in := s.loadAnalysisImport(w, r)
 	if in == nil {
 		return

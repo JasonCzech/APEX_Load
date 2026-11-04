@@ -176,6 +176,7 @@ func (s *Server) handleGetPrometheusOperation(w http.ResponseWriter, r *http.Req
 		s.resumePrometheusInspections(context.Background())
 	}
 }
+
 func (s *Server) resumePrometheusInspections(parent context.Context) {
 	if s.runner == nil || !s.runner.isExecutionLeader() {
 		return
@@ -184,19 +185,21 @@ func (s *Server) resumePrometheusInspections(parent context.Context) {
 	if !ok || store.EnsurePrometheusInspectionSchema() != nil {
 		return
 	}
-	ops, err := store.ListPrometheusInspections("", "", 4)
-	if err != nil {
-		return
-	}
-	for _, op := range ops {
-		owner := uuid.NewString()
-		now := time.Now().UTC()
-		claimed, err := store.ClaimPrometheusInspection(op.ID, owner, now, now.Add(time.Minute))
-		if err != nil || !claimed {
-			continue
-		}
-		s.launchBackground(func() { s.executeDirectPrometheusInspection(parent, store, op, owner) })
-	}
+	resumeDirectProviderOperations(
+		s,
+		parent,
+		s.prometheusInspectionSlotChan(),
+		func(limit int) ([]*storage.PrometheusInspection, error) {
+			return store.ListPrometheusInspections("", "", limit)
+		},
+		nil,
+		func(op *storage.PrometheusInspection, owner string, now, leaseUntil time.Time) (bool, error) {
+			return store.ClaimPrometheusInspection(op.ID, owner, now, leaseUntil)
+		},
+		func(ctx context.Context, op *storage.PrometheusInspection, owner string) {
+			s.executeDirectPrometheusInspection(ctx, store, op, owner)
+		},
+	)
 }
 func (s *Server) executeDirectPrometheusInspection(parent context.Context, store storage.PrometheusInspectionStore, op *storage.PrometheusInspection, owner string) {
 	ctx, cancel := s.runner.executionOperationContext(parent)
@@ -392,7 +395,7 @@ func (s *Server) pollPrometheusInspections(r *http.Request, c *storage.Monitorin
 			continue
 		}
 		owner := uuid.NewString()
-		lease := minTime(now.Add(time.Minute), op.ExpiresAt)
+		lease := collectorInspectionLeaseUntil(now, op.ExpiresAt)
 		claimed, err := store.ClaimPrometheusInspection(op.ID, owner, now, lease)
 		if err != nil || !claimed {
 			continue

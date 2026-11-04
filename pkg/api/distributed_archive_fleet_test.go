@@ -375,19 +375,19 @@ func TestStageRemoteArchiveMergesThreeGeneratorFleet(t *testing.T) {
 	// Configured order is a, b, c; the archive bundles finish c, b, a.
 	backend := newDistributedExecutionBackend([]string{"generator-a", "generator-b", "generator-c"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    testID,
-		RefKey:                "RUN-20260806-0007",
-		Name:                  testName,
-		Status:                "RUNNING",
-		ProjectID:             "project-fleet",
-		CreatedAt:             start.Add(-time.Minute),
-		StartedAt:             &start,
-		Duration:              2 * time.Second,
-		DurationStr:           "2s",
-		TotalVUsers:           10,
-		GeneratorShards:       shards,
-		Groups:                []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 10}},
-		remoteClientsByTarget: clientsByTarget,
+		ID:                     testID,
+		RefKey:                 "RUN-20260806-0007",
+		Name:                   testName,
+		Status:                 "RUNNING",
+		ProjectID:              "project-fleet",
+		CreatedAt:              start.Add(-time.Minute),
+		StartedAt:              &start,
+		Duration:               2 * time.Second,
+		DurationStr:            "2s",
+		TotalVUsers:            10,
+		GeneratorShards:        shards,
+		Groups:                 []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 10}},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: clientsByTarget},
 	}
 	runner := NewTestRunner(1, nil, store)
 	runner.mu.Lock()
@@ -533,12 +533,12 @@ func TestStageRemoteArchiveFleetHandlesOneMissingGenerator(t *testing.T) {
 
 	backend := newDistributedExecutionBackend([]string{"generator-a", "generator-b", "generator-c"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    testID,
-		Name:                  testName,
-		Status:                "RUNNING",
-		CreatedAt:             start.Add(-time.Minute),
-		StartedAt:             &start,
-		remoteClientsByTarget: clientsByTarget,
+		ID:                     testID,
+		Name:                   testName,
+		Status:                 "RUNNING",
+		CreatedAt:              start.Add(-time.Minute),
+		StartedAt:              &start,
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: clientsByTarget},
 	}
 	runner := NewTestRunner(1, nil, nil)
 	runner.mu.Lock()

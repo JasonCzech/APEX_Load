@@ -56,7 +56,7 @@ func (j *leasedJobRunner[T]) wakeUp() {
 func (j *leasedJobRunner[T]) start(s *Server) context.CancelFunc {
 	j.init()
 	ctx, cancel := context.WithCancel(context.Background())
-	s.launchBackground(func() {
+	if !s.launchBackground(func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
 		for {
@@ -68,7 +68,10 @@ func (j *leasedJobRunner[T]) start(s *Server) context.CancelFunc {
 			}
 			j.fill(s, ctx)
 		}
-	})
+	}) {
+		cancel()
+		return nil
+	}
 	return cancel
 }
 

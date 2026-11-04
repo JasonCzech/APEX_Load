@@ -53,6 +53,8 @@ type preparedHTTPChild struct {
 	debugError                             error
 	err                                    error
 	started, completed                     time.Time
+	quotaWait                              time.Duration // queued for quota, over its attempts
+	quotaWaits                             []timeInterval
 }
 
 // Fixed source-ordinal allowances include every attempt, including values from
@@ -158,6 +160,56 @@ func (vu *VUser) admitConcurrentRetryClassifications(children []preparedHTTPChil
 		}
 	}
 	return observed, nil
+}
+
+// idleQuotaWindows are the windows within a concurrent group when a child
+// queued for quota and none had a request in flight.
+func idleQuotaWindowsOfChildren(children []preparedHTTPChild) []timeInterval {
+	spans := make([]quotaWaitSpan, 0, len(children))
+	for _, child := range children {
+		spans = append(spans, quotaWaitSpan{start: child.started, end: child.completed, waits: child.quotaWaits})
+	}
+	return idleQuotaWindows(spans)
+}
+
+// idleQuotaWait is the total of idleQuotaWindowsOfChildren.
+func idleQuotaWait(children []preparedHTTPChild) time.Duration {
+	var idle time.Duration
+	for _, window := range idleQuotaWindowsOfChildren(children) {
+		idle += window.end.Sub(window.start)
+	}
+	return idle
+}
+
+type timeInterval struct{ start, end time.Time }
+
+// mergeTimeIntervals returns the union of intervals as sorted, disjoint
+// intervals.
+func mergeTimeIntervals(intervals []timeInterval) []timeInterval {
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i].start.Before(intervals[j].start) })
+	var merged []timeInterval
+	for _, interval := range intervals {
+		if n := len(merged); n > 0 && !interval.start.After(merged[n-1].end) {
+			merged[n-1].end = maxTime(merged[n-1].end, interval.end)
+			continue
+		}
+		merged = append(merged, interval)
+	}
+	return merged
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
 }
 
 type concurrentHTTPGroup struct {
@@ -315,12 +367,13 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 				if ctx.Err() != nil {
 					child.err = ctx.Err()
 				} else {
-					executor := &VUser{Proto: vu.Proto, Script: vu.Script, RedactionConfig: child.redaction, structuredBodyResolvedAction: nil, unredactedDebug: vu.unredactedDebug, debugRetryGroupCount: len(children)}
+					executor := &VUser{Proto: vu.Proto, Script: vu.Script, QuotaPacer: vu.QuotaPacer, trackQuotaWaitIntervals: vu.QuotaPacer != nil, quotaPauseBypass: vu.quotaPauseBypass, RedactionConfig: child.redaction, structuredBodyResolvedAction: nil, unredactedDebug: vu.unredactedDebug, debugRetryGroupCount: len(children)}
 					if child.structuredBody {
 						executor.structuredBodyResolvedAction = child.action
 					}
 					history := &httpRetryClassificationHistory{base: child.redaction, allowance: maxConcurrentRetryClassificationBytes / len(children)}
 					child.result, child.err = executor.executeRetryInternal(ctx, child.action, errCfg, nil, history)
+					child.quotaWait, child.quotaWaits = executor.llmQuotaWait, executor.llmQuotaWaitIntervals
 					if vu.unredactedDebug {
 						debugResult := child.result
 						if debugResult != nil && len(debugResult.ProtocolEvidence) == 0 {
@@ -442,7 +495,20 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 		vu.recordTransaction(name, duration, success, source)
 	}
 	group, err := vu.runConcurrentHTTP(ctx, action, errCfg)
-	aggregate := &protocol.Result{ActionName: action.Name, StartTime: group.started, Duration: group.completed.Sub(group.started), Success: err == nil, BusinessTransaction: dsl.HTTPSequenceRecordsTransaction(action), Group: vu.Group, Extractions: cloneStringMap(group.extractions)}
+	// The group's elapsed time leaves out the time its children only queued
+	// for quota, with no request in flight; the enclosing transactions and
+	// iteration leave it out too (takeLLMQuotaWait).
+	idleWindows := idleQuotaWindowsOfChildren(group.children)
+	var idleQuota time.Duration
+	for _, window := range idleWindows {
+		idleQuota += window.end.Sub(window.start)
+	}
+	vu.llmQuotaWait += idleQuota
+	// Inside a parallel branch the block learns when the group sat idle.
+	if vu.trackQuotaWaitIntervals {
+		vu.noteQuotaWaitIntervals(idleWindows...)
+	}
+	aggregate := &protocol.Result{ActionName: action.Name, StartTime: group.started, Duration: max(0, group.completed.Sub(group.started)-idleQuota), Success: err == nil, BusinessTransaction: dsl.HTTPSequenceRecordsTransaction(action), Group: vu.Group, Extractions: cloneStringMap(group.extractions)}
 	if err != nil {
 		aggregate.ErrorMessage = err.Error()
 	}
@@ -466,7 +532,7 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 				aggregate.ErrorMessage = message
 			}
 			if index < len(transactions) {
-				recordRequestTransaction(transactions[index], child.started, child.completed.Sub(child.started), false, &protocol.Result{ActionName: transactions[index], StartTime: child.started, ErrorMessage: message})
+				recordRequestTransaction(transactions[index], child.started, max(0, child.completed.Sub(child.started)-child.quotaWait), false, &protocol.Result{ActionName: transactions[index], StartTime: child.started, ErrorMessage: message})
 			}
 			continue
 		}
@@ -480,7 +546,7 @@ func (vu *VUser) executeConcurrentHTTPSequence(ctx context.Context, action dsl.A
 			}
 		}
 		if index < len(transactions) {
-			recordRequestTransaction(transactions[index], child.started, child.completed.Sub(child.started), child.result.Success, child.result)
+			recordRequestTransaction(transactions[index], child.started, max(0, child.completed.Sub(child.started)-child.quotaWait), child.result.Success, child.result)
 		}
 	}
 	if len(group.children) == 0 {

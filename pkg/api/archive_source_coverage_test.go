@@ -43,9 +43,11 @@ func TestArchiveSourceCoveragePersistsMissingAndRetiredSources(t *testing.T) {
 	const id = "partial-source-coverage"
 	client := coverageArchiveClient(t, id)
 	run := &ManagedTest{ID: id, Name: "Coverage", Status: "FAILED", CreatedAt: time.Now().UTC(),
-		remoteClientsByTarget:        map[string]generatorClient{"healthy": client, "missing": &startupLifecycleFakeClient{}},
-		GeneratorShards:              []GeneratorShardSummary{{Group: "checkout", Target: "orphaned-assignment", VUsers: 1}},
-		remoteArchiveClientsByTarget: map[string]generatorClient{"retired": client, "no-transport": nil}}
+		GeneratorShards: []GeneratorShardSummary{{Group: "checkout", Target: "orphaned-assignment", VUsers: 1}},
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:        map[string]generatorClient{"healthy": client, "missing": &startupLifecycleFakeClient{}},
+			remoteArchiveClientsByTarget: map[string]generatorClient{"retired": client, "no-transport": nil},
+		}}
 	runner := NewTestRunner(1, nil, nil)
 	runner.tests[id] = run
 	backend := newDistributedExecutionBackend([]string{"healthy", "missing"}, time.Second, nil)
@@ -127,7 +129,7 @@ func TestArchiveSourceCoverageCollectionModes(t *testing.T) {
 				clients["a"] = nil
 			}
 			runner := NewTestRunner(1, nil, nil)
-			run := &ManagedTest{ID: id, remoteClientsByTarget: clients}
+			run := &ManagedTest{ID: id, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: clients}}
 			runner.tests[id] = run
 			backend := newDistributedExecutionBackend([]string{"b", "a"}, time.Second, nil)
 			bundles, coverage, err := backend.fetchRemoteArchiveBundlesWithCoverage(context.Background(), runner, run, tc.required)
@@ -207,8 +209,10 @@ func TestArchiveSourceCoverageCompletenessAndAcceptance(t *testing.T) {
 func TestArchiveSourceCoverageKeepsRecordedSingleTarget(t *testing.T) {
 	const id = "retired-with-single-source"
 	runner := NewTestRunner(1, nil, nil)
-	run := &ManagedTest{ID: id, remoteTarget: "missing-original",
-		remoteArchiveClientsByTarget: map[string]generatorClient{"retired": coverageArchiveClient(t, id)}}
+	run := &ManagedTest{ID: id, distributedTestRuntime: distributedTestRuntime{
+		remoteTarget:                 "missing-original",
+		remoteArchiveClientsByTarget: map[string]generatorClient{"retired": coverageArchiveClient(t, id)},
+	}}
 	backend := newDistributedExecutionBackend(nil, time.Second, nil)
 	backend.dial = func(context.Context, string) (generatorClient, error) { return nil, fmt.Errorf("unavailable") }
 	bundles, coverage, err := backend.fetchRemoteArchiveBundlesWithCoverage(context.Background(), runner, run, false)

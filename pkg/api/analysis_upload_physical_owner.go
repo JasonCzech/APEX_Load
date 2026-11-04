@@ -45,17 +45,37 @@ type analysisUploadPhysicalOwner struct {
 	done                    chan struct{}
 	receipt                 *storage.AnalysisUploadWriter
 	resultErr               error
+	slots                   chan struct{}
+}
+
+func (s *Server) acquireAnalysisUploadOwner() (*analysisUploadPhysicalOwner, bool) {
+	return acquireAnalysisUploadOwnerWithSlots(s.analysisUploadWriterSlotChan())
 }
 
 func acquireAnalysisUploadOwner() (*analysisUploadPhysicalOwner, bool) {
+	return acquireAnalysisUploadOwnerWithSlots(analysisUploadWriterSlots)
+}
+
+func acquireAnalysisUploadOwnerWithSlots(slots chan struct{}) (*analysisUploadPhysicalOwner, bool) {
+	if slots == nil {
+		slots = analysisUploadWriterSlots
+	}
 	select {
-	case analysisUploadWriterSlots <- struct{}{}:
+	case slots <- struct{}{}:
 	default:
 		return nil, false
 	}
-	o := &analysisUploadPhysicalOwner{id: uuid.NewString(), descriptors: map[io.Closer]*analysisUploadDescriptor{}, resolved: true, done: make(chan struct{})}
+	o := &analysisUploadPhysicalOwner{id: uuid.NewString(), descriptors: map[io.Closer]*analysisUploadDescriptor{}, resolved: true, done: make(chan struct{}), slots: slots}
 	analysisUploadOwners.Store(o.id, o)
 	return o, true
+}
+
+func (o *analysisUploadPhysicalOwner) releaseSlot() {
+	if o != nil && o.slots != nil {
+		<-o.slots
+		return
+	}
+	<-analysisUploadWriterSlots
 }
 func (o *analysisUploadPhysicalOwner) beginOperation() (func(), error) {
 	o.mu.Lock()
@@ -179,7 +199,7 @@ func (o *analysisUploadPhysicalOwner) progress() {
 		next()
 	}
 	if release {
-		o.releaseOnce.Do(func() { analysisUploadOwners.Delete(o.id); <-analysisUploadWriterSlots })
+		o.releaseOnce.Do(func() { analysisUploadOwners.Delete(o.id); o.releaseSlot() })
 	}
 }
 func (o *analysisUploadPhysicalOwner) endRequest() {

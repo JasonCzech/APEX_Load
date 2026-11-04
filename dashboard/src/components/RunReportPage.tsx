@@ -1,6 +1,7 @@
 import RunReportProjectPanels from './RunReportProjectPanels'
 import MessagingProgressDiagnostics from './MessagingProgressDiagnostics'
 import MessagingDiagnostics from './MessagingDiagnostics'
+import RunReportLLMPanel from './RunReportLLMPanel'
 import RunAnnotations from './RunAnnotations'
 import BaselineComparisonWorkspace from './baselineComparison/BaselineComparisonWorkspace'
 import { loadAllTestSummaries } from './testCatalogPagination'
@@ -797,6 +798,7 @@ export default function RunReportPage({
       </section>
       <MessagingProgressDiagnostics snapshot={report?.messaging_progress} />
       <MessagingDiagnostics series={Object.entries(report?.by_action || {}).map(([name, stats]) => ({ name, messaging: stats.messaging }))} />
+      <RunReportLLMPanel report={report?.llm ?? report?.llm_inference} />
       <RunAnnotations key={`annotations-${testId}`} testId={testId} startedAt={test.started_at} canEdit={canPublishConfluence} onAnnotationsChange={setTimelineAnnotations} reloadKey={annotationReload} />
       {showNotes && <TestNotesDialog testId={testId} testName={test.name} initialDraft={noteDraft || undefined} onClose={() => { setShowNotes(false); setNoteDraft('') }} />}
       {showComposer && <ReportComposer comparisonId={initialComparisonId} population={population} testId={testId} testName={test.name} profile={activeLens} onAnnotationsSaved={saved => { if (activeLensRef.current === activeLens && testIDRef.current === testId) setAnnotations(saved) }} onClose={() => setShowComposer(false)} />}

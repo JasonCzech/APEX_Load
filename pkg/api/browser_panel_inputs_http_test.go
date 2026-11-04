@@ -408,12 +408,12 @@ func TestBrowserPanelSavedValidationHonorsIdentityDeadline(t *testing.T) {
 				if archive && canceled {
 					expectedCalls = 0
 				}
-				before := len(analysisPipelineJobs)
+				before := len(server.semaphores.analysisPipelineJobs)
 				finished := make(chan bool, 1)
 				go func() { finished <- server.validateSavedBrowserPanelInputs(response, request, &definition) }()
 				select {
 				case accepted := <-finished:
-					if accepted || response.Code != 400 || probe.calls != expectedCalls || len(analysisPipelineJobs) != before {
+					if accepted || response.Code != 400 || probe.calls != expectedCalls || len(server.semaphores.analysisPipelineJobs) != before {
 						t.Fatal("identity deadline or admission release failed", accepted, response.Code, probe.calls)
 					}
 				case <-time.After(time.Second):

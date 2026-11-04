@@ -31,6 +31,7 @@ cmd/
   apexload-java-host-supervisor/ — Experimental dedicated Java execution-pod PID 1 supervisor (not enabled by default)
   apexload-java-host-broker/ — Experimental mTLS broker for dedicated Java pods and externally attested cleanup (not enabled by default)
   apexfault-target/ — Authenticated independent HTTP traffic counter for disposable fault trials
+  apexllm-target/ — Configurable mock LLM streaming and continuous-batching target for local trials
   apexbench/     — Controlled local performance-evidence harness (`make performance-smoke`)
   datamodeldoc/  — Code generator for docs/DATA_MODEL.md
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
@@ -103,8 +104,9 @@ pkg/
   librarycontract/ — Portable library transfer and import response contracts
   importartifact/ — Content-addressed, encrypted immutable source bundles for governed runners
   fileasset/     — Bounded local file/asset opening for import paths
+  llmperf/       — Pure LLM inference dataset normalization, synthetic prompt generation, unit economics, capacity planning, and bootstrap run comparison
   internal/      — Cross-package internal guards: archiveingest, archivequota, boundedcache, boundedtext, diskspace,
-                   filelock, subprocessguard, zipbounds, winfs (Windows private ACLs, file IDs and
+                   filelock, llmfixture, subprocessguard, zipbounds, winfs (Windows private ACLs, file IDs and
                    handle-relative rename/remove); paritytest is the test-only LoadRunner web
                    parity harness (fixture server, expected requests, one-iteration replay)
 api/

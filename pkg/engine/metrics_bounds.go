@@ -91,6 +91,10 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 		if !server.GRPC.Valid() {
 			server.GRPC = nil
 		}
+		server.LLM = server.LLM.Clone()
+		if !server.LLM.Valid() {
+			server.LLM = nil
+		}
 		server.SubscriptionID = boundedMetricString(server.SubscriptionID, maxMetricLabelBytes)
 		if server.AcknowledgementMs != nil {
 			v := *server.AcknowledgementMs

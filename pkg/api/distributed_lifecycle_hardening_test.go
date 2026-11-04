@@ -118,10 +118,12 @@ func TestFetchRemoteArchiveBundlesRequireAllRejectsZeroBundles(t *testing.T) {
 	client := &startupLifecycleFakeClient{accept: true}
 	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
 	test := &ManagedTest{
-		ID:                    "run-missing-archive",
-		remoteTarget:          "gen-a",
-		remoteClient:          client,
-		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		ID: "run-missing-archive",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteTarget:          "gen-a",
+			remoteClient:          client,
+			remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+		},
 	}
 	runner := &TestRunner{}
 
@@ -181,13 +183,15 @@ func TestDistributedFailureIsVisibleBeforeRemoteStopCleanupCompletes(t *testing.
 		Status:       "RUNNING",
 		executionCtx: runCtx,
 		cancel:       cancel,
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-lost":      lost,
-			"gen-surviving": blocking,
-		},
-		remoteTargetStates: map[string]string{
-			"gen-lost":      "FAILED",
-			"gen-surviving": "RUNNING",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-lost":      lost,
+				"gen-surviving": blocking,
+			},
+			remoteTargetStates: map[string]string{
+				"gen-lost":      "FAILED",
+				"gen-surviving": "RUNNING",
+			},
 		},
 	}
 	runner := NewTestRunner(1, nil, nil)
@@ -240,13 +244,15 @@ func TestDistributedAbortedStopsRemainingPeersWithoutChangingOutcome(t *testing.
 		Status:       "RUNNING",
 		executionCtx: runCtx,
 		cancel:       cancel,
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-aborted":   abortedSource,
-			"gen-surviving": blockingPeer,
-		},
-		remoteTargetStates: map[string]string{
-			"gen-aborted":   "ABORTED",
-			"gen-surviving": "RUNNING",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-aborted":   abortedSource,
+				"gen-surviving": blockingPeer,
+			},
+			remoteTargetStates: map[string]string{
+				"gen-aborted":   "ABORTED",
+				"gen-surviving": "RUNNING",
+			},
 		},
 	}
 	runner := NewTestRunner(1, nil, nil)
@@ -330,15 +336,17 @@ func TestDistributedAbortedCleanupFansOutBeforeBlockedPeerDeadline(t *testing.T)
 		Status:       "RUNNING",
 		executionCtx: runCtx,
 		cancel:       cancel,
-		remoteClientsByTarget: map[string]generatorClient{
-			"gen-aborted":  abortedSource,
-			"gen-blocking": blockingPeer,
-			"gen-fast":     fastPeer,
-		},
-		remoteTargetStates: map[string]string{
-			"gen-aborted":  "ABORTED",
-			"gen-blocking": "RUNNING",
-			"gen-fast":     "RUNNING",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget: map[string]generatorClient{
+				"gen-aborted":  abortedSource,
+				"gen-blocking": blockingPeer,
+				"gen-fast":     fastPeer,
+			},
+			remoteTargetStates: map[string]string{
+				"gen-aborted":  "ABORTED",
+				"gen-blocking": "RUNNING",
+				"gen-fast":     "RUNNING",
+			},
 		},
 	}
 	runner := NewTestRunner(1, nil, nil)

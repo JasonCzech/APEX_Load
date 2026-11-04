@@ -6,12 +6,15 @@ export interface TransactionSLARule {
   protocol?: string
   group?: string
   transaction: string
-  metric: 'average_duration_ms' | 'p90_duration_ms' | 'p95_duration_ms' | 'p99_duration_ms' | 'max_acknowledgement_ms' | 'min_duration_ms' | 'max_duration_ms' | 'error_count' | 'error_rate_pct' | 'minimum_count' | 'bytes_sent' | 'bytes_received' | 'tps' | 'max_consumer_lag_ms' | 'max_consumer_offset_lag'
+  metric: 'average_duration_ms' | 'p90_duration_ms' | 'p95_duration_ms' | 'p99_duration_ms' | 'max_acknowledgement_ms' | 'min_duration_ms' | 'max_duration_ms' | 'error_count' | 'error_rate_pct' | 'minimum_count' | 'bytes_sent' | 'bytes_received' | 'tps' | 'max_consumer_lag_ms' | 'max_consumer_offset_lag' | 'p50_ttft_ms' | 'p90_ttft_ms' | 'p95_ttft_ms' | 'p99_ttft_ms' | 'p90_tpot_ms' | 'p95_tpot_ms' | 'p99_tpot_ms' | 'p95_itl_ms' | 'p99_itl_ms' | 'ttft_p50_ms' | 'ttft_p90_ms' | 'ttft_p95_ms' | 'ttft_p99_ms' | 'tpot_p50_ms' | 'tpot_p90_ms' | 'tpot_p95_ms' | 'tpot_p99_ms' | 'first_visible_token_p95_ms' | 'itl_p99_ms' | 'output_tokens_per_sec' | 'goodput_pct' | 'throttle_rate_pct' | 'truncation_rate_pct' | 'empty_output_rate_pct' | 'schema_failure_rate_pct'
   comparator: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'neq'
   threshold: number
   severity?: 'fail' | 'warning'
   // The browser iterations judged: warm ones by default, all, or cold only.
   iterations?: 'warm' | 'all' | 'cold'
+  slo_ttft_ms?: number
+  slo_tpot_ms?: number
+  slo_e2e_ms?: number
 }
 
 export interface TransactionSLARuleResult {
@@ -59,6 +62,17 @@ export interface GoalConfig {
   max_partition_skew_pct?: number
   max_redelivery_rate_pct?: number
   max_dead_letter_rate_pct?: number
+  max_llm_p95_ttft_ms?: number
+  max_llm_p95_tpot_ms?: number
+  min_llm_output_tokens_per_sec?: number
+  min_llm_goodput_pct?: number
+  max_llm_throttle_rate_pct?: number
+  llm_slo_ttft_ms?: number
+  llm_slo_tpot_ms?: number
+  llm_slo_e2e_ms?: number
+  llm_slo_ttft_target_ms?: number
+  llm_slo_tpot_target_ms?: number
+  llm_slo_e2e_target_ms?: number
   stop_on_sla_breach?: boolean
   stop_on_max_errors?: boolean
   sla_breach_window?: string
@@ -72,6 +86,8 @@ export interface GoalConfig {
     stepped_ramp?: SteppedRampConfig
     closed_vuser?: ClosedVUserConfig
     goal_driven?: GoalDrivenConfig
+    open_rate_stages?: unknown
+    capacity_sweep?: unknown
   }
 }
 
@@ -148,6 +164,11 @@ export interface GoalStatus {
   partition_skew_breached?: boolean
   redelivery_rate_breached?: boolean
   dead_letter_rate_breached?: boolean
+  llm_p95_ttft_breached?: boolean
+  llm_p95_tpot_breached?: boolean
+  llm_output_tokens_per_sec_breached?: boolean
+  llm_goodput_breached?: boolean
+  llm_throttle_rate_breached?: boolean
   breach_active?: boolean
   breach_duration_sec?: number
   stop_triggered?: boolean

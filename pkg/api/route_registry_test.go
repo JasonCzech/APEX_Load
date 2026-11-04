@@ -37,6 +37,12 @@ func TestModularAPIRouteCatalogsAreCompleteAndUnique(t *testing.T) {
 				if route.Access == nil {
 					t.Errorf("authenticated route %s has no access requirement", key)
 				}
+			case apiRouteMiddlewareSpecialized:
+				if route.SpecializedAuthMiddleware == "" {
+					t.Errorf("specialized route %s has no SpecializedAuthMiddleware name", key)
+				} else if _, ok := specializedRouteAccessProfiles[route.SpecializedAuthMiddleware]; !ok {
+					t.Errorf("specialized route %s references unknown access profile %q", key, route.SpecializedAuthMiddleware)
+				}
 			default:
 				t.Errorf("route %s has unsupported middleware profile %d", key, route.MiddlewareProfile)
 			}
@@ -69,9 +75,10 @@ func TestControllerRouteDiscoveryIncludesModularCatalogs(t *testing.T) {
 			if route.Handler != spec.HandlerIdentity {
 				t.Errorf("route %s handler = %q, want %q", key, route.Handler, spec.HandlerIdentity)
 			}
-			wantAuthenticated := spec.MiddlewareProfile == apiRouteMiddlewareAuthenticated
-			if route.GenericAuth != wantAuthenticated || route.Unauthenticated == wantAuthenticated {
-				t.Errorf("route %s middleware discovery = genericAuth:%t unauthenticated:%t, want authenticated:%t", key, route.GenericAuth, route.Unauthenticated, wantAuthenticated)
+			wantGenericAuth := spec.MiddlewareProfile == apiRouteMiddlewareAuthenticated
+			wantUnauthenticated := spec.MiddlewareProfile == apiRouteMiddlewarePublic
+			if route.GenericAuth != wantGenericAuth || route.Unauthenticated != wantUnauthenticated {
+				t.Errorf("route %s middleware discovery = genericAuth:%t unauthenticated:%t, want genericAuth:%t unauthenticated:%t", key, route.GenericAuth, route.Unauthenticated, wantGenericAuth, wantUnauthenticated)
 			}
 		}
 	}
@@ -446,7 +453,7 @@ func TestArchiveAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 35; got != want {
+	if got, want := len(modular), 39; got != want {
 		t.Fatalf("modular archive route count = %d, want %d", got, want)
 	}
 

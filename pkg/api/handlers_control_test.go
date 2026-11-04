@@ -355,17 +355,17 @@ func TestHandleScaleVUsersMapsDistributedActivationToConflict(t *testing.T) {
 	now := time.Now().UTC()
 	backend := newDistributedExecutionBackend(nil, 50*time.Millisecond, nil)
 	testRun := &ManagedTest{
-		ID:                      "activating-scale",
-		Name:                    "activating distributed scale",
-		Status:                  "RUNNING",
-		ProjectID:               storage.DefaultProjectID,
-		Duration:                time.Minute,
-		DurationStr:             time.Minute.String(),
-		Groups:                  []TestGroup{{Name: "buyers", VUsers: 1}},
-		TotalVUsers:             1,
-		StartedAt:               &now,
-		executionBackend:        backend,
-		remoteActivationPending: true,
+		ID:                     "activating-scale",
+		Name:                   "activating distributed scale",
+		Status:                 "RUNNING",
+		ProjectID:              storage.DefaultProjectID,
+		Duration:               time.Minute,
+		DurationStr:            time.Minute.String(),
+		Groups:                 []TestGroup{{Name: "buyers", VUsers: 1}},
+		TotalVUsers:            1,
+		StartedAt:              &now,
+		executionBackend:       backend,
+		distributedTestRuntime: distributedTestRuntime{remoteActivationPending: true},
 	}
 	server.runner.tests[testRun.ID] = testRun
 

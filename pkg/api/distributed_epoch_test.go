@@ -467,8 +467,8 @@ func TestRunScopedFenceDoesNotSuppressHealthyRunRenewal(t *testing.T) {
 	defer cancelLost()
 	healthyCtx, cancelHealthy := context.WithCancel(context.Background())
 	defer cancelHealthy()
-	lost := &ManagedTest{ID: "lost-run", executionCtx: lostCtx, executionGeneration: 31, remoteClientsByTarget: map[string]generatorClient{"shared": lostClient}}
-	healthy := &ManagedTest{ID: "healthy-run", executionCtx: healthyCtx, executionGeneration: 31, remoteClientsByTarget: map[string]generatorClient{"shared": healthyClient}}
+	lost := &ManagedTest{ID: "lost-run", executionCtx: lostCtx, executionGeneration: 31, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"shared": lostClient}}}
+	healthy := &ManagedTest{ID: "healthy-run", executionCtx: healthyCtx, executionGeneration: 31, distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"shared": healthyClient}}}
 	runner := &TestRunner{tests: map[string]*ManagedTest{lost.ID: lost, healthy.ID: healthy}, leadership: leadership}
 	backend := newDistributedExecutionBackend([]string{"shared"}, 20*time.Millisecond, nil)
 	backend.fenceTestExecutionLease(lost, "shared")
@@ -643,10 +643,10 @@ func TestStagedAssignmentLeaseKeeperHandsOffToSingleTopologyOwner(t *testing.T) 
 	runCtx, cancelRun := context.WithCancel(context.Background())
 	defer cancelRun()
 	testRun := &ManagedTest{
-		ID:                    "staged-handoff-run",
-		executionCtx:          runCtx,
-		executionGeneration:   42,
-		remoteClientsByTarget: map[string]generatorClient{"new": liveClient},
+		ID:                     "staged-handoff-run",
+		executionCtx:           runCtx,
+		executionGeneration:    42,
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"new": liveClient}},
 	}
 	runner := &TestRunner{
 		tests:      map[string]*ManagedTest{testRun.ID: testRun},
@@ -690,10 +690,10 @@ func TestRenewGeneratorExecutionEpochIncludesEvacuationClients(t *testing.T) {
 	initial := &epochRenewalFakeClient{notified: make(chan struct{}, 2)}
 	replacement := &epochRenewalFakeClient{notified: make(chan struct{}, 2)}
 	testRun := &ManagedTest{
-		ID:                    "renew-dynamic",
-		executionCtx:          runCtx,
-		executionGeneration:   19,
-		remoteClientsByTarget: map[string]generatorClient{"initial": initial},
+		ID:                     "renew-dynamic",
+		executionCtx:           runCtx,
+		executionGeneration:    19,
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"initial": initial}},
 	}
 	runner := &TestRunner{
 		tests:      map[string]*ManagedTest{testRun.ID: testRun},
@@ -804,9 +804,11 @@ func TestStaleEvacuationDetachClearsOnlyDetachedIncarnationFence(t *testing.T) {
 func TestEvacuationDetachAcceptsNilCapturedResourceMaps(t *testing.T) {
 	backend := newDistributedExecutionBackend(nil, 20*time.Millisecond, nil)
 	testRun := &ManagedTest{
-		ID:                           "terminal-evacuation",
-		remoteClientsByTarget:        map[string]generatorClient{"generator": nil},
-		remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"generator": nil},
+		ID: "terminal-evacuation",
+		distributedTestRuntime: distributedTestRuntime{
+			remoteClientsByTarget:        map[string]generatorClient{"generator": nil},
+			remoteMetricsStreamsByTarget: map[string]*generatorrpc.MetricsStream{"generator": nil},
+		},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{testRun.ID: testRun}}
 
@@ -831,7 +833,7 @@ func TestRunEpochRenewalWaitsForReplacementAfterLossFencedParticipant(t *testing
 	runCtx, cancel := context.WithCancel(context.Background())
 	testRun := &ManagedTest{
 		ID: "loss-fenced-run", executionCtx: runCtx, executionGeneration: 23,
-		remoteClientsByTarget: map[string]generatorClient{"lost:9090": client},
+		distributedTestRuntime: distributedTestRuntime{remoteClientsByTarget: map[string]generatorClient{"lost:9090": client}},
 	}
 	runner := &TestRunner{tests: map[string]*ManagedTest{testRun.ID: testRun}, leadership: leadership}
 	backend := newDistributedExecutionBackend([]string{"lost:9090"}, 20*time.Millisecond, nil)

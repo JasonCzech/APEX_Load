@@ -1150,6 +1150,7 @@ func cloneLiveMetrics(metrics *LiveMetrics) *LiveMetrics {
 	cloned.StatisticalFindings = append([]StatisticalFinding(nil), metrics.StatisticalFindings...)
 	cloned.ObservationValidUntil = cloneTimePtr(metrics.ObservationValidUntil)
 	cloned.ErrorBreakdown = cloneStringInt64Map(metrics.ErrorBreakdown)
+	cloned.LLM = cloneLiveLLMMetrics(metrics.LLM)
 	cloned.JavaHTTP = metrics.JavaHTTP.Retained()
 	cloned.MessagingProgress = metrics.MessagingProgress.Clone()
 	cloned.Messaging = protocol.CloneMessagingSummaries(metrics.Messaging)

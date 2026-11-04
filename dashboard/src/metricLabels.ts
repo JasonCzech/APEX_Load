@@ -27,6 +27,12 @@ export const METRIC_LABELS = {
   tps: { label: 'TPS', unit: '' },
   errorRate: { label: 'Error rate', unit: '%' },
   vusers: { label: 'VUsers', unit: '' },
+  ttft: { label: 'TTFT', unit: 'ms' },
+  tpot: { label: 'TPOT', unit: 'ms/tok' },
+  itl: { label: 'ITL', unit: 'ms' },
+  outputTokensPerSec: { label: 'Output tok/s', unit: 'tok/s' },
+  inputTokensPerSec: { label: 'Input tok/s', unit: 'tok/s' },
+  goodput: { label: 'Goodput', unit: '%' },
 } as const
 
 export type MetricLabelId = keyof typeof METRIC_LABELS

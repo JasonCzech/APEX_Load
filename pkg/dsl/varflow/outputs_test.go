@@ -111,6 +111,8 @@ func TestStepOutputsMatchesRuntimeProducers(t *testing.T) {
 		{"source_metric only logs", dsl.Action{Type: "source_metric", Params: map[string]any{"args": []string{"m", "{{var.x}}"}}}, Outputs{NoReads: true}},
 		{"source_runtime uses its args literally", dsl.Action{Type: "source_runtime", Params: map[string]any{"function": "lr_exit", "args": []string{"{{var.x}}"}}}, Outputs{NoReads: true}},
 		{"rendezvous uses its key literally", dsl.Action{Type: "rendezvous", Params: map[string]any{"key": "{{var.x}}"}}, Outputs{NoReads: true}},
+		{"llm_request outputs and conversation history", dsl.Action{Type: "llm_request", Params: map[string]any{"save_as": "reply", "save_finish_reason_as": "reason", "save_tool_calls_as": "tools", "conversation": map[string]any{"history_var": "chat_hist"}}}, Outputs{Writes: []Write{{Name: "reply"}, {Name: "reason"}, {Name: "tools"}, {Name: "chat_hist"}}}},
+		{"llm_request conversation true default history", dsl.Action{Type: "llm_request", Params: map[string]any{"conversation": true}}, Outputs{Writes: []Write{{Name: "llm_conversation_history"}}}},
 		{"requests are not modeled", dsl.Action{Type: "request", Target: "/{{var.x}}"}, Outputs{}},
 	}
 	for _, test := range tests {

@@ -267,7 +267,7 @@ func TestArchiveTransferCapacityHeldUntilBundleCleanup(t *testing.T) {
 	}
 	client := &archiveStreamingFakeClient{artifacts: artifacts}
 	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
-	run := &ManagedTest{ID: testID, remoteTarget: "generator-a", remoteClient: client}
+	run := &ManagedTest{ID: testID, distributedTestRuntime: distributedTestRuntime{remoteTarget: "generator-a", remoteClient: client}}
 	bundles, err := backend.fetchRemoteArchiveBundles(&TestRunner{}, run, true)
 	if err != nil {
 		t.Fatal(err)
@@ -295,7 +295,7 @@ func TestArchiveTransferCapacityFailureReleasesReservation(t *testing.T) {
 	root := transferCapacitySandbox(t, remoteArchiveTotalMaxBytes)
 	client := &archiveStreamingFakeClient{artifacts: map[string]string{}}
 	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
-	_, err := backend.fetchRemoteArchiveBundles(&TestRunner{}, &ManagedTest{ID: "failed-transfer", remoteTarget: "generator-a", remoteClient: client}, true)
+	_, err := backend.fetchRemoteArchiveBundles(&TestRunner{}, &ManagedTest{ID: "failed-transfer", distributedTestRuntime: distributedTestRuntime{remoteTarget: "generator-a", remoteClient: client}}, true)
 	if err == nil {
 		t.Fatal("missing source accepted")
 	}

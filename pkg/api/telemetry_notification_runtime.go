@@ -243,7 +243,6 @@ func (s *Server) startTelemetryNotificationWorker() {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s.telemetryNotificationCancel = cancel
 	if !s.launchBackground(func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -262,7 +261,9 @@ func (s *Server) startTelemetryNotificationWorker() {
 		}
 	}) {
 		cancel()
+		return
 	}
+	s.telemetryNotificationCancel = cancel
 }
 
 func (s *Server) reconcileTelemetryNotifications(ctx context.Context) {

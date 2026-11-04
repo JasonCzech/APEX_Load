@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
-	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -126,13 +125,9 @@ func (s *Server) handlePollDynatraceOperations(w http.ResponseWriter, r *http.Re
 		writeError(w, 503, "collector signing configuration unavailable")
 		return
 	}
-	capacity := 4
-	if raw := r.URL.Query().Get("capacity"); raw != "" {
-		capacity, err = strconv.Atoi(raw)
-		if err != nil || capacity < 1 || capacity > 4 {
-			writeError(w, 400, "capacity must be between 1 and 4")
-			return
-		}
+	capacity, ok := parseCollectorInspectionCapacity(w, r, 4, "capacity must be between 1 and 4")
+	if !ok {
+		return
 	}
 	operations, err := store.ListDynatraceOperations(collector.ProjectID, collector.ID, capacity)
 	if err != nil {
@@ -159,10 +154,7 @@ func (s *Server) handlePollDynatraceOperations(w http.ResponseWriter, r *http.Re
 			continue
 		}
 		owner := uuid.NewString()
-		lease := now.Add(time.Minute)
-		if op.ExpiresAt.Before(lease) {
-			lease = op.ExpiresAt
-		}
+		lease := collectorInspectionLeaseUntil(now, op.ExpiresAt)
 		claimed, err := store.ClaimDynatraceOperation(op.ID, owner, now, lease)
 		if err != nil || !claimed {
 			continue

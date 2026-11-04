@@ -264,7 +264,7 @@ func TestJavaHostScaleDownDoesNotReplayOnUncertainty(t *testing.T) {
 	g, load := javaHostPlacementFixture(t)
 	p, _ := javaHostPlacementForGroup(g, load)
 	shards := []GeneratorShardSummary{{Group: g.Name, Target: "gen-a", VUsers: 2, JavaHost: p}}
-	run := &ManagedTest{ID: "run", Status: "RUNNING", Groups: []TestGroup{g}, remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: shards}}
+	run := &ManagedTest{ID: "run", Status: "RUNNING", Groups: []TestGroup{g}, distributedTestRuntime: distributedTestRuntime{remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: shards}}}
 	tr := &TestRunner{tests: map[string]*ManagedTest{run.ID: run}}
 	b := &distributedExecutionBackend{timeout: time.Second}
 	c := &javaHostScaleTestClient{err: errors.New("lost response")}
@@ -354,7 +354,7 @@ func TestJavaHostMultiShardScaleDownPreservesIdentityAndStopsOnPartialFailure(t 
 			p, _ := javaHostPlacementForGroup(g, load)
 			p.ReservationID = "original"
 			shards := []GeneratorShardSummary{{Group: g.Name, Target: "a", VUsers: 2, ShardOrdinal: 0, ShardCount: 2, JavaHost: p}, {Group: g.Name, Target: "b", VUsers: 2, ShardOrdinal: 1, ShardCount: 2, JavaHost: p}}
-			run := &ManagedTest{ID: "run", Status: "RUNNING", remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: shards}}
+			run := &ManagedTest{ID: "run", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: shards}}}
 			tr := &TestRunner{tests: map[string]*ManagedTest{run.ID: run}}
 			backend := &distributedExecutionBackend{timeout: time.Second}
 			a, b := &javaHostScaleTestClient{}, &javaHostScaleTestClient{}
@@ -405,7 +405,7 @@ func TestJavaHostStagesReserveFreshLifetimeAdmissions(t *testing.T) {
 	if len(initial) != 2 || initial[0].VUsers != 0 || initial[1].VUsers != 0 || initial[0].JavaHost.PreparedVUsers != 2 {
 		t.Fatal("cold peak lost", initial)
 	}
-	run := &ManagedTest{ID: "run", Status: "RUNNING", remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: initial}}
+	run := &ManagedTest{ID: "run", Status: "RUNNING", distributedTestRuntime: distributedTestRuntime{remoteGroupShards: map[string][]GeneratorShardSummary{g.Name: initial}}}
 	tr := &TestRunner{tests: map[string]*ManagedTest{run.ID: run}}
 	backend := &distributedExecutionBackend{timeout: time.Second}
 	clients := map[string]generatorClient{"a": &javaHostScaleTestClient{}, "b": &javaHostScaleTestClient{}}
