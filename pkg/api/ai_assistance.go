@@ -290,7 +290,7 @@ func buildAIAuthoringContract(now time.Time) AIAuthoringContractResponse {
 			{Method: http.MethodPost, Path: "/api/v1/ai/repairs", Purpose: "Suggest deterministic repairs for validation, correlation, data, assertions, waits, and runtime parity.", Evidence: []string{"pkg/api/ai_assistance_test.go"}},
 			{Method: http.MethodPost, Path: "/api/v1/ai/explain", Purpose: "Explain scripts, scenarios, runtime settings, and reports with citations.", Evidence: []string{"pkg/api/ai_assistance_test.go"}},
 			{Method: http.MethodGet, Path: "/api/v1/ai/review-queue", Purpose: "List AI-generated or AI-repaired drafts waiting for gated promotion.", Evidence: []string{"pkg/api/ai_assistance_test.go"}},
-			{Method: http.MethodGet, Path: "/api/v1/tests/{id}/archive/ai-root-cause", Purpose: "Wrap archived root-cause evidence in an AI-assistance response.", Evidence: []string{"pkg/api/c4_analysis_integrations.go"}},
+			{Method: http.MethodGet, Path: "/api/v1/tests/{id}/archive/ai-root-cause", Purpose: "Wrap archived root-cause evidence in an AI-assistance response.", Evidence: []string{"pkg/api/root_cause_analysis.go"}},
 		},
 		PromotionRule:       "AI assistance cannot directly create reusable scripts; promotion must pass authoring session approval.",
 		DeterminismContract: "The local provider is deterministic and fixture-backed so tests can verify stable output without external network calls.",
@@ -593,7 +593,7 @@ func buildAIRootCauseResponse(testID string, provider string, rootCause RunRootC
 		RootCause:     rootCause,
 		Citations: []AICitation{
 			{Label: "Archive report", Path: "/api/v1/tests/" + strings.TrimSpace(testID) + "/archive/report"},
-			{Label: "Deterministic root-cause engine", Path: "pkg/api/c4_analysis_integrations.go"},
+			{Label: "Deterministic root-cause engine", Path: "pkg/api/root_cause_analysis.go"},
 			{Label: "AI workflow contract", Path: "/api/v1/ai/authoring/contract"},
 		},
 		NextActions: actions,

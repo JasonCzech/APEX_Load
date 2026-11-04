@@ -2139,15 +2139,29 @@ func validateExistingCIRun(test *ManagedTest, projectID string, expected ciRunMe
 }
 
 func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciRunResponse, error) {
+	response, metadata, err := s.evaluateCIRunResponse(ctx, test)
+	if err != nil || test == nil {
+		return response, err
+	}
+	checkURL, syncErr := s.syncCIGitHubCheck(ctx, test, metadata, response)
+	response.CheckURL = checkURL
+	return response, syncErr
+}
+
+// evaluateCIRunResponse computes a CI run's response, outcome included,
+// without publishing it: unlike buildCIRunResponse it never syncs the GitHub
+// Check, so readers such as the agent brief can judge a run without outbound
+// calls.
+func (s *Server) evaluateCIRunResponse(ctx context.Context, test *ManagedTest) (ciRunResponse, ciRunMetadata, error) {
 	response := ciRunResponse{SchemaVersion: ciRunSchemaVersion}
 	if test == nil {
 		response.Outcome = "execution_error"
 		response.Error = "CI run is unavailable"
-		return response, nil
+		return response, ciRunMetadata{}, nil
 	}
 	metadata, err := decodeCIRunMetadata(test.MaterializationKey)
 	if err != nil {
-		return response, err
+		return response, ciRunMetadata{}, err
 	}
 	response.TestID = test.ID
 	response.TelemetryAcceptancePolicyID = metadata.TelemetryAcceptancePolicyID
@@ -2200,9 +2214,7 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 	if response.Outcome != "monitoring_pending" && (!strings.EqualFold(response.Status, "COMPLETE") || response.terminalEvidenceVerified) {
 		finalizeCIRunOutcome(&response, metadata)
 	}
-	checkURL, syncErr := s.syncCIGitHubCheck(ctx, test, metadata, response)
-	response.CheckURL = checkURL
-	return response, syncErr
+	return response, metadata, nil
 }
 
 func sanitizeCIExternalText(value string, maxBytes int) string {

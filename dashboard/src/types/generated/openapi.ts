@@ -5963,6 +5963,11 @@ export interface operations {
                 "sources"?: Array<Record<string, unknown>>;
               }) | null;
               "status"?: string;
+              "stop_trigger"?: ({
+                "at"?: string;
+                "reason"?: string;
+                "rule"?: string;
+              }) | null;
               "telemetry_acceptance"?: ({
                 "criteria"?: Array<{
                   "advisory"?: boolean;
@@ -71407,6 +71412,430 @@ export interface operations {
       };
     };
   };
+  "handleGetAgentBrief": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "baseline"?: string;
+        "comparison_id"?: string;
+        "detail"?: string;
+        "format"?: string;
+      };
+      "header"?: {
+        "If-None-Match"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "baseline": {
+              "comparison_id"?: string;
+              "resolved_count": number;
+              "resolved_ids"?: Array<string>;
+              "run_ids": Array<string>;
+              "selection": string;
+              "source_context"?: ({
+                "event_name"?: string;
+                "head_ref"?: string;
+                "provider"?: string;
+                "ref"?: string;
+                "repository"?: string;
+                "run_attempt"?: string;
+                "sha"?: string;
+                "workflow_run_id"?: string;
+              }) | null;
+              "verdict"?: string;
+            };
+            "brief_digest": string;
+            "detail_level": string;
+            "evidence": {
+              "coverage_percent"?: (number) | null;
+              "status": string;
+            };
+            "findings": Array<{
+              "baseline_state": string;
+              "confidence": string;
+              "evidence": Array<{
+                "ref": string;
+                "uri": string;
+              }>;
+              "explains"?: Array<string>;
+              "id": string;
+              "kind": string;
+              "metric"?: ({
+                "baseline"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "name": string;
+                "observed"?: (number) | null;
+                "samples"?: (number) | null;
+                "threshold"?: (number) | null;
+                "unit": string;
+              }) | null;
+              "next"?: Array<{
+                "args": Record<string, string>;
+                "tool": string;
+                "why": string;
+              }>;
+              "rule_id"?: string;
+              "scope": {
+                "generator"?: string;
+                "group"?: string;
+                "population"?: string;
+                "transaction"?: string;
+                "window"?: ({
+                  "from": string;
+                  "to": string;
+                }) | null;
+              };
+              "severity": string;
+              "sources": Array<string>;
+              "title": string;
+              "untrusted"?: ({
+                "source": string;
+                "text": string;
+                "truncated": boolean;
+              }) | null;
+            }>;
+            "generated_from": {
+              "builder_version": string;
+              "comparison_id"?: string;
+              "manifest_sha256"?: string;
+              "rca_analysis"?: string;
+            };
+            "links": {
+              "brief": string;
+              "report": string;
+              "ui": string;
+            };
+            "metrics": Array<{
+              "baseline"?: ({
+                "error_delta_pct"?: (number) | null;
+                "error_pct"?: (number) | null;
+                "p95_delta_pct"?: (number) | null;
+                "p95_ms"?: (number) | null;
+              }) | null;
+              "error_pct"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "percentiles_approximate"?: boolean;
+              "samples": number;
+              "scope": string;
+              "sla_ms"?: (number) | null;
+              "sla_result"?: string;
+              "throughput_per_s"?: (number) | null;
+            }>;
+            "rca"?: ({
+              "analysis_id"?: string;
+              "outcome"?: string;
+              "revision"?: number;
+              "source": string;
+              "state"?: string;
+              "top_hypotheses": Array<string>;
+            }) | null;
+            "run": {
+              "application_id"?: string;
+              "ci_run_id"?: string;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name"?: string;
+              "observed_duration_s"?: (number) | null;
+              "peak_vusers": number;
+              "planned_duration_s"?: (number) | null;
+              "project_id"?: string;
+              "release_id"?: string;
+              "scenario_id"?: string;
+              "scripts": Array<string>;
+              "source_context"?: ({
+                "event_name"?: string;
+                "head_ref"?: string;
+                "provider"?: string;
+                "ref"?: string;
+                "repository"?: string;
+                "run_attempt"?: string;
+                "sha"?: string;
+                "workflow_run_id"?: string;
+              }) | null;
+              "started_at"?: (string) | null;
+              "stop_trigger"?: ({
+                "at": string;
+                "reason"?: string;
+                "rule": string;
+              }) | null;
+              "termination_reason": string;
+            };
+            "schema": string;
+            "truncation": {
+              "how_to_get_more"?: string;
+              "omitted": Record<string, number>;
+              "omitted_finding_ids"?: Array<string>;
+              "truncated": boolean;
+            };
+            "validity": {
+              "gate"?: string;
+              "reasons": Array<string>;
+              "verdict": string;
+            };
+            "verdict": {
+              "blocking": boolean;
+              "ci_exit_code"?: (number) | null;
+              "ci_outcome"?: string;
+              "decided_by": Array<string>;
+              "explanation": string;
+              "reason_codes": Array<string>;
+              "source": string;
+              "status": string;
+            };
+          }) | null;
+          "text/markdown": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "404": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "409": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "500": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "503": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetAgentFinding": {
+    parameters: {
+      "path": {
+        "finding_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "baseline"?: string;
+        "comparison_id"?: string;
+        "detail"?: string;
+        "format"?: string;
+      };
+      "header"?: {
+        "If-None-Match"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "excerpts": Array<{
+              "anomaly_id": string;
+              "locator": string;
+              "points": Array<{
+                "at": string;
+                "value": (number) | null;
+              }>;
+              "ref_id": string;
+              "sampled"?: boolean;
+              "series": string;
+              "unit"?: string;
+            }>;
+            "finding": {
+              "baseline_state": string;
+              "confidence": string;
+              "evidence": Array<{
+                "ref": string;
+                "uri": string;
+              }>;
+              "explains"?: Array<string>;
+              "id": string;
+              "kind": string;
+              "metric"?: ({
+                "baseline"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "name": string;
+                "observed"?: (number) | null;
+                "samples"?: (number) | null;
+                "threshold"?: (number) | null;
+                "unit": string;
+              }) | null;
+              "next"?: Array<{
+                "args": Record<string, string>;
+                "tool": string;
+                "why": string;
+              }>;
+              "rule_id"?: string;
+              "scope": {
+                "generator"?: string;
+                "group"?: string;
+                "population"?: string;
+                "transaction"?: string;
+                "window"?: ({
+                  "from": string;
+                  "to": string;
+                }) | null;
+              };
+              "severity": string;
+              "sources": Array<string>;
+              "title": string;
+              "untrusted"?: ({
+                "source": string;
+                "text": string;
+                "truncated": boolean;
+              }) | null;
+            };
+            "related": Array<string>;
+            "run_id": string;
+            "samples": Array<{
+              "source": string;
+              "text": string;
+              "truncated": boolean;
+            }>;
+            "schema": string;
+            "series"?: ({
+              "downsampled": boolean;
+              "interval_s": number;
+              "metric": string;
+              "points": Array<Array<number>>;
+              "unit": string;
+            }) | null;
+            "truncation": {
+              "how_to_get_more"?: string;
+              "omitted": Record<string, number>;
+              "omitted_finding_ids"?: Array<string>;
+              "truncated": boolean;
+            };
+          }) | null;
+          "text/markdown": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "404": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "409": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "500": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "503": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetAnalysisPolicy": {
     parameters: {
       "path": {
@@ -75134,6 +75563,258 @@ export interface operations {
       "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetCIRunAgentBrief": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "baseline"?: string;
+        "comparison_id"?: string;
+        "detail"?: string;
+        "format"?: string;
+      };
+      "header"?: {
+        "If-None-Match"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "baseline": {
+              "comparison_id"?: string;
+              "resolved_count": number;
+              "resolved_ids"?: Array<string>;
+              "run_ids": Array<string>;
+              "selection": string;
+              "source_context"?: ({
+                "event_name"?: string;
+                "head_ref"?: string;
+                "provider"?: string;
+                "ref"?: string;
+                "repository"?: string;
+                "run_attempt"?: string;
+                "sha"?: string;
+                "workflow_run_id"?: string;
+              }) | null;
+              "verdict"?: string;
+            };
+            "brief_digest": string;
+            "detail_level": string;
+            "evidence": {
+              "coverage_percent"?: (number) | null;
+              "status": string;
+            };
+            "findings": Array<{
+              "baseline_state": string;
+              "confidence": string;
+              "evidence": Array<{
+                "ref": string;
+                "uri": string;
+              }>;
+              "explains"?: Array<string>;
+              "id": string;
+              "kind": string;
+              "metric"?: ({
+                "baseline"?: (number) | null;
+                "delta_pct"?: (number) | null;
+                "name": string;
+                "observed"?: (number) | null;
+                "samples"?: (number) | null;
+                "threshold"?: (number) | null;
+                "unit": string;
+              }) | null;
+              "next"?: Array<{
+                "args": Record<string, string>;
+                "tool": string;
+                "why": string;
+              }>;
+              "rule_id"?: string;
+              "scope": {
+                "generator"?: string;
+                "group"?: string;
+                "population"?: string;
+                "transaction"?: string;
+                "window"?: ({
+                  "from": string;
+                  "to": string;
+                }) | null;
+              };
+              "severity": string;
+              "sources": Array<string>;
+              "title": string;
+              "untrusted"?: ({
+                "source": string;
+                "text": string;
+                "truncated": boolean;
+              }) | null;
+            }>;
+            "generated_from": {
+              "builder_version": string;
+              "comparison_id"?: string;
+              "manifest_sha256"?: string;
+              "rca_analysis"?: string;
+            };
+            "links": {
+              "brief": string;
+              "report": string;
+              "ui": string;
+            };
+            "metrics": Array<{
+              "baseline"?: ({
+                "error_delta_pct"?: (number) | null;
+                "error_pct"?: (number) | null;
+                "p95_delta_pct"?: (number) | null;
+                "p95_ms"?: (number) | null;
+              }) | null;
+              "error_pct"?: (number) | null;
+              "p50_ms"?: (number) | null;
+              "p95_ms"?: (number) | null;
+              "p99_ms"?: (number) | null;
+              "percentiles_approximate"?: boolean;
+              "samples": number;
+              "scope": string;
+              "sla_ms"?: (number) | null;
+              "sla_result"?: string;
+              "throughput_per_s"?: (number) | null;
+            }>;
+            "rca"?: ({
+              "analysis_id"?: string;
+              "outcome"?: string;
+              "revision"?: number;
+              "source": string;
+              "state"?: string;
+              "top_hypotheses": Array<string>;
+            }) | null;
+            "run": {
+              "application_id"?: string;
+              "ci_run_id"?: string;
+              "completed_at"?: (string) | null;
+              "id": string;
+              "name"?: string;
+              "observed_duration_s"?: (number) | null;
+              "peak_vusers": number;
+              "planned_duration_s"?: (number) | null;
+              "project_id"?: string;
+              "release_id"?: string;
+              "scenario_id"?: string;
+              "scripts": Array<string>;
+              "source_context"?: ({
+                "event_name"?: string;
+                "head_ref"?: string;
+                "provider"?: string;
+                "ref"?: string;
+                "repository"?: string;
+                "run_attempt"?: string;
+                "sha"?: string;
+                "workflow_run_id"?: string;
+              }) | null;
+              "started_at"?: (string) | null;
+              "stop_trigger"?: ({
+                "at": string;
+                "reason"?: string;
+                "rule": string;
+              }) | null;
+              "termination_reason": string;
+            };
+            "schema": string;
+            "truncation": {
+              "how_to_get_more"?: string;
+              "omitted": Record<string, number>;
+              "omitted_finding_ids"?: Array<string>;
+              "truncated": boolean;
+            };
+            "validity": {
+              "gate"?: string;
+              "reasons": Array<string>;
+              "verdict": string;
+            };
+            "verdict": {
+              "blocking": boolean;
+              "ci_exit_code"?: (number) | null;
+              "ci_outcome"?: string;
+              "decided_by": Array<string>;
+              "explanation": string;
+              "reason_codes": Array<string>;
+              "source": string;
+              "status": string;
+            };
+          }) | null;
+          "text/markdown": string;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "404": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "409": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "500": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
+        };
+      };
+      "503": {
+        content: {
+          "application/json": {
+            "code"?: string;
+            "error": string;
+            "ref"?: string;
+            "remediation"?: string;
+          };
         };
       };
       "default": {
@@ -83612,6 +84293,9 @@ export interface operations {
         "analysis_id": string;
         "id": string;
       };
+      "query"?: {
+        "max_bytes"?: number;
+      };
     };
     requestBody?: never;
     responses: {
@@ -83912,6 +84596,11 @@ export interface operations {
             "schema": string;
             "truncated": boolean;
           };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -90473,6 +91162,11 @@ export interface operations {
               }>;
             }) | null;
             "status"?: string;
+            "stop_trigger"?: ({
+              "at": string;
+              "reason"?: string;
+              "rule": string;
+            }) | null;
             "telemetry_acceptance"?: ({
               "criteria": Array<{
                 "advisory"?: boolean;
@@ -97308,6 +98002,11 @@ export interface operations {
                 }>;
               }) | null;
               "status"?: string;
+              "stop_trigger"?: ({
+                "at": string;
+                "reason"?: string;
+                "rule": string;
+              }) | null;
               "telemetry_acceptance"?: ({
                 "criteria": Array<{
                   "advisory"?: boolean;
@@ -224129,6 +224828,9 @@ export interface paths {
   "/api/v1/ci/runs/{id}/abort": {
     "post": operations["handleAbortCIRun"];
   };
+  "/api/v1/ci/runs/{id}/agent-brief": {
+    "get": operations["handleGetCIRunAgentBrief"];
+  };
   "/api/v1/correlation-rulesets": {
     "get": operations["handleListCorrelationRulesets"];
     "post": operations["handleCreateCorrelationRuleset"];
@@ -225524,6 +226226,12 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive": {
     "get": operations["handleDownloadRunArchive"];
+  };
+  "/api/v1/tests/{id}/archive/agent-brief": {
+    "get": operations["handleGetAgentBrief"];
+  };
+  "/api/v1/tests/{id}/archive/agent-brief/findings/{finding_id}": {
+    "get": operations["handleGetAgentFinding"];
   };
   "/api/v1/tests/{id}/archive/ai-root-cause": {
     "get": operations["handleGetRunArchiveAIRootCause"];

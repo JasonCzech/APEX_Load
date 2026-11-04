@@ -1099,6 +1099,9 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		IntervalSummariesParquetFile: "interval_summaries.parquet",
 	}
 	manifest.Continuity = continuity
+	// The goal and threshold controllers run on the controller, so the stop
+	// trigger comes from the controller's run, never from a generator bundle.
+	manifest.StopTrigger = tr.autoStopTriggerOf(test)
 	manifest.TerminationReason = "unknown"
 	switch finalStatus {
 	case "ABORTED":

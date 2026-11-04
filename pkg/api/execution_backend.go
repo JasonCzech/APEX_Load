@@ -953,6 +953,9 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 		if refresher, ok := a.recorder.(interface{ RefreshProvenance(RunArchiveProvenance) }); ok {
 			refresher.RefreshProvenance(buildRunArchiveProvenance(a.runner, test))
 		}
+		if recorder, ok := a.recorder.(interface{ SetStopTrigger(*RunStopTrigger) }); ok {
+			recorder.SetStopTrigger(a.runner.autoStopTriggerOf(test))
+		}
 	}
 	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaEvaluated, slaBreached, slaDetails)
 	if archiveRecord != nil && test != nil && archiveRecord.RefKey == "" {

@@ -147,6 +147,7 @@ const NOTIFICATION_FORMAT_OPTIONS = [
   { value: 'teams', label: 'Microsoft Teams Adaptive Card' },
   { value: 'dynatrace', label: 'Dynatrace Events API v2' },
   { value: 'grafana', label: 'Grafana annotations' },
+  { value: 'cloudevents', label: 'CloudEvents 1.0 (agents and orchestrators)' },
 ] as const
 
 const NOTIFICATION_EVENTS = [

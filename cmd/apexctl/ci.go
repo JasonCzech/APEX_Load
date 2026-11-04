@@ -138,6 +138,8 @@ type ciArgs struct {
 	junitPath                string
 	githubOutput             string
 	githubSummary            string
+	agentBriefPath           string
+	ctrfPath                 string
 	idempotencyKey           string
 	telemetryInconclusive    string
 	telemetryPolicy          string
@@ -247,6 +249,8 @@ func parseCIArgs(arguments []string) (ciArgs, error) {
 	fs.StringVar(&args.junitPath, "junit", args.junitPath, "JUnit evidence path")
 	fs.StringVar(&args.githubOutput, "github-output", "", "GitHub output file")
 	fs.StringVar(&args.githubSummary, "github-summary", "", "GitHub job summary file")
+	fs.StringVar(&args.agentBriefPath, "agent-brief", "", "write the run's agent brief (JSON, standard detail) to this path")
+	fs.StringVar(&args.ctrfPath, "ctrf", "", "write the run's CTRF report to this path")
 	fs.StringVar(&args.idempotencyKey, "idempotency-key", "", "explicit idempotency key")
 	fs.StringVar(&args.telemetryInconclusive, "telemetry-inconclusive", "", "map an inconclusive fail_ci telemetry verdict: pass or fail (no default)")
 	fs.StringVar(&args.telemetryPolicy, "telemetry-policy", "", "judge the run by this project telemetry acceptance policy (its ID) instead of the project's default")
@@ -318,6 +322,9 @@ func validateCIArgs(args ciArgs) error {
 		return fmt.Errorf("--telemetry-inconclusive must be pass or fail")
 	}
 	if args.executionMode == "local" {
+		if args.agentBriefPath != "" || args.ctrfPath != "" {
+			return fmt.Errorf("--agent-brief and --ctrf require controller mode: the brief is built from the controller's archive")
+		}
 		if args.telemetryInconclusive != "" {
 			return fmt.Errorf("--telemetry-inconclusive requires controller mode")
 		}
@@ -371,6 +378,8 @@ func validateDistinctCIOutputPaths(args ciArgs) error {
 		{name: "--junit", path: args.junitPath},
 		{name: "--github-output", path: args.githubOutput},
 		{name: "--github-summary", path: args.githubSummary},
+		{name: "--agent-brief", path: args.agentBriefPath},
+		{name: "--ctrf", path: args.ctrfPath},
 	}
 	for i := range paths {
 		if strings.TrimSpace(paths[i].path) == "" {
@@ -517,6 +526,14 @@ type CIResult struct {
 	// AnalysisPolicySelections echoes the browser and journey policy revisions
 	// the run chose; omitted when unset.
 	AnalysisPolicySelections *runcontract.AnalysisPolicySelections `json:"analysis_policy_selections,omitempty"`
+
+	// agentOutputs are the controller's agent brief renderings, fetched after
+	// the run for --agent-brief, --ctrf and --github-summary.
+	agentOutputs ciAgentOutputs
+	// fetchAgentOutputs reads them; ciCmd calls it once the outcome is
+	// settled, so the fetch never runs into --timeout and rewrites a decided
+	// gate as timed out.
+	fetchAgentOutputs func(context.Context) ciAgentOutputs
 }
 
 func ciCmd() {
@@ -537,6 +554,8 @@ func ciCmd() {
 	}
 	if parseErr != nil {
 		result := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID", Message: parseErr.Error()}
+		// Nothing ran, so there are no agent outputs to write or clear.
+		args.agentBriefPath, args.ctrfPath = "", ""
 		_ = finalizeCIResult(args, result)
 		fmt.Fprintf(os.Stderr, "configuration error: %v\n", parseErr)
 		os.Exit(exitCodeUsageOrConfiguration)
@@ -567,6 +586,11 @@ func ciCmd() {
 	}
 	if err := enforceCIRequirements(args, &result); err != nil && result.Message == "" {
 		result.Message = err.Error()
+	}
+	if result.fetchAgentOutputs != nil && ctx.Err() == nil {
+		// Outside --timeout, but a signal still aborts it, so the settled
+		// outcome's evidence is written promptly.
+		result.agentOutputs = result.fetchAgentOutputs(signalCtx)
 	}
 	if err := finalizeCIResult(args, result); err != nil {
 		fmt.Fprintf(os.Stderr, "evidence error: %v\n", err)
@@ -810,6 +834,10 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	}
 	if args.waitAnalysis > 0 {
 		result.RootCause = waitForCIRootCause(ctx, auth, client, state.Response, args.waitAnalysis)
+	}
+	testID := result.TestID
+	result.fetchAgentOutputs = func(ctx context.Context) ciAgentOutputs {
+		return fetchCIAgentOutputs(ctx, args, auth, client, testID)
 	}
 	return result, nil
 }
@@ -1745,9 +1773,17 @@ func finalizeCIResult(args ciArgs, result CIResult) error {
 	if err != nil {
 		return err
 	}
+	if err := writeCIAgentOutputs(args, result.agentOutputs); err != nil {
+		return err
+	}
 	if args.githubSummary != "" {
 		if err := writeCISummary(args.githubSummary, result); err != nil {
 			return err
+		}
+		if len(result.agentOutputs.markdown) > 0 {
+			if err := appendCIAgentSummary(args.githubSummary, result.agentOutputs.markdown); err != nil {
+				return err
+			}
 		}
 	}
 	if args.githubOutput != "" {
@@ -1995,7 +2031,11 @@ Evidence:
   --json PATH            JSON result path (default apexload-result.json)
   --junit PATH           JUnit XML path (default apexload-results.xml)
   --github-output PATH   Append stable scalar outputs for a composite action
-  --github-summary PATH  Append a Markdown job summary`)
+  --github-summary PATH  Append a Markdown job summary (the run's agent brief when
+                         the controller serves it)
+  --agent-brief PATH     Write the run's agent brief (apexload.agent_brief.v1 JSON,
+                         standard detail); controller mode only
+  --ctrf PATH            Write the run's CTRF test report; controller mode only`)
 }
 
 // telemetryVerdictOutcome is a verdict's outcome, or empty without one.

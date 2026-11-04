@@ -98,6 +98,12 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle", "handleGetRCABundle", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCABundle)
 		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/agent-brief", "handleGetAgentBrief", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetAgentBrief)
+		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/agent-brief/findings/{finding_id}", "handleGetAgentFinding", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetAgentFinding)
+		}),
 		// Narration checks are reads: they change nothing.
 		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/narration-check", "handleCheckRCANarration", rcaNarrationAccess(viewerProjectAccess(resolveTestProjectID)), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleCheckRCANarration)

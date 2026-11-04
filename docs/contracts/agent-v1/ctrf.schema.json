@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apexload:contract:agent-v1:ctrf.schema.json",
+  "$defs": {
+    "AgentCTRFEnvironment": {
+      "properties": {
+        "appName": {
+          "type": "string"
+        },
+        "appVersion": {
+          "type": "string"
+        },
+        "buildName": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "branchName": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentCTRFRuns": {
+      "properties": {
+        "tool": {
+          "$ref": "#/$defs/AgentCTRFTool"
+        },
+        "summary": {
+          "$ref": "#/$defs/AgentCTRFSummary"
+        },
+        "tests": {
+          "items": {
+            "$ref": "#/$defs/AgentCTRFTest"
+          },
+          "type": "array"
+        },
+        "environment": {
+          "$ref": "#/$defs/AgentCTRFEnvironment"
+        },
+        "extra": {
+          "type": "object"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool",
+        "summary",
+        "tests"
+      ]
+    },
+    "AgentCTRFSummary": {
+      "properties": {
+        "tests": {
+          "type": "integer"
+        },
+        "passed": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "pending": {
+          "type": "integer"
+        },
+        "skipped": {
+          "type": "integer"
+        },
+        "other": {
+          "type": "integer"
+        },
+        "start": {
+          "type": "integer"
+        },
+        "stop": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tests",
+        "passed",
+        "failed",
+        "pending",
+        "skipped",
+        "other",
+        "start",
+        "stop"
+      ]
+    },
+    "AgentCTRFTest": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "duration": {
+          "type": "integer"
+        },
+        "message": {
+          "type": "string"
+        },
+        "suite": {
+          "type": "string"
+        },
+        "extra": {
+          "type": "object"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "status",
+        "duration"
+      ]
+    },
+    "AgentCTRFTool": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name"
+      ]
+    }
+  },
+  "properties": {
+    "reportFormat": {
+      "type": "string"
+    },
+    "specVersion": {
+      "type": "string"
+    },
+    "results": {
+      "$ref": "#/$defs/AgentCTRFRuns"
+    }
+  },
+  "type": "object",
+  "required": [
+    "reportFormat",
+    "specVersion",
+    "results"
+  ]
+}

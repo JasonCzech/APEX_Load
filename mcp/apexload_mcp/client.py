@@ -193,15 +193,23 @@ class APEXLoadClient:
     def _api_error(self, response: httpx.Response, parsed: Any, path: str) -> JsonMap:
         message = response.reason_phrase or "APEX Load API request failed"
         code = "api_error"
+        remediation = self._remediation_for_status(response.status_code)
+        ref = None
         if isinstance(parsed, dict):
             message = str(parsed.get("error") or parsed.get("message") or message)
             code = str(parsed.get("code") or code)
-        return {
+            # A coded controller error says what to do next; keep it.
+            remediation = str(parsed.get("remediation") or remediation)
+            ref = parsed.get("ref")
+        error = {
             "code": code,
             "message": message,
             "path": path,
-            "remediation": self._remediation_for_status(response.status_code),
+            "remediation": remediation,
         }
+        if ref:
+            error["ref"] = str(ref)
+        return error
 
     def _transport_error(self, path: str, exc: httpx.HTTPError) -> JsonMap:
         return {

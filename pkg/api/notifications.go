@@ -176,9 +176,9 @@ func validateNotificationsSettings(settings NotificationsSettings) error {
 			return err
 		}
 		switch webhook.Format {
-		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana:
+		case notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana, notificationFormatCloudEvents:
 		default:
-			return fmt.Errorf("%s.format must be one of %q, %q, %q or %q", prefix, notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana)
+			return fmt.Errorf("%s.format must be one of %q, %q, %q, %q or %q", prefix, notificationFormatSlack, notificationFormatTeams, notificationFormatDynatrace, notificationFormatGrafana, notificationFormatCloudEvents)
 		}
 		if webhook.Format == notificationFormatGrafana && strings.TrimSpace(webhook.APIToken) == "" {
 			return fmt.Errorf("%s.api_token is required for Grafana webhooks", prefix)
@@ -339,6 +339,8 @@ func buildNotificationPayloadForWebhook(webhook NotificationWebhookSettings, eve
 		return buildDynatraceNotificationPayload(webhook, event), nil
 	case notificationFormatGrafana:
 		return buildGrafanaNotificationPayload(event), nil
+	case notificationFormatCloudEvents:
+		return buildCloudEventNotificationPayload(webhook, event), nil
 	default:
 		return nil, fmt.Errorf("unsupported notification format %q", format)
 	}
@@ -585,6 +587,9 @@ func (d *notificationDispatcher) postJSON(webhook NotificationWebhookSettings, p
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
+		if webhook.Format == notificationFormatCloudEvents {
+			req.Header.Set("Content-Type", "application/cloudevents+json; charset=utf-8")
+		}
 		if dedupeKey != "" {
 			req.Header.Set("X-APEXLoad-Notification-Key", dedupeKey)
 		}

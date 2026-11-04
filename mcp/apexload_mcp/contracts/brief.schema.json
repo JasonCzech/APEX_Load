@@ -1,0 +1,718 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apexload:contract:agent-v1:brief.schema.json",
+  "$defs": {
+    "AgentBaseline": {
+      "properties": {
+        "selection": {
+          "type": "string",
+          "enum": [
+            "explicit",
+            "latest",
+            "none"
+          ]
+        },
+        "comparison_id": {
+          "type": "string"
+        },
+        "run_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "source_context": {
+          "$ref": "#/$defs/AgentSourceContext"
+        },
+        "resolved_count": {
+          "type": "integer"
+        },
+        "resolved_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "selection",
+        "run_ids",
+        "resolved_count"
+      ]
+    },
+    "AgentBriefProvenance": {
+      "properties": {
+        "manifest_sha256": {
+          "type": "string"
+        },
+        "builder_version": {
+          "type": "string"
+        },
+        "comparison_id": {
+          "type": "string"
+        },
+        "rca_analysis": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "builder_version"
+      ]
+    },
+    "AgentEvidence": {
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "coverage_percent": {
+          "type": "number"
+        }
+      },
+      "type": "object",
+      "required": [
+        "status"
+      ]
+    },
+    "AgentEvidenceRef": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ref",
+        "uri"
+      ]
+    },
+    "AgentFinding": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "sla_breach",
+            "regression",
+            "error_group",
+            "evidence_gap",
+            "validity",
+            "throughput_gap",
+            "environment",
+            "anomaly",
+            "rca_hypothesis",
+            "auto_stop"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "blocker",
+            "major",
+            "minor",
+            "info"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/AgentScope"
+        },
+        "metric": {
+          "$ref": "#/$defs/AgentFindingMetric"
+        },
+        "baseline_state": {
+          "type": "string",
+          "enum": [
+            "new",
+            "recurring",
+            "unknown"
+          ]
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/AgentEvidenceRef"
+          },
+          "type": "array"
+        },
+        "untrusted": {
+          "$ref": "#/$defs/AgentUntrusted"
+        },
+        "next": {
+          "items": {
+            "$ref": "#/$defs/AgentNextStep"
+          },
+          "type": "array"
+        },
+        "explains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rule_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "severity",
+        "confidence",
+        "title",
+        "scope",
+        "baseline_state",
+        "sources",
+        "evidence"
+      ]
+    },
+    "AgentFindingMetric": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "number"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "baseline": {
+          "type": "number"
+        },
+        "delta_pct": {
+          "type": "number"
+        },
+        "samples": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ]
+    },
+    "AgentLinks": {
+      "properties": {
+        "brief": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "ui": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "brief",
+        "report",
+        "ui"
+      ]
+    },
+    "AgentMetricBaseline": {
+      "properties": {
+        "p95_ms": {
+          "type": "number"
+        },
+        "p95_delta_pct": {
+          "type": "number"
+        },
+        "error_pct": {
+          "type": "number"
+        },
+        "error_delta_pct": {
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "AgentMetricRow": {
+      "properties": {
+        "scope": {
+          "type": "string"
+        },
+        "samples": {
+          "type": "integer"
+        },
+        "p50_ms": {
+          "type": "number"
+        },
+        "p95_ms": {
+          "type": "number"
+        },
+        "p99_ms": {
+          "type": "number"
+        },
+        "throughput_per_s": {
+          "type": "number"
+        },
+        "error_pct": {
+          "type": "number"
+        },
+        "sla_ms": {
+          "type": "number"
+        },
+        "sla_result": {
+          "type": "string"
+        },
+        "percentiles_approximate": {
+          "type": "boolean"
+        },
+        "baseline": {
+          "$ref": "#/$defs/AgentMetricBaseline"
+        }
+      },
+      "type": "object",
+      "required": [
+        "scope",
+        "samples"
+      ]
+    },
+    "AgentNextStep": {
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool",
+        "args",
+        "why"
+      ]
+    },
+    "AgentRCA": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "analysis_id": {
+          "type": "string"
+        },
+        "revision": {
+          "type": "integer"
+        },
+        "state": {
+          "type": "string"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "top_hypotheses": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "top_hypotheses"
+      ]
+    },
+    "AgentRun": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "application_id": {
+          "type": "string"
+        },
+        "release_id": {
+          "type": "string"
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "scripts": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "completed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "planned_duration_s": {
+          "type": "number"
+        },
+        "observed_duration_s": {
+          "type": "number"
+        },
+        "termination_reason": {
+          "type": "string"
+        },
+        "stop_trigger": {
+          "$ref": "#/$defs/RunStopTrigger"
+        },
+        "peak_vusers": {
+          "type": "integer"
+        },
+        "ci_run_id": {
+          "type": "string"
+        },
+        "source_context": {
+          "$ref": "#/$defs/AgentSourceContext"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "scripts",
+        "termination_reason",
+        "peak_vusers"
+      ]
+    },
+    "AgentScope": {
+      "properties": {
+        "transaction": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "population": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/AgentWindow"
+        }
+      },
+      "type": "object"
+    },
+    "AgentSourceContext": {
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "repository": {
+          "type": "string"
+        },
+        "sha": {
+          "type": "string"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "head_ref": {
+          "type": "string"
+        },
+        "event_name": {
+          "type": "string"
+        },
+        "workflow_run_id": {
+          "type": "string"
+        },
+        "run_attempt": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentTruncation": {
+      "properties": {
+        "truncated": {
+          "type": "boolean"
+        },
+        "omitted": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "how_to_get_more": {
+          "type": "string"
+        },
+        "omitted_finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "truncated",
+        "omitted"
+      ]
+    },
+    "AgentUntrusted": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "text",
+        "truncated"
+      ]
+    },
+    "AgentValidity": {
+      "properties": {
+        "verdict": {
+          "type": "string"
+        },
+        "reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "gate": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "verdict",
+        "reasons"
+      ]
+    },
+    "AgentVerdict": {
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "fail",
+            "inconclusive",
+            "not_assessed",
+            "invalid"
+          ]
+        },
+        "blocking": {
+          "type": "boolean"
+        },
+        "reason_codes": {
+          "items": {
+            "type": "string",
+            "enum": [
+              "aborted",
+              "assessment_inconclusive",
+              "auto_stopped",
+              "baseline_unavailable",
+              "cancelled",
+              "configuration_error",
+              "evidence_incomplete",
+              "execution_error",
+              "monitoring_incomplete",
+              "no_criteria",
+              "operator_stopped",
+              "rca_pending",
+              "regression_vs_baseline",
+              "run_invalid",
+              "run_suspect",
+              "sla_breached",
+              "telemetry_failed",
+              "telemetry_inconclusive",
+              "throughput_below_target",
+              "timed_out"
+            ]
+          },
+          "type": "array"
+        },
+        "decided_by": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "ci_outcome",
+            "report_verdict"
+          ]
+        },
+        "ci_outcome": {
+          "type": "string"
+        },
+        "ci_exit_code": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "status",
+        "blocking",
+        "reason_codes",
+        "decided_by",
+        "explanation",
+        "source"
+      ]
+    },
+    "AgentWindow": {
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "RunStopTrigger": {
+      "properties": {
+        "rule": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "rule",
+        "at"
+      ]
+    }
+  },
+  "properties": {
+    "schema": {
+      "type": "string"
+    },
+    "brief_digest": {
+      "type": "string"
+    },
+    "generated_from": {
+      "$ref": "#/$defs/AgentBriefProvenance"
+    },
+    "detail_level": {
+      "type": "string",
+      "enum": [
+        "summary",
+        "standard",
+        "full"
+      ]
+    },
+    "run": {
+      "$ref": "#/$defs/AgentRun"
+    },
+    "verdict": {
+      "$ref": "#/$defs/AgentVerdict"
+    },
+    "validity": {
+      "$ref": "#/$defs/AgentValidity"
+    },
+    "evidence": {
+      "$ref": "#/$defs/AgentEvidence"
+    },
+    "baseline": {
+      "$ref": "#/$defs/AgentBaseline"
+    },
+    "metrics": {
+      "items": {
+        "$ref": "#/$defs/AgentMetricRow"
+      },
+      "type": "array"
+    },
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/AgentFinding"
+      },
+      "type": "array"
+    },
+    "rca": {
+      "$ref": "#/$defs/AgentRCA"
+    },
+    "links": {
+      "$ref": "#/$defs/AgentLinks"
+    },
+    "truncation": {
+      "$ref": "#/$defs/AgentTruncation"
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "brief_digest",
+    "generated_from",
+    "detail_level",
+    "run",
+    "verdict",
+    "validity",
+    "evidence",
+    "baseline",
+    "metrics",
+    "findings",
+    "links",
+    "truncation"
+  ]
+}

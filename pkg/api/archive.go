@@ -68,6 +68,10 @@ type RunArchiveManifest struct {
 	// ExecutorCompletedAt keeps the executing controller's own completion time
 	// when failover recovery restamps CompletedAt with the durable run end.
 	ExecutorCompletedAt *time.Time `json:"executor_completed_at,omitempty"`
+	// StopTrigger is the automatic stop rule that ended the run early, when
+	// one did. TerminationReason stays the coarse enum; this keeps which rule
+	// fired, which the live GoalStatus otherwise only shows while running.
+	StopTrigger *RunStopTrigger `json:"stop_trigger,omitempty"`
 	// InitialProvenance is captured once when archive recording begins and is
 	// never refreshed by runtime controls. Provenance remains the final enriched
 	// execution snapshot for generator inventory, actors, and governance.

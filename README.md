@@ -398,12 +398,13 @@ go run ./cmd/apexctl run \
 
 Additional `run` flags: `--junit` (write a JUnit XML report), `--timeout` (API run wait timeout; default duration + 30m), `--transaction-rule` / `--transaction-rules-file` (exact per-transaction SLA rules; require `--api`), `--telemetry-policy` (judge the run by one of the project's telemetry acceptance policies instead of its default), `--telemetry-budget-policy` (set the run's live telemetry budgets from one of the project's telemetry budget policies instead of the system threshold settings), `--browser-policy ID@REV` (pin a project browser policy `<id>@<revision>` or `project_default`), and `--journey-policy ID@REV` (pin a project journey policy `<id>@<revision>` or `project_default`); policy flags require `--api`, and the controller confirms telemetry policy bindings before the run starts.
 
-**Subcommands** (21 commands plus `help`; `apexctl help` prints full usage):
+**Subcommands** (22 commands plus `help`; `apexctl help` prints full usage):
 
 | Command | Purpose |
 |---------|---------|
 | `run` | Execute a performance test locally or via `--api` |
 | `ci` | Run a CI performance gate locally or through a controller |
+| `brief` | Print a finished run's agent brief: verdict, blocking flag, reason codes and ranked findings as JSON, Markdown or CTRF (exits 1 when blocking; see [docs/contracts/agent-v1](docs/contracts/agent-v1/README.md)) |
 | `script` | Validate or explain a JSON DSL script |
 | `status` | Print a test's current status and SLA verdict (exits 1 on breach/failure) |
 | `wait` | Block until a started test finishes, then report the SLA verdict |
@@ -536,7 +537,7 @@ pkg/                 # Core engine, protocols, DSL, API, storage, RCA, and gover
 api/proto/           # gRPC protobuf definitions (controller ↔ generator; see api/proto/README.md)
 dashboard/           # React 18 + TypeScript + Recharts SPA (see dashboard/README.md)
 desktop/             # Wails v2 native client shell embedding controller API + dashboard (see desktop/README.md)
-mcp/                 # Python MCP server exposing the REST API as agent tools
+mcp/                 # Python MCP server: curated agent-brief tools by default; the REST API as tools with APEXLOAD_MCP_TOOLSETS=full
 deployments/         # Kustomize overlays (local/onprem/aks/eks), Helm chart, Docker Compose, Azure & AWS Terraform
 examples/            # Sample JSON DSL scripts, CSV prompt feeds, raw .http fixtures, and monitoring configs (see examples/README.md)
 scripts/             # CI verification, E2E harnesses, manifest renderers, and packaging scripts (see scripts/README.md)

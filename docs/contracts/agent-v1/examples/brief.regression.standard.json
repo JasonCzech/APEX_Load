@@ -1,0 +1,144 @@
+{
+  "schema": "apexload.agent_brief.v1",
+  "brief_digest": "a8bd818171960cf57eaf23e171f0161c99f6b10cd4a9836fcba88d9a484230a2",
+  "generated_from": {
+    "manifest_sha256": "abc123",
+    "builder_version": "1",
+    "comparison_id": "cmp-1"
+  },
+  "detail_level": "standard",
+  "run": {
+    "id": "run-1",
+    "name": "Checkout load",
+    "project_id": "proj",
+    "application_id": "shop",
+    "release_id": "r42",
+    "scenario_id": "sc",
+    "scripts": [
+      "browse.js",
+      "checkout.js"
+    ],
+    "started_at": "2026-11-03T09:00:00Z",
+    "completed_at": "2026-11-03T09:10:00Z",
+    "planned_duration_s": 600,
+    "observed_duration_s": 600,
+    "termination_reason": "workload_completed",
+    "peak_vusers": 50
+  },
+  "verdict": {
+    "status": "pass",
+    "blocking": false,
+    "reason_codes": [
+      "regression_vs_baseline"
+    ],
+    "decided_by": [
+      "baseline"
+    ],
+    "explanation": "The run met its acceptance criteria; 1 finding to review.",
+    "source": "report_verdict"
+  },
+  "validity": {
+    "verdict": "unknown",
+    "reasons": []
+  },
+  "evidence": {
+    "status": "complete",
+    "coverage_percent": 100
+  },
+  "baseline": {
+    "selection": "explicit",
+    "comparison_id": "cmp-1",
+    "run_ids": [
+      "run-0"
+    ],
+    "verdict": "regressed",
+    "resolved_count": 0
+  },
+  "metrics": [
+    {
+      "scope": "overall",
+      "samples": 10000,
+      "p50_ms": 120,
+      "p95_ms": 260,
+      "p99_ms": 410,
+      "throughput_per_s": 16.7,
+      "error_pct": 0.2
+    },
+    {
+      "scope": "Checkout",
+      "samples": 4000,
+      "p50_ms": 140,
+      "p95_ms": 250,
+      "p99_ms": 390,
+      "throughput_per_s": 6.67,
+      "error_pct": 0.25,
+      "sla_ms": 300,
+      "sla_result": "pass",
+      "baseline": {
+        "p95_ms": 190,
+        "p95_delta_pct": 31.58
+      }
+    },
+    {
+      "scope": "Browse",
+      "samples": 6000,
+      "p50_ms": 90,
+      "p95_ms": 180,
+      "p99_ms": 300,
+      "throughput_per_s": 10,
+      "error_pct": 0.17,
+      "sla_ms": 300,
+      "sla_result": "pass"
+    }
+  ],
+  "findings": [
+    {
+      "id": "fnd_reg_6dfac97e19fa",
+      "kind": "regression",
+      "severity": "major",
+      "confidence": "high",
+      "title": "successful_p95 of Checkout regressed to 250 ms from baseline 190 ms",
+      "scope": {
+        "transaction": "Checkout",
+        "group": "shoppers"
+      },
+      "metric": {
+        "name": "successful_p95",
+        "unit": "ms",
+        "observed": 250,
+        "baseline": 190,
+        "delta_pct": 31.58
+      },
+      "baseline_state": "new",
+      "sources": [
+        "baseline_regression"
+      ],
+      "evidence": [
+        {
+          "ref": "baseline_comparison",
+          "uri": "/tests/run-1/baseline-comparisons/cmp-1"
+        }
+      ],
+      "next": [
+        {
+          "tool": "apex_get_finding",
+          "args": {
+            "comparison_id": "cmp-1",
+            "finding_id": "fnd_reg_6dfac97e19fa",
+            "run_id": "run-1"
+          },
+          "why": "series against the baseline"
+        }
+      ]
+    }
+  ],
+  "links": {
+    "brief": "/tests/run-1/archive/agent-brief",
+    "report": "/tests/run-1/archive/report",
+    "ui": "#/report/run-1?section=summary"
+  },
+  "truncation": {
+    "truncated": false,
+    "omitted": {}
+  }
+}

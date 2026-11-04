@@ -16553,6 +16553,17 @@ paths:
                           nullable: true
                         status:
                           type: string
+                        stop_trigger:
+                          type: object
+                          properties:
+                            at:
+                              type: string
+                              format: date-time
+                            reason:
+                              type: string
+                            rule:
+                              type: string
+                          nullable: true
                         telemetry_acceptance:
                           type: object
                           properties:
@@ -60787,6 +60798,664 @@ paths:
       tags:
         - CI/CD
       x-handler: handleAbortCIRun
+  /api/v1/ci/runs/{id}/agent-brief:
+    get:
+      summary: Get CI Run Agent Brief
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: ci_runner, Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleGetCIRunAgentBrief
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baseline:
+                    type: object
+                    properties:
+                      comparison_id:
+                        type: string
+                      resolved_count:
+                        type: integer
+                        format: int64
+                      resolved_ids:
+                        type: array
+                        items:
+                          type: string
+                      run_ids:
+                        type: array
+                        items:
+                          type: string
+                      selection:
+                        type: string
+                      source_context:
+                        type: object
+                        properties:
+                          event_name:
+                            type: string
+                          head_ref:
+                            type: string
+                          provider:
+                            type: string
+                          ref:
+                            type: string
+                          repository:
+                            type: string
+                          run_attempt:
+                            type: string
+                          sha:
+                            type: string
+                          workflow_run_id:
+                            type: string
+                        nullable: true
+                      verdict:
+                        type: string
+                    required:
+                      - resolved_count
+                      - run_ids
+                      - selection
+                  brief_digest:
+                    type: string
+                  detail_level:
+                    type: string
+                  evidence:
+                    type: object
+                    properties:
+                      coverage_percent:
+                        type: number
+                        format: double
+                        nullable: true
+                      status:
+                        type: string
+                    required:
+                      - status
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_state:
+                          type: string
+                        confidence:
+                          type: string
+                        evidence:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              ref:
+                                type: string
+                              uri:
+                                type: string
+                            required:
+                              - ref
+                              - uri
+                        explains:
+                          type: array
+                          items:
+                            type: string
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                        metric:
+                          type: object
+                          properties:
+                            baseline:
+                              type: number
+                              format: double
+                              nullable: true
+                            delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            name:
+                              type: string
+                            observed:
+                              type: number
+                              format: double
+                              nullable: true
+                            samples:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            threshold:
+                              type: number
+                              format: double
+                              nullable: true
+                            unit:
+                              type: string
+                          required:
+                            - name
+                            - unit
+                          nullable: true
+                        next:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              args:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              tool:
+                                type: string
+                              why:
+                                type: string
+                            required:
+                              - args
+                              - tool
+                              - why
+                        rule_id:
+                          type: string
+                        scope:
+                          type: object
+                          properties:
+                            generator:
+                              type: string
+                            group:
+                              type: string
+                            population:
+                              type: string
+                            transaction:
+                              type: string
+                            window:
+                              type: object
+                              properties:
+                                from:
+                                  type: string
+                                  format: date-time
+                                to:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - from
+                                - to
+                              nullable: true
+                        severity:
+                          type: string
+                        sources:
+                          type: array
+                          items:
+                            type: string
+                        title:
+                          type: string
+                        untrusted:
+                          type: object
+                          properties:
+                            source:
+                              type: string
+                            text:
+                              type: string
+                            truncated:
+                              type: boolean
+                          required:
+                            - source
+                            - text
+                            - truncated
+                          nullable: true
+                      required:
+                        - baseline_state
+                        - confidence
+                        - evidence
+                        - id
+                        - kind
+                        - scope
+                        - severity
+                        - sources
+                        - title
+                  generated_from:
+                    type: object
+                    properties:
+                      builder_version:
+                        type: string
+                      comparison_id:
+                        type: string
+                      manifest_sha256:
+                        type: string
+                      rca_analysis:
+                        type: string
+                    required:
+                      - builder_version
+                  links:
+                    type: object
+                    properties:
+                      brief:
+                        type: string
+                      report:
+                        type: string
+                      ui:
+                        type: string
+                    required:
+                      - brief
+                      - report
+                      - ui
+                  metrics:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: object
+                          properties:
+                            error_delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            p95_delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            p95_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                          nullable: true
+                        error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        p50_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p95_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p99_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        percentiles_approximate:
+                          type: boolean
+                        samples:
+                          type: integer
+                          format: int64
+                        scope:
+                          type: string
+                        sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        sla_result:
+                          type: string
+                        throughput_per_s:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - samples
+                        - scope
+                  rca:
+                    type: object
+                    properties:
+                      analysis_id:
+                        type: string
+                      outcome:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      source:
+                        type: string
+                      state:
+                        type: string
+                      top_hypotheses:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - source
+                      - top_hypotheses
+                    nullable: true
+                  run:
+                    type: object
+                    properties:
+                      application_id:
+                        type: string
+                      ci_run_id:
+                        type: string
+                      completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      observed_duration_s:
+                        type: number
+                        format: double
+                        nullable: true
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      planned_duration_s:
+                        type: number
+                        format: double
+                        nullable: true
+                      project_id:
+                        type: string
+                      release_id:
+                        type: string
+                      scenario_id:
+                        type: string
+                      scripts:
+                        type: array
+                        items:
+                          type: string
+                      source_context:
+                        type: object
+                        properties:
+                          event_name:
+                            type: string
+                          head_ref:
+                            type: string
+                          provider:
+                            type: string
+                          ref:
+                            type: string
+                          repository:
+                            type: string
+                          run_attempt:
+                            type: string
+                          sha:
+                            type: string
+                          workflow_run_id:
+                            type: string
+                        nullable: true
+                      started_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      stop_trigger:
+                        type: object
+                        properties:
+                          at:
+                            type: string
+                            format: date-time
+                          reason:
+                            type: string
+                          rule:
+                            type: string
+                        required:
+                          - at
+                          - rule
+                        nullable: true
+                      termination_reason:
+                        type: string
+                    required:
+                      - id
+                      - peak_vusers
+                      - scripts
+                      - termination_reason
+                  schema:
+                    type: string
+                  truncation:
+                    type: object
+                    properties:
+                      how_to_get_more:
+                        type: string
+                      omitted:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      omitted_finding_ids:
+                        type: array
+                        items:
+                          type: string
+                      truncated:
+                        type: boolean
+                    required:
+                      - omitted
+                      - truncated
+                  validity:
+                    type: object
+                    properties:
+                      gate:
+                        type: string
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      verdict:
+                        type: string
+                    required:
+                      - reasons
+                      - verdict
+                  verdict:
+                    type: object
+                    properties:
+                      blocking:
+                        type: boolean
+                      ci_exit_code:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      ci_outcome:
+                        type: string
+                      decided_by:
+                        type: array
+                        items:
+                          type: string
+                      explanation:
+                        type: string
+                      reason_codes:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                      status:
+                        type: string
+                    required:
+                      - blocking
+                      - decided_by
+                      - explanation
+                      - reason_codes
+                      - source
+                      - status
+                required:
+                  - baseline
+                  - brief_digest
+                  - detail_level
+                  - evidence
+                  - findings
+                  - generated_from
+                  - links
+                  - metrics
+                  - run
+                  - schema
+                  - truncation
+                  - validity
+                  - verdict
+                nullable: true
+            text/markdown:
+              schema:
+                type: string
+        "400":
+          description: Invalid detail, format or baseline (code invalid_detail, invalid_format or invalid_baseline).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: A CI credential bound to another run (code forbidden), or no access to the run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "404":
+          description: No such run, comparison or finding (code run_not_found, comparison_not_found or finding_not_found).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "409":
+          description: The run has not finished or its archive is unavailable (code run_not_finished or archive_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "500":
+          description: Controller failure (code internal, with ref).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "503":
+          description: Saved comparisons are unavailable on this controller (code comparison_storage_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: ci_runner, Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: baseline
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: comparison_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: detail
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
+      tags:
+        - CI/CD
+      x-handler: handleGetCIRunAgentBrief
   /api/v1/correlation-rulesets:
     get:
       summary: List Correlation Rulesets
@@ -452131,6 +452800,1109 @@ paths:
       tags:
         - Tests
       x-handler: handleDownloadRunArchive
+  /api/v1/tests/{id}/archive/agent-brief:
+    get:
+      summary: Get Agent Brief
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetAgentBrief
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  baseline:
+                    type: object
+                    properties:
+                      comparison_id:
+                        type: string
+                      resolved_count:
+                        type: integer
+                        format: int64
+                      resolved_ids:
+                        type: array
+                        items:
+                          type: string
+                      run_ids:
+                        type: array
+                        items:
+                          type: string
+                      selection:
+                        type: string
+                      source_context:
+                        type: object
+                        properties:
+                          event_name:
+                            type: string
+                          head_ref:
+                            type: string
+                          provider:
+                            type: string
+                          ref:
+                            type: string
+                          repository:
+                            type: string
+                          run_attempt:
+                            type: string
+                          sha:
+                            type: string
+                          workflow_run_id:
+                            type: string
+                        nullable: true
+                      verdict:
+                        type: string
+                    required:
+                      - resolved_count
+                      - run_ids
+                      - selection
+                  brief_digest:
+                    type: string
+                  detail_level:
+                    type: string
+                  evidence:
+                    type: object
+                    properties:
+                      coverage_percent:
+                        type: number
+                        format: double
+                        nullable: true
+                      status:
+                        type: string
+                    required:
+                      - status
+                  findings:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline_state:
+                          type: string
+                        confidence:
+                          type: string
+                        evidence:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              ref:
+                                type: string
+                              uri:
+                                type: string
+                            required:
+                              - ref
+                              - uri
+                        explains:
+                          type: array
+                          items:
+                            type: string
+                        id:
+                          type: string
+                        kind:
+                          type: string
+                        metric:
+                          type: object
+                          properties:
+                            baseline:
+                              type: number
+                              format: double
+                              nullable: true
+                            delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            name:
+                              type: string
+                            observed:
+                              type: number
+                              format: double
+                              nullable: true
+                            samples:
+                              type: integer
+                              format: int64
+                              nullable: true
+                            threshold:
+                              type: number
+                              format: double
+                              nullable: true
+                            unit:
+                              type: string
+                          required:
+                            - name
+                            - unit
+                          nullable: true
+                        next:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              args:
+                                type: object
+                                additionalProperties:
+                                  type: string
+                              tool:
+                                type: string
+                              why:
+                                type: string
+                            required:
+                              - args
+                              - tool
+                              - why
+                        rule_id:
+                          type: string
+                        scope:
+                          type: object
+                          properties:
+                            generator:
+                              type: string
+                            group:
+                              type: string
+                            population:
+                              type: string
+                            transaction:
+                              type: string
+                            window:
+                              type: object
+                              properties:
+                                from:
+                                  type: string
+                                  format: date-time
+                                to:
+                                  type: string
+                                  format: date-time
+                              required:
+                                - from
+                                - to
+                              nullable: true
+                        severity:
+                          type: string
+                        sources:
+                          type: array
+                          items:
+                            type: string
+                        title:
+                          type: string
+                        untrusted:
+                          type: object
+                          properties:
+                            source:
+                              type: string
+                            text:
+                              type: string
+                            truncated:
+                              type: boolean
+                          required:
+                            - source
+                            - text
+                            - truncated
+                          nullable: true
+                      required:
+                        - baseline_state
+                        - confidence
+                        - evidence
+                        - id
+                        - kind
+                        - scope
+                        - severity
+                        - sources
+                        - title
+                  generated_from:
+                    type: object
+                    properties:
+                      builder_version:
+                        type: string
+                      comparison_id:
+                        type: string
+                      manifest_sha256:
+                        type: string
+                      rca_analysis:
+                        type: string
+                    required:
+                      - builder_version
+                  links:
+                    type: object
+                    properties:
+                      brief:
+                        type: string
+                      report:
+                        type: string
+                      ui:
+                        type: string
+                    required:
+                      - brief
+                      - report
+                      - ui
+                  metrics:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        baseline:
+                          type: object
+                          properties:
+                            error_delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            error_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            p95_delta_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            p95_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                          nullable: true
+                        error_pct:
+                          type: number
+                          format: double
+                          nullable: true
+                        p50_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p95_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        p99_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        percentiles_approximate:
+                          type: boolean
+                        samples:
+                          type: integer
+                          format: int64
+                        scope:
+                          type: string
+                        sla_ms:
+                          type: number
+                          format: double
+                          nullable: true
+                        sla_result:
+                          type: string
+                        throughput_per_s:
+                          type: number
+                          format: double
+                          nullable: true
+                      required:
+                        - samples
+                        - scope
+                  rca:
+                    type: object
+                    properties:
+                      analysis_id:
+                        type: string
+                      outcome:
+                        type: string
+                      revision:
+                        type: integer
+                        format: int64
+                      source:
+                        type: string
+                      state:
+                        type: string
+                      top_hypotheses:
+                        type: array
+                        items:
+                          type: string
+                    required:
+                      - source
+                      - top_hypotheses
+                    nullable: true
+                  run:
+                    type: object
+                    properties:
+                      application_id:
+                        type: string
+                      ci_run_id:
+                        type: string
+                      completed_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      observed_duration_s:
+                        type: number
+                        format: double
+                        nullable: true
+                      peak_vusers:
+                        type: integer
+                        format: int64
+                      planned_duration_s:
+                        type: number
+                        format: double
+                        nullable: true
+                      project_id:
+                        type: string
+                      release_id:
+                        type: string
+                      scenario_id:
+                        type: string
+                      scripts:
+                        type: array
+                        items:
+                          type: string
+                      source_context:
+                        type: object
+                        properties:
+                          event_name:
+                            type: string
+                          head_ref:
+                            type: string
+                          provider:
+                            type: string
+                          ref:
+                            type: string
+                          repository:
+                            type: string
+                          run_attempt:
+                            type: string
+                          sha:
+                            type: string
+                          workflow_run_id:
+                            type: string
+                        nullable: true
+                      started_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      stop_trigger:
+                        type: object
+                        properties:
+                          at:
+                            type: string
+                            format: date-time
+                          reason:
+                            type: string
+                          rule:
+                            type: string
+                        required:
+                          - at
+                          - rule
+                        nullable: true
+                      termination_reason:
+                        type: string
+                    required:
+                      - id
+                      - peak_vusers
+                      - scripts
+                      - termination_reason
+                  schema:
+                    type: string
+                  truncation:
+                    type: object
+                    properties:
+                      how_to_get_more:
+                        type: string
+                      omitted:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      omitted_finding_ids:
+                        type: array
+                        items:
+                          type: string
+                      truncated:
+                        type: boolean
+                    required:
+                      - omitted
+                      - truncated
+                  validity:
+                    type: object
+                    properties:
+                      gate:
+                        type: string
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      verdict:
+                        type: string
+                    required:
+                      - reasons
+                      - verdict
+                  verdict:
+                    type: object
+                    properties:
+                      blocking:
+                        type: boolean
+                      ci_exit_code:
+                        type: integer
+                        format: int64
+                        nullable: true
+                      ci_outcome:
+                        type: string
+                      decided_by:
+                        type: array
+                        items:
+                          type: string
+                      explanation:
+                        type: string
+                      reason_codes:
+                        type: array
+                        items:
+                          type: string
+                      source:
+                        type: string
+                      status:
+                        type: string
+                    required:
+                      - blocking
+                      - decided_by
+                      - explanation
+                      - reason_codes
+                      - source
+                      - status
+                required:
+                  - baseline
+                  - brief_digest
+                  - detail_level
+                  - evidence
+                  - findings
+                  - generated_from
+                  - links
+                  - metrics
+                  - run
+                  - schema
+                  - truncation
+                  - validity
+                  - verdict
+                nullable: true
+            text/markdown:
+              schema:
+                type: string
+        "400":
+          description: Invalid detail, format or baseline (code invalid_detail, invalid_format or invalid_baseline).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: A CI credential bound to another run (code forbidden), or no access to the run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "404":
+          description: No such run, comparison or finding (code run_not_found, comparison_not_found or finding_not_found).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "409":
+          description: The run has not finished or its archive is unavailable (code run_not_finished or archive_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "500":
+          description: Controller failure (code internal, with ref).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "503":
+          description: Saved comparisons are unavailable on this controller (code comparison_storage_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: baseline
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: comparison_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: detail
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetAgentBrief
+  /api/v1/tests/{id}/archive/agent-brief/findings/{finding_id}:
+    get:
+      summary: Get Agent Finding
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetAgentFinding
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  excerpts:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        anomaly_id:
+                          type: string
+                        locator:
+                          type: string
+                        points:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              at:
+                                type: string
+                                format: date-time
+                              value:
+                                type: number
+                                format: double
+                                nullable: true
+                            required:
+                              - at
+                              - value
+                        ref_id:
+                          type: string
+                        sampled:
+                          type: boolean
+                        series:
+                          type: string
+                        unit:
+                          type: string
+                      required:
+                        - anomaly_id
+                        - locator
+                        - points
+                        - ref_id
+                        - series
+                  finding:
+                    type: object
+                    properties:
+                      baseline_state:
+                        type: string
+                      confidence:
+                        type: string
+                      evidence:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            ref:
+                              type: string
+                            uri:
+                              type: string
+                          required:
+                            - ref
+                            - uri
+                      explains:
+                        type: array
+                        items:
+                          type: string
+                      id:
+                        type: string
+                      kind:
+                        type: string
+                      metric:
+                        type: object
+                        properties:
+                          baseline:
+                            type: number
+                            format: double
+                            nullable: true
+                          delta_pct:
+                            type: number
+                            format: double
+                            nullable: true
+                          name:
+                            type: string
+                          observed:
+                            type: number
+                            format: double
+                            nullable: true
+                          samples:
+                            type: integer
+                            format: int64
+                            nullable: true
+                          threshold:
+                            type: number
+                            format: double
+                            nullable: true
+                          unit:
+                            type: string
+                        required:
+                          - name
+                          - unit
+                        nullable: true
+                      next:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            args:
+                              type: object
+                              additionalProperties:
+                                type: string
+                            tool:
+                              type: string
+                            why:
+                              type: string
+                          required:
+                            - args
+                            - tool
+                            - why
+                      rule_id:
+                        type: string
+                      scope:
+                        type: object
+                        properties:
+                          generator:
+                            type: string
+                          group:
+                            type: string
+                          population:
+                            type: string
+                          transaction:
+                            type: string
+                          window:
+                            type: object
+                            properties:
+                              from:
+                                type: string
+                                format: date-time
+                              to:
+                                type: string
+                                format: date-time
+                            required:
+                              - from
+                              - to
+                            nullable: true
+                      severity:
+                        type: string
+                      sources:
+                        type: array
+                        items:
+                          type: string
+                      title:
+                        type: string
+                      untrusted:
+                        type: object
+                        properties:
+                          source:
+                            type: string
+                          text:
+                            type: string
+                          truncated:
+                            type: boolean
+                        required:
+                          - source
+                          - text
+                          - truncated
+                        nullable: true
+                    required:
+                      - baseline_state
+                      - confidence
+                      - evidence
+                      - id
+                      - kind
+                      - scope
+                      - severity
+                      - sources
+                      - title
+                  related:
+                    type: array
+                    items:
+                      type: string
+                  run_id:
+                    type: string
+                  samples:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        source:
+                          type: string
+                        text:
+                          type: string
+                        truncated:
+                          type: boolean
+                      required:
+                        - source
+                        - text
+                        - truncated
+                  schema:
+                    type: string
+                  series:
+                    type: object
+                    properties:
+                      downsampled:
+                        type: boolean
+                      interval_s:
+                        type: number
+                        format: double
+                      metric:
+                        type: string
+                      points:
+                        type: array
+                        items:
+                          type: array
+                          items:
+                            type: number
+                            format: double
+                      unit:
+                        type: string
+                    required:
+                      - downsampled
+                      - interval_s
+                      - metric
+                      - points
+                      - unit
+                    nullable: true
+                  truncation:
+                    type: object
+                    properties:
+                      how_to_get_more:
+                        type: string
+                      omitted:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      omitted_finding_ids:
+                        type: array
+                        items:
+                          type: string
+                      truncated:
+                        type: boolean
+                    required:
+                      - omitted
+                      - truncated
+                required:
+                  - excerpts
+                  - finding
+                  - related
+                  - run_id
+                  - samples
+                  - schema
+                  - truncation
+                nullable: true
+            text/markdown:
+              schema:
+                type: string
+        "400":
+          description: Invalid detail, format or baseline (code invalid_detail, invalid_format or invalid_baseline).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: A CI credential bound to another run (code forbidden), or no access to the run.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "404":
+          description: No such run, comparison or finding (code run_not_found, comparison_not_found or finding_not_found).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "409":
+          description: The run has not finished or its archive is unavailable (code run_not_finished or archive_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "500":
+          description: Controller failure (code internal, with ref).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        "503":
+          description: Saved comparisons are unavailable on this controller (code comparison_storage_unavailable).
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    description: Stable machine-readable error code an agent branches on. Present when the agent-brief handler rejects the request; an access or lookup refusal from the route's middleware (403, 503) carries only error.
+                  error:
+                    type: string
+                    description: Human-readable error message.
+                  ref:
+                    type: string
+                    description: Server log correlation id (500 only).
+                  remediation:
+                    type: string
+                    description: What to do next.
+                required:
+                  - error
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: finding_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: baseline
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: comparison_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: detail
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: format
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          description: Handler-read request header; whether it is required can depend on authentication mode or operation state.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetAgentFinding
   /api/v1/tests/{id}/archive/ai-root-cause:
     get:
       summary: Get Run Archive AI Root Cause
@@ -462428,6 +464200,20 @@ paths:
                     nullable: true
                   status:
                     type: string
+                  stop_trigger:
+                    type: object
+                    properties:
+                      at:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                      rule:
+                        type: string
+                    required:
+                      - at
+                      - rule
+                    nullable: true
                   telemetry_acceptance:
                     type: object
                     properties:
@@ -485982,6 +487768,20 @@ paths:
                         nullable: true
                       status:
                         type: string
+                      stop_trigger:
+                        type: object
+                        properties:
+                          at:
+                            type: string
+                            format: date-time
+                          reason:
+                            type: string
+                          rule:
+                            type: string
+                        required:
+                          - at
+                          - rule
+                        nullable: true
                       telemetry_acceptance:
                         type: object
                         properties:
@@ -494300,6 +496100,12 @@ paths:
                   - revision
                   - schema
                   - truncated
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -494330,6 +496136,13 @@ paths:
           required: true
           schema:
             type: string
+        - name: max_bytes
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
       tags:
         - Tests
       x-handler: handleGetRCABundle

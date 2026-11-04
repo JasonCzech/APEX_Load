@@ -1,0 +1,386 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apexload:contract:agent-v1:finding-detail.schema.json",
+  "$defs": {
+    "AgentEvidenceRef": {
+      "properties": {
+        "ref": {
+          "type": "string"
+        },
+        "uri": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ref",
+        "uri"
+      ]
+    },
+    "AgentFinding": {
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "sla_breach",
+            "regression",
+            "error_group",
+            "evidence_gap",
+            "validity",
+            "throughput_gap",
+            "environment",
+            "anomaly",
+            "rca_hypothesis",
+            "auto_stop"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "blocker",
+            "major",
+            "minor",
+            "info"
+          ]
+        },
+        "confidence": {
+          "type": "string",
+          "enum": [
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "title": {
+          "type": "string"
+        },
+        "scope": {
+          "$ref": "#/$defs/AgentScope"
+        },
+        "metric": {
+          "$ref": "#/$defs/AgentFindingMetric"
+        },
+        "baseline_state": {
+          "type": "string",
+          "enum": [
+            "new",
+            "recurring",
+            "unknown"
+          ]
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/AgentEvidenceRef"
+          },
+          "type": "array"
+        },
+        "untrusted": {
+          "$ref": "#/$defs/AgentUntrusted"
+        },
+        "next": {
+          "items": {
+            "$ref": "#/$defs/AgentNextStep"
+          },
+          "type": "array"
+        },
+        "explains": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rule_id": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "severity",
+        "confidence",
+        "title",
+        "scope",
+        "baseline_state",
+        "sources",
+        "evidence"
+      ]
+    },
+    "AgentFindingMetric": {
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "observed": {
+          "type": "number"
+        },
+        "threshold": {
+          "type": "number"
+        },
+        "baseline": {
+          "type": "number"
+        },
+        "delta_pct": {
+          "type": "number"
+        },
+        "samples": {
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "name",
+        "unit"
+      ]
+    },
+    "AgentNextStep": {
+      "properties": {
+        "tool": {
+          "type": "string"
+        },
+        "args": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "why": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "tool",
+        "args",
+        "why"
+      ]
+    },
+    "AgentScope": {
+      "properties": {
+        "transaction": {
+          "type": "string"
+        },
+        "group": {
+          "type": "string"
+        },
+        "population": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "window": {
+          "$ref": "#/$defs/AgentWindow"
+        }
+      },
+      "type": "object"
+    },
+    "AgentSeries": {
+      "properties": {
+        "metric": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "interval_s": {
+          "type": "number"
+        },
+        "points": {
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array",
+            "maxItems": 2,
+            "minItems": 2
+          },
+          "type": "array"
+        },
+        "downsampled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "metric",
+        "unit",
+        "interval_s",
+        "points",
+        "downsampled"
+      ]
+    },
+    "AgentTruncation": {
+      "properties": {
+        "truncated": {
+          "type": "boolean"
+        },
+        "omitted": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "how_to_get_more": {
+          "type": "string"
+        },
+        "omitted_finding_ids": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "truncated",
+        "omitted"
+      ]
+    },
+    "AgentUntrusted": {
+      "properties": {
+        "source": {
+          "type": "string"
+        },
+        "text": {
+          "type": "string"
+        },
+        "truncated": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "source",
+        "text",
+        "truncated"
+      ]
+    },
+    "AgentWindow": {
+      "properties": {
+        "from": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "to": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "type": "object",
+      "required": [
+        "from",
+        "to"
+      ]
+    },
+    "RCAEvidenceExcerpt": {
+      "properties": {
+        "ref_id": {
+          "type": "string"
+        },
+        "anomaly_id": {
+          "type": "string"
+        },
+        "series": {
+          "type": "string"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "locator": {
+          "type": "string"
+        },
+        "points": {
+          "items": {
+            "$ref": "#/$defs/RCAExcerptPoint"
+          },
+          "type": "array"
+        },
+        "sampled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "ref_id",
+        "anomaly_id",
+        "series",
+        "locator",
+        "points"
+      ]
+    },
+    "RCAExcerptPoint": {
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "value": {
+          "type": "number"
+        }
+      },
+      "type": "object",
+      "required": [
+        "at",
+        "value"
+      ]
+    }
+  },
+  "properties": {
+    "schema": {
+      "type": "string"
+    },
+    "run_id": {
+      "type": "string"
+    },
+    "finding": {
+      "$ref": "#/$defs/AgentFinding"
+    },
+    "series": {
+      "$ref": "#/$defs/AgentSeries"
+    },
+    "samples": {
+      "items": {
+        "$ref": "#/$defs/AgentUntrusted"
+      },
+      "type": "array"
+    },
+    "excerpts": {
+      "items": {
+        "$ref": "#/$defs/RCAEvidenceExcerpt"
+      },
+      "type": "array"
+    },
+    "related": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "truncation": {
+      "$ref": "#/$defs/AgentTruncation"
+    }
+  },
+  "type": "object",
+  "required": [
+    "schema",
+    "run_id",
+    "finding",
+    "samples",
+    "excerpts",
+    "related",
+    "truncation"
+  ]
+}

@@ -360,6 +360,10 @@ type Server struct {
 	// always uses the governed transport built by dynatrace.NewClient.
 	dynatraceClient func(dynatrace.Config, dynatrace.Credentials) (*dynatrace.Client, error)
 
+	// Agent briefs' CI evaluations (handlers_agent_brief.go).
+	agentCIEvaluationsOnce sync.Once
+	agentCIEvaluations     *boundedArchiveCache[ciRunResponse]
+
 	// Root-cause v2 analysis jobs (rca_analyses.go).
 	rcaJobsOnce sync.Once
 	rcaJobs     *leasedJobRunner[storage.RCAAnalysis]
@@ -1083,6 +1087,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/auth/ci/github/exchange", cors(log(http.HandlerFunc(s.handleGitHubCIExchange))))
 	s.mux.Handle("POST /api/v1/ci/runs", cors(log(ciMutationAuth(http.HandlerFunc(s.handleCreateCIRun)))))
 	s.mux.Handle("GET /api/v1/ci/runs/{id}", cors(log(ciAuth(http.HandlerFunc(s.handleGetCIRun)))))
+	s.mux.Handle("GET /api/v1/ci/runs/{id}/agent-brief", cors(log(ciAuth(http.HandlerFunc(s.handleGetCIRunAgentBrief)))))
 	s.mux.Handle("POST /api/v1/ci/runs/{id}/abort", cors(log(ciMutationAuth(http.HandlerFunc(s.handleAbortCIRun)))))
 
 	// Test lifecycle and archive endpoints.

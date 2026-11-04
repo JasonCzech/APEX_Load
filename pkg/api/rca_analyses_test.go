@@ -405,6 +405,19 @@ func TestRCABundleStaysWithin256KiB(t *testing.T) {
 	}
 }
 
+func TestRCABundleCanBeBoundToASmallerAgentBudget(t *testing.T) {
+	assessment := rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion}
+	for i := 0; i < 2000; i++ {
+		assessment.Validity.Windows = append(assessment.Validity.Windows, rca.ValidityWindow{Verdict: rca.ValiditySuspect, Findings: []rca.ValidityFinding{{Rule: rca.RuleGeneratorCPU, Generator: strings.Repeat("g", 40), Value: 99, Threshold: 85}}})
+	}
+	full := boundRCABundle(RCABundle{Schema: rcaBundleSchema, Assessment: assessment})
+	small := boundRCABundleTo(full, 48<<10)
+	body, _ := json.Marshal(small)
+	if !small.Truncated || len(body) > 48<<10 || len(small.Assessment.Validity.Windows) == 0 || len(small.Assessment.Validity.Windows) >= len(full.Assessment.Validity.Windows) {
+		t.Fatalf("small bundle %d bytes, %d of %d windows", len(body), len(small.Assessment.Validity.Windows), len(full.Assessment.Validity.Windows))
+	}
+}
+
 func TestRCABundleBoundsSLADetails(t *testing.T) {
 	assessment := rca.Assessment{SchemaVersion: rca.AssessmentSchemaVersion}
 	for i := 0; i < 5000; i++ {

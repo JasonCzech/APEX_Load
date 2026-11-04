@@ -8,6 +8,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -1317,18 +1318,40 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	}
 	tr.routeThresholdAlertNotifications(test, alerts, time.Now())
 
+	var trigger *RunStopTrigger
+	if allowStops {
+		switch {
+		case stopForError:
+			trigger = tr.recordAutoStopTrigger(test, runStopRuleErrorRate, "error rate threshold breached")
+		case stopForP99:
+			trigger = tr.recordAutoStopTrigger(test, runStopRuleSustainedP99, "sustained p99 latency threshold breached")
+		case shouldStopForGoalStatus(live):
+			trigger = tr.recordAutoStopTrigger(test, runStopRuleGoal, live.GoalStatus.StopReason)
+		}
+	}
+	if tr.autoStopSuperseded(test, trigger) {
+		// An operator's stop got there first; this rule did not stop the run.
+		tr.clearAutoStopTriggerAnyStatus(test, trigger)
+		trigger = nil
+	}
+	var stopErr error
 	if stopForError {
 		if earlyStop != nil && earlyStop.Enabled {
-			tr.requestStopIfRunningWithReason(test, earlyStopReason(live, *earlyStop), "threshold stop failed")
+			stopErr = errors.Join(stopErr, tr.requestStopIfRunningWithReason(test, earlyStopReason(live, *earlyStop), "threshold stop failed"))
 		} else {
-			tr.requestStopIfRunning(test, "threshold stop failed")
+			stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "threshold stop failed"))
 		}
 	}
 	if stopForP99 {
-		tr.requestStopIfRunning(test, "p99 threshold stop failed")
+		stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "p99 threshold stop failed"))
 	}
 	if allowStops && shouldStopForGoalStatus(live) {
-		tr.requestStopIfRunning(test, "goal-oriented stop failed")
+		stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "goal-oriented stop failed"))
+	}
+	if stopErr != nil {
+		// The stop did not happen, so the run was not stopped automatically;
+		// the next sample may record the trigger again.
+		tr.clearAutoStopTrigger(test, trigger)
 	}
 }
 

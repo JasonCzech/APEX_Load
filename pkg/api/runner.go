@@ -797,6 +797,9 @@ type ManagedTest struct {
 	// Distributed remote execution runtime state (managed by distributedBackend
 	// via prepareDistributedRuntimeState and its rollback helper).
 	distributedTestRuntime
+	// autoStopTrigger is the first automatic stop requested for the run
+	// (guarded by tr.mu); the archive manifest keeps it as StopTrigger.
+	autoStopTrigger *RunStopTrigger
 	// pendingJointPublications hold the joint evidence of source batches
 	// accepted since the last published point (B5); the next installed
 	// publication carries them (pendingJointBytes estimates their size).

@@ -23,6 +23,7 @@ import (
 
 var apexctlCommandHandlers = map[string]func(){
 	"run":          runTest,
+	"brief":        briefCmd,
 	"ci":           ciCmd,
 	"script":       scriptCmd,
 	"status":       statusCmd,
@@ -493,6 +494,7 @@ Usage:
 Commands:
   run       Execute a performance test
   ci        Run a CI performance gate locally or through a controller
+  brief     Print a finished run's agent brief: verdict, reasons, findings (JSON, Markdown or CTRF)
   script    Validate or explain a JSON DSL script
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
   wait      Block until a started test finishes, then report SLA verdict

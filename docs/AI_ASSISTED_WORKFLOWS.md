@@ -88,7 +88,9 @@ The queue complements the broader authoring session APIs and gives dashboard/wor
 
 ## MCP Server Integration
 
-Coding and operations agents invoke APEX Load's deterministic authoring, run management, analytics, browser intelligence, and root-cause analysis workflows through the Python Model Context Protocol bridge in `mcp/` (see `mcp/README.md` for stdio client setup and tool contracts):
+Coding and operations agents invoke APEX Load's deterministic authoring, run management, analytics, browser intelligence, and root-cause analysis workflows through the Python Model Context Protocol bridge in `mcp/` (see `mcp/README.md` for stdio client setup and tool contracts).
+
+The bridge's default toolset, `agent`, is the curated result tools (`apex_run_brief`, `apex_get_finding`, `apex_wait_for_run` and others, over the `apexload.agent_brief.v1` contract in `docs/contracts/agent-v1`). The tools below are in the `full` toolset: set `APEXLOAD_MCP_TOOLSETS=full`, or `agent,full` for both.
 
 - **Deterministic authoring and review sessions**: Agents inspect `ai_authoring_contract` and `ai_policy`, generate or repair drafts via `ai_drafts`, `ai_repairs`, `ai_explain`, and `ai_review_queue`, validate and replay drafts (`script_validate_draft`, `script_replay_draft`, `script_diagnose_replay`, `script_authoring_correlation_preview`), and manage conditional edits using `script_get` / `scenario_get` (`query.view="authoring"`) paired with `if_match` on `script_update` / `scenario_update`. AI drafts remain authoring sessions until explicitly promoted via `script_authoring_session_approve`.
 - **Run orchestration and governed monitoring**: Agents estimate and manage runs (`run_estimate`, `run_create`, `run_start`, `run_pause`, `run_resume`, `run_stop`, `run_metrics`, `run_sla_status`) and inspect project-scoped Prometheus, Dynatrace, and Elasticsearch/OpenSearch telemetry (`prometheus_*`, `dynatrace_*`, `elastic_*`, `run_monitors_get`, `run_monitor_series`, `run_monitor_evidence`).
