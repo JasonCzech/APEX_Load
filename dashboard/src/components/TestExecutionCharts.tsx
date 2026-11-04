@@ -3,7 +3,7 @@ import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import { handleTabKey } from './tabKeyboard'
 import { settingsHref } from './settingsNavigation'
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent } from 'react'
 import { createPortal } from 'react-dom'
 import {
   Area,
@@ -29,6 +29,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import StatTile from './StatTile'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import PrometheusPanelCard from './PrometheusPanelCard'
 import ContinuousStackedArea from './ContinuousStackedArea'
 import {
@@ -142,6 +143,9 @@ import {
   writeStoredJSON,
   writeStoredString,
 } from '../utils/browserStorage'
+
+// Only a run that sends LLM requests shows its live LLM signals.
+const LiveLLMChartSignals = lazy(() => import('./LiveLLMSignals').then(module => ({ default: module.LiveLLMChartSignals })))
 
 interface Props {
   filteredData: MetricsHistoryPoint[]
@@ -2869,31 +2873,9 @@ export default function TestExecutionCharts({
         </p>
       )}
 
-      {hasLLMData && (latestMetrics?.resources?.cpu_process_pct_max ?? latestMetrics?.resources?.cpu_process_pct ?? latest.cpuProcessMax ?? latest.cpuProcess ?? 0) > 85 && (
-        <p className="scenario-script-status error" role="alert">
-          Generator CPU exceeded 85% while streaming SSE tokens — client-side TTFT and TPOT measurements may include generator scheduling jitter.
-        </p>
-      )}
-
-      {hasLLMData && (!enableGraphGroupTabs || activeGraphGroupTab === 'llm') && (
-        <div className="charts-toolbar-badges llm-kpi-tiles" role="region" aria-label="LLM live KPIs">
-          <span className="archive-chip">
-            Output tok/s: {(latestMetrics?.llm?.interval_output_tokens_per_sec ?? latestMetrics?.llm?.output_tokens_per_sec ?? latest.llmOutputTokensPerSec ?? 0).toFixed(1)}
-          </span>
-          <span className="archive-chip">
-            TTFT p95: {(latestMetrics?.llm?.interval_summary?.p95_ttft_ms ?? latestMetrics?.llm?.summary?.p95_ttft_ms ?? latest.llmTtftP95Ms ?? 0).toFixed(1)} ms
-          </span>
-          <span className="archive-chip">
-            TPOT p95: {(latestMetrics?.llm?.interval_summary?.p95_tpot_ms ?? latestMetrics?.llm?.summary?.p95_tpot_ms ?? latest.llmTpotP95Ms ?? 0).toFixed(1)} ms
-          </span>
-          <span className="archive-chip">
-            Goodput %: {(latestMetrics?.llm?.goodput_pct ?? latest.llmGoodputPct ?? 0).toFixed(1)}%
-          </span>
-          <span className="archive-chip">
-            Throttle 429 %: {(latestMetrics?.llm?.throttle_rate_pct ?? latest.llmThrottleRatePct ?? 0).toFixed(1)}%
-          </span>
-        </div>
-      )}
+      {hasLLMData && <LazyLoadBoundary title="The LLM live signals could not be loaded.">
+        <Suspense fallback={null}><LiveLLMChartSignals latestMetrics={latestMetrics} latest={latest} showTiles={!enableGraphGroupTabs || activeGraphGroupTab === 'llm'} /></Suspense>
+      </LazyLoadBoundary>}
 
       {paginateGraphs && displayModeCharts.length > 0 && (
         <nav className="archive-pagination-bar graph-pagination-bar" aria-label="Graph pages">

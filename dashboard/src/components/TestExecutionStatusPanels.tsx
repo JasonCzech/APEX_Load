@@ -28,6 +28,17 @@ function loadTelemetryPolicySegments() {
 }
 const TelemetryPolicySegmentList = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryPolicySegmentList })))
 const TelemetryBudgetChange = lazy(() => loadTelemetryPolicySegments().then(module => ({ default: module.TelemetryBudgetChange })))
+// Only a run that sends LLM requests shows its live LLM signals.
+const LiveLLMSignalsCard = lazy(() => import('./LiveLLMSignals').then(module => ({ default: module.LiveLLMSignalsCard })))
+
+// The LLM goals a goal-oriented run can set, each with its breach flag.
+const llmGoalFlags = [
+  ['max_llm_p95_ttft_ms', 'llm_p95_ttft_breached', 'LLM P95 TTFT'],
+  ['max_llm_p95_tpot_ms', 'llm_p95_tpot_breached', 'LLM P95 TPOT'],
+  ['min_llm_output_tokens_per_sec', 'llm_output_tokens_per_sec_breached', 'LLM output tok/s'],
+  ['min_llm_goodput_pct', 'llm_goodput_breached', 'LLM goodput'],
+  ['max_llm_throttle_rate_pct', 'llm_throttle_rate_breached', 'LLM throttle rate'],
+] as const
 
 interface LiveMetricsSummary {
   llm?: LiveLLMMetrics
@@ -580,93 +591,11 @@ export default function TestExecutionStatusPanels({
         <BrowserDocumentEvidencePanel summary={metrics?.browser_documents} summaryMode="live-history" />
       </>)}
 
-      {metrics?.llm?.summary && metrics.llm.summary.requests > 0 && (() => {
-        const llm = metrics.llm
-        const summary = llm.summary!
-        const cacheHitPct = (summary.prompt_tokens ?? 0) > 0
-          ? ((summary.cached_tokens ?? 0) / (summary.prompt_tokens ?? 1)) * 100
-          : 0
-        const finishEntries = Object.entries(summary.finish_reasons ?? {}).sort((a, b) => b[1] - a[1])
-        const bandEntries = Object.entries(summary.by_input_band ?? {}).sort((a, b) => a[0].localeCompare(b[0]))
-        const badgeTone = (llm.throttle_rate_pct ?? 0) > 5 ? 'danger' : (llm.goodput_pct ?? 100) < 90 ? 'warning' : 'healthy'
-        const cpuPct = Math.max(metrics.resources?.container_cpu_usage_pct ?? 0, metrics.resources?.cpu_process_pct ?? 0)
-        const cpuSaturated = cpuPct >= 85
-        const droppedResults = metrics.telemetry?.dropped_results ?? 0
-        const incompletePeer = Boolean(llm.incomplete || summary.incomplete)
-        return (
-          <div className="goal-status-card llm-metrics-card" data-testid="live-llm-signals">
-            <div className="goal-status-header">
-              <div>
-                <h3 className="goal-status-title">LLM inference signals</h3>
-                <p className="goal-status-subtitle">
-                  Rolling {Math.round(llm.rolling_window_seconds || 30)}s window across {summary.requests.toLocaleString()} requests ({(summary.streamed_requests ?? 0).toLocaleString()} streamed).
-                  {(summary.tokens_estimated_requests ?? 0) > 0 ? ' Token counts include client-side ~4 B/tok estimates.' : ''}
-                </p>
-              </div>
-              <div className={`goal-status-badge ${badgeTone}`}>
-                {(llm.output_tokens_per_sec ?? 0).toFixed(1)} tok/s
-              </div>
-            </div>
-
-            {(cpuSaturated || droppedResults > 0 || incompletePeer) && (
-              <div className="goal-status-warning" role="status" data-testid="llm-generator-self-check-banner">
-                {cpuSaturated || droppedResults > 0
-                  ? `Generator self-check: ${cpuSaturated ? `generator CPU saturated (${cpuPct.toFixed(1)}%)` : ''}${cpuSaturated && droppedResults > 0 ? ' and ' : ''}${droppedResults > 0 ? `${droppedResults.toLocaleString()} results dropped` : ''} — inter-token latency (ITL) is marked unreliable.`
-                  : ''}
-                {incompletePeer
-                  ? `${cpuSaturated || droppedResults > 0 ? ' ' : ''}A generator in this run predates LLM summaries — the LLM summary is incomplete.`
-                  : ''}
-              </div>
-            )}
-
-            <div className="goal-status-grid">
-              <div className="goal-status-metric">
-                <span className="goal-status-label">TTFT P50 / P95</span>
-                <span className="goal-status-value">{(summary.p50_ttft_ms ?? 0).toFixed(0)} / {(summary.p95_ttft_ms ?? 0).toFixed(0)} ms</span>
-              </div>
-              <div className="goal-status-metric">
-                <span className="goal-status-label">TPOT P50 / P95</span>
-                <span className="goal-status-value">{(summary.p50_tpot_ms ?? 0).toFixed(1)} / {(summary.p95_tpot_ms ?? 0).toFixed(1)} ms/tok</span>
-              </div>
-              <div className="goal-status-metric">
-                <span className="goal-status-label">Output tok/s</span>
-                <span className="goal-status-value">{(llm.output_tokens_per_sec ?? 0).toFixed(1)} tok/s</span>
-              </div>
-              <div className="goal-status-metric">
-                <span className="goal-status-label">Goodput</span>
-                <span className="goal-status-value">{(llm.goodput_pct ?? 0).toFixed(1)}%</span>
-              </div>
-              <div className="goal-status-metric">
-                <span className="goal-status-label">Throttle rate</span>
-                <span className="goal-status-value">{(llm.throttle_rate_pct ?? 0).toFixed(1)}%</span>
-              </div>
-              <div className="goal-status-metric">
-                <span className="goal-status-label">Cache hit rate</span>
-                <span className="goal-status-value">{cacheHitPct.toFixed(1)}%</span>
-              </div>
-            </div>
-
-            {finishEntries.length > 0 && (
-              <div className="capacity-live-breakdown">
-                <div>
-                  <span className="capacity-live-heading">Finish reasons</span>
-                  {finishEntries.map(([reason, count]) => (
-                    <span key={reason}>{reason}: {count.toLocaleString()}</span>
-                  ))}
-                </div>
-                {bandEntries.length > 0 && (
-                  <div>
-                    <span className="capacity-live-heading">By input length band</span>
-                    {bandEntries.map(([band, bandStats]) => (
-                      <span key={band}>{band}: {bandStats.requests.toLocaleString()} req · {(bandStats.p95_ttft_ms ?? 0).toFixed(0)} ms P95 TTFT</span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )
-      })()}
+      {metrics?.llm?.summary && metrics.llm.summary.requests > 0 && <LazyLoadBoundary title="The LLM inference signals could not be loaded.">
+        <Suspense fallback={null}><LiveLLMSignalsCard llm={metrics.llm}
+          cpuPct={Math.max(metrics.resources?.container_cpu_usage_pct ?? 0, metrics.resources?.cpu_process_pct ?? 0)}
+          droppedResults={metrics.telemetry?.dropped_results ?? 0} /></Suspense>
+      </LazyLoadBoundary>}
 
       {isGoalOriented && (
         <div className="goal-status-card">
@@ -791,31 +720,11 @@ export default function TestExecutionStatusPanels({
                 Dead-letter rate {goalStatus?.dead_letter_rate_breached ? 'breached' : 'healthy'}
               </span>
             )}
-            {test.goal_config?.max_llm_p95_ttft_ms !== undefined && (
-              <span className={`goal-flag ${goalStatus?.llm_p95_ttft_breached ? 'alert' : ''}`}>
-                LLM P95 TTFT {goalStatus?.llm_p95_ttft_breached ? 'breached' : 'healthy'}
+            {llmGoalFlags.map(([configKey, breachedKey, label]) => test.goal_config?.[configKey] !== undefined && (
+              <span key={configKey} className={`goal-flag ${goalStatus?.[breachedKey] ? 'alert' : ''}`}>
+                {label} {goalStatus?.[breachedKey] ? 'breached' : 'healthy'}
               </span>
-            )}
-            {test.goal_config?.max_llm_p95_tpot_ms !== undefined && (
-              <span className={`goal-flag ${goalStatus?.llm_p95_tpot_breached ? 'alert' : ''}`}>
-                LLM P95 TPOT {goalStatus?.llm_p95_tpot_breached ? 'breached' : 'healthy'}
-              </span>
-            )}
-            {test.goal_config?.min_llm_output_tokens_per_sec !== undefined && (
-              <span className={`goal-flag ${goalStatus?.llm_output_tokens_per_sec_breached ? 'alert' : ''}`}>
-                LLM output tok/s {goalStatus?.llm_output_tokens_per_sec_breached ? 'breached' : 'healthy'}
-              </span>
-            )}
-            {test.goal_config?.min_llm_goodput_pct !== undefined && (
-              <span className={`goal-flag ${goalStatus?.llm_goodput_breached ? 'alert' : ''}`}>
-                LLM goodput {goalStatus?.llm_goodput_breached ? 'breached' : 'healthy'}
-              </span>
-            )}
-            {test.goal_config?.max_llm_throttle_rate_pct !== undefined && (
-              <span className={`goal-flag ${goalStatus?.llm_throttle_rate_breached ? 'alert' : ''}`}>
-                LLM throttle rate {goalStatus?.llm_throttle_rate_breached ? 'breached' : 'healthy'}
-              </span>
-            )}
+            ))}
             <span className="goal-flag neutral">
               Stop on breach {test.goal_config?.stop_on_sla_breach ? 'enabled' : 'disabled'}
             </span>

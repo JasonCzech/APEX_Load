@@ -11,12 +11,12 @@ import KafkaManagementSourceFields from './KafkaManagementSourceFields'
 import { kafkaSourceError, newKafkaIdentity, newKafkaScope } from './kafkaManagementSource'
 import ManagementCollectionState from "./ManagementCollectionState"
 import RunManagementEvidence from "./RunManagementEvidence"
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import MonitorTimelinePlot from './MonitorTimelinePlot'
 import { monitorSeriesIdentity, providerBucketRange, monitorEntityLabel } from './monitorTimelineModel'
 import DependencyEvidence from './DependencyEvidence'
 import MonitorRunEvidence from './MonitorRunEvidence'
-import PrometheusSourceFields from './PrometheusSourceFields'
 import PrometheusRunEvidence from './PrometheusRunEvidence'
 import { emptyPrometheusSelection } from './prometheusConnectionModel'
 import DynatraceSourceFields from './DynatraceSourceFields'
@@ -28,6 +28,10 @@ import type { JsonSuccessResponseBody } from '../types/generated/openapi'
 import { useMonitoringCapabilities, useMonitoringEnabled } from './useMonitoringCapabilities'
 import type { AnalysisPoint } from '../types/analysis'
 import type { MetricsHistoryPoint, MonitoringCollectorListResponse } from '../types'
+
+// The Prometheus source fields render only for a prometheus-query source, so
+// the live route loads them on use.
+const PrometheusSourceFields = lazy(() => import('./PrometheusSourceFields'))
 
 type ManagementSource = JsonSuccessResponseBody<'handleMonitorSources', '200'>[number]
 type Source = MonitorSource & Pick<ManagementSource, 'management_scope' | 'management_identity'>
@@ -119,7 +123,9 @@ export function RunMonitorSources({ projectId, canManage = false, showEnableHint
       {draft.pack === 'kafka-offsets' && <KafkaManagementSourceFields source={managementSource(draft)} savedSource={savedManagementSource} available={kafkaManagementAvailable} onChange={changeManagementSource} />}
       {draft.pack === 'servicebus-runtime' && <ServiceBusManagementSourceFields source={managementSource(draft)} savedSource={savedManagementSource} available={serviceBusManagementAvailable} onChange={changeManagementSource} />}
       {draft.pack === 'solace-semp' && <SolaceManagementSourceFields source={managementSource(draft)} savedSource={savedManagementSource} available={solaceManagementAvailable} onChange={changeManagementSource} />}
-      {draft.pack === 'prometheus-query' && <PrometheusSourceFields projectId={projectId} source={draft} onChange={setDraft} />}
+      {draft.pack === 'prometheus-query' && <LazyLoadBoundary title="The Prometheus source fields could not be loaded.">
+        <Suspense fallback={null}><PrometheusSourceFields projectId={projectId} source={draft} onChange={setDraft} /></Suspense>
+      </LazyLoadBoundary>}
       {draft.pack === 'elastic' && <ElasticSourceFields key={draft.id || 'new'} projectId={projectId} source={draft} onChange={setDraft} onValidationChange={setSourceValidation} />}
       {draft.pack === 'dynatrace' && <DynatraceSourceFields projectId={projectId} source={draft} onChange={setDraft} />}
       <label>Collection interval (seconds)<input type="number" min={['dynatrace', 'cloudwatch', 'azure-monitor'].includes(draft.pack) ? 60 : ['servicebus-runtime', 'solace-semp'].includes(draft.pack) ? 30 : draft.pack === 'kafka-offsets' ? 10 : 1} max={3600} value={draft.interval_seconds} onChange={e => setDraft({ ...draft, interval_seconds: Number(e.target.value) })} /></label>
