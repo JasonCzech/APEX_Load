@@ -11,7 +11,7 @@ surface the result in its native test UI.
 
 | Command | Exit 0 | Exit 1 | Exit 2+ |
 | --- | --- | --- | --- |
-| `apexctl ci run` | passed | SLA breach, a run the project's validity gate fails (`run_invalid`), or a `fail_ci` telemetry acceptance failure (`telemetry_failed`) | configuration (including an unmapped inconclusive telemetry verdict, `telemetry_inconclusive`), execution, timeout, or cancellation (see JSON `outcome`) |
+| `apexctl ci run` | passed | SLA breach, a run the project's validity gate fails (`run_invalid`), a `fail_ci` telemetry acceptance failure (`telemetry_failed`), or a run that executed and then failed or was aborted (`execution_error` or `cancelled` with status `FAILED`, `ABORTED` or `NO_RESULTS`) | configuration (including an unmapped inconclusive telemetry verdict, `telemetry_inconclusive`), other execution errors, timeout, or cancellation (see JSON `outcome`; the agent-v1 contract README lists every outcome and code) |
 | `apexctl run` | test ran, no SLA breach | execution error **or** SLA breach | — |
 | `apexctl status` | not breached, not failed | SLA breached, or test FAILED/ABORTED | bad args / fetch error |
 | `apexctl wait` | terminal COMPLETE, not breached | breach, FAILED/ABORTED, or timeout | bad args |
@@ -29,6 +29,24 @@ step already has a working performance gate.
   skipped when no thresholds are configured). This is the de-facto
   Ant/Surefire dialect consumed by GitHub Actions test reporters and artifact
   processors.
+- `apexctl brief <test-id>` prints a finished run's agent brief: the verdict,
+  `blocking` flag, reason codes, metrics against the newest saved baseline
+  comparison, and ranked findings with stable ids (`--format json|md|ctrf`,
+  `--detail summary|standard|full`). It exits 1 when the brief is blocking.
+  The contract is `docs/contracts/agent-v1/README.md`.
+- `apexctl ci run` (controller mode) adds three outputs, read with the run's own
+  CI credentials once the gate has decided:
+  - `--agent-brief <path>` writes the brief as JSON.
+  - `--ctrf <path>` writes a CTRF test report.
+  - `--github-summary` appends the brief's Markdown, at `summary` detail,
+    after the gate summary, when the controller serves it. Summary detail
+    carries no text from the system under test, so it is safe in a public
+    job summary.
+
+  None of the three changes the outcome or the exit code: the brief is read
+  after the outcome is settled, outside `--timeout`, for at most 30 s. A brief
+  the controller cannot serve is a warning on stderr. `--agent-brief` and `--ctrf`
+  are refused in `--execution-mode=local`, which has no archive.
 
 ### SLA thresholds
 

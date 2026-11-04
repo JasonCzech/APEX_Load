@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:apexload:contract:agent-v1:event.schema.json",
+  "$defs": {
+    "AgentCloudEventData": {
+      "properties": {
+        "event": {
+          "$ref": "#/$defs/AgentCloudEventSummary"
+        },
+        "links": {
+          "$ref": "#/$defs/AgentCloudEventLinks"
+        }
+      },
+      "type": "object",
+      "required": [
+        "event",
+        "links"
+      ]
+    },
+    "AgentCloudEventLinks": {
+      "properties": {
+        "brief": {
+          "type": "string"
+        },
+        "report": {
+          "type": "string"
+        },
+        "ui": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "AgentCloudEventSummary": {
+      "properties": {
+        "type": {
+          "type": "string"
+        },
+        "test_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "test_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "severity": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "conditions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object",
+      "required": [
+        "type",
+        "conditions"
+      ]
+    }
+  },
+  "properties": {
+    "specversion": {
+      "type": "string",
+      "enum": [
+        "1.0"
+      ]
+    },
+    "id": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string"
+    },
+    "subject": {
+      "type": "string"
+    },
+    "time": {
+      "type": "string"
+    },
+    "datacontenttype": {
+      "type": "string",
+      "enum": [
+        "application/json"
+      ]
+    },
+    "dataschema": {
+      "type": "string"
+    },
+    "data": {
+      "$ref": "#/$defs/AgentCloudEventData"
+    }
+  },
+  "type": "object",
+  "required": [
+    "specversion",
+    "id",
+    "source",
+    "type",
+    "time",
+    "datacontenttype",
+    "dataschema",
+    "data"
+  ]
+}

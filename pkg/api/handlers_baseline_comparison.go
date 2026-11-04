@@ -307,19 +307,28 @@ func (s *Server) loadBaselineComparison(w http.ResponseWriter, r *http.Request, 
 	if !ok {
 		return nil, false
 	}
-	payload, err := store.GetBaselineComparison(id, current.ProjectID, current.ID)
-	if errors.Is(err, sql.ErrNoRows) {
-		writeError(w, 404, "comparison not found")
+	result, status, message := s.loadBaselineComparisonSnapshot(store, current, id)
+	if status != 0 {
+		writeError(w, status, message)
 		return nil, false
 	}
+	return result, true
+}
+
+// loadBaselineComparisonSnapshot loads a run's saved comparison, refusing
+// one whose baselines left the run's application and project. A non-zero
+// status is the HTTP status the failure maps to.
+func (s *Server) loadBaselineComparisonSnapshot(store storage.ComparisonStore, current *ManagedTest, id string) (*BaselineComparisonSnapshot, int, string) {
+	payload, err := store.GetBaselineComparison(id, current.ProjectID, current.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, 404, "comparison not found"
+	}
 	if err != nil {
-		writeError(w, 500, "comparison could not be loaded")
-		return nil, false
+		return nil, 500, "comparison could not be loaded"
 	}
 	var result BaselineComparisonSnapshot
 	if json.Unmarshal(payload, &result) != nil {
-		writeError(w, 500, "invalid comparison snapshot")
-		return nil, false
+		return nil, 500, "invalid comparison snapshot"
 	}
 	// A comparison saved before telemetry text was scrubbed is projected
 	// with the shared scrubber (TEL-B).
@@ -329,11 +338,10 @@ func (s *Server) loadBaselineComparison(w http.ResponseWriter, r *http.Request, 
 	for _, baseline := range result.Baselines {
 		test, found := s.archiveDomainService().GetTest(baseline.ID)
 		if !found || !baselineSameScope(current, test) {
-			writeError(w, 404, "a referenced baseline is unavailable in this application and project")
-			return nil, false
+			return nil, 404, "a referenced baseline is unavailable in this application and project"
 		}
 	}
-	return &result, true
+	return &result, 0, ""
 }
 
 // BaselineComparisonSummary lists a saved comparison without its full payload.

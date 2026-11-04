@@ -1,5 +1,7 @@
 # The server uses the v1 FastMCP contract; v2 removes this import.
-mcp>=1.0,<2.0
+# The agent tools return CallToolResult directly; 1.25 is the oldest version
+# verified to pass it through FastMCP and the low-level server unchanged.
+mcp>=1.25,<2.0
 httpx
 pytest
 pytest-asyncio

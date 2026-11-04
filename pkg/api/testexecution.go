@@ -5889,23 +5889,27 @@ func applyGoalControllerUpdateWithScaler(tr *TestRunner, test *ManagedTest, live
 	live.GoalStatus.SuggestedTotalVUsers = live.GoalStatus.CurrentTotalVUsers
 }
 
-func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage string) {
+// requestStopIfRunning stops a running test; the error is the failed stop's,
+// nil when the stop went through or the test was not running.
+func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage string) error {
 	tr.mu.RLock()
 	status := test.Status
 	tr.mu.RUnlock()
 	if status != "RUNNING" {
-		return
+		return nil
 	}
-	if err := tr.StopTest(test.ID); err != nil {
+	err := tr.StopTest(test.ID)
+	if err != nil {
 		slog.Warn(warningMessage, "test_id", test.ID, "error", err)
 	}
+	return err
 }
 
-func (tr *TestRunner) requestStopIfRunningWithReason(test *ManagedTest, reason, warningMessage string) {
+func (tr *TestRunner) requestStopIfRunningWithReason(test *ManagedTest, reason, warningMessage string) error {
 	tr.mu.Lock()
 	if test.Status != "RUNNING" {
 		tr.mu.Unlock()
-		return
+		return nil
 	}
 	previousError := test.Error
 	test.Error = strings.TrimSpace(reason)
@@ -5918,7 +5922,9 @@ func (tr *TestRunner) requestStopIfRunningWithReason(test *ManagedTest, reason, 
 		}
 		tr.mu.Unlock()
 		slog.Warn(warningMessage, "test_id", test.ID, "error", err)
+		return err
 	}
+	return nil
 }
 
 func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan time.Time, bool, error) {

@@ -796,11 +796,14 @@ type ManagedTest struct {
 	remoteTargetStates                             map[string]string
 	remoteFinalizing                               bool
 	remoteWorkloadCompleted                        bool
-	remoteLifecycleCtx                             context.Context
-	remoteLifecycleCancel                          context.CancelFunc
-	remoteStopFinalizerRunning                     bool
-	remoteMetricsLastPublishedAt                   time.Time
-	remoteMetricsFlushScheduled                    bool
+	// autoStopTrigger is the first automatic stop requested for the run
+	// (guarded by tr.mu); the archive manifest keeps it as StopTrigger.
+	autoStopTrigger              *RunStopTrigger
+	remoteLifecycleCtx           context.Context
+	remoteLifecycleCancel        context.CancelFunc
+	remoteStopFinalizerRunning   bool
+	remoteMetricsLastPublishedAt time.Time
+	remoteMetricsFlushScheduled  bool
 	// remoteMetricsStoredRevisionByTarget is the accepted revision of each
 	// target's latest stored window, and remoteMetricsGateRevision the
 	// accepted revision at the gate's last publication: a target has a new

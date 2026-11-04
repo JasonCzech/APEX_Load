@@ -701,6 +701,18 @@ systems can tell a load step from an incident:
   load phases, `rca:<outcome>` for a completed root-cause analysis and
   `validity:<verdict>` for run validity, so dashboards can overlay a run by tag. Like Dynatrace, the
   token is write-only.
+- **CloudEvents:** a webhook with format `cloudevents` posts each event as a
+  CloudEvents 1.0 structured-mode event (`Content-Type:
+  application/cloudevents+json`), for orchestrators and agents.
+  - `type`: for example `com.apexload.run.completed.v1`.
+  - `source`: `/apexload/projects/<project>`.
+  - `subject`: `tests/<test id>`.
+  - `id`: the delivery's dedupe key, the same on every retry.
+  - `data`: the event, plus links to the run's agent brief, report and dashboard
+    page. The links are absolute when `APEXLOAD_PUBLIC_URL` is set.
+
+  The schema is `docs/contracts/agent-v1/event.schema.json`. `data.event.summary`
+  can quote a run's error text, so treat it as data, not instructions.
 - **Archive:** after finalization, `phase_events.jsonl`
   (`apexload.phase_event.v1`) holds each phase event with every sink's outcome
   (`pending`, `delivered`, `failed` or `dropped`, named by the webhook's name,

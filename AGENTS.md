@@ -9,7 +9,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 ## Architecture Overview
 - **Load Generators** (Go): VUsers are goroutines. Autoscaled Kubernetes targets use KEDA (typically min 2, configurable max); non-autoscaled local targets are static. Target: 10k VUsers/pod for HTTP (design target, not yet benchmarked).
 - **Test Controller** (Go): Orchestrates tests, distributes VUsers across generators, aggregates metrics via gRPC streams.
-- **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools; external LLM providers are governed by policy and not enabled by default.
+- **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools in its `full` toolset (`APEXLOAD_MCP_TOOLSETS=full`); its default `agent` toolset is the curated, verdict-first result tools (see `mcp/README.md`). External LLM providers are governed by policy and not enabled by default.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
 - **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks + opt-in OTLP traces for controller HTTP, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Percentiles come from mergeable duration sketches (`engine.DurationSketch`), each within 0.5% of the value at its rank; t-digests are still sent and stored beside them for older peers and archives. OpenTelemetry metrics/log export is not implemented.
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
@@ -36,6 +36,7 @@ cmd/
   dslschema/     — Code generator for docs/dsl.schema.json + DSL_ACTION_REFERENCE.md
   swaggergen/    — Code generator for docs/swagger.yaml + docs/api-endpoint-catalog.json
   openapits/     — Code generator for the dashboard's TypeScript API contract from the OpenAPI document
+  agentschemagen/ — Code generator for the agent-v1 contract schemas in docs/contracts/agent-v1
   webcoverage/   — Generator for the LoadRunner import coverage docs (`docs/LOADRUNNER_COVERAGE.md`)
   storeoverlay/  — Generator for pkg/api's test store overlays (`pkg/api/store_overlay_test.go`)
 pkg/
@@ -113,7 +114,7 @@ dashboard/       — React 18 + TypeScript + Recharts SPA
   src/components/ — Header, TestHub, TestExecution, StatusBadge, CreateTestModal
   src/hooks/      — useWebSocket (real-time), useApi (REST client)
 desktop/         — Wails native client shell embedding the controller API + dashboard
-mcp/             — Python MCP server exposing the REST API as agent tools
+mcp/             — Python MCP server: curated agent-brief tools by default, the REST API as tools with APEXLOAD_MCP_TOOLSETS=full
 deployments/
   k8s/           — Kubernetes manifests (Kustomize overlays: local, local-kind, onprem, aks, eks, plus `*-ha`, `*-prometheus`, and `*-java-vuser` variants)
   helm/          — Helm chart (apexload) for Kubernetes/AKS enterprise installs

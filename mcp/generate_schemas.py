@@ -13,6 +13,10 @@ from apexload_mcp.tools import ENDPOINT_TOOLS
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "mcp/apexload_mcp/input_schemas.json"
+# The agent tools advertise the controller's agent-v1 schemas as their MCP
+# output schemas; the package carries a copy so it works outside a checkout.
+CONTRACTS_SOURCE = ROOT / "docs/contracts/agent-v1"
+CONTRACTS_OUTPUT = ROOT / "mcp/apexload_mcp/contracts"
 # Start with common read/start workflows. Names, descriptions, guards, and
 # conditional-save adapters remain curated in tools.py. Aliases share schemas.
 WORKFLOWS = {("GET", "/scripts/{id}"), ("GET", "/scenarios/{id}"),
@@ -82,17 +86,33 @@ def generate(source: Path = ROOT / "docs/swagger.yaml") -> str:
     return json.dumps({"source": "docs/swagger.yaml", "tools": schemas}, indent=2, sort_keys=True) + "\n"
 
 
+def contract_copies() -> dict[str, str]:
+    """The agent-v1 schemas the package copies, by file name."""
+    return {path.name: path.read_text() for path in sorted(CONTRACTS_SOURCE.glob("*.schema.json"))}
+
+
+def contracts_current() -> bool:
+    expected = contract_copies()
+    actual = {path.name: path.read_text() for path in sorted(CONTRACTS_OUTPUT.glob("*.schema.json"))} if CONTRACTS_OUTPUT.is_dir() else {}
+    return actual == expected
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     generated = generate()
     if args.check:
-        if not OUTPUT.exists() or OUTPUT.read_text() != generated:
+        if not OUTPUT.exists() or OUTPUT.read_text() != generated or not contracts_current():
             print("Run the MCP Python environment: python mcp/generate_schemas.py")
             return 1
     else:
         OUTPUT.write_text(generated)
+        CONTRACTS_OUTPUT.mkdir(exist_ok=True)
+        for stale in CONTRACTS_OUTPUT.glob("*.schema.json"):
+            stale.unlink()
+        for name, body in contract_copies().items():
+            (CONTRACTS_OUTPUT / name).write_text(body)
     return 0
 
 

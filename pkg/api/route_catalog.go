@@ -54,6 +54,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	// surface; API-key fallback must also carry the explicit run/read scope.
 	routeAuth(http.MethodPost, "/api/v1/ci/runs", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveCIRunCreateProjectID, ServiceAccountScope: "tests:run", MaxBodyBytes: 4 << 20}),
 	routeAuth(http.MethodGet, "/api/v1/ci/runs/{id}", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "results:read"}),
+	routeAuth(http.MethodGet, "/api/v1/ci/runs/{id}/agent-brief", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "results:read"}),
 	routeAuth(http.MethodPost, "/api/v1/ci/runs/{id}/abort", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "tests:run"}),
 
 	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.

@@ -237,6 +237,17 @@ func (w *runArchiveWriter) flushBuffersLocked() error {
 	return errors.Join(failures...)
 }
 
+// SetStopTrigger records the automatic stop rule that ended the run early.
+func (w *runArchiveWriter) SetStopTrigger(trigger *RunStopTrigger) {
+	if w == nil || trigger == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	copied := *trigger
+	w.manifest.StopTrigger = &copied
+}
+
 // SetTerminationReason records the execution driver's explicit completion signal.
 func (w *runArchiveWriter) SetTerminationReason(reason string) {
 	w.mu.Lock()

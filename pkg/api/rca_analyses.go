@@ -12,6 +12,7 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,8 @@ const (
 	rcaEvidenceSchema = "apexload.rca_evidence.v1"
 	rcaBundleSchema   = "apexload.rca_bundle.v2"
 	rcaMaxBundleBytes = 256 << 10
+	// rcaMinBundleBytes is the smallest bundle a request may ask for.
+	rcaMinBundleBytes = 32 << 10
 	// An analysis lease outlives the engine's 120 s wall-time budget plus
 	// archive reading, so a live owner is not overtaken.
 	rcaAnalysisLease = 5 * time.Minute
@@ -869,7 +872,21 @@ func (s *Server) handleGetRCAAssessmentV2(w http.ResponseWriter, r *http.Request
 // handleGetRCABundle returns a completed analysis with its evidence, within
 // 256 KiB.
 func (s *Server) handleGetRCABundle(w http.ResponseWriter, r *http.Request) {
+	maxBytes := rcaMaxBundleBytes
+	if raw := strings.TrimSpace(r.URL.Query().Get("max_bytes")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed < rcaMinBundleBytes || parsed > rcaMaxBundleBytes {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("max_bytes must be between %d and %d", rcaMinBundleBytes, rcaMaxBundleBytes))
+			return
+		}
+		maxBytes = parsed
+	}
 	if bundle, _, ok := s.rcaBundleForRequest(w, r); ok {
+		if maxBytes < rcaMaxBundleBytes {
+			// A smaller bundle fits an agent's context; the narration check
+			// still reads the full one.
+			bundle = boundRCABundleTo(bundle, maxBytes)
+		}
 		writeJSON(w, http.StatusOK, bundle)
 	}
 }
@@ -905,9 +922,14 @@ const rcaBundleInventoryReserve = 16 << 10
 // the inventory, the remaining excerpts and last the SLA details. It marks
 // what it cut.
 func boundRCABundle(bundle RCABundle) RCABundle {
+	return boundRCABundleTo(bundle, rcaMaxBundleBytes)
+}
+
+// boundRCABundleTo is boundRCABundle with a smaller cap, in the same order.
+func boundRCABundleTo(bundle RCABundle, maxBytes int) RCABundle {
 	fits := func() bool {
 		body, err := json.Marshal(bundle)
-		return err == nil && len(body) <= rcaMaxBundleBytes
+		return err == nil && len(body) <= maxBytes
 	}
 	if bundle.Evidence != nil && len(*bundle.Evidence) > rcaBundleInventoryReserve && !fits() {
 		bundle.Evidence, bundle.Truncated = nil, true

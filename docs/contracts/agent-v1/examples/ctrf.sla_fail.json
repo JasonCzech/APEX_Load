@@ -1,0 +1,128 @@
+{
+  "reportFormat": "CTRF",
+  "specVersion": "0.0.0",
+  "results": {
+    "tool": {
+      "name": "APEX Load"
+    },
+    "summary": {
+      "tests": 5,
+      "passed": 3,
+      "failed": 2,
+      "pending": 0,
+      "skipped": 0,
+      "other": 0,
+      "start": 1793696400000,
+      "stop": 1793697000000
+    },
+    "tests": [
+      {
+        "name": "SLA Browse error rate \u003c= 1%",
+        "status": "passed",
+        "duration": 0,
+        "suite": "sla",
+        "extra": {
+          "apexload": {
+            "metric": "error_pct",
+            "observed": 0.17,
+            "p50_ms": 90,
+            "p99_ms": 300,
+            "samples": 6000,
+            "threshold": 1,
+            "throughput_per_s": 10,
+            "unit": "pct"
+          }
+        }
+      },
+      {
+        "name": "SLA Browse p95 \u003c= 300 ms",
+        "status": "passed",
+        "duration": 180,
+        "suite": "sla",
+        "extra": {
+          "apexload": {
+            "metric": "p95_ms",
+            "observed": 180,
+            "p50_ms": 90,
+            "p99_ms": 300,
+            "samples": 6000,
+            "threshold": 300,
+            "throughput_per_s": 10,
+            "unit": "ms"
+          }
+        }
+      },
+      {
+        "name": "SLA Checkout error rate \u003c= 1%",
+        "status": "passed",
+        "duration": 0,
+        "suite": "sla",
+        "extra": {
+          "apexload": {
+            "metric": "error_pct",
+            "observed": 0.25,
+            "p50_ms": 140,
+            "p99_ms": 390,
+            "samples": 4000,
+            "threshold": 1,
+            "throughput_per_s": 6.67,
+            "unit": "pct"
+          }
+        }
+      },
+      {
+        "name": "SLA Checkout p95 \u003c= 300 ms",
+        "status": "failed",
+        "duration": 410,
+        "message": "p95 of Checkout is 410 ms vs SLA 300 ms",
+        "suite": "sla",
+        "extra": {
+          "apexload": {
+            "finding_id": "fnd_sla_fcb7591cf11f",
+            "metric": "p95_ms",
+            "observed": 410,
+            "p50_ms": 140,
+            "p99_ms": 390,
+            "samples": 4000,
+            "threshold": 300,
+            "throughput_per_s": 6.67,
+            "unit": "ms"
+          }
+        }
+      },
+      {
+        "name": "APEX Load verdict",
+        "status": "failed",
+        "duration": 600000,
+        "message": "The run failed its acceptance criteria with 1 blocking finding. Worst finding: p95 of Checkout is 410 ms vs SLA 300 ms.",
+        "suite": "verdict",
+        "extra": {
+          "apexload": {
+            "reason_codes": [
+              "sla_breached"
+            ],
+            "status": "fail"
+          }
+        }
+      }
+    ],
+    "environment": {
+      "appName": "shop",
+      "appVersion": "r42"
+    },
+    "extra": {
+      "apexload": {
+        "blocking": true,
+        "brief_uri": "/tests/run-1/archive/agent-brief",
+        "findings": [
+          "fnd_sla_fcb7591cf11f"
+        ],
+        "reason_codes": [
+          "sla_breached"
+        ],
+        "run_id": "run-1",
+        "verdict": "fail"
+      }
+    }
+  }
+}

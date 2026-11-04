@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/runcontract"
 )
 
 type cliInputError struct{ cause error }
@@ -135,12 +137,10 @@ func importCommandExitCode(err error) int {
 	return exitCodeControllerOrTransport
 }
 
+// ciResultExitCode is the shared contract's exit code, so the controller's
+// agent brief reports the code this process exits with.
 func ciResultExitCode(result CIResult) int {
-	outcome := strings.ToLower(strings.TrimSpace(result.Outcome))
-	if (outcome == ciOutcomeExecutionError || outcome == ciOutcomeCancelled) && isCITestVerdictFailureStatus(result.Status) {
-		return exitCodeTestFailure
-	}
-	return ciExitCode(outcome)
+	return runcontract.CIResultExitCode(result.Outcome, result.Status)
 }
 
 func isCITestVerdictFailureStatus(status string) bool {

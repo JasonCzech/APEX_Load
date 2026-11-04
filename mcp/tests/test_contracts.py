@@ -51,7 +51,7 @@ def test_generated_input_schemas_are_current():
 
 @pytest.mark.asyncio
 async def test_actual_tool_registry_exposes_selected_schemas_and_keeps_curated_contract():
-    registered = {tool.name: tool for tool in await create_mcp_server().list_tools()}
+    registered = {tool.name: tool for tool in await create_mcp_server(["full"]).list_tools()}
     generated = json.loads(OUTPUT.read_text())["tools"]
     for spec in ENDPOINT_TOOLS:
         assert registered[spec.name].description == spec.description

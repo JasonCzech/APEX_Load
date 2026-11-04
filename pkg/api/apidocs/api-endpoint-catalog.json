@@ -1536,6 +1536,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/ci/runs/{id}/agent-brief",
+      "operationId": "handleGetCIRunAgentBrief",
+      "summary": "Get CI Run Agent Brief",
+      "category": "CI/CD",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: ci_runner, Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/correlation-rulesets",
       "operationId": "handleListCorrelationRulesets",
       "summary": "List Correlation Rulesets",
@@ -6830,6 +6840,26 @@
       "path": "/api/v1/tests/{id}/archive",
       "operationId": "handleDownloadRunArchive",
       "summary": "Download Run Archive",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/agent-brief",
+      "operationId": "handleGetAgentBrief",
+      "summary": "Get Agent Brief",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/agent-brief/findings/{finding_id}",
+      "operationId": "handleGetAgentFinding",
+      "summary": "Get Agent Finding",
       "category": "Test Execution",
       "public": false,
       "authenticated": true,
