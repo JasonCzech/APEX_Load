@@ -297,6 +297,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.ErrorMessage = "http action is required"
 		return result, nil
 	}
+	// The closure reads action when it runs, so it sees the prepared
+	// llm_request below; every later return reaches it.
+	defer func() { stampLLMFailureDiagnostics(action, h.resolveURL, result) }()
 	if strings.EqualFold(strings.TrimSpace(action.Type), "llm_request") {
 		prepared, err := prepareLLMRequestAction(action, h.resolveURL(action.Target))
 		if err != nil {

@@ -588,3 +588,94 @@ func TestHandleGenAISpanLookupElasticAndDynatrace(t *testing.T) {
 		t.Fatalf("expected InputTokenDelta=4 OutputTokenDelta=0, got in=%d out=%d", match.InputTokenDelta, match.OutputTokenDelta)
 	}
 }
+
+// /llm/compare and /llm/prompt-datasets/calibrate authorize the query's
+// project only: a test ID in the body must belong to it, or another project's
+// archive would leak through the comparison or the calibration.
+func TestLLMPerfBodyTestIDsStayInTheRouteProject(t *testing.T) {
+	server, id, _ := harDownloadFixture(t)
+	post := func(path, roles string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		data, _ := json.Marshal(body)
+		req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Auth-Request-User", "llm-user")
+		req.Header.Set("X-APEXLoad-Project-Roles", roles)
+		reply := httptest.NewRecorder()
+		server.mux.ServeHTTP(reply, req)
+		return reply
+	}
+	other := "another-project"
+	for _, tc := range []struct {
+		name string
+		path string
+		body any
+	}{
+		{name: "compare baseline", path: "/api/v1/llm/compare", body: LLMCompareRequest{BaselineTestID: id, CandidateTestID: id}},
+		{name: "compare groups", path: "/api/v1/llm/compare", body: LLMCompareRequest{TestID: id, BaselineGroup: "a", CandidateGroup: "b"}},
+		{name: "calibrate", path: "/api/v1/llm/prompt-datasets/calibrate", body: LLMPromptDatasetCalibrateRequest{TestID: id}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if reply := post(tc.path+"?project_id="+other, other+"="+RoleEditor, tc.body); reply.Code != http.StatusNotFound {
+				t.Fatalf("another project's user reached the run: %d %s", reply.Code, reply.Body.String())
+			}
+			if reply := post(tc.path+"?project_id="+storage.DefaultProjectID, storage.DefaultProjectID+"="+RoleEditor, tc.body); reply.Code == http.StatusNotFound || reply.Code == http.StatusForbidden {
+				t.Fatalf("the owning project's user was refused: %d %s", reply.Code, reply.Body.String())
+			}
+			// A system administrator is unscoped: naming no project leaves
+			// them unrestricted, and naming one still confines the body.
+			data, _ := json.Marshal(tc.body)
+			for _, admin := range []struct {
+				query   string
+				refused bool
+			}{{query: "", refused: false}, {query: "?project_id=" + other, refused: true}} {
+				req := httptest.NewRequest(http.MethodPost, tc.path+admin.query, bytes.NewReader(data))
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("X-Auth-Request-User", "llm-admin")
+				req.Header.Set("X-APEXLoad-Roles", RoleSystemAdmin)
+				reply := httptest.NewRecorder()
+				server.mux.ServeHTTP(reply, req)
+				if refused := reply.Code == http.StatusNotFound; refused != admin.refused {
+					t.Fatalf("admin %q: status %d %s, want refused=%v", admin.query, reply.Code, reply.Body.String(), admin.refused)
+				}
+			}
+		})
+	}
+}
+
+// Calibration from an archive takes the server's completion counts against
+// the visible characters: fully estimated counts, tool-call requests and the
+// reasoning share of a completion stay out, and a prompt-only estimate keeps
+// its exact completion count.
+func TestCalibrateFromArchiveUsesVisibleServerTokens(t *testing.T) {
+	server, store := businessKeyServer(t)
+	if server.providerMonitoringCancel != nil {
+		server.providerMonitoringCancel()
+	}
+	diags := []*protocol.LLMDiagnostics{
+		{CompletionTokens: 10, OutputChars: 40},                                                       // exact
+		{CompletionTokens: 10, OutputChars: 40, TokensEstimated: true, PromptTokensEstimated: true},   // prompt-only estimate
+		{CompletionTokens: 105, ReasoningTokens: 100, OutputChars: 20},                                // 5 visible tokens
+		{CompletionTokens: 50, OutputChars: 999, TokensEstimated: true},                               // fully estimated
+		{CompletionTokens: 40, OutputChars: 8, ToolCallsCount: 1},                                     // tool-call arguments
+		{CompletionTokens: 3, ReasoningTokens: 3, OutputChars: 7},                                     // no visible tokens
+		{CompletionTokens: 105, ReasoningTokens: 60, ReasoningTokensEstimated: true, OutputChars: 20}, // estimated reasoning share
+	}
+	_ = exemplarArchiveFixture(t, server, store, "calibrate-run", func(i int, tx *TransactionEvent) {
+		if i < len(diags) {
+			tx.ActionName = "chat"
+			tx.ServerTelemetry = &protocol.ServerTelemetry{LLM: diags[i]}
+		}
+	})
+	rec := timeslotRequest(t, server, http.MethodPost, "/api/v1/llm/prompt-datasets/calibrate", LLMPromptDatasetCalibrateRequest{TestID: "calibrate-run"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("calibrate: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var got LLMPromptDatasetCalibrateResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got.Source != "archive" || got.SampleCount != 3 || got.TotalChars != 100 || got.TotalTokens != 25 || got.BytesPerToken != 4 {
+		t.Fatalf("calibration = %+v, want 3 samples, 100 chars over 25 visible tokens (4 bytes/token)", got)
+	}
+}

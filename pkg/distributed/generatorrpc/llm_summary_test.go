@@ -121,13 +121,25 @@ func TestLLMSummaryVersionAndPeerCompleteness(t *testing.T) {
 		t.Fatalf("expected LlmSummaryVersion=%d, got %d", CurrentLLMSummaryVersion, pbBatch.GetLlmSummaryVersion())
 	}
 
-	// Merge a modern peer with an older peer that executed the same action without an LLMSummary.
-	mergedMixed := mergeMetricAggregates([]MetricAggregate{
+	// A current peer whose executions carried no LLM summary (requests that
+	// were not LLM requests) is not a missing peer: older generators are
+	// detected by the batch's LLMSummaryVersion on the controller.
+	mergedAbsent := mergeMetricAggregates([]MetricAggregate{
 		{Name: "chat", Count: 1, DependencyType: "http", LLM: s.Clone()},
-		{Name: "chat", Count: 1, DependencyType: "http", LLM: nil},
+		{Name: "chat", Count: 3, DependencyType: "http", LLM: nil},
 	})
-	if mergedMixed == nil || mergedMixed.LLM == nil || !mergedMixed.LLM.Incomplete {
-		t.Fatalf("expected mixed peer merge to set LLM.Incomplete=true, got %+v", mergedMixed)
+	if mergedAbsent == nil || mergedAbsent.LLM == nil || mergedAbsent.LLM.Incomplete {
+		t.Fatalf("expected an absent current-version peer summary to leave LLM complete, got %+v", mergedAbsent)
+	}
+	// An incomplete peer summary stays incomplete through the merge.
+	incomplete := s.Clone()
+	incomplete.Incomplete = true
+	mergedIncomplete := mergeMetricAggregates([]MetricAggregate{
+		{Name: "chat", Count: 1, DependencyType: "http", LLM: s.Clone()},
+		{Name: "chat", Count: 1, DependencyType: "http", LLM: incomplete},
+	})
+	if mergedIncomplete == nil || mergedIncomplete.LLM == nil || !mergedIncomplete.LLM.Incomplete {
+		t.Fatalf("expected an incomplete peer summary to mark the merge incomplete, got %+v", mergedIncomplete)
 	}
 }
 

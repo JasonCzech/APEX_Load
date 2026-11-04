@@ -51,18 +51,46 @@ var synthVocab = []string{
 	"resilience", "failover", "throttling", "guardrail", "threshold", "allocation",
 }
 
+// Generation bounds. The dataset is built in memory and returned twice (as
+// records and as JSONL), so its size is bounded up front rather than by the
+// request body, which a few numbers can multiply without limit.
+const (
+	MaxCount         = 50000
+	MaxInputTokens   = 1 << 20 // the largest context windows in use
+	MaxBytesPerToken = 16.0
+	MaxOutputBytes   = 32 << 20
+)
+
 // Generate produces a deterministic synthetic JSONL prompt dataset matching cfg.
 func Generate(cfg Config) (*Result, error) {
 	count := cfg.Count
 	if count <= 0 {
 		count = 100
 	}
-	if count > 50000 {
-		return nil, fmt.Errorf("count %d exceeds maximum 50000", count)
+	if count > MaxCount {
+		return nil, fmt.Errorf("count %d exceeds maximum %d", count, MaxCount)
 	}
 	bpt := cfg.BytesPerToken
 	if bpt <= 0 || math.IsNaN(bpt) || math.IsInf(bpt, 0) {
 		bpt = 4.0
+	}
+	if bpt > MaxBytesPerToken {
+		return nil, fmt.Errorf("bytes_per_token %g exceeds maximum %g", bpt, MaxBytesPerToken)
+	}
+	for _, field := range []struct {
+		name  string
+		value int
+	}{
+		{"mean_input_tokens", cfg.MeanInputTokens},
+		{"std_input_tokens", cfg.StdInputTokens},
+		{"min_input_tokens", cfg.MinInputTokens},
+		{"max_input_tokens", cfg.MaxInputTokens},
+		{"expected_output_tokens", cfg.ExpectedOutputTokens},
+		{"shared_prefix_tokens", cfg.SharedPrefixTokens},
+	} {
+		if field.value > MaxInputTokens {
+			return nil, fmt.Errorf("%s %d exceeds maximum %d", field.name, field.value, MaxInputTokens)
+		}
 	}
 	meanIn := cfg.MeanInputTokens
 	if meanIn <= 0 {
@@ -105,6 +133,9 @@ func Generate(cfg Config) (*Result, error) {
 	rng := rand.New(rand.NewSource(seed))
 
 	prefixTokens := max(0, min(cfg.SharedPrefixTokens, maxIn-4))
+	if float64(prefixTokens)*bpt > MaxOutputBytes {
+		return nil, outputTooLarge()
+	}
 	var sharedPrefix string
 	if prefixTokens > 0 {
 		sharedPrefix = buildTokenString(rng, prefixTokens, bpt, "system-context")
@@ -123,6 +154,11 @@ func Generate(cfg Config) (*Result, error) {
 	for i := 0; i < count; i++ {
 		targetTokens := sampleTokenCount(rng, dist, meanIn, stdIn, minIn, maxIn, i)
 		suffixTokens := max(4, targetTokens-prefixTokens)
+		// Each record carries the shared prefix and its own prompt (twice:
+		// prompt and message); refuse before building what cannot fit.
+		if float64(jsonlBuf.Len())+float64(prefixTokens+2*suffixTokens)*bpt > MaxOutputBytes {
+			return nil, outputTooLarge()
+		}
 		userPrompt := buildTokenString(rng, suffixTokens, bpt, fmt.Sprintf("req-%d", i+1))
 		var msgs []dataset.Message
 		if sharedPrefix != "" {
@@ -159,6 +195,9 @@ func Generate(cfg Config) (*Result, error) {
 		}
 		jsonlBuf.Write(line)
 		jsonlBuf.WriteByte('\n')
+		if jsonlBuf.Len() > MaxOutputBytes {
+			return nil, outputTooLarge()
+		}
 	}
 
 	return &Result{
@@ -172,6 +211,10 @@ func Generate(cfg Config) (*Result, error) {
 		Records:            records,
 		JSONL:              jsonlBuf.String(),
 	}, nil
+}
+
+func outputTooLarge() error {
+	return fmt.Errorf("synthetic dataset would exceed %d MiB; lower count, input token sizes, shared_prefix_tokens or bytes_per_token", MaxOutputBytes>>20)
 }
 
 func sampleTokenCount(rng *rand.Rand, dist string, meanIn, stdIn, minIn, maxIn, idx int) int {

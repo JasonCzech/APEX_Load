@@ -198,12 +198,21 @@ type VUser struct {
 	resultSequence        uint64
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
-	async                     *asyncConversations
-	inAsyncDispatch           bool
-	onAsyncResult             func(*protocol.Result, *ReplayActionEvent)
-	QuotaPacer                *QuotaPacer
-	llmConversationVars       map[string]struct{}
-	llmConversationHistory    map[string][]LLMConversationMessage
+	async                  *asyncConversations
+	inAsyncDispatch        bool
+	onAsyncResult          func(*protocol.Result, *ReplayActionEvent)
+	QuotaPacer             *QuotaPacer
+	llmConversationVars    map[string]struct{}
+	llmConversationHistory map[string][]LLMConversationMessage
+	// llmQuotaWait is the time the current action queued for quota; it is
+	// excluded from transaction times like think time (takeLLMQuotaWait).
+	llmQuotaWait time.Duration
+	// A concurrent child's executor and a parallel branch record when they
+	// queued, so their parent can tell when none of them was busy.
+	trackQuotaWaitIntervals bool
+	llmQuotaWaitIntervals   []timeInterval
+	// quotaPauseBypass lets teardown LLM actions through a paused pacer.
+	quotaPauseBypass          bool
 	lastLLMConversationAction *protocol.Action
 	lastLLMConversationTurn   *pendingLLMConversationTurn
 }
@@ -563,7 +572,9 @@ func (lc *lifecycleRun) runParallel(action *dsl.Action, depth int) (actionFlow, 
 		}
 		return flowTeardown, false
 	}
-	if !lc.vu.executeParallelBlock(lc.actionCtx, *action, lc.phase) && !lc.ignoreErrors {
+	ok := lc.vu.executeParallelBlock(lc.actionCtx, *action, lc.phase)
+	lc.vu.takeLLMQuotaWait()
+	if !ok && !lc.ignoreErrors {
 		return flowTeardown, false
 	}
 	return flowNext, true
@@ -659,6 +670,7 @@ func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		}
 		vu.markUserWorkStarted()
 		result, err := vu.executeHTTPSequenceAction(lc.actionCtx, action, lc.errCfg, claimRequestTransaction)
+		vu.takeLLMQuotaWait()
 		if errors.Is(err, errTransactionGoalReached) {
 			if ignoreErrors {
 				return flowNext, false
@@ -759,6 +771,7 @@ func (lc *lifecycleRun) runLeaf(step *dsl.Action) (actionFlow, bool) {
 		return nil
 	})
 	releasePause()
+	vu.takeLLMQuotaWait()
 	vu.acceptWebSocketCallback(action, result, err)
 	if err != nil {
 		releaseEmitterReservation()

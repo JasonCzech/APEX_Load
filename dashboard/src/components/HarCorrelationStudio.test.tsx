@@ -229,6 +229,19 @@ describe('HarCorrelationStudio', () => {
     expect(container.textContent).toContain('177 static · 2 telemetry')
   })
 
+  // The import API serializes an empty list as null; the review must render
+  // rather than fail as "Authoring tools could not be loaded".
+  it('renders when the import result sends null review lists', () => {
+    const script: ScriptDefinition = {
+      name: 'Null lists', version: '1', protocol: 'http', config: { base_url: 'https://app.example.test' },
+      actions: [{ name: 'GET /', type: 'request', method: 'GET', target: '/' }],
+    }
+    expect(() => act(() => {
+      root.render(<HarCorrelationStudio script={script} warnings={null} diagnostics={null} unsupportedElements={null} reviewSections={null} />)
+    })).not.toThrow()
+    expect(container.querySelector('.har-funnel-step')).not.toBeNull()
+  })
+
   it('does not count the recording profile drops as static assets', () => {
     const script: ScriptDefinition = {
       name: 'Profiled', version: '1', protocol: 'http', config: { base_url: 'https://org.my.salesforce.com' },

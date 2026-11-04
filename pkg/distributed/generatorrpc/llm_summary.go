@@ -186,14 +186,14 @@ func llmSummaryFromProto(p *pb.LLMSummary) *engine.LLMSummary {
 	return out
 }
 
-// LLMPeerUncounted reports whether a peer that sent no (or partial) LLM summary
-// for count executions of an action may still have run LLM actions: for example,
-// an older generator without LLM summary support.
-func LLMPeerUncounted(s *engine.LLMSummary, count int64, dependencyType string) bool {
-	if s != nil {
-		return s.Incomplete || s.Requests < count
-	}
-	return count > 0 && (dependencyType == "" || dependencyType == "http" || dependencyType == "llm" || dependencyType == "multiple")
+// LLMPeerUncounted reports whether a peer's LLM summary for an action is
+// already incomplete. Whether a peer supports LLM summaries at all is decided
+// by its batch's LLMSummaryVersion, not here: a current peer whose summary is
+// absent or covers fewer requests than the action count simply ran executions
+// that were not LLM requests (every LLM request, including a transport
+// failure, carries diagnostics).
+func LLMPeerUncounted(s *engine.LLMSummary) bool {
+	return s != nil && s.Incomplete
 }
 
 func llmBandSummaryToProto(b *engine.LLMBandSummary) *pb.LLMBandSummary {

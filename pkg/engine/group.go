@@ -96,6 +96,7 @@ type GroupConfig struct {
 	// preparation whether the group runs shared or falls back to dedicated.
 	javaShared     *javaSharedGroup
 	rateLimiter    *TokenBucket
+	quotaPacer     *QuotaPacer
 	throughputCap  *GroupThroughputCap
 	rendezvous     *RendezvousCoordinator
 	executionGoals *ExecutionGoalLimiter
@@ -865,6 +866,12 @@ func (mge *MultiGroupEngine) RunAt(ctx context.Context, executionStart time.Time
 	mge.wg = &wg
 	for i := range mge.groups {
 		mge.groups[i].executionGoals = NewExecutionGoalLimiter(mge.groups[i].Script.Config.RunLogic, softStopAll)
+		// One quota pacer per group on this generator, shared by its closed
+		// and open-model users alike.
+		mge.groups[i].quotaPacer = newGroupQuotaPacer(mge.groups[i].Script, mge.groups[i].DataShard)
+		if mge.paused {
+			mge.groups[i].quotaPacer.SetPaused(true)
+		}
 		if !isOpenWorkload(mge.groups[i].Script) {
 			mge.groups[i].rendezvous = NewRendezvousCoordinator()
 			mge.groups[i].rateLimiter = newIterationRateLimiter(mge.groups[i].Script)
@@ -2058,6 +2065,8 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx conte
 		SecretResolver:               group.SecretResolver,
 		Rendezvous:                   group.rendezvous,
 		ExecutionGoals:               group.executionGoals,
+		QuotaPacer:                   group.quotaPacer,
+		quotaPauseBypass:             phase == "teardown",
 		ActionBoundaryCtx:            entitledBoundaryCtx,
 		DataProvider:                 group.dataProvider,
 		LiveTableClient:              group.LiveTableClient,
@@ -2414,6 +2423,7 @@ func (mge *MultiGroupEngine) newPreparedVUser(prepared *preparedVUser) *VUser {
 		SecretResolver:               prepared.group.SecretResolver,
 		PauseControl:                 mge,
 		IterationRateLimiter:         prepared.group.rateLimiter,
+		QuotaPacer:                   prepared.group.quotaPacer,
 		ThroughputCap:                prepared.group.throughputCap,
 		Rendezvous:                   prepared.group.rendezvous,
 		DistributedRendezvous:        prepared.group.distributedRendezvous,
@@ -2990,6 +3000,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(identity vuserIdentity, group Group
 			SecretResolver:               group.SecretResolver,
 			PauseControl:                 mge,
 			ExecutionGoals:               group.executionGoals,
+			QuotaPacer:                   group.quotaPacer,
 			HardStopCtx:                  shedCtx,
 			ActionBoundaryCtx:            boundaryCtx,
 			DataProvider:                 group.dataProvider,
@@ -3455,6 +3466,8 @@ func (mge *MultiGroupEngine) pauseLocked() error {
 			mge.groups[i].rateLimiter.SetPaused(true)
 		}
 		mge.groups[i].throughputCap.SetPaused(true)
+		// Requests already queued for quota wait out the pause too.
+		mge.groups[i].quotaPacer.SetPaused(true)
 	}
 
 	slog.Info("test execution paused")
@@ -3537,6 +3550,7 @@ func (mge *MultiGroupEngine) Resume() error {
 			mge.groups[i].rateLimiter.SetPaused(false)
 		}
 		mge.groups[i].throughputCap.SetPaused(false)
+		mge.groups[i].quotaPacer.SetPaused(false)
 	}
 
 	// Keep the user-visible duration as the active-runtime base and retain pause
@@ -3724,7 +3738,18 @@ func (mge *MultiGroupEngine) closeRuntimeAdmissionOnDone(ctx context.Context) {
 	}
 	mge.controlsReady = false
 	mge.runtimePause.beginTerminal(true)
+	mge.releaseQuotaPausesLocked()
 	mge.mu.Unlock()
+}
+
+// releaseQuotaPausesLocked lifts a pause from the groups' quota pacers once
+// the run is stopping: a pause no longer applies, and requests queued for
+// quota (and teardown LLM actions) must finish rather than wait out the
+// stop's deadline.
+func (mge *MultiGroupEngine) releaseQuotaPausesLocked() {
+	for i := range mge.groups {
+		mge.groups[i].quotaPacer.SetPaused(false)
+	}
 }
 
 func (mge *MultiGroupEngine) Stop() {
@@ -3745,6 +3770,7 @@ func (mge *MultiGroupEngine) stop(hard bool) {
 	if hard {
 		mge.hardStopRequested = true
 	}
+	mge.releaseQuotaPausesLocked()
 	cancel := mge.cancel
 	groups := append([]GroupConfig(nil), mge.groups...)
 	mge.mu.Unlock()
@@ -3768,6 +3794,7 @@ func (mge *MultiGroupEngine) GracefulStop() {
 	}
 	mge.gracefulStopRequested = true
 	mge.runtimePause.beginTerminal(false)
+	mge.releaseQuotaPausesLocked()
 	// Close scale admission at the same linearization point as the graceful
 	// fence. Relying on holdScaleGuard to observe loopCtx asynchronously leaves
 	// a window where a control plan admitted before the fence can spawn VUsers

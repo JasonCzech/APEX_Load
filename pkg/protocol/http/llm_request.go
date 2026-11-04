@@ -121,9 +121,12 @@ func buildLLMRequestBody(dialect string, params map[string]any, stream bool) ([]
 		if ignoreEOS, ok := boolParam(params["ignore_eos"]); ok && ignoreEOS {
 			parameters["ignore_eos"] = true
 		}
-		if len(parameters) > 0 {
-			payload["parameters"] = parameters
+		// TGI reports the finish reason and generated token count only with
+		// details; without them a stream has no finish to account.
+		if _, set := parameters["details"]; !set {
+			parameters["details"] = true
 		}
+		payload["parameters"] = parameters
 
 	case LLMDialectTriton:
 		textInput := prompt
@@ -147,6 +150,43 @@ func buildLLMRequestBody(dialect string, params map[string]any, stream bool) ([]
 		payload["prompt"] = p
 		payload["stream"] = stream
 		applyCommonOpenAIFields(payload, params, stream)
+
+	case LLMDialectOpenAIResponses:
+		// The Responses API takes input (a string, or chat-style
+		// {role, content} items), instructions for the system prompt,
+		// max_output_tokens and text.format; it has no stream_options
+		// (usage arrives on the terminal event) and no [DONE].
+		msgs, err := buildMessagesField(params["messages"], "", "")
+		if err != nil {
+			return nil, err
+		}
+		if msgs != nil {
+			payload["input"] = msgs
+		} else {
+			payload["input"] = prompt
+		}
+		if strings.TrimSpace(systemPrompt) != "" {
+			payload["instructions"] = systemPrompt
+		}
+		payload["stream"] = stream
+		if maxToks, ok := intParam(params["max_tokens"]); ok && maxToks > 0 {
+			// OpenAI and Azure reject a max_output_tokens below 16.
+			payload["max_output_tokens"] = max(maxToks, minResponsesOutputTokens)
+		}
+		if temp, ok := floatParam(params["temperature"]); ok {
+			payload["temperature"] = temp
+		}
+		if topP, ok := floatParam(params["top_p"]); ok {
+			payload["top_p"] = topP
+		}
+		if ignoreEOS, ok := boolParam(params["ignore_eos"]); ok && ignoreEOS {
+			payload["ignore_eos"] = true
+		}
+		if _, exists := payload["text"]; !exists {
+			if format := responsesTextFormat(params); format != nil {
+				payload["text"] = map[string]any{"format": format}
+			}
+		}
 
 	case LLMDialectOllama:
 		msgs, err := buildMessagesField(params["messages"], systemPrompt, prompt)
@@ -236,6 +276,50 @@ func applyCommonOpenAIFields(payload map[string]any, params map[string]any, stre
 			}
 		}
 	}
+}
+
+// minResponsesOutputTokens is the smallest max_output_tokens the OpenAI and
+// Azure Responses API accept.
+const minResponsesOutputTokens = 16
+
+// responsesTextFormat maps params.response_format (chat shape) or
+// params.json_schema to a Responses API text.format object.
+func responsesTextFormat(params map[string]any) map[string]any {
+	if rf, ok := params["response_format"].(map[string]any); ok {
+		if typ, _ := rf["type"].(string); typ == "json_schema" {
+			if inner, ok := rf["json_schema"].(map[string]any); ok {
+				format := make(map[string]any, len(inner)+1)
+				for k, v := range inner {
+					format[k] = v
+				}
+				format["type"] = "json_schema"
+				return format
+			}
+		}
+		return rf
+	}
+	schema, ok := params["json_schema"]
+	if !ok || schema == nil {
+		return nil
+	}
+	if raw, isString := schema.(string); isString {
+		var parsed map[string]any
+		if json.Unmarshal([]byte(raw), &parsed) != nil {
+			return nil
+		}
+		schema = parsed
+	}
+	if m, isMap := schema.(map[string]any); isMap {
+		// A {name, schema} wrapper, as params.json_schema may be authored.
+		if inner, hasInner := m["schema"].(map[string]any); hasInner {
+			name, _ := m["name"].(string)
+			if strings.TrimSpace(name) == "" {
+				name = "response"
+			}
+			return map[string]any{"type": "json_schema", "name": name, "schema": inner}
+		}
+	}
+	return map[string]any{"type": "json_schema", "name": "response", "schema": schema}
 }
 
 func hasLeadingSystemMessageAny(msgs []any) bool {

@@ -302,3 +302,33 @@ func TestLLMSummaryNumbersOnlyFinalizeAndMerge(t *testing.T) {
 		t.Fatalf("expected merged numbers-only band summary to preserve quantiles, got %+v", merged.ByInputBand["<256"])
 	}
 }
+
+// A length finish the script accepts (fail_on_truncation:false) is a
+// successful request: its timings belong in the sketches, and truncation
+// stays a counter. A request with transport-failure diagnostics counts as a
+// failed request in the denominators.
+func TestLLMSummaryAcceptedLengthFinishAndTransportFailure(t *testing.T) {
+	var s *LLMSummary
+	ObserveLLMAction(&s, &protocol.Result{
+		StatusCode: 200,
+		Success:    true,
+		ServerTelemetry: &protocol.ServerTelemetry{LLM: &protocol.LLMDiagnostics{
+			Stream: true, TTFTMs: 40, TPOTMs: 4, E2EMs: 100, CompletionTokens: 16,
+			FinishReason: "length", Truncated: true,
+		}},
+	})
+	ObserveLLMAction(&s, &protocol.Result{
+		Success:         false,
+		ServerTelemetry: &protocol.ServerTelemetry{LLM: &protocol.LLMDiagnostics{ErrorCode: "transport", E2EMs: 5}},
+	})
+	FinalizeLLMSummary(s)
+	if s.Requests != 2 || s.SuccessfulRequests != 1 || s.FailedRequests != 1 || s.TruncatedRequests != 1 || s.StreamedRequests != 1 {
+		t.Fatalf("unexpected counters %+v", s)
+	}
+	if s.TTFTSketch == nil || s.TPOTSketch == nil || s.P50TTFTMs <= 0 {
+		t.Fatalf("an accepted length finish must enter the latency sketches, got %+v", s)
+	}
+	if got := s.GoodputPct(0, 0, 0); got != 50 {
+		t.Fatalf("GoodputPct = %v, want 50 (the transport failure is in the denominator)", got)
+	}
+}

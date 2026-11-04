@@ -20,12 +20,16 @@ import (
 	"time"
 )
 
+// maxFixtureOutputTokens bounds the output tokens one response generates.
+const maxFixtureOutputTokens = 1 << 16
+
 // Dialect identifies the wire format used by the mock server.
 type Dialect string
 
 const (
 	DialectOpenAIChat        Dialect = "openai_chat"
 	DialectOpenAICompletions Dialect = "openai_completions"
+	DialectOpenAIResponses   Dialect = "openai_responses"
 	DialectAzureOpenAI       Dialect = "azure_openai"
 	DialectTGI               Dialect = "tgi"
 	DialectOllama            Dialect = "ollama"
@@ -192,6 +196,9 @@ func NewServer(cfg Config) *Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/chat/completions", s.handleLLM)
 	mux.HandleFunc("/v1/completions", s.handleLLM)
+	mux.HandleFunc("/v1/responses", s.handleResponses)
+	mux.HandleFunc("/openai/v1/responses", s.handleResponses)
+	mux.HandleFunc("/openai/responses", s.handleResponses)
 	mux.HandleFunc("/openai/deployments/", s.handleAzure)
 	mux.HandleFunc("/generate_stream", s.handleTGI)
 	mux.HandleFunc("/generate", s.handleTGI)
@@ -293,6 +300,10 @@ func (s *Server) handleAzure(w http.ResponseWriter, r *http.Request) {
 	s.serveDialect(w, r, DialectAzureOpenAI)
 }
 
+func (s *Server) handleResponses(w http.ResponseWriter, r *http.Request) {
+	s.serveDialect(w, r, DialectOpenAIResponses)
+}
+
 func (s *Server) handleTGI(w http.ResponseWriter, r *http.Request) {
 	s.serveDialect(w, r, DialectTGI)
 }
@@ -325,6 +336,8 @@ type parsedLLMRequest struct {
 	PromptChars int
 	Temperature *float64
 	Seed        *int64
+	// TGI returns finish details only when the request asks for them.
+	Details bool
 }
 
 func parseIncomingRequest(body []byte, defaultDialect Dialect, defaultModel string) parsedLLMRequest {
@@ -344,7 +357,7 @@ func parseIncomingRequest(body []byte, defaultDialect Dialect, defaultModel stri
 	if st, ok := raw["stream"].(bool); ok {
 		res.Stream = st
 	}
-	for _, k := range []string{"max_tokens", "max_completion_tokens", "max_new_tokens"} {
+	for _, k := range []string{"max_tokens", "max_completion_tokens", "max_new_tokens", "max_output_tokens"} {
 		if v, ok := raw[k].(float64); ok && v > 0 {
 			res.MaxTokens = int(v)
 			break
@@ -359,6 +372,9 @@ func parseIncomingRequest(body []byte, defaultDialect Dialect, defaultModel stri
 		}
 		if ig, ok := params["ignore_eos"].(bool); ok {
 			res.IgnoreEOS = ig
+		}
+		if d, ok := params["details"].(bool); ok {
+			res.Details = d
 		}
 	}
 	if v, ok := raw["min_tokens"].(float64); ok && v > 0 {
@@ -387,7 +403,18 @@ func parseIncomingRequest(body []byte, defaultDialect Dialect, defaultModel stri
 			}
 		}
 	}
-	for _, field := range []string{"prompt", "inputs", "text_input"} {
+	// The Responses API's input is a string or chat-style items.
+	if items, ok := raw["input"].([]any); ok {
+		for _, m := range items {
+			if mm, ok := m.(map[string]any); ok {
+				if c, ok := mm["content"].(string); ok {
+					sb.WriteString(c)
+					sb.WriteByte(' ')
+				}
+			}
+		}
+	}
+	for _, field := range []string{"prompt", "inputs", "text_input", "input", "instructions"} {
 		if s, ok := raw[field].(string); ok {
 			sb.WriteString(s)
 		}
@@ -472,7 +499,11 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 
 	parsed := parseIncomingRequest(body, dialect, cfg.Model)
 	promptTokens := max(1, (parsed.PromptChars+3)/4)
-	outputTokens := cfg.OutputTokens
+	// A request's token counts size the response this server builds; bound
+	// them so one request cannot make it allocate without limit.
+	parsed.MaxTokens = min(parsed.MaxTokens, maxFixtureOutputTokens)
+	parsed.MinTokens = min(parsed.MinTokens, maxFixtureOutputTokens)
+	outputTokens := min(cfg.OutputTokens, maxFixtureOutputTokens)
 	finishReason := cfg.DefaultFinishReason
 	if parsed.MaxTokens > 0 && parsed.MaxTokens < outputTokens {
 		outputTokens = parsed.MaxTokens
@@ -688,6 +719,14 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 		}
 	}
 
+	if dialect == DialectOpenAIResponses {
+		created := fmt.Sprintf(`{"type":"response.created","sequence_number":0,"response":{"id":%q,"object":"response","status":"in_progress","model":%q,"output":[]}}`, reqID, parsed.Model)
+		_, _ = fmt.Fprintf(w, "event: response.created\ndata: %s\n\n", created)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
 	var actualTTFT, firstVisible time.Duration
 	var recordedITLs []time.Duration
 	lastTokenAt := time.Time{}
@@ -713,8 +752,16 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 		}
 		lastTokenAt = now
 		chunksSent++
-		chunk := fmt.Sprintf(`{"id":%q,"object":"chat.completion.chunk","model":%q,"choices":[{"index":0,"delta":{"reasoning_content":"think "},"finish_reason":null}]}`, reqID, parsed.Model)
-		_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+		if dialect == DialectOllama {
+			chunk := fmt.Sprintf(`{"model":%q,"message":{"role":"assistant","content":"","thinking":"think "},"done":false}`, parsed.Model)
+			_, _ = fmt.Fprintf(w, "%s\n", chunk)
+		} else if dialect == DialectOpenAIResponses {
+			_, _ = io.WriteString(w, "event: response.reasoning_summary_text.delta\n"+
+				`data: {"type":"response.reasoning_summary_text.delta","item_id":"rs_1","output_index":0,"summary_index":0,"delta":"think "}`+"\n\n")
+		} else {
+			chunk := fmt.Sprintf(`{"id":%q,"object":"chat.completion.chunk","model":%q,"choices":[{"index":0,"delta":{"reasoning_content":"think "},"finish_reason":null}]}`, reqID, parsed.Model)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", chunk)
+		}
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -764,7 +811,10 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 					errMsg = "The response was filtered due to the prompt triggering safety policy."
 				}
 				errPayload := fmt.Sprintf(`{"error":{"message":%q,"code":%q}}`, errMsg, errCode)
-				if dialect == DialectOllama {
+				if dialect == DialectOpenAIResponses {
+					errPayload = fmt.Sprintf(`{"type":"error","code":%q,"message":%q,"param":null}`, errCode, errMsg)
+					_, _ = fmt.Fprintf(w, "event: error\ndata: %s\n\n", errPayload)
+				} else if dialect == DialectOllama {
 					_, _ = fmt.Fprintf(w, "%s\n", errPayload)
 				} else {
 					_, _ = fmt.Fprintf(w, "data: %s\n\n", errPayload)
@@ -806,7 +856,7 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 
 		tok := tokens[i]
 		isLast := i == outputTokens-1
-		s.writeStreamTokenChunk(w, dialect, reqID, parsed.Model, tok, isLast, finishReason, promptTokens, outputTokens, cfg)
+		s.writeStreamTokenChunk(w, dialect, reqID, parsed.Model, tok, isLast, finishReason, promptTokens, outputTokens, parsed.Details, cfg)
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -814,7 +864,16 @@ func (s *Server) serveDialect(w http.ResponseWriter, r *http.Request, dialect Di
 
 	// If outputTokens == 0 (e.g. FaultEmptyOutput), still emit finish chunk and DONE.
 	if outputTokens == 0 {
-		s.writeStreamTokenChunk(w, dialect, reqID, parsed.Model, "", true, finishReason, promptTokens, 0, cfg)
+		s.writeStreamTokenChunk(w, dialect, reqID, parsed.Model, "", true, finishReason, promptTokens, 0, parsed.Details, cfg)
+		if flusher != nil {
+			flusher.Flush()
+		}
+	}
+
+	// The Responses API ends with one terminal event carrying the whole
+	// response and its usage, and no [DONE].
+	if dialect == DialectOpenAIResponses {
+		writeResponsesTerminalEvent(w, reqID, parsed.Model, strings.Join(tokens[:outputTokens], ""), promptTokens, outputTokens+reasoningCount, reasoningCount, cfg.CachedPromptTokens, finishReason, cfg)
 		if flusher != nil {
 			flusher.Flush()
 		}
@@ -892,6 +951,7 @@ func (s *Server) writeStreamTokenChunk(
 	finishReason string,
 	promptTokens int,
 	outputTokens int,
+	details bool,
 	cfg Config,
 ) {
 	switch dialect {
@@ -904,9 +964,13 @@ func (s *Server) writeStreamTokenChunk(
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 
 	case DialectTGI:
-		if isLast {
-			payload := fmt.Sprintf(`{"token":{"id":1,"text":%q,"logprob":0.0,"special":false},"generated_text":%q,"details":{"finish_reason":%q,"generated_tokens":%d,"prompt_tokens":%d}}`,
+		if isLast && details {
+			payload := fmt.Sprintf(`{"token":{"id":1,"text":%q,"logprob":0.0,"special":false},"generated_text":%q,"details":{"finish_reason":%q,"generated_tokens":%d,"seed":null,"input_length":%d}}`,
 				tok, tok, finishReason, outputTokens, promptTokens)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
+		} else if isLast {
+			// Without details TGI's final event carries only generated_text.
+			payload := fmt.Sprintf(`{"token":{"id":1,"text":%q,"logprob":0.0,"special":false},"generated_text":%q,"details":null}`, tok, tok)
 			_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		} else {
 			payload := fmt.Sprintf(`{"token":{"id":1,"text":%q,"logprob":0.0,"special":false},"generated_text":null,"details":null}`, tok)
@@ -915,21 +979,23 @@ func (s *Server) writeStreamTokenChunk(
 
 	case DialectOllama:
 		if isLast {
+			// Real Ollama counts thinking tokens inside eval_count.
 			payload := fmt.Sprintf(`{"model":%q,"message":{"role":"assistant","content":%q},"done":true,"done_reason":%q,"prompt_eval_count":%d,"eval_count":%d}`,
-				model, tok, finishReason, promptTokens, outputTokens)
+				model, tok, finishReason, promptTokens, outputTokens+cfg.ReasoningTokens)
 			_, _ = fmt.Fprintf(w, "%s\n", payload)
 		} else {
 			payload := fmt.Sprintf(`{"model":%q,"message":{"role":"assistant","content":%q},"done":false}`, model, tok)
 			_, _ = fmt.Fprintf(w, "%s\n", payload)
 		}
 
+	case DialectOpenAIResponses:
+		payload := fmt.Sprintf(`{"type":"response.output_text.delta","item_id":"msg_1","output_index":0,"content_index":0,"delta":%q}`, tok)
+		_, _ = fmt.Fprintf(w, "event: response.output_text.delta\ndata: %s\n\n", payload)
+
 	case DialectTriton:
-		payload := fmt.Sprintf(`{"model_name":%q,"text_output":%q,"finish_reason":%q}`, model, tok, func() string {
-			if isLast {
-				return finishReason
-			}
-			return ""
-		}())
+		// Triton's generate_stream wire shape: no finish_reason and no
+		// terminal event; the stream simply ends.
+		payload := fmt.Sprintf(`{"model_name":%q,"model_version":"1","text_output":%q}`, model, tok)
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 
 	default: // DialectOpenAIChat, DialectAzureOpenAI
@@ -968,6 +1034,12 @@ func (s *Server) writeNonStreamResponse(
 	fault FaultConfig,
 ) {
 	w.Header().Set("Content-Type", "application/json")
+	if dialect == DialectTGI {
+		// TGI's /generate reports the prompt length in a header; its details
+		// carry a prefill list only with decoder_input_details.
+		w.Header().Set("x-prompt-tokens", strconv.Itoa(promptTokens))
+		w.Header().Set("x-generated-tokens", strconv.Itoa(outputTokens))
+	}
 	w.WriteHeader(http.StatusOK)
 	fullText := strings.Join(tokens, "")
 	if injectFault && fault.Kind == FaultStreamError {
@@ -984,22 +1056,29 @@ func (s *Server) writeNonStreamResponse(
 		return
 	}
 	switch dialect {
+	case DialectOpenAIResponses:
+		_ = json.NewEncoder(w).Encode(responsesObject(reqID, model, fullText, promptTokens, outputTokens+reasoningTokens, reasoningTokens, cachedTokens, finishReason, cfg))
 	case DialectOllama:
+		message := map[string]any{"role": "assistant", "content": fullText}
+		if reasoningTokens > 0 {
+			// "abc " estimates at exactly one token apiece (4 bytes/token).
+			message["thinking"] = strings.Repeat("abc ", reasoningTokens)
+		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"model":             model,
-			"message":           map[string]any{"role": "assistant", "content": fullText},
+			"message":           message,
 			"done":              true,
 			"done_reason":       finishReason,
 			"prompt_eval_count": promptTokens,
-			"eval_count":        outputTokens,
+			"eval_count":        outputTokens + reasoningTokens,
 		})
 	case DialectTGI:
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"generated_text": fullText,
 			"details": map[string]any{
 				"finish_reason":    finishReason,
-				"prompt_tokens":    promptTokens,
 				"generated_tokens": outputTokens,
+				"prefill":          []any{},
 			},
 		})
 	case DialectTriton:
@@ -1054,6 +1133,61 @@ func (s *Server) writeNonStreamResponse(
 	}
 }
 
+// responsesObject builds an OpenAI Responses API response object. A length
+// finish is status incomplete with reason max_output_tokens, a content filter
+// is incomplete with reason content_filter, as the real API reports them.
+func responsesObject(reqID, model, text string, inputTokens, outputTokens, reasoningTokens, cachedTokens int, finishReason string, cfg Config) map[string]any {
+	output := []map[string]any{{
+		"type":    "message",
+		"id":      "msg_1",
+		"status":  "completed",
+		"role":    "assistant",
+		"content": []map[string]any{{"type": "output_text", "text": text, "annotations": []any{}}},
+	}}
+	if cfg.ToolCallName != "" {
+		args := cfg.ToolCallArgumentsJSON
+		if args == "" {
+			args = `{"query":"status"}`
+		}
+		output = append(output, map[string]any{"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": cfg.ToolCallName, "arguments": args, "status": "completed"})
+	}
+	resp := map[string]any{
+		"id":                 reqID,
+		"object":             "response",
+		"status":             "completed",
+		"model":              model,
+		"output":             output,
+		"incomplete_details": nil,
+		"error":              nil,
+		"usage": map[string]any{
+			"input_tokens":          inputTokens,
+			"input_tokens_details":  map[string]any{"cached_tokens": cachedTokens},
+			"output_tokens":         outputTokens,
+			"output_tokens_details": map[string]any{"reasoning_tokens": reasoningTokens},
+			"total_tokens":          inputTokens + outputTokens,
+		},
+	}
+	switch finishReason {
+	case "length":
+		resp["status"] = "incomplete"
+		resp["incomplete_details"] = map[string]any{"reason": "max_output_tokens"}
+	case "content_filter":
+		resp["status"] = "incomplete"
+		resp["incomplete_details"] = map[string]any{"reason": "content_filter"}
+	}
+	return resp
+}
+
+func writeResponsesTerminalEvent(w io.Writer, reqID, model, text string, inputTokens, outputTokens, reasoningTokens, cachedTokens int, finishReason string, cfg Config) {
+	resp := responsesObject(reqID, model, text, inputTokens, outputTokens, reasoningTokens, cachedTokens, finishReason, cfg)
+	eventType := "response.completed"
+	if resp["status"] == "incomplete" {
+		eventType = "response.incomplete"
+	}
+	payload, _ := json.Marshal(map[string]any{"type": eventType, "sequence_number": 1, "response": resp})
+	_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, payload)
+}
+
 func (s *Server) recordRequest(rec RecordedRequest) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1061,7 +1195,7 @@ func (s *Server) recordRequest(rec RecordedRequest) {
 }
 
 func generateTokenStrings(customText string, count int, temp *float64, seed *int64) []string {
-	if count <= 0 {
+	if count <= 0 || count > maxFixtureOutputTokens {
 		return nil
 	}
 	if customText != "" {

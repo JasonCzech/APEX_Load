@@ -1292,8 +1292,8 @@ Execute an LLM inference request (streaming SSE/NDJSON or non-streaming JSON) wi
 | `header_list` | array |  | Ordered logical header occurrences. |
 | `body` | string |  | Explicit request body; when omitted, the payload is synthesized from params (model, prompt, system, messages, max_tokens, temperature, stream, extra_body) according to params.dialect. |
 | `body_template_encoding` | enum |  | Template value encoding for body: when set to json, template occurrences inside JSON string literals are JSON-escaped. One of: `json`. |
-| `params.dialect` | enum |  | LLM wire dialect: openai_chat (default), openai_completions, azure_openai, tgi, ollama, triton, vercel_ai, langserve, raw_text, or custom. One of: `openai_chat`, `openai_completions`, `azure_openai`, `tgi`, `ollama`, `triton`, `vercel_ai`, `langserve`, `raw_text`, `custom`. |
-| `params.llm_dialect` | enum |  | Alias for params.dialect. One of: `openai_chat`, `openai_completions`, `azure_openai`, `tgi`, `ollama`, `triton`, `vercel_ai`, `langserve`, `raw_text`, `custom`. |
+| `params.dialect` | enum |  | LLM wire dialect: openai_chat (default), openai_completions, openai_responses (OpenAI and Azure Responses API), azure_openai, tgi, ollama, triton, vercel_ai, langserve, raw_text, or custom. One of: `openai_chat`, `openai_completions`, `openai_responses`, `azure_openai`, `tgi`, `ollama`, `triton`, `vercel_ai`, `langserve`, `raw_text`, `custom`. |
+| `params.llm_dialect` | enum |  | Alias for params.dialect. One of: `openai_chat`, `openai_completions`, `openai_responses`, `azure_openai`, `tgi`, `ollama`, `triton`, `vercel_ai`, `langserve`, `raw_text`, `custom`. |
 | `params.stream_profile` | any |  | Stream parser profile override when streaming from an application or gateway (dialect preset name or custom {preset, delta_path, finish_path, usage_path} object). |
 | `params.model` | string |  | Model or deployment identifier sent in the synthesized payload and recorded in LLM telemetry. |
 | `params.prompt` | string |  | User prompt text used to synthesize the request payload when body and params.messages are omitted. |

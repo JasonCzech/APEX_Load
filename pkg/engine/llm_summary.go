@@ -156,7 +156,9 @@ func ObserveLLMAction(dst **LLMSummary, result *protocol.Result) {
 		s.TokensEstimatedRequests++
 	}
 
-	if result.Success && !throttled && !d.Truncated {
+	// Success already fails a cut-off stream and, unless the script accepts
+	// it, a length finish; truncation itself is only counted above.
+	if result.Success && !throttled {
 		s.SuccessfulRequests++
 	} else if !throttled {
 		s.FailedRequests++
@@ -229,7 +231,7 @@ func ObserveLLMAction(dst **LLMSummary, result *protocol.Result) {
 
 	// Latency distributions use only successful, complete, streamed requests
 	// for TTFT / FirstVisibleToken / TPOT / ITL, and successful requests for E2E.
-	if result.Success && !throttled && !d.Truncated {
+	if result.Success && !throttled {
 		e2eMs := d.E2EMs
 		if e2eMs <= 0 && result.Duration > 0 {
 			e2eMs = float64(result.Duration) / 1e6
@@ -617,8 +619,9 @@ func (s *LLMSummary) TruncationRatePct() float64 {
 }
 
 // GoodputPct estimates the percentage of all requests (including throttled and
-// failed requests in the denominator) that succeeded without truncation and met
-// all positive latency SLO thresholds (TTFT, TPOT, E2E in ms).
+// failed requests in the denominator) that succeeded (a length finish counts
+// when fail_on_truncation: false accepts it) and met all positive latency SLO
+// thresholds (TTFT, TPOT, E2E in ms).
 func (s *LLMSummary) GoodputPct(sloTTFTMs, sloTPOTMs, sloE2EMs float64) float64 {
 	if s == nil || s.Requests <= 0 || s.SuccessfulRequests <= 0 {
 		return 0

@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -106,7 +107,7 @@ func Transform(script *dsl.Script) []Change {
 				Detail:     "Upgraded http_request to llm_request (dialect=" + info.Dialect + ").",
 			})
 		}
-		if scrubAuthHeaders(action) {
+		if referenceProviderKeys(action) {
 			changes = append(changes, Change{
 				Step:       "scrub_llm_auth",
 				ActionName: action.Name,
@@ -149,7 +150,9 @@ func detectLLMCall(a dsl.Action, baseURL string) (DetectedCall, bool) {
 		dialect = "openai_chat"
 	case strings.HasSuffix(lowerPath, "/v1/completions"):
 		dialect = "openai_completions"
-	case strings.HasSuffix(lowerPath, "/v1/responses"):
+	case strings.HasSuffix(lowerPath, "/v1/responses") || strings.HasSuffix(lowerPath, "/openai/responses"):
+		// OpenAI /v1/responses, Azure /openai/v1/responses and
+		// /openai/responses?api-version=...
 		dialect = "openai_responses"
 	case strings.HasSuffix(lowerPath, "/generate_stream") && strings.Contains(lowerPath, "/v2/models/"):
 		dialect = "triton_generate"
@@ -204,44 +207,22 @@ func detectLLMCall(a dsl.Action, baseURL string) (DetectedCall, bool) {
 	}, true
 }
 
-func scrubAuthHeaders(a *dsl.Action) bool {
-	if a == nil || (len(a.Headers) == 0 && len(a.HeaderList) == 0) {
+// referenceProviderKeys points the action's model-provider key headers at
+// llmSecretRef (the replacement rule is credentialpolicy's).
+func referenceProviderKeys(a *dsl.Action) bool {
+	if a == nil {
 		return false
 	}
 	changed := false
 	for k, v := range a.Headers {
-		lower := strings.ToLower(strings.TrimSpace(k))
-		trimmed := strings.TrimSpace(v)
-		switch lower {
-		case "authorization":
-			if strings.Contains(trimmed, "{{") {
-				continue
-			}
-			a.Headers[k] = "Bearer " + llmSecretRef
-			changed = true
-		case "api-key", "x-api-key", "ocp-apim-subscription-key":
-			if strings.Contains(trimmed, "{{") {
-				continue
-			}
-			a.Headers[k] = llmSecretRef
+		if replacement, ok := credentialpolicy.ProviderKeyHeaderReference(k, v, llmSecretRef); ok {
+			a.Headers[k] = replacement
 			changed = true
 		}
 	}
 	for i := range a.HeaderList {
-		lower := strings.ToLower(strings.TrimSpace(a.HeaderList[i].Name))
-		trimmed := strings.TrimSpace(a.HeaderList[i].Value)
-		switch lower {
-		case "authorization":
-			if strings.Contains(trimmed, "{{") {
-				continue
-			}
-			a.HeaderList[i].Value = "Bearer " + llmSecretRef
-			changed = true
-		case "api-key", "x-api-key", "ocp-apim-subscription-key":
-			if strings.Contains(trimmed, "{{") {
-				continue
-			}
-			a.HeaderList[i].Value = llmSecretRef
+		if replacement, ok := credentialpolicy.ProviderKeyHeaderReference(a.HeaderList[i].Name, a.HeaderList[i].Value, llmSecretRef); ok {
+			a.HeaderList[i].Value = replacement
 			changed = true
 		}
 	}

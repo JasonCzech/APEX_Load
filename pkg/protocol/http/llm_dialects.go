@@ -3,12 +3,15 @@ package http
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"strings"
+	"unsafe"
 )
 
 const (
 	LLMDialectOpenAIChat        = "openai_chat"
 	LLMDialectOpenAICompletions = "openai_completions"
+	LLMDialectOpenAIResponses   = "openai_responses"
 	LLMDialectAzureOpenAI       = "azure_openai"
 	LLMDialectTGI               = "tgi"
 	LLMDialectOllama            = "ollama"
@@ -21,10 +24,20 @@ const (
 func normalizeLLMDialect(raw string, targetURL string) string {
 	d := strings.ToLower(strings.TrimSpace(raw))
 	switch d {
-	case "openai", "openai_chat", "openai_responses", "chat", "chat_completions", "vllm", "nim":
+	case "openai", "azure", "aoai", "foundry", "vllm", "nim":
+		// A provider name, not a wire format: these providers serve the
+		// Responses API too, which their /responses path selects.
+		if isResponsesTarget(targetURL) {
+			return LLMDialectOpenAIResponses
+		}
+	}
+	switch d {
+	case "openai", "openai_chat", "chat", "chat_completions", "vllm", "nim":
 		return LLMDialectOpenAIChat
 	case "openai_completions", "completions":
 		return LLMDialectOpenAICompletions
+	case "openai_responses", "responses", "azure_openai_responses":
+		return LLMDialectOpenAIResponses
 	case "azure", "azure_openai", "azure_openai_chat", "aoai", "foundry":
 		return LLMDialectAzureOpenAI
 	case "tgi", "tgi_generate":
@@ -42,6 +55,8 @@ func normalizeLLMDialect(raw string, targetURL string) string {
 	}
 	lowerTarget := strings.ToLower(targetURL)
 	switch {
+	case isResponsesTarget(targetURL):
+		return LLMDialectOpenAIResponses
 	case strings.Contains(lowerTarget, "/openai/deployments/"):
 		return LLMDialectAzureOpenAI
 	case strings.Contains(lowerTarget, "/api/chat") || strings.Contains(lowerTarget, "/api/generate"):
@@ -154,6 +169,12 @@ func scanLLMChunkFast(dialect string, data []byte) llmChunkScanResult {
 			res.visibleRaw = val
 		}
 	case LLMDialectOllama:
+		// A thinking model streams its reasoning in "thinking" (message.thinking
+		// on /api/chat, thinking on /api/generate) beside an empty content.
+		if val, ok := findJSONStringField(trimmed, keyThinking, keyThinkingSpaced); ok && len(val) > 0 {
+			res.hasReasoningToken = true
+			res.reasoningRaw = val
+		}
 		if val, ok := findJSONStringField(trimmed, keyContent, keyContentSpaced); ok && len(val) > 0 {
 			res.hasVisibleToken = true
 			res.visibleRaw = val
@@ -184,6 +205,7 @@ func scanLLMChunkFast(dialect string, data []byte) llmChunkScanResult {
 		hasNonNullField(trimmed, markerToolCalls) ||
 		hasNonNullField(trimmed, markerError) ||
 		hasNonNullField(trimmed, markerStopReason) ||
+		dialect == LLMDialectTGI && hasNonNullField(trimmed, markerGeneratedText) ||
 		bytes.Contains(trimmed, markerDoneTrue) ||
 		bytes.Contains(trimmed, markerDoneSpaced) ||
 		bytes.Contains(trimmed, markerEvalCount) {
@@ -291,6 +313,306 @@ func appendUnescapedJSONBytes(dst []byte, raw []byte) []byte {
 	return dst
 }
 
+// isResponsesTarget reports an OpenAI Responses API path: OpenAI
+// /v1/responses, Azure /openai/v1/responses or /openai/responses?api-version=.
+func isResponsesTarget(targetURL string) bool {
+	targetPath := strings.ToLower(targetURL)
+	if i := strings.IndexAny(targetPath, "?#"); i >= 0 {
+		targetPath = targetPath[:i]
+	}
+	return strings.HasSuffix(targetPath, "/responses")
+}
+
+var (
+	keyResponsesType       = []byte(`"type":"response.`)
+	keyResponsesTypeSpaced = []byte(`"type": "response.`)
+	keyErrorType           = []byte(`"type":"error"`)
+	keyErrorTypeSpaced     = []byte(`"type": "error"`)
+	keyErrorObject         = []byte(`"error":{`)
+	keyErrorObjectSpaced   = []byte(`"error": {`)
+	markerGeneratedText    = []byte(`"generated_text"`)
+	keyThinking            = []byte(`"thinking":"`)
+	keyThinkingSpaced      = []byte(`"thinking": "`)
+	keyDelta               = []byte(`"delta":"`)
+	keyDeltaSpaced         = []byte(`"delta": "`)
+)
+
+// responsesEventKind classifies one OpenAI Responses API stream event: by the
+// SSE event name when the server sends one, otherwise by the payload's event
+// type. Only event types begin with "response." (nested output items have
+// types such as message or function_call), so the payload's field order does
+// not matter. It does not allocate.
+func responsesEventKind(eventType string, data []byte) string {
+	// Only a Responses event name is trusted: a proxy may label every event
+	// generically (the SSE default is "message").
+	if strings.HasPrefix(eventType, "response.") || eventType == "error" {
+		return eventType
+	}
+	for _, key := range [][]byte{keyResponsesType, keyResponsesTypeSpaced} {
+		if idx := bytes.Index(data, key); idx >= 0 {
+			start := idx + len(key) - len("response.")
+			if val, ok := extractJSONQuotedBytes(data[start:]); ok && len(val) > 0 {
+				return unsafe.String(&val[0], len(val))
+			}
+		}
+	}
+	// An error event, or a gateway's bare {"error": {...}} payload.
+	if bytes.Contains(data, keyErrorType) || bytes.Contains(data, keyErrorTypeSpaced) ||
+		bytes.HasPrefix(data, []byte(`{"error"`)) || bytes.HasPrefix(data, []byte(`{ "error"`)) ||
+		(bytes.Contains(data, keyErrorObject) || bytes.Contains(data, keyErrorObjectSpaced)) && !bytes.Contains(data, []byte(`"response"`)) {
+		return "error"
+	}
+	return ""
+}
+
+// responsesErrorCode renders an error event's code, which a gateway may send
+// as a number.
+func responsesErrorCode(code any) string {
+	switch c := code.(type) {
+	case string:
+		return c
+	case float64:
+		return strconv.FormatFloat(c, 'f', -1, 64)
+	default:
+		return ""
+	}
+}
+
+// llmResponsesObject is an OpenAI Responses API response: the body of a
+// non-streaming call, and the "response" of a stream's terminal event.
+type llmResponsesObject struct {
+	Model             string                   `json:"model"`
+	Status            string                   `json:"status"`
+	Output            []llmResponsesOutputItem `json:"output"`
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
+	Error any `json:"error"`
+	Usage *struct {
+		InputTokens        int `json:"input_tokens"`
+		OutputTokens       int `json:"output_tokens"`
+		TotalTokens        int `json:"total_tokens"`
+		InputTokensDetails *struct {
+			CachedTokens int `json:"cached_tokens"`
+		} `json:"input_tokens_details"`
+		OutputTokensDetails *struct {
+			ReasoningTokens int `json:"reasoning_tokens"`
+		} `json:"output_tokens_details"`
+	} `json:"usage"`
+}
+
+type llmResponsesOutputItem struct {
+	Type    string `json:"type"`
+	Content []struct {
+		Type    string `json:"type"`
+		Text    string `json:"text"`
+		Refusal string `json:"refusal"`
+	} `json:"content"`
+	Summary []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"summary"`
+	CallID    string `json:"call_id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Arguments string `json:"arguments,omitempty"`
+}
+
+// llmResponsesEvent is a stream event that needs a full parse: a terminal
+// response event or an error event.
+type llmResponsesEvent struct {
+	Type     string              `json:"type"`
+	Code     any                 `json:"code"` // a string; some gateways send a number
+	Message  string              `json:"message"`
+	Error    any                 `json:"error"` // an error event may nest {code, message}
+	Response *llmResponsesObject `json:"response"`
+}
+
+// failureCode names a terminal status that is not a usable completion: a
+// failed or cancelled response, or one left incomplete for a reason other
+// than its output limit or a content filter (which the finish reason already
+// carries). It is empty for a completed response.
+func (r *llmResponsesObject) failureCode() string {
+	switch r.Status {
+	case "failed":
+		return "response_failed"
+	case "cancelled":
+		return "response_cancelled"
+	case "incomplete":
+		if r.IncompleteDetails != nil && (r.IncompleteDetails.Reason == "max_output_tokens" || r.IncompleteDetails.Reason == "content_filter") {
+			return ""
+		}
+		return "response_incomplete"
+	default:
+		return ""
+	}
+}
+
+// finishReason maps a response's status to the chat finish-reason vocabulary
+// the rest of the LLM accounting uses.
+func (r *llmResponsesObject) finishReason() string {
+	switch r.Status {
+	case "completed":
+		for _, item := range r.Output {
+			if item.Type == "function_call" {
+				return "tool_calls"
+			}
+		}
+		return "stop"
+	case "incomplete":
+		reason := ""
+		if r.IncompleteDetails != nil {
+			reason = r.IncompleteDetails.Reason
+		}
+		switch reason {
+		case "max_output_tokens":
+			return "length"
+		case "":
+			return "incomplete"
+		default:
+			return reason
+		}
+	case "":
+		return ""
+	default:
+		return r.Status
+	}
+}
+
+// toolCalls returns the response's function calls and their JSON.
+func (r *llmResponsesObject) toolCalls() (int, string) {
+	var calls []llmResponsesOutputItem
+	for _, item := range r.Output {
+		if item.Type == "function_call" {
+			calls = append(calls, llmResponsesOutputItem{Type: item.Type, CallID: item.CallID, Name: item.Name, Arguments: item.Arguments})
+		}
+	}
+	if len(calls) == 0 {
+		return 0, ""
+	}
+	b, err := json.Marshal(calls)
+	if err != nil || len(b) > maxSavedAssistantTextBytes {
+		return len(calls), ""
+	}
+	return len(calls), string(b)
+}
+
+// reasoningText is the raw reasoning of the response's reasoning items: their
+// content, typed reasoning_text (or output_text, as LiteLLM's chat bridge
+// types it), not a summary, which is not the reasoning tokens.
+func (r *llmResponsesObject) reasoningText() string {
+	var sb strings.Builder
+	for _, item := range r.Output {
+		if item.Type != "reasoning" {
+			continue
+		}
+		for _, part := range item.Content {
+			if part.Type == "reasoning_text" || part.Type == "output_text" {
+				sb.WriteString(part.Text)
+			}
+		}
+	}
+	return sb.String()
+}
+
+// reasoningSummaryText is the reasoning items' summary text. Ollama's
+// /v1/responses returns a thinking model's whole reasoning this way, with a
+// reasoning count of zero.
+func (r *llmResponsesObject) reasoningSummaryText() string {
+	var sb strings.Builder
+	for _, item := range r.Output {
+		if item.Type != "reasoning" {
+			continue
+		}
+		for _, part := range item.Summary {
+			if part.Type == "summary_text" {
+				sb.WriteString(part.Text)
+			}
+		}
+	}
+	return sb.String()
+}
+
+// outputText concatenates the response's visible output text.
+func (r *llmResponsesObject) outputText() string {
+	var sb strings.Builder
+	for _, item := range r.Output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, part := range item.Content {
+			switch part.Type {
+			case "output_text":
+				sb.WriteString(part.Text)
+			case "refusal":
+				sb.WriteString(part.Refusal)
+			}
+		}
+	}
+	return sb.String()
+}
+
+// llmOllamaOutput is an Ollama response's assistant output: message.content
+// or response, its thinking, and message.tool_calls.
+type llmOllamaOutput struct {
+	Content   string
+	Thinking  string
+	ToolCalls []map[string]any
+}
+
+// ollamaOutput decodes the envelope's Ollama output, if it has one.
+func (env *llmSlowChunkEnvelope) ollamaOutput() (llmOllamaOutput, bool) {
+	var out llmOllamaOutput
+	found := false
+	if raw := bytes.TrimSpace(env.OllamaMessage); len(raw) > 0 && raw[0] == '{' {
+		var msg struct {
+			Content   string          `json:"content"`
+			Thinking  string          `json:"thinking"`
+			ToolCalls llmToolCallList `json:"tool_calls"`
+		}
+		if json.Unmarshal(raw, &msg) == nil {
+			out.Content, out.Thinking, out.ToolCalls = msg.Content, msg.Thinking, msg.ToolCalls
+			found = true
+		}
+	}
+	if raw := bytes.TrimSpace(env.OllamaResponse); len(raw) > 0 && raw[0] == '"' {
+		var text string
+		if json.Unmarshal(raw, &text) == nil {
+			if out.Content == "" {
+				out.Content = text
+			}
+			found = true
+		}
+	}
+	if env.Thinking != "" && out.Thinking == "" {
+		out.Thinking = env.Thinking
+		found = true
+	}
+	return out, found
+}
+
+// llmToolCallList decodes tool_calls as an array, or as one object as older
+// TGI streams send it; any other shape is ignored rather than failing the
+// whole chunk.
+type llmToolCallList []map[string]any
+
+func (l *llmToolCallList) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	switch {
+	case len(data) == 0:
+	case data[0] == '[':
+		var calls []map[string]any
+		if json.Unmarshal(data, &calls) == nil {
+			*l = calls
+		}
+	case data[0] == '{':
+		var call map[string]any
+		if json.Unmarshal(data, &call) == nil {
+			*l = llmToolCallList{call}
+		}
+	}
+	return nil
+}
+
 // llmSlowChunkEnvelope is used only on the terminal/metadata chunk (1-2 per stream).
 type llmSlowChunkEnvelope struct {
 	Model   string `json:"model"`
@@ -298,15 +620,16 @@ type llmSlowChunkEnvelope struct {
 		FinishReason string `json:"finish_reason"`
 		Text         string `json:"text"`
 		Delta        struct {
-			Content          string           `json:"content"`
-			ReasoningContent string           `json:"reasoning_content"`
-			Reasoning        string           `json:"reasoning"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			Reasoning        string          `json:"reasoning"`
+			ToolCalls        llmToolCallList `json:"tool_calls"`
 		} `json:"delta"`
 		Message struct {
-			Content          string           `json:"content"`
-			ReasoningContent string           `json:"reasoning_content"`
-			ToolCalls        []map[string]any `json:"tool_calls"`
+			Content          string          `json:"content"`
+			ReasoningContent string          `json:"reasoning_content"`
+			Reasoning        string          `json:"reasoning"`
+			ToolCalls        llmToolCallList `json:"tool_calls"`
 		} `json:"message"`
 	} `json:"choices"`
 	Usage *struct {
@@ -325,6 +648,7 @@ type llmSlowChunkEnvelope struct {
 	Details       *struct {
 		FinishReason    string `json:"finish_reason"`
 		GeneratedTokens int    `json:"generated_tokens"`
+		InputLength     int    `json:"input_length"`
 		Prefill         []any  `json:"prefill"`
 	} `json:"details"`
 	// Ollama
@@ -332,6 +656,12 @@ type llmSlowChunkEnvelope struct {
 	DoneReason      string `json:"done_reason"`
 	PromptEvalCount int    `json:"prompt_eval_count"`
 	EvalCount       int    `json:"eval_count"`
+	// Ollama's top-level message (/api/chat) and response and thinking
+	// (/api/generate). Raw, so another server's string "message" or object
+	// "response" cannot fail the whole parse.
+	OllamaMessage  json.RawMessage `json:"message"`
+	OllamaResponse json.RawMessage `json:"response"`
+	Thinking       string          `json:"thinking"`
 	// Triton
 	ModelName    string `json:"model_name"`
 	TextOutput   string `json:"text_output"`

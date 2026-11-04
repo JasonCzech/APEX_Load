@@ -614,7 +614,7 @@ export default function TestExecutionStatusPanels({
                   ? `Generator self-check: ${cpuSaturated ? `generator CPU saturated (${cpuPct.toFixed(1)}%)` : ''}${cpuSaturated && droppedResults > 0 ? ' and ' : ''}${droppedResults > 0 ? `${droppedResults.toLocaleString()} results dropped` : ''} — inter-token latency (ITL) is marked unreliable.`
                   : ''}
                 {incompletePeer
-                  ? `${cpuSaturated || droppedResults > 0 ? ' ' : ''}Mixed-version or silent generator peer detected — LLM summary is incomplete.`
+                  ? `${cpuSaturated || droppedResults > 0 ? ' ' : ''}A generator in this run predates LLM summaries — the LLM summary is incomplete.`
                   : ''}
               </div>
             )}

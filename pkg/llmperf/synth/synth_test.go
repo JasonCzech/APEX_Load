@@ -36,3 +36,22 @@ func TestGenerateSyntheticDatasetDistributionsAndSharedPrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestGenerateBoundsTheDatasetSize(t *testing.T) {
+	for _, cfg := range []Config{
+		{Count: 10, BytesPerToken: 1e9},
+		{Count: 10, MaxInputTokens: MaxInputTokens + 1},
+		{Count: 10, SharedPrefixTokens: MaxInputTokens + 1},
+		// 50,000 records of about 64k tokens would be gigabytes.
+		{Count: MaxCount, MeanInputTokens: 65536, MinInputTokens: 65536, MaxInputTokens: 65536},
+		{Count: 4, MeanInputTokens: 1 << 20, MinInputTokens: 1 << 20, MaxInputTokens: 1 << 20, SharedPrefixTokens: 1<<20 - 8, BytesPerToken: 16},
+	} {
+		if _, err := Generate(cfg); err == nil {
+			t.Fatalf("Generate(%+v) succeeded; want it refused", cfg)
+		}
+	}
+	res, err := Generate(Config{Count: 200, MeanInputTokens: 1024, Seed: 3})
+	if err != nil || len(res.JSONL) > MaxOutputBytes {
+		t.Fatalf("an ordinary dataset must still generate: %v", err)
+	}
+}

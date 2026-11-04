@@ -272,10 +272,16 @@ func spliceConversationMessagesIntoJSONBody(rawBody []byte, msgMaps []map[string
 	if json.Unmarshal(rawBody, &bodyMap) != nil {
 		return nil, false
 	}
-	if _, hasMsgs := bodyMap["messages"]; !hasMsgs && !isLLMReq {
-		return nil, false
+	field := "messages"
+	if _, hasMsgs := bodyMap["messages"]; !hasMsgs {
+		if _, hasInput := bodyMap["input"]; hasInput {
+			// An OpenAI Responses API body carries the turns in input.
+			field = "input"
+		} else if !isLLMReq {
+			return nil, false
+		}
 	}
-	bodyMap["messages"] = msgMaps
+	bodyMap[field] = msgMaps
 	updated, err := json.Marshal(bodyMap)
 	if err != nil {
 		return nil, false
@@ -549,6 +555,7 @@ func extractCurrentTurnMessagesFrom(params map[string]any, body []byte) []LLMCon
 		var bodyObj struct {
 			Messages []LLMConversationMessage `json:"messages"`
 			Prompt   string                   `json:"prompt"`
+			Input    json.RawMessage          `json:"input"`
 		}
 		if json.Unmarshal(body, &bodyObj) == nil {
 			if len(bodyObj.Messages) > 0 {
@@ -559,6 +566,21 @@ func extractCurrentTurnMessagesFrom(params map[string]any, body []byte) []LLMCon
 			}
 			if strings.TrimSpace(bodyObj.Prompt) != "" {
 				return []LLMConversationMessage{{Role: "user", Content: bodyObj.Prompt, Redacted: bodyObj.Prompt}}
+			}
+			// An OpenAI Responses API body: input is a string or
+			// chat-style {role, content} items.
+			if len(bodyObj.Input) > 0 {
+				var text string
+				if json.Unmarshal(bodyObj.Input, &text) == nil && strings.TrimSpace(text) != "" {
+					return []LLMConversationMessage{{Role: "user", Content: text, Redacted: text}}
+				}
+				var items []LLMConversationMessage
+				if json.Unmarshal(bodyObj.Input, &items) == nil && len(items) > 0 {
+					for i := range items {
+						items[i].Redacted = items[i].Content
+					}
+					return items
+				}
 			}
 		}
 	}
@@ -659,10 +681,7 @@ func truncateLLMConversationMessages(cfg *LLMConversationConfig, msgs []LLMConve
 	}
 	assemble := func(slice []LLMConversationMessage) []LLMConversationMessage {
 		if sysMsg != nil {
-			out := make([]LLMConversationMessage, 0, 1+len(slice))
-			out = append(out, *sysMsg)
-			out = append(out, slice...)
-			return out
+			return append([]LLMConversationMessage{*sysMsg}, slice...)
 		}
 		out := make([]LLMConversationMessage, len(slice))
 		copy(out, slice)

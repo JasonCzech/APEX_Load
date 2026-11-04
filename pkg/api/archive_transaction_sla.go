@@ -123,7 +123,7 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 					if llm.CompletionTokens > 0 {
 						a.llmCompletionTokens += int64(llm.CompletionTokens)
 					}
-					if event.Success && !throttled && !llm.Truncated {
+					if event.Success && !throttled {
 						a.llmSuccessCount++
 						good := true
 						if rule.SLOTTFTMs != nil && *rule.SLOTTFTMs > 0 && (llm.TTFTMs <= 0 || llm.TTFTMs > *rule.SLOTTFTMs) {

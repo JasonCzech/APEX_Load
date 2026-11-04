@@ -1003,14 +1003,7 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 				delay = boundedRetryBackoff(baseRetryDelay, attempt)
 			}
 			if (errCfg.HonorRetryAfter || retryBackoff == "retry_after") && lastResult != nil && lastResult.RetryAfter > 0 {
-				ra := lastResult.RetryAfter
-				maxRA := 60 * time.Second
-				if errCfg.RetryAfterMaxMs > 0 {
-					maxRA = time.Duration(errCfg.RetryAfterMaxMs) * time.Millisecond
-				}
-				if ra > maxRA {
-					ra = maxRA
-				}
+				ra := min(lastResult.RetryAfter, retryAfterCap(errCfg))
 				if ra > delay {
 					delay = ra
 				}
@@ -1059,18 +1052,22 @@ func (vu *VUser) executeRetryInternal(ctx context.Context, action *protocol.Acti
 				return emit(child)
 			}
 		}
-		var reservedQuotaTokens int
-		if vu.QuotaPacer != nil {
-			var quotaOK bool
-			reservedQuotaTokens, quotaOK = vu.QuotaPacer.Wait(ctx)
-			if !quotaOK {
-				return lastResult, ctx.Err()
+		quotaStart := time.Now()
+		reservedQuotaTokens, quotaOK := vu.waitLLMQuota(ctx, action)
+		if vu.QuotaPacer != nil && protocol.IsLLMAction(action) {
+			waited := time.Since(quotaStart)
+			vu.llmQuotaWait += waited
+			// Only waits that queued are worth an interval; the cap would
+			// otherwise fill with admissions that took no time.
+			if vu.trackQuotaWaitIntervals && waited >= time.Millisecond {
+				vu.noteQuotaWaitIntervals(timeInterval{quotaStart, quotaStart.Add(waited)})
 			}
 		}
-		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
-		if vu.QuotaPacer != nil {
-			vu.QuotaPacer.ObserveResult(reservedQuotaTokens, result)
+		if !quotaOK {
+			return lastResult, ctx.Err()
 		}
+		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
+		vu.observeLLMQuota(action, reservedQuotaTokens, result)
 		if err != nil {
 			if vu.unredactedDebug && result != nil {
 				vu.captureFailedRetryDebug(result)
@@ -1248,6 +1245,19 @@ func actionTypeForTrace(action *protocol.Action) string {
 		return strings.ToLower(strings.TrimSpace(action.Type))
 	}
 	return strings.ToLower(strings.TrimSpace(action.Method))
+}
+
+// defaultRetryAfterCap bounds a server's Retry-After when the script sets no
+// retry_after_max_ms.
+const defaultRetryAfterCap = 60 * time.Second
+
+// retryAfterCap is the longest wait a Retry-After header can impose, on the
+// retry path and as a quota pacer cooldown alike.
+func retryAfterCap(errCfg dsl.ErrorHandlingConfig) time.Duration {
+	if errCfg.RetryAfterMaxMs > 0 {
+		return time.Duration(errCfg.RetryAfterMaxMs) * time.Millisecond
+	}
+	return defaultRetryAfterCap
 }
 
 func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {

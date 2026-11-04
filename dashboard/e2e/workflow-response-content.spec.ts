@@ -354,17 +354,26 @@ test('incomplete recorder response source remains a visible execution blocker th
     expect(action.metadata?.execution_blocker).toBe('import_review_required')
     expect(action.extractors || []).toEqual([])
     expect(JSON.stringify(action)).not.toContain(canary)
-    const issues = controls.getByRole('region', { name: 'Resolve import issues', exact: true })
-    await issues.getByRole('searchbox', { name: 'Find an issue', exact: true }).fill('response_content_truncated')
-    await issues.getByRole('button', { name: /Review unavailable response content/ }).click()
-    const selected = issues.getByRole('article', { name: 'Selected issue', exact: true })
-    await expect(selected.getByRole('region', { name: 'Available resolution', exact: true })).toContainText('cannot clear this execution blocker')
-    await expect(selected.getByRole('button', { name: /Mark reviewed/ })).toHaveCount(0)
-    await screenshot(page, info, 'response-content-blocker.png', selected, 'response-content-blocker-narrow.png', true)
-    await selected.getByRole('button', { name: 'Inspect source evidence', exact: true }).click()
+    // A HAR import lists its converter findings in the correlation studio's
+    // deduplicated conversion log rather than the shared issue workspace.
+    const conversionLog = controls.getByRole('region', { name: 'Deduplicated conversion log', exact: true })
+    const blocker = conversionLog.getByRole('row')
+      .filter({ hasText: 'response_content_truncated' })
+      .filter({ has: page.getByRole('cell', { name: 'blocker', exact: true }) })
+      .first()
+    await expect(blocker).toContainText('Captured response content requires review before correlation')
+    await expect(controls.getByRole('status').filter({ hasText: 'Import review has blockers' })).toBeVisible()
+    // The log is a horizontally scrolling table and the mapping navigation
+    // opens unfiltered, so screenshot()'s single-evidence geometry checks do
+    // not apply; capture plain evidence screenshots instead.
+    await blocker.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: info.outputPath('response-content-blocker.png') })
+    await controls.getByRole('tab', { name: 'Source Mapping', exact: true }).click()
     await expect(controls.getByRole('tab', { name: 'Source Mapping', exact: true })).toHaveAttribute('aria-selected', 'true')
-    await expect(controls.getByRole('navigation', { name: 'Review mapping navigation', exact: true })).toBeVisible()
-    await screenshot(page, info, 'response-content-retained-source.png', controls.getByRole('navigation', { name: 'Review mapping navigation', exact: true }))
+    const mappingNavigation = controls.getByRole('navigation', { name: 'Review mapping navigation', exact: true })
+    await expect(mappingNavigation).toBeVisible()
+    await mappingNavigation.scrollIntoViewIfNeeded()
+    await page.screenshot({ path: info.outputPath('response-content-retained-source.png') })
     const id = await saveAndOpen(page, controls)
     await reopenSavedScript(page, workspace, id)
     const reopened = (await json(await page.context().request.get(`/api/v1/scripts/${id}`))).script as unknown as ScriptDefinition

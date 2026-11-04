@@ -26,6 +26,54 @@ type Record struct {
 	InputBand            string    `json:"input_band"`
 }
 
+// Normalization bounds. A multi-turn conversation repeats its history in every
+// turn's record, so the normalized output can grow quadratically in the
+// input. The record count is enforced inside a conversation, and the output
+// stops at MaxNormalizedBytes; either limit truncates the dataset, which the
+// result reports, instead of exhausting memory.
+const (
+	MaxRecords         = 50000
+	MaxNormalizedBytes = 32 << 20
+)
+
+// Truncation reasons reported in ImportResult.TruncationReason.
+const (
+	TruncatedMaxRecords = "max_records"
+	TruncatedMaxBytes   = "max_bytes"
+)
+
+// outputBudget tracks the records and the (approximate, pre-escaping) output
+// bytes a normalization has produced, and why it stopped, if it did.
+type outputBudget struct {
+	records    int
+	maxRecords int
+	bytes      int64
+	truncated  string
+}
+
+// admit charges one record. It reports false, recording why, once the record
+// limit is reached or the output would exceed MaxNormalizedBytes.
+func (b *outputBudget) admit(rec *Record) bool {
+	if b.truncated != "" {
+		return false
+	}
+	if b.records >= b.maxRecords {
+		b.truncated = TruncatedMaxRecords
+		return false
+	}
+	size := int64(len(rec.PromptID) + len(rec.ConversationID) + len(rec.Prompt) + 128)
+	for _, m := range rec.Messages {
+		size += int64(len(m.Role) + len(m.Content) + 32)
+	}
+	if b.bytes+size > MaxNormalizedBytes {
+		b.truncated = TruncatedMaxBytes
+		return false
+	}
+	b.bytes += size
+	b.records++
+	return true
+}
+
 // ImportOptions configures dataset normalization.
 type ImportOptions struct {
 	Format        string // "auto", "sharegpt", "openai_chat", "jsonl"
@@ -44,8 +92,13 @@ type ImportResult struct {
 	MaxInputTokens           int            `json:"max_input_tokens"`
 	MeanExpectedOutputTokens float64        `json:"mean_expected_output_tokens"`
 	InputBandCounts          map[string]int `json:"input_band_counts"`
-	Records                  []Record       `json:"records"`
-	NormalizedJSONL          string         `json:"normalized_jsonl"`
+	// Truncated reports a dataset cut at a limit: TruncationReason is
+	// max_records (the record limit) or max_bytes (the output size limit;
+	// set max_turns or max_records to keep whole conversations instead).
+	Truncated        bool     `json:"truncated,omitempty"`
+	TruncationReason string   `json:"truncation_reason,omitempty"`
+	Records          []Record `json:"records"`
+	NormalizedJSONL  string   `json:"normalized_jsonl"`
 }
 
 // ClassifyInputBand maps a prompt token count into the 4 canonical input bands.
@@ -84,8 +137,8 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 		return nil, fmt.Errorf("dataset payload is empty")
 	}
 	maxRecords := opts.MaxRecords
-	if maxRecords <= 0 {
-		maxRecords = 50000
+	if maxRecords <= 0 || maxRecords > MaxRecords {
+		maxRecords = MaxRecords
 	}
 	bpt := opts.BytesPerToken
 	if bpt <= 0 {
@@ -97,6 +150,7 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 	}
 
 	var rawItems []map[string]any
+	inputCapped := false // lines remained after the record limit
 	if trimmed[0] == '[' {
 		if err := json.Unmarshal(trimmed, &rawItems); err != nil {
 			return nil, fmt.Errorf("parse JSON array dataset: %w", err)
@@ -114,6 +168,12 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 			}
 			rawItems = append(rawItems, item)
 			if len(rawItems) >= maxRecords {
+				for _, rest := range lines[idx+1:] {
+					if len(bytes.TrimSpace(rest)) > 0 {
+						inputCapped = true
+						break
+					}
+				}
 				break
 			}
 		}
@@ -128,9 +188,16 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 	}
 
 	var records []Record
+	// recordItem is each record's source item, so a truncation can count the
+	// conversations it kept the same way the import counts them: per item.
+	var recordItem []int
 	conversations := 0
+	budget := &outputBudget{maxRecords: maxRecords}
 	for itemIdx, item := range rawItems {
-		if len(records) >= maxRecords {
+		if budget.records >= maxRecords || budget.truncated == TruncatedMaxBytes {
+			if budget.truncated == "" {
+				budget.truncated = TruncatedMaxRecords
+			}
 			break
 		}
 		convID := stringField(item, "id", "conversation_id", "prompt_id")
@@ -139,22 +206,27 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 		}
 		switch detectedFormat {
 		case "sharegpt":
-			turns := extractShareGPTTurns(item, convID, opts.MaxTurns, bpt, redact)
+			turns := extractShareGPTTurns(item, convID, opts.MaxTurns, bpt, redact, budget)
 			if len(turns) > 0 {
 				conversations++
 				records = append(records, turns...)
+				for range turns {
+					recordItem = append(recordItem, itemIdx)
+				}
 			}
 		case "openai_chat":
 			rec, ok := extractOpenAIChatRecord(item, convID, itemIdx, bpt, redact)
-			if ok {
+			if ok && budget.admit(&rec) {
 				conversations++
 				records = append(records, rec)
+				recordItem = append(recordItem, itemIdx)
 			}
 		default:
 			rec, ok := extractGenericRecord(item, convID, itemIdx, bpt, redact)
-			if ok {
+			if ok && budget.admit(&rec) {
 				conversations++
 				records = append(records, rec)
+				recordItem = append(recordItem, itemIdx)
 			}
 		}
 	}
@@ -176,6 +248,25 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 	for i := range records {
 		r := &records[i]
 		r.InputBand = ClassifyInputBand(r.EstimatedInputTokens)
+		line, err := json.Marshal(r)
+		if err != nil {
+			return nil, fmt.Errorf("marshal normalized record %d: %w", i, err)
+		}
+		if i > 0 && jsonlBuf.Len()+len(line)+1 > MaxNormalizedBytes {
+			// JSON escaping can outgrow the budget's estimate: keep the
+			// records written so far, and count only their source items.
+			records = records[:i]
+			conversations = 0
+			for j := range records {
+				if j == 0 || recordItem[j] != recordItem[j-1] {
+					conversations++
+				}
+			}
+			budget.truncated = TruncatedMaxBytes
+			break
+		}
+		jsonlBuf.Write(line)
+		jsonlBuf.WriteByte('\n')
 		bandCounts[r.InputBand]++
 		totalIn += r.EstimatedInputTokens
 		if r.EstimatedInputTokens > maxIn {
@@ -185,12 +276,11 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 			totalOut += r.ExpectedOutputTokens
 			outCount++
 		}
-		line, err := json.Marshal(r)
-		if err != nil {
-			return nil, fmt.Errorf("marshal normalized record %d: %w", i, err)
-		}
-		jsonlBuf.Write(line)
-		jsonlBuf.WriteByte('\n')
+	}
+
+	truncation := budget.truncated
+	if truncation == "" && inputCapped {
+		truncation = TruncatedMaxRecords
 	}
 
 	meanIn := float64(totalIn) / float64(len(records))
@@ -207,6 +297,8 @@ func Normalize(raw []byte, opts ImportOptions) (*ImportResult, error) {
 		MaxInputTokens:           maxIn,
 		MeanExpectedOutputTokens: meanOut,
 		InputBandCounts:          bandCounts,
+		Truncated:                truncation != "",
+		TruncationReason:         truncation,
 		Records:                  records,
 		NormalizedJSONL:          jsonlBuf.String(),
 	}, nil
@@ -222,7 +314,7 @@ func sniffFormat(first map[string]any) string {
 	return "jsonl"
 }
 
-func extractShareGPTTurns(item map[string]any, convID string, maxTurns int, bpt float64, redact func(string) string) []Record {
+func extractShareGPTTurns(item map[string]any, convID string, maxTurns int, bpt float64, redact func(string) string, budget *outputBudget) []Record {
 	rawConvs, ok := item["conversations"].([]any)
 	if !ok || len(rawConvs) == 0 {
 		return nil
@@ -258,7 +350,7 @@ func extractShareGPTTurns(item map[string]any, convID string, maxTurns int, bpt 
 			msgsCopy := make([]Message, len(history))
 			copy(msgsCopy, history)
 			inTokens := estimateMessagesTokens(msgsCopy, bpt)
-			out = append(out, Record{
+			rec := Record{
 				PromptID:             fmt.Sprintf("%s-t%d", convID, turnIdx),
 				ConversationID:       convID,
 				TurnIndex:            turnIdx,
@@ -267,7 +359,11 @@ func extractShareGPTTurns(item map[string]any, convID string, maxTurns int, bpt 
 				EstimatedInputTokens: inTokens,
 				ExpectedOutputTokens: expectedOut,
 				InputBand:            ClassifyInputBand(inTokens),
-			})
+			}
+			if !budget.admit(&rec) {
+				return out
+			}
+			out = append(out, rec)
 			turnIdx++
 			if maxTurns > 0 && turnIdx >= maxTurns {
 				return out

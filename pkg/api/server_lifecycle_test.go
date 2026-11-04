@@ -147,7 +147,8 @@ func TestLeaderPeriodicTaskAndRetentionCadencesRejectAfterShutdown(t *testing.T)
 
 func TestNilReceiverSemaphoresReturnStableChannels(t *testing.T) {
 	var nilServer *Server
-	if nilServer.ensureSemaphores() != nilServer.ensureSemaphores() {
+	firstSemaphores := nilServer.ensureSemaphores()
+	if firstSemaphores != nilServer.ensureSemaphores() {
 		t.Fatal("(*Server)(nil).ensureSemaphores() allocated distinct semaphore structs across calls")
 	}
 	req := (&http.Request{}).WithContext(context.Background())
@@ -157,7 +158,8 @@ func TestNilReceiverSemaphoresReturnStableChannels(t *testing.T) {
 	nilServer.releaseEnterpriseImportSlot()
 
 	var nilRunner *TestRunner
-	if nilRunner.latencyRouteProbeSlotChan() != nilRunner.latencyRouteProbeSlotChan() {
+	firstProbeSlots := nilRunner.latencyRouteProbeSlotChan()
+	if firstProbeSlots != nilRunner.latencyRouteProbeSlotChan() {
 		t.Fatal("(*TestRunner)(nil).latencyRouteProbeSlotChan() allocated distinct channels across calls")
 	}
 }

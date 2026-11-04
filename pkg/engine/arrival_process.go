@@ -10,10 +10,17 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// ArrivalSampler generates inter-arrival durations for open-workload schedulers
+// ArrivalSampler generates arrival times for open-workload schedulers
 // supporting uniform, Poisson (exponential inter-arrival), and Gamma (bursty
 // with shape k = Burstiness, where CV^2 = 1/k) arrival processes, as well as
 // stepped or linearly ramped rate stages.
+//
+// Arrivals are time-rescaled: unit-mean gaps accumulate in operational time
+// tau, and each arrival lands at the wall-clock time t where the cumulative
+// rate Lambda(t) (the integral of the rate schedule) reaches tau. A ramp
+// therefore delivers its integral, not its starting rate: 0 to 10 TPS over an
+// hour offers about 18,000 arrivals. At a constant rate this reduces to
+// gaps of tau/rate, as before.
 type ArrivalSampler struct {
 	process    string
 	burstiness float64
@@ -21,6 +28,17 @@ type ArrivalSampler struct {
 	stages     []dsl.PacingRateStage
 	shardCount int
 	rng        *rand.Rand
+	segments   []arrivalRateSegment
+	opTime     float64
+}
+
+// arrivalRateSegment is one piece of the shard-adjusted rate schedule: the
+// rate moves linearly from `from` to `to` over dur seconds starting at start;
+// the last segment is open-ended (dur = +Inf) at a constant rate.
+type arrivalRateSegment struct {
+	start, dur float64
+	from, to   float64
+	cumStart   float64 // Lambda(start)
 }
 
 // NewArrivalSampler constructs a deterministic or time-seeded arrival sampler
@@ -45,7 +63,7 @@ func NewArrivalSampler(pacing dsl.PacingConfig, shard DataShardConfig) *ArrivalS
 	}
 	stages := make([]dsl.PacingRateStage, len(pacing.RateStages))
 	copy(stages, pacing.RateStages)
-	return &ArrivalSampler{
+	s := &ArrivalSampler{
 		process:    proc,
 		burstiness: pacing.Burstiness,
 		baseTPS:    pacing.TPS,
@@ -53,6 +71,126 @@ func NewArrivalSampler(pacing dsl.PacingConfig, shard DataShardConfig) *ArrivalS
 		shardCount: shardCount,
 		rng:        rand.New(rand.NewSource(seed)),
 	}
+	s.segments = s.buildRateSegments()
+	return s
+}
+
+// shardRate is the rate this generator offers for a configured rate.
+func (s *ArrivalSampler) shardRate(raw float64) float64 {
+	if raw <= 0 || math.IsNaN(raw) || math.IsInf(raw, 0) {
+		return 0
+	}
+	raw = math.Min(raw, float64(dsl.MaxPacingTPS))
+	if s.shardCount > 1 {
+		raw /= float64(s.shardCount)
+	}
+	return raw
+}
+
+// buildRateSegments lays out the rate schedule EffectiveTPSAt describes, with
+// the cumulative rate at each segment start.
+func (s *ArrivalSampler) buildRateSegments() []arrivalRateSegment {
+	if len(s.stages) == 0 {
+		return []arrivalRateSegment{{dur: math.Inf(1), from: s.shardRate(s.baseTPS), to: s.shardRate(s.baseTPS)}}
+	}
+	var segments []arrivalRateSegment
+	var start, cum float64
+	for _, stage := range s.stages {
+		if stage.DurationSeconds <= 0 {
+			continue
+		}
+		dur := float64(stage.DurationSeconds)
+		from := s.shardRate(stage.TargetTPS)
+		to := from
+		if stage.EndTPS != nil {
+			to = s.shardRate(*stage.EndTPS)
+		}
+		segments = append(segments, arrivalRateSegment{start: start, dur: dur, from: from, to: to, cumStart: cum})
+		start += dur
+		cum += (from + to) / 2 * dur
+	}
+	// After the last stage the rate holds at its final value.
+	last := s.stages[len(s.stages)-1]
+	tail := last.TargetTPS
+	if last.EndTPS != nil {
+		tail = *last.EndTPS
+	}
+	tailRate := s.shardRate(tail)
+	return append(segments, arrivalRateSegment{start: start, dur: math.Inf(1), from: tailRate, to: tailRate, cumStart: cum})
+}
+
+// arrivalTime inverts the cumulative rate: the elapsed seconds t at which
+// Lambda(t) reaches opTime. ok is false when the rate stays at zero from
+// there on, so no such arrival ever comes.
+func (s *ArrivalSampler) arrivalTime(opTime float64) (float64, bool) {
+	for _, seg := range s.segments {
+		r := math.Max(0, opTime-seg.cumStart)
+		if math.IsInf(seg.dur, 1) {
+			if seg.from <= 0 {
+				return 0, false
+			}
+			return seg.start + r/seg.from, true
+		}
+		// An arrival at a segment's end belongs to the next segment with a
+		// positive rate (stages are half-open intervals). The cumulative sums
+		// carry rounding error, so "at the end" allows a relative epsilon.
+		area := (seg.from + seg.to) / 2 * seg.dur
+		if area <= 0 || r >= area-arrivalBoundaryEpsilon*math.Max(1, seg.cumStart+area) {
+			continue
+		}
+		// Within the segment the rate is from + slope*x, so Lambda grows by
+		// from*x + slope*x^2/2; solve for x in the cancellation-free form.
+		if r <= 0 {
+			return seg.start, true
+		}
+		half := (seg.to - seg.from) / seg.dur / 2
+		x := 2 * r / (seg.from + math.Sqrt(math.Max(0, seg.from*seg.from+4*half*r)))
+		return seg.start + math.Min(math.Max(x, 0), seg.dur), true
+	}
+	return 0, false
+}
+
+// arrivalBoundaryEpsilon is the relative tolerance for an arrival landing on
+// a segment boundary of the cumulative rate.
+const arrivalBoundaryEpsilon = 1e-9
+
+// unitGap draws one unit-mean inter-arrival gap in operational time.
+func (s *ArrivalSampler) unitGap() float64 {
+	switch s.process {
+	case "poisson":
+		return s.rng.ExpFloat64()
+	case "gamma":
+		k := s.burstiness
+		if k <= 0 || math.IsNaN(k) || math.IsInf(k, 0) {
+			k = 1.0
+		}
+		// Gamma(k, 1/k) has mean 1 and CV^2 = 1/k.
+		return sampleGamma(s.rng, k) / k
+	default:
+		return 1
+	}
+}
+
+// NextArrival returns the elapsed time of the next arrival and advances the
+// sampler. The first arrival is due at the start of the first stage with a
+// positive rate. ok is false once the rate stays at zero, when no further
+// arrival will come.
+func (s *ArrivalSampler) NextArrival() (time.Duration, bool) {
+	if s == nil {
+		return 0, false
+	}
+	at, ok := s.arrivalTime(s.opTime)
+	if !ok {
+		return 0, false
+	}
+	if gap := s.unitGap(); gap > 0 && !math.IsNaN(gap) {
+		s.opTime += gap
+	}
+	nanos := at * float64(time.Second)
+	if nanos >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64), true
+	}
+	return time.Duration(nanos), true
 }
 
 // IsNonUniformOrStaged reports whether the pacing config uses a non-uniform
@@ -108,44 +246,7 @@ func (s *ArrivalSampler) EffectiveTPSAt(elapsed time.Duration) (tps float64, war
 	if rawTPS <= 0 || math.IsNaN(rawTPS) || math.IsInf(rawTPS, 0) {
 		return 0, warmup
 	}
-	rawTPS = math.Min(rawTPS, float64(dsl.MaxPacingTPS))
-	if s.shardCount > 1 {
-		rawTPS /= float64(s.shardCount)
-	}
-	return rawTPS, warmup
-}
-
-// NextInterArrival samples the next inter-arrival duration at the given elapsed
-// time. If the effective TPS at elapsed is <= 0, it returns a short step wait
-// (100ms) and ok=false so the caller can advance its clock without dispatching.
-func (s *ArrivalSampler) NextInterArrival(elapsed time.Duration) (delay time.Duration, warmup bool, ok bool) {
-	tps, warmup := s.EffectiveTPSAt(elapsed)
-	if tps <= 0 {
-		return 100 * time.Millisecond, warmup, false
-	}
-	meanSec := 1.0 / tps
-	var sec float64
-	switch s.process {
-	case "poisson":
-		sec = s.rng.ExpFloat64() * meanSec
-	case "gamma":
-		k := s.burstiness
-		if k <= 0 || math.IsNaN(k) || math.IsInf(k, 0) {
-			k = 1.0
-		}
-		// Gamma(k, theta) with mean = k * theta = meanSec -> theta = meanSec / k
-		sec = sampleGamma(s.rng, k) * (meanSec / k)
-	default:
-		sec = meanSec
-	}
-	if sec < 0 || math.IsNaN(sec) {
-		sec = 0
-	}
-	nanos := sec * float64(time.Second)
-	if nanos >= float64(math.MaxInt64) {
-		return time.Duration(math.MaxInt64), warmup, true
-	}
-	return time.Duration(nanos), warmup, true
+	return s.shardRate(rawTPS), warmup
 }
 
 // sampleGamma draws a standard Gamma(k, 1) variate using Marsaglia and Tsang's
@@ -226,7 +327,13 @@ func runSampledArrivalSchedulerFromOrigin(
 		return elapsed
 	}
 
-	var nextDeadline time.Duration
+	sleep := func(delay time.Duration) bool {
+		if sleepActive != nil {
+			return sleepActive(ctx, delay)
+		}
+		return sleepContext(ctx, delay)
+	}
+	nextDeadline, due := sampler.NextArrival()
 	arrival := 0
 	for totalArrivals <= 0 || arrival < totalArrivals {
 		if waitIfPaused != nil {
@@ -237,15 +344,17 @@ func runSampledArrivalSchedulerFromOrigin(
 		if ctx.Err() != nil {
 			return
 		}
+		if !due {
+			// The rate stays at zero from here on: idle until the run ends.
+			if !sleep(time.Second) {
+				return
+			}
+			continue
+		}
 
 		now := schedulerElapsed()
 		if now < nextDeadline {
-			delay := nextDeadline - now
-			if sleepActive != nil {
-				if !sleepActive(ctx, delay) {
-					return
-				}
-			} else if !sleepContext(ctx, delay) {
+			if !sleep(nextDeadline - now) {
 				return
 			}
 			continue
@@ -255,12 +364,7 @@ func runSampledArrivalSchedulerFromOrigin(
 		dispatched := 0
 		shedCount := 0
 		firstShedIndex := 0
-		for (totalArrivals <= 0 || arrival < totalArrivals) && nextDeadline <= now {
-			stepDelay, _, ok := sampler.NextInterArrival(nextDeadline)
-			if !ok {
-				nextDeadline += stepDelay
-				break
-			}
+		for (totalArrivals <= 0 || arrival < totalArrivals) && due && nextDeadline <= now {
 			if dispatched < maxOpenWorkloadCatchUpBurst {
 				if waitIfPaused != nil {
 					if err := waitIfPaused(ctx); err != nil {
@@ -279,7 +383,7 @@ func runSampledArrivalSchedulerFromOrigin(
 				shedCount++
 			}
 			arrival++
-			nextDeadline += stepDelay
+			nextDeadline, due = sampler.NextArrival()
 		}
 		if shedCount > 0 && shed != nil {
 			shed(firstShedIndex, shedCount)

@@ -1748,7 +1748,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 			continue
 		}
 		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
-		llmUncounted = llmUncounted || generatorrpc.LLMPeerUncounted(value.LLM, value.Count, value.DependencyType)
+		llmUncounted = llmUncounted || generatorrpc.LLMPeerUncounted(value.LLM)
 		if out.Name == "" {
 			out.Name = value.Name
 		}

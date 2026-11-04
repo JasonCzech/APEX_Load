@@ -1382,12 +1382,19 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		if startOffset > test.Duration {
 			return nil, fmt.Errorf("group[%d]: start_offset %s begins after the %s scenario deadline", index, startOffset, test.Duration)
 		}
-		stageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0
+		// As at compile: user stages drive a vuser_driven group that sets
+		// target_vusers, and in any mode an open-model group runs the rate
+		// stages its stages compiled to.
+		userStageDriven := normalizeScenarioMode(test.ScenarioMode) == "vuser_driven" && len(group.Stages) > 0 && maxStageTargetVUsers(group.Stages) > 0
+		stageDriven := userStageDriven || group.rateStageDriven() && rateStagesDerivedFromStages(group.script, group.Stages)
 		initialVUsers := group.VUsers
 		engineRampUp := rampUp
 		engineRampDown := rampDown
 		allowZeroVUsers := false
-		if stageDriven {
+		// As at compile, only stages that set target_vusers scale the users.
+		// Open-model rate stages keep the group's users (an open workload
+		// needs a positive count) while their schedule still runs.
+		if userStageDriven {
 			initialVUsers = stagedInitialVUsers(group.Stages, group.VUsers)
 			engineRampUp = 0
 			engineRampDown = 0

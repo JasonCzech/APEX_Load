@@ -77,7 +77,7 @@ func ExpandCapacitySweepStages(cfg *CapacitySweepConfig) ([]storage.LoadStage, t
 		warmupDur, _ = time.ParseDuration(strings.TrimSpace(cfg.WarmupDuration))
 	}
 
-	stages := make([]storage.LoadStage, 0, len(cfg.Levels)*2)
+	var stages []storage.LoadStage
 	var total time.Duration
 	for idx, lvl := range cfg.Levels {
 		if warmupDur > 0 {

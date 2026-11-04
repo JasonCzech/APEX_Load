@@ -593,10 +593,8 @@ func (vu *VUser) interpolateJSONBodyWithSecrets(s string) (string, string) {
 		}
 		if contexts[index].InString {
 			escapedActual := templatedjson.EscapeStringContent(actual)
-			escapedSafe := safe
-			if safe == actual {
-				escapedSafe = escapedActual
-			} else {
+			escapedSafe := escapedActual
+			if safe != actual {
 				escapedSafe = templatedjson.EscapeStringContent(safe)
 			}
 			return escapedActual, escapedSafe, nil

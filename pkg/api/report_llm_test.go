@@ -207,3 +207,41 @@ func TestRunArchiveLLMReportAggregationAndSLA(t *testing.T) {
 		t.Fatalf("expected CSV rows without error, got rows=%d err=%v", csvRows, err)
 	}
 }
+
+// A fixed-output benchmark accepts its length finishes: the report keeps
+// their timings and goodput, and counts truncation separately.
+func TestRunArchiveLLMReportAcceptedLengthFinish(t *testing.T) {
+	acc := newArchiveLLMAccumulator(&RunArchiveManifest{}, newArchiveQuantileBudget())
+	baseTime := time.Date(2026, 6, 1, 12, 0, 0, 0, time.UTC)
+	for i := 0; i < 4; i++ {
+		acc.merge(TransactionEvent{
+			Timestamp:  baseTime.Add(time.Duration(i) * time.Second),
+			Population: "action",
+			ActionName: "bench",
+			StatusCode: 200,
+			Success:    true,
+			DurationMs: 300,
+			ServerTelemetry: &protocol.ServerTelemetry{LLM: &protocol.LLMDiagnostics{
+				Stream: true, TTFTMs: 80, TPOTMs: 6, E2EMs: 300, PromptTokens: 64, CompletionTokens: 32,
+				FinishReason: "length", Truncated: true,
+			}},
+		})
+	}
+	acc.merge(TransactionEvent{
+		Timestamp:       baseTime.Add(5 * time.Second),
+		Population:      "action",
+		ActionName:      "bench",
+		Success:         false,
+		ServerTelemetry: &protocol.ServerTelemetry{LLM: &protocol.LLMDiagnostics{ErrorCode: "transport"}},
+	})
+	summary := acc.finalize(10)
+	if summary == nil {
+		t.Fatalf("expected an LLM summary")
+	}
+	if summary.TotalRequests != 5 || summary.SuccessfulRequests != 4 || summary.TruncatedRequests != 4 || summary.ErrorRequests != 1 {
+		t.Fatalf("unexpected counters %+v", summary)
+	}
+	if summary.TTFT.Samples != 4 || summary.TPOT.Samples != 4 || summary.GoodputPct != 80 {
+		t.Fatalf("accepted length finishes must keep their timings and goodput: TTFT=%+v TPOT=%+v goodput=%v", summary.TTFT, summary.TPOT, summary.GoodputPct)
+	}
+}

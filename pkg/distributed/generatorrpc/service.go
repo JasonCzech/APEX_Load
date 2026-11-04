@@ -3964,7 +3964,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 			continue
 		}
 		javaUncounted = javaUncounted || protocol.JavaHTTPPeerUncounted(value.JavaHTTP, value.Count, value.DependencyType)
-		llmUncounted = llmUncounted || LLMPeerUncounted(value.LLM, value.Count, value.DependencyType)
+		llmUncounted = llmUncounted || LLMPeerUncounted(value.LLM)
 		if out.Name == "" {
 			out.Name = value.Name
 		}

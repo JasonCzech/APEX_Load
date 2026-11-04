@@ -16,11 +16,14 @@ func TestFixtureServerDialects(t *testing.T) {
 		dialect Dialect
 		path    string
 		wantSub string
+		body    string
 	}{
 		{name: "OpenAI Chat", dialect: DialectOpenAIChat, path: "/v1/chat/completions", wantSub: "data: [DONE]"},
 		{name: "OpenAI Completions", dialect: DialectOpenAICompletions, path: "/v1/completions", wantSub: `"object":"text_completion"`},
 		{name: "Azure OpenAI", dialect: DialectAzureOpenAI, path: "/openai/deployments/gpt4/chat/completions?api-version=2024-06-01", wantSub: "data: [DONE]"},
-		{name: "TGI", dialect: DialectTGI, path: "/generate_stream", wantSub: `"generated_tokens":`},
+		// TGI reports finish details only when the request asks for them.
+		{name: "TGI", dialect: DialectTGI, path: "/generate_stream", wantSub: `"generated_tokens":`, body: `{"inputs":"Hello world","stream":true,"parameters":{"details":true}}`},
+		{name: "TGI without details", dialect: DialectTGI, path: "/generate_stream", wantSub: `"details":null`, body: `{"inputs":"Hello world","stream":true}`},
 		{name: "Ollama NDJSON", dialect: DialectOllama, path: "/api/chat", wantSub: `"done":true`},
 		{name: "Triton", dialect: DialectTriton, path: "/v2/models/ensemble/generate_stream", wantSub: `"text_output":`},
 	}
@@ -39,6 +42,9 @@ func TestFixtureServerDialects(t *testing.T) {
 			defer srv.Close()
 
 			reqBody := `{"model":"mock-model","stream":true,"messages":[{"role":"user","content":"Hello world"}]}`
+			if tc.body != "" {
+				reqBody = tc.body
+			}
 			resp, err := http.Post(srv.URL+tc.path, "application/json", strings.NewReader(reqBody))
 			if err != nil {
 				t.Fatalf("POST %s: %v", tc.path, err)

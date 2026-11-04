@@ -70,6 +70,8 @@ type LLMEvalSampleRecord struct {
 	TPOTMs           float64 `json:"tpot_ms,omitempty"`
 	E2EMs            float64 `json:"e2e_ms,omitempty"`
 	FinishReason     string  `json:"finish_reason,omitempty"`
+	Success          bool    `json:"success"`
+	ErrorCode        string  `json:"error_code,omitempty"`
 	OutputHash       string  `json:"output_hash,omitempty"`
 	Truncated        bool    `json:"truncated,omitempty"`
 	SchemaFailed     bool    `json:"schema_failed,omitempty"`
@@ -135,6 +137,9 @@ func (s *Server) handleCalibrateLLMPromptDataset(w http.ResponseWriter, r *http.
 		}
 	}
 
+	if !s.requireBodyTestsInRouteProject(w, r, req.TestID) {
+		return
+	}
 	if testID := strings.TrimSpace(req.TestID); testID != "" && sampleCount == 0 {
 		source = "archive"
 		archives := s.archiveDomainService()
@@ -154,11 +159,22 @@ func (s *Server) handleCalibrateLLMPromptDataset(w http.ResponseWriter, r *http.
 				return nil
 			}
 			d := tx.ServerTelemetry.LLM
-			if !d.TokensEstimated && d.OutputChars > 0 && d.CompletionTokens > 0 {
-				totalChars += int64(d.OutputChars)
-				totalTokens += int64(d.CompletionTokens)
-				sampleCount++
+			// The completion count must be the server's: an estimate of it, or
+			// of everything, would calibrate the estimator against itself.
+			if (d.TokensEstimated && !d.PromptTokensEstimated) || d.ReasoningTokensEstimated || d.OutputChars <= 0 || d.ToolCallsCount > 0 {
+				// A tool call's argument tokens are in the count but not in
+				// the visible characters, and an estimated reasoning share
+				// leaves the visible count unknown.
+				return nil
 			}
+			// The characters are the visible answer's, so are the tokens.
+			tokens := d.CompletionTokens - d.ReasoningTokens
+			if tokens <= 0 {
+				return nil
+			}
+			totalChars += int64(d.OutputChars)
+			totalTokens += int64(tokens)
+			sampleCount++
 			return nil
 		})
 	}
@@ -309,6 +325,11 @@ func (s *Server) handleExportRunArchiveLLMSamples(w http.ResponseWriter, r *http
 			return nil
 		}
 		d := tx.ServerTelemetry.LLM
+		if !tx.Success && d.OutputChars == 0 && d.CompletionTokens == 0 && d.ToolCallsCount == 0 {
+			// A request that failed before producing output (a transport
+			// failure, a refused request) has nothing to evaluate.
+			return nil
+		}
 		var hashStr string
 		if d.OutputHash != 0 {
 			hashStr = strings.ToLower(strings.TrimSpace(formatUint64Hex(d.OutputHash)))
@@ -331,6 +352,8 @@ func (s *Server) handleExportRunArchiveLLMSamples(w http.ResponseWriter, r *http
 			TPOTMs:           d.TPOTMs,
 			E2EMs:            d.E2EMs,
 			FinishReason:     d.FinishReason,
+			Success:          tx.Success,
+			ErrorCode:        d.ErrorCode,
 			OutputHash:       hashStr,
 			Truncated:        d.Truncated,
 			SchemaFailed:     d.SchemaFailed,
@@ -409,6 +432,9 @@ func (s *Server) handleCompareLLMRuns(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	if !s.requireBodyTestsInRouteProject(w, r, req.TestID, req.BaselineTestID, req.CandidateTestID) {
+		return
+	}
 	baseSnap := req.Baseline
 	candSnap := req.Candidate
 	if strings.TrimSpace(req.TestID) != "" && req.BaselineGroup != "" && req.CandidateGroup != "" {
@@ -443,6 +469,35 @@ func (s *Server) handleCompareLLMRuns(w http.ResponseWriter, r *http.Request) {
 	}
 	res := compare.Compare(baseSnap, candSnap, req.Seed)
 	writeJSON(w, http.StatusOK, res)
+}
+
+// requireBodyTestsInRouteProject requires every test a request body names to
+// belong to the project the route authorized: the RBAC-bound project, or the
+// query's project_id for an unscoped caller. These routes authorize only the
+// query's project, so a body test ID must not reach another project's archive.
+// A test elsewhere is reported as not found, like a missing one. An unscoped
+// caller (global administrator, auth bypass) who names no project stays
+// unrestricted, as elsewhere.
+func (s *Server) requireBodyTestsInRouteProject(w http.ResponseWriter, r *http.Request, testIDs ...string) bool {
+	projectID, scoped := authorizedProjectFromRequest(r)
+	if !scoped {
+		requested := strings.TrimSpace(r.URL.Query().Get("project_id"))
+		if requested == "" {
+			return true
+		}
+		projectID = normalizeProjectID(requested)
+	}
+	for _, id := range testIDs {
+		if id = strings.TrimSpace(id); id == "" {
+			continue
+		}
+		test, ok := s.archiveDomainService().GetTestSummary(id)
+		if !ok || test == nil || normalizeProjectID(test.ProjectID) != projectID {
+			writeError(w, http.StatusNotFound, "test not found")
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) loadArchiveLLMSnapshot(ctx context.Context, testID, groupFilter string) (compare.RunSnapshot, error) {

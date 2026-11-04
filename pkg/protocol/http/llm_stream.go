@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -44,25 +45,36 @@ func releaseITLDistribution(dist *protocol.DiagnosticDistribution) {
 }
 
 func isLLMAction(action *protocol.Action) bool {
-	if action == nil {
-		return false
+	return protocol.IsLLMAction(action)
+}
+
+// stampLLMFailureDiagnostics gives an LLM action that ended without a
+// response to analyze (a transport failure, a refused or invalid request) the
+// diagnostics of a failed request, so it counts in every LLM denominator
+// instead of vanishing from goodput, error and throttle rates.
+func stampLLMFailureDiagnostics(action *protocol.Action, resolveURL func(string) string, result *protocol.Result) {
+	if result == nil || result.Success || !isLLMAction(action) {
+		return
 	}
-	if strings.EqualFold(strings.TrimSpace(action.Type), "llm_request") {
-		return true
+	if result.ServerTelemetry != nil && result.ServerTelemetry.LLM != nil {
+		return
 	}
-	if action.Params == nil {
-		return false
+	if result.ServerTelemetry == nil {
+		result.ServerTelemetry = &protocol.ServerTelemetry{}
 	}
-	if enabled, ok := boolParam(action.Params["llm"]); ok && enabled {
-		return true
+	code := "transport"
+	if result.StatusCode != 0 {
+		code = "request_failed"
 	}
-	if _, hasDialect := action.Params["llm_dialect"]; hasDialect {
-		return true
+	result.ServerTelemetry.LLM = &protocol.LLMDiagnostics{
+		Dialect:   resolveActionLLMDialect(action.Params, resolveURL(action.Target)),
+		Model:     extractModelFromRequest(action.Body, action.Params),
+		E2EMs:     durationToNonNegativeMilliseconds(result.Duration),
+		ErrorCode: code,
+		// The band places the failure in the per-band error rate; no prompt
+		// tokens are counted, because none reached the server.
+		InputLengthBand: protocol.ClassifyLLMInputBand(protocol.EstimateTokenCount(string(action.Body))),
 	}
-	if _, hasProfile := action.Params["stream_profile"]; hasProfile {
-		return true
-	}
-	return false
 }
 
 type llmStreamObserver struct {
@@ -78,7 +90,13 @@ type llmStreamObserver struct {
 	tokenChunkCount     int
 	visibleChunkCount   int
 	reasoningChunkCount int
-	itlDist             *protocol.DiagnosticDistribution
+	// rawReasoningChunkCount counts streamed reasoning tokens themselves; a
+	// Responses reasoning summary is reasoning output but not those tokens
+	// (summaryReasoningChunkCount), unless the server counts no reasoning.
+	rawReasoningChunkCount     int
+	summaryReasoningChunkCount int
+	lastVisibleTokenAt         time.Time
+	itlDist                    *protocol.DiagnosticDistribution
 
 	outputHash  uint64
 	outputChars int
@@ -96,9 +114,20 @@ type llmStreamObserver struct {
 	hasServerUsage   bool
 	toolCallsCount   int
 	toolCallsJSON    string
-	errorCode        string
-	errorMessage     string
-	http200Error     bool
+	// toolCallDeltas assembles chat tool calls streamed as an id and name
+	// followed by argument fragments.
+	toolCallDeltas        []*llmToolCallDelta
+	toolCallArgBytes      int
+	toolCallArgsTruncated bool
+	// completeToolCalls collects calls that arrive whole, as Ollama streams
+	// each one in its own chunk, while text is captured.
+	completeToolCalls          [][]byte
+	completeToolCallBytes      int
+	completeToolCallsTruncated bool
+	errorCode                  string
+	errorMessage               string
+	http200Error               bool
+	terminal                   bool // a Responses terminal or error event was read
 }
 
 func newLLMStreamObserver(dialect string, requestStart time.Time, captureText bool) *llmStreamObserver {
@@ -141,6 +170,7 @@ func (o *llmStreamObserver) observeTokenBytes(raw []byte, visible bool, now time
 		if o.visibleChunkCount == 0 {
 			o.firstVisibleTokenAt = now
 		}
+		o.lastVisibleTokenAt = now
 		o.visibleChunkCount++
 		decoded := appendUnescapedJSONBytes(o.scratchBuf[:0], raw)
 		for i := 0; i < len(decoded); i++ {
@@ -170,11 +200,16 @@ func (o *llmStreamObserver) observeChunk(eventType string, data []byte, now time
 		o.observeCustomProfileChunk(data, now)
 		return
 	}
+	if o.dialect == LLMDialectOpenAIResponses {
+		o.observeResponsesChunk(eventType, data, now)
+		return
+	}
 	scan := scanLLMChunkFast(o.dialect, data)
 	if o.model == "" && len(scan.modelRaw) > 0 && len(scan.modelRaw) <= 128 {
 		o.model = string(scan.modelRaw)
 	}
 	if scan.hasReasoningToken {
+		o.rawReasoningChunkCount++
 		o.observeTokenBytes(scan.reasoningRaw, false, now)
 	}
 	if scan.hasVisibleToken {
@@ -236,22 +271,20 @@ func (o *llmStreamObserver) parseSlowChunk(data []byte) {
 			o.errorMessage = msg
 		}
 	}
+	if len(env.Choices) == 0 && o.dialect == LLMDialectOllama {
+		if out, ok := env.ollamaOutput(); ok && len(out.ToolCalls) > 0 {
+			o.addCompleteToolCalls(out.ToolCalls)
+		}
+	}
 	if len(env.Choices) > 0 {
 		ch := env.Choices[0]
 		if ch.FinishReason != "" {
 			o.finishReason = ch.FinishReason
 		}
-		tc := ch.Delta.ToolCalls
-		if len(tc) == 0 {
-			tc = ch.Message.ToolCalls
-		}
-		if len(tc) > 0 {
-			o.toolCallsCount += len(tc)
-			if o.captureText && o.toolCallsJSON == "" {
-				if b, err := json.Marshal(tc); err == nil && len(b) <= maxSavedAssistantTextBytes {
-					o.toolCallsJSON = string(b)
-				}
-			}
+		if len(ch.Delta.ToolCalls) > 0 {
+			o.addToolCallDeltas(ch.Delta.ToolCalls)
+		} else if len(ch.Message.ToolCalls) > 0 {
+			o.addCompleteToolCalls(ch.Message.ToolCalls)
 		}
 	}
 	if env.Usage != nil && (env.Usage.PromptTokens > 0 || env.Usage.CompletionTokens > 0 || env.Usage.TotalTokens > 0) {
@@ -269,13 +302,22 @@ func (o *llmStreamObserver) parseSlowChunk(data []byte) {
 		}
 		o.hasServerUsage = true
 	}
+	// TGI's final event carries the whole generated_text; its finish and
+	// token count come in details only when the request asked for details.
+	if o.dialect == LLMDialectTGI && env.GeneratedText != "" && o.finishReason == "" && (env.Details == nil || env.Details.FinishReason == "") {
+		o.finishReason = "stop"
+	}
 	if env.Details != nil {
 		if env.Details.FinishReason != "" {
 			o.finishReason = env.Details.FinishReason
 		}
 		if env.Details.GeneratedTokens > 0 {
 			o.completionTokens = env.Details.GeneratedTokens
-			if len(env.Details.Prefill) > 0 {
+			// TGI's stream details report the prompt as input_length; a
+			// prefill list comes only with decoder_input_details.
+			if env.Details.InputLength > 0 {
+				o.promptTokens = env.Details.InputLength
+			} else if len(env.Details.Prefill) > 0 {
 				o.promptTokens = len(env.Details.Prefill)
 			}
 			o.totalTokens = o.promptTokens + o.completionTokens
@@ -300,6 +342,105 @@ func (o *llmStreamObserver) parseSlowChunk(data []byte) {
 	}
 	if env.StopReason != "" && o.finishReason == "" {
 		o.finishReason = env.StopReason
+	}
+}
+
+// observeResponsesChunk handles one OpenAI Responses API stream event. Text
+// and reasoning deltas take the zero-allocation path. Only the terminal
+// response event and error events are fully parsed, because the terminal event
+// repeats the whole output, which must not be read as another token.
+func (o *llmStreamObserver) observeResponsesChunk(eventType string, data []byte, now time.Time) {
+	trimmed := bytes.TrimSpace(data)
+	switch responsesEventKind(eventType, trimmed) {
+	case "response.output_text.delta", "response.refusal.delta":
+		if val, ok := findJSONStringField(trimmed, keyDelta, keyDeltaSpaced); ok && len(val) > 0 {
+			o.observeTokenBytes(val, true, now)
+		}
+	case "response.reasoning_text.delta":
+		if val, ok := findJSONStringField(trimmed, keyDelta, keyDeltaSpaced); ok && len(val) > 0 {
+			o.rawReasoningChunkCount++
+			o.observeTokenBytes(val, false, now)
+		}
+	case "response.reasoning_summary_text.delta":
+		// A summary of the reasoning: it starts the clock but is not the
+		// reasoning tokens usage counts.
+		if val, ok := findJSONStringField(trimmed, keyDelta, keyDeltaSpaced); ok && len(val) > 0 {
+			o.summaryReasoningChunkCount++
+			o.observeTokenBytes(val, false, now)
+		}
+	case "response.created", "response.in_progress":
+		if o.model == "" {
+			if val, ok := findJSONStringField(trimmed, keyModel, keyModelSpaced); ok && len(val) > 0 && len(val) <= 128 {
+				o.model = string(val)
+			}
+		}
+	case "response.completed", "response.incomplete", "response.failed", "response.cancelled", "error":
+		o.parseResponsesTerminalEvent(trimmed)
+	}
+}
+
+func (o *llmStreamObserver) parseResponsesTerminalEvent(data []byte) {
+	var ev llmResponsesEvent
+	if err := json.Unmarshal(data, &ev); err != nil {
+		return
+	}
+	if ev.Type == "error" || (ev.Response == nil && ev.Error != nil) {
+		code, msg := responsesErrorCode(ev.Code), ev.Message
+		if code == "" && ev.Error != nil {
+			code, msg = extractLLMErrorDetails(ev.Error)
+		}
+		if code == "" {
+			code = "error"
+		}
+		o.http200Error = true
+		o.errorCode = code
+		o.errorMessage = msg
+		o.finishReason = "error"
+		o.terminal = true
+		return
+	}
+	resp := ev.Response
+	if resp == nil {
+		return
+	}
+	o.terminal = true
+	if o.model == "" && resp.Model != "" && len(resp.Model) <= 128 {
+		o.model = resp.Model
+	}
+	o.finishReason = resp.finishReason()
+	if resp.Error != nil {
+		code, msg := extractLLMErrorDetails(resp.Error)
+		if code != "" {
+			o.http200Error = true
+			o.errorCode = code
+			o.errorMessage = msg
+		}
+	}
+	if code := resp.failureCode(); code != "" && !o.http200Error {
+		o.http200Error = true
+		o.errorCode = code
+		o.errorMessage = "response " + resp.Status
+	}
+	if n, toolsJSON := resp.toolCalls(); n > 0 {
+		o.toolCallsCount = n
+		if o.captureText {
+			o.toolCallsJSON = toolsJSON
+		}
+	}
+	if u := resp.Usage; u != nil && (u.InputTokens > 0 || u.OutputTokens > 0 || u.TotalTokens > 0) {
+		o.promptTokens = u.InputTokens
+		o.completionTokens = u.OutputTokens
+		o.totalTokens = u.TotalTokens
+		if o.totalTokens == 0 {
+			o.totalTokens = o.promptTokens + o.completionTokens
+		}
+		if u.InputTokensDetails != nil {
+			o.cachedTokens = u.InputTokensDetails.CachedTokens
+		}
+		if u.OutputTokensDetails != nil {
+			o.reasoningTokens = u.OutputTokensDetails.ReasoningTokens
+		}
+		o.hasServerUsage = true
 	}
 }
 
@@ -381,7 +522,9 @@ func (o *llmStreamObserver) onSSEEvent(event sseEvent, now time.Time) (bool, err
 	}
 	data := unsafe.Slice(unsafe.StringData(event.Data), len(event.Data))
 	o.observeChunk(event.Event, data, now)
-	return false, nil
+	// A Responses stream is over at its terminal event; stop there rather
+	// than wait for a gateway that holds the connection open.
+	return o.terminal, nil
 }
 
 func readLLMStreamResponse(
@@ -478,6 +621,124 @@ func shouldCaptureLLMText(params map[string]any) bool {
 	return false
 }
 
+// llmToolCallDelta is one chat tool call assembled from its stream deltas.
+type llmToolCallDelta struct {
+	index          int
+	id, kind, name string
+	arguments      strings.Builder
+}
+
+// maxStreamedToolCalls bounds the distinct tool calls one stream assembles.
+const maxStreamedToolCalls = 128
+
+// addCompleteToolCalls counts calls that arrive whole and, while text is
+// captured, keeps them for the saved list within the saved-text bound.
+func (o *llmStreamObserver) addCompleteToolCalls(calls []map[string]any) {
+	o.toolCallsCount += len(calls)
+	if !o.captureText || o.completeToolCallsTruncated {
+		return
+	}
+	for _, call := range calls {
+		b, err := json.Marshal(call)
+		if err != nil || len(o.completeToolCalls) >= maxStreamedToolCalls || o.completeToolCallBytes+len(b)+1 > maxSavedAssistantTextBytes {
+			o.completeToolCallsTruncated = true
+			return
+		}
+		o.completeToolCallBytes += len(b) + 1
+		o.completeToolCalls = append(o.completeToolCalls, b)
+	}
+}
+
+// addToolCallDeltas merges a chunk's delta.tool_calls into the calls they
+// continue, matched by index (a delta without one is matched by position):
+// the first non-empty id, type and name stick and argument fragments append.
+// A delta that names a function under an id other than its match's starts a
+// new call, for servers that send each whole call under the same index or
+// none; a nameless fragment always continues its match, as some servers
+// change the id (or send "null") on argument fragments.
+func (o *llmStreamObserver) addToolCallDeltas(deltas []map[string]any) {
+	for pos, delta := range deltas {
+		index := pos
+		if v, ok := delta["index"].(float64); ok && v >= 0 && v < maxStreamedToolCalls && v == float64(int(v)) {
+			index = int(v)
+		}
+		id, _ := delta["id"].(string)
+		if id == "null" {
+			id = ""
+		}
+		fn, _ := delta["function"].(map[string]any)
+		name, _ := fn["name"].(string)
+		var call *llmToolCallDelta
+		for i := len(o.toolCallDeltas) - 1; i >= 0; i-- {
+			if o.toolCallDeltas[i].index == index {
+				call = o.toolCallDeltas[i]
+				break
+			}
+		}
+		if call != nil && name != "" && id != "" && call.id != "" && id != call.id {
+			call = nil
+		}
+		if call == nil {
+			if len(o.toolCallDeltas) >= maxStreamedToolCalls {
+				continue
+			}
+			call = &llmToolCallDelta{index: index}
+			o.toolCallDeltas = append(o.toolCallDeltas, call)
+		}
+		if id != "" && call.id == "" {
+			call.id = id
+		}
+		if kind, _ := delta["type"].(string); kind != "" && call.kind == "" {
+			call.kind = kind
+		}
+		if name != "" && call.name == "" {
+			call.name = name
+		}
+		if args, _ := fn["arguments"].(string); args != "" && o.captureText && !o.toolCallArgsTruncated {
+			if o.toolCallArgBytes+len(args) > maxSavedAssistantTextBytes {
+				o.toolCallArgsTruncated = true
+				continue
+			}
+			o.toolCallArgBytes += len(args)
+			call.arguments.WriteString(args)
+		}
+	}
+}
+
+// finishToolCalls counts the assembled tool calls and, when text is
+// captured and every call fitted, saves them: whole calls as they came, or
+// assembled ones in the shape of a chat message's tool_calls.
+func (o *llmStreamObserver) finishToolCalls() {
+	o.toolCallsCount += len(o.toolCallDeltas)
+	if !o.captureText || o.toolCallsJSON != "" {
+		return
+	}
+	if len(o.completeToolCalls) > 0 {
+		if out := "[" + string(bytes.Join(o.completeToolCalls, []byte(","))) + "]"; !o.completeToolCallsTruncated && len(out) <= maxSavedAssistantTextBytes {
+			o.toolCallsJSON = out
+		}
+		return
+	}
+	if len(o.toolCallDeltas) == 0 || o.toolCallArgsTruncated {
+		return
+	}
+	calls := make([]map[string]any, 0, len(o.toolCallDeltas))
+	for _, call := range o.toolCallDeltas {
+		kind := call.kind
+		if kind == "" {
+			kind = "function"
+		}
+		entry := map[string]any{"type": kind, "function": map[string]any{"name": call.name, "arguments": call.arguments.String()}}
+		if call.id != "" {
+			entry["id"] = call.id
+		}
+		calls = append(calls, entry)
+	}
+	if b, err := json.Marshal(calls); err == nil && len(b) <= maxSavedAssistantTextBytes {
+		o.toolCallsJSON = string(b)
+	}
+}
+
 func finalizeStreamLLMDiagnostics(
 	obs *llmStreamObserver,
 	sseRes sseReadResult,
@@ -491,6 +752,14 @@ func finalizeStreamLLMDiagnostics(
 ) *protocol.LLMDiagnostics {
 	if obs == nil {
 		return nil
+	}
+	obs.finishToolCalls()
+	// A server that streams reasoning only as a summary and reports usage
+	// counting none of it (Ollama's /v1/responses streams a thinking model's
+	// whole reasoning so) has streamed the reasoning itself. A stream that
+	// ended before its usage says nothing either way.
+	if obs.hasServerUsage && obs.reasoningTokens == 0 && obs.rawReasoningChunkCount == 0 && obs.summaryReasoningChunkCount > 0 {
+		obs.rawReasoningChunkCount = obs.summaryReasoningChunkCount
 	}
 	e2eMs := durationToNonNegativeMilliseconds(duration)
 	diag := &protocol.LLMDiagnostics{
@@ -529,6 +798,15 @@ func finalizeStreamLLMDiagnostics(
 		diag.ReasoningTokens = obs.reasoningTokens
 		diag.CachedTokens = obs.cachedTokens
 		diag.TotalTokens = obs.totalTokens
+		// Ollama and vLLM count reasoning inside the completion without a
+		// breakdown: a streamed reasoning chunk is about one token.
+		if diag.ReasoningTokens == 0 && obs.rawReasoningChunkCount > 0 {
+			diag.ReasoningTokensEstimated = true
+			if diag.CompletionTokens > 1 {
+				diag.ReasoningTokens = min(obs.rawReasoningChunkCount, diag.CompletionTokens-1)
+			}
+		}
+		fillMissingLLMPromptTokens(diag, respHeaders, requestBody)
 	} else {
 		diag.PromptTokens = protocol.EstimateTokenCount(string(requestBody))
 		if obs.outputChars > 0 {
@@ -536,45 +814,69 @@ func finalizeStreamLLMDiagnostics(
 		} else if obs.visibleChunkCount > 0 {
 			diag.CompletionTokens = obs.visibleChunkCount
 		}
-		if obs.reasoningChunkCount > 0 && diag.ReasoningTokens == 0 {
-			diag.ReasoningTokens = obs.reasoningChunkCount
-			diag.CompletionTokens += obs.reasoningChunkCount
+		if obs.rawReasoningChunkCount > 0 && diag.ReasoningTokens == 0 {
+			diag.ReasoningTokens = obs.rawReasoningChunkCount
+			diag.ReasoningTokensEstimated = true
+			diag.CompletionTokens += obs.rawReasoningChunkCount
 		}
 		diag.TotalTokens = diag.PromptTokens + diag.CompletionTokens
 		diag.TokensEstimated = true
 	}
 
-	if diag.CompletionTokens > 1 {
-		if !obs.firstTokenAt.IsZero() && !obs.lastTokenAt.IsZero() && obs.lastTokenAt.After(obs.firstTokenAt) {
-			decodeSpanMs := durationToNonNegativeMilliseconds(obs.lastTokenAt.Sub(obs.firstTokenAt))
-			diag.TPOTMs = decodeSpanMs / float64(diag.CompletionTokens-1)
-		} else if diag.E2EMs > diag.TTFTMs && diag.TTFTMs > 0 {
-			diag.TPOTMs = (diag.E2EMs - diag.TTFTMs) / float64(diag.CompletionTokens-1)
+	// TPOT divides a timed decode span by the tokens emitted inside it. A model
+	// that streams its raw reasoning emits every output token between the
+	// first and last token. One that does not (OpenAI and Azure o-series,
+	// gpt-5, which at most stream a reasoning summary that is not those
+	// tokens) generates its reasoning before the visible answer: time the
+	// visible span and leave the reasoning tokens out of the count.
+	spanTokens := diag.CompletionTokens
+	spanStart, spanEnd := obs.firstTokenAt, obs.lastTokenAt
+	// The fallback, when the span has no length, starts where the span does.
+	fallbackStartMs := diag.TTFTMs
+	if obs.rawReasoningChunkCount == 0 {
+		spanStart, spanEnd = obs.firstVisibleTokenAt, obs.lastVisibleTokenAt
+		fallbackStartMs = diag.FirstVisibleTokenMs
+		if diag.ReasoningTokens > 0 && diag.ReasoningTokens < diag.CompletionTokens {
+			spanTokens -= diag.ReasoningTokens
+		}
+	}
+	if spanTokens > 1 {
+		if !spanStart.IsZero() && !spanEnd.IsZero() && spanEnd.After(spanStart) {
+			decodeSpanMs := durationToNonNegativeMilliseconds(spanEnd.Sub(spanStart))
+			diag.TPOTMs = decodeSpanMs / float64(spanTokens-1)
+		} else if diag.E2EMs > fallbackStartMs && fallbackStartMs > 0 {
+			diag.TPOTMs = (diag.E2EMs - fallbackStartMs) / float64(spanTokens-1)
 		}
 	}
 
 	diag.InputLengthBand = protocol.ClassifyLLMInputBand(diag.PromptTokens)
-	if isTruncatedFinishReason(diag.FinishReason) {
-		diag.Truncated = true
-	} else if sseRes.EndReason == EndReasonTimeout {
-		diag.Truncated = true
+	// A timeout is checked first: a stream that reported a length finish and
+	// then stalled was still cut off by the client, and its timings run to
+	// the timeout.
+	// cutOff records a stream the client stopped reading before the server
+	// finished it; no override may accept it.
+	cutOff := false
+	if sseRes.EndReason == EndReasonTimeout {
+		diag.Truncated, cutOff = true, true
 		if diag.ErrorCode == "" {
 			diag.ErrorCode = "stream_timeout"
 		}
+	} else if protocol.IsLLMLengthFinish(diag.FinishReason) {
+		diag.Truncated = !llmLengthFinishRequested(params, requestBody)
 	} else if sseRes.EndReason == EndReasonEOF && diag.FinishReason == "" && statusCode >= 200 && statusCode < 300 && dialectRequiresTerminalMarker(obs.dialect) {
-		diag.Truncated = true
+		diag.Truncated, cutOff = true, true
 		if diag.ErrorCode == "" {
 			diag.ErrorCode = "stream_truncated"
 		}
 	}
 	if streamErr != nil && !diag.Truncated {
 		if strings.Contains(streamErr.Error(), "stream_truncated") {
-			diag.Truncated = true
+			diag.Truncated, cutOff = true, true
 			if diag.ErrorCode == "" {
 				diag.ErrorCode = "stream_truncated"
 			}
 		} else if strings.Contains(streamErr.Error(), "stream_timeout") {
-			diag.Truncated = true
+			diag.Truncated, cutOff = true, true
 			if diag.ErrorCode == "" {
 				diag.ErrorCode = "stream_timeout"
 			}
@@ -582,13 +884,17 @@ func finalizeStreamLLMDiagnostics(
 	}
 
 	applyLLMResponseHeaders(diag, respHeaders)
-	stampLLMResultDimensionsAndExtractions(diag, string(obs.savedText), obs.toolCallsJSON, obs.errorMessage, statusCode, streamErr == nil, params, result)
+	stampLLMResultDimensionsAndExtractions(diag, string(obs.savedText), obs.toolCallsJSON, obs.errorMessage, statusCode, streamErr == nil, cutOff, params, result)
 	return diag
 }
 
+// dialectRequiresTerminalMarker reports a dialect whose server always ends a
+// finished stream with a terminal event, so EOF without one is a cut-off.
+// Triton's generate_stream (TensorRT-LLM ensemble and vLLM backend) sends
+// only text_output chunks and closes the stream: a clean EOF is its end.
 func dialectRequiresTerminalMarker(dialect string) bool {
 	switch dialect {
-	case LLMDialectOpenAIChat, LLMDialectOpenAICompletions, LLMDialectAzureOpenAI, LLMDialectTGI, LLMDialectOllama, LLMDialectTriton, LLMDialectVercelAI:
+	case LLMDialectOpenAIChat, LLMDialectOpenAICompletions, LLMDialectAzureOpenAI, LLMDialectOpenAIResponses, LLMDialectTGI, LLMDialectOllama, LLMDialectVercelAI:
 		return true
 	default:
 		return false
@@ -618,7 +924,49 @@ func analyzeNonStreamingLLMResponse(
 	var assistantText string
 	var toolCallsJSON string
 	var errMsg string
-	if len(bytes.TrimSpace(respBody)) > 0 && json.Unmarshal(respBody, &env) == nil {
+	// reasoningText is reasoning the server returned as text (chat
+	// reasoning_content or reasoning, a Responses reasoning item's
+	// reasoning_text, Ollama thinking), counted or not.
+	var reasoningText string
+	if dialect == LLMDialectOpenAIResponses {
+		var resp llmResponsesObject
+		if len(bytes.TrimSpace(respBody)) > 0 && json.Unmarshal(respBody, &resp) == nil {
+			diag.Model = resp.Model
+			diag.FinishReason = resp.finishReason()
+			assistantText = resp.outputText()
+			reasoningText = resp.reasoningText()
+			diag.ToolCallsCount, toolCallsJSON = resp.toolCalls()
+			if resp.Error != nil {
+				diag.ErrorCode, errMsg = extractLLMErrorDetails(resp.Error)
+				if statusCode >= 200 && statusCode < 300 {
+					diag.HTTP200Error = true
+				}
+			}
+			if code := resp.failureCode(); code != "" && !diag.HTTP200Error && statusCode >= 200 && statusCode < 300 {
+				diag.ErrorCode, errMsg = code, "response "+resp.Status
+				diag.HTTP200Error = true
+			}
+			if u := resp.Usage; u != nil && (u.InputTokens > 0 || u.OutputTokens > 0 || u.TotalTokens > 0) {
+				diag.PromptTokens = u.InputTokens
+				diag.CompletionTokens = u.OutputTokens
+				diag.TotalTokens = u.TotalTokens
+				if diag.TotalTokens == 0 {
+					diag.TotalTokens = diag.PromptTokens + diag.CompletionTokens
+				}
+				if u.InputTokensDetails != nil {
+					diag.CachedTokens = u.InputTokensDetails.CachedTokens
+				}
+				if u.OutputTokensDetails != nil {
+					diag.ReasoningTokens = u.OutputTokensDetails.ReasoningTokens
+				}
+			}
+			// A summary stands for the reasoning only when the server counts
+			// none (Ollama's /v1/responses); otherwise it is not those tokens.
+			if reasoningText == "" && diag.ReasoningTokens == 0 {
+				reasoningText = resp.reasoningSummaryText()
+			}
+		}
+	} else if len(bytes.TrimSpace(respBody)) > 0 && json.Unmarshal(respBody, &env) == nil {
 		diag.Model = env.Model
 		if env.Error != nil {
 			code, msg := extractLLMErrorDetails(env.Error)
@@ -635,10 +983,25 @@ func analyzeNonStreamingLLMResponse(
 			if assistantText == "" {
 				assistantText = ch.Text
 			}
+			reasoningText = ch.Message.ReasoningContent
+			if reasoningText == "" {
+				reasoningText = ch.Message.Reasoning
+			}
 			if len(ch.Message.ToolCalls) > 0 {
 				diag.ToolCallsCount = len(ch.Message.ToolCalls)
 				if b, err := json.Marshal(ch.Message.ToolCalls); err == nil && len(b) <= maxSavedAssistantTextBytes {
 					toolCallsJSON = string(b)
+				}
+			}
+		}
+		if len(env.Choices) == 0 {
+			if out, ok := env.ollamaOutput(); ok {
+				assistantText, reasoningText = out.Content, out.Thinking
+				if len(out.ToolCalls) > 0 {
+					diag.ToolCallsCount = len(out.ToolCalls)
+					if b, err := json.Marshal(out.ToolCalls); err == nil && len(b) <= maxSavedAssistantTextBytes {
+						toolCallsJSON = string(b)
+					}
 				}
 			}
 		}
@@ -649,13 +1012,14 @@ func analyzeNonStreamingLLMResponse(
 				assistantText = env.TextOutput
 			}
 		}
+
 		if env.Details != nil {
 			if diag.FinishReason == "" {
 				diag.FinishReason = env.Details.FinishReason
 			}
 			if env.Details.GeneratedTokens > 0 {
 				diag.CompletionTokens = env.Details.GeneratedTokens
-				diag.PromptTokens = len(env.Details.Prefill)
+				diag.PromptTokens = max(env.Details.InputLength, len(env.Details.Prefill))
 				diag.TotalTokens = diag.PromptTokens + diag.CompletionTokens
 			}
 		}
@@ -683,6 +1047,9 @@ func analyzeNonStreamingLLMResponse(
 		if env.StopReason != "" && diag.FinishReason == "" {
 			diag.FinishReason = env.StopReason
 		}
+		if env.DoneReason != "" && diag.FinishReason == "" {
+			diag.FinishReason = env.DoneReason
+		}
 	}
 
 	if diag.Model == "" {
@@ -701,28 +1068,76 @@ func analyzeNonStreamingLLMResponse(
 	if diag.PromptTokens == 0 && diag.CompletionTokens == 0 {
 		diag.PromptTokens = protocol.EstimateTokenCount(string(requestBody))
 		diag.CompletionTokens = protocol.EstimateTokenCount(assistantText)
+		// The estimated completion covers the reasoning too, as a server's
+		// count does.
+		if reasoningText != "" {
+			diag.ReasoningTokens = protocol.EstimateTokenCount(reasoningText)
+			diag.ReasoningTokensEstimated = true
+			diag.CompletionTokens += diag.ReasoningTokens
+		}
 		diag.TotalTokens = diag.PromptTokens + diag.CompletionTokens
 		diag.TokensEstimated = true
+	} else {
+		fillMissingLLMPromptTokens(diag, respHeaders, requestBody)
+		// Ollama and vLLM count reasoning inside the completion, without a
+		// breakdown.
+		if reasoningText != "" && diag.ReasoningTokens == 0 {
+			diag.ReasoningTokensEstimated = true
+			if diag.CompletionTokens > 1 {
+				diag.ReasoningTokens = min(protocol.EstimateTokenCount(reasoningText), diag.CompletionTokens-1)
+			}
+		}
 	}
 	diag.InputLengthBand = protocol.ClassifyLLMInputBand(diag.PromptTokens)
-	if isTruncatedFinishReason(diag.FinishReason) {
-		diag.Truncated = true
+	if protocol.IsLLMLengthFinish(diag.FinishReason) {
+		diag.Truncated = !llmLengthFinishRequested(params, requestBody)
 	}
 	applyLLMResponseHeaders(diag, respHeaders)
 	if len(assistantText) > maxSavedAssistantTextBytes {
 		assistantText = assistantText[:maxSavedAssistantTextBytes]
 	}
-	stampLLMResultDimensionsAndExtractions(diag, assistantText, toolCallsJSON, errMsg, statusCode, true, params, result)
+	stampLLMResultDimensionsAndExtractions(diag, assistantText, toolCallsJSON, errMsg, statusCode, true, false, params, result)
 	return diag
 }
 
-func isTruncatedFinishReason(reason string) bool {
-	switch strings.ToLower(strings.TrimSpace(reason)) {
-	case "length", "max_tokens", "model_length":
-		return true
-	default:
-		return false
+// fillMissingLLMPromptTokens supplies the prompt count when the server reported
+// output tokens but no prompt (TGI without input_length or prefill, Ollama
+// with a cached prompt): from TGI's x-prompt-tokens header, else estimated
+// from the request body. A missing count is never reported as a zero.
+func fillMissingLLMPromptTokens(diag *protocol.LLMDiagnostics, headers http.Header, requestBody []byte) {
+	if diag.PromptTokens > 0 || len(requestBody) == 0 || diag.CompletionTokens <= 0 {
+		return
 	}
+	// A server total covers the prompt exactly.
+	if diag.TotalTokens > diag.CompletionTokens {
+		diag.PromptTokens = diag.TotalTokens - diag.CompletionTokens
+		return
+	}
+	if n, err := strconv.Atoi(strings.TrimSpace(headers.Get("x-prompt-tokens"))); err == nil && n > 0 {
+		diag.PromptTokens = n
+	} else {
+		diag.PromptTokens = protocol.EstimateTokenCount(string(requestBody))
+		diag.TokensEstimated = true
+		// Only the prompt is estimated: the completion count is the server's.
+		diag.PromptTokensEstimated = true
+	}
+	diag.TotalTokens = max(diag.TotalTokens, diag.PromptTokens+diag.CompletionTokens)
+}
+
+// llmLengthFinishRequested reports a request that asked to generate up to
+// its output limit (ignore_eos, as fixed-output benchmarks do), set in
+// params, params.extra_body or an explicit body: a length finish is then the
+// requested stop, not a truncation.
+func llmLengthFinishRequested(params map[string]any, requestBody []byte) bool {
+	if v, ok := boolParam(params["ignore_eos"]); ok {
+		return v
+	}
+	if extra, ok := params["extra_body"].(map[string]any); ok {
+		if v, ok := boolParam(extra["ignore_eos"]); ok {
+			return v
+		}
+	}
+	return bytes.Contains(requestBody, []byte(`"ignore_eos":true`)) || bytes.Contains(requestBody, []byte(`"ignore_eos": true`))
 }
 
 func extractModelFromRequest(requestBody []byte, params map[string]any) string {
@@ -744,6 +1159,7 @@ func stampLLMResultDimensionsAndExtractions(
 	errorMsg string,
 	statusCode int,
 	transportOK bool,
+	streamCutOff bool,
 	params map[string]any,
 	result *protocol.Result,
 ) {
@@ -866,13 +1282,13 @@ func stampLLMResultDimensionsAndExtractions(
 			}
 		}
 		if diag.Truncated {
+			// A stream the client cut off (timeout, no terminal event) always
+			// fails: its timings are incomplete. fail_on_truncation:false
+			// accepts only a length finish, which the server completed.
 			failTrunc := true
-			if params != nil {
+			if !streamCutOff && protocol.IsLLMLengthFinish(diag.FinishReason) {
 				if v, ok := boolParam(params["fail_on_truncation"]); ok {
 					failTrunc = v
-				}
-				if ignoreEOS, ok := boolParam(params["ignore_eos"]); ok && ignoreEOS {
-					failTrunc = false
 				}
 			}
 			if failTrunc {

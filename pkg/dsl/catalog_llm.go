@@ -7,6 +7,7 @@ import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 var LLMDialectNames = []string{
 	"openai_chat",
 	"openai_completions",
+	"openai_responses",
 	"azure_openai",
 	"tgi",
 	"ollama",
@@ -21,12 +22,13 @@ var LLMDialectNames = []string{
 // normalize to a canonical LLMDialectNames entry at runtime.
 var LLMDialectAliases = []string{
 	"openai",
-	"openai_responses",
 	"chat",
 	"chat_completions",
 	"vllm",
 	"nim",
 	"completions",
+	"responses",
+	"azure_openai_responses",
 	"azure",
 	"azure_openai_chat",
 	"aoai",
@@ -56,7 +58,7 @@ func llmActionSpecs() []ActionSpec {
 				{Name: "header_list", Kind: FieldKindArray, Doc: "Ordered logical header occurrences."},
 				{Name: "body", Kind: FieldKindString, Doc: "Explicit request body; when omitted, the payload is synthesized from params (model, prompt, system, messages, max_tokens, temperature, stream, extra_body) according to params.dialect."},
 				{Name: "body_template_encoding", Kind: FieldKindEnum, Enum: []string{"json"}, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Template value encoding for body: when set to json, template occurrences inside JSON string literals are JSON-escaped."},
-				{Name: "params.dialect", Kind: FieldKindEnum, Enum: LLMDialectNames, EnumAliases: LLMDialectAliases, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "LLM wire dialect: openai_chat (default), openai_completions, azure_openai, tgi, ollama, triton, vercel_ai, langserve, raw_text, or custom."},
+				{Name: "params.dialect", Kind: FieldKindEnum, Enum: LLMDialectNames, EnumAliases: LLMDialectAliases, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "LLM wire dialect: openai_chat (default), openai_completions, openai_responses (OpenAI and Azure Responses API), azure_openai, tgi, ollama, triton, vercel_ai, langserve, raw_text, or custom."},
 				{Name: "params.llm_dialect", Kind: FieldKindEnum, Enum: LLMDialectNames, EnumAliases: LLMDialectAliases, SchemaEnum: true, EnumCaseFold: true, EnumTrimSpace: true, EnumAllowBlank: true, Doc: "Alias for params.dialect."},
 				{Name: "params.stream_profile", Kind: FieldKindAny, Doc: "Stream parser profile override when streaming from an application or gateway (dialect preset name or custom {preset, delta_path, finish_path, usage_path} object)."},
 				{Name: "params.model", Kind: FieldKindString, Doc: "Model or deployment identifier sent in the synthesized payload and recorded in LLM telemetry."},

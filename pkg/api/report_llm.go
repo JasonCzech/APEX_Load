@@ -279,7 +279,7 @@ func (a *archiveActionLLMAccumulator) add(tx TransactionEvent, d *protocol.LLMDi
 	if d.ReasoningTokens > 0 {
 		a.reasoningTokens += int64(d.ReasoningTokens)
 	}
-	if tx.Success && !throttled && !d.Truncated {
+	if tx.Success && !throttled {
 		a.successful++
 		if good {
 			a.good++
@@ -523,7 +523,7 @@ func newArchiveLLMAccumulator(manifest *RunArchiveManifest, budget *archiveQuant
 }
 
 func (a *archiveLLMAccumulator) isGoodRequest(tx TransactionEvent, d *protocol.LLMDiagnostics) bool {
-	if !tx.Success || d == nil || d.Throttled || tx.StatusCode == 429 || d.Truncated || d.EmptyOutput || d.FinishReason == "content_filter" || d.HTTP200Error || d.SchemaFailed {
+	if !tx.Success || d == nil || d.Throttled || tx.StatusCode == 429 || d.EmptyOutput || d.FinishReason == "content_filter" || d.HTTP200Error || d.SchemaFailed {
 		return false
 	}
 	if a.sloTTFTMs != nil && *a.sloTTFTMs > 0 && d.Stream && (d.TTFTMs <= 0 || d.TTFTMs > *a.sloTTFTMs) {
@@ -608,7 +608,9 @@ func (a *archiveLLMAccumulator) merge(tx TransactionEvent) {
 	}
 
 	good := a.isGoodRequest(tx, d)
-	if tx.Success && !throttled && !d.Truncated {
+	// Success already fails a cut-off stream and, unless the script accepts
+	// it, a length finish; truncation itself is only counted above.
+	if tx.Success && !throttled {
 		a.successful++
 		if good {
 			a.goodRequests++
@@ -660,7 +662,7 @@ func (a *archiveLLMAccumulator) merge(tx TransactionEvent) {
 		if d.CompletionTokens > 0 {
 			band.completionTokens += int64(d.CompletionTokens)
 		}
-		if tx.Success && !throttled && !d.Truncated {
+		if tx.Success && !throttled {
 			e2e := d.E2EMs
 			if e2e <= 0 {
 				e2e = tx.DurationMs

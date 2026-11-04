@@ -3165,38 +3165,21 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 			index,
 		)
 	}
-	if len(group.Stages) > 0 && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" {
+	// A revision reuses the source test's compiled script. When its rate
+	// stages are the ones the source's stages compiled to (not authored in
+	// the script or a runtime override), rebuild them from this revision's.
+	if runtimeAlreadyApplied && revisionGroup != nil && revisionGroup.rateStageDriven() && rateStagesDerivedFromStages(revisionGroup.script, revisionGroup.Stages) {
+		scriptCopy.Config.Pacing.RateStages = nil
+	}
+	// An open-model group's stages compile to arrival-rate stages when any of
+	// them sets target_tps; stages that set only target_vusers (a goal run, a
+	// concurrency sweep) leave the script's own rate running.
+	if len(group.Stages) > 0 && dsl.CanonicalWorkloadModel(scriptCopy.Config.RunLogic.WorkloadModel) == "open" && stagesSetTargetTPS(group.Stages) {
 		if len(scriptCopy.Config.Pacing.RateStages) == 0 {
-			rateStages := make([]dsl.PacingRateStage, 0, len(group.Stages))
-			var prevTPS float64
-			for _, st := range group.Stages {
-				if st.TargetTPS == nil {
-					continue
-				}
-				dur, _ := time.ParseDuration(st.Duration)
-				sec := int(math.Round(dur.Seconds()))
-				if sec <= 0 {
-					sec = 1
-				}
-				stageType := strings.ToLower(strings.TrimSpace(st.Type))
-				if stageType == "ramp_up" || stageType == "ramp_down" {
-					endVal := *st.TargetTPS
-					rateStages = append(rateStages, dsl.PacingRateStage{
-						DurationSeconds: sec,
-						TargetTPS:       prevTPS,
-						EndTPS:          &endVal,
-						Warmup:          st.Warmup,
-					})
-				} else {
-					rateStages = append(rateStages, dsl.PacingRateStage{
-						DurationSeconds: sec,
-						TargetTPS:       *st.TargetTPS,
-						Warmup:          st.Warmup,
-					})
-				}
-				prevTPS = *st.TargetTPS
+			if rateStagePieceCount(group.Stages) > maxDerivedRateStages {
+				return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: arrival-rate stages run in pieces of at most %d s, and these stages need more than %d of them; shorten the stages", index, maxRateStageSeconds, maxDerivedRateStages)
 			}
-			if len(rateStages) > 0 {
+			if rateStages := deriveOpenModelRateStages(group.Stages, scriptCopy.Config.Pacing.TPS); len(rateStages) > 0 {
 				scriptCopy.Config.Pacing.Type = "tps"
 				scriptCopy.Config.Pacing.RateStages = rateStages
 				testGroup.stageDriven = true
@@ -3636,6 +3619,124 @@ func loadStageCompatibility(stages []storage.LoadStage, groupIndex int, allowTar
 		}
 	}
 	return durationStringOrEmpty(rampUp), durationStringOrEmpty(rampDown), maxVUsers, nil
+}
+
+// stagesSetTargetTPS reports stages of which at least one sets an arrival rate.
+func stagesSetTargetTPS(stages []storage.LoadStage) bool {
+	for _, stage := range stages {
+		if stage.TargetTPS != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// deriveOpenModelRateStages compiles an open-model group's load stages to
+// arrival-rate stages. A ramp starts from the previous rate, from zero before
+// any rate stage. A stage without target_tps holds the current rate (the
+// script's own before any rate stage), and a ramp_down that sets neither
+// target_tps nor target_vusers ramps it to zero, as a user ramp-down without
+// a target ramps to zero users. A stage longer than a rate stage may run
+// compiles to consecutive pieces along the same line.
+func deriveOpenModelRateStages(stages []storage.LoadStage, scriptTPS float64) []dsl.PacingRateStage {
+	rateStages := make([]dsl.PacingRateStage, 0, len(stages))
+	var prevTPS float64
+	rateSeen := false
+	for _, st := range stages {
+		dur, _ := time.ParseDuration(st.Duration)
+		sec := int(math.Round(dur.Seconds()))
+		if sec <= 0 {
+			sec = 1
+		}
+		stageType := strings.ToLower(strings.TrimSpace(st.Type))
+		if st.TargetTPS == nil {
+			current := prevTPS
+			if !rateSeen {
+				current = scriptTPS
+			}
+			if stageType == "ramp_down" && st.TargetVUsers == 0 {
+				end := 0.0
+				rateStages = appendRateStagePieces(rateStages, sec, current, &end, st.Warmup)
+				prevTPS = 0
+			} else {
+				rateStages = appendRateStagePieces(rateStages, sec, current, nil, st.Warmup)
+				prevTPS = current
+			}
+			rateSeen = true
+			continue
+		}
+		if stageType == "ramp_up" || stageType == "ramp_down" {
+			rateStages = appendRateStagePieces(rateStages, sec, prevTPS, st.TargetTPS, st.Warmup)
+		} else {
+			rateStages = appendRateStagePieces(rateStages, sec, *st.TargetTPS, nil, st.Warmup)
+		}
+		prevTPS = *st.TargetTPS
+		rateSeen = true
+	}
+	return rateStages
+}
+
+// maxRateStageSeconds is the longest rate stage a script may carry.
+const maxRateStageSeconds = dsl.MaxConfiguredProtocolTimeoutMS / 1000
+
+// maxDerivedRateStages bounds the rate stages one group's stages compile to;
+// compile rejects stages that need more.
+const maxDerivedRateStages = 1024
+
+// rateStagePieceCount is how many rate stages deriveOpenModelRateStages would
+// build from the stages, counted without building them.
+func rateStagePieceCount(stages []storage.LoadStage) int64 {
+	var pieces int64
+	for _, st := range stages {
+		dur, _ := time.ParseDuration(st.Duration)
+		sec := max(1, int64(math.Round(dur.Seconds())))
+		pieces += (sec + maxRateStageSeconds - 1) / maxRateStageSeconds
+		if pieces > maxDerivedRateStages {
+			return pieces
+		}
+	}
+	return pieces
+}
+
+// appendRateStagePieces appends a rate stage of sec seconds that holds from,
+// or ramps from it to *to, as pieces of at most maxRateStageSeconds.
+func appendRateStagePieces(rateStages []dsl.PacingRateStage, sec int, from float64, to *float64, warmup bool) []dsl.PacingRateStage {
+	for done := 0; done < sec && len(rateStages) < maxDerivedRateStages; {
+		n := min(maxRateStageSeconds, sec-done)
+		piece := dsl.PacingRateStage{DurationSeconds: n, TargetTPS: from, Warmup: warmup}
+		if to != nil {
+			end := *to
+			if done+n < sec {
+				end = from + (*to-from)*float64(done+n)/float64(sec)
+			}
+			piece.TargetTPS = from + (*to-from)*float64(done)/float64(sec)
+			piece.EndTPS = &end
+		}
+		rateStages = append(rateStages, piece)
+		done += n
+	}
+	return rateStages
+}
+
+// rateStagesDerivedFromStages reports a compiled script whose rate stages are
+// exactly the ones its group's stages compile to, rather than rate stages the
+// script or a runtime override authored. Compile leaves the script's TPS as
+// it was, so the derivation repeats exactly.
+func rateStagesDerivedFromStages(script *dsl.Script, stages []storage.LoadStage) bool {
+	if script == nil || len(script.Config.Pacing.RateStages) == 0 || !stagesSetTargetTPS(stages) {
+		return false
+	}
+	return reflect.DeepEqual(deriveOpenModelRateStages(stages, script.Config.Pacing.TPS), script.Config.Pacing.RateStages)
+}
+
+// maxStageTargetVUsers is the largest target_vusers any stage sets; zero for
+// stages that set only an arrival rate.
+func maxStageTargetVUsers(stages []storage.LoadStage) int {
+	peak := 0
+	for _, stage := range stages {
+		peak = max(peak, stage.TargetVUsers)
+	}
+	return peak
 }
 
 func stagedInitialVUsers(stages []storage.LoadStage, peakVUsers int) int {

@@ -133,7 +133,7 @@ func (s *Server) handleGenAISpanLookup(w http.ResponseWriter, r *http.Request) {
 	modelFilter := strings.TrimSpace(req.Model)
 
 	matchesByTrace := make(map[string]*GenAISpanMatch)
-	matchOrder := make([]string, 0, limit)
+	matchOrder := make([]string, 0, maxGenAISpanLookupLimit)
 	var minTS, maxTS time.Time
 
 	_ = forEachArchiveTransaction(record, func(tx *TransactionEvent) error {

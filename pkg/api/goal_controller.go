@@ -308,7 +308,7 @@ func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMet
 		status.LiveTableNote = state.liveTableNote
 	}
 
-	hasLLMSamples := live != nil && live.LLM != nil && live.LLM.Summary != nil && live.LLM.Summary.Requests > 0
+	hasLLMSamples := live.LLM != nil && live.LLM.Summary != nil && live.LLM.Summary.Requests > 0
 	hasLLMStreamSamples := hasLLMSamples && live.LLM.Summary.StreamedRequests > 0
 
 	breaches := goalBreachSet{

@@ -175,9 +175,7 @@ func BuildCapacitySweepReport(
 	}
 	if len(baseLevels) < 2 && cfg != nil && len(transactions) > 0 {
 		if synthLevels, synthSpans := synthesizeSweepSpansFromConfig(cfg, transactions); len(synthLevels) >= 2 {
-			baseLevels = synthLevels
-			spans := synthSpans
-			return finalizeCapacitySweepSpans(report, mode, sloTTFT, sloTPOT, sloE2E, minGoodput, spans, transactions, monitorPoints, deployments)
+			return finalizeCapacitySweepSpans(report, mode, sloTTFT, sloTPOT, sloE2E, minGoodput, synthSpans, transactions, monitorPoints, deployments)
 		}
 	}
 	if len(baseLevels) == 0 {
@@ -435,7 +433,7 @@ func finalizeCapacitySweepSpans(
 						continue
 					}
 					diag := tx.ServerTelemetry.LLM
-					if !tx.Success || tx.StatusCode >= 400 || tx.ErrorMessage != "" || diag.Truncated || diag.Throttled || diag.ErrorCode != "" || diag.EmptyOutput {
+					if !tx.Success || tx.StatusCode >= 400 || tx.ErrorMessage != "" || diag.Throttled || diag.ErrorCode != "" || diag.EmptyOutput {
 						continue
 					}
 					ok := true
