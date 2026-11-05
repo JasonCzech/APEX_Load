@@ -249,8 +249,10 @@ func AppendUniqueStrings(values []string, extra ...string) []string {
 	if len(extra) == 0 {
 		return values
 	}
-	seen := make(map[string]struct{}, len(values)+len(extra))
-	out := make([]string, 0, len(values)+len(extra))
+	// Size the result from values alone; append grows it for extra. A summed
+	// capacity is an allocation size computed from two caller lengths.
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
 	for _, value := range values {
 		if _, ok := seen[value]; ok {
 			continue
