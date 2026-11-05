@@ -267,20 +267,20 @@ func TestSuggestSecrets(t *testing.T) {
 		{
 			name:            "api key header",
 			action:          dsl.Action{Name: "call", Type: "http_request", Target: "/x", Headers: map[string]string{"X-Api-Key": "k-99999"}},
-			wantVar:         "X_API_KEY",
-			wantReplacement: "{{env.X_API_KEY}}",
+			wantVar:         "X_APIKEY",
+			wantReplacement: "{{env.X_APIKEY}}",
 		},
 		{
 			name:            "json body password",
 			action:          dsl.Action{Name: "login", Type: "http_request", Target: "/login", Body: `{"username": "jane", "password": "hunter2"}`},
-			wantVar:         "PASSWORD",
-			wantReplacement: "{{env.PASSWORD}}",
+			wantVar:         "PW",
+			wantReplacement: "{{env.PW}}",
 		},
 		{
 			name:            "json escaped string password",
 			action:          dsl.Action{Name: "login", Type: "http_request", Target: "/login", Body: `{"password":"abc\"residual-secret"}`},
-			wantVar:         "PASSWORD",
-			wantReplacement: "{{env.PASSWORD}}",
+			wantVar:         "PW",
+			wantReplacement: "{{env.PW}}",
 		},
 		{
 			name:            "json numeric passcode",
@@ -291,8 +291,8 @@ func TestSuggestSecrets(t *testing.T) {
 		{
 			name:            "browser fill password",
 			action:          dsl.Action{Name: "fill pw", Type: "browser_fill", Selector: "#login_password", Value: "hunter2"},
-			wantVar:         "LOGIN_PASSWORD",
-			wantReplacement: "{{env.LOGIN_PASSWORD}}",
+			wantVar:         "LOGIN_PW",
+			wantReplacement: "{{env.LOGIN_PW}}",
 		},
 	}
 	for _, tt := range tests {

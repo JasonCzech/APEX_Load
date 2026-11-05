@@ -143,7 +143,7 @@ const stoppedSession = {
   status: 'stopped',
   stop_reason: 'requested',
   har_available: true,
-  warnings: ['step 1 filled a password input; the value was masked at capture — provide it at runtime via {{env.PASSWORD}}'],
+  warnings: ['step 1 filled a password input; the value was masked at capture — Provide it at runtime as {{env.PW}}'],
 }
 
 const forceStoppedSession = {
@@ -521,6 +521,22 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.getBrowserRecording).toHaveBeenCalledWith('brec-1')
   })
 
+  it.each([
+    [false, 'Not recorded'],
+    [true, 'Recorded'],
+  ] as const)('shows whether this recording records hovers (capture_hovers %s)', async (captureHovers, want) => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...recordingSession, capture_hovers: captureHovers } })
+    await renderPanel()
+    const stat = Array.from(container.querySelectorAll('.rec-stat')).find(el => el.textContent?.includes('Hovers'))
+    expect(stat?.querySelector('.rec-stat-value')?.textContent).toBe(want)
+  })
+
+  it('says nothing about hovers for an older controller that does not report them', async () => {
+    // recordingSession has no capture_hovers, as an older controller sends it.
+    await renderPanel()
+    expect(Array.from(container.querySelectorAll('.rec-stat-label')).some(el => el.textContent === 'Hovers')).toBe(false)
+  })
+
   it('loads retained step thumbnails only after an explicit authorized request', async () => {
     const thumbnail = 'data:image/jpeg;base64,dGh1bWJuYWls'
     apiMock.getRawBrowserRecording.mockResolvedValue({
@@ -766,7 +782,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('Save as script')
     expect(container.textContent).toContain('Save unverified draft')
     // The capture-time masking warning surfaces to the user.
-    expect(container.textContent).toContain('{{env.PASSWORD}}')
+    expect(container.textContent).toContain('{{env.PW}}')
   })
 
   it('shows force finish when graceful stop is still finalizing', async () => {

@@ -48,6 +48,11 @@ const (
 	ConfidenceLightningAuraClass = 84
 	ConfidenceLightningTitle     = 80
 	ConfidenceVolatileAuraID     = 56
+	// ConfidenceRecordSpecific ranks a candidate whose text names one record
+	// (I-0463595045, a Salesforce record id, a UUID, a long number): the
+	// next run creates or opens a different record, so it matches nothing.
+	// It ranks below the CSS path and XPath, which describe position.
+	ConfidenceRecordSpecific = 54
 	// ConfidenceLightningButtonName ranks a Lightning button's name attribute,
 	// the hook Salesforce's own standard actions carry (Edit, SaveEdit).
 	ConfidenceLightningButtonName = 82

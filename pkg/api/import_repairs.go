@@ -431,6 +431,7 @@ var replayPreflightGeneratedWarnings = []*regexp.Regexp{
 	regexp.MustCompile(`^variable\(s\) with no seed or preceding extractor are sent as placeholder text: `),
 	regexp.MustCompile(`^configure project secret\(s\) before replay: `),
 	regexp.MustCompile(`^` + regexp.QuoteMeta(unconfiguredSecretsWarning)),
+	regexp.MustCompile(`^` + regexp.QuoteMeta(draftreview.ReplayUnreadableEnvironmentWarning)),
 	regexp.MustCompile(`^(file )?data source ".*" (has no |contains a generated OpenAPI placeholder|requires an import file binding)`),
 	regexp.MustCompile(`^parameter ".*" references missing data source ".*"$`),
 	regexp.MustCompile(`^config\.jms\.mock is enabled; replay uses the in-memory JMS broker$`),

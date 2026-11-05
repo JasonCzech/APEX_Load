@@ -171,7 +171,7 @@ test('dashboard and closed-shadow toolbar control the same live session', async 
 
 test('capture modern web surfaces and preserve conversion warnings', async ({ page, harness:h },info)=>{
   await studio(page,h)
-  const rec=await startRecording(page,h,false,{ws:true})
+  const rec=await startRecording(page,h,false,{ws:true,hovers:true})
   try {
     const target=rec.target
     await target.getByLabel('Customer',{exact:true}).fill('keyboard-customer')
@@ -226,7 +226,8 @@ test('capture modern web surfaces and preserve conversion warnings', async ({ pa
     expect(converted.warnings?.join(' ')).toMatch(/upload|fixture paths/i)
     expect(converted.warnings?.join(' ')).toMatch(/password|masked/i)
     expect(converted.script.actions.find((a:{type:string})=>a.type==='browser_set_files')?.value).toBe('upload.txt')
-    expect(converted.script.actions.find((a:{selector:string})=>a.selector==='#password')?.value).toBe('{{env.PASSWORD}}')
+    // The field is named password; scripts can never read an env var named PASSWORD, so the recorder writes PW.
+    expect(converted.script.actions.find((a:{selector:string})=>a.selector==='#password')?.value).toBe('{{env.PW}}')
     expect(captured.steps.find((s:{element?:{id:string}})=>s.element?.id==='frame-action')?.frame_selector).toBeTruthy()
     expect(captured.steps.find((s:{element?:{id:string}})=>s.element?.id==='shadow-action')?.candidates.length).toBeGreaterThan(0)
     await info.attach('capture-surfaces',{body:JSON.stringify(captured,null,2),contentType:'application/json'})

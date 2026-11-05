@@ -3290,6 +3290,87 @@ describe("RecordingStudio", () => {
     expect(urlInput.value).toBe("app.example.com:8080/login?source=qa");
   });
 
+  it("records hover steps only when asked before the recording starts", async () => {
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+          folderId="folder-9"
+        />,
+      );
+    });
+    await flushPromises();
+    const urlInput = container.querySelector(
+      'input[aria-label="Start URL address"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(urlInput, "app.example.com/login");
+      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    // The choice is on the start form itself, not behind Advanced options.
+    const hoverLabel = Array.from(container.querySelectorAll("label")).find(
+      (label) => label.textContent?.includes("Record hover actions"),
+    );
+    expect(hoverLabel).toBeDefined();
+    const hoverBox = hoverLabel!.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    expect(hoverBox.checked).toBe(false);
+    const recordButton = () =>
+      Array.from(container.querySelectorAll("button")).find(
+        (button) => button.textContent?.includes("Start browser recording"),
+      )!;
+    await act(async () => {
+      recordButton().dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(apiMock.startBrowserRecording).toHaveBeenLastCalledWith(
+      expect.objectContaining({ capture_hovers: false }),
+    );
+  });
+
+  it("asks the recorder for hover steps when the hover option is checked", async () => {
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+          folderId="folder-9"
+        />,
+      );
+    });
+    await flushPromises();
+    const urlInput = container.querySelector(
+      'input[aria-label="Start URL address"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(urlInput, "app.example.com/menu");
+      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const hoverBox = Array.from(container.querySelectorAll("label"))
+      .find((label) => label.textContent?.includes("Record hover actions"))!
+      .querySelector('input[type="checkbox"]') as HTMLInputElement;
+    await act(async () => {
+      hoverBox.click();
+    });
+    expect(hoverBox.checked).toBe(true);
+    const recordButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Start browser recording"),
+    );
+    await act(async () => {
+      recordButton!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(
+      expect.objectContaining({ start_url: "https://app.example.com/menu", capture_hovers: true }),
+    );
+  });
+
   it("starts a browser recording with QUIC disabled when asked", async () => {
     await act(async () => {
       root.render(

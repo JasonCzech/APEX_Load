@@ -904,6 +904,10 @@ type ScriptProjectionContext struct {
 	headerList          bool
 	secretBindings      bool
 	metadata            bool
+	// actionMetadata is set on the metadata map of an action-shaped object
+	// (one with a string type), not on a map merely named metadata inside
+	// configuration or parameters.
+	actionMetadata bool
 }
 
 func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
@@ -937,6 +941,13 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 			if ctx.metadata &&
 				key == dsl.ImportActionUIDMetadataKey &&
 				dsl.IsValidImportActionUID(child) {
+				out[key] = child
+				continue
+			}
+			// Ranked locators of the step's own element (see
+			// scriptdisclosure.IsSelectorCandidateList), kept as the step's
+			// selector is.
+			if ctx.actionMetadata && scriptdisclosure.IsSelectorCandidateList(key, child) {
 				out[key] = child
 				continue
 			}
@@ -1086,6 +1097,10 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 				secretBindings:    IsScriptSecretBindingsMap(key),
 				metadata:          ctx.metadata || NormalizeScriptFieldName(key) == "metadata",
 			}
+			if !ctx.metadata && !ctx.opaqueMap && NormalizeScriptFieldName(key) == "metadata" {
+				_, actionShaped := typed["type"].(string)
+				childCtx.actionMetadata = actionShaped
+			}
 			if ctx.transactionParams && (key == "args" || key == "call_args") {
 				childCtx.transactionFunction, _ = typed["function"].(string)
 			}
@@ -1106,6 +1121,12 @@ func ProjectScriptNode(value any, ctx ScriptProjectionContext) any {
 		return out
 	case string:
 		return ProjectScriptString(typed, ctx)
+	case bool:
+		// A boolean carries one bit and is never credential material, whatever
+		// its key (a recorder's source_masked_secret or salesforce_auth flag).
+		// Masked, it became the string sentinel: a phantom kept credential that
+		// pinned every edit of the step, and a type the restore cannot put back.
+		return typed
 	default:
 		if IsSensitiveScriptKey(ctx.key) && !IsSecretReferenceKey(ctx.key) && !isSecretGatedCount(ctx.key, value) {
 			return MaskedScriptSecret

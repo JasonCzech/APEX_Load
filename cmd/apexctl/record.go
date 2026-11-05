@@ -26,6 +26,7 @@ type recordArgs struct {
 	upload      bool
 	headless    bool
 	noHAR       bool
+	hovers      bool
 	maxThinkMs  int
 	help        bool
 	err         error
@@ -56,6 +57,7 @@ func parseRecordArgs(args []string) recordArgs {
 	flags.BoolVar(&r.upload, "upload", false, "upload recorded script")
 	flags.BoolVar(&r.headless, "headless", false, "record headlessly")
 	flags.BoolVar(&r.noHAR, "no-har", false, "disable HAR capture")
+	flags.BoolVar(&r.hovers, "hovers", false, "record hover steps")
 	flags.IntVar(&r.maxThinkMs, "max-think-ms", 0, "maximum think time")
 	if err := flags.Parse(args); err != nil {
 		r.err = err
@@ -137,6 +139,8 @@ Options:
   --out, -o        Output script path (default recording.json)
   --har            Side-car HAR path (default <out>.har)
   --no-har         Disable network/HAR capture
+  --hovers         Record a step when the pointer rests on an element (off by
+                   default; turn on for menus that open only on hover)
   --name, -n       Script name (default derived from output file)
   --max-think-ms   Cap recorded think time per action
   --upload         Upload the finished script to the controller
@@ -171,6 +175,8 @@ func recordCmd() {
 		StartURL:   args.url,
 		Headless:   args.headless,
 		CaptureHAR: !args.noHAR,
+		// Hover steps are opt-in (--hovers), as in the dashboard.
+		CaptureHovers: args.hovers,
 		// The CLI flow has no dashboard panel, so the in-page advanced sidebar
 		// (sections/transactions/notes/recent-steps) is the only control surface.
 		Sidebar: true,

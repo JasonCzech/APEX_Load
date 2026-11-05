@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -209,7 +210,9 @@ func sourceSOAPEndpointPlaceholder(fn ParsedFunction) string {
 	if key == "" {
 		key = "SOAP_SERVICE"
 	}
-	return "{{env." + key + "_URL}}"
+	// A service named after a token or secret would make a name scripts can
+	// never read (credential.ReadableScriptEnvName).
+	return "{{env." + credential.ReadableScriptEnvName(key+"_URL") + "}}"
 }
 
 func splitSourceSOAPMethod(value string) (service, binding, operation string) {

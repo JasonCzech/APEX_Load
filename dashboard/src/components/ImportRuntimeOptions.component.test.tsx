@@ -235,7 +235,18 @@ describe('ImportRuntimeOptions', () => {
       setNativeValue(inputByLabel('Authentication'), 'bearer')
     })
     const updated = onChange.mock.calls[0][0] as ScriptDefinition
-    expect(updated.config.http?.auth).toEqual({ type: 'bearer', token: '{{env.API_TOKEN}}' })
+    expect(updated.config.http?.auth).toEqual({ type: 'bearer', token: '{{env.API_TKN}}' })
+  })
+
+  it('inserts readable env-placeholder auth when basic is selected', () => {
+    const onChange = render(buildScript())
+    act(() => {
+      setNativeValue(inputByLabel('Authentication'), 'basic')
+    })
+    const updated = onChange.mock.calls[0][0] as ScriptDefinition
+    expect(updated.config.http?.auth).toEqual({ type: 'basic', username: '{{env.API_USERNAME}}', password: '{{env.API_PW}}' })
+    // Scripts can never read a variable whose name says PASSWORD, TOKEN or SECRET.
+    expect(JSON.stringify(updated.config.http?.auth)).not.toMatch(/env\.[A-Z_]*(PASSWORD|PASSWD|TOKEN|SECRET|API_KEY|CREDENTIAL)/)
   })
 
   it('keeps a sequential decimal pacing draft while persisting milliseconds', () => {

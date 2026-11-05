@@ -3,6 +3,8 @@ package paramize
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 // Cases ported from the pkg/api browser-to-HTTP conversion tests to lock
@@ -132,15 +134,22 @@ func TestEnvKey(t *testing.T) {
 		want string
 	}{
 		{"Authorization", "AUTHORIZATION"},
-		{"X-Api-Key", "X_API_KEY"},
-		{"api_key", "API_KEY"},
-		{"password", "PASSWORD"},
-		{"", "SECRET"},
-		{"--", "SECRET"},
+		// Names scripts can never read become ones an operator can allow.
+		{"X-Api-Key", "X_APIKEY"},
+		{"api_key", "APIKEY"},
+		{"password", "PW"},
+		{"refresh_token", "REFRESH_TKN"},
+		{"aws_session", "REC_AWS_SESSION"},
+		{"", "VALUE"},
+		{"--", "VALUE"},
 	}
 	for _, tt := range tests {
-		if got := EnvKey(tt.name); got != tt.want {
+		got := EnvKey(tt.name)
+		if got != tt.want {
 			t.Errorf("EnvKey(%q) = %q, want %q", tt.name, got, tt.want)
+		}
+		if engine.ScriptEnvKeyAlwaysBlocked(got) {
+			t.Errorf("EnvKey(%q) = %q, which scripts can never read", tt.name, got)
 		}
 	}
 }

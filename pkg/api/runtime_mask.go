@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -44,7 +45,9 @@ type managedTestMaskOptions struct {
 // sensitiveEnvKey reports whether a runtime Env variable name looks secret-bearing
 // and so its value must be redacted before it leaves the server.
 func sensitiveEnvKey(name string) bool {
-	if scrub.SensitiveName(name) {
+	// A readable name an import wrote for a credential (API_TKN for
+	// API_TOKEN) is one too.
+	if scrub.SensitiveName(name) || credential.SensitiveEnvName(name) {
 		return true
 	}
 	normalized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(name)))

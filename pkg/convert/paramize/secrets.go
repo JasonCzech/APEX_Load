@@ -1,6 +1,7 @@
 package paramize
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"sort"
@@ -99,7 +100,7 @@ func SanitizeBodySecrets(body string) string {
 // {{env.KEY}}. Secrets are always high-risk: they never auto-apply, because
 // the replacement only works once the operator supplies the value at runtime.
 func secretSuggestions(script *dsl.Script) ([]Suggestion, error) {
-	collector := newSecretCollector()
+	collector := newSecretCollector(script)
 	budget := &suggestionRegexBudget{}
 	var scanErr error
 	forEachAction(script, func(section string, index int, request *int, action *dsl.Action) {
@@ -424,25 +425,65 @@ func schemePreservingEnvTemplate(headerValue, envKey string) string {
 }
 
 // secretCollector groups occurrences of the same secret value under one
-// suggestion so selecting it externalizes every occurrence at once.
+// suggestion so selecting it externalizes every occurrence at once. Secret
+// suggestions are not applied from here: import responses drop them and
+// guided credential bindings take their place (pkg/api import_response.go).
+// They still claim their values so the data-parameter passes skip them, and
+// their names follow the same rules a binding's would.
 type secretCollector struct {
 	order   []string
 	grouped map[string]*Suggestion
+	// varOwners maps each suggested variable name to the credential value it
+	// stands for, so two different credentials never share one variable,
+	// while one credential under two spellings (Authorization, authorization)
+	// keeps one. A variable the script already reads is owned by nothing a
+	// suggestion could hold.
+	varOwners map[string]string
 }
 
-func newSecretCollector() *secretCollector {
-	return &secretCollector{grouped: map[string]*Suggestion{}}
+// existingEnvOwner marks a variable the script already reads.
+const existingEnvOwner = "\x00existing"
+
+func newSecretCollector(script *dsl.Script) *secretCollector {
+	collector := &secretCollector{grouped: map[string]*Suggestion{}, varOwners: map[string]string{}}
+	if payload, err := json.Marshal(script); err == nil {
+		for _, match := range existingEnvReference.FindAllSubmatch(payload, maxSuggestionRegexMatches) {
+			collector.varOwners[string(match[1])] = existingEnvOwner
+		}
+	}
+	return collector
+}
+
+var existingEnvReference = regexp.MustCompile(`\{\{\s*env\.([A-Za-z0-9_]+)\s*\}\}`)
+
+// rename points a replacement at the variable chosen for its credential.
+func renameEnvTemplate(text, from, to string) string {
+	if from == to {
+		return text
+	}
+	return strings.ReplaceAll(text, "{{env."+from+"}}", "{{env."+to+"}}")
 }
 
 func (c *secretCollector) add(name, value, kind string, location Location, replacement string) {
 	key := name + "|" + value
+	base := EnvKey(name)
 	if existing, ok := c.grouped[key]; ok {
+		location.ReplaceText = renameEnvTemplate(location.ReplaceText, base, existing.VarName)
 		existing.Locations = append(existing.Locations, location)
 		return
 	}
+	// Different spellings can make one name (api_key and apikey both
+	// suggest APIKEY); a second credential gets APIKEY_2.
+	varName := base
+	for suffix := 2; c.varOwners[varName] != "" && c.varOwners[varName] != value; suffix++ {
+		varName = fmt.Sprintf("%s_%d", base, suffix)
+	}
+	c.varOwners[varName] = value
+	replacement = renameEnvTemplate(replacement, base, varName)
+	location.ReplaceText = renameEnvTemplate(location.ReplaceText, base, varName)
 	c.grouped[key] = &Suggestion{
 		Kind:         KindSecret,
-		VarName:      EnvKey(name),
+		VarName:      varName,
 		Replacement:  replacement,
 		LiteralValue: value,
 		SampleValue:  truncateValue(value),
@@ -450,8 +491,8 @@ func (c *secretCollector) add(name, value, kind string, location Location, repla
 		Confidence:   0.9,
 		RuleID:       "secret." + strings.ReplaceAll(kind, " ", "_"),
 		Rationale: fmt.Sprintf(
-			"The %s %q carries a credential. Externalize it to {{env.%s}} and supply the value at runtime; the script will not run until the environment variable is set.",
-			kind, name, EnvKey(name)),
+			"The %s %q carries a credential. Externalize it to {{env.%s}} and supply the value at runtime: set %s where the script runs and add it to APEXLOAD_SCRIPT_ENV_ALLOWLIST, or bind a project secret ({{secret.NAME}}) instead. The script will not run until it can read the value.",
+			kind, name, varName, varName),
 		HighRisk: true,
 	}
 	c.order = append(c.order, key)

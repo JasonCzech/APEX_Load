@@ -4717,11 +4717,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -29079,11 +29087,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -45216,6 +45232,8 @@ paths:
                 capture_har:
                   type: boolean
                   nullable: true
+                capture_hovers:
+                  type: boolean
                 capture_screenshots:
                   type: boolean
                 capture_ws_payloads:
@@ -48248,11 +48266,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -50383,11 +50409,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -52565,11 +52599,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -54615,11 +54657,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -56665,11 +56715,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -165565,11 +165623,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -167893,11 +167959,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -170291,11 +170365,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -172625,11 +172707,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -174953,11 +175043,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -177286,11 +177384,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -179620,11 +179726,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -224635,11 +224749,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -226964,11 +227086,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -229364,11 +229494,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -231699,11 +231837,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -234028,11 +234174,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -236362,11 +236516,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -238697,11 +238859,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -264084,11 +264254,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -265586,11 +265764,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -268810,11 +268996,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -270496,11 +270690,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -277656,11 +277858,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -283374,11 +283584,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -287973,11 +288191,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -289659,11 +289885,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -293750,11 +293984,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -312246,11 +312488,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -313748,11 +313998,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -323267,11 +323525,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -324953,11 +325219,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -339065,11 +339339,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -357046,11 +357328,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -364856,11 +365146,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -381560,11 +381858,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string
@@ -383246,11 +383552,19 @@ paths:
                             type: array
                             items:
                               type: string
+                          required_environment:
+                            type: array
+                            items:
+                              type: string
                           required_secrets:
                             type: array
                             items:
                               type: string
                           runtime_prerequisites:
+                            type: array
+                            items:
+                              type: string
+                          unreadable_environment:
                             type: array
                             items:
                               type: string
@@ -394616,11 +394930,19 @@ paths:
                         type: array
                         items:
                           type: string
+                      required_environment:
+                        type: array
+                        items:
+                          type: string
                       required_secrets:
                         type: array
                         items:
                           type: string
                       runtime_prerequisites:
+                        type: array
+                        items:
+                          type: string
+                      unreadable_environment:
                         type: array
                         items:
                           type: string

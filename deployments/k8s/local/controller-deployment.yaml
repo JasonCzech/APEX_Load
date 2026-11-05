@@ -80,25 +80,20 @@ spec:
               value: 60s
             - name: APEXLOAD_GENERATOR_RUN_SUPERVISION_RENEW_INTERVAL
               value: 10s
+            - name: APEXLOAD_SCRIPT_ENV_ALLOWLIST
+              value: OPENAI_MODEL,XAI_MODEL
             - name: APEXLOAD_GENERATORS
               value: dns://apexload-generator.apexload-local.svc.cluster.local:9090
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: apexload-openai-secrets
-                  key: OPENAI_API_KEY
-                  optional: true
+            # Default model names scripts read as {{env.OPENAI_MODEL}} and
+            # {{env.XAI_MODEL}}. Runs execute on the generators, which carry
+            # the same allowlist and values (generator-statefulset.yaml); the
+            # controller copy keeps its replay preflight accurate. Provider
+            # keys are project secrets, not pod variables (deployments/README.md).
             - name: OPENAI_MODEL
               valueFrom:
                 configMapKeyRef:
                   name: apexload-openai-settings
                   key: OPENAI_MODEL
-                  optional: true
-            - name: XAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: apexload-xai-secrets
-                  key: XAI_API_KEY
                   optional: true
             - name: XAI_MODEL
               valueFrom:

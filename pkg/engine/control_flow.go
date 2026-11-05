@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -253,8 +254,13 @@ func conditionOperandContainsSensitiveReference(value string) bool {
 		switch namespace {
 		case "secret":
 			return true
-		case "var", "param", "data", "env":
+		case "var", "param", "data":
 			if scrub.SensitiveName(name) {
+				return true
+			}
+		case "env":
+			// Includes the readable names imports write (API_TKN).
+			if credential.SensitiveEnvName(name) {
 				return true
 			}
 		}

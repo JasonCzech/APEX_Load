@@ -39,8 +39,8 @@ Runnable sample JSON DSL scripts, CSV parameter feeds, raw `.http` request/respo
 
 | File | Description |
 | --- | --- |
-| `openai-chat-completions-poll.json`, `openai-chat-completions-poll-csv.json`, `openai-responses-poll.json`, `openai-local-controller-test.json`, `openai-prompts.csv` | OpenAI Chat Completions and Responses API load scripts (parameterized via `openai-prompts.csv` and `{{env.*}}` secrets). |
-| `grok-chat-completions-poll.json`, `grok-chat-completions-poll-csv.json`, `grok-responses-poll.json`, `grok-local-controller-test.json`, `grok-prompts.csv` | xAI Grok Chat Completions and Responses API load scripts and CSV prompt feed. |
+| `openai-chat-completions-poll.json`, `openai-chat-completions-poll-csv.json`, `openai-responses-poll.json`, `openai-local-controller-test.json`, `openai-prompts.csv` | OpenAI Chat Completions and Responses API load scripts (parameterized via `openai-prompts.csv`; the key comes from the `{{secret.OPENAI_API_KEY}}` project secret and the model from the allowlisted `{{env.OPENAI_MODEL}}`). |
+| `grok-chat-completions-poll.json`, `grok-chat-completions-poll-csv.json`, `grok-responses-poll.json`, `grok-local-controller-test.json`, `grok-prompts.csv` | xAI Grok Chat Completions and Responses API load scripts and CSV prompt feed (the key comes from the `{{secret.XAI_API_KEY}}` project secret and the model from the allowlisted `{{env.XAI_MODEL}}`). |
 
 ### Raw `.http` Request / Response & REST API Fixtures
 

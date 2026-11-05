@@ -98,7 +98,7 @@ func TestApplySecretSuggestion(t *testing.T) {
 	if action.Headers["Accept"] != "application/json" {
 		t.Errorf("unrelated header changed: %q", action.Headers["Accept"])
 	}
-	if !strings.Contains(action.Body, `"password": "{{env.PASSWORD}}"`) {
+	if !strings.Contains(action.Body, `"password": "{{env.PW}}"`) {
 		t.Errorf("body = %q, want password externalized", action.Body)
 	}
 	if len(diffs) != 2 {

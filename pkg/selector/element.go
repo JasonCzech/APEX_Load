@@ -200,11 +200,87 @@ func Candidates(meta ElementMetadata) []Candidate {
 			Reason:     "Computed XPath captured at recording time; validate stability on replay.",
 		})
 	}
+	out = demoteRecordSpecific(out, meta)
 	out = Unique(out)
 	if meta.Lightning {
 		out = visibleOnly(out)
 	}
 	return out
+}
+
+// selectorTextToken splits text into the runs of letters, digits and hyphens
+// a record identifier is written with.
+var selectorTextToken = regexp.MustCompile(`[A-Za-z0-9-]+`)
+
+var (
+	// autoNumber is a Salesforce-style auto-number: I-0463595045, CASE-000123.
+	autoNumber = regexp.MustCompile(`^[A-Za-z]{1,6}-[0-9]{5,}$`)
+	// longNumber is an order, account or ticket number, or a timestamp.
+	longNumber = regexp.MustCompile(`^[0-9]{8,}$`)
+	uuidToken  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	// salesforceID is a 15- or 18-character record id (0015e00000AbCdE),
+	// whose middle holds a run of zeros.
+	salesforceID = regexp.MustCompile(`^[a-zA-Z0-9]{15}(?:[a-zA-Z0-9]{3})?$`)
+)
+
+// RecordSpecificText reports text that names one record rather than a kind of
+// element, such as the tab label "Subtabs for I-0463595045 | Interaction".
+func RecordSpecificText(text string) bool {
+	for _, token := range selectorTextToken.FindAllString(text, -1) {
+		token = strings.Trim(token, "-")
+		if uuidToken.MatchString(token) || recordSpecificWord(token) {
+			return true
+		}
+		// An id can join a record number to a prefix: tab-I-0463595045,
+		// row-CASE-000123. Check each part, and each part with the next.
+		parts := strings.Split(token, "-")
+		for index, part := range parts {
+			if recordSpecificWord(part) || (index+1 < len(parts) && autoNumber.MatchString(part+"-"+parts[index+1])) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func recordSpecificWord(word string) bool {
+	switch {
+	case autoNumber.MatchString(word), longNumber.MatchString(word):
+		return true
+	case salesforceID.MatchString(word) && strings.Contains(word, "000") && strings.ContainsAny(word, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+		// Ids of metadata (custom fields 00N, record types 012, layouts
+		// 00h, profiles 00e) are the same in every run of an org.
+		return !salesforceMetadataIDPrefix(word)
+	}
+	return false
+}
+
+func salesforceMetadataIDPrefix(id string) bool {
+	for _, prefix := range []string{"00N", "012", "00h", "00e", "00D", "01I"} {
+		if strings.HasPrefix(id, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// demoteRecordSpecific ranks below the positional candidates every candidate
+// built from an element's text or attributes that names one record. The CSS
+// path and XPath candidates, which describe position, keep their rank.
+func demoteRecordSpecific(candidates []Candidate, meta ElementMetadata) []Candidate {
+	cssPath := strings.TrimSpace(meta.CSSPath)
+	for i := range candidates {
+		candidate := &candidates[i]
+		if candidate.Kind == "xpath" || (cssPath != "" && candidate.Value == cssPath) {
+			continue
+		}
+		if candidate.Confidence <= ConfidenceRecordSpecific || !RecordSpecificText(candidate.Value) {
+			continue
+		}
+		candidate.Confidence = ConfidenceRecordSpecific
+		candidate.Reason = "Names one record (" + strings.TrimSuffix(candidate.Reason, ".") + "); the next run opens or creates another record, so this will not match it."
+	}
+	return candidates
 }
 
 func dataTestAttributeName(meta ElementMetadata) string {

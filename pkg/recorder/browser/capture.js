@@ -594,6 +594,13 @@
     return age >= 0 && age <= 2000;
   }
 
+  // Hover steps are opt-in per recording (Options.CaptureHovers). The recorder
+  // also drops them server-side when off, so this only saves the round trip.
+  function hoverCaptureEnabled() {
+    const cfg = window.__apexloadRecorderConfig;
+    return !!(cfg && typeof cfg === 'object' && cfg.hovers === true);
+  }
+
   function scheduleHover(el) {
     if (!el || paused || assertMode || shouldSkipDuplicateHover(el)) return;
     const key = elementFingerprint(el);
@@ -603,11 +610,15 @@
     pendingHover = {
       el: el,
       key: key,
+      // The pointer arrived now; the step is reported once it has rested.
+      // Stamp the arrival, so a click made inside a frame during the dwell
+      // (which cannot cancel this document's pending hover) orders after it.
+      ts: Date.now(),
       timer: setTimeout(() => {
         const pending = pendingHover;
         pendingHover = null;
         if (!pending || paused || assertMode) return;
-        record('hover', pending.el, '');
+        record('hover', pending.el, '', false, { ts: pending.ts });
         lastRecordedHover = { key: pending.key, ts: Date.now() };
       }, 500)
     };
@@ -741,7 +752,7 @@
 
   window.addEventListener('mouseover', (ev) => {
     if (!ev.isTrusted) return;
-    if (paused || assertMode) return;
+    if (paused || assertMode || !hoverCaptureEnabled()) return;
     const raw = targetOf(ev);
     if (!raw || isToolbar(raw)) return;
     const target = interactiveAncestor(raw);

@@ -40,11 +40,11 @@ func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, loca
 	mechanism := strings.ToLower(strings.TrimSpace(auth.Mechanism))
 	switch {
 	case strings.Contains(mechanism, "bearer") || strings.Contains(mechanism, "token"):
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(auth.Password, auth.Username, "{{env.API_TKN}}")}
 	case strings.Contains(mechanism, "digest"):
-		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
+		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PW}}")}
 	case mechanism == "" || strings.Contains(mechanism, "basic"):
-		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
+		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PW}}")}
 	default:
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" requires review and was retained behind an execution gate")

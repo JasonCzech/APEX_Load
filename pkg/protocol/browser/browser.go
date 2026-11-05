@@ -234,6 +234,10 @@ type Browser struct {
 	// (salesforce_ept.go).
 	eptCalibration      bool
 	lastSalesforceEPTMs float64
+
+	// windowsAtLastSwitch are the windows open at the last successful
+	// browser_switch_window; a later switch treats any other window as new.
+	windowsAtLastSwitch map[playwright.Page]bool
 }
 
 // SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.

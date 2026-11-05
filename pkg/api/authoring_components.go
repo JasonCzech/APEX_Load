@@ -90,7 +90,7 @@ func authoringComponentCatalog() []AuthoringComponent {
 				Method:  "POST",
 				Target:  "/oauth/token",
 				Headers: map[string]string{"Content-Type": "application/x-www-form-urlencoded"},
-				Body:    "grant_type=client_credentials&client_id={{env.CLIENT_ID}}&client_secret={{env.CLIENT_SECRET}}",
+				Body:    "grant_type=client_credentials&client_id={{env.CLIENT_ID}}&client_secret={{secret.CLIENT_SECRET}}",
 				Extractors: []dsl.Extractor{{
 					Name:       "access_token",
 					Source:     "body",

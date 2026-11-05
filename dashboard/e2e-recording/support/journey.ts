@@ -44,10 +44,12 @@ export async function pairAgent(page: Page, h: Harness, info: TestInfo) {
   await expect(page.getByTestId('browser-recorder-bridge-connected')).toBeVisible()
   return agent
 }
-export async function startRecording(page: Page, h: Harness, agent = false, options: { har?: boolean; mobile?: string; screenshots?: boolean; minimal?: boolean; ws?: boolean; excludeHosts?: string } = {}) {
+export async function startRecording(page: Page, h: Harness, agent = false, options: { har?: boolean; hovers?: boolean; mobile?: string; screenshots?: boolean; minimal?: boolean; ws?: boolean; excludeHosts?: string } = {}) {
   await page.getByLabel('Start URL scheme', { exact: true }).selectOption('http://')
   await page.getByLabel('Start URL address', { exact: true }).fill(h.target.url.replace('http://',''))
   await page.getByLabel('Capture side-car HAR', { exact: false }).setChecked(options.har ?? true)
+  // Hover steps are opt-in for each recording, on the start form itself.
+  await page.getByLabel('Record hover actions', { exact: false }).setChecked(options.hovers ?? false)
   if (options.mobile) await page.getByLabel('Emulated device preset', { exact: true }).selectOption({ label: options.mobile })
   if (options.screenshots || options.minimal || options.ws !== undefined || options.excludeHosts) {
     await page.getByRole('button', { name: 'Advanced options', exact: true }).click()
