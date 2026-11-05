@@ -249,6 +249,10 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 				out[key] = child
 				continue
 			}
+			if ctx.surfaceMetadata && !sentEntry && IsSelectorCandidateList(key, child) {
+				out[key] = p.projectSelectorCandidateList(child)
+				continue
+			}
 			if normalized == normalizeName(dsl.ImportHeaderFidelityPreservedNameBase64Key) ||
 				normalized == normalizeName(dsl.ImportHeaderFidelityPreservedValueBase64Key) {
 				out[key] = base64.StdEncoding.EncodeToString([]byte(credential.Redacted))
@@ -397,6 +401,10 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 		return out, nil
 	case string:
 		return p.projectString(typed, ctx), nil
+	case bool:
+		// A boolean is never credential material, whatever its key; see
+		// importreview.ProjectScriptNode.
+		return typed, nil
 	default:
 		if isSensitiveKey(ctx.key) && !isSecretReferenceKey(ctx.key) && !isSecretGatedCount(ctx.key, value) {
 			return credential.Redacted, nil

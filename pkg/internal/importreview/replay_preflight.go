@@ -2,6 +2,7 @@ package importreview
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -45,6 +46,14 @@ type ReplayPreflight struct {
 	Issues                  []string               `json:"issues,omitempty"`
 	Warnings                []string               `json:"warnings,omitempty"`
 	Checks                  []ReplayPreflightCheck `json:"checks,omitempty"`
+
+	// RequiredEnvironment are the {{env.*}} names the script reads, and
+	// UnreadableEnvironment those a script cannot read in this controller's
+	// process: an always-blocked name, one missing from
+	// APEXLOAD_SCRIPT_ENV_ALLOWLIST, or one not set. They warn; they do not
+	// refuse replay.
+	RequiredEnvironment   []string `json:"required_environment,omitempty"`
+	UnreadableEnvironment []string `json:"unreadable_environment,omitempty"`
 }
 
 type ReplayPreflightCheck struct {
@@ -119,6 +128,11 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) require project configuration before execution: %s", strings.Join(preflight.MissingSecrets, ", ")))
 		}
 	}
+	var environmentDetail string
+	preflight.RequiredEnvironment, preflight.UnreadableEnvironment, environmentDetail = ReplayEnvironmentRefs(script, controllerManagedSecrets)
+	if len(preflight.UnreadableEnvironment) > 0 {
+		preflight.Warnings = append(preflight.Warnings, ReplayUnreadableEnvironmentWarning+environmentDetail+". "+replayEnvironmentRemedy)
+	}
 	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(readiness.Blocking) == 0 && len(dataWarnings) == 0 &&
 		(!controllerManagedSecrets || len(preflight.MissingSecrets) == 0)
 	preflight.Checks = []ReplayPreflightCheck{
@@ -158,6 +172,21 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			Status: "warn",
 			Detail: strings.Join(preflight.RuntimePrerequisites, "; "),
 		},
+	}
+	if len(preflight.RequiredEnvironment) > 0 {
+		detail := "Readable: " + strings.Join(preflight.RequiredEnvironment, ", ")
+		if !controllerManagedSecrets {
+			detail = "Referenced: " + strings.Join(preflight.RequiredEnvironment, ", ") + " (checked when a replay or debug starts on the controller that runs it)"
+		}
+		if len(preflight.UnreadableEnvironment) > 0 {
+			detail = "Not readable here: " + environmentDetail + ". " + replayEnvironmentRemedy
+		}
+		preflight.Checks = append(preflight.Checks, ReplayPreflightCheck{
+			ID:     "environment",
+			Label:  "Environment variables",
+			Status: ReplayCheckStatus(true, len(preflight.UnreadableEnvironment) > 0),
+			Detail: detail,
+		})
 	}
 	if preflight.BrowserRequired {
 		preflight.Checks = append(preflight.Checks, ReplayEvidenceCaptureCheck(script))
@@ -239,6 +268,8 @@ func CloneReplayPreflight(preflight *ReplayPreflight) *ReplayPreflight {
 	cloned.DataSourceIssues = append([]string(nil), preflight.DataSourceIssues...)
 	cloned.RequiredSecrets = append([]string(nil), preflight.RequiredSecrets...)
 	cloned.MissingSecrets = append([]string(nil), preflight.MissingSecrets...)
+	cloned.RequiredEnvironment = append([]string(nil), preflight.RequiredEnvironment...)
+	cloned.UnreadableEnvironment = append([]string(nil), preflight.UnreadableEnvironment...)
 	cloned.RuntimePrerequisites = append([]string(nil), preflight.RuntimePrerequisites...)
 	cloned.Issues = append([]string(nil), preflight.Issues...)
 	cloned.Warnings = append([]string(nil), preflight.Warnings...)
@@ -440,6 +471,104 @@ func unverifiedAuraTokenVariables(script *dsl.Script, variables map[string]strin
 	}
 	sort.Strings(out)
 	return out
+}
+
+// ReplayUnreadableEnvironmentWarning begins the warning BuildReplayPreflight
+// writes for {{env.*}} names a script cannot read here.
+const ReplayUnreadableEnvironmentWarning = "environment variable(s) scripts cannot read: "
+
+const replayEnvironmentRemedy = "Set each where the script runs (this controller for replay and debugging, " +
+	"every load generator for a test) and list it in " + engine.EnvScriptEnvAllowlist + "; a name that is always " +
+	"blocked has to be renamed, here and in the {{env.*}} reference"
+
+// ReplayEnvironmentRefs lists the {{env.*}} names the script's executable
+// steps and configuration read, those a script cannot read, and a detail
+// naming each unreadable one with its reason. It reports names, never values.
+//
+// Only an always-blocked name is unreadable everywhere. Whether an allowed
+// name is listed and set depends on the process that runs the script, so
+// those reasons are reported only when onThisController: a replay or debug
+// start, which runs here. An import or authoring preview stores its preflight
+// with the script, where another controller's state would read as current.
+func ReplayEnvironmentRefs(script *dsl.Script, onThisController bool) (required []string, unreadable []string, detail string) {
+	required = replayEnvironmentNames(script)
+	reasons := make([]string, 0)
+	for _, name := range required {
+		var reason string
+		switch status := engine.ScriptEnvKeyStatusOf(name); {
+		case status == engine.ScriptEnvKeyReadable:
+			continue
+		case status == engine.ScriptEnvKeyBlockedName:
+			reason = "the name is always blocked (it names a password, token, secret, key or credential, or a cloud or secret-store namespace)"
+		case !onThisController:
+			continue
+		case status == engine.ScriptEnvKeyNotAllowlisted:
+			reason = "not listed in " + engine.EnvScriptEnvAllowlist
+		default:
+			reason = "not set"
+		}
+		unreadable = append(unreadable, name)
+		reasons = append(reasons, name+" ("+reason+")")
+	}
+	return required, unreadable, strings.Join(reasons, ", ")
+}
+
+// replayEnvironmentNames collects {{env.*}} names from what runs: each step's
+// own fields (not its metadata, which records provenance, and not a step an
+// import left for review), base64 bodies decoded, and the configuration.
+func replayEnvironmentNames(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	names := make(map[string]struct{})
+	collect := func(text string) {
+		for _, match := range ReplayTemplateRefPattern.FindAllStringSubmatch(text, -1) {
+			if len(match) >= 3 && match[1] == "env" {
+				if name := strings.TrimSpace(match[2]); name != "" {
+					names[name] = struct{}{}
+				}
+			}
+		}
+	}
+	var scan func(actions []dsl.Action, depth int)
+	scan = func(actions []dsl.Action, depth int) {
+		for _, action := range actions {
+			if payload, err := json.Marshal(action); err == nil {
+				var shape map[string]any
+				if json.Unmarshal(payload, &shape) == nil && (IsNonExecutableReviewAction(shape) || IsDurablyImportReviewGatedAction(shape)) {
+					continue
+				}
+			}
+			// A control step arrives as its shell (its condition, without the
+			// steps it holds, which are listed on their own); a parallel
+			// block's branches are walked here, step by step.
+			executable := action
+			executable.Metadata = nil
+			if action.Control != nil && len(action.Control.Branches) > 0 {
+				control := *action.Control
+				control.Branches = nil
+				executable.Control = &control
+				if depth < ReplayPreflightMaxControlDepth {
+					for _, branch := range action.Control.Branches {
+						scan(FlattenReplayActionsForReadiness(branch.Steps, depth+1), depth+1)
+					}
+				}
+			}
+			if payload, err := json.Marshal(executable); err == nil {
+				collect(string(payload))
+			}
+			if strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") {
+				if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(action.Body)); err == nil {
+					collect(string(decoded))
+				}
+			}
+		}
+	}
+	scan(ReplayOrderedActions(script), 0)
+	if payload, err := json.Marshal(script.Config); err == nil {
+		collect(string(payload))
+	}
+	return SortedSetKeys(names)
 }
 
 func ReplaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([]string, []string) {

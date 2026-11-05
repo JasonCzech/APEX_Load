@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -332,15 +333,15 @@ func TestConvertMaskedFillEmitsEnvPlaceholder(t *testing.T) {
 		t.Fatalf("actions = %+v", actionTypes(result.Script.Actions))
 	}
 	fill := result.Script.Actions[1]
-	if fill.Type != "browser_fill" || fill.Value != "{{env.USER_PASSWORD}}" {
-		t.Errorf("masked fill = %+v, want {{env.USER_PASSWORD}} placeholder", fill)
+	if fill.Type != "browser_fill" || fill.Value != "{{env.USER_PW}}" {
+		t.Errorf("masked fill = %+v, want {{env.USER_PW}} placeholder", fill)
 	}
 	if fill.Metadata["source_masked_secret"] != true {
 		t.Errorf("metadata = %+v, want source_masked_secret=true", fill.Metadata)
 	}
 	found := false
 	for _, w := range result.Warnings {
-		if strings.Contains(w, "USER_PASSWORD") && strings.Contains(w, "masked") {
+		if strings.Contains(w, "USER_PW") && strings.Contains(w, "masked") && strings.Contains(w, "APEXLOAD_SCRIPT_ENV_ALLOWLIST") {
 			found = true
 		}
 	}
@@ -355,17 +356,26 @@ func TestSecretEnvKey(t *testing.T) {
 		step Step
 		want string
 	}{
-		{"name attribute", Step{Element: &selector.ElementMetadata{Name: "user_password"}}, "USER_PASSWORD"},
+		{"name attribute", Step{Element: &selector.ElementMetadata{Name: "user_password"}}, "USER_PW"},
 		{"id fallback", Step{Element: &selector.ElementMetadata{ID: "loginPwd"}}, "LOGINPWD"},
-		{"placeholder with punctuation", Step{Element: &selector.ElementMetadata{Placeholder: "Your password!"}}, "YOUR_PASSWORD"},
-		{"digit prefix gets SECRET prefix", Step{Element: &selector.ElementMetadata{Name: "2fa-code"}}, "SECRET_2FA_CODE"},
-		{"no element falls back", Step{}, "PASSWORD"},
-		{"non-alphanumeric only falls back", Step{Element: &selector.ElementMetadata{Name: "----"}}, "PASSWORD"},
+		{"placeholder with punctuation", Step{Element: &selector.ElementMetadata{Placeholder: "Your password!"}}, "YOUR_PW"},
+		{"digit prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "2fa-code"}}, "REC_2FA_CODE"},
+		{"secret word shortened", Step{Element: &selector.ElementMetadata{Name: "client_secret"}}, "CLIENT_SCRT"},
+		{"token word shortened", Step{Element: &selector.ElementMetadata{ID: "otp-token"}}, "OTP_TKN"},
+		{"cloud prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "aws_key"}}, "REC_AWS_KEY"},
+		{"no element falls back", Step{}, "PW"},
+		{"non-alphanumeric only falls back", Step{Element: &selector.ElementMetadata{Name: "----"}}, "PW"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := secretEnvKey(tt.step); got != tt.want {
+			got := secretEnvKey(tt.step)
+			if got != tt.want {
 				t.Errorf("secretEnvKey() = %q, want %q", got, tt.want)
+			}
+			// The runtime can read every name the recorder writes, once the
+			// operator allows it.
+			if engine.ScriptEnvKeyAlwaysBlocked(got) {
+				t.Errorf("secretEnvKey() = %q, which scripts can never read", got)
 			}
 		})
 	}

@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "protocol": "http",
   "config": {
-    "base_url": "{{env.AZURE_OPENAI_ENDPOINT}}",
+    "base_url": "{{env.LLM_AZURE_OPENAI_ENDPOINT}}",
     "think_time": {
       "type": "fixed",
       "mean_ms": 250
@@ -32,7 +32,7 @@
       "name": "Azure OpenAI Chat Stream",
       "type": "llm_request",
       "method": "POST",
-      "target": "/openai/deployments/{{env.AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21",
+      "target": "/openai/deployments/{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21",
       "headers": {
         "api-key": "{{secret.AZURE_OPENAI_API_KEY}}",
         "Content-Type": "application/json",
@@ -43,7 +43,7 @@
       "params": {
         "llm_dialect": "azure_openai",
         "stream_mode": "sse",
-        "model": "{{env.AZURE_OPENAI_DEPLOYMENT}}",
+        "model": "{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}",
         "include_usage": true,
         "save_text_as": "assistant_reply"
       },

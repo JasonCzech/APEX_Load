@@ -108,7 +108,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				Init: []dsl.Action{
 					templateAction("http_oauth2_token", "Get Agent API Token", func(action *dsl.Action) {
 						action.Params = map[string]any{
-							"token_url":     "{{env.SALESFORCE_TOKEN_URL}}",
+							"token_url":     "{{env.SALESFORCE_TKN_URL}}",
 							"grant_type":    "client_credentials",
 							"client_id":     "{{env.SALESFORCE_CLIENT_ID}}",
 							"client_secret": "{{secret.SALESFORCE_CLIENT_SECRET}}",
@@ -574,7 +574,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				Version:  "1.0.0",
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
-					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					BaseURL:   "{{env.LLM_AZURE_OPENAI_ENDPOINT}}",
 					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
 					Pacing:    dsl.PacingConfig{Type: "none"},
 					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
@@ -590,9 +590,9 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				Init: []dsl.Action{
 					templateAction("http_oauth2_token", "Acquire Azure Entra Token", func(action *dsl.Action) {
 						action.Params = map[string]any{
-							"token_url":     "https://login.microsoftonline.com/{{env.AZURE_TENANT_ID}}/oauth2/v2.0/token",
+							"token_url":     "https://login.microsoftonline.com/{{env.LLM_AZURE_TENANT_ID}}/oauth2/v2.0/token",
 							"grant_type":    "client_credentials",
-							"client_id":     "{{env.AZURE_CLIENT_ID}}",
+							"client_id":     "{{env.LLM_AZURE_CLIENT_ID}}",
 							"client_secret": "{{secret.AZURE_CLIENT_SECRET}}",
 							"scope":         "https://cognitiveservices.azure.com/.default",
 							"save_as":       "azure_ad_token",
@@ -601,7 +601,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				},
 				Actions: []dsl.Action{
 					templateAction("llm_request", "Azure OpenAI Chat Stream", func(action *dsl.Action) {
-						action.Target = "/openai/deployments/{{env.AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Target = "/openai/deployments/{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
 						action.Headers = map[string]string{
 							"Authorization": "Bearer {{var.azure_ad_token}}",
 							"api-key":       "{{secret.AZURE_OPENAI_API_KEY}}",
@@ -611,7 +611,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 						action.Params = map[string]any{
 							"llm_dialect":   "azure_openai",
 							"stream_mode":   "sse",
-							"model":         "{{env.AZURE_OPENAI_DEPLOYMENT}}",
+							"model":         "{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}",
 							"include_usage": true,
 							"save_text_as":  "assistant_reply",
 						}
@@ -680,7 +680,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				Version:  "1.0.0",
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
-					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					BaseURL:   "{{env.LLM_AZURE_OPENAI_ENDPOINT}}",
 					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 200},
 					Pacing:    dsl.PacingConfig{Type: "none"},
 					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
@@ -695,7 +695,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				},
 				Actions: []dsl.Action{
 					templateAction("llm_request", "Probe Azure Deployment Quota", func(action *dsl.Action) {
-						action.Target = "/openai/deployments/{{env.AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Target = "/openai/deployments/{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
 						action.Headers = map[string]string{
 							"api-key": "{{secret.AZURE_OPENAI_API_KEY}}",
 						}
@@ -704,7 +704,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 						action.Params = map[string]any{
 							"llm_dialect": "azure_openai",
 							"stream_mode": "sse",
-							"model":       "{{env.AZURE_OPENAI_DEPLOYMENT}}",
+							"model":       "{{env.LLM_AZURE_OPENAI_DEPLOYMENT}}",
 						}
 						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
 					}),
@@ -724,7 +724,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				Version:  "1.0.0",
 				Protocol: "http",
 				Config: dsl.ScriptConfig{
-					BaseURL:   "{{env.AZURE_OPENAI_ENDPOINT}}",
+					BaseURL:   "{{env.LLM_AZURE_OPENAI_ENDPOINT}}",
 					ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250},
 					Pacing:    dsl.PacingConfig{Type: "tps", TPS: 5},
 					RunLogic:  dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},
@@ -738,7 +738,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 				},
 				Actions: []dsl.Action{
 					templateAction("llm_request", "PTU Sustained Chat Stream", func(action *dsl.Action) {
-						action.Target = "/openai/deployments/{{env.AZURE_PTU_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
+						action.Target = "/openai/deployments/{{env.LLM_AZURE_PTU_DEPLOYMENT}}/chat/completions?api-version=2024-10-21"
 						action.Headers = map[string]string{
 							"api-key": "{{secret.AZURE_OPENAI_API_KEY}}",
 						}
@@ -747,7 +747,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 						action.Params = map[string]any{
 							"llm_dialect": "azure_openai",
 							"stream_mode": "sse",
-							"model":       "{{env.AZURE_PTU_DEPLOYMENT}}",
+							"model":       "{{env.LLM_AZURE_PTU_DEPLOYMENT}}",
 						}
 						action.Assertions = []dsl.Assertion{{Type: "status_code", Expected: 200}}
 					}),

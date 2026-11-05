@@ -23,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/pwshutdown"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	playwright "github.com/mxschmitt/playwright-go"
 )
@@ -95,6 +96,12 @@ type Options struct {
 	// the in-page bar's expand button). When false the page shows only the
 	// minimal REC/Pause/Assert bar. The API manager defaults this on.
 	Sidebar bool
+	// CaptureHovers records a step each time the pointer rests on an element.
+	// Off by default: most of those are the pointer crossing the page on its
+	// way to a click, each one a replay step that can fail and a pause that
+	// becomes think time. Turn it on for menus and tooltips that open only on
+	// hover. When off, the recorder drops hover events whatever the page sends.
+	CaptureHovers bool
 
 	// followWindowHeadless gives a headless recording the window-sized page a
 	// headed desktop recording has, for package tests that cannot open a
@@ -164,6 +171,11 @@ type Recorder struct {
 	// drainer goroutine (started in Start) debounces bursts of events into one
 	// page.Evaluate per open page so rapid capture never floods the browser.
 	sidebarPush chan struct{}
+
+	// internalPageWarned notes that interactions or navigations on a page the
+	// browser draws itself (an error page) were dropped, so the recording warns
+	// once rather than per event. Guarded by mu.
+	internalPageWarned bool
 }
 
 // maxBrowserHARCaptureBytes bounds Playwright's raw HAR capture on disk. It
@@ -635,7 +647,12 @@ func (r *Recorder) registerPage(page playwright.Page) {
 			pauseSeq = r.nextFrameStateSeqLocked()
 		}
 		if !paused {
-			if len(r.session.NavEvents) < maxBrowserNetworkEvents {
+			if browserprotocol.IsBrowserInternalURL(rawURL) {
+				// A failed load lands on the browser's own error page. It is
+				// not somewhere a replay can go, and keeping it would also
+				// retarget an open popup's window switch at it.
+				warning = r.noteBrowserInternalPageLocked()
+			} else if len(r.session.NavEvents) < maxBrowserNetworkEvents {
 				nav.URL = r.retainNativeStringLocked(rawURL, maxBrowserNativeURLBytes)
 				nav.SameDocument, nav.NavigationType = r.takeSameDocumentReportLocked(nav.URL, nav.Timestamp)
 				r.session.NavEvents = append(r.session.NavEvents, nav)
@@ -899,9 +916,26 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		}
 		steps[index].Section = section
 	}
+	steps, droppedInternal, droppedAssert := r.recordableSteps(steps)
+	if droppedAssert {
+		// Picking is one-shot: a pick made on a page that is not recorded
+		// still ends it, as a recorded one does below.
+		r.SetAssertMode(false)
+	}
 	r.mu.Lock()
 	if r.paused || r.stopped {
 		r.mu.Unlock()
+		return nil
+	}
+	internalWarning := ""
+	if droppedInternal {
+		internalWarning = r.noteBrowserInternalPageLocked()
+	}
+	if len(steps) == 0 {
+		r.mu.Unlock()
+		if internalWarning != "" {
+			r.emit(Event{Type: EventWarning, Warning: internalWarning})
+		}
 		return nil
 	}
 	if len(steps) > maxBrowserSteps-len(r.session.Steps) {
@@ -922,6 +956,9 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		recorded = append(recorded, r.session.appendStep(step))
 	}
 	r.mu.Unlock()
+	if internalWarning != "" {
+		r.emit(Event{Type: EventWarning, Warning: internalWarning})
+	}
 	if switched != nil {
 		r.emit(Event{Type: EventStep, Step: switched})
 	}
@@ -940,6 +977,41 @@ func (r *Recorder) handleRecordBinding(source *playwright.BindingSource, args ..
 		}
 	}
 	return nil
+}
+
+// recordableSteps drops what this recording does not keep: hover steps unless
+// the recording opted into them (the page's own config can be rewritten by
+// the site, so the server decides), and interactions on a page the browser
+// draws itself, such as the error page a frame shows when its load fails.
+// droppedInternal reports that the second happened, and droppedAssert that a
+// verification pick was among the steps it dropped.
+func (r *Recorder) recordableSteps(steps []Step) (kept []Step, droppedInternal, droppedAssert bool) {
+	kept = steps[:0]
+	for _, step := range steps {
+		if step.Kind == StepHover && !r.opts.CaptureHovers {
+			continue
+		}
+		if browserprotocol.IsBrowserInternalURL(step.URL) {
+			droppedInternal = true
+			droppedAssert = droppedAssert || step.Kind == StepAssert
+			continue
+		}
+		kept = append(kept, step)
+	}
+	return kept, droppedInternal, droppedAssert
+}
+
+// noteBrowserInternalPageLocked records, once per recording, that activity
+// on a browser-drawn page was left out, and returns the warning to emit.
+// Callers hold r.mu.
+func (r *Recorder) noteBrowserInternalPageLocked() string {
+	if r.internalPageWarned {
+		return ""
+	}
+	r.internalPageWarned = true
+	warning := "The browser showed its own error page (a page or frame failed to load), and what happened on it was not recorded: it cannot be replayed. Check the step before it, or the network, if the page should have loaded."
+	r.appendWarningLocked(warning)
+	return warning
 }
 
 func (r *Recorder) trustedCapturePayload(payload string) bool {
@@ -1731,6 +1803,7 @@ func (r *Recorder) configScript() string {
 	layout := defaultSidebarLayout()
 	config := map[string]any{
 		"sidebar": r.opts.Sidebar,
+		"hovers":  r.opts.CaptureHovers,
 		"open":    layout.Expanded,
 		"edge":    layout.Edge,
 		"offset":  layout.Offset,

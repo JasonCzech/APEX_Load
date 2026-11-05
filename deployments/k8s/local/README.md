@@ -93,10 +93,11 @@ make k8s-local-apply
 
 ## Optional: Configure AI provider credentials for OpenAI or Grok scripts
 
-The controller pod reads provider credentials and default model names from optional
-Kubernetes resources; without them the pod still starts, but scripts using
-`{{env.OPENAI_API_KEY}}`, `{{env.OPENAI_MODEL}}`, `{{env.XAI_API_KEY}}`, or
-`{{env.XAI_MODEL}}` fail at runtime. The commands are in
+The generator pods (and the controller, for its preflight) read default model
+names (`{{env.OPENAI_MODEL}}`, `{{env.XAI_MODEL}}`) from optional ConfigMaps;
+without them the pods still start, but scripts using them fail at runtime. The
+provider keys (`{{secret.OPENAI_API_KEY}}`, `{{secret.XAI_API_KEY}}`) are project
+secrets in the script's project, not Kubernetes resources. The commands are in
 [AI provider setup for local Kubernetes](../../README.md#ai-provider-setup-for-local-kubernetes).
 
 ## 3. Wait for the pods to become ready

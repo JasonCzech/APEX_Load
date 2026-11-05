@@ -90,6 +90,11 @@ type BrowserRecordingStartRequest struct {
 	// Sidebar toggles the in-page advanced control sidebar embedded in the
 	// recorded browser. Default true; set false for only the minimal toolbar.
 	Sidebar *bool `json:"sidebar,omitempty"`
+	// CaptureHovers records a step whenever the pointer rests on an element.
+	// Default false: most hovers are the pointer crossing the page, and each
+	// one becomes a replay step and a recorded pause. Turn it on for menus
+	// that open only on hover.
+	CaptureHovers bool `json:"capture_hovers,omitempty"`
 	// QUICMode is the recorded browser's own HTTP/3: "auto" (default) lets
 	// Chromium use HTTP/3 when a site offers it; "off" launches it with QUIC
 	// disabled, so the recording holds only HTTP/1.1 and HTTP/2 traffic.
@@ -115,6 +120,7 @@ type BrowserRecordingSession struct {
 	Status               string                           `json:"status"`
 	StartURL             string                           `json:"start_url"`
 	CaptureHAR           bool                             `json:"capture_har"`
+	CaptureHovers        bool                             `json:"capture_hovers"`
 	StartedAt            time.Time                        `json:"started_at"`
 	StoppedAt            *time.Time                       `json:"stopped_at,omitempty"`
 	StopReason           string                           `json:"stop_reason,omitempty"`
@@ -309,6 +315,7 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 		Status:        BrowserRecordingActive,
 		StartURL:      strings.TrimSpace(req.StartURL),
 		CaptureHAR:    captureHAR,
+		CaptureHovers: req.CaptureHovers,
 		StartedAt:     time.Now(),
 		CurrentURL:    strings.TrimSpace(req.StartURL),
 		Section:       recbrowserNormalizeSection(req.Section),
@@ -342,13 +349,14 @@ func (m *BrowserRecordingManager) Start(req BrowserRecordingStartRequest) (*Brow
 			IncludeHosts: req.IncludeHosts,
 			ExcludeHosts: req.ExcludeHosts,
 		},
-		WindowX:      req.WindowX,
-		WindowY:      req.WindowY,
-		WindowWidth:  req.WindowWidth,
-		WindowHeight: req.WindowHeight,
-		DisableQUIC:  strings.TrimSpace(req.QUICMode) == "off",
-		Sidebar:      sidebar,
-		Scrubber:     func(s string) string { return scrub.Value(s, scrub.Policy{}) },
+		WindowX:       req.WindowX,
+		WindowY:       req.WindowY,
+		WindowWidth:   req.WindowWidth,
+		WindowHeight:  req.WindowHeight,
+		DisableQUIC:   strings.TrimSpace(req.QUICMode) == "off",
+		Sidebar:       sidebar,
+		CaptureHovers: req.CaptureHovers,
+		Scrubber:      func(s string) string { return scrub.Value(s, scrub.Policy{}) },
 	})
 	session.mu.Lock()
 	session.backend = backend
@@ -1307,6 +1315,7 @@ func (s *BrowserRecordingSession) summaryLocked() *BrowserRecordingSession {
 		Status:               s.Status,
 		StartURL:             scrub.ValueURL(s.StartURL, scrub.Policy{}),
 		CaptureHAR:           s.CaptureHAR,
+		CaptureHovers:        s.CaptureHovers,
 		StartedAt:            s.StartedAt,
 		StoppedAt:            s.StoppedAt,
 		StopReason:           s.StopReason,

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -693,20 +694,62 @@ func (b *Browser) dispatchSwitchWindow(ctx context.Context, action *protocol.Act
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 
+	// A page-key match (see trySwitchWindow) prefers a window opened since
+	// the switch began; an older one counts only after a grace period, so a
+	// popup still loading wins over the opener showing the same page.
+	// Windows opened since the last switch (a popup an earlier step opened
+	// included) count as new; before any switch, every window but the current
+	// one does.
+	existing := b.windowsAtLastSwitch
+	if existing == nil {
+		existing = map[playwright.Page]bool{}
+		if current := b.currentPage(); current != nil {
+			existing[current] = true
+		}
+	}
+	started := time.Now()
+	grace := min(timeout/2, 2*time.Second)
 	for {
-		err := b.trySwitchWindow(action)
+		err := b.trySwitchWindow(action, windowMatchScope{existing: existing, allowOlder: time.Since(started) >= grace})
 		if err == nil {
+			b.rememberWindowsAtSwitch()
 			return nil
 		}
 		select {
 		case <-switchCtx.Done():
+			// The window showing the recorded page may be the current one;
+			// accept it only once no other window has appeared in time.
+			if b.trySwitchWindow(action, windowMatchScope{existing: existing, allowOlder: true, allowCurrent: true}) == nil {
+				b.rememberWindowsAtSwitch()
+				return nil
+			}
 			return err
 		case <-ticker.C:
 		}
 	}
 }
 
-func (b *Browser) trySwitchWindow(action *protocol.Action) error {
+func (b *Browser) rememberWindowsAtSwitch() {
+	open := map[playwright.Page]bool{}
+	for _, page := range b.contextPages() {
+		open[page] = true
+	}
+	b.windowsAtLastSwitch = open
+}
+
+// windowMatchScope limits which windows a page-key match may pick.
+type windowMatchScope struct {
+	// existing holds the windows open when the switch began.
+	existing     map[playwright.Page]bool
+	allowOlder   bool
+	allowCurrent bool
+}
+
+// trySwitchWindow switches to the window the action names. Matching by page
+// (browsercontract.WindowPageKey) is limited by scope: a switch goes to a
+// window just opened, which may not exist or have loaded yet when the first
+// attempt runs, and the opener often shows the same page.
+func (b *Browser) trySwitchWindow(action *protocol.Action, scope windowMatchScope) error {
 	pages := b.contextPages()
 	if len(pages) == 0 {
 		return fmt.Errorf("browser_switch_window found no open pages")
@@ -761,7 +804,47 @@ func (b *Browser) trySwitchWindow(action *protocol.Action) error {
 			return nil
 		}
 	}
+	// A target recorded with its full URL keeps the query of the run it was
+	// recorded in. When no window carries it, the window showing the same page
+	// (browsercontract.WindowPageKey) is the one meant: the newest such window
+	// other than the current one, since a switch goes to a window just opened
+	// and the opener often shows the same page with another query.
+	if want, ok := browsercontract.WindowPageKey(target); ok {
+		if page := newestWindowShowingPage(pages, want, b.currentPage(), scope); page != nil {
+			b.registerPage(page, true)
+			b.currentFrameSelector = ""
+			return nil
+		}
+	}
 	return fmt.Errorf("browser_switch_window could not find page matching %q", target)
+}
+
+// newestWindowShowingPage returns the most recently opened page other than
+// current whose URL has the page key want, or current itself when allowed and
+// no other page has it; nil if none.
+func newestWindowShowingPage(pages []playwright.Page, want string, current playwright.Page, scope windowMatchScope) playwright.Page {
+	var older, currentMatch playwright.Page
+	for index := len(pages) - 1; index >= 0; index-- {
+		key, ok := browsercontract.WindowPageKey(pages[index].URL())
+		if !ok || key != want {
+			continue
+		}
+		switch {
+		case pages[index] == current:
+			currentMatch = pages[index]
+		case !scope.existing[pages[index]]:
+			return pages[index]
+		case older == nil:
+			older = pages[index]
+		}
+	}
+	if scope.allowOlder && older != nil {
+		return older
+	}
+	if scope.allowCurrent {
+		return currentMatch
+	}
+	return nil
 }
 
 func (b *Browser) dispatchCloseWindow(ctx context.Context, action *protocol.Action) error {

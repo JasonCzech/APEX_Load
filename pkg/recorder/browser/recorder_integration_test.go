@@ -379,7 +379,7 @@ func TestRecorderCapturesDebouncedHover(t *testing.T) {
 	server := keyboardFixtureServer()
 	defer server.Close()
 
-	recorder := New(Options{StartURL: server.URL, Headless: true})
+	recorder := New(Options{StartURL: server.URL, Headless: true, CaptureHovers: true})
 	if err := recorder.Start(); err != nil {
 		t.Skipf("browser runtime unavailable: %v", err)
 	}
@@ -410,6 +410,50 @@ func TestRecorderCapturesDebouncedHover(t *testing.T) {
 	}
 	if got := session.Steps[0].bestSelector(); got != "#save" {
 		t.Fatalf("hover selector = %q, want #save", got)
+	}
+}
+
+// Hover steps are opt-in: a recording that did not ask for them keeps the
+// click and none of the pointer's rests on the way.
+func TestRecorderSkipsHoversUnlessEnabled(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping browser integration test in -short mode")
+	}
+	server := keyboardFixtureServer()
+	defer server.Close()
+
+	recorder := New(Options{StartURL: server.URL, Headless: true})
+	if err := recorder.Start(); err != nil {
+		t.Skipf("browser runtime unavailable: %v", err)
+	}
+	defer func() { _, _ = recorder.Stop() }()
+
+	pages := recorder.context.Pages()
+	if len(pages) == 0 {
+		t.Fatal("no recording page open")
+	}
+	page := pages[0]
+	if err := page.Locator("#save").Hover(); err != nil {
+		t.Fatalf("hover save: %v", err)
+	}
+	time.Sleep(900 * time.Millisecond)
+	if err := page.Locator("#save").Click(); err != nil {
+		t.Fatalf("click save: %v", err)
+	}
+	waitForSteps(t, recorder, 1, 10*time.Second)
+	time.Sleep(650 * time.Millisecond)
+
+	session, err := recorder.Stop()
+	if err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	for _, step := range session.Steps {
+		if step.Kind == StepHover {
+			t.Fatalf("steps = %+v, want no hover step", session.Steps)
+		}
+	}
+	if len(session.Steps) == 0 || session.Steps[len(session.Steps)-1].Kind != StepClick {
+		t.Fatalf("steps = %+v, want the click recorded", session.Steps)
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	"github.com/jasonczech/apexload/pkg/selector"
@@ -198,7 +199,10 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				"The recorded Salesforce sign-in (%d step(s)) runs in init, once per virtual user. Before running more than one observer, give each its own user or session: every one would sign in as the recorded user, and a verification code does not replay. A storage_state_pool or salesforce_jwt session skips the recorded sign-in.", moved))
 		}
 	}
-	for _, entry := range timeline {
+	internalSkipped := 0
+	mergedFills, mergedInto := 0, 0
+	for index := 0; index < len(timeline); index++ {
+		entry := timeline[index]
 		entrySection := normalizeSection(entry.section)
 		switch {
 		case entry.wsOpen || entry.wsFrame != nil:
@@ -219,18 +223,18 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				txnStack = append(txnStack, marker.Name)
 				result.Stats.Transactions++
 			case MarkerTransactionEnd:
-				index := -1
+				open := -1
 				for i, n := range txnStack {
 					if n == marker.Name {
-						index = i
+						open = i
 					}
 				}
-				if index < 0 {
+				if open < 0 {
 					result.Warnings = append(result.Warnings, fmt.Sprintf(
 						"transaction end %q has no matching start and was skipped", marker.Name))
 					continue
 				}
-				txnStack = append(txnStack[:index], txnStack[index+1:]...)
+				txnStack = append(txnStack[:open], txnStack[open+1:]...)
 				action := dsl.TransactionMarker(marker.Name, false)
 				decorate(&action, false)
 				out = append(out, sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp})
@@ -238,6 +242,10 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 				pendingNotes = append(pendingNotes, marker.Text)
 				result.Stats.Notes++
 			}
+		case entry.navURL != "" && browserprotocol.IsBrowserInternalURL(entry.navURL):
+			// A load that failed shows the browser's own error page; it is not
+			// a page a replay can go to.
+			internalSkipped++
 		case entry.navURL != "":
 			action := dsl.Action{Name: "Navigate to " + entry.navURL, Type: "browser_navigate", Target: relativeTarget(baseURL, entry.navURL)}
 			decorate(&action, true)
@@ -245,13 +253,41 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 			result.Stats.Navigations++
 		default:
 			step := *entry.step
+			if browserprotocol.IsBrowserInternalURL(step.URL) {
+				internalSkipped++
+				result.Stats.SkippedSteps++
+				continue
+			}
+			burst := fillBurst(timeline, index)
+			signedIn := signIn[step.Seq]
+			if len(burst) > 1 {
+				// One field typed in several bursts: fill its final value
+				// once (see fillBurst).
+				step = mergedFillStep(timeline, burst)
+				for _, at := range burst {
+					signedIn = signedIn || signIn[timeline[at].step.Seq]
+				}
+				index = burst[len(burst)-1]
+			}
 			action, ok := convertStep(step, session, opts, result)
 			if !ok {
 				result.Stats.SkippedSteps++
 				continue
 			}
+			if len(burst) > 1 {
+				first := timeline[burst[0]].step.Seq - 1
+				action.ThinkTimeAfter, action.ThinkTime = false, dsl.ThinkTimeConfig{}
+				applyRecordedThinkTimeFrom(&action, session, first, step.Seq-1, opts.MaxThinkTimeMs)
+				seqs := make([]int, 0, len(burst))
+				for _, at := range burst {
+					seqs = append(seqs, timeline[at].step.Seq)
+				}
+				setMeta(&action, "recorder_merged_step_seqs", seqs)
+				mergedFills += len(burst)
+				mergedInto++
+			}
 			decorate(&action, true)
-			if signIn[step.Seq] {
+			if signedIn {
 				setMeta(&action, "salesforce_auth", true)
 			}
 			sa := sectionedAction{action: action, section: entrySection, timestamp: entry.timestamp, width: step.ViewportWidth, height: step.ViewportHeight}
@@ -267,6 +303,14 @@ func assembleActions(session *Session, opts ConvertOptions, baseURL string, resu
 		}
 	}
 
+	if internalSkipped > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d step(s) or navigation(s) on the browser's own error page (shown when a page or frame failed to load) were left out: they cannot be replayed. Check the step before them, or the network, if the page should have loaded.", internalSkipped))
+	}
+	if mergedFills > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%d fill step(s) typed into the same field in bursts were merged into %d fill(s) of the field's final value; the recorded typing time is kept as think time.", mergedFills, mergedInto))
+	}
 	if len(pendingNotes) > 0 {
 		if len(out) > 0 {
 			last := &out[len(out)-1].action
@@ -989,7 +1033,7 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 			key := secretEnvKey(step)
 			action.Value = "{{env." + key + "}}"
 			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"step %d filled a password input; the value was masked at capture — provide it at runtime via {{env.%s}}", step.Seq, key))
+				"step %d filled a password input; the value was masked at capture. Provide it at runtime as {{env.%s}}: set %s where the script runs (this controller for replay and debugging, every load generator for a test) and add it to APEXLOAD_SCRIPT_ENV_ALLOWLIST. Or replace it with a project secret, {{secret.NAME}}; a run that uses a project secret keeps no screenshots", step.Seq, key, key))
 		} else if step.MarkSecret {
 			// Marking a captured value as sensitive is a disclosure/review
 			// instruction, not permission to destroy the executable value. The
@@ -1054,6 +1098,9 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Switch window"
 		action.Type = "browser_switch_window"
 		action.Selector = ""
+		// The full URL: replay matches it exactly first, then falls back to
+		// the window showing the same page (browsercontract.WindowPageKey),
+		// so a sign-in popup's per-run query does not break the switch.
 		action.Target = step.Value
 		return action, true
 	default:
@@ -1099,7 +1146,15 @@ func attachPointerParams(action *dsl.Action, step Step) {
 // ThinkTimeAfter is set), skipping sub-perceptual gaps. Server-side pause
 // windows are subtracted so pausing a recording never inflates think time.
 func applyRecordedThinkTime(action *dsl.Action, session *Session, stepIndex int, maxThinkTimeMs int) {
-	if stepIndex < 0 || stepIndex >= len(session.Steps) {
+	applyRecordedThinkTimeFrom(action, session, stepIndex, stepIndex, maxThinkTimeMs)
+}
+
+// applyRecordedThinkTimeFrom encodes the time from the step at fromIndex to
+// the next step that survives conversion after the step at stepIndex. A fill
+// merged from several bursts spans from its first burst, so the typing time
+// stays in the replay.
+func applyRecordedThinkTimeFrom(action *dsl.Action, session *Session, fromIndex, stepIndex int, maxThinkTimeMs int) {
+	if stepIndex < 0 || stepIndex >= len(session.Steps) || fromIndex < 0 || fromIndex > stepIndex {
 		return
 	}
 	// The think time is the gap to the next step that survives conversion, so
@@ -1114,7 +1169,7 @@ func applyRecordedThinkTime(action *dsl.Action, session *Session, stepIndex int,
 	if nextIndex < 0 {
 		return
 	}
-	cur := session.Steps[stepIndex].Timestamp
+	cur := session.Steps[fromIndex].Timestamp
 	next := session.Steps[nextIndex].Timestamp
 	gap := (next.Sub(cur) - pausedDurationBetween(session.PauseIntervals, cur, next)).Milliseconds()
 	if gap < minRecordedThinkTimeMs {
@@ -1225,18 +1280,27 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 }
 
 // secretEnvKey derives a stable env-var name for a masked fill from the
-// element's identity (name attr, id, placeholder), defaulting to PASSWORD.
+// element's identity (name attr, id, placeholder), defaulting to PW. The name
+// is always one a script may read (scriptReadableEnvKey).
 func secretEnvKey(step Step) string {
 	candidates := []string{}
 	if step.Element != nil {
 		candidates = append(candidates, step.Element.Name, step.Element.ID, step.Element.Placeholder, step.Element.AriaLabel)
 	}
 	for _, raw := range candidates {
-		if key := sanitizeEnvKey(raw); key != "" {
+		if key := scriptReadableEnvKey(sanitizeEnvKey(raw)); key != "" {
 			return key
 		}
 	}
-	return "PASSWORD"
+	return "PW"
+}
+
+// scriptReadableEnvKey rewrites a derived name the script environment policy
+// always refuses into one it can allow (credential.ReadableScriptEnvName): a
+// password field named "password" used to become {{env.PASSWORD}}, which
+// could never resolve.
+func scriptReadableEnvKey(key string) string {
+	return credential.ReadableScriptEnvName(key)
 }
 
 func sanitizeEnvKey(raw string) string {
@@ -1263,7 +1327,8 @@ func sanitizeEnvKey(raw string) string {
 		return ""
 	}
 	if key[0] >= '0' && key[0] <= '9' {
-		key = "SECRET_" + key
+		// An environment variable name cannot start with a digit.
+		key = "REC_" + key
 	}
 	return key
 }

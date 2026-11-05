@@ -145,9 +145,11 @@ func SensitiveHeaderKey(key string) bool {
 }
 
 // EnvKey converts a field or header name into the UPPER_SNAKE environment
-// variable key used in {{env.KEY}} replacements.
+// variable key used in {{env.KEY}} replacements: one a script can read once the
+// operator allows it, so a "password" field suggests {{env.PW}}, not the
+// always-blocked {{env.PASSWORD}} (credential.ScriptEnvKey).
 func EnvKey(name string) string {
-	return credential.EnvKey(name)
+	return credential.ScriptEnvKey(name)
 }
 
 var selectorTokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_\-]*`)

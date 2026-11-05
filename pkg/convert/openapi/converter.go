@@ -3565,7 +3565,7 @@ func newAuthContext(script *dsl.Script, schemes map[string]securityScheme, baseU
 		for _, suffix := range openAPISecurityCredentialSuffixes(schemes[name]) {
 			key := openAPISecurityNameKey(name, suffix)
 			context.securityNames[key] = credentialNames.Allocate(
-				openAPISecretName(name, suffix),
+				openAPISecurityNameHint(name, suffix),
 				"openapi-security-scheme\x00"+name+"\x00"+suffix,
 			)
 		}
@@ -3606,12 +3606,26 @@ func (a *authContext) securityName(schemeName, suffix string) string {
 		}
 		if a.credentialNames != nil {
 			return a.credentialNames.Allocate(
-				openAPISecretName(schemeName, suffix),
+				openAPISecurityNameHint(schemeName, suffix),
 				"openapi-security-scheme\x00"+schemeName+"\x00"+strings.ToUpper(strings.TrimSpace(suffix)),
 			)
 		}
 	}
-	return openAPISecretName(schemeName, suffix)
+	return openAPISecurityNameHint(schemeName, suffix)
+}
+
+// openAPISecurityNameHint is the name a scheme's credential asks the registry
+// for. A username or client ID is read through {{env.*}}, so its hint is
+// already the script-readable form: two schemes whose names differ only in a
+// rewritten word (apiPassword, apiPasswd) are then numbered by the registry
+// instead of silently sharing one env variable.
+func openAPISecurityNameHint(schemeName, suffix string) string {
+	name := openAPISecretName(schemeName, suffix)
+	switch strings.ToUpper(strings.TrimSpace(suffix)) {
+	case "USERNAME", "CLIENT_ID":
+		return credential.ReadableScriptEnvName(name)
+	}
+	return name
 }
 
 func normalizedSecuritySchemes(doc *document) map[string]securityScheme {
@@ -3792,14 +3806,14 @@ func applyOpenAPISecurityScheme(action *dsl.Action, name string, scopes []string
 		case "basic", "digest":
 			action.Auth = &dsl.AuthConfig{
 				Type:     strings.ToLower(strings.TrimSpace(scheme.Scheme)),
-				Username: "{{env." + auth.securityName(name, "USERNAME") + "}}",
+				Username: "{{env." + credential.ReadableScriptEnvName(auth.securityName(name, "USERNAME")) + "}}",
 				Password: "{{secret." + auth.securityName(name, "PASSWORD") + "}}",
 			}
 		}
 	case "basic":
 		action.Auth = &dsl.AuthConfig{
 			Type:     "basic",
-			Username: "{{env." + auth.securityName(name, "USERNAME") + "}}",
+			Username: "{{env." + credential.ReadableScriptEnvName(auth.securityName(name, "USERNAME")) + "}}",
 			Password: "{{secret." + auth.securityName(name, "PASSWORD") + "}}",
 		}
 	case "apikey":
@@ -3875,7 +3889,7 @@ func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scope
 		Params: map[string]any{
 			"token_url":     tokenURL,
 			"grant_type":    grantType,
-			"client_id":     "{{env." + a.securityName(name, "CLIENT_ID") + "}}",
+			"client_id":     "{{env." + credential.ReadableScriptEnvName(a.securityName(name, "CLIENT_ID")) + "}}",
 			"client_secret": "{{secret." + a.securityName(name, "CLIENT_SECRET") + "}}",
 			"scope":         scope,
 			"save_as":       saveAs,
@@ -3888,7 +3902,7 @@ func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scope
 		},
 	}
 	if grantType == "password" {
-		action.Params["username"] = "{{env." + a.securityName(name, "USERNAME") + "}}"
+		action.Params["username"] = "{{env." + credential.ReadableScriptEnvName(a.securityName(name, "USERNAME")) + "}}"
 		action.Params["password"] = "{{secret." + a.securityName(name, "PASSWORD") + "}}"
 	}
 	actionIndex := len(a.script.Init)

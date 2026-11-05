@@ -85,6 +85,8 @@ export type BrowserRecorderSession = {
   status: 'recording' | 'paused' | 'stopping' | 'stopped' | 'failed'
   start_url: string
   capture_har: boolean
+  // capture_hovers says whether this recording records hover steps.
+  capture_hovers?: boolean
   started_at: string
   stopped_at?: string
   stop_reason?: 'requested' | 'browser_closed' | 'forced'
@@ -142,6 +144,10 @@ export type BrowserRecorderStartRequest = {
   // recorded browser. Omitted/true shows it; false falls back to the minimal
   // pause/assert toolbar.
   sidebar?: boolean
+  // capture_hovers records a step whenever the pointer rests on an element.
+  // Off unless set: most hovers are the pointer crossing the page, and each
+  // one becomes a replay step and a recorded pause.
+  capture_hovers?: boolean
   // quic_mode 'off' launches the recorded browser with QUIC disabled, so the
   // recording holds no HTTP/3 traffic. Omitted means the browser default.
   quic_mode?: 'auto' | 'off'

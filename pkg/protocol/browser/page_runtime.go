@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -63,6 +64,11 @@ func combineBrowserCaptureErrors(primary, secondary error) error {
 
 func (b *Browser) resolveURL(target string) string {
 	if strings.HasPrefix(target, "http://") || strings.HasPrefix(target, "https://") {
+		return target
+	}
+	// about:blank is a page of its own, and a browser-internal URL is refused
+	// by navigate: neither is a path under the base URL.
+	if isAboutURL(target) || browsercontract.IsBrowserInternalURL(target) {
 		return target
 	}
 	if b.baseURL == "" {
@@ -145,6 +151,12 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	if browsercontract.IsBrowserInternalURL(target) {
+		// A recording that ended on the browser's error page for a failed load
+		// kept it as a step. Loading it shows nothing of the site, and adding
+		// http:// would load a different, wrong URL.
+		return fmt.Errorf("browser_navigate target %q is a page the browser draws itself (such as its error page for a failed load), not a site page; delete this step", target)
+	}
 	page := b.currentPage()
 	if page == nil {
 		return fmt.Errorf("browser page is not initialized")
@@ -152,7 +164,7 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 	resolvedTarget := target
 	if b.baseURL != "" && strings.HasPrefix(target, "/") {
 		resolvedTarget = strings.TrimRight(b.baseURL, "/") + target
-	} else if !strings.HasPrefix(target, "http") {
+	} else if !strings.HasPrefix(target, "http") && !isAboutURL(target) {
 		resolvedTarget = "http://" + target
 	}
 	if b.eptCalibration {
@@ -170,6 +182,10 @@ func (b *Browser) navigate(ctx context.Context, action *protocol.Action, result 
 	b.currentURL = resolvedTarget
 	if err := b.noteDocumentResponse(ctx, action, result, page, response); err != nil {
 		return err
+	}
+	if isAboutURL(resolvedTarget) {
+		// about:blank has an empty body, which never counts as visible.
+		return nil
 	}
 	return b.waitVisibleWithTimeout(ctx, "body", timeout)
 }
@@ -493,4 +509,10 @@ func (b *Browser) selectOption(ctx context.Context, action *protocol.Action, sel
 		Timeout: playwright.Float(b.timeoutMS(ctx, timeout)),
 	})
 	return err
+}
+
+// isAboutURL reports about:blank, about:srcdoc and the like: pages the browser
+// opens as they are.
+func isAboutURL(target string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(target)), "about:")
 }

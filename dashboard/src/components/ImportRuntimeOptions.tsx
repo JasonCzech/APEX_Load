@@ -359,17 +359,17 @@ export default function ImportRuntimeOptions({ draftScope, script, onChange, dis
                     if (type === 'none') {
                       delete http.auth
                     } else if (type === 'basic') {
-                      http.auth = { type: 'basic', username: '{{env.API_USERNAME}}', password: '{{env.API_PASSWORD}}' }
+                      http.auth = { type: 'basic', username: '{{env.API_USERNAME}}', password: '{{env.API_PW}}' }
                     } else {
-                      http.auth = { type: 'bearer', token: '{{env.API_TOKEN}}' }
+                      http.auth = { type: 'bearer', token: '{{env.API_TKN}}' }
                     }
                     return { ...next, http }
                   })
                 }}
               >
                 <option value="none">None</option>
-                <option value="basic">Basic ({'{{env.API_USERNAME}}'} / {'{{env.API_PASSWORD}}'})</option>
-                <option value="bearer">Bearer ({'{{env.API_TOKEN}}'})</option>
+                <option value="basic">Basic ({'{{env.API_USERNAME}}'} / {'{{env.API_PW}}'})</option>
+                <option value="bearer">Bearer ({'{{env.API_TKN}}'})</option>
               </select>
             </label>
           </>

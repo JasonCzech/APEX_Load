@@ -106,10 +106,12 @@ func TestProjectScriptNodeMasksSecretGatedTextAndKeepsOnlyTheCount(t *testing.T)
 	if preserved, _ := projected["preserved"].(map[string]any); preserved["secret_gated"] != 3 {
 		t.Fatalf("typed count = %#v, want it kept", projected["preserved"])
 	}
-	for _, key := range []string{"params", "flags"} {
-		if value, _ := projected[key].(map[string]any); value["secret_gated"] != MaskedScriptSecret {
-			t.Fatalf("%s.secret_gated = %#v, want a value that is not a count masked", key, projected[key])
-		}
+	if value, _ := projected["params"].(map[string]any); value["secret_gated"] != MaskedScriptSecret {
+		t.Fatalf("params.secret_gated = %#v, want text that is not a count masked", projected["params"])
+	}
+	// A boolean is never credential material, under any key.
+	if value, _ := projected["flags"].(map[string]any); value["secret_gated"] != true {
+		t.Fatalf("flags.secret_gated = %#v, want the boolean kept", projected["flags"])
 	}
 }
 

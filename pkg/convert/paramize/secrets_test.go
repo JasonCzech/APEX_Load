@@ -101,7 +101,7 @@ func TestSecretSuggestionQuotedLiteralStopsAtClosingQuote(t *testing.T) {
 	if location.SearchText != ` token="abc123"` {
 		t.Errorf("SearchText = %q, want the quoted credential only", location.SearchText)
 	}
-	if location.ReplaceText != ` token="{{env.TOKEN}}"` {
+	if location.ReplaceText != ` token="{{env.TKN}}"` {
 		t.Errorf("ReplaceText = %q, want the quoted credential only", location.ReplaceText)
 	}
 }
@@ -160,7 +160,7 @@ func TestSecretSuggestionFormLiteralStopsAtCredential(t *testing.T) {
 	if location.SearchText != "&token=xyz" {
 		t.Errorf("SearchText = %q, want the credential pair only", location.SearchText)
 	}
-	if location.ReplaceText != "&token={{env.TOKEN}}" {
+	if location.ReplaceText != "&token={{env.TKN}}" {
 		t.Errorf("ReplaceText = %q, want the credential pair only", location.ReplaceText)
 	}
 }

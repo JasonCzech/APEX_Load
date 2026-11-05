@@ -10,6 +10,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
 	"reflect"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 )
@@ -400,38 +401,130 @@ func ValidatePreservedImportCredentialEditsWithOptions(
 	if err != nil {
 		return err
 	}
-	if HasNewProjectedCredential(rawCandidate, safeCandidate, rawPrior, safePrior) {
+	if found, unmatched := newProjectedCredentialAtPath(rawCandidate, safeCandidate, rawPrior, safePrior, ""); found {
+		if unmatched != "" {
+			// The steps could not be matched to the stored ones, so they were
+			// compared by position, and the value found is one the stored
+			// script keeps: a kept credential that moved, not a new one.
+			return fmt.Errorf(
+				"could not match the edited steps of %s with the stored version, so the imported credentials they keep "+
+					"cannot be checked: undo the step deletion, insertion or reordering there, bind the kept credentials "+
+					"to runtime secrets, or run the source import again",
+				ImportContextDisplayPath(unmatched),
+			)
+		}
 		return fmt.Errorf("script introduces new executable credentials; bind a runtime secret or run the source import again")
 	}
-	if context, changed := retainedImportCredentialContextChange(
+	if disclosed := retainedCredentialDisclosedAtPath(rawCandidate, safeCandidate, rawPrior, safePrior, ""); disclosed != "" {
+		return fmt.Errorf(
+			"this edit would show the imported credential kept at %s in plain text: restore what kept it masked "+
+				"(such as a removed or cleared source_marked_secret mark), bind it to a runtime secret, or run the "+
+				"source import again",
+			ImportContextDisplayPath(disclosed),
+		)
+	}
+	if change, changed := retainedImportCredentialContextChangeDetail(
 		rawCandidate,
 		safeCandidate,
 		rawPrior,
 		safePrior,
 		options,
 	); changed {
+		if change.Reason == "browser_page" {
+			return fmt.Errorf(
+				"this edit changes the pages or page scripts around the imported credential kept at %s "+
+					"(first change at %s): a step could type the credential into another page or read it from "+
+					"the page. While a recording keeps a captured value you can only delete hovers, scrolls and "+
+					"fills, add or remove waits and screenshots, rename steps (unless run logic runs them by that name), and change think time or browser "+
+					"display settings; the parameters, data and run logic the steps use are held too. Bind it to a runtime secret first, or record again",
+				change.Path,
+				change.ChangedAt,
+			)
+		}
 		return fmt.Errorf(
 			"script changes the execution context for retained imported credentials at %s: "+
 				"this edit could send an imported credential somewhere new. Bind the imported credential "+
 				"to a runtime secret or run the source import again; a system administrator can allow some "+
 				"proxy and TLS edits (Access > Import credential policy)",
-			context,
+			change.Path,
 		)
 	}
 	return nil
 }
 
 func HasNewProjectedCredential(candidate, projectedCandidate, prior, projectedPrior any) bool {
-	return hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior, "")
+	found, _ := newProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior, "")
+	return found
 }
 
-func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string) bool {
+// projectedCredentialFinding records where hasNewProjectedCredentialAtPath
+// found a credential prior does not hold at the matching place.
+type projectedCredentialFinding struct {
+	// value is the candidate's executable value there.
+	value any
+	// positional names the innermost step list the finding was compared in by
+	// position, because its steps could not be matched to the stored ones.
+	positional string
+}
+
+// newProjectedCredentialAtPath reports a projected credential in candidate that
+// prior does not hold at the matching place. unmatched names the step list
+// whose steps could not be matched when the value found is one prior already
+// keeps masked: a kept credential compared against a step that now holds its
+// position, not a new one. It is empty for a value prior does not keep.
+func newProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string) (found bool, unmatched string) {
+	var finding projectedCredentialFinding
+	if !hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior, path, &finding) {
+		return false, ""
+	}
+	if finding.positional == "" {
+		return true, ""
+	}
+	kept := make(map[string]struct{})
+	collectMaskedLeafValues(prior, projectedPrior, kept)
+	if _, isKept := kept[maskedLeafKey(finding.value)]; isKept {
+		return true, finding.positional
+	}
+	return true, ""
+}
+
+// collectMaskedLeafValues adds every scalar of raw that projected changes.
+func collectMaskedLeafValues(raw, projected any, out map[string]struct{}) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		projectedMap, _ := projected.(map[string]any)
+		for key, child := range typed {
+			collectMaskedLeafValues(child, projectedMap[key], out)
+		}
+	case []any:
+		projectedSlice, _ := projected.([]any)
+		for index, child := range typed {
+			var projectedChild any
+			if index < len(projectedSlice) {
+				projectedChild = projectedSlice[index]
+			}
+			collectMaskedLeafValues(child, projectedChild, out)
+		}
+	default:
+		if typed != nil && !reflect.DeepEqual(raw, projected) {
+			out[maskedLeafKey(raw)] = struct{}{}
+		}
+	}
+}
+
+func maskedLeafKey(value any) string {
+	return fmt.Sprintf("%T\x00%v", value, value)
+}
+
+func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string, finding *projectedCredentialFinding) bool {
 	switch typed := candidate.(type) {
 	case map[string]any:
 		projectedMap, _ := projectedCandidate.(map[string]any)
 		priorMap, _ := prior.(map[string]any)
 		projectedPriorMap, _ := projectedPrior.(map[string]any)
-		for key, child := range typed {
+		// In key order, so the same edit always reports the same place.
+		for _, key := range sortedMapKeys(typed) {
+			child := typed[key]
 			var safeChild, priorChild, safePriorChild any
 			if projectedMap != nil {
 				safeChild = projectedMap[key]
@@ -448,11 +541,95 @@ func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, proje
 				priorChild,
 				safePriorChild,
 				AppendImportContextPath(path, key),
+				finding,
 			) {
 				return true
 			}
 		}
 		return false
+	case []any:
+		projectedSlice, _ := projectedCandidate.([]any)
+		priorSlice, _ := prior.([]any)
+		projectedPriorSlice, projectedPriorOK := projectedPrior.([]any)
+		var actionMatches []int
+		hasActionMatches := false
+		actionCollection := projectedPriorOK && IsActionCollectionContextPath(path)
+		if actionCollection && len(projectedSlice) == len(typed) {
+			actionMatches, hasActionMatches = MatchCredentialPreservingActionCollection(projectedSlice, projectedPriorSlice)
+		}
+		// Unmatched steps fall back to the positions they now hold, which after
+		// a deletion, insertion or reorder can be other steps'.
+		positional := actionCollection && !hasActionMatches
+		for index, child := range typed {
+			var safeChild, priorChild, safePriorChild any
+			if index < len(projectedSlice) {
+				safeChild = projectedSlice[index]
+			}
+			priorIdx := index
+			if hasActionMatches {
+				priorIdx = actionMatches[index]
+			}
+			if priorIdx >= 0 && priorIdx < len(priorSlice) {
+				priorChild = priorSlice[priorIdx]
+			}
+			if priorIdx >= 0 && priorIdx < len(projectedPriorSlice) {
+				safePriorChild = projectedPriorSlice[priorIdx]
+			}
+			if hasNewProjectedCredentialAtPath(
+				child,
+				safeChild,
+				priorChild,
+				safePriorChild,
+				AppendImportContextPath(path, strconv.Itoa(index)),
+				finding,
+			) {
+				if positional && finding != nil && finding.positional == "" {
+					finding.positional = path
+				}
+				return true
+			}
+		}
+		return false
+	default:
+		if reflect.DeepEqual(candidate, projectedCandidate) {
+			return false
+		}
+		if reflect.DeepEqual(prior, projectedPrior) || !reflect.DeepEqual(candidate, prior) {
+			if finding != nil {
+				finding.value = candidate
+			}
+			return true
+		}
+		return false
+	}
+}
+
+// retainedCredentialDisclosedAtPath returns the first place where candidate
+// still holds the exact value prior keeps there masked, but candidate's own
+// projection no longer hides it as prior's did. Restoring a masked read puts
+// a kept value back only where it was, so the only way to reveal one is to
+// change what decides its masking around it: clear the mark on a recorded
+// fill, for example, and the next read would show the value. A value the
+// candidate masks whole, or exactly as prior did, discloses nothing.
+func retainedCredentialDisclosedAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string) string {
+	switch typed := candidate.(type) {
+	case map[string]any:
+		projectedMap, _ := projectedCandidate.(map[string]any)
+		priorMap, _ := prior.(map[string]any)
+		projectedPriorMap, _ := projectedPrior.(map[string]any)
+		for _, key := range sortedMapKeys(typed) {
+			child := typed[key]
+			if disclosed := retainedCredentialDisclosedAtPath(
+				child,
+				projectedMap[key],
+				priorMap[key],
+				projectedPriorMap[key],
+				AppendImportContextPath(path, key),
+			); disclosed != "" {
+				return disclosed
+			}
+		}
+		return ""
 	case []any:
 		projectedSlice, _ := projectedCandidate.([]any)
 		priorSlice, _ := prior.([]any)
@@ -477,22 +654,25 @@ func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, proje
 			if priorIdx >= 0 && priorIdx < len(projectedPriorSlice) {
 				safePriorChild = projectedPriorSlice[priorIdx]
 			}
-			if hasNewProjectedCredentialAtPath(
+			if disclosed := retainedCredentialDisclosedAtPath(
 				child,
 				safeChild,
 				priorChild,
 				safePriorChild,
 				AppendImportContextPath(path, strconv.Itoa(index)),
-			) {
-				return true
+			); disclosed != "" {
+				return disclosed
 			}
 		}
-		return false
+		return ""
 	default:
-		if reflect.DeepEqual(candidate, projectedCandidate) {
-			return false
+		if candidate == nil || reflect.DeepEqual(prior, projectedPrior) || !reflect.DeepEqual(candidate, prior) {
+			return ""
 		}
-		return reflect.DeepEqual(prior, projectedPrior) || !reflect.DeepEqual(candidate, prior)
+		if reflect.DeepEqual(projectedCandidate, projectedPrior) || projectedCandidate == MaskedScriptSecret {
+			return ""
+		}
+		return path
 	}
 }
 
@@ -651,10 +831,35 @@ func retainedImportCredentialContextChange(
 	projectedPrior any,
 	options PreservedImportEditOptions,
 ) (string, bool) {
+	change, changed := retainedImportCredentialContextChangeDetail(candidate, projectedCandidate, prior, projectedPrior, options)
+	return change.Path, changed
+}
+
+// importCredentialContextChange says where and why an edit changes the
+// context of a kept credential.
+type importCredentialContextChange struct {
+	// Path is where the kept credential is (ImportContextDisplayPath form).
+	Path string
+	// Reason is "script" (a credential kept at script level), "transport"
+	// (proxy, TLS and other routing), "step" (the step that holds it or what
+	// it reads), or "browser_page" (the page flow around a credential a
+	// browser step keeps).
+	Reason string
+	// ChangedAt is the first changed step of a browser_page change.
+	ChangedAt string
+}
+
+func retainedImportCredentialContextChangeDetail(
+	candidate,
+	projectedCandidate,
+	prior,
+	projectedPrior any,
+	options PreservedImportEditOptions,
+) (importCredentialContextChange, bool) {
 	candidateMap, candidateOK := projectedCandidate.(map[string]any)
 	priorMap, priorOK := projectedPrior.(map[string]any)
 	if !candidateOK || !priorOK {
-		return "script", true
+		return importCredentialContextChange{Path: "script", Reason: "script"}, true
 	}
 	candidateActions, candidateOrder := ImportActionContexts(candidateMap)
 	priorActions, priorOrder := ImportActionContexts(priorMap)
@@ -678,6 +883,51 @@ func retainedImportCredentialContextChange(
 	// parameters, data sources and variable-writing steps its wire fields
 	// interpolate (importReferenceGuard).
 	references := newImportReferenceGuard(candidate, candidateMap, prior, priorMap)
+
+	// The page flow of a browser script (persistent_import_preserved_browser_page.go),
+	// built once, and only when a credential a browser step keeps needs it.
+	browserScript := NormalizeScriptFieldName(StringJSONValue(candidateMap["protocol"])) == "browser"
+	seededSession := browserSessionSeeds(candidateMap) || browserSessionSeeds(priorMap)
+	pageChecked, pageChanged, pageChangedAt := false, false, ""
+	browserPageChange := func() (string, bool) {
+		if pageChecked {
+			return pageChangedAt, pageChanged
+		}
+		pageChecked = true
+		candidateSteps, candidateGroups, candidateErr := importBrowserPageSteps(candidateMap)
+		priorSteps, priorGroups, priorErr := importBrowserPageSteps(priorMap)
+		if candidateErr != nil || priorErr != nil {
+			pageChanged, pageChangedAt = true, "script"
+			return pageChangedAt, pageChanged
+		}
+		pairs, at, changed := alignBrowserPageSteps(candidateSteps, priorSteps)
+		// Each run-logic group holds its steps the way the walk does: only
+		// droppable ones may go, and none may move between groups. (The
+		// walk's run_logic entry already pins which groups there are.)
+		for group, members := range priorGroups {
+			if changed {
+				break
+			}
+			if _, groupAt, groupChanged := alignBrowserPageSteps(candidateGroups[group], members); groupChanged {
+				at, changed = groupAt, true
+			}
+		}
+		for _, pair := range pairs {
+			if changed {
+				break
+			}
+			// The synthetic sign-in entry has no step, and so nothing it reads.
+			if pair[0] != "" && references.requestChangedBetween(pair[0], pair[1]) {
+				at, changed = pair[0], true
+			}
+		}
+		if at == "" {
+			at = "script"
+		}
+		pageChanged, pageChangedAt = changed, ImportContextDisplayPath(at)
+		return pageChangedAt, pageChanged
+	}
+	reason, changedAt := "", ""
 
 	var visit func(
 		raw,
@@ -799,23 +1049,41 @@ func retainedImportCredentialContextChange(
 				// A credential kept at script level is sent with every request,
 				// so it also holds what every request reads.
 				if !reflect.DeepEqual(candidateGlobal, priorGlobal) || references.scriptChanged() {
+					reason = "script"
 					return "script", true
 				}
 				return "", false
 			}
 			candidateAction, candidateExists := candidateActions[actionPath]
 			priorAction, priorExists := priorActions[priorActionPath]
-			if !candidateExists || !priorExists ||
-				!reflect.DeepEqual(candidateTransport, priorTransport) ||
-				!reflect.DeepEqual(candidateAction, priorAction) ||
-				references.requestChangedBetween(actionPath, priorActionPath) {
-				return ImportContextDisplayPath(actionPath), true
+			switch {
+			case !candidateExists || !priorExists:
+				reason = "step"
+			case !reflect.DeepEqual(candidateTransport, priorTransport):
+				reason = "transport"
+			default:
+				if browserScript && browserPageValueLeaf(path, actionPath, candidateAction, seededSession) {
+					if at, changed := browserPageChange(); changed {
+						reason, changedAt = "browser_page", at
+						return ImportContextDisplayPath(actionPath), true
+					}
+				}
+				if reflect.DeepEqual(candidateAction, priorAction) &&
+					!references.requestChangedBetween(actionPath, priorActionPath) {
+					return "", false
+				}
+				reason = "step"
 			}
+			return ImportContextDisplayPath(actionPath), true
 		}
 		return "", false
 	}
 
-	return visit(candidate, projectedCandidate, prior, projectedPrior, "", "", "", "")
+	path, changed := visit(candidate, projectedCandidate, prior, projectedPrior, "", "", "", "")
+	if !changed {
+		return importCredentialContextChange{}, false
+	}
+	return importCredentialContextChange{Path: path, Reason: reason, ChangedAt: changedAt}, true
 }
 
 func ImportTransportContext(script map[string]any) map[string]any {
@@ -837,6 +1105,8 @@ func ImportTransportContext(script map[string]any) map[string]any {
 			transport[key] = withoutFields(value, webRuntimeBehaviourFields)
 		case "soap":
 			transport[key] = withoutFields(value, soapBehaviourFields)
+		case "browser":
+			transport[key] = withoutFields(value, browserBehaviourFields)
 		case "browseremulation":
 			// Browser emulation picks a user agent and cache behaviour; it never
 			// changes where a request goes or what credential it carries.
@@ -908,6 +1178,42 @@ var webRuntimeBehaviourFields = map[string]struct{}{
 var soapBehaviourFields = map[string]struct{}{
 	"version":       {},
 	"faulthandling": {},
+}
+
+// browserBehaviourFields shape how the browser runs and what evidence it
+// keeps: a window or none, its size and device, pacing, metrics, screenshots
+// and HAR. Like the log and results settings, which are never pinned, they
+// change neither where a page sends a retained credential nor how. The proxy,
+// client certificates, HTTP credentials, storage state and session, which do,
+// stay pinned, as do the engine, QUIC, traceparent, per-iteration identity and
+// the directory HAR files are written to, and the review policy, which can
+// let a reviewed page script run.
+var browserBehaviourFields = map[string]struct{}{
+	"headless":               {},
+	"slowmoms":               {},
+	"viewport":               {},
+	"availablescreenwidth":   {},
+	"availablescreenheight":  {},
+	"deviceprofile":          {},
+	"touchmode":              {},
+	"orientation":            {},
+	"useragent":              {},
+	"locale":                 {},
+	"timezone":               {},
+	"systemlanguage":         {},
+	"geolocation":            {},
+	"clientmetrics":          {},
+	"capturedocumentmetrics": {},
+	"captureinteractions":    {},
+	"experiencecanary":       {},
+	"eptcalibration":         {},
+	"capturescreenshots":     {},
+	"harcapture":             {},
+	"harcapturepolicy":       {},
+	"harslathresholdms":      {},
+	"cacheenabled":           {},
+	"cachecontenturls":       {},
+	"checknewerversions":     {},
 }
 
 // withoutFields returns a copy of a settings map without the named
@@ -1160,7 +1466,16 @@ func ImportActionWireContext(action map[string]any) map[string]any {
 	for key, value := range action {
 		switch NormalizeScriptFieldName(key) {
 		case "name", "assertions", "extractors", "thinktime", "thinktimeafter",
-			"waitfor", "sync", "capture", "metadata", "control":
+			"waitfor", "sync", "capture", "control":
+			continue
+		case "metadata":
+			// A browser step's runtime reads part of its metadata to choose
+			// its element, frame and page (browserRuntimeMetadataKeys): a
+			// self-heal fallback can retarget a kept fill. Other metadata is
+			// provenance no step sends.
+			if held := browserRuntimeMetadata(action); held != nil {
+				context[key] = held
+			}
 			continue
 		case "params":
 			params, _ := value.(map[string]any)
@@ -1222,4 +1537,13 @@ func ImportContextDisplayPath(path string) string {
 func StringJSONValue(value any) string {
 	text, _ := value.(string)
 	return text
+}
+
+func sortedMapKeys(value map[string]any) []string {
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }

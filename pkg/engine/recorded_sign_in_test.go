@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -234,5 +235,18 @@ func TestRecordedSignInPlanReadsConvertedRecordings(t *testing.T) {
 	}
 	if strings.Join(ran, ",") != "browser_navigate "+app {
 		t.Fatalf("a seeded observer's init runs %v", ran)
+	}
+}
+
+// The summary the imported-credential guard pins is the observer's own plan:
+// which init steps it skips and the page it opens instead.
+func TestRecordedSignInSummary(t *testing.T) {
+	if got := RecordedSignInSummary(recordedSignInScript(dsl.BrowserSessionLoginSteps)); got != nil {
+		t.Fatalf("summary without a seeding strategy = %#v, want nil", got)
+	}
+	got := RecordedSignInSummary(recordedSignInScript(dsl.BrowserSessionStorageStatePool))
+	want := map[string]any{"skipped_init": []int{1, 2, 3, 4, 5}, "landing": landingPage}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("summary = %#v, want %#v", got, want)
 	}
 }

@@ -174,7 +174,7 @@ func newTokenAction(tokenVar string) dsl.Action {
 		Name: "Acquire Agent API Token",
 		Type: "http_oauth2_token",
 		Params: map[string]any{
-			"token_url":     "{{env.SALESFORCE_TOKEN_URL}}",
+			"token_url":     "{{env.SALESFORCE_TKN_URL}}",
 			"grant_type":    "client_credentials",
 			"client_id":     "{{env.SALESFORCE_CLIENT_ID}}",
 			"client_secret": "{{secret.SALESFORCE_CLIENT_SECRET}}",

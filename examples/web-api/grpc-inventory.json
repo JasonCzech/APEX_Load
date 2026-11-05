@@ -17,7 +17,7 @@
       "use_reflection": true,
       "timeout_ms": 30000,
       "metadata": {
-        "authorization": "Bearer {{env.INVENTORY_API_TOKEN}}"
+        "authorization": "Bearer {{secret.INVENTORY_API_TOKEN}}"
       }
     },
     "error_handling": {

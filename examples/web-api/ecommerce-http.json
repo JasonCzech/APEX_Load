@@ -20,7 +20,7 @@
       },
       "auth": {
         "type": "bearer",
-        "token": "{{env.SHOP_API_TOKEN}}"
+        "token": "{{secret.SHOP_API_TOKEN}}"
       }
     },
     "error_handling": {
@@ -85,7 +85,7 @@
       "type": "request",
       "method": "POST",
       "target": "/api/orders",
-      "body": "{\n  \"cartId\": \"{{var.cart_id}}\",\n  \"paymentToken\": \"{{env.SHOP_PAYMENT_TOKEN}}\"\n}",
+      "body": "{\n  \"cartId\": \"{{var.cart_id}}\",\n  \"paymentToken\": \"{{secret.SHOP_PAYMENT_TOKEN}}\"\n}",
       "assertions": [
         {
           "type": "status_code",

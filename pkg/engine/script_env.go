@@ -3,6 +3,8 @@ package engine
 import (
 	"os"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 // EnvScriptEnvAllowlist is the operator-owned, comma-separated allowlist of
@@ -11,18 +13,6 @@ import (
 // listed keys are script-visible; everything else resolves as missing. An
 // unset allowlist is deliberately default-deny.
 const EnvScriptEnvAllowlist = "APEXLOAD_SCRIPT_ENV_ALLOWLIST"
-
-// scriptEnvSecretPrefix is the engine's own secret store namespace
-// (see secrets.go: APEXLOAD_SECRET_<name>). These must never be reachable
-// through script-visible env, regardless of the allowlist, so a script cannot
-// read resolved credentials by name through {{env.KEY}} or CEL `env`.
-var scriptEnvBlockedPrefixes = []string{
-	"APEXLOAD_SECRET_", "AWS_", "AZURE_", "GOOGLE_", "GCP_", "OCI_", "KUBERNETES_",
-}
-
-var scriptEnvBlockedFragments = []string{
-	"TOKEN", "PASSWORD", "PASSWD", "SECRET", "API_KEY", "PRIVATE_KEY", "CREDENTIAL",
-}
 
 // scriptEnvAllowlist parses EnvScriptEnvAllowlist into a set. An empty set
 // means no process environment variables are visible to scripts.
@@ -42,19 +32,50 @@ func scriptEnvAllowlist() map[string]struct{} {
 
 // scriptEnvKeyAllowed reports whether a script may read the given env key.
 func scriptEnvKeyAllowed(key string, allow map[string]struct{}) bool {
-	upper := strings.ToUpper(strings.TrimSpace(key))
-	for _, prefix := range scriptEnvBlockedPrefixes {
-		if strings.HasPrefix(upper, prefix) {
-			return false
-		}
-	}
-	for _, fragment := range scriptEnvBlockedFragments {
-		if strings.Contains(upper, fragment) {
-			return false
-		}
+	if ScriptEnvKeyAlwaysBlocked(key) {
+		return false
 	}
 	_, ok := allow[key]
 	return ok
+}
+
+// ScriptEnvKeyAlwaysBlocked reports an environment variable name no allowlist
+// can make script-visible: one in a cloud or secret-store namespace, or one
+// naming a password, token, secret, key or credential
+// (credential.ScriptEnvNameAlwaysBlocked).
+func ScriptEnvKeyAlwaysBlocked(key string) bool {
+	return credential.ScriptEnvNameAlwaysBlocked(key)
+}
+
+// ScriptEnvKeyStatus says whether a script can read an environment variable
+// through {{env.KEY}} in this process, and if not, why. It never reveals the
+// value.
+type ScriptEnvKeyStatus string
+
+const (
+	ScriptEnvKeyReadable ScriptEnvKeyStatus = "readable"
+	// ScriptEnvKeyBlockedName: the name is always blocked; rename it.
+	ScriptEnvKeyBlockedName ScriptEnvKeyStatus = "blocked_name"
+	// ScriptEnvKeyNotAllowlisted: the name is not in the operator's
+	// APEXLOAD_SCRIPT_ENV_ALLOWLIST.
+	ScriptEnvKeyNotAllowlisted ScriptEnvKeyStatus = "not_allowlisted"
+	// ScriptEnvKeyUnset: allowed, but this process's environment has no
+	// such variable.
+	ScriptEnvKeyUnset ScriptEnvKeyStatus = "not_set"
+)
+
+// ScriptEnvKeyStatusOf applies the same policy as {{env.KEY}} resolution.
+func ScriptEnvKeyStatusOf(key string) ScriptEnvKeyStatus {
+	if ScriptEnvKeyAlwaysBlocked(key) {
+		return ScriptEnvKeyBlockedName
+	}
+	if _, ok := scriptEnvAllowlist()[key]; !ok {
+		return ScriptEnvKeyNotAllowlisted
+	}
+	if _, ok := os.LookupEnv(key); !ok {
+		return ScriptEnvKeyUnset
+	}
+	return ScriptEnvKeyReadable
 }
 
 // lookupScriptEnv resolves an environment value for script consumption,

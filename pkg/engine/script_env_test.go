@@ -83,3 +83,25 @@ func TestConditionExprEnvMapRespectsAllowlist(t *testing.T) {
 		t.Fatalf("CEL condition env should expose allowlisted key, got %v", envMap["APEXLOAD_PUBLIC_REGION"])
 	}
 }
+
+func TestScriptEnvKeyStatusOfNamesEachReason(t *testing.T) {
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_RECORDED_PW,APEXLOAD_UNSET_PW,PASSWORD")
+	t.Setenv("APEXLOAD_RECORDED_PW", "synthetic")
+	t.Setenv("APEXLOAD_UNLISTED_PW", "synthetic")
+	tests := map[string]ScriptEnvKeyStatus{
+		"APEXLOAD_RECORDED_PW": ScriptEnvKeyReadable,
+		"APEXLOAD_UNSET_PW":    ScriptEnvKeyUnset,
+		"APEXLOAD_UNLISTED_PW": ScriptEnvKeyNotAllowlisted,
+		// An allowlisted name that names a password is still never readable.
+		"PASSWORD":   ScriptEnvKeyBlockedName,
+		"AWS_REGION": ScriptEnvKeyBlockedName,
+	}
+	for key, want := range tests {
+		if got := ScriptEnvKeyStatusOf(key); got != want {
+			t.Errorf("ScriptEnvKeyStatusOf(%q) = %q, want %q", key, got, want)
+		}
+		if readable := ScriptEnvAvailable(key); readable != (want == ScriptEnvKeyReadable) {
+			t.Errorf("ScriptEnvAvailable(%q) = %v, disagrees with status %q", key, readable, want)
+		}
+	}
+}

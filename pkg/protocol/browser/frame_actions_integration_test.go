@@ -523,6 +523,94 @@ func TestBrowserProtocolExecutesWindowSwitchActions(t *testing.T) {
 	}
 }
 
+// A window switch recorded with the popup's full URL carries the query of the
+// recorded login (an expiry, a user, a state). The popup of a later run has
+// another query; the switch still finds it by origin and path.
+func TestBrowserSwitchWindowMatchesRecordedURLWithAnotherRunsQuery(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/sso/login":
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Sign in</title></head><body><div id="who">sso</div></body></html>`))
+		default:
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main</title></head>
+<body><a id="open-popup" target="_blank" href="/sso/login?EXPIRE_SECS=60&state=live-run">Sign in</a></body></html>`))
+		}
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open popup", Type: "browser_click", Selector: "#open-popup"})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:   "Switch window",
+		Type:   "browser_switch_window",
+		Target: server.URL + "/sso/login?EXPIRE_SECS=60&state=recorded-run",
+	})
+	if result.PageTitle != "Sign in" {
+		t.Fatalf("PageTitle = %q, want the sign-in popup", result.PageTitle)
+	}
+}
+
+// The opener shows the same page as the popup with another query. When the
+// recorded URL matches neither, the switch goes to the popup, the newest window
+// showing that page, not to the opener it started from.
+func TestBrowserSwitchWindowPrefersNewWindowShowingThePage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "print" {
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Print view</title></head><body>print</body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main view</title></head>
+<body><a id="open-popup" target="_blank" href="/app?view=print&run=live">Print</a></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/app?view=main"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open popup", Type: "browser_click", Selector: "#open-popup"})
+	// A step between the click and the switch: the popup opened before the
+	// switch began, and still counts as the new window.
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Settle", Type: "browser_wait", WaitFor: &protocol.WaitCondition{Type: "duration", Value: "400ms"}})
+	start := time.Now()
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name:   "Switch window",
+		Type:   "browser_switch_window",
+		Target: server.URL + "/app?view=print&run=recorded",
+	})
+	if result.PageTitle != "Print view" {
+		t.Fatalf("PageTitle = %q, want the popup, not the opener", result.PageTitle)
+	}
+	if elapsed := time.Since(start); elapsed > 1500*time.Millisecond {
+		t.Fatalf("switch took %s, want the popup taken without waiting out the grace period", elapsed)
+	}
+}
+
+// about:blank loads as itself, not as a path under the base URL, and an empty
+// page does not wait out the action timeout for a visible body.
+func TestBrowserNavigatesToAboutBlank(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main</title></head><body>main</body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/"})
+	start := time.Now()
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Blank", Type: "browser_navigate", Target: "about:blank", TimeoutMs: 5000})
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Fatalf("about:blank navigation took %s, want it to finish without waiting for a visible body", elapsed)
+	}
+	if result.PageURL != "about:blank" {
+		t.Fatalf("PageURL = %q, want about:blank", result.PageURL)
+	}
+}
+
 func newChromiumIntegrationBrowser(t *testing.T, baseURL string) *Browser {
 	t.Helper()
 	return newIntegrationBrowser(t, "chromium", baseURL)

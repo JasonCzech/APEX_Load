@@ -30,7 +30,7 @@
         "method": "POST",
         "target": "/v1/responses",
         "headers": {
-          "Authorization": "Bearer {{env.XAI_API_KEY}}",
+          "Authorization": "Bearer {{secret.XAI_API_KEY}}",
           "Content-Type": "application/json",
           "Accept": "application/json"
         },

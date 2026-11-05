@@ -583,6 +583,7 @@ func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.lifecycleRouteSeq = nil
 	b.lastActionPopup = nil
 	b.lastDownloadOutcome = nil
+	b.windowsAtLastSwitch = nil
 	b.mu.Unlock()
 }
 

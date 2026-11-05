@@ -2,6 +2,7 @@ package engine
 
 import (
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -50,6 +51,24 @@ func newRecordedSignInPlan(script *dsl.Script) *recordedSignInPlan {
 	plan.skipEnclosingTransactions(script.Init)
 	plan.landing = plan.landingURL(script, last)
 	return plan
+}
+
+// RecordedSignInSummary is what an observer's session strategy does with the
+// script's recorded sign-in: the top-level init positions it skips and the
+// page it opens instead, or nil when it runs the sign-in as recorded. The
+// imported-credential guard pins it on a browser recording that keeps a
+// credential, since step metadata decides it.
+func RecordedSignInSummary(script *dsl.Script) map[string]any {
+	plan := newRecordedSignInPlan(script)
+	if plan == nil {
+		return nil
+	}
+	skipped := make([]int, 0, len(plan.skip))
+	for index := range plan.skip {
+		skipped = append(skipped, index)
+	}
+	sort.Ints(skipped)
+	return map[string]any{"skipped_init": skipped, "landing": plan.landing}
 }
 
 func recordedSignInStep(action dsl.Action) bool {

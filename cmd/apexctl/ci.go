@@ -27,6 +27,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/cmd/apexctl/internal/ciclient"
 	"github.com/jasonczech/apexload/pkg/analysis"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/runcontract"
@@ -1477,7 +1478,9 @@ func decodeCIVariables(raw []byte) (map[string]string, error) {
 }
 
 func sensitiveCIVariableKey(name string) bool {
-	if scrub.SensitiveName(name) {
+	// The same names the controller refuses (pkg/api sensitiveEnvKey),
+	// readable ones an import wrote for a credential (API_TKN) included.
+	if scrub.SensitiveName(name) || credential.SensitiveEnvName(name) {
 		return true
 	}
 	normalized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(name)))

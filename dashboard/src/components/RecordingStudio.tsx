@@ -752,6 +752,8 @@ export default function RecordingStudio({
   >(null);
   const [browserExcludeHosts, setBrowserExcludeHosts] = useState("");
   const [browserSidebar, setBrowserSidebar] = useState(true);
+  // Hover steps are opt-in for each recording.
+  const [browserCaptureHovers, setBrowserCaptureHovers] = useState(false);
   const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false);
   const [installState, setInstallState] = useState<{
     status: string;
@@ -1726,6 +1728,7 @@ export default function RecordingStudio({
         quic_mode: browserDisableQUIC ? "off" : undefined,
         storage_state_path: browserStorageState.trim() || undefined,
         sidebar: browserSidebar,
+        capture_hovers: browserCaptureHovers,
         exclude_hosts: browserExcludeHosts.trim()
           ? browserExcludeHosts
               .split(",")
@@ -3276,6 +3279,21 @@ export default function RecordingStudio({
                 <span>
                   Capture side-car HAR (network traffic for protocol-level
                   scripting)
+                </span>
+              </label>
+              <label className="rec-checkbox-row">
+                <input
+                  type="checkbox"
+                  checked={browserCaptureHovers}
+                  onChange={(e) => setBrowserCaptureHovers(e.target.checked)}
+                />
+                <span>
+                  Record hover actions{" "}
+                  <span className="rec-hint">
+                    (off: only clicks, typing and other interactions become
+                    steps. Turn on for menus or tooltips that open only on
+                    hover)
+                  </span>
                 </span>
               </label>
 

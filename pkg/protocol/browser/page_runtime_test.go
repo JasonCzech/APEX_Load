@@ -1,8 +1,11 @@
 package browser
 
 import (
+	"context"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestBrowserResolveURL(t *testing.T) {
@@ -17,6 +20,8 @@ func TestBrowserResolveURL(t *testing.T) {
 		{name: "empty base", target: "/orders", want: "/orders"},
 		{name: "relative target", baseURL: "https://app.example/root/", target: "orders", want: "https://app.example/root/orders"},
 		{name: "leading slash target", baseURL: "https://app.example/root/", target: "/orders", want: "https://app.example/root/orders"},
+		{name: "about blank", baseURL: "https://app.example/root/", target: "about:blank", want: "about:blank"},
+		{name: "browser error page", baseURL: "https://app.example/root/", target: "chrome-error://chromewebdata/", want: "chrome-error://chromewebdata/"},
 	}
 
 	for _, tt := range tests {
@@ -26,6 +31,17 @@ func TestBrowserResolveURL(t *testing.T) {
 				t.Fatalf("resolveURL() = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A recording that ended on the browser's error page kept it as a step; replay
+// refuses it instead of loading http://chrome-error://... or a path under the
+// base URL.
+func TestBrowserNavigateRefusesBrowserInternalPage(t *testing.T) {
+	b := &Browser{baseURL: "https://app.example"}
+	err := b.navigate(context.Background(), &protocol.Action{Type: "browser_navigate"}, &protocol.Result{}, b.resolveURL("chrome-error://chromewebdata/"))
+	if err == nil || !strings.Contains(err.Error(), "draws itself") {
+		t.Fatalf("navigate() error = %v, want the browser-internal page refused", err)
 	}
 }
 

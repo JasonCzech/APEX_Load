@@ -1714,13 +1714,7 @@ func (s *importReferenceScope) stepDigest(path string) string {
 		return cached
 	}
 	node := s.nodes[path]
-	context := ImportActionWireContext(node)
-	for field := range context {
-		switch NormalizeScriptFieldName(field) {
-		case "attribution", "pacingids", "timeoutms":
-			delete(context, field)
-		}
-	}
+	context := importStepContext(node)
 	if request := s.asyncRequest(path); request != nil {
 		if params, _ := context["params"].(map[string]any); params != nil {
 			params["request"] = ImportActionWireContext(request)

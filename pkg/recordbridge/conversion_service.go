@@ -839,6 +839,12 @@ func (s *Service) ConvertBrowserRecording(artifact *recbrowser.Session, info *Br
 		if req.Parameterize && !hasBrowserRecordingParameterizationSelectionsForScript(req.ParameterizationSelections, scriptIndex) {
 			ApplyAutoParameterization(sc)
 		}
+		// A recording repeats steps (the same hover, or one field filled in
+		// several bursts), and a saved recording keeps its imported values.
+		// A stable identity per step lets a later edit that deletes or moves
+		// steps match each kept step to its stored self instead of to
+		// whatever now holds its position.
+		importreview.EnsureScriptImportActionUIDs(sc)
 	}
 	if result.Script != nil {
 		result.Script.ProjectID = projectID

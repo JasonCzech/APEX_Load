@@ -57,6 +57,22 @@ spec:
               value: /var/lib/apexload-generator/archives
             - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
               value: "false"
+            # Every run executes here, so {{env.OPENAI_MODEL}} and
+            # {{env.XAI_MODEL}} resolve from this pod's environment.
+            - name: APEXLOAD_SCRIPT_ENV_ALLOWLIST
+              value: OPENAI_MODEL,XAI_MODEL
+            - name: OPENAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: apexload-openai-settings
+                  key: OPENAI_MODEL
+                  optional: true
+            - name: XAI_MODEL
+              valueFrom:
+                configMapKeyRef:
+                  name: apexload-xai-settings
+                  key: XAI_MODEL
+                  optional: true
           volumeMounts:
             - name: tmp
               mountPath: /tmp

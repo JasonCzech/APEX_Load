@@ -22,7 +22,7 @@ READMEs own the details; this page is the router.
 | Kubernetes monitoring examples | [Kubernetes monitoring stack](#kubernetes-monitoring-stack) |
 | Java Vuser runner component | [Java Vuser runner component](#java-vuser-runner-component) |
 | Browser generator for observer pools | [Browser generator for observer pools](#browser-generator-for-observer-pools) |
-| Local AI provider secrets | [AI provider setup for local Kubernetes](#ai-provider-setup-for-local-kubernetes) |
+| Local AI provider setup | [AI provider setup for local Kubernetes](#ai-provider-setup-for-local-kubernetes) |
 | Azure App Service controller launcher | `deployments/azure/appservice/README.md` |
 
 ### Kubernetes directory map
@@ -88,26 +88,18 @@ commands.
 
 ## AI provider setup for local Kubernetes
 
-Use this when you want APEX Load scripts running in the controller pod to read provider credentials from Kubernetes instead of your local shell.
+Use this to give the OpenAI and Grok example scripts their model names and API keys on the local Kubernetes cluster.
 
-The local controller deployment supports these optional environment variables:
+- **Model names.** The scripts read `{{env.OPENAI_MODEL}}` and `{{env.XAI_MODEL}}`. Every run executes on the generator pods, so the generator StatefulSet lists both names in `APEXLOAD_SCRIPT_ENV_ALLOWLIST` and reads them from the optional `apexload-openai-settings` and `apexload-xai-settings` ConfigMaps. The controller reads the same ConfigMaps so its replay preflight agrees.
+- **API keys.** The scripts read `{{secret.OPENAI_API_KEY}}` and `{{secret.XAI_API_KEY}}`. A script stored on the controller belongs to a project and reads only that project's secrets, so create `OPENAI_API_KEY` or `XAI_API_KEY` as a project secret in the script's project (in the project's secrets in the dashboard, or with `POST /api/v1/projects/{id}/secrets`). A key cannot go through a pod variable: a script can never read an `{{env.*}}` name that contains `API_KEY`, `TOKEN`, `SECRET` or `PASSWORD`.
 
-- `OPENAI_API_KEY`
-- `OPENAI_MODEL`
-- `XAI_API_KEY`
-- `XAI_MODEL`
-
-If you do not create the matching Kubernetes resources, the controller still starts normally, but scripts using those variables will fail at runtime.
+Without the ConfigMaps the pods still start normally, but scripts using those model names fail at runtime.
 
 ### Grok / xAI
 
-Create the secret and default model config:
+Create the default model config, then add `XAI_API_KEY` as a project secret:
 
 ```bash
-kubectl -n apexload-local create secret generic apexload-xai-secrets \
-  --from-literal=XAI_API_KEY=REPLACE_WITH_XAI_API_KEY \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n apexload-local create configmap apexload-xai-settings \
   --from-literal=XAI_MODEL=grok-4.3 \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -115,37 +107,35 @@ kubectl -n apexload-local create configmap apexload-xai-settings \
 
 ### OpenAI
 
-Create the secret and default model config:
+Create the default model config, then add `OPENAI_API_KEY` as a project secret:
 
 ```bash
-kubectl -n apexload-local create secret generic apexload-openai-secrets \
-  --from-literal=OPENAI_API_KEY=REPLACE_WITH_OPENAI_API_KEY \
-  --dry-run=client -o yaml | kubectl apply -f -
-
 kubectl -n apexload-local create configmap apexload-openai-settings \
   --from-literal=OPENAI_MODEL=REPLACE_WITH_OPENAI_MODEL \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### Reload The Controller
+### Reload The Pods
 
-After creating or updating either secret or configmap, restart the controller so the pod picks up the new values:
+After creating or updating either ConfigMap, restart the generators and the controller so the pods pick up the new values:
 
 ```bash
+kubectl -n apexload-local rollout restart statefulset/apexload-generator
 kubectl -n apexload-local rollout restart deployment/apexload-controller
+kubectl -n apexload-local rollout status statefulset/apexload-generator
 kubectl -n apexload-local rollout status deployment/apexload-controller
 ```
 
 ### Verify The Environment
 
-You can confirm a non-secret model variable is present with:
+Confirm a generator sees the model names:
 
 ```bash
-kubectl -n apexload-local exec deploy/apexload-controller -- printenv XAI_MODEL
-kubectl -n apexload-local exec deploy/apexload-controller -- printenv OPENAI_MODEL
+kubectl -n apexload-local exec apexload-generator-0 -- printenv XAI_MODEL
+kubectl -n apexload-local exec apexload-generator-0 -- printenv OPENAI_MODEL
 ```
 
-Do not print the API key values back out of the pod.
+Never put an API key in a ConfigMap or pod variable.
 
 ## Kubernetes monitoring stack
 

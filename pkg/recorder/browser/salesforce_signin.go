@@ -55,11 +55,28 @@ func salesforceSignInSteps(steps []Step, stepRange StepRange) map[int]bool {
 // moveSalesforceSignInToInit puts the timeline up to the sign-in's last step
 // in init. It refuses, saying why, when a transaction started there ends
 // after it: init and the iteration cannot share one.
+//
+// Only a sign-in the timeline holds as one leading run moves. The timeline is
+// in time order and the sign-in run in step order, and the two can differ: a
+// click inside a frame of the login page can be stamped before a hover
+// reported ahead of it. A step that is not part of the sign-in never moves,
+// and a sign-in it splits stays where it was recorded, whole, with a warning:
+// half of it in init would leave the iteration clicking a login page it no
+// longer shows.
 func moveSalesforceSignInToInit(entries []timelineEntry, signIn map[int]bool) (int, string) {
 	last := -1
 	for i, entry := range entries {
+		if entry.step == nil {
+			continue
+		}
+		if !signIn[entry.step.Seq] {
+			break
+		}
+		last = i
+	}
+	for _, entry := range entries[last+1:] {
 		if entry.step != nil && signIn[entry.step.Seq] {
-			last = i
+			return 0, "The recorded Salesforce sign-in runs in every iteration: another recorded step happened in the middle of it, and init cannot hold part of the sign-in. Exclude that step and convert again to sign in once per virtual user."
 		}
 	}
 	if last < 0 {

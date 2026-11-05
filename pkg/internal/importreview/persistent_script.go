@@ -143,6 +143,14 @@ func preparePersistentLibraryScript(
 			if err := ValidatePreservedImportCredentialEditsWithOptions(preserved, prior, options); err != nil {
 				return nil, err
 			}
+			// A recording saved before conversions stamped step identities gets
+			// them on its first checked save, so a later edit that deletes or
+			// moves steps can match each kept step to its stored self. The
+			// editor takes the saved copy back, identities included.
+			if preserved.Metadata != nil && preserved.Metadata.Import != nil &&
+				strings.EqualFold(strings.TrimSpace(preserved.Metadata.Import.Source), "browser_recorder") {
+				EnsureScriptImportActionUIDs(preserved)
+			}
 			if maybeGraduateCredentialPreservingImport(preserved, prior) {
 				// The review-surface sanitizer above returned early because the
 				// script was still credential-preserving. Graduation stores the

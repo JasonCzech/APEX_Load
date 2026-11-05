@@ -1835,6 +1835,13 @@ export default function BrowserRecorderControlPanel({
           <span className="rec-stat-value">{session.har_available ? 'Ready' : session.capture_har ? 'Capturing' : 'Off'}</span>
           <span className="rec-stat-label">HAR</span>
         </div>
+        {/* An older controller sends no capture_hovers: it always recorded hovers, so say nothing rather than "Not recorded". */}
+        {session.capture_hovers !== undefined && (
+          <div className="rec-stat" title="Chosen before the recording started">
+            <span className="rec-stat-value">{session.capture_hovers ? 'Recorded' : 'Not recorded'}</span>
+            <span className="rec-stat-label">Hovers</span>
+          </div>
+        )}
       </div>
 
       <RecordingEnvironmentReview environment={session.recording_environment} declaredPreset={session.device_profile} agentReported={!!api.browserRecorderBridge} live showUnavailable />
