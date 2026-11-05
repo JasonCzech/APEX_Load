@@ -29,7 +29,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 | Playwright spec files | 3 | 98 | assertion-driven |
 | Go statement coverage | 77.01% | 77.01% | ratchet |
 | Go coverage floor enforced | 0 | 0 | 1 |
-| Packages with no test file | 6 | 12 | 3 |
+| Packages with no test file | 6 | 13 | 3 |
 | Open inherited review defects | 11 | 1 | 0 |
 | Resource-leak linters enabled | 0 | 2 | 1 |
 | Converter golden files | 0 | 30 | all registered converters |
@@ -45,7 +45,7 @@ Sources: [STATUS.md](STATUS.md) · [TEST_PROGRAM.md](TEST_PROGRAM.md) · [Tier-0
 
 | GREEN | PARTIAL | MISSING | Total |
 |---:|---:|---:|---:|
-| 785 | 0 | 0 | 785 |
+| 788 | 0 | 0 | 788 |
 
 ## Last verified executions
 

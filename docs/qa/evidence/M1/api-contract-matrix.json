@@ -5,13 +5,13 @@
     "source": "pkg/api/server.go"
   },
   "totals": {
-    "routes": 785,
+    "routes": 788,
     "public": 31,
-    "protected": 754,
-    "rbac": 749,
+    "protected": 757,
+    "rbac": 752,
     "handler_authenticated": 5,
     "role_metadata_missing": 0,
-    "green": 785,
+    "green": 788,
     "partial": 0,
     "missing": 0
   },
@@ -3523,6 +3523,34 @@
       },
       "denied_role": "qa_contract_unlisted",
       "service_account_scope": "tests:run"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ci/runs/{id}/agent-brief",
+      "operation_id": "handleGetCIRunAgentBrief",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: ci_runner, Viewer, Editor, ProjectAdmin; service-account scope: results:read",
+      "anonymous_assertion": "route is registered with handler-specific auth middleware",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "ci_runner",
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
     },
     {
       "method": "GET",
@@ -16092,6 +16120,60 @@
       "method": "GET",
       "path": "/api/v1/tests/{id}/archive",
       "operation_id": "handleDownloadRunArchive",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/agent-brief",
+      "operation_id": "handleGetAgentBrief",
+      "public": false,
+      "authenticated": true,
+      "state": "GREEN",
+      "enforcement": "authentication middleware and access catalog",
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin",
+      "anonymous_assertion": "HTTP 401 before handler",
+      "role_assertion": "each listed role allowed; unlisted role denied with HTTP 403",
+      "allowed_roles": {
+        "global": [
+          "editor",
+          "project_admin",
+          "system_admin",
+          "viewer"
+        ],
+        "project": [
+          "editor",
+          "project_admin",
+          "viewer"
+        ]
+      },
+      "denied_role": "qa_contract_unlisted",
+      "service_account_scope": "results:read"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/agent-brief/findings/{finding_id}",
+      "operation_id": "handleGetAgentFinding",
       "public": false,
       "authenticated": true,
       "state": "GREEN",
