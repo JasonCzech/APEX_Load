@@ -21,6 +21,9 @@ const (
 	MaxKafkaIdentifierBytes       = 4 << 10
 	FeatureRealSeekV1             = "kafka_real_seek_v1"
 	FeatureConsumerTransactionsV1 = "kafka_consumer_transactions_v1"
+	// MaxIdempotentInFlightRequests is the Java producer's ceiling for
+	// max.in.flight.requests.per.connection with idempotence enabled.
+	MaxIdempotentInFlightRequests = 5
 )
 
 func BoundedConfigInt(cfg map[string]any, key string, fallback, minimum, maximum int) (int, error) {
@@ -58,7 +61,7 @@ func ParseProducerTuning(values map[string]any) (ProducerTuning, error) {
 		dst      **int
 		min, max int
 	}{
-		{"retries", &p.Retries, 0, 2147483647}, {"linger_ms", &p.LingerMs, 0, 3600000}, {"batch_bytes", &p.BatchBytes, 512, 67108864}, {"buffer_bytes", &p.BufferBytes, 1, 1073741824}, {"admission_timeout_ms", &p.AdmissionTimeoutMs, 0, 3600000}, {"delivery_timeout_ms", &p.DeliveryTimeoutMs, 1, 3600000}, {"request_timeout_ms", &p.RequestTimeoutMs, 1, 3600000},
+		{"retries", &p.Retries, 0, 2147483647}, {"linger_ms", &p.LingerMs, 0, 3600000}, {"batch_bytes", &p.BatchBytes, 512, 67108864}, {"buffer_bytes", &p.BufferBytes, 1, 1073741824}, {"admission_timeout_ms", &p.AdmissionTimeoutMs, 0, 3600000}, {"delivery_timeout_ms", &p.DeliveryTimeoutMs, 1, 3600000}, {"request_timeout_ms", &p.RequestTimeoutMs, 1, 3600000}, {"max_in_flight_requests", &p.MaxInFlightRequests, 1, 2147483647},
 	} {
 		key := "kafka_producer_" + f.key
 		if _, ok := values[key]; !ok {
@@ -85,6 +88,26 @@ func ValidateProducerSettings(values map[string]any) error {
 	_, err := ParseProducerTuning(values)
 	return err
 }
+
+// IdempotentProducer mirrors the real adapter's acks/idempotence resolution:
+// acks none/leader disable idempotent writes, and acks=all (the default)
+// keeps them unless idempotence is explicitly disabled.
+func IdempotentProducer(acks, idempotence string) bool {
+	switch strings.ToLower(strings.TrimSpace(acks)) {
+	case "none", "leader":
+		return false
+	}
+	return !strings.EqualFold(strings.TrimSpace(idempotence), "disabled")
+}
+
+// ValidateProducerInFlight rejects what the Java producer rejects: an
+// idempotent producer cannot exceed MaxIdempotentInFlightRequests.
+func ValidateProducerInFlight(p ProducerTuning, acks, idempotence string) error {
+	if p.MaxInFlightRequests != nil && *p.MaxInFlightRequests > MaxIdempotentInFlightRequests && IdempotentProducer(acks, idempotence) {
+		return fmt.Errorf("Kafka producer max_in_flight_requests above %d requires idempotence: disabled or acks none/leader", MaxIdempotentInFlightRequests)
+	}
+	return nil
+}
 func ValidateConsumerGroupOverride(group, configuredGroup string) error {
 	if group != "" && group != configuredGroup {
 		return fmt.Errorf("per-action consumer_group differs from the configured config.kafka.consumer_group; the real Kafka adapter binds one group per client")
@@ -101,6 +124,12 @@ func ValidateOAuthTokenEndpoint(raw string) error {
 
 type ProducerTuning struct {
 	Retries, LingerMs, BatchBytes, BufferBytes, AdmissionTimeoutMs, DeliveryTimeoutMs, RequestTimeoutMs *int
+	// MaxInFlightRequests is max.in.flight.requests.per.connection. It applies
+	// only to a non-idempotent producer, where unset keeps franz-go's default of
+	// one produce request in flight per broker. An idempotent producer (acks=all
+	// with idempotence not disabled, the default) ignores it and pipelines up to
+	// MaxIdempotentInFlightRequests requests per broker.
+	MaxInFlightRequests *int
 }
 
 func TLSVersions(minVersion, maxVersion string) (uint16, uint16, error) {

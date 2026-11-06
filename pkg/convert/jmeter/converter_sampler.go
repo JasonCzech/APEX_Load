@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -110,8 +111,10 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		action.Auth = &retained
 		applyJMeterAuthReviewGate(action, reviewAuth, location)
 	}
-	if timeout := samplerTimeoutMs(element); timeout > 0 {
+	if timeout, kind := samplerTimeoutMs(element, ctx); timeout > 0 {
 		action.TimeoutMs = timeout
+	} else if ctx.samplerTimeouts != nil {
+		ctx.samplerTimeouts.add(kind)
 	}
 	if redirects, ok := samplerRedirects(element); ok {
 		action.MaxRedirects = &redirects
@@ -237,7 +240,7 @@ func parseSamplerArguments(node *xmlNode, diagnostics *diag.Collector, location 
 	}
 	if rawBody {
 		for _, arg := range args {
-			if value := prop(arg, "Argument.value"); value != "" {
+			if value := propRaw(arg, "Argument.value"); value != "" {
 				return value, nil
 			}
 		}
@@ -245,7 +248,7 @@ func parseSamplerArguments(node *xmlNode, diagnostics *diag.Collector, location 
 	params := map[string]any{}
 	for _, arg := range args {
 		name := prop(arg, "Argument.name")
-		value := prop(arg, "Argument.value")
+		value := propRaw(arg, "Argument.value")
 		if name != "" {
 			params[name] = convertVariablesWithDiagnostics(value, diagnostics, location)
 		}
@@ -290,14 +293,75 @@ func applySamplerFiles(action *dsl.Action, node *xmlNode, diagnostics *diag.Coll
 	}
 }
 
-func samplerTimeoutMs(node *xmlNode) int {
-	connectTimeout := parseInt(prop(node, "HTTPSampler.connect_timeout"))
-	responseTimeout := parseInt(prop(node, "HTTPSampler.response_timeout"))
-	if responseTimeout > 0 {
-		return responseTimeout
-	}
-	return connectTimeout
+// jmeterTimeoutKind says why a sampler's JMeter timeouts give no action
+// timeout.
+type jmeterTimeoutKind int
+
+const (
+	jmeterTimeoutNone        jmeterTimeoutKind = iota // neither timeout set: JMeter waits without limit
+	jmeterTimeoutConnectOnly                          // only a connect timeout, which bounds the connect phase alone
+	jmeterTimeoutVariable                             // a timeout from a variable or function, resolved only at run time
+)
+
+// jmeterSamplerTimeoutStats counts, per thread group, the samplers whose
+// timeouts did not become an action timeout.
+type jmeterSamplerTimeoutStats struct {
+	untimed, connectOnly, variable int
 }
+
+func (s *jmeterSamplerTimeoutStats) add(kind jmeterTimeoutKind) {
+	switch kind {
+	case jmeterTimeoutConnectOnly:
+		s.connectOnly++
+	case jmeterTimeoutVariable:
+		s.variable++
+	default:
+		s.untimed++
+	}
+}
+
+// samplerTimeoutMs resolves a sampler's JMeter timeouts, its own value first
+// and then HTTP Request Defaults. Only the response timeout becomes the
+// action's timeout: APEX's action timeout bounds the whole exchange, while
+// JMeter's connect timeout bounds the connect phase alone, so a connect-only
+// sampler keeps the runtime defaults and is disclosed instead. A value of 0
+// is JMeter's "no timeout"; a non-numeric one (a variable or function) is
+// resolved only at run time and is reported separately.
+func samplerTimeoutMs(node *xmlNode, ctx *convertContext) (int, jmeterTimeoutKind) {
+	connect, response := prop(node, "HTTPSampler.connect_timeout"), prop(node, "HTTPSampler.response_timeout")
+	if ctx != nil {
+		connect = convertutil.FirstNonEmpty(connect, ctx.defaultConnectTimeout)
+		response = convertutil.FirstNonEmpty(response, ctx.defaultResponseTimeout)
+	}
+	parse := func(raw string) (int, bool) {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return 0, true
+		}
+		value, err := strconv.Atoi(raw)
+		return value, err == nil
+	}
+	responseTimeout, responseLiteral := parse(response)
+	if !responseLiteral {
+		return 0, jmeterTimeoutVariable
+	}
+	if responseTimeout > 0 {
+		return responseTimeout, jmeterTimeoutNone
+	}
+	connectTimeout, connectLiteral := parse(connect)
+	switch {
+	case !connectLiteral:
+		return 0, jmeterTimeoutVariable
+	case connectTimeout > 0:
+		return 0, jmeterTimeoutConnectOnly
+	}
+	return 0, jmeterTimeoutNone
+}
+
+// jmeterDefaultMaxRedirects is httpsampler.max_redirects in a stock
+// jmeter.properties. The property lives in the JMeter installation, never in
+// the plan, so the stock value is the best available source.
+const jmeterDefaultMaxRedirects = 20
 
 func samplerRedirects(node *xmlNode) (int, bool) {
 	follow, followOK := parseOptionalBool(prop(node, "HTTPSampler.follow_redirects"))
@@ -306,7 +370,7 @@ func samplerRedirects(node *xmlNode) (int, bool) {
 		return 0, false
 	}
 	if follow || auto {
-		return httpprotocol.Capabilities().MaxRedirects, true
+		return min(jmeterDefaultMaxRedirects, httpprotocol.Capabilities().MaxRedirects), true
 	}
 	return 0, true
 }
@@ -329,10 +393,22 @@ func buildBaseURL(protocol, domain, port string) string {
 	if protocol == "" {
 		protocol = "https"
 	}
-	if port != "" {
+	// JMeter leaves the scheme's default port out of the URL, so its Host
+	// header carries no port; an explicit :443 or :80 would add one here.
+	if port != "" && !jmeterDefaultPort(protocol, port) {
 		return fmt.Sprintf("%s://%s:%s", protocol, domain, port)
 	}
 	return fmt.Sprintf("%s://%s", protocol, domain)
+}
+
+func jmeterDefaultPort(protocol, port string) bool {
+	switch strings.ToLower(strings.TrimSpace(protocol)) {
+	case "https":
+		return port == "443"
+	case "http":
+		return port == "80"
+	}
+	return false
 }
 
 func buildURL(protocol, domain, port, rawPath string) string {

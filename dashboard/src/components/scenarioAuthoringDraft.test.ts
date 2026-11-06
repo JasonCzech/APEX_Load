@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ScenarioFormState } from '../types/scenarioAuthoring'
 import { assertDraftHasNoInlineCredentials, clearScenarioAuthoringDraft, migrateScenarioDraftCheckpoint, parseScenarioDraftCheckpoint, readScenarioDraftCheckpoint, saveScenarioAuthoringDraft, scenarioAuthoringDraftFromScripts, type ScenarioAuthoringDraft } from './scenarioAuthoringDraft'
 import { nextAuthoringCreateIntent } from './authoringCreateIntent'
+import { emptyScenarioForm } from './scenarioFormModel'
 const draft = (): ScenarioAuthoringDraft => ({ version: 3, projectId: 'project-a', savedAt: '2026-09-12T12:00:00Z', editingId: null, editingUpdatedAt: '', form: { name: '', duration: '', start_delay: '', scenario_mode: 'vuser_driven', script_shakeout: false, resource_baseline: false, groups: [{ name: '', script_id: '', stages: [], vusers: 0, ramp_up: '', ramp_down: '', initialization: 'at_runtime' }] } as ScenarioFormState, source: 'existing', startChoice: 'existing', shapeId: '', templateId: '', cloneId: '', step: 'source', visited: 1 })
 afterEach(() => { localStorage.clear(); vi.restoreAllMocks() })
 const flatMirrors = () => ({ runtime_pacing_type: '', runtime_ignore_think_time: false, runtime_log_level: '', runtime_auto_transactions: '', assignment_mode: 'auto', assignment_targets: [] as string[] })
@@ -167,6 +168,49 @@ describe('a scenario draft built from imported scripts', () => {
     expect(parsed!.form.name).toBe('Orders')
     expect(parsed!.form.groups.map(group => [group.name, group.script_id, group.vusers])).toEqual([['List orders', 's1', 1], ['Open cart', 's2', 1]])
     expect(() => assertDraftHasNoInlineCredentials(draft.form)).not.toThrow()
+  })
+
+  it('starts from the load the import source declared instead of one virtual user', () => {
+    const draft = scenarioAuthoringDraftFromScripts('project-a', 'Split', [{ id: 's1', name: 'Balance' }, { id: 's2', name: 'Other' }], {
+      termination_mode: 'iterations',
+      groups: [{ vusers: 50, ramp_up: '1s', iterations: 200, initialization: 'at_runtime' }, undefined],
+    })
+    const parsed = parseScenarioDraftCheckpoint(JSON.parse(JSON.stringify(draft)), 'project-a')
+    expect(parsed).not.toBeNull()
+    expect(parsed!.form.termination_mode).toBe('iterations')
+    expect(parsed!.form.groups.map(group => [group.script_id, group.vusers, group.ramp_up, group.iterations])).toEqual([['s1', 50, '1s', 200], ['s2', 1, '', undefined]])
+  })
+
+  it('seeds VUsers, ramp-up and loops from a saved script\'s preserved source_population when no population is passed', () => {
+    const preserved = (source_population: Record<string, unknown>) => ({ metadata: { import: { preserved: { source_population } } } })
+    const draft = scenarioAuthoringDraftFromScripts('project-a', 'Plan', [
+      { id: 's1', name: 'Balance', script: preserved({ num_threads: 25, ramp_time_seconds: 10, loops: 3 }) },
+      // Unresolved expressions (the *_source twins) and loops -1 set nothing.
+      { id: 's2', name: 'Pay', script: preserved({ num_threads_source: '${__P(users)}', ramp_time_seconds: 5, loops: -1 }) },
+      { id: 's3', name: 'Other' },
+    ] as never)
+    const parsed = parseScenarioDraftCheckpoint(JSON.parse(JSON.stringify(draft)), 'project-a')
+    expect(parsed).not.toBeNull()
+    expect(parsed!.form.groups.map(group => [group.script_id, group.vusers, group.ramp_up, group.iterations])).toEqual([['s1', 25, '10s', 3], ['s2', 1, '5s', undefined], ['s3', 1, '', undefined]])
+    // Not every group has a finite loop count, so the scenario keeps its duration.
+    expect(parsed!.form.termination_mode).not.toBe('iterations')
+    const finite = scenarioAuthoringDraftFromScripts('project-a', 'Plan', [{ id: 's1', name: 'Balance', script: preserved({ num_threads: 2, loops: 4 }) }] as never)
+    expect(finite.form.termination_mode).toBe('iterations')
+    const scheduled = scenarioAuthoringDraftFromScripts('project-a', 'Plan', [{ id: 's1', name: 'Balance', script: preserved({ num_threads: 2, loops: 4, scheduler: true, duration_seconds: 60 }) }] as never)
+    expect(scheduled.form.termination_mode).not.toBe('iterations')
+    // A scheduled thread group's duration is the scenario's, not the form default.
+    const longRun = scenarioAuthoringDraftFromScripts('project-a', 'Plan', [
+      { id: 's1', name: 'Balance', script: preserved({ num_threads: 2, loops: -1, scheduler: true, duration_seconds: 600, delay_seconds: 5 }) },
+      { id: 's2', name: 'Pay', script: preserved({ num_threads: 3, loops: -1, scheduler: true, duration_seconds: 900 }) },
+      { id: 's3', name: 'Other', script: preserved({ num_threads: 1, loops: 2 }) },
+    ] as never)
+    expect(longRun.form.duration).toBe('900s')
+    // A scheduled group whose duration is an unresolved expression sets none.
+    const unresolved = scenarioAuthoringDraftFromScripts('project-a', 'Plan', [
+      { id: 's1', name: 'Balance', script: preserved({ num_threads: 2, scheduler: true, duration_seconds: 600 }) },
+      { id: 's2', name: 'Pay', script: preserved({ num_threads: 3, scheduler: true, duration_seconds_source: '${__P(duration)}' }) },
+    ] as never)
+    expect(unresolved.form.duration).toBe(emptyScenarioForm().duration)
   })
 
   it('keeps a joint evidence projection through a checkpoint and refuses one it could not edit (NA-B)', () => {

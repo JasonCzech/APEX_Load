@@ -673,6 +673,27 @@ it('opens a configuration reference reached from its step as the configuration c
   } finally { await act(async () => root.unmount()); container.remove(); mock.request.mockReset(); vi.clearAllMocks() }
 })
 
+it('says a blocker on a step awaiting runtime support cannot be cleared yet', async () => {
+  const gate = (resolution: string) => ({ execution_blocker: 'import_review_required', import_review: { source: 'jmeter', reason_codes: ['jmeter_messaging_compatibility_unverified'], resolution } })
+  const script = { name: 'Messaging draft', version: '1.0', protocol: 'kafka', config: {}, actions: [{ name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: gate('awaiting_runtime_support') }, { name: 'Other', type: 'kafka_produce', target: 'audit', metadata: gate('replace_behavior_and_remove_gate') }], metadata: { import: { preserved: { server_import_attestation_v1: 'protected:messaging' } } } } as unknown as ScriptDefinition
+  mock.request.mockResolvedValue({ candidate_id: 'protected:messaging', revision: 'protected:messaging', script, before: script, findings: [
+    { code: 'import_review_required', action_path: 'actions[0]', source_ref: 'plan.jmx#Produce', detail: '', gate: 'execution' },
+    { code: 'import_review_required', action_path: 'actions[1]', source_ref: 'plan.jmx#Other', detail: '', gate: 'execution' },
+  ], readiness: { replay_ready: false }, expires_at: '2099-09-19', fidelity_report: {} })
+  const container = document.createElement('div'); document.body.append(container); const root = createRoot(container)
+  const row = (text: string) => [...container.querySelectorAll<HTMLButtonElement>('.lr-issue-row')].find(item => item.textContent?.includes(text))!
+  const detail = () => container.querySelector('[aria-label="Selected issue"]')!.textContent || ''
+  try {
+    await act(async () => root.render(<GuidedRepair script={script} projectId="p" onApplied={vi.fn()} />))
+    await act(async () => row('plan.jmx#Produce').click())
+    expect(detail()).toContain('Cannot be cleared yet: APEX cannot yet run this step as the source does')
+    expect(detail()).not.toContain('This requires a supported source or configuration change.')
+    await act(async () => row('plan.jmx#Other').click())
+    expect(detail()).toContain('This requires a supported source or configuration change.')
+    expect(detail()).not.toContain('Cannot be cleared yet')
+  } finally { await act(async () => root.unmount()); container.remove(); mock.request.mockReset(); vi.clearAllMocks() }
+})
+
 it.each(['legacy_tls_replacement', 'diagnostic:warnings:tls', 'diagnostic:warnings:migration'])('edits %s inline without protected repair storage', async code => {
  const { ImportSettingsProvider } = await import('./ImportSettingsContext')
  const script = { name: 'TLS draft', version: '1', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { preserved: { server_import_attestation_v1: 'signed:tls' } } } } as unknown as ScriptDefinition

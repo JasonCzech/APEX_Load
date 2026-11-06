@@ -133,6 +133,37 @@ func SensitiveName(name string) bool {
 	return false
 }
 
+// NonCredentialName reports the names that contain a credential word but
+// name where a credential is used or which one it is, never the credential.
+// The name is compared in NormalizeName form (lower case, letters and digits
+// only), and these are the only such names:
+//   - "tokenurl" (token_url, tokenUrl): an OAuth token endpoint address;
+//   - any name ending in "tokenendpointurl"
+//     (sasl.oauthbearer.token.endpoint.url, tokenEndpointUrl): the same
+//     address under Kafka's and other clients' spelling;
+//   - "sharedaccesskeyname" (shared_access_key_name, sharedAccessKeyName):
+//     an Event Hubs / Service Bus SAS policy name such as "send"; the key
+//     itself is SharedAccessKey.
+//
+// SensitiveName does not apply this exemption: a caller that judges a value
+// by its name alone (a JSON body member, a log field) keeps masking a token
+// endpoint whose query carries a client_secret, or a connection string pasted
+// where a policy name belongs. Only a caller that then scans the value itself
+// (a URL's userinfo and credential-named query parameters) may exempt these
+// names: the JMeter messaging source review does so through this function.
+//
+// PARITY: pkg/scriptdisclosure (isTokenEndpointKey, isNonSecretIdentifierKey),
+// pkg/internal/importreview (IsScriptURLKey, IsNonSecretIdentifierScriptKey)
+// and dashboard/src/components/credentialPreviewPolicy.ts
+// (isCredentialLocatorName) exempt exactly these names for the disclosed
+// fields they show, so a preview never masks a field the server shows.
+func NonCredentialName(name string) bool {
+	normalized := NormalizeName(name)
+	return normalized == "tokenurl" ||
+		strings.HasSuffix(normalized, "tokenendpointurl") ||
+		normalized == "sharedaccesskeyname"
+}
+
 // MinNamedValueBytes is the shortest value under a credential-like name in a
 // URL-encoded pair (a query string or form body) treated as credential
 // material, unless the name is password-like (a PIN can be short). A shorter

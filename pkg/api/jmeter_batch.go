@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,7 +39,92 @@ type jmeterBatchCandidate struct {
 	Scenario     *jmeter.ScenarioDraft  `json:"scenario_draft"`
 	History      []JMeterBatchOperation `json:"history,omitempty"`
 	ExpiresAt    time.Time              `json:"expires_at"`
+	// Warnings and ScriptWarnings are the converter's plan-wide and
+	// per-script warnings, before review augmentation. A repair rebuilds every
+	// script's replay preflight from them, so the warnings the converter
+	// attributed to each script survive the review. ScriptWarnings is keyed by
+	// jmeterBatchScriptKey, since script pointers do not survive the store.
+	Warnings       []string            `json:"warnings,omitempty"`
+	ScriptWarnings map[string][]string `json:"script_warnings,omitempty"`
+	// SourceSecretSessionID is the optional source-secret migration session
+	// the import offered, never its values. Each applied repair consumes it and
+	// registers a replacement, so the offer survives the review instead of
+	// being dropped by the first repair's value-free requirements.
+	SourceSecretSessionID string `json:"source_secret_session_id,omitempty"`
+	// SourceSecretRequirements locates each requirement the session holds a
+	// value for. Requirement IDs are not stable across a repair's response, so
+	// a repair follows each value to the one requirement at the same script
+	// and path.
+	SourceSecretRequirements []jmeterBatchSourceSecretRequirement `json:"source_secret_requirements,omitempty"`
 }
+
+type jmeterBatchSourceSecretRequirement struct {
+	ID          string `json:"id"`
+	ScriptIndex int    `json:"script_index"`
+	Path        string `json:"path"`
+}
+
+// recordJMeterBatchSourceSecretSession notes the session a response offered
+// and where its requirements are, or clears both when it offered none.
+func recordJMeterBatchSourceSecretSession(b *jmeterBatchCandidate, sessionID string, requirements []SecretBindingRequirement) {
+	b.SourceSecretSessionID, b.SourceSecretRequirements = "", nil
+	if strings.TrimSpace(sessionID) == "" {
+		return
+	}
+	b.SourceSecretSessionID = sessionID
+	for _, requirement := range requirements {
+		if requirement.SourceValueAvailable {
+			b.SourceSecretRequirements = append(b.SourceSecretRequirements, jmeterBatchSourceSecretRequirement{ID: requirement.ID, ScriptIndex: requirement.ScriptIndex, Path: requirement.Path})
+		}
+	}
+}
+
+// jmeterBatchScriptKey names a batch script the way repair findings and
+// readiness do: by its JMeter source group, or by position when it has none.
+// Batch operations never add, remove or reorder scripts, so both are stable.
+func jmeterBatchScriptKey(index int, script *dsl.Script) string {
+	if script != nil && script.Config.JMeter != nil && script.Config.JMeter.SourceGroupID != "" {
+		return script.Config.JMeter.SourceGroupID
+	}
+	return fmt.Sprintf("script-%d", index)
+}
+
+// recordJMeterBatchWarnings keeps the converter's warnings with the batch.
+// warnings must be the converter's list before review augmentation, so a
+// repair's augmentation does not repeat the augmented lines.
+func recordJMeterBatchWarnings(b *jmeterBatchCandidate, warnings []string, scriptWarnings map[*dsl.Script][]string) {
+	if b == nil {
+		return
+	}
+	b.Warnings = append([]string(nil), warnings...)
+	b.ScriptWarnings = nil
+	for index, script := range b.Scripts {
+		list, ok := scriptWarnings[script]
+		if !ok {
+			continue
+		}
+		if b.ScriptWarnings == nil {
+			b.ScriptWarnings = make(map[string][]string, len(scriptWarnings))
+		}
+		b.ScriptWarnings[jmeterBatchScriptKey(index, script)] = append([]string{}, list...)
+	}
+}
+
+// jmeterBatchScriptWarnings rebuilds the per-script warning lists for the
+// batch's current script pointers.
+func jmeterBatchScriptWarnings(b *jmeterBatchCandidate) map[*dsl.Script][]string {
+	if b == nil || len(b.ScriptWarnings) == 0 {
+		return nil
+	}
+	out := make(map[*dsl.Script][]string, len(b.ScriptWarnings))
+	for index, script := range b.Scripts {
+		if list, ok := b.ScriptWarnings[jmeterBatchScriptKey(index, script)]; ok {
+			out[script] = append([]string{}, list...)
+		}
+	}
+	return out
+}
+
 type jmeterBatchReceipt struct {
 	Kind          string         `json:"kind"`
 	RequestDigest string         `json:"request_digest,omitempty"`

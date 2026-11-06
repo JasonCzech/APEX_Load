@@ -195,12 +195,27 @@ function formatSourceRange(mapping?: SourceReviewMapping | null) {
   return `${mapping.source_file}:${mapping.start_line}`
 }
 
-function targetSectionLabel(targetPath?: string): 'Init' | 'Actions' | 'Teardown' | null {
+function targetSectionLabel(targetPath?: string): 'Init' | 'Actions' | 'Teardown' | 'Configuration' | null {
   const trimmed = (targetPath || '').trim()
+  if (/^config(?:\[|\.|$)/.test(trimmed)) return 'Configuration'
   if (/^init(?:\[|\.|$)/.test(trimmed)) return 'Init'
   if (/^actions(?:\[|\.|$)/.test(trimmed)) return 'Actions'
   if (/^teardown(?:\[|\.|$)/.test(trimmed)) return 'Teardown'
   return null
+}
+
+// A configuration element (a JMeter test plan, header manager or cookie
+// manager) can shape the script as a whole without one destination field. Its
+// mapping is converted, not review-only, and its notes say where values went.
+function isWholeConfigMapping(mapping: SourceReviewMapping): boolean {
+  return mapping.target_kind === 'config' && !mapping.target_path
+}
+
+// A whole-config mapping's target_name is the source element's own name
+// (Test Plan), not a destination, so it never labels the target.
+function mappingTargetLabel(mapping: SourceReviewMapping): string {
+  if (mapping.target_path) return mapping.target_path
+  return isWholeConfigMapping(mapping) ? 'script configuration' : mapping.target_name || 'review-only'
 }
 
 // A truncated preview ends with this marker, which is not source.
@@ -1043,7 +1058,7 @@ export default function SourceMappingReview({
               >
                 <td className="cell-mono source-map-source-cell" title={formatSourceRange(mapping)}><button type="button" data-mapping-select aria-current={mapping.id === selectedMappingId ? 'true' : undefined} tabIndex={mapping.id === selectedMappingId ? 0 : -1} onClick={event => { event.stopPropagation(); selectMapping(mapping) }}>{formatSourceRange(mapping)}</button></td>
                 <td className="source-map-function-cell" title={mapping.function || '-'}>{mapping.function || '-'}</td>
-                <td className="cell-mono source-map-target-cell" title={mapping.target_path || mapping.target_name || 'review-only'}>{mapping.target_path || mapping.target_name || 'review-only'}{identity.resolved[mapping.id]?.status === 'moved' && <small>Current: {identity.resolved[mapping.id].path}</small>}{['changed', 'missing', 'ambiguous'].includes(identity.resolved[mapping.id]?.status) && <small>Identity: {identity.resolved[mapping.id].status}</small>}</td>
+                <td className="cell-mono source-map-target-cell" title={mappingTargetLabel(mapping)}>{mappingTargetLabel(mapping)}{identity.resolved[mapping.id]?.status === 'moved' && <small>Current: {identity.resolved[mapping.id].path}</small>}{['changed', 'missing', 'ambiguous'].includes(identity.resolved[mapping.id]?.status) && <small>Identity: {identity.resolved[mapping.id].status}</small>}</td>
                 <td className="source-map-status-cell">
                   <div className="source-map-status-stack">
                     <span className={`source-map-status ${CATEGORY_CLASS[statusCategory(mapping.status)]}`}>
@@ -1080,8 +1095,10 @@ export default function SourceMappingReview({
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
         <span>{sourceOnly ? 'Original conversion' : 'Conversion'}: {formatStatusLabel(selectedMapping.status)} · {sourceOnly ? 'Original support mode' : 'Runtime support'}: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
         {sourceOnly
-          ? <span>Original import path: <code>{selectedMapping.target_path || 'Unavailable'}</code></span>
-          : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}{targetSectionLabel(destinationPath) ? <> · <span className="source-map-section-badge">{targetSectionLabel(destinationPath)}</span></> : null}</span>}
+          ? <span>Original import path: <code>{selectedMapping.target_path || (isWholeConfigMapping(selectedMapping) ? 'script configuration' : 'Unavailable')}</code></span>
+          : isWholeConfigMapping(selectedMapping) && !identity.resolved[selectedMapping.id]?.path
+            ? <span>Destination: script configuration as a whole · <span className="source-map-section-badge">Configuration</span></span>
+            : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}{targetSectionLabel(destinationPath) ? <> · <span className="source-map-section-badge">{targetSectionLabel(destinationPath)}</span></> : null}</span>}
         {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{!sourceOnly && onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
         {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
         {!sourceOnly && <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />}
@@ -1174,7 +1191,7 @@ export default function SourceMappingReview({
               />
             </Suspense>
           ) : (
-            <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? unmappedIssueFocus ? 'No destination mapping is linked to this finding. Other mappings for this source file are listed above.' : 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
+            <div className="source-map-empty">{!dslDocument ? 'Destination is not available yet.' : identity.checking ? 'Verifying mapping identity…' : !selectedMapping ? unmappedIssueFocus ? 'No destination mapping is linked to this finding. Other mappings for this source file are listed above.' : 'This captured file has no destination mappings. Select a mapped file or inspect destination items without source origin.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path && isWholeConfigMapping(selectedMapping) ? 'This source element shaped the script configuration as a whole rather than one field, so there is no single destination to highlight. Its notes say where its values went.' : !selectedMapping.target_path && !identity.resolved[selectedMapping.id]?.path ? 'This source construct has no mapped destination. Its conversion status and review notes explain what needs attention.' : 'No verified destination. Inspect mapping details to re-link an edited, removed, or ambiguous target.'}</div>
           )}
         </div>}
       </div>

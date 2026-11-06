@@ -58,7 +58,7 @@ func reserveStructuredRedactionValues(options Options, count int) bool {
 
 func nestedJSONObjectOrArray(value string) bool {
 	trimmed := bytes.TrimSpace([]byte(value))
-	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte(credential.Redacted)) || wholeStructuredRuntimeTemplate(string(trimmed)) {
+	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte(credential.Redacted)) || structuredRuntimeTemplateText(string(trimmed)) {
 		return false
 	}
 	return trimmed[0] == '{' || trimmed[0] == '['
@@ -174,7 +174,7 @@ func InspectQueryValueStructure(value string, maxWorkBytes int) (jsonLike bool, 
 	}
 	workBytes = len(value) * 2
 	trimmed := strings.TrimSpace(value)
-	if len(trimmed) == 0 || trimmed == credential.Redacted || wholeStructuredRuntimeTemplate(trimmed) {
+	if len(trimmed) == 0 || trimmed == credential.Redacted || structuredRuntimeTemplateText(trimmed) {
 		return false, workBytes, nil
 	}
 	if trimmed[0] == '[' {
@@ -412,6 +412,48 @@ func wholeStructuredRuntimeTemplate(value string) bool {
 	}
 	expression := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
 	return expression == "run.id" || structuredRuntimeReferenceExpression.MatchString(expression) || structuredRuntimeFunctionExpression.MatchString(expression)
+}
+
+// maxCompositeRuntimeTemplateBytes bounds the text compositeRuntimeTemplate
+// scans; longer values keep the nested-JSON classification.
+const maxCompositeRuntimeTemplateBytes = 4096
+
+// structuredRuntimeTemplateText reports whether value is runtime template
+// text rather than an encoded JSON layer: one supported reference, or a
+// composite of supported references and literal text.
+func structuredRuntimeTemplateText(value string) bool {
+	return wholeStructuredRuntimeTemplate(value) || compositeRuntimeTemplate(value)
+}
+
+// compositeRuntimeTemplate reports whether value is made only of supported
+// runtime references ({{param.x}}, {{var.x}}, {{fn.x()}}, ... as accepted by
+// wholeStructuredRuntimeTemplate) and literal text, and starts with a
+// reference, as in "{{param.jmeter_time_1}}T{{param.jmeter_time_2}}Z". Such a
+// string starts with '{' but is not JSON, so treating it as a nested JSON
+// layer rejected, and masked, the whole body around it. The exemption is
+// narrow: every {{...}} token must be a supported reference, and the literal
+// text between them must hold no brace or bracket, so anything that could be
+// an object or array ("{{param.a}}{\"token\":...}") is still parsed as nested
+// JSON and fails closed. The string is still a scalar, so known-credential
+// matching applies to it as to any other value.
+func compositeRuntimeTemplate(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) > maxCompositeRuntimeTemplateBytes || !strings.HasPrefix(trimmed, "{{") {
+		return false
+	}
+	tokens := runtimeTemplatePattern.FindAllStringIndex(trimmed, -1)
+	if len(tokens) == 0 || tokens[0][0] != 0 {
+		return false
+	}
+	previous := 0
+	for _, token := range tokens {
+		if strings.ContainsAny(trimmed[previous:token[0]], "{}[]") ||
+			!wholeStructuredRuntimeTemplate(trimmed[token[0]:token[1]]) {
+			return false
+		}
+		previous = token[1]
+	}
+	return !strings.ContainsAny(trimmed[previous:], "{}[]")
 }
 
 // spliceFormValue applies spans, found in a form value's decoded text, to its

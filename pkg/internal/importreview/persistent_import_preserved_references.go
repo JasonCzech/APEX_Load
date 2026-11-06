@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
@@ -541,17 +542,53 @@ func (s *importReferenceScope) parameterDigest(index int) string {
 		return cached
 	}
 	held := make(map[string]any, len(s.parameters[index]))
-	chooses := false
+	chooses, clock := false, importClockParameter(s.parameters[index])
 	switch dsl.CanonicalParameterType(StringJSONValue(s.parameters[index]["type"])) {
 	case "list", "file":
 		chooses = true
 	}
 	for field, value := range s.parameters[index] {
-		if _, selection := importSelectionParameterFields[field]; !chooses || !selection {
-			held[field] = value
+		if _, selection := importSelectionParameterFields[field]; chooses && selection {
+			continue
 		}
+		// A clock parameter's zone only shifts the digits of the time it
+		// formats, so it cannot carry a credential anywhere. Its format stays
+		// held: literal text there is part of the value the request sends.
+		if clock && field == "timezone" && importClockTimezone(value) {
+			continue
+		}
+		held[field] = value
 	}
 	return s.digest(key, held)
+}
+
+// importClockParameter reports whether a projected parameter formats the
+// current time (a date_time or timestamp parameter).
+func importClockParameter(parameter map[string]any) bool {
+	switch dsl.CanonicalParameterType(StringJSONValue(parameter["type"])) {
+	case "date_time", "timestamp":
+		return true
+	}
+	return false
+}
+
+// importClockTimezone reports whether value is a timezone a clock parameter
+// resolves without interpolation: empty (the generator's zone) or a zone name
+// the runtime can load. A template there reads other data and stays held.
+func importClockTimezone(value any) bool {
+	zone, ok := value.(string)
+	if !ok {
+		return value == nil
+	}
+	zone = strings.TrimSpace(zone)
+	if zone == "" {
+		return true
+	}
+	if strings.Contains(zone, "{{") || strings.EqualFold(zone, "local") {
+		return false
+	}
+	_, err := time.LoadLocation(zone)
+	return err == nil
 }
 
 // sourceDigest digests a data source without its selection strategy, and

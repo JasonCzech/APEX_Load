@@ -19,7 +19,7 @@ import CatalogActionForm from './CatalogActionForm'
 import ActionChecks from './ActionChecks'
 import type { ChecksReplay } from './actionChecksModel'
 import ReferenceField from './ReferenceField'
-import { blockerTitle } from './replayReadinessIssues'
+import { blockedStepBadgeTitle } from './replayReadinessIssues'
 import { HTTP_RUNTIME_ACTION_TYPES, NO_RESPONSE_ACTION_TYPES, hasHandBuiltEditor, type LiveTableFormContext } from './catalogActionFormModel'
 
 type Action = ScriptActionDefinition
@@ -397,7 +397,7 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
           <div className="action-editor-issue-pills">
             {isControlAction(action) && <span className="action-signal-pill control">control</span>}
             {executionBlocked
-              ? <span className="action-signal-pill error" title={`Blocks replay: ${executionBlockers.map(blockerTitle).join(', ')}`}>blocked</span>
+              ? <span className="action-signal-pill error" title={blockedStepBadgeTitle(action, executionBlockers)}>blocked</span>
               : reviewGated && <span className="action-signal-pill warning">review</span>}
             {isReviewGatedJavaScriptAction(action) && <span className="action-signal-pill warning">js</span>}
             {fallbackCount > 0 && <span className="action-signal-pill selector">fallbacks {fallbackCount}</span>}

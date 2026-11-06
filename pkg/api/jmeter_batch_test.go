@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
@@ -147,6 +149,29 @@ func TestJMeterBatchPayloadPointer(t *testing.T) {
 		if _, err = replacePayloadPointer(got, pointer, "x"); err == nil {
 			t.Fatalf("invalid pointer %s accepted", pointer)
 		}
+	}
+}
+
+// A reviewed payload correction changes the one selected value. Key order,
+// indentation, number spelling and escapes elsewhere are the bytes the source
+// sampler sent, so they stay as they were.
+func TestJMeterBatchPayloadPointerPreservesOtherBytes(t *testing.T) {
+	body := "{\n  \"zeta\": 100.0,\n  \"alpha\": {\"note\": \"a<b & \\u0041\\\"}\",\n    \"items\" : [ 1 , {\"sent\":\"{{param.jmeter_time_1}}T{{param.jmeter_time_2}}Z\", \"k\":\"]\"} ]\n  }\n}\n"
+	got, err := replacePayloadPointer(body, "/alpha/items/1/sent", "{{fn.timestamp.iso8601()}}<x>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Replace(body, `"{{param.jmeter_time_1}}T{{param.jmeter_time_2}}Z"`, `"{{fn.timestamp.iso8601()}}<x>"`, 1)
+	if got != want {
+		t.Fatalf("payload bytes changed outside the selected value:\n got %q\nwant %q", got, want)
+	}
+	// encoding/json keeps the last of duplicated keys, so the correction does too.
+	got, err = replacePayloadPointer(`{"k":"first","k":"second"}`, "/k", "v")
+	if err != nil || got != `{"k":"first","k":"v"}` {
+		t.Fatalf("duplicate key: %s %v", got, err)
+	}
+	if _, err := replacePayloadPointer(`{"k":"v"}`, "/k/inner", "x"); err == nil {
+		t.Fatal("pointer through a scalar accepted")
 	}
 }
 
@@ -439,5 +464,358 @@ func TestJMeterBatchCreateScriptRejectsPartialSaveWithoutToken(t *testing.T) {
 		if w.Code != 409 {
 			t.Fatalf("partial save status=%d", w.Code)
 		}
+	}
+}
+
+// JMeter formats __time in the JVM's default zone. Confirming the reference
+// context may name that zone (for example the source timezone picked at
+// import) instead of forcing UTC over it.
+func TestJMeterBatchReferenceContextAcceptsSourceTimezone(t *testing.T) {
+	newBatch := func(zone string) *jmeterBatchCandidate {
+		return &jmeterBatchCandidate{Scripts: []*dsl.Script{{
+			Protocol: "kafka",
+			Config:   dsl.ScriptConfig{JMeter: &dsl.JMeterCompatibility{SourceGroupID: "g1", Timezone: zone}},
+			Parameters: []dsl.Parameter{
+				{Name: "jmeter_time_1", Type: "date_time", Format: "yyyy-MM-dd", Timezone: zone},
+				{Name: "seq", Type: "counter"},
+			},
+			Actions: []dsl.Action{{Name: "send", Type: "kafka_produce", Metadata: map[string]any{
+				"execution_blocker": "import_review_required", "execution_blockers": []string{"import_review_required"},
+				"review_gate": "jmeter_reference_context_confirmation_required", "review_reasons": []string{"jmeter_reference_context_confirmation_required"},
+			}}},
+		}}}
+	}
+	for _, zone := range []string{"America/Chicago", "UTC"} {
+		b := newBatch("America/Chicago")
+		if err := applyJMeterBatchOperation(b, JMeterBatchOperation{Type: "confirm_reference_context", Timezone: zone, ConfirmNoOverrides: true}); err != nil {
+			t.Fatalf("confirm %s: %v", zone, err)
+		}
+		s := b.Scripts[0]
+		if !s.Config.JMeter.ContextConfirmed || s.Config.JMeter.Timezone != zone || s.Parameters[0].Timezone != zone || s.Parameters[1].Timezone != "" {
+			t.Fatalf("confirm %s left config %+v parameters %+v", zone, s.Config.JMeter, s.Parameters)
+		}
+		if reasons, _ := s.Actions[0].Metadata["review_reasons"].([]string); len(reasons) != 0 {
+			t.Fatalf("confirm %s kept review reasons %v", zone, reasons)
+		}
+	}
+	for _, op := range []JMeterBatchOperation{
+		{Type: "confirm_reference_context", Timezone: "Mars/Olympus", ConfirmNoOverrides: true},
+		{Type: "confirm_reference_context", Timezone: "Local", ConfirmNoOverrides: true},
+		{Type: "confirm_reference_context", Timezone: "", ConfirmNoOverrides: true},
+		{Type: "confirm_reference_context", Timezone: "UTC"},
+	} {
+		if err := applyJMeterBatchOperation(newBatch(""), op); err == nil {
+			t.Fatalf("confirmation %+v accepted", op)
+		}
+	}
+}
+
+// An import converted with time_mode=utc built its clock parameters to send
+// true UTC. Confirming a local zone must not quietly rewrite them; it is
+// refused, naming the UTC choice, while UTC still confirms. A stored batch
+// carries the preserved mode as decoded JSON.
+func TestJMeterBatchReferenceContextKeepsUTCTimeMode(t *testing.T) {
+	newBatch := func(resolution any) *jmeterBatchCandidate {
+		return &jmeterBatchCandidate{Scripts: []*dsl.Script{{
+			Protocol: "kafka",
+			Config:   dsl.ScriptConfig{JMeter: &dsl.JMeterCompatibility{SourceGroupID: "g1", Timezone: "UTC"}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{"time_resolution": resolution}}},
+			Parameters: []dsl.Parameter{
+				{Name: "jmeter_time_1", Type: "date_time", Format: "2006-01-02T15:04:05.000Z", Timezone: "UTC"},
+			},
+			Actions: []dsl.Action{{Name: "send", Type: "kafka_produce", Metadata: map[string]any{
+				"review_gate": "jmeter_reference_context_confirmation_required", "review_reasons": []string{"jmeter_reference_context_confirmation_required"},
+			}}},
+		}}}
+	}
+	for _, resolution := range []any{
+		map[string]string{"mode": "utc", "timezone": "America/Chicago"},
+		map[string]any{"mode": "utc", "timezone": "America/Chicago"},
+	} {
+		b := newBatch(resolution)
+		err := applyJMeterBatchOperation(b, JMeterBatchOperation{Type: "confirm_reference_context", Timezone: "America/Chicago", ConfirmNoOverrides: true})
+		if err == nil || !strings.Contains(err.Error(), "time mode utc") {
+			t.Fatalf("confirming America/Chicago on a utc-mode import = %v, want a refusal naming the UTC choice", err)
+		}
+		if s := b.Scripts[0]; s.Config.JMeter.ContextConfirmed || s.Config.JMeter.Timezone != "UTC" || s.Parameters[0].Timezone != "UTC" {
+			t.Fatalf("refused confirmation changed config %+v parameters %+v", s.Config.JMeter, s.Parameters)
+		}
+		if err := applyJMeterBatchOperation(b, JMeterBatchOperation{Type: "confirm_reference_context", Timezone: "UTC", ConfirmNoOverrides: true}); err != nil {
+			t.Fatalf("confirming UTC on a utc-mode import: %v", err)
+		}
+		if s := b.Scripts[0]; !s.Config.JMeter.ContextConfirmed || s.Parameters[0].Timezone != "UTC" {
+			t.Fatalf("UTC confirmation left config %+v parameters %+v", s.Config.JMeter, s.Parameters)
+		}
+	}
+}
+
+// A confirmed zone is stored in its canonical IANA spelling. A UTC alias is
+// stored as UTC, which a time_mode=utc import accepts; a case variant that only
+// a case-insensitive filesystem (macOS) loads is refused on every host, since a
+// Linux generator cannot load it.
+func TestJMeterBatchReferenceContextStoresCanonicalZone(t *testing.T) {
+	newBatch := func() *jmeterBatchCandidate {
+		return &jmeterBatchCandidate{Scripts: []*dsl.Script{{
+			Protocol: "kafka",
+			Config:   dsl.ScriptConfig{JMeter: &dsl.JMeterCompatibility{SourceGroupID: "g1", Timezone: "UTC"}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{"time_resolution": map[string]any{"mode": "utc"}}}},
+			Parameters: []dsl.Parameter{
+				{Name: "jmeter_time_1", Type: "date_time", Format: "2006-01-02T15:04:05.000Z", Timezone: "UTC"},
+			},
+		}}}
+	}
+	for _, alias := range []string{"Etc/UTC", "utc", "Zulu"} {
+		b := newBatch()
+		if err := applyJMeterBatchOperation(b, JMeterBatchOperation{Type: "confirm_reference_context", Timezone: alias, ConfirmNoOverrides: true}); err != nil {
+			t.Fatalf("confirm %s on a utc-mode import: %v", alias, err)
+		}
+		if s := b.Scripts[0]; s.Config.JMeter.Timezone != "UTC" || s.Parameters[0].Timezone != "UTC" {
+			t.Fatalf("confirm %s stored config %+v parameters %+v, want UTC", alias, s.Config.JMeter, s.Parameters)
+		}
+	}
+	for _, variant := range []string{"america/chicago", "AMERICA/CHICAGO", "America/chicago"} {
+		b := newBatch()
+		b.Scripts[0].Metadata = nil
+		if err := applyJMeterBatchOperation(b, JMeterBatchOperation{Type: "confirm_reference_context", Timezone: variant, ConfirmNoOverrides: true}); err == nil {
+			t.Fatalf("confirm %s accepted, storing %q", variant, b.Scripts[0].Config.JMeter.Timezone)
+		}
+	}
+}
+
+// The messaging preview shows each script as it will be saved: payloads, hub
+// names and token URLs are not credentials, and the converted credentials are
+// already {{secret.*}} references.
+func TestJMeterBatchPreviewShowsNonCredentialFieldsAndGateGuidance(t *testing.T) {
+	_, response, scripts := batchTestPreview(t)
+	raw, _ := json.Marshal(response["scripts"])
+	// The preserved source review is a copy of the JMX text, in which the
+	// converter masks credential values (a disabled PLAIN JAAS password) in
+	// place. Everything else in a script is what will be saved and run.
+	var generic []map[string]any
+	if err := json.Unmarshal(raw, &generic); err != nil {
+		t.Fatal(err)
+	}
+	for i, script := range generic {
+		metadata, _ := script["metadata"].(map[string]any)
+		imported, _ := metadata["import"].(map[string]any)
+		preserved, _ := imported["preserved"].(map[string]any)
+		delete(preserved, "source_review")
+		executable, _ := json.Marshal(script)
+		if strings.Contains(string(executable), "[REDACTED]") {
+			t.Fatalf("batch preview masked fields of script %d outside the source review copy", i)
+		}
+	}
+	var previewed []dsl.Script
+	_ = json.Unmarshal(raw, &previewed)
+	if len(previewed) != len(scripts) {
+		t.Fatalf("previewed %d scripts, want %d", len(previewed), len(scripts))
+	}
+	for i := range previewed {
+		if previewed[i].Actions[0].Body != scripts[i].Actions[0].Body || previewed[i].Actions[0].Body == "" {
+			t.Fatalf("script %d body differs from the draft that will be saved", i)
+		}
+	}
+	raw, _ = json.Marshal(response["repair_suggestions"])
+	var suggestions []scriptImportRepairSuggestion
+	_ = json.Unmarshal(raw, &suggestions)
+	operations := map[string]bool{}
+	unclearable := map[string]bool{}
+	for _, suggestion := range suggestions {
+		operations[suggestion.BatchOperation] = true
+		if suggestion.Clearable != nil && !*suggestion.Clearable {
+			unclearable[suggestion.Code] = true
+		}
+	}
+	for _, operation := range []string{"confirm_reference_context", "bind_kafka_credentials", "bind_eventhubs_credentials"} {
+		if !operations[operation] {
+			t.Errorf("no suggestion points at %s in %+v", operation, suggestions)
+		}
+	}
+	if !unclearable["jmeter_messaging_compatibility_unverified"] {
+		t.Errorf("the messaging conformance gate is not marked as not clearable: %+v", suggestions)
+	}
+	raw, _ = json.Marshal(response["diagnostics"])
+	var diagnostics []struct {
+		Code       string `json:"code"`
+		Detail     string `json:"detail"`
+		Resolution string `json:"resolution"`
+	}
+	_ = json.Unmarshal(raw, &diagnostics)
+	explained := 0
+	for _, diagnostic := range diagnostics {
+		if strings.HasPrefix(diagnostic.Code, "jmeter_") && strings.HasPrefix(diagnostic.Detail, "Resolve imported behavior before replay: ") {
+			t.Errorf("diagnostic %s still shows the raw code: %q", diagnostic.Code, diagnostic.Detail)
+		}
+		// The meaning is in detail and what clears it in resolution.
+		if diagnostic.Code == "jmeter_messaging_compatibility_unverified" && diagnostic.Detail != "" &&
+			strings.Contains(diagnostic.Resolution, "cannot run") && !strings.Contains(diagnostic.Detail, diagnostic.Resolution) {
+			explained++
+		}
+	}
+	if explained == 0 {
+		t.Errorf("no messaging diagnostic says plainly the plan cannot run yet: %+v", diagnostics)
+	}
+	raw, _ = json.Marshal(response["secret_binding_requirements"])
+	var requirements []SecretBindingRequirement
+	_ = json.Unmarshal(raw, &requirements)
+	eventHubs := 0
+	for _, requirement := range requirements {
+		if requirement.Path == "/config/eventhubs/connection_string" {
+			eventHubs++
+			if !strings.Contains(requirement.Context, "Endpoint=sb://") || !strings.Contains(requirement.Context, "SharedAccessKey=") {
+				t.Errorf("Event Hubs requirement does not describe the connection string: %q", requirement.Context)
+			}
+		}
+	}
+	if eventHubs == 0 {
+		t.Error("no Event Hubs credential requirement")
+	}
+}
+
+func TestJMeterTimestampGateSuggestsReconversion(t *testing.T) {
+	source, err := os.ReadFile("../convert/jmeter/testdata/split_pay_original.jmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := jmeter.ConvertJMX(source, jmeter.ConvertOptions{ScenarioDraft: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := httptest.NewRecorder()
+	NewServer(ServerConfig{}).writeJMeterImportResponse(w, httptest.NewRequest("POST", "/", nil), 200, result, &jmeterImportRequest{Data: source})
+	if w.Code != 200 {
+		t.Fatalf("import %d: %s", w.Code, w.Body.String())
+	}
+	var response struct {
+		RepairSuggestions []scriptImportRepairSuggestion `json:"repair_suggestions"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	for _, suggestion := range response.RepairSuggestions {
+		if suggestion.Code == "jmeter_timestamp_timezone_required" {
+			if len(suggestion.Reinspect) == 0 || suggestion.Reinspect[0].Field != "time_mode" {
+				t.Fatalf("timestamp suggestion has no re-conversion option: %+v", suggestion)
+			}
+			return
+		}
+	}
+	t.Fatalf("no timestamp suggestion in %+v", response.RepairSuggestions)
+}
+
+// review_gated_steps counts steps. A messaging step carries several gate
+// reasons at once, and the reason count used to be reported as the step count.
+func TestJMeterCompatReportCountsGatedSteps(t *testing.T) {
+	source, err := os.ReadFile("../convert/jmeter/testdata/messaging_original.jmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := jmeter.ConvertJMX(source, jmeter.ConvertOptions{ScenarioDraft: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := 0
+	for _, script := range result.Scripts {
+		steps += len(script.Actions)
+	}
+	report := buildJMeterProtocolCompatReport(result)
+	if report.ReviewGatedSteps == 0 || report.ReviewGatedSteps > steps {
+		t.Fatalf("review_gated_steps = %d for %d converted steps", report.ReviewGatedSteps, steps)
+	}
+	if report.PromotionStatus != "review_required" {
+		t.Fatalf("promotion status = %q, want review_required", report.PromotionStatus)
+	}
+	// Every messaging step is held until its replay is verified, so the plan
+	// imports for review only; it used to claim "executable".
+	if report.ReviewGatedSteps != steps || report.ImportMode != "review_only" {
+		t.Fatalf("import_mode = %q with %d of %d steps gated, want review_only with all gated", report.ImportMode, report.ReviewGatedSteps, steps)
+	}
+}
+
+func TestJMeterImportModeFollowsGatedSteps(t *testing.T) {
+	for _, tc := range []struct {
+		gated, steps int
+		want         string
+	}{{0, 0, "unsupported"}, {3, 3, "review_only"}, {1, 3, "executable"}, {0, 2, "executable"}} {
+		if got := jmeterImportMode(tc.gated, tc.steps); got != tc.want {
+			t.Fatalf("jmeterImportMode(%d, %d) = %q, want %q", tc.gated, tc.steps, got, tc.want)
+		}
+	}
+}
+
+// A scenario group with no user count or ramp-up of its own takes the thread
+// group's, which the converter keeps in each script (source_population), so
+// a scenario built from saved scripts does not fall back to 10 users and no
+// ramp-up. Values the group sets itself win.
+func TestJMeterScenarioGroupSeedsPopulationFromScript(t *testing.T) {
+	source, err := os.ReadFile("../convert/jmeter/testdata/split_pay_original.jmx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := jmeter.ConvertJMX(source, jmeter.ConvertOptions{ScenarioDraft: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.ScenarioDraft == nil || len(result.ScenarioDraft.Groups) != 1 {
+		t.Fatalf("scenario draft = %+v, want one group", result.ScenarioDraft)
+	}
+	// Round-trip the script as a saved one is read: numbers decode as float64.
+	payload, err := json.Marshal(result.Scripts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved []*dsl.Script
+	if err := json.Unmarshal(payload, &saved); err != nil {
+		t.Fatal(err)
+	}
+	draft := cloneJMeterScenarioDraft(result.ScenarioDraft)
+	draft.Groups[0].VUsers, draft.Groups[0].RampUp = 0, ""
+	request, err := buildJMeterScenarioRequest(saved, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.Groups[0]; got.VUsers != 50 || got.RampUp != "1s" {
+		t.Fatalf("seeded group = %d users, ramp-up %q; want the thread group's 50 and 1s", got.VUsers, got.RampUp)
+	}
+
+	draft.Groups[0].VUsers, draft.Groups[0].RampUp = 7, "30s"
+	request, err = buildJMeterScenarioRequest(saved, draft)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := request.Groups[0]; got.VUsers != 7 || got.RampUp != "30s" {
+		t.Fatalf("explicit group = %d users, ramp-up %q; want its own 7 and 30s", got.VUsers, got.RampUp)
+	}
+}
+
+// The OpenAPI schema for the batch repair routes is generated from
+// JMeterBatchRepairResponse, so every key the handler sends must be a field of
+// that type, or the documented contract and generated client types omit it.
+func TestJMeterBatchRepairResponseKeysAreDocumented(t *testing.T) {
+	documented := map[string]bool{}
+	typ := reflect.TypeOf(JMeterBatchRepairResponse{})
+	for i := 0; i < typ.NumField(); i++ {
+		name, _, _ := strings.Cut(typ.Field(i).Tag.Get("json"), ",")
+		documented[name] = true
+	}
+	server, original, _ := batchTestPreview(t)
+	id := decodeBatchIdentity(t, original["batch"])
+	req := ImportRepairRequest{BatchID: id.ID, Revision: id.Revision, ProjectID: "p", Operations: []JMeterBatchOperation{{Type: "confirm_reference_context", Timezone: "UTC", ConfirmNoOverrides: true}}}
+	for _, apply := range []bool{false, true} {
+		w := httptest.NewRecorder()
+		server.processImportRepair(w, httptest.NewRequest("POST", "/", nil), apply, req)
+		if w.Code != 200 {
+			t.Fatalf("repair (apply=%v) %d: %s", apply, w.Code, w.Body.String())
+		}
+		var response map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		for key := range response {
+			if !documented[key] {
+				t.Errorf("repair (apply=%v) sends %q, which JMeterBatchRepairResponse does not document", apply, key)
+			}
+		}
+		req.PreviewDigest, _ = response["preview_digest"].(string)
 	}
 }

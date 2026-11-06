@@ -445,4 +445,87 @@ describe('ScriptBlockerRepairPanel', () => {
     expect(button('Delete step')?.disabled).toBe(true)
     expect(button('Open request body')?.disabled).toBe(false)
   })
+
+  describe('JMeter credential bindings', () => {
+    const gate = (codes: string[], resolution = 'awaiting_runtime_support') => ({ execution_blocker: 'import_review_required', import_review: { version: 1, source: 'jmeter', reason_codes: codes, source_refs: ['plan.jmx#Produce'], resolution } })
+    const kafkaStep: ScriptActionDefinition = { name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: gate(['jmeter_kafka_oauth_credentials_required', 'jmeter_messaging_compatibility_unverified']) }
+    const kafkaScript = { name: 'Orders', version: '1', protocol: 'kafka', config: { kafka: { brokers: ['broker.test:9093'], oauth: { token_url: 'https://idp.test/token', client_id: '{{secret.ORDERS_CLIENT_ID}}', client_secret_ref: '{{secret.ORDERS_CLIENT_SECRET}}' } } }, actions: [kafkaStep], metadata: { import: { source: 'jmeter' } } } as unknown as ScriptDefinition
+    const hubStep: ScriptActionDefinition = { name: 'Send', type: 'eventhubs_send', target: 'orders', metadata: gate(['jmeter_eventhubs_credentials_required']) }
+    const hubScript = { name: 'Hub', version: '1', protocol: 'eventhubs', config: { eventhubs: { event_hub: 'orders-hub', connection_string_secret: '{{secret.HUB_CONNECTION}}' } }, actions: [hubStep], metadata: { import: { source: 'jmeter' } } } as unknown as ScriptDefinition
+    const input = (label: string) => panel().querySelector<HTMLInputElement>(`input[aria-label="${label}"]`)!
+    const type = async (label: string, value: string) => {
+      const element = input(label)
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(element, value)
+        element.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+
+    it('binds the Kafka client ID and secret by name, sending the JMeter code as the finding', async () => {
+      ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: { ...outcome, script: kafkaScript, before: kafkaScript }, headers: new Headers() })
+      await render({ script: kafkaScript, baseline: authoringFixture(kafkaScript, 'script-1', 'project-1'), action: kafkaStep, actionPath: 'actions[0]' })
+      const operation = panel().querySelector<HTMLSelectElement>('[aria-label="Repair operation"]')!
+      expect(Array.from(operation.options).map(option => option.value)).toEqual(['bind_kafka_credentials'])
+      // The names the script already references are the starting point.
+      expect(input('Client ID secret name').value).toBe('ORDERS_CLIENT_ID')
+      expect(input('Client secret name').value).toBe('ORDERS_CLIENT_SECRET')
+      expect(panel().textContent).toContain('Enter the name of an existing project secret, not its value.')
+      await type('Client ID secret name', 'KAFKA_ID')
+      await click('Preview repair')
+      const [url, options] = (requestWithResponse as Mock).mock.calls[0]
+      expect(url).toBe('/scripts/script-1/repairs/preview')
+      expect(JSON.parse(options.body)).toEqual({ finding: 'jmeter_kafka_oauth_credentials_required', action_path: 'actions[0]', operation: { type: 'bind_kafka_credentials', client_id_secret: 'KAFKA_ID', secret_name: 'ORDERS_CLIENT_SECRET' } })
+    })
+
+    it('needs both Kafka secret names before Preview', async () => {
+      const unbound = { ...kafkaScript, config: { kafka: { oauth: { token_url: 'https://idp.test/token' } } } } as unknown as ScriptDefinition
+      await render({ script: unbound, baseline: authoringFixture(unbound, 'script-1', 'project-1'), action: kafkaStep, actionPath: 'actions[0]' })
+      expect(button('Preview repair')?.disabled).toBe(true)
+      await type('Client secret name', 'KAFKA_SECRET')
+      expect(button('Preview repair')?.disabled).toBe(true)
+      await type('Client ID secret name', 'KAFKA_ID')
+      expect(button('Preview repair')?.disabled).toBe(false)
+    })
+
+    it('prompts to create a project secret the binding names before it exists', async () => {
+      ;(requestWithResponse as Mock).mockRejectedValueOnce(new ApiError('Create the project secret ORDERS_CLIENT_ID, ORDERS_CLIENT_SECRET before binding it', 400, { error: 'Create the project secret ORDERS_CLIENT_ID, ORDERS_CLIENT_SECRET before binding it' }))
+      const given = await render({ script: kafkaScript, baseline: authoringFixture(kafkaScript, 'script-1', 'project-1'), action: kafkaStep, actionPath: 'actions[0]' })
+      await click('Preview repair')
+      const prompt = panel().querySelector('.script-blocker-repair-guard[role="alert"]')!
+      expect(prompt.textContent).toBe('Create the project secret ORDERS_CLIENT_ID, ORDERS_CLIENT_SECRET in Project Secrets first, then preview this repair again. The repair binds a secret by name; it never stores the value here.')
+      expect(panel().querySelector('.script-blocker-repair-error')).toBeNull()
+      expect(given.onReconcile).not.toHaveBeenCalled()
+      // Editing a name clears the prompt.
+      await type('Client secret name', 'OTHER')
+      expect(panel().querySelector('.script-blocker-repair-guard[role="alert"]')).toBeNull()
+    })
+
+    it('binds the Event Hubs connection string by name and says what the secret holds', async () => {
+      ;(requestWithResponse as Mock).mockResolvedValueOnce({ body: { ...outcome, script: hubScript, before: hubScript }, headers: new Headers() })
+      await render({ script: hubScript, baseline: authoringFixture(hubScript, 'script-1', 'project-1'), action: hubStep, actionPath: 'actions[0]' })
+      const secret = input('Connection string secret name')
+      expect(secret.value).toBe('HUB_CONNECTION')
+      const format = document.getElementById(secret.getAttribute('aria-describedby')!)!
+      expect(format.textContent).toContain('Endpoint=sb://<namespace>/;SharedAccessKeyName=<name>;SharedAccessKey=<key>')
+      expect(format.textContent).toContain('(orders-hub)')
+      await click('Preview repair')
+      expect(JSON.parse((requestWithResponse as Mock).mock.calls[0][1].body)).toEqual({ finding: 'jmeter_eventhubs_credentials_required', action_path: 'actions[0]', operation: { type: 'bind_eventhubs_credentials', secret_name: 'HUB_CONNECTION' } })
+    })
+
+    it('says a step awaiting runtime support cannot be cleared yet, with or without a repair', async () => {
+      await render({ script: kafkaScript, baseline: authoringFixture(kafkaScript, 'script-1', 'project-1'), action: kafkaStep, actionPath: 'actions[0]' })
+      const note = () => panel().querySelector('.script-blocker-repair-note[role="note"]')?.textContent
+      expect(note()).toBe('Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release. The repair below still resolves its own requirement.')
+      const unverified = { ...kafkaStep, metadata: gate(['jmeter_messaging_compatibility_unverified']) }
+      await render({ script: kafkaScript, baseline: authoringFixture(kafkaScript, 'script-1', 'project-1'), action: unverified, actionPath: 'actions[0]' })
+      expect(note()).toBe('Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release.')
+      expect(panel().textContent).not.toContain('Correct the source and import it again')
+      expect(panel().querySelector('[aria-label="Repair operation"]')).toBeNull()
+      // A step whose gate a change can clear reads as before.
+      const clearable = { ...kafkaStep, metadata: gate(['jmeter_unbounded_thread_group'], 'replace_behavior_and_remove_gate') }
+      await render({ script: kafkaScript, baseline: authoringFixture(kafkaScript, 'script-1', 'project-1'), action: clearable, actionPath: 'actions[0]' })
+      expect(note()).toBeUndefined()
+      expect(panel().textContent).toContain('Correct the source and import it again')
+    })
+  })
 })

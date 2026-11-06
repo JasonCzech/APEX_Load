@@ -3,10 +3,29 @@ import type { ImportReviewTab } from './ImportReviewTabs'
 
 export interface ImportWorkspaceIssue extends IssueDetail {
   identity?: string
+  /** The normalized diagnostic code, when the importer reported one. */
+  code?: string
+  /** Where in the draft the diagnostic applies, such as scripts[1].actions[0]. */
+  location?: string
   targetTab?: ImportReviewTab
   actionLabel?: string
   impact?: string
   resolution?: string
+  /** Nothing available in this release clears the finding, so no fix is offered. */
+  unclearable?: boolean
+}
+
+/**
+ * A resolution the importer hosting the review offers for one issue, outside
+ * the review tabs (a source option, a batch repair). run, when present,
+ * replaces the tab button; resolution replaces the issue's resolution text.
+ */
+export interface ImportIssueAction {
+  label?: string
+  run?: () => void
+  resolution?: string
+  /** The importer says nothing clears this finding yet: no fix button is shown. */
+  unclearable?: boolean
 }
 
 export interface GroupedImportWorkspaceIssue extends ImportWorkspaceIssue {
@@ -26,8 +45,84 @@ function diagnosticCode(issue: ImportWorkspaceIssue) {
   return /\b([a-z][a-z0-9]+(?:_[a-z0-9]+){2,})\b/i.exec(issue.description || '')?.[1]?.toLowerCase() || ''
 }
 
+// The converter's detail for codes it has no sentence for. It names the code
+// only, so the review explains those codes itself.
+const GENERIC_DIAGNOSTIC_DETAIL = /^resolve imported behavior before replay:/i
+
+const MESSAGING_REPLAY_UNAVAILABLE = 'JMeter messaging replay is not available yet. The converted script is preserved for review, but it cannot run until APEX has verified its Kafka and Event Hubs clients against the JMeter plugins.'
+
+// Code-specific explanations for gates a review mark cannot clear: each says
+// what clears it, or that nothing in the review does. A server-provided
+// detail or resolution wins over this copy.
+const diagnosticPresentations: Record<string, Pick<ImportWorkspaceIssue, 'targetTab' | 'actionLabel' | 'impact' | 'resolution' | 'unclearable'>> = {
+  jmeter_timestamp_timezone_required: {
+    // The policy is a conversion option, not a runtime setting.
+    targetTab: undefined,
+    actionLabel: undefined,
+    impact: 'The source builds a timestamp from the load generator\'s local clock but labels it UTC with a literal Z suffix, so the value it sends depends on where the test runs. Replay stays blocked until you choose how the timestamp is produced.',
+    resolution: 'Open Source & conversion options and choose a Timestamp policy: normalize to UTC, or keep the source wall clock and name its IANA timezone. Then select Inspect & review again. Changing the policy replaces this review with a new inspection.',
+  },
+  jmeter_kafka_oauth_credentials_required: {
+    impact: 'The Kafka OAuth client ID and client secret were moved to project-secret references. Replay stays blocked until you confirm which project secrets supply them.',
+    resolution: 'Create the client ID and client secret in Project Secrets, then apply the repair "Bind Kafka credential references" for this group in Reviewed repairs for all scripts.',
+  },
+  jmeter_kafka_nonstandard_oauth_options: {
+    impact: 'The Kafka OAuth settings use option names the standard Kafka client does not recognize, so the importer cannot tell how the JMeter plugin applied them.',
+    resolution: 'Apply the repair "Normalize Kafka OAuth option names" for this group in Reviewed repairs for all scripts. If the repair is refused, correct the option names in the source and import it again.',
+  },
+  jmeter_eventhubs_credentials_required: {
+    impact: 'The Event Hubs connection string was moved to a project-secret reference. Replay stays blocked until you confirm which project secret holds it.',
+    resolution: 'Create a project secret whose value is the connection string, in the form Endpoint=sb://<namespace>/;SharedAccessKeyName=<name>;SharedAccessKey=<key>, optionally followed by ;EntityPath=<hub> naming this script\'s event hub. Then apply the repair "Bind Event Hubs credential reference" for this group in Reviewed repairs for all scripts.',
+  },
+  jmeter_reference_context_confirmation_required: {
+    targetTab: undefined,
+    actionLabel: undefined,
+    impact: 'The messaging schedule and payload times depend on the timezone the JMeter host ran in and on JMeter property overrides (-J options). If either differs from what the draft assumes, the replayed load or timestamps differ from the source.',
+    resolution: 'Apply the repair "Confirm the reference timezone and no property overrides" in Reviewed repairs for all scripts, choosing UTC or the IANA timezone the JMeter host ran in. A plan converted with time mode utc sends true UTC time, so confirm UTC for it. If the source used property overrides, correct the plan and import it again.',
+  },
+  jmeter_messaging_compatibility_unverified: {
+    targetTab: undefined,
+    actionLabel: undefined,
+    impact: MESSAGING_REPLAY_UNAVAILABLE,
+    resolution: 'Nothing in this review clears this gate. Save the scripts to keep them for review; no repair or review mark makes them runnable today.',
+    unclearable: true,
+  },
+  jmeter_kafka_batch_allocation_parity_unverified: {
+    targetTab: undefined,
+    actionLabel: undefined,
+    impact: `APEX has not verified that its Kafka producer batches and partitions messages the way the JMeter Kafka plugin does, so throughput and partition spread could differ. ${MESSAGING_REPLAY_UNAVAILABLE}`,
+    resolution: 'Nothing in this review clears this gate. Save the scripts to keep them for review; no repair or review mark makes them runnable today.',
+    unclearable: true,
+  },
+}
+
+/** The review's own resolution for a code, in the words of the controls that clear it. */
+export function importReviewResolution(code: string): string | undefined {
+  return diagnosticPresentations[code]?.resolution
+}
+
+function codePresentation(issue: ImportWorkspaceIssue, evidence: string): ImportWorkspaceIssue | null {
+  const code = issue.code && diagnosticPresentations[issue.code]
+    ? issue.code
+    : Object.keys(diagnosticPresentations).find(candidate => evidence.includes(candidate))
+  if (!code) return null
+  const presentation = diagnosticPresentations[code]
+  const serverDetail = issue.description && !GENERIC_DIAGNOSTIC_DETAIL.test(issue.description.trim())
+  return {
+    ...issue,
+    code,
+    targetTab: 'targetTab' in presentation ? presentation.targetTab : /credential/.test(code) ? 'credentials' : undefined,
+    actionLabel: 'actionLabel' in presentation ? presentation.actionLabel : /credential/.test(code) ? 'Review credentials' : undefined,
+    impact: issue.impact || (serverDetail ? undefined : presentation.impact),
+    resolution: issue.resolution || presentation.resolution,
+    unclearable: issue.unclearable ?? presentation.unclearable,
+  }
+}
+
 function issuePresentation(issue: ImportWorkspaceIssue): ImportWorkspaceIssue {
   const evidence = `${issue.title} ${issue.description || ''} ${issue.source || ''}`.toLowerCase()
+  const coded = codePresentation(issue, evidence)
+  if (coded) return coded
   if ((evidence.match(/[a-z][a-z0-9]*(?:_[a-z0-9]+)+/g) || []).some(code => responseContentSourceReasons.has(code))) return {
     ...issue,
     title: 'Review unavailable response content',
@@ -76,7 +171,16 @@ const diagnosticKindTitles: Record<string, string> = {
   import_missing_variables: 'Unresolved variables',
   import_credential_preserved: 'Imported credential kept in the script',
   import_review_required: 'Imported behavior needs review',
-  jmeter_timestamp_timezone_required: 'Timestamp timezone policy required',
+  // The JMeter review-gate titles match the API's guidance table
+  // (importreview.JMeterReviewCodeGuidance), so the issue and its repair
+  // suggestion read the same.
+  jmeter_timestamp_timezone_required: 'Choose how JMeter timestamps are evaluated',
+  jmeter_kafka_oauth_credentials_required: 'Bind the Kafka OAuth client credentials',
+  jmeter_kafka_nonstandard_oauth_options: 'Rename the Kafka OAuth options',
+  jmeter_eventhubs_credentials_required: 'Bind the Event Hubs connection string',
+  jmeter_reference_context_confirmation_required: 'Confirm the JMeter reference timezone',
+  jmeter_messaging_compatibility_unverified: 'JMeter messaging replay is not available yet',
+  jmeter_kafka_batch_allocation_parity_unverified: 'Kafka batching parity is not verified yet',
   jmeter_invalid_header_value: 'Invalid header value',
   jmeter_review_traversal_failed: 'Review traversal failed',
 }

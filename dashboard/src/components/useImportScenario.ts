@@ -6,14 +6,15 @@ import { useApi } from '../hooks/useApi'
 import { type StoredScript } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { scenarioDraftBuilderHash } from './importScenario'
-import { scenarioAuthoringDraftFromScripts } from './scenarioAuthoringDraft'
+import { scenarioAuthoringDraftFromScripts, type ImportScenarioPopulation } from './scenarioAuthoringDraft'
 import { importSourceLabel } from './importSourceLabel'
 
 // One scenario from a saved import batch: a group per script, saved as a
 // project draft and opened in the Scenario Builder to shape the load. A draft
 // can hold scripts whose inputs are still missing, which a saved scenario
 // refuses; the builder saves the scenario once they can run. Every importer's
-// save confirmation offers it.
+// save confirmation offers it. An importer whose source declared its load
+// (JMeter thread groups) passes it, so the draft starts from that load.
 export function useImportScenario(projectId: string | undefined) {
   const api = useApi()
   const [busy, setBusy] = useState(false)
@@ -30,7 +31,7 @@ export function useImportScenario(projectId: string | undefined) {
     mountedRef.current = true
     return () => { mountedRef.current = false }
   }, [])
-  const create = useCallback(async (name: string, scripts: StoredScript[]) => {
+  const create = useCallback(async (name: string, scripts: StoredScript[], population?: ImportScenarioPopulation) => {
     if (!projectId || scripts.length === 0 || busyRef.current) return
     const key = importScenarioKey(projectId, scripts)
     // The desktop app lists the draft under Recent (a no-op in the browser).
@@ -44,7 +45,7 @@ export function useImportScenario(projectId: string | undefined) {
     setBusy(true)
     setFailure(null)
     try {
-      const draft = await api.createScenarioDraft(projectId, { name, document: scenarioAuthoringDraftFromScripts(projectId, name, scripts) })
+      const draft = await api.createScenarioDraft(projectId, { name, document: scenarioAuthoringDraftFromScripts(projectId, name, scripts, population) })
       createdRef.current = { key, draftId: draft.id }
       remember(draft.id)
       if (!mountedRef.current) return

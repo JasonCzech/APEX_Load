@@ -1,4 +1,5 @@
 import type { ScenarioFormState, ScenarioStartChoice } from '../types/scenarioAuthoring'
+import type { ScriptMetadata } from '../types/scripts'
 import type { ScenarioSourceMode, ScenarioWizardStep } from './scenarioWizardUtils'
 import { legacyFlatFormFieldsValid, migrateLegacyFlatForm } from './scenarioAuthoringDraftV2'
 import { emptyScenarioForm, emptyScenarioGroup } from './scenarioFormModel'
@@ -49,23 +50,102 @@ const WIZARD_STEPS: ScenarioWizardStep[] = ['scripts', 'source', 'run', 'data', 
 // Version 1 checkpoints were written while the builder opened on a separate Start step.
 const V1_WIZARD_STEPS = ['start', 'scripts', 'source', 'run', 'data', 'review']
 
-// New Scenario Builder work with one group per script, one virtual user each,
-// opened at Model & Shape. Saved as a project draft, it can hold scripts that
-// cannot run yet, which a saved scenario refuses. Each group is named for its
-// script as the builder names one, so scripts sharing a name get distinct groups.
-export function scenarioAuthoringDraftFromScripts(projectId: string, name: string, scripts: ReadonlyArray<{ id: string; name: string }>): ScenarioAuthoringDraft {
+/**
+ * The load an import's source declared (a JMeter thread group's threads,
+ * ramp-up and loops), positional with the saved scripts. A script without an
+ * entry starts at one virtual user.
+ */
+export interface ImportScenarioPopulation {
+  termination_mode?: 'duration' | 'iterations'
+  duration?: string
+  groups: ReadonlyArray<ImportScenarioPopulationGroup | undefined>
+}
+
+export interface ImportScenarioPopulationGroup { vusers?: number; ramp_up?: string; iterations?: number; initialization?: string }
+
+type ScriptWithMetadata = { metadata?: ScriptMetadata } | null | undefined
+
+function positiveInteger(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined
+}
+
+function sourcePopulationRecord(script: ScriptWithMetadata): Record<string, unknown> | undefined {
+  const population = script?.metadata?.import?.preserved?.source_population
+  return population && typeof population === 'object' && !Array.isArray(population) ? population as Record<string, unknown> : undefined
+}
+
+/**
+ * The load a script's import source declared, as the converter preserved it
+ * (metadata.import.preserved.source_population: a JMeter thread group's
+ * num_threads, ramp_time_seconds and loops). Only literal numbers count: a
+ * "*_source" twin holds an expression the importer could not resolve, and
+ * loops -1 (forever) sets no iteration count.
+ */
+export function sourcePopulationGroup(script: ScriptWithMetadata): ImportScenarioPopulationGroup | undefined {
+  const population = sourcePopulationRecord(script)
+  if (!population) return undefined
+  const vusers = positiveInteger(population.num_threads)
+  const ramp = positiveInteger(population.ramp_time_seconds)
+  const iterations = positiveInteger(population.loops)
+  if (!vusers && !ramp && !iterations) return undefined
+  return { ...(vusers ? { vusers } : {}), ...(ramp ? { ramp_up: `${ramp}s` } : {}), ...(iterations ? { iterations } : {}) }
+}
+
+/**
+ * The scenario load the scripts' own source populations declare, for a save
+ * without a scenario draft. Iteration termination applies only when every
+ * group declares a finite loop count and none runs on a scheduler. A
+ * scheduled group's duration (duration_seconds, as the scenario draft takes
+ * it) sets the scenario duration when every scheduled group states a literal
+ * one: the longest, so no group is cut short.
+ */
+export function sourcePopulationFromScripts(scripts: ReadonlyArray<ScriptWithMetadata>): ImportScenarioPopulation | undefined {
+  const groups = scripts.map(sourcePopulationGroup)
+  if (groups.every(group => !group)) return undefined
+  const finite = scripts.every((script, index) => groups[index]?.iterations && sourcePopulationRecord(script)?.scheduler !== true)
+  const scheduled = scripts.map(sourcePopulationRecord).filter(population => population?.scheduler === true)
+  const durations = scheduled.map(population => positiveInteger(population?.duration_seconds))
+  const duration = durations.length && durations.every(Boolean) ? Math.max(...durations as number[]) : undefined
+  return { ...(finite ? { termination_mode: 'iterations' as const } : {}), ...(duration ? { duration: `${duration}s` } : {}), groups }
+}
+
+// New Scenario Builder work with one group per script, one virtual user each
+// unless the import's source declared its load (population, else the saved
+// script's preserved source_population), opened at Model & Shape. Saved
+// as a project draft, it can hold scripts that cannot run yet, which a saved
+// scenario refuses. Each group is named for its script as the builder names
+// one, so scripts sharing a name get distinct groups.
+export function scenarioAuthoringDraftFromScripts(projectId: string, name: string, scripts: ReadonlyArray<{ id: string; name: string; script?: ScriptWithMetadata }>, suppliedPopulation?: ImportScenarioPopulation): ScenarioAuthoringDraft {
+  const population = suppliedPopulation ?? sourcePopulationFromScripts(scripts.map(script => script.script))
   const groups: ScenarioFormState['groups'] = []
   scripts.forEach((script, index) => {
     const group = emptyScenarioGroup(script.id, index)
-    groups.push({ ...group, name: scenarioGroupNameAfterScriptSelection(group.name, index, script.name, '', groups.map(item => item.name)), vusers: 1 })
+    const source = population?.groups[index]
+    const vusers = source?.vusers && Number.isInteger(source.vusers) && source.vusers > 0 ? source.vusers : 1
+    const iterations = source?.iterations && Number.isInteger(source.iterations) && source.iterations > 0 ? source.iterations : undefined
+    groups.push({
+      ...group,
+      name: scenarioGroupNameAfterScriptSelection(group.name, index, script.name, '', groups.map(item => item.name)),
+      vusers,
+      ...(source?.ramp_up ? { ramp_up: source.ramp_up } : {}),
+      ...(iterations ? { iterations } : {}),
+      ...(source?.initialization === 'at_once' ? { initialization: 'at_once' as const } : {}),
+    })
   })
+  const form = emptyScenarioForm()
   return {
     version: 3,
     projectId,
     savedAt: new Date().toISOString(),
     editingId: null,
     editingUpdatedAt: '',
-    form: { ...emptyScenarioForm(), name, groups },
+    form: {
+      ...form,
+      name,
+      groups,
+      ...(population?.termination_mode === 'iterations' ? { termination_mode: 'iterations' as const } : {}),
+      ...(population?.duration ? { duration: population.duration } : {}),
+    },
     source: 'shape',
     startChoice: '',
     shapeId: '',

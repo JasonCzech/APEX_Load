@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
@@ -228,7 +229,7 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 	} else {
 		opts = append(opts, kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
 	}
-	switch strings.ToLower(c.cfg.Acks) {
+	switch strings.ToLower(strings.TrimSpace(c.cfg.Acks)) {
 	case "none":
 		// Idempotence requires acks=all; non-all acks must disable it.
 		opts = append(opts, kgo.RequiredAcks(kgo.NoAck()), kgo.DisableIdempotentWrite())
@@ -241,6 +242,12 @@ func (c *franzClient) newClient(consumerGroup string, extra ...kgo.Opt) (*kgo.Cl
 		if c.cfg.Idempotence == "disabled" {
 			opts = append(opts, kgo.DisableIdempotentWrite())
 		}
+	}
+	// franz rejects any in-flight override on an idempotent producer and
+	// pipelines idempotent requests itself (up to five, the Java ceiling the
+	// validator enforces), so the setting only applies once idempotence is off.
+	if p.MaxInFlightRequests != nil && !kafkacontract.IdempotentProducer(c.cfg.Acks, c.cfg.Idempotence) {
+		opts = append(opts, kgo.MaxProduceRequestsInflightPerBroker(*p.MaxInFlightRequests))
 	}
 	if strings.EqualFold(c.cfg.IsolationLevel, "read_committed") {
 		opts = append(opts, kgo.FetchIsolationLevel(kgo.ReadCommitted()))
@@ -1481,8 +1488,13 @@ func (c *franzClient) buildTLSConfig() (*tls.Config, error) {
 	return tlsCfg, nil
 }
 
+// compressionCodec maps the configured codec, including "none" (the Init
+// default): franz-go otherwise prefers snappy, which would silently compress
+// batches that a Java producer (compression.type=none) sends uncompressed.
 func compressionCodec(name string) (kgo.CompressionCodec, bool) {
-	switch strings.ToLower(name) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "none":
+		return kgo.NoCompression(), true
 	case "gzip":
 		return kgo.GzipCompression(), true
 	case "snappy":

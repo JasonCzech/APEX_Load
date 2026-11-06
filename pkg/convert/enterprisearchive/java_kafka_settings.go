@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
 
 const JavaKafkaSettingsMetadataKey = "java_kafka_settings"
@@ -113,6 +114,14 @@ func buildJavaKafkaSettingsReport(program javaProgram) *JavaKafkaSettingsReport 
 				continue
 			}
 			env := newJavaStringEnv()
+			methodStart := len(report.Settings)
+			// Each Properties receiver is its own producer configuration, so
+			// a row is judged against the receiver it was put on.
+			producers := make(map[string]*javaKafkaProducerIdentity, len(properties))
+			for receiver := range properties {
+				producers[receiver] = &javaKafkaProducerIdentity{resolved: true}
+			}
+			var receivers []string
 			var visit func([]javaStatement, bool)
 			visit = func(statements []javaStatement, conditional bool) {
 				for _, statement := range statements {
@@ -143,12 +152,33 @@ func buildJavaKafkaSettingsReport(program javaProgram) *JavaKafkaSettingsReport 
 						if !knownName {
 							name = "[dynamic property]"
 						}
+						producer := producers[match[1]]
+						if !knownName {
+							// A dynamic property name may be acks or enable.idempotence.
+							producer.resolved = false
+						} else if name == "acks" || name == "enable.idempotence" {
+							if knownValue && !conditional {
+								producer.observe(name, value)
+							} else {
+								producer.resolved = false
+							}
+						} else if name == "max.in.flight.requests.per.connection" || name == "retries" {
+							// These can turn an unset idempotence off (see
+							// javaKafkaImplicitIdempotenceConflict).
+							if knownValue && !conditional {
+								producer.observe(name, value)
+							} else {
+								producer.conflictUnresolved = true
+								producer.retriesUnresolved = producer.retriesUnresolved || name == "retries"
+							}
+						}
 						setting := classifyJavaKafkaSetting(name, value, knownName && knownValue && !conditional)
 						setting.SourceFile, setting.StartLine, setting.EndLine = statement.File, statement.StartLine, statement.EndLine
 						if conditional {
 							setting.Notes += " Conditional or looped assignment; an effective property value was not inferred."
 						}
 						report.Settings = append(report.Settings, setting)
+						receivers = append(receivers, match[1])
 						report.StatusCounts[setting.GoSupport]++
 					}
 					if !conditional {
@@ -162,6 +192,11 @@ func buildJavaKafkaSettingsReport(program javaProgram) *JavaKafkaSettingsReport 
 				}
 			}
 			visit(method.Statements, false)
+			for offset, receiver := range receivers {
+				row := methodStart + offset
+				producer := producers[receiver]
+				refineJavaKafkaInFlightSettings(report.Settings[row:row+1], report.StatusCounts, *producer, producer.resolved)
+			}
 		}
 	}
 	if !producerFound {
@@ -240,6 +275,14 @@ func classifyJavaKafkaSetting(name, value string, resolved bool) JavaKafkaSettin
 			setting.GoFields = []string{"config.kafka.producer.batch_bytes"}
 			setting.Notes = "Java batch.size is an allocation target and permits larger singleton records; Go/franz-go batch_bytes is a maximum. Direct copying can reject records the Java producer accepts."
 		}
+	case "max.in.flight.requests.per.connection":
+		// Classified against the producer's idempotence once the whole method is
+		// read (refineJavaKafkaInFlightSettings); alone it is only a candidate.
+		if parsed, err := strconv.Atoi(value); err == nil && kafkaprotocol.ValidateProducerSettings(map[string]any{"kafka_producer_max_in_flight_requests": parsed}) == nil {
+			setting.GoSupport = "partial"
+			setting.GoFields = []string{"config.kafka.producer.max_in_flight_requests"}
+			setting.Notes = javaKafkaInFlightIdempotentNote
+		}
 	case "retries", "linger.ms", "buffer.memory", "max.block.ms", "delivery.timeout.ms", "request.timeout.ms":
 		native := map[string]string{"retries": "retries", "linger.ms": "linger_ms", "buffer.memory": "buffer_bytes", "max.block.ms": "admission_timeout_ms", "delivery.timeout.ms": "delivery_timeout_ms", "request.timeout.ms": "request_timeout_ms"}[name]
 		parsed, err := strconv.Atoi(value)
@@ -256,6 +299,130 @@ func classifyJavaKafkaSetting(name, value string, resolved bool) JavaKafkaSettin
 		setting.Value = boundedRuntimeReviewEvidence(value)
 	}
 	return setting
+}
+
+const javaKafkaInFlightIdempotentNote = "Maps to config.kafka.producer.max_in_flight_requests only for a non-idempotent producer (acks 0 or 1, or enable.idempotence=false). An idempotent producer (acks all with idempotence not disabled, the Java 3.x default) does not apply it in Go: franz pipelines up to 5 idempotent requests itself and refuses more than 5."
+
+// javaKafkaProducerIdentity is the acks/idempotence pair the Go runtime uses
+// to decide whether a producer is idempotent (kafkacontract.IdempotentProducer),
+// plus the effective in-flight and retries values that make the Java client
+// turn an unset idempotence off. conflictUnresolved records a dynamic or
+// conditional assignment of either, whose effective value is unknown, and
+// retriesUnresolved one of retries. resolved is false when acks or
+// enable.idempotence was assigned dynamically or conditionally.
+type javaKafkaProducerIdentity struct {
+	acks, idempotence  string
+	inFlight, retries  string
+	conflictUnresolved bool
+	retriesUnresolved  bool
+	resolved           bool
+}
+
+func (p *javaKafkaProducerIdentity) observe(name, value string) {
+	switch name {
+	case "acks":
+		p.acks = map[string]string{"0": "none", "1": "leader", "-1": "all", "all": "all"}[strings.ToLower(strings.TrimSpace(value))]
+	case "enable.idempotence":
+		p.idempotence = map[string]string{"true": "enabled", "false": "disabled"}[strings.ToLower(strings.TrimSpace(value))]
+	case "max.in.flight.requests.per.connection":
+		p.inFlight = strings.TrimSpace(value)
+	case "retries":
+		p.retries = strings.TrimSpace(value)
+	}
+}
+
+// javaKafkaImplicitIdempotenceConflict names the effective setting that makes
+// the Java producer turn its default idempotence off (more than five requests
+// in flight, or retries=0), or returns "" when none does. It mirrors the
+// JMeter converter's helper of the same name: Kafka 3.x (KAFKA-13598) turns an
+// unset enable.idempotence off instead of failing on these settings; only an
+// explicit enable.idempotence=true makes them invalid.
+func javaKafkaImplicitIdempotenceConflict(producer javaKafkaProducerIdentity) string {
+	if value, err := strconv.Atoi(producer.inFlight); err == nil && value > kafkacontract.MaxIdempotentInFlightRequests {
+		return "max.in.flight.requests.per.connection " + producer.inFlight
+	}
+	if value, err := strconv.Atoi(producer.retries); err == nil && value == 0 {
+		return "retries 0"
+	}
+	return ""
+}
+
+// refineJavaKafkaInFlightSettings applies the idempotence rule to the retries and
+// max.in.flight rows of one producer's Properties receiver. resolved is false
+// when acks or enable.idempotence was assigned dynamically or conditionally,
+// so the rule cannot be decided and the row stays partial. With idempotence
+// unset, a conflicting in-flight or retries value turns it off as the Java
+// client does; the rows then also map to config.kafka.idempotence: disabled.
+func refineJavaKafkaInFlightSettings(settings []JavaKafkaSetting, counts map[string]int, producer javaKafkaProducerIdentity, resolved bool) {
+	if !resolved {
+		return
+	}
+	idempotence, implicit := producer.idempotence, ""
+	if idempotence == "" && kafkacontract.IdempotentProducer(producer.acks, idempotence) {
+		if producer.conflictUnresolved {
+			// The Java client may or may not have turned idempotence off.
+			return
+		}
+		if implicit = javaKafkaImplicitIdempotenceConflict(producer); implicit != "" {
+			idempotence = "disabled"
+		}
+	}
+	implicitNote := ""
+	if implicit != "" {
+		implicitNote = " enable.idempotence is unset and the producer sets " + implicit + ", so the Java client turns idempotence off rather than failing; Go matches it with config.kafka.idempotence: disabled."
+	}
+	for index := range settings {
+		setting := &settings[index]
+		if value, err := strconv.Atoi(setting.Value); err == nil && value == 0 && setting.Name == "retries" && producer.idempotence == "enabled" && setting.GoSupport == "supported" {
+			// An explicit enable.idempotence=true makes the Java client refuse
+			// an effective retries=0; a later assignment can replace this one.
+			if producer.retriesUnresolved {
+				setting.Notes += " enable.idempotence=true is set explicitly, so the Java client refuses retries=0, but a conditional or dynamic assignment may replace this value; the effective value requires source review."
+				continue
+			}
+			if effective, err := strconv.Atoi(producer.retries); err != nil || effective != 0 {
+				setting.Notes += " A later assignment replaces this value, so the Java client's refusal of retries=0 for an explicitly idempotent producer does not apply."
+				continue
+			}
+			// Unsupported rows never disclose their value.
+			setting.GoSupport, setting.GoFields, setting.Value = "unsupported", nil, "[value withheld]"
+			setting.Notes = "enable.idempotence=true is set explicitly, and the Java client refuses retries=0 for an idempotent producer. Set enable.idempotence=false to keep the value."
+			if counts["supported"]--; counts["supported"] <= 0 {
+				delete(counts, "supported")
+			}
+			counts["unsupported"]++
+			continue
+		}
+		if setting.Name == "retries" && implicit == "retries 0" && setting.GoSupport == "supported" {
+			setting.GoFields = append(setting.GoFields, "config.kafka.idempotence")
+			setting.Notes += implicitNote
+			continue
+		}
+		if setting.Name != "max.in.flight.requests.per.connection" || setting.GoSupport != "partial" {
+			continue
+		}
+		previous := setting.GoSupport
+		if !kafkacontract.IdempotentProducer(producer.acks, idempotence) {
+			setting.GoSupport = "supported"
+			setting.Notes = "The producer is not idempotent (acks 0 or 1, or enable.idempotence=false), so the value maps to config.kafka.producer.max_in_flight_requests as Java applies it."
+			if implicit != "" {
+				setting.GoFields = append(setting.GoFields, "config.kafka.idempotence")
+				setting.Notes = "The value maps to config.kafka.producer.max_in_flight_requests as Java applies it." + implicitNote
+			}
+		} else if value, err := strconv.Atoi(setting.Value); err == nil && value > kafkacontract.MaxIdempotentInFlightRequests {
+			// The effective producer stays idempotent: enable.idempotence=true is
+			// explicit, or a later assignment replaced this value. Unsupported
+			// rows never disclose their value (see classifyJavaKafkaSetting).
+			setting.GoSupport, setting.GoFields, setting.Value = "unsupported", nil, "[value withheld]"
+			setting.Notes = "The effective producer is idempotent (enable.idempotence=true set explicitly, or this value is replaced by a later assignment), and both the Java client and Go refuse more than 5 requests in flight for an idempotent producer. Set enable.idempotence=false to keep the value."
+		}
+		if setting.GoSupport != previous {
+			if counts[previous]--; counts[previous] <= 0 {
+				delete(counts, previous)
+			}
+			counts[setting.GoSupport]++
+		}
+	}
 }
 
 func oneOfFold(value string, options ...string) bool {

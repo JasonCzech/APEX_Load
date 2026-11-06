@@ -629,6 +629,9 @@ func (k *Kafka) checkRecordSize(rec kafkaRecord) error {
 }
 
 func validateKafkaConfigBounds(cfg config) error {
+	if err := kafkacontract.ValidateProducerInFlight(cfg.Producer, cfg.Acks, cfg.Idempotence); err != nil {
+		return err
+	}
 	if len(cfg.Brokers) > maxKafkaBrokers {
 		return fmt.Errorf("kafka brokers exceed %d entries", maxKafkaBrokers)
 	}
@@ -1059,7 +1062,7 @@ func (k *Kafka) buildRecord(action *protocol.Action, topic string) kafkaRecord {
 		keyPresent = false
 	} // DI KafkaMeter maps empty strings to null.
 	correlationID := paramString(action.Params, "correlation_id", "")
-	_, actionPartition := intParamOK(action.Params, "partition")
+	_, actionPartition := actionPartitionParam(action.Params)
 	manualPartition := actionPartition || strings.EqualFold(strings.TrimSpace(k.cfg.PartitionStrategy), "explicit")
 	headers := cloneStringMap(action.Headers)
 	if headers == nil && len(action.Metadata) > 0 {
@@ -1093,8 +1096,8 @@ func metadataKeyIsProvenance(key string) bool {
 // resolvePartition mirrors a producer's partitioner: an explicit partition param
 // wins, then the configured strategy (key-hash / round-robin / explicit).
 func (k *Kafka) resolvePartition(action *protocol.Action, key string) int32 {
-	if p, ok := intParamOK(action.Params, "partition"); ok {
-		return int32(p)
+	if p, ok := actionPartitionParam(action.Params); ok {
+		return p
 	}
 	partitions := k.cfg.Partitions
 	if partitions <= 0 {
@@ -1470,20 +1473,18 @@ func durationParam(params map[string]any, key string, fallback time.Duration) ti
 	return durationValue(params, key, fallback)
 }
 
-func intParamOK(params map[string]any, key string) (int, bool) {
-	if params == nil {
+// actionPartitionParam reads the partition param with the same parser as
+// validateActionBounds. Engine interpolation delivers templated params as
+// strings ("{{param.p}}" -> "3"), so routing must accept numeric strings or an
+// authored partition would silently fall through to the strategy default.
+// validateActionBounds fails the sample for a present but invalid value before
+// any record is built, so ok=false here only means "no partition authored".
+func actionPartitionParam(params map[string]any) (int32, bool) {
+	partition, present, err := optionalBoundedParamInt(params, "partition", 0, math.MaxInt32)
+	if !present || err != nil {
 		return 0, false
 	}
-	switch value := params[key].(type) {
-	case int:
-		return value, true
-	case int64:
-		return int(value), true
-	case float64:
-		return int(value), true
-	default:
-		return 0, false
-	}
+	return int32(partition), true
 }
 
 func cloneStringMap(in map[string]string) map[string]string {

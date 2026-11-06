@@ -54,6 +54,12 @@ type scriptImportReviewSection = importreview.ScriptImportReviewSection
 
 type scriptImportRepairSuggestion = importreview.ScriptImportRepairSuggestion
 
+// jmeterReviewRepairSuggestions explains each JMeter review gate on the
+// scripts, and names the repair or re-conversion that clears it.
+var jmeterReviewRepairSuggestions = importreview.JMeterReviewRepairSuggestions
+
+var explainJMeterReviewDiagnostics = importreview.ExplainJMeterReviewDiagnostics
+
 // importResponseValue hands a typed pointer to the response sanitizers as a
 // true nil when it is nil. A nil typed pointer boxed into an `any` is not a nil
 // interface, and the sanitizers only short-circuit on the latter — so a field

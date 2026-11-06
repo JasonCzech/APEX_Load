@@ -57,6 +57,22 @@ export function normalizeCredentialPreviewName(value: string): string {
   return decoded.toLowerCase().replace(/[^a-z0-9]+/g, '')
 }
 
+/**
+ * Names of where a credential is used or which one it is, never the
+ * credential: an OAuth token endpoint (the DSL's token_url, Kafka's
+ * sasl.oauthbearer.token.endpoint.url) and the Event Hubs SAS policy name
+ * (shared_access_key_name; the key itself is the connection string's
+ * SharedAccessKey). Keep in parity with pkg/credential.NonCredentialName.
+ * pkg/credential.SensitiveName (mirrored by isSensitiveCredentialPreviewName)
+ * does not apply it; the disclosure projection (pkg/scriptdisclosure
+ * isTokenEndpointKey and isNonSecretIdentifierKey) applies it to disclosed
+ * field keys (isSensitiveCredentialPreviewKey), whose URL values it scans.
+ */
+export function isCredentialLocatorName(name: string): boolean {
+  const normalized = normalizeCredentialPreviewName(name)
+  return normalized === 'tokenurl' || normalized.endsWith('tokenendpointurl') || normalized === 'sharedaccesskeyname'
+}
+
 export function isSensitiveCredentialPreviewName(name: string): boolean {
   if (sensitiveCredentialNames.has(normalizeCredentialPreviewName(name))) return true
   const parts = name.trim().split(/[^A-Za-z0-9]+/).filter(Boolean)
@@ -112,6 +128,9 @@ export function isRecordedStateHeader(name: string): boolean {
   return hasHeaderWord(words, recordedStateWords) && !hasHeaderWord(words, credentialWords)
 }
 
+// A field key: a credential name or header, except a credential locator,
+// which the header heuristic (any "token" or "key" part) would otherwise mask.
 export function isSensitiveCredentialPreviewKey(name: string): boolean {
+  if (isCredentialLocatorName(name)) return false
   return isSensitiveCredentialPreviewName(name) || isSensitiveCredentialPreviewHeader(name)
 }

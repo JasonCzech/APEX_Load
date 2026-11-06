@@ -1,6 +1,9 @@
 package jmeter
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGetSupportMatrixEntriesStructure(t *testing.T) {
 	entries := GetSupportMatrixEntries()
@@ -108,6 +111,9 @@ func TestCategoryForSourceMapping(t *testing.T) {
 		{"unsupported counts", "unsupported", "unsupported", categoryUnsupported, true},
 		{"contributor is skipped", "converted", "contributor", "", false},
 		{"config is skipped", "converted", "config", "", false},
+		{"csv export is a contributor", "converted", "export", "", false},
+		{"generated parameter is a contributor", "review_only", "parameter", "", false},
+		{"dynamic function is a contributor", "converted", "dynamic_function", "", false},
 		{"ignored is informational", "ignored", "diagnostic", "", false},
 		{"unknown status is informational", "something", "action", "", false},
 	}
@@ -119,4 +125,86 @@ func TestCategoryForSourceMapping(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSupportMatrixDocumentsCountersAndMessagingDisclosures(t *testing.T) {
+	notes := map[string]string{}
+	for _, entry := range GetSupportMatrixEntries() {
+		notes[entry.ID] = entry.Notes
+	}
+	if !strings.Contains(notes["jmeter-counter"], "unique-number blocks") {
+		t.Fatalf("counter row missing or incomplete: %q", notes["jmeter-counter"])
+	}
+	// jmeterCounterRangeHoldsBlocks keeps unique-number blocks whenever the
+	// thread count is not a literal; the note must not promise a wrap there.
+	if !strings.Contains(notes["jmeter-counter"], "not a literal it keeps unique-number blocks") || strings.Contains(notes["jmeter-counter"], "two million") {
+		t.Fatalf("counter row misdescribes a non-literal thread count: %q", notes["jmeter-counter"])
+	}
+	if !jmeterCounterRangeHoldsBlocks(1, 3, 0) || jmeterCounterRangeHoldsBlocks(1, 3, 4) {
+		t.Fatal("the note no longer matches jmeterCounterRangeHoldsBlocks")
+	}
+	for _, want := range []string{"compression.type", "max_in_flight_requests", "batch.size", "client.id", "EntityPath", "sampler schedules have no execution path"} {
+		if !strings.Contains(notes["jmeter-messaging-producers"], want) {
+			t.Fatalf("messaging producer notes lack %q", want)
+		}
+	}
+	if strings.Contains(notes["jmeter-udv"], "{{var.") {
+		t.Fatal("UDV notes still claim {{var.*}} values; the converter inlines literals")
+	}
+}
+
+// The UDV note must say what happens to a UDV in an HTTP sampler parameter:
+// the domain is expanded, the parameter is not, and the request is gated.
+func TestSupportMatrixUDVNoteMatchesSamplerParameters(t *testing.T) {
+	plan := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <Arguments testname="UDV" enabled="true" elementType="Arguments">
+        <collectionProp name="Arguments.arguments">
+          <elementProp name="host" elementType="Argument"><stringProp name="Argument.name">host</stringProp><stringProp name="Argument.value">api.example.test</stringProp></elementProp>
+        </collectionProp>
+      </Arguments>
+      <hashTree/>
+      <ThreadGroup testname="API" enabled="true"/>
+      <hashTree>
+        <HTTPSamplerProxy testname="S1" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="q" elementType="HTTPArgument"><stringProp name="Argument.name">q</stringProp><stringProp name="Argument.value">${host}</stringProp></elementProp>
+            </collectionProp>
+          </elementProp>
+          <stringProp name="HTTPSampler.domain">${host}</stringProp>
+          <stringProp name="HTTPSampler.path">/search</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(plan), ConvertOptions{FileName: "udv.jmx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) == 0 {
+		t.Fatalf("scripts = %+v", result.Scripts)
+	}
+	script := result.Scripts[0]
+	if !strings.Contains(script.Config.BaseURL, "api.example.test") {
+		t.Fatalf("base_url = %q, want the UDV expanded", script.Config.BaseURL)
+	}
+	if q, _ := script.Actions[0].Params["q"].(string); q == "api.example.test" || !strings.Contains(q, "host") {
+		t.Fatalf("params.q = %q; the converter now expands UDVs in sampler parameters, so update the jmeter-udv note", q)
+	}
+	for _, entry := range GetSupportMatrixEntries() {
+		if entry.ID == "jmeter-udv" {
+			if !strings.Contains(entry.Notes, "sampler parameters") || !strings.Contains(entry.Notes, "not expanded") {
+				t.Fatalf("jmeter-udv note claims parameters are expanded: %q", entry.Notes)
+			}
+			return
+		}
+	}
+	t.Fatal("missing jmeter-udv support entry")
 }

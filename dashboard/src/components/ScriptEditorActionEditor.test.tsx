@@ -506,6 +506,12 @@ describe('ActionEditor transaction field', () => {
     expect(pill?.getAttribute('title')).toBe('Blocks replay: Import missing variables')
   })
 
+  it('titles a blocked pill on a step awaiting runtime support as not clearable yet', () => {
+    renderEditor({ name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: { execution_blocker: 'import_review_required', import_review: { reason_codes: ['jmeter_messaging_compatibility_unverified'], resolution: 'awaiting_runtime_support' } } } as unknown as ScriptActionDefinition)
+    const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')].find(element => element.textContent === 'blocked')
+    expect(pill?.getAttribute('title')).toBe('Blocks replay: Review imported behavior. Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release.')
+  })
+
   it('titles a blocked pill by what each blocker asks for', () => {
     renderEditor({ name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blockers: ['legacy_tls_replacement', 'encrypted_proxy_password'] } } as unknown as ScriptActionDefinition)
     const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')].find(element => element.textContent === 'blocked')

@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,18 +30,21 @@ import (
 // ImportRepairOperation describes an operator supplied replacement, never an
 // acknowledgement. Body values travel only through encrypted candidate storage.
 type ImportRepairOperation struct {
-	Type         string         `json:"type"`
-	Body         *string        `json:"body,omitempty"`
-	SecretName   string         `json:"secret_name,omitempty"`
-	Variable     string         `json:"variable,omitempty"`
-	Producer     string         `json:"producer,omitempty"`
-	Parameter    *dsl.Parameter `json:"parameter,omitempty"`
-	ResponsePath string         `json:"response_path,omitempty"`
-	Extractor    *dsl.Extractor `json:"extractor,omitempty"`
-	TLSMin       string         `json:"tls_min,omitempty"`
-	TLSMax       string         `json:"tls_max,omitempty"`
-	VUsers       int            `json:"vusers,omitempty"`
-	Iterations   int            `json:"iterations,omitempty"`
+	Type       string  `json:"type"`
+	Body       *string `json:"body,omitempty"`
+	SecretName string  `json:"secret_name,omitempty"`
+	// ClientIDSecret names the project secret bind_kafka_credentials binds
+	// the Kafka OAuth client ID to; SecretName names the client secret's.
+	ClientIDSecret string         `json:"client_id_secret,omitempty"`
+	Variable       string         `json:"variable,omitempty"`
+	Producer       string         `json:"producer,omitempty"`
+	Parameter      *dsl.Parameter `json:"parameter,omitempty"`
+	ResponsePath   string         `json:"response_path,omitempty"`
+	Extractor      *dsl.Extractor `json:"extractor,omitempty"`
+	TLSMin         string         `json:"tls_min,omitempty"`
+	TLSMax         string         `json:"tls_max,omitempty"`
+	VUsers         int            `json:"vusers,omitempty"`
+	Iterations     int            `json:"iterations,omitempty"`
 }
 type ImportRepairRequest struct {
 	BatchID       string                 `json:"batch_id,omitempty"`
@@ -435,6 +439,10 @@ var replayPreflightGeneratedWarnings = []*regexp.Regexp{
 	regexp.MustCompile(`^(file )?data source ".*" (has no |contains a generated OpenAPI placeholder|requires an import file binding)`),
 	regexp.MustCompile(`^parameter ".*" references missing data source ".*"$`),
 	regexp.MustCompile(`^config\.jms\.mock is enabled; replay uses the in-memory JMS broker$`),
+	// The missing Kafka / Event Hubs client lines depend on the build, so one
+	// stamped by a build without the real client is never carried into a
+	// repair on a build that has it.
+	regexp.MustCompile(`^This APEX Load build has no real (Kafka|Azure Event Hubs) client \(`),
 }
 
 func replayPreflightGeneratedWarning(line string) bool {
@@ -625,6 +633,12 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 			found = true
 		}
 	}
+	if !found && req.Finding != "" && jmeterCredentialRepairFindings[op.Type] == req.Finding {
+		// JMeter review codes are reasons of the step's one
+		// import_review_required finding, not findings of their own.
+		review, _ := target.Metadata["import_review"].(map[string]any)
+		found = slices.Contains(dslwalk.MetadataStrings(review, "reason_codes"), req.Finding)
+	}
 	if !found {
 		return nil, errors.New("Finding is no longer present")
 	}
@@ -646,6 +660,10 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 		target.Metadata["restored_body_protected"] = true
 		for _, k := range []string{"body_gated_by_secret", "source_secret_ref", "source_secret_function", "masked_body", "masked_body_raw", "masked_body_calls"} {
 			delete(target.Metadata, k)
+		}
+	case "bind_kafka_credentials", "bind_eventhubs_credentials":
+		if err := bindJMeterMessagingCredentials(script, req); err != nil {
+			return nil, err
 		}
 	case "replace_proxy_secret":
 		if req.Finding != "encrypted_proxy_password" || !logicalSecretNamePattern.MatchString(op.SecretName) {
@@ -841,6 +859,56 @@ func applyImportRepair(script *dsl.Script, req ImportRepairRequest) ([]engine.Pa
 		return nil, errors.New("Repair creates an invalid draft; check the supplied operation fields")
 	}
 	return nil, nil
+}
+
+// jmeterCredentialRepairFindings maps a saved-script credential repair to the
+// JMeter review code it clears.
+var jmeterCredentialRepairFindings = map[string]string{
+	"bind_kafka_credentials":     "jmeter_kafka_oauth_credentials_required",
+	"bind_eventhubs_credentials": "jmeter_eventhubs_credentials_required",
+}
+
+// bindJMeterMessagingCredentials is the saved-script form of the JMeter batch
+// repairs of the same names (applyJMeterBatchOperation): a saved import keeps
+// its credential review code, and the batch is locked once the import is
+// saved, so without it the only way to clear the code was a re-import. It
+// binds the script's credential fields to the named project secrets and
+// clears the code from every step, as the credential is script-wide. The
+// caller checks that the secrets exist (jmeterCredentialRepairSecrets).
+func bindJMeterMessagingCredentials(script *dsl.Script, req ImportRepairRequest) error {
+	op := req.Operation
+	if req.Finding != jmeterCredentialRepairFindings[op.Type] {
+		return errors.New("Select the JMeter credential requirement this repair binds")
+	}
+	switch op.Type {
+	case "bind_kafka_credentials":
+		if script.Config.Kafka.OAuth == nil || !logicalSecretNamePattern.MatchString(op.SecretName) || !logicalSecretNamePattern.MatchString(op.ClientIDSecret) {
+			return errors.New("Select valid Kafka client ID and client-secret references")
+		}
+		script.Config.Kafka.OAuth.ClientID = "{{secret." + op.ClientIDSecret + "}}"
+		script.Config.Kafka.OAuth.ClientSecretRef = "{{secret." + op.SecretName + "}}"
+	case "bind_eventhubs_credentials":
+		if script.Protocol != "eventhubs" || !logicalSecretNamePattern.MatchString(op.SecretName) {
+			return errors.New("Select a valid Event Hubs credential reference")
+		}
+		script.Config.EventHubs.ConnectionString = ""
+		script.Config.EventHubs.ConnectionStringSecret = "{{secret." + op.SecretName + "}}"
+	}
+	removeJMeterRepairCode(script, req.Finding)
+	refreshBatchCredentialConfig(script)
+	return nil
+}
+
+// jmeterCredentialRepairSecrets lists the project secrets a JMeter credential
+// repair binds, or nil for any other operation.
+func jmeterCredentialRepairSecrets(op ImportRepairOperation) []string {
+	switch op.Type {
+	case "bind_kafka_credentials":
+		return []string{op.ClientIDSecret, op.SecretName}
+	case "bind_eventhubs_credentials":
+		return []string{op.SecretName}
+	}
+	return nil
 }
 
 // repairRequestAction decodes a nested request (an http_sequence entry) as

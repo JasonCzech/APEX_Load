@@ -1,5 +1,6 @@
 import type { JMeterImportResult } from '../types/scriptImports'
 import { messagingScheduleSummary } from './jmeterMessaging'
+import { countLabel } from '../utils/numberFormat'
 
 export default function JMeterMessagingPreview({ result }: { result: JMeterImportResult }) {
   const groups = result.scenario_draft?.groups || []
@@ -7,11 +8,33 @@ export default function JMeterMessagingPreview({ result }: { result: JMeterImpor
   const curves = groups.flatMap(group => messagingScheduleSummary(group).map(curve => ({ ...curve, group })))
   const planned = curves.reduce((sum, curve) => sum + curve.planned, 0)
   const stats = result.stats
+  const enabled = stats.enabled_workload_samplers ?? result.scripts.length
+  const converted = stats.converted_workload_samplers ?? result.scripts.length
+  const blocked = stats.blocked_workload_samplers ?? result.scripts.length
+  const disabled = stats.disabled_workload_samplers ?? 0
+  // Newer servers split the enabled samplers three ways, disjointly; an
+  // older one sends only converted and blocked, which overlap.
+  const split = stats.replay_ready_workload_samplers !== undefined || stats.review_gated_workload_samplers !== undefined || stats.unconverted_workload_samplers !== undefined
+  const ready = stats.replay_ready_workload_samplers ?? 0
+  const gated = stats.review_gated_workload_samplers ?? 0
+  const unconverted = stats.unconverted_workload_samplers ?? 0
+  const allReady = split && enabled > 0 && ready === enabled
   return <section className="lr-preserved" aria-label="Messaging fidelity">
     <h4>Messaging fidelity</h4>
-    <p><strong>Converted drafts · replay blocked</strong></p>
-    <p>{stats.converted_workload_samplers ?? result.scripts.length}/{stats.enabled_workload_samplers ?? result.scripts.length} enabled workload samplers mapped. {stats.blocked_workload_samplers ?? result.scripts.length} blocked; {stats.disabled_workload_samplers ?? 0} disabled workload samplers remain disabled.</p>
-    <p>Single generator required. Strict compatibility is unverified. Reference target: JMeter 5.4.1, JDK 17, Kafka 3.3.1, DI-KafkaMeter 8c2dcc9, PNOP Event Hubs 0.2.8, Throughput Shaping Timer 2.6.</p>
+    <p><strong>{allReady ? 'Converted drafts · replay ready' : 'Converted drafts · replay blocked'}</strong></p>
+    {split
+      ? <>
+        <p>Of {countLabel(enabled, 'enabled workload sampler')}:</p>
+        <ul aria-label="Workload sampler status">
+          <li><strong>{ready}</strong> ready to replay</li>
+          <li><strong>{gated}</strong> converted, held for review</li>
+          <li><strong>{unconverted}</strong> not converted</li>
+        </ul>
+        <p>{countLabel(disabled, 'disabled workload sampler')} {disabled === 1 ? 'remains' : 'remain'} disabled.</p>
+      </>
+      // The converter counts a sampler as converted when it has a draft, reviewable or not, and as blocked when that draft cannot replay: the counts overlap.
+      : <p>{converted} of {countLabel(enabled, 'enabled workload sampler')} {converted === 1 ? 'has' : 'have'} a converted draft; {blocked} of {enabled} {blocked === 1 ? 'is' : 'are'} blocked from replay. {countLabel(disabled, 'disabled workload sampler')} {disabled === 1 ? 'remains' : 'remain'} disabled.</p>}
+    <p>JMeter messaging replay is not available yet: APEX has not verified its Kafka and Event Hubs clients against the JMeter plugins this plan uses, so these scripts are preserved for review and cannot run. Single generator required. Reference target: JMeter 5.4.1, JDK 17, Kafka 3.3.1, DI-KafkaMeter 8c2dcc9, PNOP Event Hubs 0.2.8, Throughput Shaping Timer 2.6.</p>
     <p>Source timezone and property overrides require confirmation. Credentials and source defects remain execution blockers after warning acknowledgement.</p>
     {curves.length > 0 && <>
       <p>Duration: {Math.max(...curves.map(curve => curve.seconds)).toLocaleString()} seconds. Approximately {planned.toLocaleString()} planned samples, assuming one message per sampler, sufficient available threads, and no property overrides.</p>

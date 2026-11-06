@@ -200,3 +200,103 @@ it('uses Data & parameters category label and preserves keyboard focus inside th
     container.remove()
   }
 })
+
+it('uses the hosting importer\'s action and resolution instead of the tab fallback', () => {
+  const issues = [{
+    id: 'gate', identity: 'gate', severity: 'blocker' as const, code: 'jmeter_eventhubs_credentials_required',
+    title: 'Event Hubs connection string to bind in Producer',
+    description: 'Resolve imported behavior before replay: jmeter_eventhubs_credentials_required',
+    source: 'plan.jmx · scripts[1].actions[0]',
+  }, {
+    id: 'compat', identity: 'compat', severity: 'blocker' as const, code: 'jmeter_messaging_compatibility_unverified',
+    title: 'Messaging replay not available yet in Producer',
+    description: 'Resolve imported behavior before replay: jmeter_messaging_compatibility_unverified',
+    source: 'plan.jmx · scripts[1].actions[0]',
+  }]
+  const run = vi.fn()
+  const onNavigate = vi.fn()
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    act(() => root.render(<ImportIssueWorkspace issues={issues} onNavigate={onNavigate} issueAction={issue => issue.code === 'jmeter_eventhubs_credentials_required' ? { label: 'Bind Event Hubs connection string', run } : undefined} />))
+    const buttonNamed = (name: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === name)
+    const row = (title: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(button => button.querySelector('strong')?.textContent === title)
+    act(() => row('Event Hubs connection string to bind in Producer')!.click())
+    expect(buttonNamed('Review credentials')).toBeUndefined()
+    act(() => buttonNamed('Bind Event Hubs connection string')!.click())
+    expect(run).toHaveBeenCalled()
+    expect(onNavigate).not.toHaveBeenCalled()
+    act(() => row('Messaging replay not available yet in Producer')!.click())
+    const resolution = container.querySelector('.shared-import-issue-resolution')!.textContent || ''
+    expect(resolution).toContain('Nothing in this review clears this gate')
+    expect(resolution).not.toContain('Correct the source or configuration')
+    expect(container.querySelector('.shared-import-issue-impact')!.textContent).toContain('JMeter messaging replay is not available yet')
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})
+
+it('says a gate cannot be cleared yet and offers no fix for it', () => {
+  const issues = [{
+    id: 'gate', identity: 'gate', severity: 'blocker' as const, code: 'jmeter_eventhubs_credentials_required',
+    title: 'Bind the Event Hubs connection string in Producer',
+    description: 'The Event Hubs sampler authenticates with a shared access key.',
+  }, {
+    id: 'compat', identity: 'compat', severity: 'blocker' as const, code: 'jmeter_messaging_compatibility_unverified',
+    title: 'JMeter messaging replay is not available yet in Producer',
+    description: 'Resolve imported behavior before replay: jmeter_messaging_compatibility_unverified',
+  }]
+  const onNavigate = vi.fn()
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    // The host's unclearable wins over the credentials tab the code would open.
+    act(() => root.render(<ImportIssueWorkspace issues={issues} onNavigate={onNavigate} issueAction={issue => issue.code === 'jmeter_eventhubs_credentials_required' ? { unclearable: true } : undefined} />))
+    const row = (title: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(button => button.querySelector('strong')?.textContent === title)
+    const actions = () => container.querySelector('.shared-import-issue-actions')!
+    act(() => row('Bind the Event Hubs connection string in Producer')!.click())
+    expect(actions().textContent).toContain('Cannot be cleared yet')
+    expect(Array.from(actions().querySelectorAll('button')).map(button => button.textContent)).not.toContain('Review credentials')
+    // Without a host answer, the review's own copy marks the messaging gate.
+    act(() => row('JMeter messaging replay is not available yet in Producer')!.click())
+    expect(actions().textContent).toContain('Cannot be cleared yet')
+    expect(onNavigate).not.toHaveBeenCalled()
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})
+
+it('offers no tab button for an issue whose tab the review hides', () => {
+  const issues = [{
+    id: 'gate', identity: 'gate', severity: 'blocker' as const, code: 'jmeter_eventhubs_credentials_required',
+    title: 'Bind the Event Hubs connection string in Producer',
+    description: 'The Event Hubs sampler authenticates with a shared access key.',
+  }]
+  const onNavigate = vi.fn()
+  const resolution = 'These scripts are already saved, so the reviewed repairs for all scripts are locked.'
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  try {
+    const actions = () => container.querySelector('.shared-import-issue-actions')!
+    const select = () => act(() => container.querySelector<HTMLButtonElement>('.shared-import-issue-row')!.click())
+    // A saved batch review: the host gives resolution text but no run, and
+    // the Credentials tab is hidden.
+    act(() => root.render(<ImportIssueWorkspace issues={issues} onNavigate={onNavigate} navigableTabs={['review', 'data', 'runtime', 'dsl', 'source']} issueAction={() => ({ resolution })} />))
+    select()
+    expect(Array.from(actions().querySelectorAll('button')).map(button => button.textContent)).not.toContain('Review credentials')
+    expect(container.querySelector('.shared-import-issue-resolution')!.textContent).toContain(resolution)
+    // A review that shows the tab keeps the button.
+    act(() => root.render(<ImportIssueWorkspace issues={issues} onNavigate={onNavigate} issueAction={() => ({ resolution })} />))
+    select()
+    act(() => Array.from(actions().querySelectorAll('button')).find(button => button.textContent === 'Review credentials')!.click())
+    expect(onNavigate).toHaveBeenCalledWith('credentials', expect.objectContaining({ id: 'gate' }))
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})

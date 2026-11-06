@@ -386,7 +386,11 @@ func (c *realClient) producer(_ context.Context, hub string) (*azeventhubs.Produ
 		if c.cfg.ConnectionString == "" {
 			return nil, fmt.Errorf("config.eventhubs.connection_string is required for connection_string auth")
 		}
-		p, err = azeventhubs.NewProducerClientFromConnectionString(c.cfg.ConnectionString, hub, nil)
+		sdkHub, herr := connectionStringEventHub(c.cfg.connectionEntityPath, hub)
+		if herr != nil {
+			return nil, herr
+		}
+		p, err = azeventhubs.NewProducerClientFromConnectionString(c.cfg.ConnectionString, sdkHub, nil)
 	} else {
 		if c.cfg.Namespace == "" {
 			return nil, fmt.Errorf("config.eventhubs.namespace is required for aad auth")
@@ -425,7 +429,11 @@ func (c *realClient) consumer(hub, group string) (*azeventhubs.ConsumerClient, e
 		if c.cfg.ConnectionString == "" {
 			return nil, fmt.Errorf("config.eventhubs.connection_string is required for connection_string auth")
 		}
-		cc, err = azeventhubs.NewConsumerClientFromConnectionString(c.cfg.ConnectionString, hub, group, nil)
+		sdkHub, herr := connectionStringEventHub(c.cfg.connectionEntityPath, hub)
+		if herr != nil {
+			return nil, herr
+		}
+		cc, err = azeventhubs.NewConsumerClientFromConnectionString(c.cfg.ConnectionString, sdkHub, group, nil)
 	} else {
 		if c.cfg.Namespace == "" {
 			return nil, fmt.Errorf("config.eventhubs.namespace is required for aad auth")

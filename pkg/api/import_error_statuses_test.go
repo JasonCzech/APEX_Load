@@ -122,7 +122,9 @@ func TestJMeterSaveRefusesAScenarioOfScriptsThatNeedReview(t *testing.T) {
 		"scripts": imported["scripts"], "scenario_draft": imported["scenario_draft"],
 	})
 	if refused.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Body.String(), importScenarioScriptsBlockedCode) ||
-		!strings.Contains(refused.Body.String(), "save the scripts without the scenario draft") {
+		!strings.Contains(refused.Body.String(), "save the scripts without the scenario draft") ||
+		// Saving without the draft keeps the thread group population.
+		!strings.Contains(refused.Body.String(), "metadata.import.preserved.source_population") {
 		t.Fatalf("scenario of a script needing review = %d %.400s, want 422 %s", refused.Code, refused.Body.String(), importScenarioScriptsBlockedCode)
 	}
 	if scripts, _ := server.store.ListScripts(storage.DefaultProjectID, nil); len(scripts) != 0 {

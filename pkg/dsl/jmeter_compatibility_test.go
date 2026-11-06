@@ -78,3 +78,22 @@ func TestJMeterValidationBoundsAndSourceCounterIdentity(t *testing.T) {
 		t.Fatal("unblocked parallel child hidden by parent gate")
 	}
 }
+
+func TestSamplerScheduleAcceptsZeroRateRowsWithSomeLoad(t *testing.T) {
+	warmUp := SamplerSchedule{ID: "timer", Segments: []SamplerRateSegment{{StartRPS: 0, EndRPS: 18, DurationSeconds: 60}, {StartRPS: 18, EndRPS: 18, DurationSeconds: 3600}}}
+	if issues := ValidateSamplerSchedule(warmUp); len(issues) > 0 {
+		t.Fatalf("0 rps warm-up rejected: %v", issues)
+	}
+	pause := SamplerSchedule{ID: "timer", Segments: []SamplerRateSegment{{StartRPS: 5, EndRPS: 5, DurationSeconds: 60}, {StartRPS: 0, EndRPS: 0, DurationSeconds: 30}}}
+	if issues := ValidateSamplerSchedule(pause); len(issues) > 0 {
+		t.Fatalf("0 rps pause row rejected: %v", issues)
+	}
+	idle := SamplerSchedule{ID: "timer", Segments: []SamplerRateSegment{{StartRPS: 0, EndRPS: 0, DurationSeconds: 60}}}
+	if issues := ValidateSamplerSchedule(idle); len(issues) == 0 || !strings.Contains(strings.Join(issues, ";"), "at least one positive rate") || !strings.Contains(strings.Join(issues, ";"), "holds every other thread until another sample is admitted") {
+		t.Fatalf("all-zero schedule accepted: %v", issues)
+	}
+	negative := SamplerSchedule{ID: "timer", Segments: []SamplerRateSegment{{StartRPS: -1, EndRPS: 5, DurationSeconds: 60}}}
+	if issues := ValidateSamplerSchedule(negative); len(issues) == 0 {
+		t.Fatal("negative rate accepted")
+	}
+}

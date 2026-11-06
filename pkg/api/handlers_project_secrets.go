@@ -1167,6 +1167,58 @@ func clearSourceSecretSession(session *sourceSecretSession) {
 	session.Values = nil
 }
 
+// restoreSourceSecretSession puts back, under its original ID, scope and
+// expiry, a session this request consumed, so a stored reference to it still
+// resolves after a later step of the same operation failed. It copies the
+// values; the caller still clears session.
+func (s *Server) restoreSourceSecretSession(r *http.Request, session *sourceSecretSession) error {
+	now := time.Now().UTC()
+	if session == nil || session.ID == "" || len(session.Values) == 0 || !session.ExpiresAt.After(now) {
+		return errors.New("source secret session cannot be restored")
+	}
+	values := make(map[string]string, len(session.Values))
+	for id, value := range session.Values {
+		values[id] = value
+	}
+	if s.protectedSourceSessions != nil && s.protectedSourceSessions.Available() {
+		defer clear(values)
+		return s.protectedSourceSessions.Create(r.Context(), secretstore.ProtectedSourceSession{
+			ID:         session.ID,
+			ProjectID:  session.ProjectID,
+			Actor:      session.Actor,
+			Values:     values,
+			ExpiresAt:  session.ExpiresAt,
+			FeatureIDs: append([]string(nil), session.FeatureIDs...),
+		})
+	}
+	if s.haExecution {
+		clear(values)
+		return errors.New("durable encrypted source secret sessions are unavailable for controller HA")
+	}
+	restored := &sourceSecretSession{
+		ID:         session.ID,
+		ProjectID:  session.ProjectID,
+		Actor:      session.Actor,
+		Values:     values,
+		ExpiresAt:  session.ExpiresAt,
+		FeatureIDs: append([]string(nil), session.FeatureIDs...),
+	}
+	s.sourceSecretMu.Lock()
+	defer s.sourceSecretMu.Unlock()
+	if s.sourceSecretSessions == nil {
+		s.sourceSecretSessions = make(map[string]*sourceSecretSession)
+	}
+	if _, exists := s.sourceSecretSessions[restored.ID]; exists {
+		clearSourceSecretSession(restored)
+		return errors.New("source secret session already exists")
+	}
+	s.sourceSecretSessions[restored.ID] = restored
+	restored.Timer = time.AfterFunc(restored.ExpiresAt.Sub(now), func() {
+		s.expireSourceSecretSession(restored.ID, restored)
+	})
+	return nil
+}
+
 func (s *Server) expireSourceSecretSession(id string, expected *sourceSecretSession) {
 	if s == nil {
 		return

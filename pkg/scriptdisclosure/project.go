@@ -84,8 +84,12 @@ type projectionContext struct {
 	scriptMetadata bool
 	importMetadata bool
 	scriptName     bool
-	extractor      bool
-	extractorList  bool
+	// protectedCredentialReview marks the import's protected credential
+	// requirement descriptors, whose names and locator paths the server
+	// authored: they say where a credential goes, they never hold one.
+	protectedCredentialReview bool
+	extractor                 bool
+	extractorList             bool
 	// browserTarget is set for a browser step's target that is a locator or
 	// script, which is never read as a URL.
 	browserTarget dsl.BrowserTargetKind
@@ -327,6 +331,8 @@ func (p *projector) project(value any, ctx projectionContext, depth int) (any, e
 					normalized == "params",
 				extractorList: ctx.action && normalized == "extractors",
 				scriptName:    depth == 0 && normalized == "name",
+				protectedCredentialReview: ctx.protectedCredentialReview ||
+					ctx.metadata && key == protectedCredentialRequirementsMetadataKey,
 			}
 			if ctx.action && !ctx.metadata {
 				childContext.browserTarget = nonURLBrowserTarget(typed, key)
@@ -557,6 +563,21 @@ func (p *projector) projectString(value string, ctx projectionContext) string {
 	}
 	if isSecretReferenceKey(ctx.key) && isNamedReference(value) {
 		return value
+	}
+	if !ctx.sentMetadataEntry && isNonSecretIdentifierKey(ctx.key) {
+		// Hub and SAS policy names are identifiers the reviewer must read, so
+		// they skip the random-looking-text heuristic. They still get the
+		// structured credential scrub: a portal connection string pasted where
+		// a hub name belongs still masks its SharedAccessKey.
+		return p.replaceKnown(p.scrubMemo.ValueLabel(value))
+	}
+	if !ctx.sentMetadataEntry && (ctx.metadata && isSecretNameListKey(ctx.key) ||
+		ctx.protectedCredentialReview && isCredentialLocatorKey(ctx.key)) {
+		// Names of secrets, and the paths a credential requirement points at,
+		// are identifiers the reviewer must read. The random-looking-text
+		// heuristic below would hide them; a known credential value they
+		// happen to contain still masks.
+		return p.replaceKnown(value)
 	}
 	if isSensitiveKey(ctx.key) {
 		return projectSensitiveString(value)
@@ -1172,6 +1193,12 @@ func isSensitiveKey(key string) bool {
 		"effectiveauth", "authmode":
 		return false
 	}
+	if isNonSecretIdentifierKey(key) || isTokenEndpointKey(normalized) {
+		// The OAuth token endpoint (sasl.oauthbearer.token.endpoint.url) is an
+		// address; credentials in its userinfo or query are found as for any
+		// URL key (isURLKey).
+		return false
+	}
 	if credential.SensitiveName(key) {
 		return true
 	}
@@ -1281,13 +1308,60 @@ func nonURLBrowserTarget(owner map[string]any, key string) dsl.BrowserTargetKind
 }
 
 func isURLKey(key string) bool {
-	switch normalizeName(key) {
+	normalized := normalizeName(key)
+	switch normalized {
 	case "baseurl", "url", "brokerurl", "schemaregistryurl", "server", "origin", "target", "address":
+		return true
+	default:
+		return isTokenEndpointKey(normalized)
+	}
+}
+
+// isTokenEndpointKey reports an OAuth token endpoint field: the DSL's
+// token_url, or Kafka's sasl.oauthbearer.token.endpoint.url setting.
+func isTokenEndpointKey(normalized string) bool {
+	return normalized == "tokenurl" || strings.HasSuffix(normalized, "tokenendpointurl")
+}
+
+// isNonSecretIdentifierKey reports fields that name a resource rather than
+// hold a credential. An Event Hubs shared_access_key_name is the SAS policy
+// name (RootManageSharedAccessKey, send); the key itself is the separate
+// SharedAccessKey, inside the connection string.
+func isNonSecretIdentifierKey(key string) bool {
+	switch normalizeName(key) {
+	case "sharedaccesskeyname", "eventhub":
 		return true
 	default:
 		return false
 	}
 }
+
+// isSecretNameListKey reports replay-preflight lists of secret names: the
+// names a run needs, never their values.
+func isSecretNameListKey(key string) bool {
+	switch normalizeName(key) {
+	case "requiredsecrets", "missingsecrets":
+		return true
+	default:
+		return false
+	}
+}
+
+// isCredentialLocatorKey reports a protected credential requirement's
+// suggested secret name and the JSON pointers of the fields it covers.
+func isCredentialLocatorKey(key string) bool {
+	switch normalizeName(key) {
+	case "suggestedname", "affectedpaths", "path":
+		return true
+	default:
+		return false
+	}
+}
+
+// protectedCredentialRequirementsMetadataKey is
+// importreview.ProtectedImportCredentialMetadataKey; importreview imports
+// this package, so the name is repeated here.
+const protectedCredentialRequirementsMetadataKey = "protected_credential_requirements_v1"
 
 func isFreeTextKey(key string) bool {
 	switch normalizeName(key) {

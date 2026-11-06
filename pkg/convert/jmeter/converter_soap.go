@@ -14,8 +14,18 @@ func applySOAPProtocolHints(script *dsl.Script, warnings *[]string, threadName s
 		return
 	}
 	soapCount := 0
+	samplerCount := 0
 	soapVersion := ""
 	for _, action := range script.Actions {
+		// Import review placeholders (thread-group error policy, shaping and
+		// other source-review gates) are not samplers and never dispatch, so
+		// they must not make a SOAP-only thread group look mixed. A placeholder
+		// that stands for a sampler (an unsupported sampler, or scripting that
+		// did not translate) is a non-SOAP sampler and still counts.
+		if action.Type == "review_required" && !jmeterSamplerPlaceholder(action) {
+			continue
+		}
+		samplerCount++
 		if action.SOAP == nil {
 			continue
 		}
@@ -29,8 +39,8 @@ func applySOAPProtocolHints(script *dsl.Script, warnings *[]string, threadName s
 	if soapCount == 0 {
 		return
 	}
-	if soapCount != len(script.Actions) {
-		*warnings = append(*warnings, fmt.Sprintf("%s: detected %d SOAP-style samplers and %d non-SOAP samplers; keeping HTTP protocol because the imported thread group is mixed", threadName, soapCount, len(script.Actions)-soapCount))
+	if soapCount != samplerCount {
+		*warnings = append(*warnings, fmt.Sprintf("%s: detected %d SOAP-style samplers and %d non-SOAP samplers; keeping HTTP protocol because the imported thread group is mixed", threadName, soapCount, samplerCount-soapCount))
 		return
 	}
 	if soapVersion == "" {
@@ -43,6 +53,23 @@ func applySOAPProtocolHints(script *dsl.Script, warnings *[]string, threadName s
 			FailOnFault: true,
 		},
 	}
+	// The runtime clears cookies per iteration only for http scripts, so the
+	// Cookie Manager's clear-each-iteration mapping does nothing here.
+	if clear := script.Config.HTTP.ClearCookiesPerIter; clear != nil && *clear {
+		*warnings = append(*warnings, fmt.Sprintf("%s: the HTTP Cookie Manager clears cookies each iteration, but this group was imported as a SOAP script and SOAP scripts keep their cookies from one iteration to the next, so session cookies carry over between iterations (config.http.clear_cookies_per_iteration is not applied to SOAP scripts)", threadName))
+	}
+}
+
+// jmeterSamplerPlaceholder reports whether a review placeholder stands in for
+// a source sampler rather than for a non-sampler gate.
+func jmeterSamplerPlaceholder(action dsl.Action) bool {
+	actions := []dsl.Action{action}
+	for _, reason := range []string{"unsupported_jmeter_sampler", "unsupported_source_script", "partially_translated_source_script"} {
+		if hasJMeterReviewReason(actions, reason) {
+			return true
+		}
+	}
+	return false
 }
 
 func applySOAPSamplerHints(action *dsl.Action) {

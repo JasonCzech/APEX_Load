@@ -3690,6 +3690,33 @@ func TestCompactTerminalManagedTestReleasesHistoryAndRuntimeState(t *testing.T) 
 	}
 }
 
+func TestCompactTerminalManagedTestEndsRunningGroups(t *testing.T) {
+	ended := time.Date(2026, time.November, 5, 22, 52, 51, 0, time.UTC)
+	earlier := ended.Add(-time.Minute)
+	testRun := &ManagedTest{
+		Status:  "COMPLETE",
+		EndedAt: &ended,
+		Groups: []TestGroup{
+			{Name: "iterations", RuntimeState: "running"},
+			{Name: "deadline", RuntimeState: "ended", EndedAt: &earlier},
+			{Name: "never-started"},
+		},
+	}
+	compactTerminalManagedTestLocked(testRun)
+	if got := testRun.Groups[0]; got.RuntimeState != "ended" || got.EndedAt == nil || !got.EndedAt.Equal(ended) {
+		t.Fatalf("iteration-bounded group = %q ended_at %v, want ended at the run end", got.RuntimeState, got.EndedAt)
+	}
+	if got := testRun.Groups[1]; got.EndedAt == nil || !got.EndedAt.Equal(earlier) {
+		t.Fatalf("deadline-ended group ended_at = %v, want its own %v", got.EndedAt, earlier)
+	}
+	if got := testRun.Groups[2]; got.RuntimeState != "" || got.EndedAt != nil {
+		t.Fatalf("group without runtime state = %q/%v, want untouched", got.RuntimeState, got.EndedAt)
+	}
+	if testRun.Groups[0].EndedAt == testRun.EndedAt {
+		t.Fatal("group ended_at aliases the run's ended_at")
+	}
+}
+
 func TestLoadStoredTestHistoryBuildsLiveMetricsFromTypedIntervalSummaries(t *testing.T) {
 	store := &metricsStoreSpy{historyByTestID: map[string][]any{
 		"test-1": {

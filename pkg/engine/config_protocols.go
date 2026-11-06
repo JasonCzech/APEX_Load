@@ -721,7 +721,7 @@ func appendJMSConfig(cfg map[string]any, script *dsl.Script) {
 func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	kafkaCfg := script.Config.Kafka
 	if p := kafkaCfg.Producer; p != nil {
-		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs} {
+		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs, "max_in_flight_requests": p.MaxInFlightRequests} {
 			if value != nil {
 				cfg["kafka_producer_"+key] = float64(*value)
 			}

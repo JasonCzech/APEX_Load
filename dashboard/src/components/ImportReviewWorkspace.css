@@ -43,6 +43,7 @@
 .shared-import-issue-detail-heading h4 { margin: 0; font-size: 18px; text-transform: none; letter-spacing: normal; }
 .shared-import-issue-detail-heading p { margin: 6px 0 0; color: var(--text-secondary); }
 .shared-import-issue-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.shared-import-issue-unclearable { align-self: center; font-weight: 600; color: var(--text-secondary, inherit); }
 .shared-import-issue-impact, .shared-import-issue-resolution { margin: 16px 0; }
 .shared-import-issue-detail h5 { margin: 0 0 8px; color: var(--text-primary); font-size: 14px; }
 .shared-import-issue-impact p, .shared-import-issue-resolution p { margin: 0; color: var(--text-secondary); line-height: 1.6; overflow-wrap: anywhere; }

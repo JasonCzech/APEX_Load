@@ -54,3 +54,38 @@ func TestStructuralKafkaContracts(t *testing.T) {
 		t.Fatalf("upper bound: %d, %v", got, err)
 	}
 }
+
+func TestProducerMaxInFlightRequestsContract(t *testing.T) {
+	p, err := ParseProducerTuning(map[string]any{"kafka_producer_max_in_flight_requests": float64(5)})
+	if err != nil || p.MaxInFlightRequests == nil || *p.MaxInFlightRequests != 5 {
+		t.Fatalf("parsed %+v, %v", p, err)
+	}
+	if p, err = ParseProducerTuning(nil); err != nil || p.MaxInFlightRequests != nil {
+		t.Fatalf("unset in-flight must stay nil to keep the franz default: %+v, %v", p, err)
+	}
+	for _, value := range []any{0, -1, 1.5, "many"} {
+		if err := ValidateProducerSettings(map[string]any{"kafka_producer_max_in_flight_requests": value}); err == nil {
+			t.Fatalf("accepted max_in_flight_requests %v", value)
+		}
+	}
+	for _, test := range []struct {
+		acks, idempotence string
+		idempotent        bool
+	}{{"", "", true}, {"all", "enabled", true}, {"ALL", "Disabled", false}, {"leader", "", false}, {"none", "enabled", false}} {
+		if got := IdempotentProducer(test.acks, test.idempotence); got != test.idempotent {
+			t.Fatalf("IdempotentProducer(%q, %q) = %v", test.acks, test.idempotence, got)
+		}
+	}
+	six, five := 6, 5
+	if err := ValidateProducerInFlight(ProducerTuning{MaxInFlightRequests: &six}, "", ""); err == nil {
+		t.Fatal("idempotent producer accepted six in-flight requests")
+	}
+	for _, test := range []struct {
+		value             *int
+		acks, idempotence string
+	}{{&five, "", ""}, {&six, "all", "disabled"}, {&six, "leader", ""}, {nil, "", ""}} {
+		if err := ValidateProducerInFlight(ProducerTuning{MaxInFlightRequests: test.value}, test.acks, test.idempotence); err != nil {
+			t.Fatalf("%+v: %v", test, err)
+		}
+	}
+}

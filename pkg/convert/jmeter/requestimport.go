@@ -298,13 +298,36 @@ func applyJMeterSharedReviewGate(action *dsl.Action, reasons []string, sourceRef
 		}
 	}
 	action.Metadata["execution_blocker"] = "import_review_required"
+	reasons = uniqueJMeterStrings(reasons)
 	action.Metadata["import_review"] = map[string]any{
 		"version":      1,
 		"source":       "jmeter",
-		"reason_codes": uniqueJMeterStrings(reasons),
+		"reason_codes": reasons,
 		"source_refs":  uniqueJMeterStrings(refs),
-		"resolution":   "replace_behavior_and_remove_gate",
+		"resolution":   jmeterReviewResolution(reasons),
 	}
+}
+
+// jmeterProductGatedReviewCodes are the gates no edit, repair or re-import can
+// clear in this release: they wait on runtime conformance work.
+var jmeterProductGatedReviewCodes = map[string]bool{
+	"jmeter_messaging_compatibility_unverified":       true,
+	"jmeter_kafka_batch_allocation_parity_unverified": true,
+}
+
+// jmeterReviewResolutionAwaitingRuntime tells the reviewer the action cannot be
+// made runnable yet. "replace_behavior_and_remove_gate" implied every gate on
+// a messaging action could be cleared, which is not true while a product gate
+// remains; the clearable codes are still listed and can still be resolved.
+const jmeterReviewResolutionAwaitingRuntime = "awaiting_runtime_support"
+
+func jmeterReviewResolution(reasons []string) string {
+	for _, reason := range reasons {
+		if jmeterProductGatedReviewCodes[reason] {
+			return jmeterReviewResolutionAwaitingRuntime
+		}
+	}
+	return "replace_behavior_and_remove_gate"
 }
 
 func projectJMeterHTTPConfigCredentials(script *dsl.Script, ctx *convertContext, sourceFile string) (requestimport.Report, error) {

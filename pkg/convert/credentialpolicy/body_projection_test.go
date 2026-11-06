@@ -375,3 +375,38 @@ func TestComposedCredentialNameIgnoresBooleanAndNullValues(t *testing.T) {
 		}
 	}
 }
+
+// The JSON projection judges a member by its name and never scans the value
+// for an embedded URL or connection-string credential, so a token endpoint
+// field and a SAS policy name field keep their name-based protection: a
+// client_secret pasted into a token_url query, or a whole connection string
+// pasted where the policy name belongs, is still governed.
+func TestProjectRequestBodyGovernsTokenEndpointAndSASPolicyNameJSONFields(t *testing.T) {
+	t.Parallel()
+	for _, member := range []struct{ name, value string }{
+		{"token_url", "https://idp.example.com/oauth2/token?client_secret=" + projectionCanary},
+		{"sasl.oauthbearer.token.endpoint.url", "https://idp.example.com/oauth2/token?client_secret=" + projectionCanary},
+		{"shared_access_key_name", "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=send;SharedAccessKey=" + projectionCanary},
+	} {
+		member := member
+		t.Run(member.name, func(t *testing.T) {
+			t.Parallel()
+			payload := []byte(`{"` + member.name + `":"` + member.value + `","ordinary":"keep"}`)
+			for _, mode := range []ProjectionMode{SecretReference, Redact} {
+				options := projectionOptions()
+				options.Mode = mode
+				output, result, err := ProjectRequestBody(payload, "application/json", options)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Contains(output, []byte(`"ordinary":"keep"`)) {
+					t.Fatalf("%s: nonsensitive bytes changed: %s", mode, output)
+				}
+				assertDisclosureSafe(t, output, result)
+				if mode == SecretReference && len(result.Requirements) == 0 {
+					t.Fatalf("%s: no credential requirement for %s: %#v", mode, member.name, result)
+				}
+			}
+		})
+	}
+}

@@ -63,7 +63,7 @@ func TestBaselineNormalizedContracts(t *testing.T) {
 // accounting. Any update must be reviewed as an intentional importer delta.
 var frozenImportContractHashes = map[string]string{
 	"har":      "03fc9cf598ad03d647308a19e73658d61ce3bd104c1d8c6b2b0c7669333f055f",
-	"jmeter":   "3c6e167f1526ecec0148f58521aba4970b123890c0569e56e89dab6cbd7929c2",
+	"jmeter":   "b095416e3138bceb8f4ffb28cfffe529f44aa27f2817995bfb644a7b6449fcb2",
 	"k6":       "223d2eb2c757a624f7c0f670f04d32bb0d9de0abb406ab040af52cbf2b2eba94",
 	"openapi":  "2556790828c10f7324153accb4cb0c850171b031581e5aea760b322de638ff9d",
 	"postman":  "d8e22b1ff33f8bd71d312ba049cfd3fcf17424541feb51da39a08550ce7052f4",
@@ -83,6 +83,8 @@ func TestFrozenImportContractsAreExactAndDeterministic(t *testing.T) {
 			if importer.name == "jmeter" {
 				requireIntentionalDelta(t, "jmeter_stable_source_identity")
 				requireIntentionalDelta(t, "jmeter_normalized_review_evidence")
+				requireIntentionalDelta(t, "jmeter_http_client_parity")
+				requireIntentionalDelta(t, "jmeter_disjoint_workload_stats")
 			}
 			if importer.name == "wsdl" {
 				requireIntentionalDelta(t, "wsdl_incomplete_skeletons_are_blocked")
@@ -603,6 +605,8 @@ var intentionalDeltaAllowlist = map[string]string{
 	"har_response_content_storage_provenance":        "HAR content is admitted as already-decoded logical storage, with exact bounded text/binary size provenance and durable gates for malformed explicit recorder envelopes or invalid storage; captured wire headers never trigger a second content decode.",
 	"http_imports_disable_implicit_traceparent":      "HTTP-producing imports without an explicit source choice persist traceparent=false so runtime defaults cannot add an unauthored wire header.",
 	"jmeter_normalized_review_evidence":              "JMeter returns source-qualified structured diagnostics and separate behavior-level review counts, restricts unsupported elements to unrepresentable behavior, and retains normalized evidence in new draft provenance.",
+	"jmeter_http_client_parity":                      "JMeter HTTP scripts pin HTTP/1.1, trust any server certificate with a review warning, turn cookies off without a Cookie Manager, disclose JMeter timeouts that do not become a request timeout (absent, connect-only or variable), record the thread group's sample-error policy and population, and map plan, thread group and config elements in source review; a diagnostic resolved to such a mapping keeps its own location.",
+	"jmeter_disjoint_workload_stats":                 "JMeter stats add disjoint replay-ready, review-gated and unconverted sampler counts beside the overlapping converted/blocked ones, count generated counter, random and date_time parameters as variables once per plan, and stop counting result exports and generated parameters as mapped workload.",
 	"jmeter_stable_source_identity":                  "JMeter provenance retains content-addressed plan and source group identities, stable source mapping IDs, and separate workload and contributor counts for regeneration and scoped compatibility behavior.",
 	"script_results_contract":                        "The optional bounded result-detail policy adds an empty results object to imported script configuration while preserving legacy runtime behavior.",
 	"http_conversion_effective_settings":             "HTTP sample and HAR conversion results surface the resolved effective_settings summary (policy, correlation mode, generation options, and source entrypoint) so callers can audit conversion provenance.",

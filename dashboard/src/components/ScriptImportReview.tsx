@@ -34,7 +34,7 @@ import SecretBindingReview, {
 import { requirementNeedsSecretBinding, requirementsPreserveDestinationValues } from './secretBindingUtils'
 import type { IssueDetail } from './IssueDetailsDialog'
 import ImportIssueWorkspace from './ImportIssueWorkspace'
-import { groupImportWorkspaceIssues, importDiagnosticTitle, type GroupedImportWorkspaceIssue } from './importIssueWorkspaceModel'
+import { groupImportWorkspaceIssues, importDiagnosticTitle, type GroupedImportWorkspaceIssue, type ImportIssueAction, type ImportWorkspaceIssue } from './importIssueWorkspaceModel'
 import { ImportSourceIssueFocusContext, type ImportSourceIssueFocus } from './ImportSourceIssueFocus'
 import LinkedCodePane from './LinkedCodePane'
 import './ScriptImportReview.css'
@@ -50,6 +50,7 @@ const severityRank: Record<string, number> = {
 }
 
 const EMPTY_REQUIREMENTS: SecretBindingRequirement[] = []
+const REVIEW_TABS_WITHOUT_CREDENTIALS: readonly ImportReviewTab[] = ['review', 'data', 'runtime', 'dsl', 'source']
 const PREVIEW_MAX_CHARS = 120000
 const PREVIEW_MAX_NODES = 5000
 const PREVIEW_MAX_ARRAY_ITEMS = 1000
@@ -484,7 +485,14 @@ interface Props {
   warnings?: string[]
   warningsTitle?: string
   reviewSummary?: JMeterReviewSummary
-  diagnostics?: {code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string}[]
+  diagnostics?: {code?: string; source_ref?: string; element: string; detail: string; resolution?: string; severity: 'blocker' | 'warning' | 'info'; location?: string}[]
+  /** A resolution the importer offers for an issue outside the review tabs. */
+  issueAction?: (issue: GroupedImportWorkspaceIssue) => ImportIssueAction | undefined
+  /**
+   * Where credential setup happens when this review does not show its
+   * Credentials tab (showCredentials false): the readiness links go there.
+   */
+  onCredentialSetup?: () => void
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
   // Collection-wide values, applied across every script of the import at once.
@@ -584,6 +592,8 @@ export default function ScriptImportReview({
   warningsTitle = 'Warnings',
   unsupportedElements = [],
   diagnostics,
+  issueAction,
+  onCredentialSetup,
   reviewSummary,
   reviewSections = [],
   sharedValues,
@@ -1036,13 +1046,16 @@ export default function ScriptImportReview({
     if (!blockerDetails.some(existing => existing.description === redactPreviewText(item))) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: redactPreviewText(item), source: 'Import conversion'})
   }
   const normalizedDiagnostics = reviewSummary && diagnostics != null
-  const actionableReviewIssues: IssueDetail[] = normalizedDiagnostics
+  const actionableReviewIssues: ImportWorkspaceIssue[] = normalizedDiagnostics
     ? diagnostics.map((item, index) => ({
         id: `jmeter-${item.source_ref || item.location || index}-${item.code || index}`,
         identity: `jmeter-${item.source_ref || item.location || index}-${item.code || index}`,
         onSelect: () => setActiveReviewTab('source'),
         severity: item.severity,
         title: importDiagnosticTitle(item),
+        code: item.code,
+        location: item.location,
+        ...(item.resolution ? { resolution: redactPreviewText(item.resolution) } : {}),
         description: redactPreviewText(item.detail),
         source: redactPreviewText([item.source_ref, item.location].filter(Boolean).join(' · ') || 'Import conversion'),
       }))
@@ -1070,6 +1083,13 @@ export default function ScriptImportReview({
   const importDraftExpired = importDraftExpiry?.expired === true
   const compactHeader = compactReview || tabbed
   const showSubtitleInline = subtitleInline || (typeof subtitle === 'string' && /dry-run validation|nothing has been saved/i.test(subtitle))
+  // A review that does not show credentials has no Credentials tab to badge
+  // or link to: its host names where credentials are set up instead.
+  const credentialsTabHidden = tabbed && !requestedCredentials
+  // Without a tab or a host destination, the count is shown as plain text.
+  const credentialLink = (label: ReactNode) => credentialsTabHidden && !onCredentialSetup
+    ? <span>{label}</span>
+    : <button type="button" onClick={credentialsTabHidden ? onCredentialSetup : () => setActiveReviewTab('credentials')}>{label}</button>
   const hasReviewBlockers = normalizedDiagnostics
     ? reviewSummary.blocking_behaviors > 0
     : actionableReviewIssues.some(issue => issue.severity === 'blocker' || issue.severity === 'error')
@@ -1151,15 +1171,15 @@ export default function ScriptImportReview({
         {normalizedDiagnostics
           ? <span aria-label="JMeter review summary">{reviewSummary.blocking_behaviors} blocking behaviors · {reviewSummary.review_behaviors} behaviors requiring review · {reviewSummary.unsupported_behaviors} unsupported behaviors · {reviewSummary.warnings} warnings · {reviewSummary.informational} informational findings</span>
           : <span><strong>{groupedReviewIssueCount}</strong> finding{groupedReviewIssueCount === 1 ? '' : 's'} · {blockingIssueCount} blocking · {warningIssueCount} warning{warningIssueCount === 1 ? '' : 's'} · {noteIssueCount} note{noteIssueCount === 1 ? '' : 's'}</span>}
-        {credentialSetupCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{credentialSetupCount}</strong> credential binding{credentialSetupCount === 1 ? '' : 's'} to configure</button>}
-        {preservedCredentialCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{preservedCredentialCount}</strong> preserved credential{preservedCredentialCount === 1 ? '' : 's'} to review</button>}
-        {keptAsRecordedCredentialCount > 0 && <button type="button" onClick={() => setActiveReviewTab('credentials')}><strong>{keptAsRecordedCredentialCount}</strong> credential{keptAsRecordedCredentialCount === 1 ? '' : 's'} kept as recorded, to edit before running</button>}
+        {credentialSetupCount > 0 && credentialLink(<><strong>{credentialSetupCount}</strong> credential binding{credentialSetupCount === 1 ? '' : 's'} to configure</>)}
+        {preservedCredentialCount > 0 && credentialLink(<><strong>{preservedCredentialCount}</strong> preserved credential{preservedCredentialCount === 1 ? '' : 's'} to review</>)}
+        {keptAsRecordedCredentialCount > 0 && credentialLink(<><strong>{keptAsRecordedCredentialCount}</strong> credential{keptAsRecordedCredentialCount === 1 ? '' : 's'} kept as recorded, to edit before running</>)}
         {requiredDataCount > 0 && <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{requiredDataCount}</strong> required data input{requiredDataCount === 1 ? '' : 's'}</button>}
         {optionalDataCount > 0 && <button type="button" onClick={() => setActiveReviewTab('data')}><strong>{optionalDataCount}</strong> optional data suggestion{optionalDataCount === 1 ? '' : 's'}</button>}
       </div>}
       {reviewNavigation}
       {!tabbed && onSettingsApplied && <div hidden={!showDataReview}><ImportParameterInventory script={script} /></div>}
-      {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace normalizedEvidence={Boolean(normalizedDiagnostics)} issues={actionableReviewIssues} onNavigate={(tab, issue) => { if (tab === 'source' && issue) focusIssueSource(issue); setActiveReviewTab(tab) }} onSourceSelect={focusIssueSource} /></div>}
+      {showOriginalDiagnostics && actionableReviewIssues.length > 0 && <div hidden={tabbed && activeReviewTab !== 'review'}><ImportIssueWorkspace normalizedEvidence={Boolean(normalizedDiagnostics)} issues={actionableReviewIssues} issueAction={issueAction} onNavigate={(tab, issue) => { if (tab === 'source' && issue) focusIssueSource(issue); setActiveReviewTab(tab) }} navigableTabs={credentialsTabHidden ? REVIEW_TABS_WITHOUT_CREDENTIALS : undefined} onSourceSelect={focusIssueSource} /></div>}
       <div hidden={tabbed && activeReviewTab !== 'review'}>{children}</div>
       {tabbed && <div hidden={activeReviewTab !== 'runtime'}>{onTransportApplied && <ImportTransportPanel script={script} diagnostics={transportDiagnostics ?? diagnostics} disabled={credentialEditing || settingsBusy || importDraftExpired || saving || parameterizationApplying || sharedValuesApplying || reviewBusy || credentialAction !== null} onApplyingChange={handleTransportApplyingChange} onApplied={onTransportApplied} />}{runtimeContent}{onSettingsApplied && <ImportRuntimeSettingsTable script={script} />}{!runtimeContent && !onSettingsApplied && !onTransportApplied && <p className="import-review-empty">No editable runtime settings were supplied by this importer. Review effective settings in the saved script before debugging.</p>}</div>}
       {!tabbed && runtimeContent}
@@ -1252,6 +1272,6 @@ export default function ScriptImportReview({
   const reimportControl = existingScripts?.choices.hasMatches
     ? <ImportExistingScripts choices={existingScripts.choices} labels={existingScripts.labels} disabled={saving || reviewBusy || sharedValuesApplying || credentialAction !== null} />
     : null
-  const reviewContent = tabbed ? <>{reimportControl}{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} counts={{ review: groupedReviewIssueCount, credentials: secretBindingRequirements.length }}>{content}</ImportReviewTabs></> : <>{reimportControl}{content}</>
+  const reviewContent = tabbed ? <>{reimportControl}{batchControls}<ImportReviewTabs active={activeReviewTab} onChange={setActiveReviewTab} visibleTabs={credentialsTabHidden ? REVIEW_TABS_WITHOUT_CREDENTIALS : undefined} counts={{ review: groupedReviewIssueCount, ...(credentialsTabHidden ? {} : { credentials: secretBindingRequirements.length }) }}>{content}</ImportReviewTabs></> : <>{reimportControl}{content}</>
   return <ImportSourceIssueFocusContext.Provider value={sourceIssueFocus}><ImportSettingsProvider script={script} disabled={credentialEditing || settingsDisabled || saving || reviewBusy || importDraftExpired || parameterizationApplying || sharedValuesApplying || transportApplying || credentialAction !== null} onApplied={onSettingsApplied} onBusyChange={handleSettingsBusyChange}>{reviewContent}</ImportSettingsProvider></ImportSourceIssueFocusContext.Provider>
 }

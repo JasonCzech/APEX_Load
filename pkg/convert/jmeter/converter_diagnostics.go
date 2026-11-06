@@ -254,9 +254,11 @@ func jmeterElementLocation(element *xmlNode) string {
 	return name
 }
 
-func buildScenarioDraft(threadGroups []*treeNode, scripts []*dsl.Script) *ScenarioDraft {
+// buildScenarioDraft names the draft after the plan's own Test Plan name when
+// it has a meaningful one; planName is empty for a generic or missing name.
+func buildScenarioDraft(threadGroups []*treeNode, scripts []*dsl.Script, planName string) *ScenarioDraft {
 	draft := &ScenarioDraft{
-		Name:         "Imported JMeter Scenario",
+		Name:         convertutil.FirstNonEmpty(strings.TrimSpace(planName), "Imported JMeter Scenario"),
 		Duration:     "5m",
 		ScenarioMode: "vuser_driven",
 		Groups:       []ScenarioDraftGroup{},
@@ -372,10 +374,17 @@ func populateJMeterWorkloadAccounting(nodes []*treeNode, mappings []sourceview.M
 				} else {
 					stats.EnabledWorkloadSamplers++
 					m, ok := byID[jmeterMappingIdentity(e, e.Name)]
-					if ok && m.TargetKind != "unsupported" && (m.Status == "converted" || m.Status == "review_only") {
+					drafted := ok && m.TargetKind != "unsupported" && (m.Status == "converted" || m.Status == "review_only")
+					switch {
+					case drafted && m.Status == "converted":
+						stats.ReplayReadyWorkloadSamplers++
 						stats.ConvertedWorkloadSamplers++
-					}
-					if !ok || m.Status != "converted" {
+					case drafted:
+						stats.ReviewGatedWorkloadSamplers++
+						stats.ConvertedWorkloadSamplers++
+						stats.BlockedWorkloadSamplers++
+					default:
+						stats.UnconvertedWorkloadSamplers++
 						stats.BlockedWorkloadSamplers++
 					}
 				}
