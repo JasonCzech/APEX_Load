@@ -118,7 +118,36 @@ func authMatchesURL(authURL string, candidate string) bool {
 	if authURL == "" || candidate == "" {
 		return false
 	}
-	return strings.HasPrefix(candidate, authURL)
+	normalizedAuth, normalizedCandidate := withoutJMeterDefaultPort(authURL), withoutJMeterDefaultPort(candidate)
+	if !strings.HasPrefix(normalizedCandidate, normalizedAuth) {
+		return false
+	}
+	// For JMeter an explicit default port ends the Authorization URL's host,
+	// so once the port is dropped the match must not run on into a longer
+	// host name (api.example.com:443 never matches api.example.com.other).
+	if _, rest, _ := strings.Cut(normalizedAuth, "://"); normalizedAuth != authURL && !strings.ContainsAny(rest, "/?#") {
+		tail := normalizedCandidate[len(normalizedAuth):]
+		return tail == "" || strings.ContainsAny(tail[:1], "/?#")
+	}
+	return true
+}
+
+// withoutJMeterDefaultPort drops an explicit :443 (https) or :80 (http) from a
+// URL's authority. Sampler URLs omit the default port, and JMeter's
+// AuthManager matches an Authorization URL with or without it.
+func withoutJMeterDefaultPort(raw string) string {
+	scheme, rest, ok := strings.Cut(raw, "://")
+	if !ok {
+		return raw
+	}
+	authority, path := rest, ""
+	if index := strings.IndexAny(rest, "/?#"); index >= 0 {
+		authority, path = rest[:index], rest[index:]
+	}
+	if index := strings.LastIndex(authority, ":"); index >= 0 && !strings.Contains(authority[index:], "]") && jmeterDefaultPort(scheme, authority[index+1:]) {
+		authority = authority[:index]
+	}
+	return scheme + "://" + authority + path
 }
 
 func parseResponseAssertions(node *xmlNode, diagnostics *diag.Collector) []dsl.Assertion {

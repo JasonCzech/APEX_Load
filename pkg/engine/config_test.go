@@ -76,6 +76,27 @@ func TestBuildProtoConfig_Kafka(t *testing.T) {
 	if cfg["kafka_mock"] != true {
 		t.Fatalf("kafka_mock = %v, want true", cfg["kafka_mock"])
 	}
+	if _, ok := cfg["kafka_producer_max_in_flight_requests"]; ok {
+		t.Fatalf("unset max_in_flight_requests must not reach the runtime: %v", cfg["kafka_producer_max_in_flight_requests"])
+	}
+}
+
+// The DSL field is validated on its own, so a missing engine mapping would
+// silently run the producer with franz's one request in flight per broker.
+func TestBuildProtoConfig_KafkaProducerTuning(t *testing.T) {
+	inFlight, linger := 5, 10
+	script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{
+		Producer: &dsl.KafkaProducerConfig{MaxInFlightRequests: &inFlight, LingerMs: &linger},
+	}}}
+
+	cfg := buildProtoConfig(script)
+
+	if cfg["kafka_producer_max_in_flight_requests"] != float64(5) {
+		t.Fatalf("kafka_producer_max_in_flight_requests = %v, want 5", cfg["kafka_producer_max_in_flight_requests"])
+	}
+	if cfg["kafka_producer_linger_ms"] != float64(10) {
+		t.Fatalf("kafka_producer_linger_ms = %v, want 10", cfg["kafka_producer_linger_ms"])
+	}
 }
 
 func TestBuildProtoConfig_EventHubs(t *testing.T) {

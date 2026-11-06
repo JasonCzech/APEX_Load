@@ -56,6 +56,15 @@ describe('useImportScenario', () => {
     expect(window.location.hash).toContain('draftId=draft-2')
   })
 
+  it('starts the draft from the population an importer passes', async () => {
+    apiMock.createScenarioDraft.mockResolvedValueOnce({ id: 'draft-p' })
+    await act(async () => root.render(<Harness projectId="project-1" />))
+    await act(async () => scenario.create('Split', [script('a')], { termination_mode: 'iterations', groups: [{ vusers: 50, ramp_up: '1s', iterations: 200 }] }))
+    const document = apiMock.createScenarioDraft.mock.calls[0][1].document
+    expect(document.form.termination_mode).toBe('iterations')
+    expect(document.form.groups[0]).toMatchObject({ script_id: 'a', vusers: 50, ramp_up: '1s', iterations: 200 })
+  })
+
   it('keeps a failure with the saved scripts it was for', async () => {
     apiMock.createScenarioDraft.mockRejectedValueOnce(new Error('network down'))
     await act(async () => root.render(<Harness projectId="project-1" />))

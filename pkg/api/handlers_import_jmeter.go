@@ -18,9 +18,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -244,6 +247,11 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 	}
 	combined := &jmeter.ConvertResult{}
 	credentialRegistry := credentialpolicy.NewNameRegistry()
+	// protected collects each document's value-bearing credential
+	// requirements for source-secret migration. Every early return clears
+	// it; after the loop it moves into combined.ProtectedRequirements.
+	var protected []credentialpolicy.Requirement
+	defer func() { clearCredentialRequirementValues(protected) }()
 	for _, document := range documents {
 		opts := request.Opts
 		opts.FileName = document.FileName
@@ -258,6 +266,7 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		if err != nil {
 			return nil, fmt.Errorf("convert JMeter ZIP entry %q: %w", document.FileName, err)
 		}
+		protected = append(protected, converted.ProtectedRequirements.Take()...)
 		if len(documents) > 1 && opts.ScenarioDraft {
 			for _, script := range converted.Scripts {
 				if script.Config.JMeter != nil {
@@ -287,6 +296,14 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 			}
 		}
 		combined.Warnings = append(combined.Warnings, converted.Warnings...)
+		// Keyed by script pointer, so the entries stay attached through the
+		// batch-wide display-label sanitization below.
+		for script, warnings := range converted.ScriptWarnings {
+			if combined.ScriptWarnings == nil {
+				combined.ScriptWarnings = make(map[*dsl.Script][]string, len(converted.ScriptWarnings))
+			}
+			combined.ScriptWarnings[script] = warnings
+		}
 		combined.UnsupportedElements = append(combined.UnsupportedElements, converted.UnsupportedElements...)
 		combined.Unsupported = append(combined.Unsupported, converted.Unsupported...)
 		combined.Assumptions = append(combined.Assumptions, converted.Assumptions...)
@@ -296,6 +313,9 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		combined.Stats.DisabledWorkloadSamplers += converted.Stats.DisabledWorkloadSamplers
 		combined.Stats.ConvertedWorkloadSamplers += converted.Stats.ConvertedWorkloadSamplers
 		combined.Stats.BlockedWorkloadSamplers += converted.Stats.BlockedWorkloadSamplers
+		combined.Stats.ReplayReadyWorkloadSamplers += converted.Stats.ReplayReadyWorkloadSamplers
+		combined.Stats.ReviewGatedWorkloadSamplers += converted.Stats.ReviewGatedWorkloadSamplers
+		combined.Stats.UnconvertedWorkloadSamplers += converted.Stats.UnconvertedWorkloadSamplers
 		combined.Stats.ConfigurationContributors += converted.Stats.ConfigurationContributors
 		combined.Stats.IgnoredReportingElements += converted.Stats.IgnoredReportingElements
 		combined.Stats.ThreadGroups += converted.Stats.ThreadGroups
@@ -305,6 +325,7 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 		combined.Stats.ConvertedActions += converted.Stats.ConvertedActions
 		combined.Stats.Headers += converted.Stats.Headers
 		combined.Stats.Variables += converted.Stats.Variables
+		combined.Stats.GeneratedParameters += converted.Stats.GeneratedParameters
 		combined.Stats.CSVSources += converted.Stats.CSVSources
 		combined.Stats.Assertions += converted.Stats.Assertions
 		combined.Stats.Timers += converted.Stats.Timers
@@ -320,6 +341,9 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 			if combined.ScenarioDraft == nil {
 				copy := *converted.ScenarioDraft
 				copy.Groups = nil
+				if len(documents) > 1 {
+					copy = combinedJMeterScenarioDraft(copy)
+				}
 				combined.ScenarioDraft = &copy
 			}
 			combined.ScenarioDraft.Groups = append(combined.ScenarioDraft.Groups, converted.ScenarioDraft.Groups...)
@@ -342,8 +366,32 @@ func convertJMeterImportRequest(request *jmeterImportRequest) (*jmeter.ConvertRe
 	combined.Summary.VariablesDiscovered = uniqueSortedStrings(combined.Summary.VariablesDiscovered)
 	combined.Summary.CSVSourcesDiscovered = uniqueSortedStrings(combined.Summary.CSVSourcesDiscovered)
 	combined.SetReviewEvidence(combined.ReviewOutcomes)
+	combined.ProtectedRequirements.Store(protected)
 	return combined, nil
 }
+
+// combinedJMeterScenarioDraft turns the first plan's draft into the draft for
+// a scenario that covers every plan in an archive. The converter names a draft
+// after its Test Plan and keeps that plan's comment; neither describes the
+// combined scenario, so it takes the generic name and drops the comment. Each
+// script keeps its own plan's identity in its import metadata.
+func combinedJMeterScenarioDraft(draft jmeter.ScenarioDraft) jmeter.ScenarioDraft {
+	draft.Name = combinedJMeterScenarioName
+	if draft.Metadata != nil {
+		metadata := make(map[string]any, len(draft.Metadata))
+		for key, value := range draft.Metadata {
+			if key != "source_comments" {
+				metadata[key] = value
+			}
+		}
+		draft.Metadata = metadata
+	}
+	return draft
+}
+
+// combinedJMeterScenarioName is the converter's generic scenario name, used
+// when one draft spans several independent plans.
+const combinedJMeterScenarioName = "Imported JMeter Scenario"
 
 // jmeterSidecarsForDocument presents archive sidecars relative to one JMX
 // entry. A basename-only global map is ambiguous when independent plans contain
@@ -580,19 +628,74 @@ func buildJMeterProtocolCompatReport(result *jmeter.ConvertResult) *protocolComp
 	if result.ReviewSummary != nil {
 		warningCount = result.ReviewSummary.Warnings
 	}
-	status := protocolPromotionStatus("executable", reviewGated, warningCount)
+	gatedSteps, steps := countJMeterReviewGatedSteps(result)
+	importMode := jmeterImportMode(gatedSteps, steps)
+	status := protocolPromotionStatus(importMode, reviewGated, warningCount)
 	return &protocolCompatReport{
 		SourceFormat:         "JMeter JMX",
 		CanonicalProtocol:    "jmeter",
-		ImportMode:           "executable",
+		ImportMode:           importMode,
 		MappedSteps:          result.Stats.Mapped,
-		ReviewGatedSteps:     reviewGated,
+		ReviewGatedSteps:     gatedSteps,
 		UnsupportedFragments: append([]string{}, result.UnsupportedElements...),
 		RuntimeParity:        protocolRuntimeParityFromScript(result.Script),
 		DataSources:          result.Stats.CSVSources,
 		CorrelationCoverage:  protocolCorrelationCoverage(countJMeterExtractors(result), result.Stats.Samplers),
 		PromotionStatus:      status,
 		NextActions:          protocolNextActions(status, "Validate converted JMeter thread groups and scenario draft before promotion."),
+	}
+}
+
+// countJMeterReviewGatedSteps counts the converted steps a review gate holds
+// back, and all converted steps. The review summary counts gate reasons
+// instead: one step can carry several, so that count is no step count (3
+// steps reported 10).
+func countJMeterReviewGatedSteps(result *jmeter.ConvertResult) (gated, steps int) {
+	if result == nil {
+		return 0, 0
+	}
+	for _, script := range result.Scripts {
+		_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+			if ref.Action == nil {
+				return nil
+			}
+			steps++
+			action := *ref.Action
+			if len(importreview.ExecutionReviewBlockerCodes(action.Metadata)) > 0 ||
+				importreview.ReviewRequiredAction(action) || importreview.MetadataString(action.Metadata, "review_gate") != "" {
+				gated++
+			}
+			return nil
+		})
+	}
+	return gated, steps
+}
+
+// jmeterImportMode derives the compat report's import_mode from the converted
+// steps instead of always claiming "executable": a plan with no converted
+// step is unsupported, and one whose every step a review gate holds (every
+// messaging plan, until its replay is verified) is review_only.
+func jmeterImportMode(gatedSteps, steps int) string {
+	switch {
+	case steps == 0:
+		return string(enterprisearchive.ImportModeUnsupported)
+	case gatedSteps >= steps:
+		return string(enterprisearchive.ImportModeReviewOnly)
+	default:
+		return string(enterprisearchive.ImportModeExecutable)
+	}
+}
+
+// describeJMeterCredentialRequirements tells the operator what value an
+// Event Hubs secret must hold. The secret replaces the whole connection string
+// the sampler assembled from its namespace, key name and key, and typing only
+// the key, which is what the plan shows, cannot authenticate.
+func describeJMeterCredentialRequirements(requirements []credentialpolicy.Requirement) {
+	for index := range requirements {
+		if requirements[index].Key == "eventhubs_connection_string" && strings.TrimSpace(requirements[index].Context) == "" {
+			requirements[index].Context = "Full Event Hubs connection string: " + importreview.EventHubsConnectionStringFormat +
+				". An EntityPath, if present, must name this sampler's event hub."
+		}
 	}
 }
 
@@ -622,12 +725,24 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	// Every preview gets a public, opaque operation identity. Normal clients
 	// echo it with the scripts on save, allowing a lost successful response to
 	// converge without collapsing two intentional previews of identical input.
+	// The value-bearing requirements feed the optional source-secret
+	// migration session (policy script_imports.allow_source_secret_migration)
+	// and are cleared on every return; the public payload carries only the
+	// value-free result.SecretRequirements.
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	stampJMeterDirectImportOperation(result, uuid.NewString())
+	explainJMeterReviewDiagnostics(result.Diagnostics)
+	describeJMeterCredentialRequirements(result.SecretRequirements)
+	describeJMeterCredentialRequirements(protectedRequirements)
 	unsupportedElements := append([]string{}, result.UnsupportedElements...)
 	protocolCompat := buildJMeterProtocolCompatReport(result)
 	for _, script := range result.Scripts {
 		persistProtocolCompatReport(script, "jmeter", protocolCompat)
 	}
+	// The batch keeps the converter's own warnings; result.Warnings becomes
+	// the augmented list below.
+	converterWarnings := append([]string(nil), result.Warnings...)
 	draft := importDraft{
 		Source:           "jmeter",
 		SourceScriptName: result.Summary.FileName,
@@ -637,6 +752,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		SourceReview:     result.SourceReview,
 		Unsupported:      result.Diagnostics,
 		Warnings:         result.Warnings,
+		ScriptWarnings:   result.ScriptWarnings,
 		Accounting:       result.Accounting(),
 	}
 	augmented := draft.Augment(r)
@@ -652,6 +768,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	}
 	if batch != nil {
 		r = withImportBatchExpiry(r, batch.ExpiresAt)
+		recordJMeterBatchWarnings(batch, converterWarnings, result.ScriptWarnings)
 	}
 	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:                 result,
@@ -669,11 +786,30 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		SourceReview:           result.SourceReview,
 		ProtocolCompat:         protocolCompat,
 		CredentialRequirements: result.SecretRequirements,
+		ProtectedRequirements:  protectedRequirements,
+		RepairSuggestions:      jmeterReviewRepairSuggestions(result.Scripts),
 		Parameterization:       buildMultiScriptParameterization(result.Scripts),
 		Preflight:              augmented.Preflight,
 	})
+	// The shared builder always writes fidelity_report, the enterprise archive
+	// converter's report. JMeter has no such report, so the key was a
+	// permanent null; its fidelity is told by protocol_compat_report,
+	// review_summary and the diagnostics.
+	delete(response, "fidelity_report")
 	if batch != nil && response[importDraftResponseFailureKey] == nil {
+		sessionID, _ := response["source_secret_session_id"].(string)
+		requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
+		recordJMeterBatchSourceSecretSession(batch, sessionID, requirements)
+		// A failed save or projection never hands the client the session ID,
+		// so discard the session now rather than strand its credential values
+		// until the TTL, as the batch-repair path does.
+		discardSession := func() {
+			if sessionID != "" {
+				_, _ = s.discardSourceSecretSession(r, batch.ProjectID, sessionID)
+			}
+		}
 		if err := s.saveJMeterBatch(r, batch); err != nil {
+			discardSession()
 			writeError(w, 503, "Cannot secure JMeter batch")
 			return
 		}
@@ -682,6 +818,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		for i, script := range batch.Scripts {
 			projected[i] = batchDisclosure(script)
 			if projected[i] == nil {
+				discardSession()
 				writeError(w, 500, "Cannot project protected batch")
 				return
 			}
@@ -698,6 +835,30 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		}
 	}
 	writeScriptImportResponse(w, status, response)
+}
+
+// jmeterSourcePopulationInt reads an integer the converter kept from the
+// script's thread group (metadata.import.preserved.source_population). A
+// value the plan set through a JMeter expression is kept under key+"_source"
+// instead and is not read here.
+func jmeterSourcePopulationInt(script *dsl.Script, key string) (int, bool) {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+		return 0, false
+	}
+	population, _ := script.Metadata.Import.Preserved["source_population"].(map[string]any)
+	switch value := population[key].(type) {
+	case int:
+		return value, true
+	case float64:
+		if value == float64(int(value)) {
+			return int(value), true
+		}
+	case json.Number:
+		if parsed, err := value.Int64(); err == nil && parsed == int64(int(parsed)) {
+			return int(parsed), true
+		}
+	}
+	return 0, false
 }
 
 // jmeterDraftProjectID is the scope the handler already applied to the plan's
@@ -1245,7 +1406,18 @@ func buildJMeterScenarioRequestNamed(
 		}
 		vusers := group.VUsers
 		if vusers == 0 {
+			// A group with no count of its own takes the thread group's, kept
+			// in the script; 10 only when the source had none.
 			vusers = 10
+			if threads, ok := jmeterSourcePopulationInt(script, "num_threads"); ok && threads > 0 {
+				vusers = threads
+			}
+		}
+		rampUp := group.RampUp
+		if rampUp == "" {
+			if seconds, ok := jmeterSourcePopulationInt(script, "ramp_time_seconds"); ok && seconds > 0 {
+				rampUp = (time.Duration(seconds) * time.Second).String()
+			}
 		}
 		initialization := strings.ToLower(strings.TrimSpace(group.Initialization))
 		if initialization == "" {
@@ -1256,7 +1428,7 @@ func buildJMeterScenarioRequestNamed(
 			ScriptID:     scriptIDsByName[scriptIdentity],
 			Role:         GroupRoleLoad,
 			VUsers:       vusers,
-			RampUp:       group.RampUp,
+			RampUp:       rampUp,
 			InitStrategy: initialization,
 			Iterations: func() *int {
 				if script.Config.RunLogic.Iterations > 0 {
@@ -1303,7 +1475,7 @@ func buildJMeterScenarioRequestNamed(
 			}
 		}
 		if request.Duration == "" {
-			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration; set a Duration under Runtime settings (Imported scenario settings) and apply it, or save the scripts without the scenario draft")
+			return nil, fmt.Errorf("JMeter messaging scenario requires an explicit schedule duration; set a Duration under Runtime settings (Imported scenario settings) and apply it, or save the scripts without the scenario draft (each script keeps its thread group's users, ramp-up, loops and schedule in metadata.import.preserved.source_population)")
 		}
 	}
 	if request.Duration == "" && request.TerminationMode != dsl.TerminationIterations {
@@ -1481,7 +1653,7 @@ func writeJMeterScenarioScriptsBlocked(w http.ResponseWriter, blocked []string) 
 	}
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 		"error": fmt.Sprintf(
-			"the scenario draft uses %s (%s); save the scripts without the scenario draft, resolve them in the editor, then create the scenario from the saved scripts",
+			"the scenario draft uses %s (%s); save the scripts without the scenario draft, resolve them in the editor, then create the scenario from the saved scripts. Each script keeps its thread group's users, ramp-up, loops and schedule in metadata.import.preserved.source_population",
 			subject, strings.Join(named, ", "),
 		),
 		"code":    importScenarioScriptsBlockedCode,

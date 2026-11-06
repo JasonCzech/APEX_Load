@@ -555,3 +555,50 @@ func TestPreservedImportedCookieEditsAreOrdinaryEdits(t *testing.T) {
 		t.Fatalf("cookie edit refused: %v", err)
 	}
 }
+
+// A JMeter timestamp gate is cleared by giving the clock parameters a zone.
+// That edit only moves the digits of the time a request sends, so it is not a
+// credential redirect, even when a script-level header keeps a credential and
+// every request interpolates the parameters. Anything else about the
+// parameter, or a zone that reads other data, stays held.
+func TestPreservedImportedCredentialAllowsClockParameterTimezone(t *testing.T) {
+	prior := importedCredentialContextScript(t, &dsl.Script{
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://origin.example.test",
+			HTTP:    dsl.HTTPConfig{DefaultHeaders: map[string]string{"client_secret": "synthetic-retained-secret"}},
+		},
+		Parameters: []dsl.Parameter{
+			{Name: "jmeter_time_1", Type: "date_time", Format: "yyyy-MM-dd", FormatDialect: "java_simple_date_format"},
+			{Name: "jmeter_time_2", Type: "date_time", Format: "HH:mm:ss.SSS", FormatDialect: "java_simple_date_format"},
+		},
+		Actions: []dsl.Action{{
+			Name: "balance", Type: "request", Method: http.MethodPost, Target: "/balance",
+			Body: `{"at":"{{param.jmeter_time_1}}T{{param.jmeter_time_2}}Z"}`,
+		}},
+	})
+	edit := func(mutate func(*dsl.Script)) error {
+		candidate := cloneScriptDefinition(prior)
+		mutate(candidate)
+		return validatePreservedImportCredentialEdits(candidate, prior)
+	}
+	for _, zone := range []string{"UTC", "America/Chicago"} {
+		if err := edit(func(s *dsl.Script) {
+			for i := range s.Parameters {
+				s.Parameters[i].Timezone = zone
+			}
+		}); err != nil {
+			t.Fatalf("timezone %s refused: %v", zone, err)
+		}
+	}
+	refused := map[string]func(*dsl.Script){
+		"format":            func(s *dsl.Script) { s.Parameters[0].Format = "'redirect.example.test'" },
+		"templated zone":    func(s *dsl.Script) { s.Parameters[0].Timezone = "{{param.jmeter_time_2}}" },
+		"base URL":          func(s *dsl.Script) { s.Config.BaseURL = "https://redirect.example.test" },
+		"parameter becomes": func(s *dsl.Script) { s.Parameters[0].Type = "list"; s.Parameters[0].Values = []string{"redirect"} },
+	}
+	for name, mutate := range refused {
+		if err := edit(mutate); err == nil {
+			t.Errorf("%s edit was allowed around a retained credential", name)
+		}
+	}
+}

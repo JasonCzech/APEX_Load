@@ -288,6 +288,17 @@ func reviewSamplerChildren(nodes []*treeNode, action *dsl.Action, script *dsl.Sc
 }
 
 func reconcileJMeterReviewMappings(script *dsl.Script, mappings []sourceview.Mapping) {
+	// A script-level gate blocks every request in the script, not only its
+	// own placeholder, so each converted request of this script (an
+	// unprefixed actions[...] path) is review-gated too.
+	if jmeterHasScriptLevelGate(script) {
+		for i := range mappings {
+			if strings.HasPrefix(mappings[i].TargetPath, "actions[") && mappings[i].Status == "converted" && (mappings[i].TargetKind == "action" || mappings[i].TargetKind == "controller") {
+				mappings[i].Status = "review_only"
+				mappings[i].Notes = "Converted draft requires resolution of its durable execution gates."
+			}
+		}
+	}
 	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
 		if ref.Action.Metadata["execution_blocker"] == nil {
 			return nil
@@ -300,6 +311,21 @@ func reconcileJMeterReviewMappings(script *dsl.Script, mappings []sourceview.Map
 		}
 		return nil
 	})
+}
+
+// jmeterHasScriptLevelGate reports whether the script carries a review
+// placeholder that gates the whole script: any review_required action that
+// does not stand in for a sampler (shaping, sample-error action, thread-group
+// termination, cross-thread counter, flattened controller and similar gates).
+func jmeterHasScriptLevelGate(script *dsl.Script) bool {
+	found := false
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action != nil && ref.Action.Type == "review_required" && !jmeterSamplerPlaceholder(*ref.Action) {
+			found = true
+		}
+		return nil
+	})
+	return found
 }
 
 func applyThreadGroupTermination(tg *treeNode, script *dsl.Script, diagnostics *diag.Collector, file string, mappings *[]sourceview.Mapping) {

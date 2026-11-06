@@ -346,3 +346,32 @@ func TestConflictingSameNamedCountersStayGated(t *testing.T) {
 		}
 	}
 }
+
+// The cross-thread counter gate blocks the script, so the import tallies it as
+// review-required work; a gated plan must not report only "mapped" items.
+func TestGlobalCounterGateCountsAsReviewRequired(t *testing.T) {
+	result, err := ConvertJMX([]byte(counterPlan(counterProps("1", "", "2", "", "false"), false, "${p_TraceID}")), ConvertOptions{FileName: "counter.jmx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || !hasJMeterReviewReason(result.Scripts[0].Actions, jmeterGlobalCounterReason) {
+		t.Fatalf("want one script carrying the cross-thread counter gate")
+	}
+	gates := 0
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.TargetName != "Cross-thread counter review gate" {
+			continue
+		}
+		gates++
+		if category, ok := categoryForSourceMapping(mapping.Status, mapping.TargetKind); !ok || category != categoryReviewRequired {
+			t.Errorf("gate mapping kind=%q status=%q tallies as (%q,%v), want review_required", mapping.TargetKind, mapping.Status, category, ok)
+		}
+	}
+	if gates != 1 {
+		t.Fatalf("gate mappings = %d, want 1", gates)
+	}
+	// The gated request and the gate itself: two review-required items.
+	if result.Stats.Mapped != 0 || result.Stats.ReviewRequired != 2 {
+		t.Fatalf("stats mapped=%d review_required=%d, want 0/2", result.Stats.Mapped, result.Stats.ReviewRequired)
+	}
+}

@@ -137,3 +137,34 @@ func TestReceiveEventHubsWithinBudgetDoesNotRestartTimeoutForLagProbe(t *testing
 		t.Fatalf("receive plus lag probe took %s, want one %s operation budget", elapsed, timeout)
 	}
 }
+
+// TestRealClientAcceptsHubScopedConnectionString drives the real azeventhubs
+// constructors offline: a hub-scoped connection string (what the Azure portal
+// copies for a hub-level SAS policy) used to fail because the SDK rejects any
+// non-empty hub alongside an EntityPath.
+func TestRealClientAcceptsHubScopedConnectionString(t *testing.T) {
+	const cs = "Endpoint=sb://example.servicebus.windows.net/;SharedAccessKeyName=send;SharedAccessKey=c3ludGhldGlj;EntityPath=orders"
+	e := &EventHubs{name: eventHubsProtocolName}
+	if err := e.Init(context.Background(), map[string]any{
+		"eventhubs_connection_string": cs + " ",
+		"eventhubs_event_hub":         "Orders",
+		"eventhubs_auth_type":         "connection_string",
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	client := e.client.(*realClient)
+	defer client.Teardown(context.Background())
+	if _, err := client.producer(context.Background(), "Orders"); err != nil {
+		t.Fatalf("producer for the EntityPath hub: %v", err)
+	}
+	if _, err := client.consumer("orders", "$Default"); err != nil {
+		t.Fatalf("consumer for the EntityPath hub: %v", err)
+	}
+	if _, err := client.producer(context.Background(), "payments"); err == nil || !strings.Contains(err.Error(), `"orders"`) || strings.Contains(err.Error(), "c3ludGhldGlj") {
+		t.Fatalf("producer for another hub = %v, want sanitized EntityPath mismatch", err)
+	}
+	props, err := azeventhubs.ParseConnectionString(client.cfg.ConnectionString)
+	if err != nil || props.SharedAccessKey == nil || *props.SharedAccessKey != "c3ludGhldGlj" || props.EntityPath == nil || *props.EntityPath != "orders" {
+		t.Fatalf("normalized connection string does not parse to the trimmed key and hub (err=%v)", err)
+	}
+}

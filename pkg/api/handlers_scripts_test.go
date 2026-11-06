@@ -3928,14 +3928,33 @@ func TestHandleValidateJMeterImport(t *testing.T) {
 	if result.ScenarioDraft == nil {
 		t.Fatal("expected scenario draft in validation response")
 	}
-	if len(result.Warnings) != 0 {
-		t.Fatalf("warnings = %v, want none", result.Warnings)
+	// USER DECISION: JMeter HTTP imports turn certificate verification off to
+	// match JMeter's trust-all samplers, and say so. That notice is the only
+	// warning this plan earns.
+	if len(result.Warnings) != 1 || !strings.HasPrefix(result.Warnings[0], "JMeter's HTTP samplers accept any server certificate") {
+		t.Fatalf("warnings = %v, want only the certificate-trust notice", result.Warnings)
 	}
 	if len(result.Correlations) != 0 {
 		t.Fatalf("correlations = %v, want none", result.Correlations)
 	}
 	if got := server.runner.ListScripts(); len(got) != 0 {
 		t.Fatalf("validate should not persist scripts, got %d", len(got))
+	}
+	// JMeter has no enterprise fidelity report, so the key is left out rather
+	// than sent as a permanent null, and a plan whose step can run reports the
+	// executable import mode.
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(resp.Body.Bytes(), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, present := raw["fidelity_report"]; present {
+		t.Fatalf("fidelity_report = %s, want the key omitted", raw["fidelity_report"])
+	}
+	var compat struct {
+		ImportMode string `json:"import_mode"`
+	}
+	if err := json.Unmarshal(raw["protocol_compat_report"], &compat); err != nil || compat.ImportMode != "executable" {
+		t.Fatalf("protocol_compat_report = %s, want import_mode executable", raw["protocol_compat_report"])
 	}
 }
 

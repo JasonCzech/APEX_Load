@@ -21,7 +21,8 @@ func TestSplitPayFidelity(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := r.Scripts[0]
-	if s.Config.BaseURL != "https://api.example.test:443" {
+	// JMeter omits the scheme's default port, so its Host header has none.
+	if s.Config.BaseURL != "https://api.example.test" {
 		t.Fatalf("endpoint=%s", s.Config.BaseURL)
 	}
 	if !hasJMeterReviewReason(s.Actions, "jmeter_timestamp_timezone_required") || !hasJMeterReviewReason(s.Actions, "import_missing_variables") {

@@ -66369,6 +66369,10 @@ paths:
                                 type: integer
                                 format: int64
                                 nullable: true
+                              max_in_flight_requests:
+                                type: integer
+                                format: int64
+                                nullable: true
                               request_timeout_ms:
                                 type: integer
                                 format: int64
@@ -243730,6 +243734,10 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                max_in_flight_requests:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 request_timeout_ms:
                                   type: integer
                                   format: int64
@@ -254456,6 +254464,10 @@ paths:
                                   format: int64
                                   nullable: true
                                 linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                max_in_flight_requests:
                                   type: integer
                                   format: int64
                                   nullable: true
@@ -272349,6 +272361,8 @@ paths:
                     body:
                       type: string
                       nullable: true
+                    client_id_secret:
+                      type: string
                     extractor:
                       type: object
                       properties:
@@ -278075,6 +278089,8 @@ paths:
                     body:
                       type: string
                       nullable: true
+                    client_id_secret:
+                      type: string
                     extractor:
                       type: object
                       properties:
@@ -347426,12 +347442,25 @@ paths:
                       properties:
                         action:
                           type: string
+                        batch_operation:
+                          type: string
                         category:
+                          type: string
+                        clearable:
+                          type: boolean
+                          nullable: true
+                        code:
                           type: string
                         description:
                           type: string
                         id:
                           type: string
+                        reinspect_options:
+                          type: array
+                          items:
+                            type: object
+                            description: 'Go type: ScriptImportReinspectOption'
+                            additionalProperties: true
                         selector_signals:
                           type: array
                           items:
@@ -347440,6 +347469,8 @@ paths:
                           type: integer
                           format: int64
                         severity:
+                          type: string
+                        source_group_id:
                           type: string
                         target_action:
                           type: string
@@ -351262,6 +351293,8 @@ paths:
                         body:
                           type: string
                           nullable: true
+                        client_id_secret:
+                          type: string
                         extractor:
                           type: object
                           properties:
@@ -357366,6 +357399,54 @@ paths:
                           type: object
                           description: 'Go type: importreview.Readiness'
                           additionalProperties: true
+                      repair_suggestions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            batch_operation:
+                              type: string
+                            category:
+                              type: string
+                            clearable:
+                              type: boolean
+                              nullable: true
+                            code:
+                              type: string
+                            description:
+                              type: string
+                            id:
+                              type: string
+                            reinspect_options:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: ScriptImportReinspectOption'
+                                additionalProperties: true
+                            selector_signals:
+                              type: array
+                              items:
+                                type: string
+                            selector_stability_score:
+                              type: integer
+                              format: int64
+                            severity:
+                              type: string
+                            source_group_id:
+                              type: string
+                            target_action:
+                              type: string
+                            title:
+                              type: string
+                          required:
+                            - action
+                            - category
+                            - description
+                            - id
+                            - severity
+                            - title
                       review_summary:
                         type: object
                         description: 'Go type: jmeter.ReviewSummary'
@@ -359006,6 +359087,15 @@ paths:
                             - path
                             - script_index
                             - suggested_name
+                      source_secret_migration_allowed:
+                        type: boolean
+                      source_secret_session_expires_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      source_secret_session_id:
+                        type: string
+                        nullable: true
                       unsupported_elements:
                         type: array
                         items:
@@ -359023,6 +359113,7 @@ paths:
                       - preflight
                       - preview_digest
                       - readiness
+                      - repair_suggestions
                       - review_summary
                       - scripts
                       - unsupported_elements
@@ -359080,6 +359171,8 @@ paths:
                         body:
                           type: string
                           nullable: true
+                        client_id_secret:
+                          type: string
                         extractor:
                           type: object
                           properties:
@@ -365184,6 +365277,54 @@ paths:
                           type: object
                           description: 'Go type: importreview.Readiness'
                           additionalProperties: true
+                      repair_suggestions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            action:
+                              type: string
+                            batch_operation:
+                              type: string
+                            category:
+                              type: string
+                            clearable:
+                              type: boolean
+                              nullable: true
+                            code:
+                              type: string
+                            description:
+                              type: string
+                            id:
+                              type: string
+                            reinspect_options:
+                              type: array
+                              items:
+                                type: object
+                                description: 'Go type: ScriptImportReinspectOption'
+                                additionalProperties: true
+                            selector_signals:
+                              type: array
+                              items:
+                                type: string
+                            selector_stability_score:
+                              type: integer
+                              format: int64
+                            severity:
+                              type: string
+                            source_group_id:
+                              type: string
+                            target_action:
+                              type: string
+                            title:
+                              type: string
+                          required:
+                            - action
+                            - category
+                            - description
+                            - id
+                            - severity
+                            - title
                       review_summary:
                         type: object
                         description: 'Go type: jmeter.ReviewSummary'
@@ -366824,6 +366965,15 @@ paths:
                             - path
                             - script_index
                             - suggested_name
+                      source_secret_migration_allowed:
+                        type: boolean
+                      source_secret_session_expires_at:
+                        type: string
+                        format: date-time
+                        nullable: true
+                      source_secret_session_id:
+                        type: string
+                        nullable: true
                       unsupported_elements:
                         type: array
                         items:
@@ -366841,6 +366991,7 @@ paths:
                       - preflight
                       - preview_digest
                       - readiness
+                      - repair_suggestions
                       - review_summary
                       - scripts
                       - unsupported_elements
@@ -393440,6 +393591,10 @@ paths:
                                   type: integer
                                   format: int64
                                   nullable: true
+                                max_in_flight_requests:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
                                 request_timeout_ms:
                                   type: integer
                                   format: int64
@@ -396130,6 +396285,10 @@ paths:
                                   format: int64
                                   nullable: true
                                 linger_ms:
+                                  type: integer
+                                  format: int64
+                                  nullable: true
+                                max_in_flight_requests:
                                   type: integer
                                   format: int64
                                   nullable: true

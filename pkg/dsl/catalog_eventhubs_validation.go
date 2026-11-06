@@ -54,6 +54,14 @@ func validateEventHubsScriptIssues(script *Script) []string {
 			issues = append(issues, "real Azure Event Hubs adapter is not available in this build; enable config.eventhubs.mock for shakeout or build with -tags eventhubs_real")
 		}
 	}
+	// Only an inline, untemplated string can be checked before the run; secret
+	// references resolve at Init, which applies the same EntityPath rule.
+	if cs := eh.ConnectionString; !eh.Mock && !strings.EqualFold(strings.TrimSpace(eh.AuthType), "aad") &&
+		strings.TrimSpace(cs) != "" && !strings.Contains(cs, "{{") && !strings.Contains(eh.EventHub, "{{") {
+		if _, err := eventhubsprotocol.ResolveConnectionStringEventHub(cs, eh.EventHub); err != nil {
+			issues = append(issues, err.Error())
+		}
+	}
 	if eh.AuthType != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(eh.AuthType)), "connection_string", "aad") {
 		issues = append(issues, fmt.Sprintf("config.eventhubs.auth_type %q is not supported (use connection_string or aad)", eh.AuthType))
 	}
@@ -103,6 +111,28 @@ func validateEventHubsScriptIssues(script *Script) []string {
 	return issues
 }
 
+// inlineConnectionStringEntityPath returns the EntityPath of the inline,
+// untemplated connection string a non-mock run signs with, or "" when there is
+// none or it can only be read at Init (a secret reference or a template).
+func inlineConnectionStringEntityPath(eh EventHubsConfig) string {
+	cs := eh.ConnectionString
+	if eh.Mock || strings.EqualFold(strings.TrimSpace(eh.AuthType), "aad") || strings.TrimSpace(cs) == "" || strings.Contains(cs, "{{") {
+		return ""
+	}
+	entityPath, err := eventhubsprotocol.ResolveConnectionStringEventHub(cs, "")
+	if err != nil {
+		return ""
+	}
+	return entityPath
+}
+
+// invalidEntityPathIssue stands in for an EntityPath that is not a valid
+// event hub name, with the wording pkg/protocol/eventhubs uses. Such a value
+// is never echoed: in a malformed string whose EntityPath runs into the next
+// segment without a ';' ("EntityPath=ordersSharedAccessKey=..."), the value
+// carries the SAS key.
+const invalidEntityPathIssue = "the EntityPath in config.eventhubs.connection_string, which is not a valid event hub name"
+
 func validateEventHubsCatalogActionIssues(path string, action Action, script *Script) []string {
 	return validateEventHubsActionSemanticIssues(path, action, script.Config.EventHubs)
 }
@@ -142,8 +172,27 @@ func validateEventHubsActionSemanticIssues(path string, action Action, eh EventH
 	}
 	if action.Type == "eventhubs_produce" || action.Type == "eventhubs_consume" {
 		eventHub, _ := action.Params["event_hub"].(string)
-		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(eventHub) == "" && strings.TrimSpace(eh.EventHub) == "" {
+		entityPath := inlineConnectionStringEntityPath(eh)
+		// A hub-scoped inline connection string supplies the hub when nothing
+		// else names one, as Init does.
+		if strings.TrimSpace(action.Target) == "" && strings.TrimSpace(eventHub) == "" && strings.TrimSpace(eh.EventHub) == "" && entityPath == "" {
 			issues = append(issues, fmt.Sprintf("%s: missing event hub (set target, params.event_hub, or config.eventhubs.event_hub)", label))
+		}
+		// The run sends to the action's own hub first (target, then
+		// params.event_hub); config.eventhubs.event_hub is checked above.
+		actionHub := strings.TrimSpace(action.Target)
+		if actionHub == "" {
+			actionHub = strings.TrimSpace(eventHub)
+		}
+		if entityPath != "" && actionHub != "" && !strings.Contains(actionHub, "{{") && !strings.EqualFold(actionHub, entityPath) {
+			// inlineConnectionStringEntityPath only returns names the protocol
+			// accepts, so this guard is defense in depth: it keeps a key-bearing
+			// EntityPath out of the issue should that function ever loosen.
+			if !eventhubsprotocol.IsEventHubName(entityPath) {
+				issues = append(issues, fmt.Sprintf("%s: event hub %q does not match %s; a hub-scoped connection string only reaches its own hub, so use a namespace-level connection string", label, actionHub, invalidEntityPathIssue))
+			} else {
+				issues = append(issues, fmt.Sprintf("%s: event hub %q does not match the EntityPath %q in config.eventhubs.connection_string; a hub-scoped connection string only reaches its own hub, so target %q or use a namespace-level connection string", label, actionHub, entityPath, entityPath))
+			}
 		}
 	}
 	if eh.ConsumerMode == "exclusive" && action.Type == "eventhubs_consume" {

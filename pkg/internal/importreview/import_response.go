@@ -133,6 +133,19 @@ type ScriptImportRepairSuggestion struct {
 	TargetAction           string   `json:"target_action,omitempty"`
 	SelectorStabilityScore int      `json:"selector_stability_score,omitempty"`
 	SelectorSignals        []string `json:"selector_signals,omitempty"`
+	// Code is the review code the suggestion resolves, for clients that
+	// match suggestions to diagnostics.
+	Code string `json:"code,omitempty"`
+	// Clearable, when set, says whether anything available today clears the
+	// gate. False means the gate stays until a later release.
+	Clearable *bool `json:"clearable,omitempty"`
+	// BatchOperation names the JMeter batch repair operation type that clears
+	// the gate; SourceGroupID is the group it must target.
+	BatchOperation string `json:"batch_operation,omitempty"`
+	SourceGroupID  string `json:"source_group_id,omitempty"`
+	// Reinspect lists the conversion options that clear the gate when the
+	// same source is imported again.
+	Reinspect []ScriptImportReinspectOption `json:"reinspect_options,omitempty"`
 }
 
 func ImportResponseValue[T any](value *T) any {

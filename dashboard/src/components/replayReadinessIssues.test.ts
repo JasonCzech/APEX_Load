@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
+import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { draftImportFindings, groupImportFindings, readinessCounts, repairImpactText } from './importReviewIssues'
 import { buildLocalReplayPreflight, templateVariableNames } from './replayPreflightUtils'
-import { distinctBlockerCodes, headerIssueText, openingEditorFocus, readinessIssueText, replayReadinessIssues, replayRefusalSummary, reviewGateBreadcrumb, storedScriptImpactText } from './replayReadinessIssues'
+import { blockedStepBadgeTitle, distinctBlockerCodes, headerIssueText, openingEditorFocus, readinessIssueText, replayReadinessIssues, replayRefusalSummary, reviewGateBreadcrumb, storedScriptImpactText } from './replayReadinessIssues'
 
 const preflight = (overrides: Partial<ReplayPreflight>): ReplayPreflight => ({ valid: false, action_count: 3, expected_action_count: 3, data_source_count: 0, parameter_count: 0, ...overrides })
 
@@ -439,5 +439,13 @@ describe('openingEditorFocus', () => {
     expect(openingEditorFocus([], [], rows)).toEqual({ phase: 'action', actionIndex: 0 })
     expect(openingEditorFocus([], [], [row('teardown', 0)])).toEqual({ phase: 'teardown', actionIndex: 0 })
     expect(openingEditorFocus([], [], [])).toBeNull()
+  })
+})
+
+describe('blockedStepBadgeTitle', () => {
+  it('names the blockers and, for a step awaiting runtime support, that nothing clears it yet', () => {
+    const step = (resolution: string) => ({ name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: { execution_blocker: 'import_review_required', import_review: { reason_codes: ['jmeter_messaging_compatibility_unverified'], resolution } } }) as ScriptActionDefinition
+    expect(blockedStepBadgeTitle(step('replace_behavior_and_remove_gate'), ['import_review_required'])).toBe('Blocks replay: Review imported behavior')
+    expect(blockedStepBadgeTitle(step('awaiting_runtime_support'), ['import_review_required'])).toBe('Blocks replay: Review imported behavior. Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release.')
   })
 })

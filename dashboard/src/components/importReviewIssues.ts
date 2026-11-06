@@ -123,7 +123,7 @@ export function issueTitle(code: string): string {
   if (code.startsWith('missing_producer:')) return `Missing value: ${code.slice(17)}`
   if (code.startsWith('conditional_producer:')) return `Check producer order: ${code.slice(21)}`
   if (code.startsWith(CONFIG_CODE)) return `Replace configuration reference: ${code.slice(CONFIG_CODE.length)}`
-  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', har_request_body_not_exported: 'Supply or remove unexported HAR request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
+  return ({ 'diagnostic:warnings': 'Review conversion warnings', 'diagnostic:credential_bindings': 'Configure unresolved credential bindings', 'diagnostic:validation': 'Resolve draft validation checks', 'diagnostic:execution': 'Review execution prerequisites', 'diagnostic:runtime_settings_parity': 'Review runtime behavior differences', 'diagnostic:runtime_settings_migration_readiness': 'Review runtime migration coverage', restored_body_required: 'Restore protected request body', har_request_body_not_exported: 'Supply or remove unexported HAR request body', encrypted_proxy_password: 'Replace encrypted proxy password', legacy_tls_replacement: 'Choose supported TLS settings', import_review_required: 'Review imported behavior', jmeter_kafka_oauth_credentials_required: 'Bind the Kafka OAuth client credentials', jmeter_eventhubs_credentials_required: 'Bind the Event Hubs connection string', ...LOADRUNNER_PARITY_ISSUE_TITLES, ...HTTP3_ISSUE_TITLES } as Record<string, string>)[code] || (code.startsWith('diagnostic:') ? 'Review import requirement' : code.replace(/_/g, ' '))
 }
 // Converter warnings are raw messages. Known ones get a title saying what to
 // do; the rest keep their message, cut at a word. The full message stays in
@@ -252,16 +252,53 @@ export function issueRepairOptions(code: string): { value: string; label: string
   if (code === 'legacy_tls_replacement') return [{ value: 'select_tls', label: 'Select supported TLS' }]
   return []
 }
+// The JMeter messaging credential codes a saved script binds, with the
+// repair that binds each (pkg/api import_repairs.go
+// jmeterCredentialRepairFindings). They are reasons of the step's
+// import_review_required gate (import_review.reason_codes), not findings of
+// their own, so the repair names the code itself as its finding.
+export const JMETER_CREDENTIAL_REPAIRS: Readonly<Record<string, { value: string; label: string }>> = {
+  jmeter_kafka_oauth_credentials_required: { value: 'bind_kafka_credentials', label: 'Bind Kafka credential references' },
+  jmeter_eventhubs_credentials_required: { value: 'bind_eventhubs_credentials', label: 'Bind Event Hubs credential reference' },
+}
+const importReviewRecord = (action: ScriptActionDefinition): Record<string, unknown> => {
+  const review = action.metadata?.import_review
+  return review && typeof review === 'object' && !Array.isArray(review) ? review as Record<string, unknown> : {}
+}
+// The step's JMeter credential codes as repairable findings, one per code, so
+// a saved script's repair sends finding = the code and the step's path.
+export function jmeterCredentialRepairFindings(action: ScriptActionDefinition, path: string): ImportFinding[] {
+  const review = importReviewRecord(action)
+  const sourceRef = strings(review.source_refs)[0] || ''
+  return sortedCodes(strings(review.reason_codes))
+    .filter(code => Object.prototype.hasOwnProperty.call(JMETER_CREDENTIAL_REPAIRS, code))
+    .map(code => ({ code, gate: 'execution', action_path: path, source_ref: sourceRef, detail: '' }))
+}
+// The import review's resolution for a step that nothing available in this
+// release clears (pkg/convert/jmeter: the messaging runtime is not verified).
+export const AWAITING_RUNTIME_SUPPORT = 'awaiting_runtime_support'
+export function actionAwaitsRuntimeSupport(action: ScriptActionDefinition | undefined): boolean {
+  return Boolean(action) && importReviewRecord(action!).resolution === AWAITING_RUNTIME_SUPPORT
+}
+/** What a step awaiting runtime support means, worded once for every surface. */
+export const AWAITING_RUNTIME_SUPPORT_TEXT = 'Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release.'
+
 // The repairs a saved script accepts (pkg/api script_repairs.go): restoring a
 // protected body is import-only, so a saved script imports its source again.
+// A JMeter credential code is bound on the saved script; an import binds it
+// in the reviewed batch repairs instead.
 export function storedRepairOptions(code: string): { value: string; label: string }[] {
+  const credential = Object.prototype.hasOwnProperty.call(JMETER_CREDENTIAL_REPAIRS, code) ? JMETER_CREDENTIAL_REPAIRS[code] : undefined
+  if (credential) return [{ ...credential }]
   return issueRepairOptions(code).filter(option => option.value !== 'restore_body')
 }
 
 // One guided repair as both repair routes take it.
 export type RepairOperation = { type: string; [key: string]: unknown }
-// What the repair form collects: the chosen operation and its value.
-export type RepairFields = { kind: string; value: string; responsePath: string; extractorType: string }
+// What the repair form collects: the chosen operation and its value. A Kafka
+// credential binding also names the client ID's secret (clientIdSecret); its
+// value is the client secret's.
+export type RepairFields = { kind: string; value: string; responsePath: string; extractorType: string; clientIdSecret?: string }
 // The operation for kind at finding, built the same way for the import
 // review and the script editor. A dependency repair names the value its
 // finding lacks; TLS defaults to 1.2 up to 1.3.
@@ -270,6 +307,9 @@ export function buildRepairOperation(kind: string, finding: Pick<ImportFinding, 
   const { value, responsePath, extractorType } = fields
   switch (kind) {
     case 'restore_body': return { type: kind, body: value }
+    // Secret names, never values: the server binds {{secret.<name>}}.
+    case 'bind_kafka_credentials': return { type: kind, client_id_secret: (fields.clientIdSecret || '').trim(), secret_name: value.trim() }
+    case 'bind_eventhubs_credentials': return { type: kind, secret_name: value.trim() }
     case 'replace_proxy_secret': return { type: kind, secret_name: value }
     case 'omit_proxy_credentials':
     case 'disable_imported_proxy': return { type: kind }

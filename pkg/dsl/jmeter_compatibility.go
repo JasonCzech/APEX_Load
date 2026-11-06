@@ -146,16 +146,28 @@ func validateJMeterCompatibility(s *Script, execution bool) []string {
 			issues = append(issues, "sampler schedule requires 1..1024 segments")
 		}
 		total := int64(0)
+		positive := false
 		for _, seg := range schedule.Segments {
 			if seg.DurationSeconds <= 0 || seg.DurationSeconds > 604800 {
 				issues = append(issues, "sampler segment duration must be 1..604800 seconds")
 			}
 			total += int64(seg.DurationSeconds)
+			// Throughput Shaping Timer accepts 0 requests/s, commonly as the
+			// start of a warm-up ramp (0 -> 18 over 60 s); in such a second it
+			// admits only the first sample, and every later caller waits until
+			// another sample is admitted (see the engine's samplerDelayMillis).
+			// A schedule with no positive rate at all is rejected below as a
+			// deliberate limit: after its first sample it would send almost
+			// nothing, which is never what the plan's rate rows describe.
 			for _, r := range []float64{seg.StartRPS, seg.EndRPS} {
-				if math.IsNaN(r) || math.IsInf(r, 0) || r <= 0 || r > 10000000 {
-					issues = append(issues, "sampler rate must be finite and in (0,10000000]")
+				if math.IsNaN(r) || math.IsInf(r, 0) || r < 0 || r > 10000000 {
+					issues = append(issues, "sampler rate must be finite and in [0,10000000]")
 				}
+				positive = positive || r > 0
 			}
+		}
+		if len(schedule.Segments) > 0 && !positive {
+			issues = append(issues, "sampler schedule requires at least one positive rate; at 0 requests/s JMeter admits one sample and then holds every other thread until another sample is admitted, so a profile that stays at 0 all but stops sending and is not supported")
 		}
 		if total > 604800 {
 			issues = append(issues, "sampler schedule exceeds 7 days")

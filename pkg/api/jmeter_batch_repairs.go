@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -154,10 +156,15 @@ func (s *Server) processJMeterBatchRepair(w http.ResponseWriter, r *http.Request
 	}{requestDigest, b.Scripts, b.Scenario})
 	evidence := &jmeter.ConvertResult{Scripts: b.Scripts, SourceReview: b.SourceReview, Unsupported: b.Advisories}
 	evidence.NormalizeReviewEvidence()
-	draft := importDraft{Source: "jmeter", ProjectID: b.ProjectID, Scripts: b.Scripts, SourceReview: b.SourceReview, Unsupported: evidence.Diagnostics, Warnings: evidence.Warnings}
+	explainJMeterReviewDiagnostics(evidence.Diagnostics)
+	// The batch keeps the converter's warnings, which the review evidence
+	// rebuilt from the stored scripts cannot recover; without them every
+	// script's replay preflight would be rebuilt with none.
+	warnings := append(append([]string(nil), b.Warnings...), evidence.Warnings...)
+	draft := importDraft{Source: "jmeter", ProjectID: b.ProjectID, Scripts: b.Scripts, SourceReview: b.SourceReview, Unsupported: evidence.Diagnostics, Warnings: warnings, ScriptWarnings: jmeterBatchScriptWarnings(b)}
 	augmented := draft.Augment(r)
 	applyJMeterReviewPreflight(augmented.Preflight, evidence)
-	response := map[string]any{"batch": b.Identity, "preview_digest": digest, "before": before, "scripts": scripts, "scenario_draft": b.Scenario, "findings": findings, "readiness": readiness, "expires_at": b.ExpiresAt, "diagnostics": evidence.Diagnostics, "review_summary": evidence.ReviewSummary, "warnings": augmented.Warnings, "unsupported_elements": evidence.UnsupportedElements, "preflight": augmented.Preflight}
+	response := map[string]any{"batch": b.Identity, "preview_digest": digest, "before": before, "scripts": scripts, "scenario_draft": b.Scenario, "findings": findings, "readiness": readiness, "expires_at": b.ExpiresAt, "diagnostics": evidence.Diagnostics, "review_summary": evidence.ReviewSummary, "warnings": augmented.Warnings, "unsupported_elements": evidence.UnsupportedElements, "preflight": augmented.Preflight, "repair_suggestions": jmeterReviewRepairSuggestions(b.Scripts)}
 	if !apply {
 		writeJSON(w, 200, response)
 		return
@@ -189,19 +196,114 @@ func (s *Server) processJMeterBatchRepair(w http.ResponseWriter, r *http.Request
 		}
 	}
 	response["scripts"] = safeScripts
+	requirements, _ := secured["secret_binding_requirements"].([]SecretBindingRequirement)
+	// consumed is the batch's previous session. Until the replacement batch
+	// and its receipt are both stored, the stored revision still names it, so
+	// a failure puts it back for the retry the error asks for.
+	var consumed *sourceSecretSession
+	defer func() { clearSourceSecretSession(consumed) }()
+	rollbackSession := func() {
+		if b.SourceSecretSessionID != "" {
+			_, _ = s.discardSourceSecretSession(r, b.ProjectID, b.SourceSecretSessionID)
+		}
+		if consumed != nil {
+			_ = s.restoreSourceSecretSession(r, consumed)
+		}
+	}
+	if previousSession := b.SourceSecretSessionID; strings.TrimSpace(previousSession) != "" {
+		var sessionID string
+		var expiresAt time.Time
+		sessionID, expiresAt, consumed = s.rekeyJMeterBatchSourceSecretSession(r, b.ProjectID, previousSession, b.SourceSecretRequirements, requirements)
+		recordJMeterBatchSourceSecretSession(b, sessionID, requirements)
+		if b.SourceSecretSessionID != "" {
+			response["source_secret_session_id"] = b.SourceSecretSessionID
+			response["source_secret_session_expires_at"] = expiresAt
+			response["source_secret_migration_allowed"] = true
+		} else {
+			// The offer is gone (migrated, discarded, expired or no longer
+			// allowed); tell the client to drop the old ID.
+			response["source_secret_session_id"] = ""
+		}
+	}
 	response["secret_binding_requirements"] = secured["secret_binding_requirements"]
 	response["batch"] = b.Identity
 	if err = s.saveJMeterBatch(r, b); err != nil {
+		rollbackSession()
 		writeError(w, 503, "Cannot secure replacement batch")
 		return
 	}
 	if err = s.publishBatchReceipt(r, &old, claim, jmeterBatchReceipt{Kind: "repair", RequestDigest: requestDigest, Digest: digest, Response: response}); err != nil {
+		// Roll back only when the receipt is known to be absent: a published
+		// receipt hands the retry the replacement session ID.
+		if _, rerr := s.openBatchReceipt(r, id.Revision, req.ProjectID); errors.Is(rerr, os.ErrNotExist) {
+			rollbackSession()
+		}
 		writeError(w, 409, "Batch publication failed; retry the same operation")
 		return
 	}
 	// Receipt is authoritative even if old claim cleanup fails.
 	_ = s.completeImportCandidateClaim(r.Context(), claim)
 	writeJSON(w, 200, response)
+}
+
+// rekeyJMeterBatchSourceSecretSession consumes the batch's source-secret
+// migration session and registers a replacement holding the values whose
+// requirements the repaired batch still has, marking those requirements
+// source_value_available. Requirement IDs are not stable across responses, so
+// each value follows its recorded requirement to the one current requirement
+// at the same script and path; batch operations never move scripts or
+// fields. A value whose requirement a repair resolved (a bind operation that
+// put a secret reference in its place), or that matches no single
+// requirement, is dropped. It returns the replacement ID and expiry, or ""
+// when no value survives or the session is gone, expired, or no longer
+// allowed, plus the consumed session (nil when nothing was consumed) so the
+// caller can restore it if storing the replacement batch fails; the caller
+// clears it.
+func (s *Server) rekeyJMeterBatchSourceSecretSession(r *http.Request, batchProjectID, sessionID string, recorded []jmeterBatchSourceSecretRequirement, current []SecretBindingRequirement) (string, time.Time, *sourceSecretSession) {
+	projectID := normalizeProjectID(batchProjectID)
+	if authorizedProjectID, scoped := authorizedProjectFromRequest(r); scoped {
+		if projectID != "" && projectID != authorizedProjectID {
+			return "", time.Time{}, nil
+		}
+		projectID = authorizedProjectID
+	}
+	session, err := s.consumeSourceSecretSession(r, projectID, sessionID)
+	if err != nil || session == nil {
+		return "", time.Time{}, nil
+	}
+	type location struct {
+		script int
+		path   string
+	}
+	matches := make(map[location][]string, len(current))
+	for _, requirement := range current {
+		at := location{requirement.ScriptIndex, requirement.Path}
+		matches[at] = append(matches[at], requirement.ID)
+	}
+	values := make(map[string]string, len(session.Values))
+	defer clear(values)
+	for _, previous := range recorded {
+		value, ok := session.Values[previous.ID]
+		if !ok {
+			continue
+		}
+		if ids := matches[location{previous.ScriptIndex, previous.Path}]; len(ids) == 1 {
+			values[ids[0]] = value
+		}
+	}
+	if len(values) == 0 {
+		return "", time.Time{}, session
+	}
+	newSessionID, err := s.registerSourceSecretSession(r, session.ProjectID, values, session.FeatureIDs...)
+	if err != nil || newSessionID == "" {
+		return "", time.Time{}, session
+	}
+	for index := range current {
+		if _, available := values[current[index].ID]; available {
+			current[index].SourceValueAvailable = true
+		}
+	}
+	return newSessionID, time.Now().UTC().Add(sourceSecretSessionTTL), session
 }
 
 func applyJMeterBatchOperation(b *jmeterBatchCandidate, op JMeterBatchOperation) error {
@@ -215,15 +317,29 @@ func applyJMeterBatchOperation(b *jmeterBatchCandidate, op JMeterBatchOperation)
 		return errors.New("Source group is no longer present")
 	}
 	if op.Type == "confirm_reference_context" {
-		if op.Timezone != "UTC" || !op.ConfirmNoOverrides {
-			return errors.New("Explicit UTC and no-property-overrides confirmation is required")
+		// JMeter formats __time in the JVM's default zone. UTC is the usual
+		// answer, but a plan that ran in a local zone (often the one picked as
+		// the source timezone at import) is reproduced only by confirming that
+		// zone instead.
+		zone, ok := jmeterReferenceTimezone(strings.TrimSpace(op.Timezone))
+		if !op.ConfirmNoOverrides || !ok {
+			return errors.New("Confirm the JMeter reference timezone (UTC, or an IANA zone such as America/Chicago) and that no JMeter property overrides apply")
+		}
+		// time_mode=utc built the clock parameters to send true UTC, so a
+		// local zone here would silently undo that import choice.
+		if zone != "UTC" {
+			for _, s := range selected {
+				if jmeterPreservedTimeMode(s) == "utc" {
+					return fmt.Errorf("This import chose time mode utc, so its timestamps are sent in UTC; confirm UTC, or re-import with the source time mode to reproduce %s", zone)
+				}
+			}
 		}
 		for _, s := range selected {
 			s.Config.JMeter.ContextConfirmed = true
-			s.Config.JMeter.Timezone = "UTC"
+			s.Config.JMeter.Timezone = zone
 			for i := range s.Parameters {
 				if s.Parameters[i].Type == "timestamp" || s.Parameters[i].Type == "date_time" {
-					s.Parameters[i].Timezone = "UTC"
+					s.Parameters[i].Timezone = zone
 				}
 			}
 			removeJMeterRepairCode(s, "jmeter_reference_context_confirmation_required")
@@ -337,6 +453,89 @@ func applyJMeterBatchOperation(b *jmeterBatchCandidate, op JMeterBatchOperation)
 	}
 	return nil
 }
+
+// jmeterPreservedTimeMode returns the time mode the import recorded in
+// preserved time_resolution, typed or decoded from a stored batch.
+func jmeterPreservedTimeMode(s *dsl.Script) string {
+	if s == nil || s.Metadata == nil || s.Metadata.Import == nil {
+		return ""
+	}
+	switch resolution := s.Metadata.Import.Preserved["time_resolution"].(type) {
+	case map[string]string:
+		return resolution["mode"]
+	case map[string]any:
+		mode, _ := resolution["mode"].(string)
+		return mode
+	}
+	return ""
+}
+
+// jmeterReferenceTimezone returns the canonical spelling of a named zone the
+// runtime can load, which is what a confirmation stores. "Local" is refused: it
+// is the generator's zone, which is what confirmation pins down. A UTC alias
+// (Etc/UTC, Zulu, utc) is stored as UTC.
+func jmeterReferenceTimezone(zone string) (string, bool) {
+	if zone == "" || strings.EqualFold(zone, "local") {
+		return "", false
+	}
+	for _, alias := range []string{"UTC", "Etc/UTC", "UCT", "Etc/UCT", "Universal", "Etc/Universal", "Zulu", "Etc/Zulu"} {
+		if strings.EqualFold(zone, alias) {
+			return "UTC", true
+		}
+	}
+	if _, err := time.LoadLocation(zone); err != nil || !jmeterZoneSpelledExactly(zone) {
+		return "", false
+	}
+	return zone, true
+}
+
+// jmeterZoneSpelledExactly reports whether zone is spelled as the zoneinfo
+// file it loads from. On a case-insensitive filesystem (macOS)
+// time.LoadLocation also loads "america/chicago", which a Linux generator
+// cannot. The directories are the ones time.LoadLocation searches. Each is
+// walked by its own directory entries, so no path is built from zone: a
+// component found only under another case is misspelled, and a zone found in
+// none of them came from a zip, whose lookup is case-sensitive.
+func jmeterZoneSpelledExactly(zone string) bool {
+	parts := strings.Split(zone, "/")
+	if slices.ContainsFunc(parts, func(part string) bool { return part == "" || part == "." || part == ".." }) {
+		return false
+	}
+	roots := []string{"/usr/share/zoneinfo", "/usr/share/lib/zoneinfo", "/usr/lib/locale/TZ", "/etc/zoneinfo"}
+	if env := os.Getenv("ZONEINFO"); env != "" {
+		roots = append([]string{env}, roots...)
+	}
+	for _, root := range roots {
+		if spelled, found := jmeterZoneInRoot(root, parts); found {
+			return spelled
+		}
+	}
+	return true
+}
+
+// jmeterZoneInRoot walks root one zone component at a time. found reports
+// whether every component exists under some case; spelled whether each one
+// matched exactly.
+func jmeterZoneInRoot(root string, parts []string) (spelled, found bool) {
+	dir, spelled := root, true
+	for _, part := range parts {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false, false
+		}
+		at := slices.IndexFunc(entries, func(e os.DirEntry) bool { return e.Name() == part })
+		if at < 0 {
+			at = slices.IndexFunc(entries, func(e os.DirEntry) bool { return strings.EqualFold(e.Name(), part) })
+			spelled = false
+		}
+		if at < 0 {
+			return false, false
+		}
+		dir = filepath.Join(dir, entries[at].Name())
+	}
+	return spelled, true
+}
+
 func removeJMeterRepairCode(s *dsl.Script, code string) {
 	_ = dslwalk.Walk(s, func(ref dslwalk.SurfaceRef) error {
 		if ref.Action != nil {
@@ -345,21 +544,23 @@ func removeJMeterRepairCode(s *dsl.Script, code string) {
 		return nil
 	})
 }
+
+// replacePayloadPointer replaces the JSON value at pointer with value as a JSON
+// string. Only that value's bytes change: the reviewed payload keeps its key
+// order, whitespace and escapes everywhere else, because the source sampler
+// sent those exact bytes.
 func replacePayloadPointer(body, pointer, value string) (string, error) {
 	if pointer == "" || !strings.HasPrefix(pointer, "/") {
 		return "", errors.New("Select a JSON payload field using a JSON pointer")
 	}
-	var root any
 	decoder := json.NewDecoder(strings.NewReader(body))
-	decoder.UseNumber()
-	if decoder.Decode(&root) != nil {
+	if decoder.Decode(new(json.RawMessage)) != nil {
 		return "", errors.New("Selected payload is not JSON")
 	}
 	if decoder.Decode(new(any)) != io.EOF {
 		return "", errors.New("Selected payload must contain exactly one JSON value")
 	}
 	parts := strings.Split(pointer[1:], "/")
-	current := root
 	for i, key := range parts {
 		for j := 0; j < len(key); j++ {
 			if key[j] == '~' {
@@ -369,38 +570,139 @@ func replacePayloadPointer(body, pointer, value string) (string, error) {
 				j++
 			}
 		}
-		key = strings.ReplaceAll(strings.ReplaceAll(key, "~1", "/"), "~0", "~")
-		last := i == len(parts)-1
-		switch node := current.(type) {
-		case map[string]any:
-			next, ok := node[key]
-			if !ok {
-				return "", errors.New("Payload field does not exist")
+		parts[i] = strings.ReplaceAll(strings.ReplaceAll(key, "~1", "/"), "~0", "~")
+	}
+	start, end, err := jsonPointerValueSpan(body, parts)
+	if err != nil {
+		return "", err
+	}
+	var encoded strings.Builder
+	encoder := json.NewEncoder(&encoded)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return "", err
+	}
+	return body[:start] + strings.TrimSuffix(encoded.String(), "\n") + body[end:], nil
+}
+
+// jsonPointerValueSpan returns the byte span of the value the unescaped
+// pointer tokens select in data, which must be one valid JSON value. Like
+// encoding/json, a duplicated object key selects its last occurrence.
+func jsonPointerValueSpan(data string, tokens []string) (int, int, error) {
+	start := skipJSONSpace(data, 0)
+	end := scanJSONValue(data, start)
+	for _, token := range tokens {
+		switch data[start] {
+		case '{':
+			found := -1
+			foundEnd := -1
+			at := skipJSONSpace(data, start+1)
+			for data[at] != '}' {
+				keyEnd := scanJSONValue(data, at)
+				var key string
+				if json.Unmarshal([]byte(data[at:keyEnd]), &key) != nil {
+					return 0, 0, errors.New("Selected payload is not JSON")
+				}
+				valueStart := skipJSONSpace(data, skipJSONSpace(data, keyEnd)+1)
+				valueEnd := scanJSONValue(data, valueStart)
+				if key == token {
+					found, foundEnd = valueStart, valueEnd
+				}
+				at = skipJSONSpace(data, valueEnd)
+				if data[at] == ',' {
+					at = skipJSONSpace(data, at+1)
+				}
 			}
-			if last {
-				node[key] = value
-			} else {
-				current = next
+			if found < 0 {
+				return 0, 0, errors.New("Payload field does not exist")
 			}
-		case []any:
-			index, err := strconv.Atoi(key)
-			if err != nil || strconv.Itoa(index) != key || index < 0 || index >= len(node) {
-				return "", errors.New("Payload array index does not exist")
+			start, end = found, foundEnd
+		case '[':
+			index, err := strconv.Atoi(token)
+			if err != nil || strconv.Itoa(index) != token || index < 0 {
+				return 0, 0, errors.New("Payload array index does not exist")
 			}
-			if last {
-				node[index] = value
-			} else {
-				current = node[index]
+			at := skipJSONSpace(data, start+1)
+			position := 0
+			found := false
+			for data[at] != ']' {
+				valueEnd := scanJSONValue(data, at)
+				if position == index {
+					start, end, found = at, valueEnd, true
+					break
+				}
+				position++
+				at = skipJSONSpace(data, valueEnd)
+				if data[at] == ',' {
+					at = skipJSONSpace(data, at+1)
+				}
+			}
+			if !found {
+				return 0, 0, errors.New("Payload array index does not exist")
 			}
 		default:
-			return "", fmt.Errorf("Payload pointer traverses a scalar")
+			return 0, 0, fmt.Errorf("Payload pointer traverses a scalar")
 		}
 	}
-	out, err := json.Marshal(root)
-	return string(out), err
+	return start, end, nil
+}
+
+func skipJSONSpace(data string, at int) int {
+	for at < len(data) && (data[at] == ' ' || data[at] == '\t' || data[at] == '\n' || data[at] == '\r') {
+		at++
+	}
+	return at
+}
+
+// scanJSONValue returns the end of the JSON value that starts at at in data,
+// which the caller has already validated.
+func scanJSONValue(data string, at int) int {
+	switch data[at] {
+	case '"':
+		for i := at + 1; i < len(data); i++ {
+			switch data[i] {
+			case '\\':
+				i++
+			case '"':
+				return i + 1
+			}
+		}
+		return len(data)
+	case '{', '[':
+		depth := 0
+		for i := at; i < len(data); i++ {
+			switch data[i] {
+			case '"':
+				i = scanJSONValue(data, i) - 1
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+				if depth == 0 {
+					return i + 1
+				}
+			}
+		}
+		return len(data)
+	default:
+		i := at
+		for i < len(data) && !strings.ContainsRune(",}] \t\n\r", rune(data[i])) {
+			i++
+		}
+		return i
+	}
 }
 
 func batchDisclosure(s *dsl.Script) *dsl.Script {
+	// A batch member is a credential-preserving import draft, like every other
+	// import preview, and its saved script is shown exactly (maskStoredScript).
+	// The converter already turned its credentials into {{secret.*}}
+	// references. Projecting it again masked on names and shapes alone, hiding
+	// message bodies, hub names and token URLs the reviewer has to check
+	// before saving.
+	if isCredentialPreservingImport(s) {
+		return cloneScriptDefinition(s)
+	}
 	p, err := scriptdisclosure.Project(s)
 	if err != nil {
 		return nil
@@ -439,5 +741,15 @@ type JMeterBatchRepairResponse struct {
 	Findings                  map[string][]importreview.Finding `json:"findings"`
 	Readiness                 map[string]importreview.Readiness `json:"readiness"`
 	SecretBindingRequirements []SecretBindingRequirement        `json:"secret_binding_requirements,omitempty"`
-	ExpiresAt                 time.Time                         `json:"expires_at"`
+	// RepairSuggestions explains each review gate the repaired batch still
+	// has, as the import response does.
+	RepairSuggestions []scriptImportRepairSuggestion `json:"repair_suggestions"`
+	// SourceSecretSessionID is set on an apply when the import offered
+	// source-secret migration: the replacement session that now holds the
+	// recorded values (the previous ID is consumed), or "" when the offer is
+	// gone and the client must drop its ID.
+	SourceSecretSessionID        *string    `json:"source_secret_session_id,omitempty"`
+	SourceSecretSessionExpiresAt *time.Time `json:"source_secret_session_expires_at,omitempty"`
+	SourceSecretMigrationAllowed bool       `json:"source_secret_migration_allowed,omitempty"`
+	ExpiresAt                    time.Time  `json:"expires_at"`
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
-import { actionImportFindings, buildRepairOperation, coveredWarnings, draftImportFindings, findingCategory, groupImportFindings, importActionEntries, importReviewFindings, isConfigReferenceIssue, issueRepairOptions, issueTitle, readinessCounts, readinessSummaryText, repairImpactText, reviewSectionFindings, storedRepairOptions, unresolvedIssueCount, warningIssueTitle, type ImportFinding, type ImportIssue } from './importReviewIssues'
+import { actionAwaitsRuntimeSupport, actionImportFindings, buildRepairOperation, jmeterCredentialRepairFindings, coveredWarnings, draftImportFindings, findingCategory, groupImportFindings, importActionEntries, importReviewFindings, isConfigReferenceIssue, issueRepairOptions, issueTitle, readinessCounts, readinessSummaryText, repairImpactText, reviewSectionFindings, storedRepairOptions, unresolvedIssueCount, warningIssueTitle, type ImportFinding, type ImportIssue } from './importReviewIssues'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { replayReadinessIssues } from './replayReadinessIssues'
 import { replayBlockers, replayGateAction, replayStartGate } from './replayStartGate'
@@ -81,6 +81,32 @@ describe('import issue queue', () => {
     expect(storedRepairOptions('restored_body_required')).toEqual([])
     expect(storedRepairOptions('unknown_unsupported')).toEqual([])
   })
+  it('binds a JMeter credential code on a saved script only: the import binds it in the batch repairs', () => {
+    expect(storedRepairOptions('jmeter_kafka_oauth_credentials_required')).toEqual([{ value: 'bind_kafka_credentials', label: 'Bind Kafka credential references' }])
+    expect(storedRepairOptions('jmeter_eventhubs_credentials_required')).toEqual([{ value: 'bind_eventhubs_credentials', label: 'Bind Event Hubs credential reference' }])
+    expect(issueRepairOptions('jmeter_kafka_oauth_credentials_required')).toEqual([])
+    expect(issueRepairOptions('jmeter_eventhubs_credentials_required')).toEqual([])
+    // A code no saved-script repair clears offers nothing, prototype names included.
+    expect(storedRepairOptions('jmeter_messaging_compatibility_unverified')).toEqual([])
+    expect(storedRepairOptions('toString')).toEqual([])
+  })
+  it('reads a step\'s JMeter credential codes from its import review reasons as repairable findings', () => {
+    const step = { name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: { execution_blocker: 'import_review_required', import_review: { source: 'jmeter', reason_codes: ['jmeter_messaging_compatibility_unverified', 'jmeter_kafka_oauth_credentials_required', 'jmeter_eventhubs_credentials_required'], source_refs: ['plan.jmx#Produce'], resolution: 'awaiting_runtime_support' } } } as ScriptActionDefinition
+    expect(jmeterCredentialRepairFindings(step, 'actions[2]')).toEqual([
+      { code: 'jmeter_eventhubs_credentials_required', gate: 'execution', action_path: 'actions[2]', source_ref: 'plan.jmx#Produce', detail: '' },
+      { code: 'jmeter_kafka_oauth_credentials_required', gate: 'execution', action_path: 'actions[2]', source_ref: 'plan.jmx#Produce', detail: '' },
+    ])
+    expect(jmeterCredentialRepairFindings({ ...step, metadata: { execution_blocker: 'import_review_required' } }, 'actions[2]')).toEqual([])
+    // The step's findings stay its one gate: the codes are its reasons.
+    expect(actionImportFindings(step, 'actions[2]').map(f => f.code)).toEqual(['import_review_required'])
+  })
+  it('reads awaiting_runtime_support as a step nothing clears yet', () => {
+    const step = (resolution?: string) => ({ name: 'Produce', type: 'kafka_produce', target: 'orders', metadata: { import_review: { reason_codes: ['jmeter_messaging_compatibility_unverified'], ...(resolution ? { resolution } : {}) } } }) as ScriptActionDefinition
+    expect(actionAwaitsRuntimeSupport(step('awaiting_runtime_support'))).toBe(true)
+    expect(actionAwaitsRuntimeSupport(step('replace_behavior_and_remove_gate'))).toBe(false)
+    expect(actionAwaitsRuntimeSupport(step())).toBe(false)
+    expect(actionAwaitsRuntimeSupport(undefined)).toBe(false)
+  })
   it('builds the operation each repair sends, the same for the import review and the editor', () => {
     const fields = { value: '', responsePath: '', extractorType: 'jsonpath' }
     const value = { code: 'missing_producer:c_token' }
@@ -98,6 +124,9 @@ describe('import issue queue', () => {
     expect(buildRepairOperation('add_extractor', { code: 'conditional_producer:ns:token' }, { value: '$.token', responsePath: 'actions[0]', extractorType: 'regex' })).toEqual({
       type: 'add_extractor', response_path: 'actions[0]', extractor: { name: 'ns:token', type: 'regex', source: 'body', expression: '$.token', on_miss: 'fail' },
     })
+    // Credential bindings send secret names (trimmed), never values.
+    expect(buildRepairOperation('bind_kafka_credentials', { code: 'jmeter_kafka_oauth_credentials_required' }, { ...fields, value: ' KAFKA_SECRET ', clientIdSecret: ' KAFKA_CLIENT ' })).toEqual({ type: 'bind_kafka_credentials', client_id_secret: 'KAFKA_CLIENT', secret_name: 'KAFKA_SECRET' })
+    expect(buildRepairOperation('bind_eventhubs_credentials', { code: 'jmeter_eventhubs_credentials_required' }, { ...fields, value: 'HUB_CONNECTION' })).toEqual({ type: 'bind_eventhubs_credentials', secret_name: 'HUB_CONNECTION' })
   })
   it('reads one step\'s gates as the draft reads them', () => {
     const s = { ...script, init: [{ name: 'Socket option', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blocker: 'legacy_tls_replacement', review_reasons: ['import_review_required'], source_file: 'vuser_init.c', source_line: 3 } }],

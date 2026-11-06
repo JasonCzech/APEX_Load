@@ -71,7 +71,10 @@ ARG PLAYWRIGHT_DRIVER_VERSION
 # PLAYWRIGHT_DRIVER_VERSION must match playwrightCliVersion in
 # playwright-community/playwright-go (see go.mod) — playwright.Run() refuses
 # to start with a mismatched driver.
-RUN apk add --no-cache ca-certificates \
+# Upgrade the base packages first so a fixed OS CVE (the Trivy gate) does not
+# wait for the next base-image digest bump; the Debian images do the same.
+RUN apk upgrade --no-cache \
+	&& apk add --no-cache ca-certificates \
 	&& if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
 		apk add --no-cache chromium nodejs nss freetype harfbuzz ttf-freefont; \
 		if [ -x /usr/bin/chromium-browser ]; then \

@@ -262,8 +262,10 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if preserved["original_file_name"] != "checkout.jmx" {
 		t.Fatalf("original_file_name = %#v, want checkout.jmx", preserved["original_file_name"])
 	}
-	if preserved["warning_count"] != 0 {
-		t.Fatalf("warning_count = %#v, want 0", preserved["warning_count"])
+	// The only warning is the certificate-trust notice every HTTP import
+	// carries (JMeter accepts any server certificate).
+	if preserved["warning_count"] != 1 || len(withoutJMeterTLSNotice(result.Warnings)) != 0 {
+		t.Fatalf("warning_count = %#v (%#v), want only the TLS notice", preserved["warning_count"], result.Warnings)
 	}
 	if preserved["unsupported_count"] != 0 {
 		t.Fatalf("unsupported_count = %#v, want 0", preserved["unsupported_count"])
@@ -726,8 +728,8 @@ hd=http://www.w3.org/wgs85_pos#</stringProp>
 	if action.Extractors[0].Expression != expected {
 		t.Fatalf("unexpected namespaced XPath2 encoding: %#v", action.Extractors[0])
 	}
-	if len(result.Warnings) != 0 {
-		t.Fatalf("warnings = %#v, want none", result.Warnings)
+	if warnings := withoutJMeterTLSNotice(result.Warnings); len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none", warnings)
 	}
 	if action.Extractors[0].Name != "page_title_xpath2" || action.Extractors[0].Type != "xpath" {
 		t.Fatalf("unexpected namespaced XPath2 extractor: %#v", action.Extractors[0])
@@ -771,10 +773,11 @@ func TestConvertJMXXPath2InvalidNamespacesWarn(t *testing.T) {
 	if len(action.Extractors) != 0 {
 		t.Fatalf("extractors = %d, want 0", len(action.Extractors))
 	}
-	if len(result.Warnings) != 1 {
-		t.Fatalf("warnings = %#v, want 1 warning", result.Warnings)
+	warnings := withoutJMeterTLSNotice(result.Warnings)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %#v, want 1 warning", warnings)
 	}
-	if !strings.Contains(result.Warnings[0], "namespace bindings were invalid") {
+	if !strings.Contains(warnings[0], "namespace bindings were invalid") {
 		t.Fatalf("unexpected warning detail: %#v", result.Warnings)
 	}
 	if !containsJMeterDiagnostic(result, "JMeter XPath2Extractor") {
@@ -1335,7 +1338,9 @@ func TestConvertJMXReviewGatesUnsupportedAuthWithoutBasicApproximation(t *testin
 	}
 }
 
-func TestConvertJMXClampsHTTPTimeoutAndUsesRuntimeRedirectLimit(t *testing.T) {
+// follow_redirects caps at JMeter's stock httpsampler.max_redirects (20), not
+// the highest limit APEX accepts.
+func TestConvertJMXClampsHTTPTimeoutAndUsesJMeterRedirectLimit(t *testing.T) {
 	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
   <hashTree>
@@ -1366,8 +1371,8 @@ func TestConvertJMXClampsHTTPTimeoutAndUsesRuntimeRedirectLimit(t *testing.T) {
 	if action.TimeoutMs != capabilities.MaxTimeoutMS {
 		t.Fatalf("timeout = %d, want runtime clamp %d", action.TimeoutMs, capabilities.MaxTimeoutMS)
 	}
-	if action.MaxRedirects == nil || *action.MaxRedirects != capabilities.MaxRedirects {
-		t.Fatalf("max redirects = %#v, want runtime limit %d", action.MaxRedirects, capabilities.MaxRedirects)
+	if action.MaxRedirects == nil || *action.MaxRedirects != 20 {
+		t.Fatalf("max redirects = %#v, want JMeter's default limit 20", action.MaxRedirects)
 	}
 	if !containsJMeterDiagnostic(result, "was clamped") {
 		t.Fatalf("diagnostics = %#v, want timeout clamp diagnostic", result.Unsupported)
@@ -1665,4 +1670,16 @@ func headerValue(action dsl.Action, name string) string {
 		}
 	}
 	return ""
+}
+
+// withoutJMeterTLSNotice drops the certificate-trust notice every HTTP import
+// carries, so a test can assert on the warnings its fixture is about.
+func withoutJMeterTLSNotice(warnings []string) []string {
+	var kept []string
+	for _, warning := range warnings {
+		if !strings.HasPrefix(warning, "JMeter's HTTP samplers accept any server certificate") {
+			kept = append(kept, warning)
+		}
+	}
+	return kept
 }

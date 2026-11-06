@@ -15,10 +15,13 @@ const (
 )
 
 type Diagnostic struct {
-	Code               string   `json:"code,omitempty"`
-	SourceRef          string   `json:"source_ref,omitempty"`
-	Element            string   `json:"element"`
-	Detail             string   `json:"detail"`
+	Code      string `json:"code,omitempty"`
+	SourceRef string `json:"source_ref,omitempty"`
+	Element   string `json:"element"`
+	Detail    string `json:"detail"`
+	// Resolution, when set, is what clears the finding, kept apart from
+	// Detail (what it means) so a client can show the two separately.
+	Resolution         string   `json:"resolution,omitempty"`
 	Severity           Severity `json:"severity"`
 	Location           string   `json:"location,omitempty"`
 	Count              int      `json:"count,omitempty"`
@@ -38,7 +41,11 @@ type ReviewSection struct {
 
 type Collector struct {
 	items Diagnostics
-	seen  map[string]struct{}
+	seen  map[string]int
+	// reported holds the item index of every Add call, duplicates included,
+	// so a caller can attribute a de-duplicated diagnostic to each scope that
+	// reported it (see Mark and ReportedSince).
+	reported []int
 }
 
 func (c *Collector) Add(sev Severity, element, location, detail string) {
@@ -65,13 +72,41 @@ func (c *Collector) AddCoded(sev Severity, code, element, location, detail strin
 	}
 	key := strings.Join([]string{string(item.Severity), item.Code, item.Element, item.Location, item.Detail}, "\x00")
 	if c.seen == nil {
-		c.seen = map[string]struct{}{}
+		c.seen = map[string]int{}
 	}
-	if _, ok := c.seen[key]; ok {
+	if index, ok := c.seen[key]; ok {
+		c.reported = append(c.reported, index)
 		return
 	}
-	c.seen[key] = struct{}{}
+	c.seen[key] = len(c.items)
+	c.reported = append(c.reported, len(c.items))
 	c.items = append(c.items, item)
+}
+
+// Mark returns a position for ReportedSince.
+func (c *Collector) Mark() int {
+	if c == nil {
+		return 0
+	}
+	return len(c.reported)
+}
+
+// ReportedSince returns, once each and in first-report order, the
+// diagnostics reported since mark, including ones an earlier scope had
+// already reported and Items lists only once.
+func (c *Collector) ReportedSince(mark int) Diagnostics {
+	if c == nil || mark >= len(c.reported) {
+		return nil
+	}
+	seen := make(map[int]bool, len(c.reported)-mark)
+	var out Diagnostics
+	for _, index := range c.reported[mark:] {
+		if !seen[index] {
+			seen[index] = true
+			out = append(out, c.items[index])
+		}
+	}
+	return out
 }
 
 func (c *Collector) Items() Diagnostics {
@@ -98,10 +133,13 @@ func (d Diagnostic) String() string {
 	} else if d.Location != "" {
 		prefix += " at " + d.Location
 	}
-	if d.Detail == "" {
+	// Text surfaces (preflight issues, review sections) keep the resolution
+	// after the meaning, as one sentence pair.
+	detail := strings.TrimSpace(strings.Join([]string{d.Detail, d.Resolution}, " "))
+	if detail == "" {
 		return fmt.Sprintf("%s [%s]", prefix, d.Severity)
 	}
-	return fmt.Sprintf("%s [%s]: %s", prefix, d.Severity, d.Detail)
+	return fmt.Sprintf("%s [%s]: %s", prefix, d.Severity, detail)
 }
 
 func (d Diagnostics) Strings() []string {
@@ -138,7 +176,7 @@ func (d Diagnostics) ReviewSections() []ReviewSection {
 			Key:      "import_diagnostics_" + string(sev),
 			Title:    severityTitle(sev),
 			Severity: string(sev),
-			Summary:  fmt.Sprintf("%d import diagnostic(s) require review.", len(items)),
+			Summary:  reviewSectionSummary(sev, len(items)),
 			Items:    items,
 		})
 	}
@@ -153,6 +191,19 @@ func (d Diagnostics) HasLocation(location string) bool {
 		}
 	}
 	return false
+}
+
+// reviewSectionSummary words a section by what it asks of the reader. Info
+// items are notes about how the source was mapped; saying they "require
+// review" made a clean import read as if something were left to do. The
+// wording stays neutral, though: this summary is shared by every importer and
+// is shown beside each Info item, and some Info items do ask the operator to
+// validate something before replay, so it must not claim nothing is needed.
+func reviewSectionSummary(sev Severity, count int) string {
+	if sev == Info {
+		return fmt.Sprintf("%d import note(s) about how the source was mapped.", count)
+	}
+	return fmt.Sprintf("%d import diagnostic(s) require review.", count)
 }
 
 func severityTitle(sev Severity) string {

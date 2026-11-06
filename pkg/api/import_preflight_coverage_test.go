@@ -368,6 +368,54 @@ func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
 	}
 }
 
+// A scenario draft that spans several plans in an archive must not carry the
+// first plan's Test Plan name and comments; a single plan keeps both.
+func TestJMeterZIPCombinedScenarioDraftDropsFirstPlanIdentity(t *testing.T) {
+	plan := func(name, comment string) string {
+		return `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="` + name + `" enabled="true"><stringProp name="TestPlan.comments">` + comment + `</stringProp></TestPlan><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><HTTPSamplerProxy testname="Home" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
+	}
+	archive := buildPreflightCoverageArchive(t, map[string]string{
+		"a/checkout.jmx": plan("Checkout journey", "Checkout plan notes"),
+		"b/search.jmx":   plan("Search journey", "Search plan notes"),
+	})
+	documents, sidecars, err := readJMeterZipImportAll(archive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	combined, err := convertJMeterImportRequest(&jmeterImportRequest{
+		Documents: documents,
+		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars, ScenarioDraft: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft := combined.ScenarioDraft
+	if draft == nil || len(draft.Groups) != 2 {
+		t.Fatalf("scenario draft = %#v, want two groups", draft)
+	}
+	if draft.Name != "Imported JMeter Scenario" {
+		t.Fatalf("combined draft name = %q, want the generic name, not the first plan's", draft.Name)
+	}
+	if _, ok := draft.Metadata["source_comments"]; ok {
+		t.Fatalf("combined draft kept the first plan's comments: %#v", draft.Metadata)
+	}
+	if draft.Metadata["source"] != "jmeter" {
+		t.Fatalf("combined draft metadata = %#v, want the other keys kept", draft.Metadata)
+	}
+
+	single, err := convertJMeterImportRequest(&jmeterImportRequest{
+		Documents: documents[:1],
+		Opts:      jmeter.ConvertOptions{SidecarFiles: sidecars, ScenarioDraft: true},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if single.ScenarioDraft == nil || single.ScenarioDraft.Name != "Checkout journey" ||
+		single.ScenarioDraft.Metadata["source_comments"] != "Checkout plan notes" {
+		t.Fatalf("single-plan draft = %#v, want its plan name and comment", single.ScenarioDraft)
+	}
+}
+
 func TestJMeterZIPScopesSameNamedCSVSidecarsToEachJMX(t *testing.T) {
 	const jmx = `<jmeterTestPlan version="1.2"><hashTree><TestPlan testname="Plan" enabled="true"/><hashTree><ThreadGroup testname="Users" enabled="true"/><hashTree><CSVDataSet testname="Rows" enabled="true"><stringProp name="filename">data.csv</stringProp><stringProp name="delimiter">,</stringProp></CSVDataSet><hashTree/><HTTPSamplerProxy testname="Lookup" enabled="true"><stringProp name="HTTPSampler.domain">example.test</stringProp><stringProp name="HTTPSampler.protocol">https</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`
 	archive := buildPreflightCoverageArchive(t, map[string]string{

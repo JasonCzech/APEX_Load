@@ -1522,6 +1522,16 @@ func trimTerminalManagedTestRuntime(test *ManagedTest) {
 		group.sharedDataSources = nil
 		group.redactionRules = nil
 		group.runtimeSecretValues = nil
+		// Only the per-group deadline watcher moves a group to "ended", and it
+		// runs only for an enforced target_duration. A run that ends by
+		// exhausting iterations, or by stop or failure, would otherwise keep
+		// reporting its groups as running after the run is terminal.
+		if group.RuntimeState != "" && group.RuntimeState != "ended" {
+			group.RuntimeState = "ended"
+			if group.EndedAt == nil {
+				group.EndedAt = cloneTimePtr(test.EndedAt)
+			}
+		}
 	}
 }
 

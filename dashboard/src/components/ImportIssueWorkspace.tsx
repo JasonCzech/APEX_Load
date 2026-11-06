@@ -4,16 +4,20 @@ import type { IssueDetailSeverity } from './IssueDetailsDialog'
 import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import type { ImportReviewTab } from './ImportReviewTabs'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
-import { groupImportWorkspaceIssues, type GroupedImportWorkspaceIssue, type ImportWorkspaceIssue } from './importIssueWorkspaceModel'
+import { groupImportWorkspaceIssues, type GroupedImportWorkspaceIssue, type ImportIssueAction, type ImportWorkspaceIssue } from './importIssueWorkspaceModel'
 import './IssueDetailsDialog.css'
 import { countLabel } from '../utils/numberFormat'
 const evidencePageSize = 100
 
-export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelect, normalizedEvidence = false }: {
+export default function ImportIssueWorkspace({ issues, onNavigate, navigableTabs, onSourceSelect, issueAction, normalizedEvidence = false }: {
   normalizedEvidence?: boolean
   issues: ImportWorkspaceIssue[]
   onNavigate?: (tab: ImportReviewTab, issue?: GroupedImportWorkspaceIssue) => void
+  /** The tabs onNavigate can open; omitted, every tab. An issue whose tab the review hides offers no tab button. */
+  navigableTabs?: readonly ImportReviewTab[]
   onSourceSelect?: (issue: GroupedImportWorkspaceIssue) => void
+  /** A resolution the hosting importer offers for an issue outside the review tabs. */
+  issueAction?: (issue: GroupedImportWorkspaceIssue) => ImportIssueAction | undefined
 }) {
   const grouped = useMemo(() => groupImportWorkspaceIssues(issues), [issues])
   const [selectedId, setSelectedId] = useState('')
@@ -40,6 +44,7 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   const warnings = grouped.filter(issue => issue.severity === 'warning').length
   const notes = grouped.filter(issue => issue.severity === 'info').length
   const reviewedCount = grouped.filter(issue => reviewed.has(issue.id)).length
+  const canNavigate = (tab?: ImportReviewTab): tab is ImportReviewTab => Boolean(tab && onNavigate && (!navigableTabs || navigableTabs.includes(tab)))
   const categoryLabel = (issue: typeof grouped[number]) => issue.targetTab === 'credentials' ? 'Credentials'
     : issue.targetTab === 'data' ? 'Data & parameters'
     : issue.targetTab === 'runtime' ? 'Runtime settings'
@@ -51,6 +56,7 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
   const categoryCounts = new Map<string, number>()
   visible.forEach(issue => categoryCounts.set(categoryLabel(issue), (categoryCounts.get(categoryLabel(issue)) || 0) + 1))
   const nextIssue = orderedVisible.find(issue => !reviewed.has(issue.id) && issue.id !== selected?.id)
+  const hostAction = selected ? issueAction?.(selected) : undefined
 
   const selectedVersion = selected ? `${selected.id}:${selected.occurrences.length}:${selected.occurrences[0]?.description || ''}` : ''
   useEffect(() => {
@@ -100,7 +106,13 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
             <div><h4 ref={detailHeadingRef} tabIndex={-1}>{selected.title}</h4><p>{selected.occurrences.length} affected location{selected.occurrences.length === 1 ? '' : 's'}</p></div>
           </div>
           <div className="shared-import-issue-actions" aria-label="Issue actions">
-            {selected.targetTab && onNavigate && <button type="button" className="btn btn-primary" onClick={() => onNavigate(selected.targetTab!, selected)}>{selected.actionLabel || 'Open related settings'}</button>}
+            {/* A gate nothing clears in this release offers no fix: a button
+                would imply the operator missed a step. */}
+            {(hostAction?.unclearable ?? selected.unclearable)
+              ? <span className="shared-import-issue-unclearable" role="note">Cannot be cleared yet</span>
+              : hostAction?.run
+              ? <button type="button" className="btn btn-primary" onClick={hostAction.run}>{hostAction.label || selected.actionLabel || 'Open related settings'}</button>
+              : canNavigate(selected.targetTab) && onNavigate && <button type="button" className="btn btn-primary" onClick={() => onNavigate(selected.targetTab!, selected)}>{selected.actionLabel || 'Open related settings'}</button>}
             {selected.onSelect && <button type="button" className="btn btn-secondary" onClick={() => { onSourceSelect?.(selected); selected.onSelect?.() }}>Open related source</button>}
             {selected.severity !== 'blocker' && selected.severity !== 'error' && <button type="button" className="btn btn-secondary" onClick={() => setReviewed(current => { const next = new Set(current); if (next.has(selected.id)) next.delete(selected.id); else next.add(selected.id); return next })}>{reviewed.has(selected.id) ? 'Remove reviewed mark' : selected.severity === 'info' ? 'Mark reviewed' : 'Mark reviewed with limitation'}</button>}
           </div>
@@ -110,7 +122,7 @@ export default function ImportIssueWorkspace({ issues, onNavigate, onSourceSelec
           </section>
           <section className="shared-import-issue-resolution" aria-label="Available resolution">
             <h5>Available resolution</h5>
-            <p>{selected.resolution || (selected.targetTab && onNavigate
+            <p>{hostAction?.resolution || selected.resolution || (canNavigate(selected.targetTab)
               ? selected.targetTab === 'credentials' ? 'Review credential handling in Credentials, then verify the affected request before replay.'
                 : selected.targetTab === 'data' ? 'Review imported data producers and bindings in Data & parameters. Edit a value if the draft cannot produce what the source requires.'
                 : selected.targetTab === 'runtime' ? 'Compare imported and draft runtime values, apply a supported edit, and recheck replay readiness.'

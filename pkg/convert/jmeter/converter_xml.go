@@ -164,6 +164,28 @@ func prop(node *xmlNode, name string) string {
 	return ""
 }
 
+// propRaw is prop without trimming, for payload values JMeter sends exactly as
+// authored: SaveService keeps stringProp text verbatim, so a raw body's
+// leading or trailing whitespace (often a final CRLF) is part of the request.
+// Identifier and flag properties keep using prop.
+func propRaw(node *xmlNode, name string) string {
+	if node == nil {
+		return ""
+	}
+	if node.Attrs["name"] == name {
+		return node.Text
+	}
+	for _, child := range node.Children {
+		if child.Attrs["name"] == name {
+			return child.Text
+		}
+		if got := propRaw(child, name); got != "" {
+			return got
+		}
+	}
+	return ""
+}
+
 func childProps(node *xmlNode, name string) []*xmlNode {
 	var out []*xmlNode
 	for _, child := range node.Children {
@@ -183,6 +205,10 @@ func applyHTTPDefaults(node *xmlNode, ctx *convertContext) {
 	ctx.defaultDomain = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.domain"), ctx.defaultDomain)
 	ctx.defaultPort = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.port"), ctx.defaultPort)
 	ctx.defaultPath = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.path"), ctx.defaultPath)
+	// JMeter merges HTTP Request Defaults into every sampler that leaves a
+	// field empty, timeouts included.
+	ctx.defaultConnectTimeout = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.connect_timeout"), ctx.defaultConnectTimeout)
+	ctx.defaultResponseTimeout = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.response_timeout"), ctx.defaultResponseTimeout)
 }
 
 func parseHeaders(node *xmlNode) dsl.HeaderList {

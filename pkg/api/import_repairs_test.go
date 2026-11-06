@@ -759,6 +759,35 @@ func TestCarriedConverterWarningsDropOnlyGeneratedLines(t *testing.T) {
 	}
 }
 
+// The missing-client lines depend on the build: a script imported on a build
+// without the real Kafka or Event Hubs client and repaired on one with it must
+// not carry the stale line as a converter warning. Lines the current build
+// generates for messaging scripts are recognized too.
+func TestCarriedConverterWarningsDropBuildDependentAdapterLines(t *testing.T) {
+	adapterLines := []string{
+		"This APEX Load build has no real Kafka client (it was built without the kafka_real tag), so sends to the configured brokers fail when the script runs. Run it on an enterprise build, or turn on config.kafka.mock for a local shakeout.",
+		"This APEX Load build has no real Azure Event Hubs client (it was built without the eventhubs_real tag), so sends to the configured namespace fail when the script runs. Run it on an enterprise build, or turn on config.eventhubs.mock for a local shakeout.",
+	}
+	for _, script := range []*dsl.Script{
+		{Name: "kafka", Version: "1.0", Protocol: "kafka", Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{Brokers: []string{"broker.example.test:9093"}, Topic: "orders"}}},
+		{Name: "eventhubs", Version: "1.0", Protocol: "eventhubs", Config: dsl.ScriptConfig{EventHubs: dsl.EventHubsConfig{EventHub: "orders"}}},
+	} {
+		for _, line := range buildReplayPreflight(script, nil, nil, nil).Warnings {
+			if strings.HasPrefix(line, "This APEX Load build") && !replayPreflightGeneratedWarning(line) {
+				t.Errorf("%s: generated line %q is not recognized", script.Name, line)
+			}
+		}
+	}
+	converter := []string{"parameter file users.prm: data file users.dat is referenced with conflicting delimiter/column layouts; separate deterministic data sources were created"}
+	prior := &dsl.Script{Name: "http", Version: "1.0", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: "https://example.test"}, Actions: []dsl.Action{{Name: "home", Type: "GET", Target: "https://example.test/"}}}
+	stamped := buildReplayPreflight(prior, nil, nil, converter)
+	stamped.Warnings = append(stamped.Warnings, adapterLines...)
+	attachImportReplayPreflight(prior, enterpriseArchiveSaveProfile, stamped)
+	if got := carriedConverterWarnings(prior); strings.Join(got, "\n") != strings.Join(converter, "\n") {
+		t.Fatalf("carried = %#v, want only the converter warnings %#v", got, converter)
+	}
+}
+
 // The restamped preflight stays an import preflight, so project-secret state
 // never makes it invalid or fails its secrets check. Its missing secrets are
 // the ones the repair's readiness could not resolve, not every secret the

@@ -274,3 +274,41 @@ func TestMatchableNamedValue(t *testing.T) {
 		}
 	}
 }
+
+// A token endpoint address and a SAS policy name contain credential words but
+// hold no credential: NonCredentialName reports exactly these names (the
+// dashboard's credentialPreviewPolicy.ts mirrors the list). SensitiveName does
+// not exempt them, so a caller that judges a value by name alone still masks a
+// token endpoint carrying a client_secret query, or a connection string pasted
+// as a policy name; the credential fields next to them stay sensitive.
+func TestNonCredentialNameExemptsOnlyTokenEndpointAndSASPolicyName(t *testing.T) {
+	for _, name := range []string{
+		"token_url", "tokenUrl", "TOKEN-URL",
+		"sasl.oauthbearer.token.endpoint.url", "tokenEndpointUrl", "oauth_token_endpoint_url",
+		"shared_access_key_name", "sharedAccessKeyName", "SharedAccessKeyName",
+	} {
+		if !NonCredentialName(name) {
+			t.Errorf("NonCredentialName(%q) = false", name)
+		}
+	}
+	for _, name := range []string{
+		"token_url", "TOKEN-URL", "sasl.oauthbearer.token.endpoint.url", "oauth_token_endpoint_url",
+		"shared_access_key_name",
+	} {
+		if !SensitiveName(name) {
+			t.Errorf("SensitiveName(%q) = false, want true: the exemption is the caller's, not SensitiveName's", name)
+		}
+	}
+	for _, name := range []string{
+		"token", "access_token", "token_value", "token_urls", "api_token_url", "session_url", "sas_url",
+		"shared_access_key", "sharedAccessKey", "shared_access_key_value", "shared_access_signature",
+		"client_secret", "connection_string", "password",
+	} {
+		if !SensitiveName(name) {
+			t.Errorf("SensitiveName(%q) = false, want true", name)
+		}
+		if NonCredentialName(name) {
+			t.Errorf("NonCredentialName(%q) = true", name)
+		}
+	}
+}

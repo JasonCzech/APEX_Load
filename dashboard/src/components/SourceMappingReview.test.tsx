@@ -205,6 +205,36 @@ describe('SourceMappingReview', () => {
     window.localStorage.removeItem(CODE_LINE_WRAP_STORAGE_KEY)
   })
 
+  it('labels configuration mappings as script configuration, not review-only or missing', async () => {
+    const plan = {
+      source_files: [{ path: 'plan.jmx', language: 'xml', content: '<TestPlan>\n<ThreadGroup/>\n<HeaderManager/>\n</TestPlan>' }],
+      mappings: [
+        { id: 'plan', source_file: 'plan.jmx', start_line: 1, end_line: 4, function: 'TestPlan', target_path: '', target_name: 'Test Plan', target_kind: 'config', status: 'converted', notes: 'Test plan variables were expanded into the generated requests.' },
+        { id: 'group', source_file: 'plan.jmx', start_line: 2, end_line: 2, function: 'ThreadGroup', target_path: 'config.run_logic', target_kind: 'config', status: 'converted' },
+      ],
+    }
+    const configured = { ...script, config: { ...script.config, run_logic: { termination_mode: 'iterations' as const, iterations: 7 } } }
+    await act(async () => { root.render(<SourceMappingReview sourceReview={plan} script={configured} />) })
+    await flushPromises()
+    const show = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Show mappings'))!
+    await act(async () => { show.click() })
+    const planRow = container.querySelector('[data-mapping-id="plan"]')!
+    expect(planRow.querySelector('.source-map-target-cell')?.textContent).toBe('script configuration')
+    expect(container.querySelector('[data-mapping-id="group"] .source-map-target-cell')?.textContent).toBe('config.run_logic')
+    await act(async () => { planRow.querySelector<HTMLButtonElement>('button')!.click() })
+    await flushPromises()
+    const details = container.querySelector('.source-map-selected-details')!.textContent || ''
+    expect(details).toContain('Destination: script configuration as a whole')
+    expect(details).not.toContain('Destination identity: unmapped')
+    expect(container.textContent).toContain('shaped the script configuration as a whole')
+    expect(container.textContent).not.toContain('This source construct has no mapped destination')
+
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-mapping-id="group"] button')!.click() })
+    await flushPromises()
+    expect(container.querySelector('.source-map-selected-details')?.textContent).toContain('Configuration')
+    expect(generatedDslPane(container).textContent).toContain('termination_mode')
+  })
+
   it('tracks import mapping viewport space after content arrives and cleans up observers', async () => {
     let top = 250
     let width = 800

@@ -54,30 +54,62 @@ type ConvertResult struct {
 	Stats               ConvertStats                   `json:"stats"`
 	Summary             ImportSummary                  `json:"summary"`
 	SourceReview        *sourceview.Review             `json:"source_review,omitempty"`
+
+	// ScriptWarnings lists, for each script in Scripts, the entries of
+	// Warnings that apply to it: those its own thread group produced plus the
+	// plan-level ones no thread group owns (Run Thread Groups consecutively,
+	// View Results Tree, the completeness guard). Warnings stays the whole
+	// plan's list; a per-script surface such as replay preflight should use
+	// this instead, so one group's "Counter p_X is retained but unused" does
+	// not appear on a sibling that never declared p_X. Keys are the script
+	// pointers, which survive in-place renaming.
+	ScriptWarnings map[*dsl.Script][]string `json:"-"`
+
+	// ProtectedRequirements transfers the credential requirements with their
+	// source values to trusted API workflows (source-secret migration) without
+	// placing them in the public conversion payload; SecretRequirements is the
+	// value-free copy. Take it once; ConvertResult must not be copied after.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 }
 
 type ConvertStats struct {
-	EnabledWorkloadSamplers   int `json:"enabled_workload_samplers"`
-	DisabledWorkloadSamplers  int `json:"disabled_workload_samplers"`
-	ConvertedWorkloadSamplers int `json:"converted_workload_samplers"`
-	BlockedWorkloadSamplers   int `json:"blocked_workload_samplers"`
-	ConfigurationContributors int `json:"configuration_contributors"`
-	IgnoredReportingElements  int `json:"ignored_reporting_elements"`
-	ThreadGroups              int `json:"thread_groups"`
-	Samplers                  int `json:"samplers"`
-	TotalSamplers             int `json:"total_samplers,omitempty"`
-	SkippedSamplers           int `json:"skipped_samplers,omitempty"`
-	ConvertedActions          int `json:"converted_actions"`
-	Headers                   int `json:"headers"`
-	Variables                 int `json:"variables"`
-	CSVSources                int `json:"csv_sources"`
-	Assertions                int `json:"assertions"`
-	Timers                    int `json:"timers"`
-	Unsupported               int `json:"unsupported"`
+	EnabledWorkloadSamplers  int `json:"enabled_workload_samplers"`
+	DisabledWorkloadSamplers int `json:"disabled_workload_samplers"`
+	// ConvertedWorkloadSamplers counts enabled samplers that have a draft
+	// action, replay-ready or review-gated. BlockedWorkloadSamplers counts
+	// enabled samplers that cannot replay as imported: review-gated drafts
+	// plus samplers with no draft. The two overlap by the review-gated drafts,
+	// so they do not sum to EnabledWorkloadSamplers; the three disjoint counts
+	// below do (ReplayReady + ReviewGated + Unconverted = Enabled).
+	ConvertedWorkloadSamplers   int `json:"converted_workload_samplers"`
+	BlockedWorkloadSamplers     int `json:"blocked_workload_samplers"`
+	ReplayReadyWorkloadSamplers int `json:"replay_ready_workload_samplers"`
+	ReviewGatedWorkloadSamplers int `json:"review_gated_workload_samplers"`
+	UnconvertedWorkloadSamplers int `json:"unconverted_workload_samplers"`
+	ConfigurationContributors   int `json:"configuration_contributors"`
+	IgnoredReportingElements    int `json:"ignored_reporting_elements"`
+	ThreadGroups                int `json:"thread_groups"`
+	Samplers                    int `json:"samplers"`
+	TotalSamplers               int `json:"total_samplers,omitempty"`
+	SkippedSamplers             int `json:"skipped_samplers,omitempty"`
+	ConvertedActions            int `json:"converted_actions"`
+	Headers                     int `json:"headers"`
+	// Variables counts source variables: User Defined Variables plus the
+	// variables JMeter config elements and functions generate, which become
+	// counter, random_number and date_time parameters (GeneratedParameters,
+	// each counted once per plan however many scripts carry it).
+	// Summary.VariablesDiscovered lists only the declared ones.
+	Variables           int `json:"variables"`
+	GeneratedParameters int `json:"generated_parameters"`
+	CSVSources          int `json:"csv_sources"`
+	Assertions          int `json:"assertions"`
+	Timers              int `json:"timers"`
+	Unsupported         int `json:"unsupported"`
 	// Four-way classification of converted JMeter elements (samplers and
 	// top-level controllers), derived from the source mappings. Contributors
-	// (extractors/assertions/timers) and informational elements (listeners,
-	// DebugSampler) are not counted here.
+	// (config, extractors/assertions/timers, generated parameters and result
+	// exports) and informational elements (listeners, DebugSampler) are not
+	// counted here.
 	Mapped          int `json:"mapped"`
 	ReviewRequired  int `json:"review_required"`
 	AdapterRequired int `json:"adapter_required"`
@@ -87,7 +119,7 @@ type ImportSummary struct {
 	FileName             string   `json:"file_name,omitempty"`
 	ThreadGroupCount     int      `json:"thread_group_count"`
 	SamplerCount         int      `json:"sampler_count"`
-	VariablesDiscovered  []string `json:"variables_discovered,omitempty"`
+	VariablesDiscovered  []string `json:"variables_discovered,omitempty"` // declared variables only; Stats.Variables also counts generated ones
 	CSVSourcesDiscovered []string `json:"csv_sources_discovered,omitempty"`
 }
 
@@ -140,6 +172,11 @@ type convertContext struct {
 	defaultDomain          string
 	defaultPort            string
 	defaultPath            string
+	defaultConnectTimeout  string
+	defaultResponseTimeout string
+	// samplerTimeouts counts the HTTP samplers whose JMeter timeouts do not
+	// become an action timeout, by reason, for the thread group's disclosure.
+	samplerTimeouts        *jmeterSamplerTimeoutStats
 	endpoint               *jmeterEndpointState
 	headers                dsl.HeaderList
 	variableScope          *jmeterVariableScope
@@ -259,6 +296,10 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	inheritedTimerMs := make(map[*treeNode]int, len(threadGroups))
 	countedAncestorTimers := make(map[*treeNode]struct{})
 	countedAncestorConfigs := make(map[*treeNode]struct{})
+	// Plan-level contributors (ancestor-scope config and the Test Plan) carry
+	// no target path, so they are mapped once per plan, by the first group
+	// that becomes a script, instead of once per thread group.
+	mappedPlanContributors := make(map[*xmlNode]struct{})
 	for _, threadGroup := range threadGroups {
 		ancestorTimers, _ := jmeterAncestorScopeTimers(trees, threadGroup)
 		for _, timer := range ancestorTimers {
@@ -277,9 +318,38 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	planDocument, planDeclared := jmeterSourceDocument(enabledPlans, opts.FileName)
+	scriptNames := jmeterScriptNames(threadGroups, opts.ScriptName)
 	threadGroupNames := make(map[string]int, len(threadGroups))
+	// scriptWarnings[i] holds the warnings result.Scripts[i]'s own thread
+	// group produced; see ConvertResult.ScriptWarnings.
+	var scriptWarnings [][]string
+	// droppedWarnings holds those of thread groups that became no script.
+	var droppedWarnings []string
+	// counterSources maps each script's Counter-element parameters to the
+	// element they came from, so stats count source counters, not names.
+	counterSources := make(map[*dsl.Script]map[string]*xmlNode)
+	// ownWarnings returns the warnings reported since a group's marks.
+	ownWarnings := func(warningStart, diagnosticMark int) []string {
+		own := append([]string(nil), result.Warnings[warningStart:]...)
+		for _, item := range diagnostics.ReportedSince(diagnosticMark) {
+			if item.Severity == diag.Warning {
+				own = append(own, item.Detail)
+			}
+		}
+		return own
+	}
 	for i, tg := range threadGroups {
 		mappingStart := len(sourceMappings)
+		var groupPlanContributors []*xmlNode
+		mapPlanContributor := func(element *xmlNode) {
+			if _, mapped := mappedPlanContributors[element]; mapped {
+				return
+			}
+			mappedPlanContributors[element] = struct{}{}
+			groupPlanContributors = append(groupPlanContributors, element)
+			appendJMeterContributorMapping(&sourceMappings, sourceFileName, element, "", jmeterElementLocation(element))
+		}
+		warningStart, diagnosticMark := len(result.Warnings), diagnostics.Mark()
 		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
 		requestReports := make([]requestimport.Report, 0)
 		var importErr error
@@ -309,22 +379,14 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			timerMs:         inheritedTimerMs[tg],
 			scriptProtocol:  groupProtocol,
 			requestReports:  &requestReports,
+			samplerTimeouts: &jmeterSamplerTimeoutStats{},
 			credentialNames: credentialNames,
 			importErr:       &importErr,
 		}
 		ancestorTimerSources, _ := jmeterAncestorScopeTimers(trees, tg)
 		ctx.contributors = append(ctx.contributors, ancestorTimerSources...)
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
-		scriptName := opts.ScriptName
-		if scriptName != "" && len(threadGroups) > 1 {
-			scriptName = fmt.Sprintf("%s_%d", scriptName, i+1)
-		}
-		if scriptName == "" {
-			scriptName = sanitizeName(threadName)
-			if len(threadGroups) > 1 {
-				scriptName = fmt.Sprintf("%s_%d", scriptName, i+1)
-			}
-		}
+		scriptName := scriptNames[i]
 		script := &dsl.Script{
 			Name:          scriptName,
 			Version:       "1.0.0",
@@ -374,6 +436,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			)
 			countedAncestorConfigs[config] = struct{}{}
 			ctx.contributors = append(ctx.contributors, config)
+			mapPlanContributor(config.Element)
 		}
 		if heterogeneous {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: mixed-protocol thread group converted as %s; samplers from other protocols were review-gated. Split them into separate scripts to run natively.", threadName, script.Protocol))
@@ -384,13 +447,35 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ctx.contributors = append(ctx.contributors, messagingAncestors...)
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
 		if script.Protocol != "kafka" && script.Protocol != "eventhubs" {
-			attachJMeterCounterParameters(script, jmeterThreadGroupCounters(trees, tg), parseInt(prop(tg.Element, "ThreadGroup.num_threads")), &diagnostics, &sourceMappings, sourceFileName)
+			counterSources[script] = attachJMeterCounterParameters(script, jmeterThreadGroupCounters(trees, tg), parseInt(prop(tg.Element, "ThreadGroup.num_threads")), &diagnostics, &sourceMappings, sourceFileName)
 			applyJMeterThroughputShaping(script, trees, tg, &diagnostics, &sourceMappings, sourceFileName)
 		}
 		for j := range script.Config.Results.CSVExports {
 			script.Config.Results.CSVExports[j].ID = fmt.Sprintf("jmeter_csv_%d", j+1)
 		}
 		applyThreadGroupTermination(tg, script, &diagnostics, sourceFileName, &sourceMappings)
+		if len(script.Actions) > 0 {
+			applyJMeterThreadGroupErrorPolicy(tg, script, &diagnostics, sourceFileName, &sourceMappings)
+		}
+		if population := jmeterThreadGroupPopulation(tg); population != nil {
+			script.Metadata.Import.Preserved["source_population"] = population
+		}
+		// JMeter's per-element Comments field is documentation only, but plans
+		// use it for business context ("Billing System = TLG"); keep it with
+		// the script it describes instead of dropping it silently.
+		if comment := jmeterElementComment(tg.Element); comment != "" {
+			script.Metadata.Import.Preserved["source_comments"] = comment
+		}
+		// A group with no actions is dropped below and must not leave mappings
+		// or diagnostics for a script that never exists. Its own mapping takes
+		// the group's script identity, so a repeated group name still resolves
+		// the group's diagnostics to the group.
+		if tg.Element.Name == "ThreadGroup" && len(script.Actions) > 0 {
+			appendJMeterContributorMapping(&sourceMappings, sourceFileName, tg.Element, "config.run_logic", threadItem)
+		}
+		if plan := jmeterEnabledPlanFor(enabledPlans, tg); plan != nil && len(script.Actions) > 0 {
+			mapPlanContributor(plan.Element)
+		}
 		timeValues.apply(script, &diagnostics, sourceFileName)
 		if opts.TimeMode != "" {
 			script.Metadata.Import.Preserved["time_resolution"] = map[string]string{"mode": opts.TimeMode, "timezone": opts.Timezone}
@@ -422,6 +507,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 					setJMeterHeaderSummary(script.Config.HTTP.DefaultHeaders, header.Name, convertVariables(header.Value))
 				}
 			}
+			if len(script.Actions) > 0 {
+				applyJMeterHTTPClientParity(script, tg, threadItem, jmeterCookieManagersInScope(trees, tg), *ctx.samplerTimeouts, &diagnostics)
+			}
 		}
 		if len(script.Config.HTTP.DefaultHeaders) == 0 {
 			script.Config.HTTP.DefaultHeaders = nil
@@ -434,6 +522,20 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		if len(script.Actions) == 0 {
 			result.Warnings = append(result.Warnings, fmt.Sprintf("%s: no executable samplers were converted", threadName))
+			// The group became no script, so its warnings belong to none.
+			droppedWarnings = append(droppedWarnings, ownWarnings(warningStart, diagnosticMark)...)
+			// Nor its configuration-contributor mappings (a later group maps
+			// the plan-level ones); its sampler outcomes stay in the review.
+			kept := sourceMappings[:mappingStart]
+			for _, mapping := range sourceMappings[mappingStart:] {
+				if mapping.TargetKind != "config" {
+					kept = append(kept, mapping)
+				}
+			}
+			sourceMappings = kept
+			for _, element := range groupPlanContributors {
+				delete(mappedPlanContributors, element)
+			}
 			continue
 		}
 		if script.Protocol == "http" {
@@ -480,15 +582,40 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			}
 			script.Metadata.Import.Preserved["reference_context"] = map[string]any{"proposed_timezone": "UTC", "proposed_property_overrides": map[string]string{}, "confirmed": false, "strict_parity": "unverified"}
 			messagingAdvisories(script, result)
+			if len(script.Config.SamplerSchedules) > 0 {
+				// One plan-wide statement (it de-duplicates across scripts): the
+				// per-action gates list codes, which read as "resolve these and it
+				// runs" although the engine still refuses sampler pacing.
+				diagnostics.Add(diag.Warning, "JMeter sampler schedules", "", jmeterSamplerScheduleUnavailable)
+			}
 		}
 		rebaseJMeterBatchMappingPaths(sourceMappings[mappingStart:], len(result.Scripts))
 		result.Scripts = append(result.Scripts, script)
+		scriptWarnings = append(scriptWarnings, ownWarnings(warningStart, diagnosticMark))
 	}
 	if len(result.Scripts) == 1 {
 		unbaseJMeterSingleScriptMappingPaths(sourceMappings)
 	}
 
-	draft := buildScenarioDraft(threadGroups, result.Scripts)
+	if len(result.Scripts) > 1 {
+		for _, plan := range enabledPlans {
+			if strings.EqualFold(prop(plan.Element, "TestPlan.serialize_threadgroups"), "true") {
+				diagnostics.Add(diag.Warning, "JMeter TestPlan", jmeterElementLocation(plan.Element), "the plan runs its thread groups one after another (Run Thread Groups consecutively), but the scenario draft starts every group at once; run the groups as separate tests, or delay each group's start, to keep them apart")
+				break
+			}
+		}
+	}
+	scenarioName := ""
+	if planDeclared {
+		scenarioName = planDocument
+	}
+	draft := buildScenarioDraft(threadGroups, result.Scripts, scenarioName)
+	for _, plan := range enabledPlans {
+		if comment := jmeterElementComment(plan.Element); comment != "" {
+			draft.Metadata["source_comments"] = comment
+			break
+		}
+	}
 	for i, script := range result.Scripts {
 		prefix := fmt.Sprintf("scripts[%d].", i)
 		for j := range sourceMappings {
@@ -508,6 +635,34 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	sort.Strings(result.UnsupportedElements)
 	result.Stats.Unsupported = len(result.UnsupportedElements)
+	// Counter, Random Variable and __time() values are JMeter variables too;
+	// they arrive as generated parameters rather than User Defined Variables,
+	// and leaving them out reported "0 variables" for a plan with five.
+	// A config element above the thread groups (a Test Plan-scope Counter, say)
+	// is attached to every script it covers, so each generated variable is
+	// counted once per plan, by name and source element, not once per script;
+	// sibling thread groups' own same-named Counters each count.
+	type generatedKey struct {
+		kind, name, scope string
+		source            *xmlNode
+	}
+	generated := map[generatedKey]struct{}{}
+	for _, script := range result.Scripts {
+		for _, parameter := range script.Parameters {
+			switch parameter.Type {
+			case "counter", "random_number", "date_time":
+				key := generatedKey{kind: parameter.Type, name: parameter.Name, scope: parameter.ScopeID}
+				if parameter.Type == "counter" {
+					key.source = counterSources[script][parameter.Name]
+				}
+				if _, counted := generated[key]; !counted {
+					generated[key] = struct{}{}
+					result.Stats.GeneratedParameters++
+				}
+			}
+		}
+	}
+	result.Stats.Variables += result.Stats.GeneratedParameters
 	result.Summary.SamplerCount = result.Stats.Samplers
 	result.Summary.VariablesDiscovered = sortedKeys(variableNames)
 	result.Summary.CSVSourcesDiscovered = sortedKeys(csvNames)
@@ -526,6 +681,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 	result.Warnings = uniqueJMeterStrings(result.Warnings)
+	result.ScriptWarnings = attributeJMeterScriptWarnings(result.Warnings, result.Scripts, scriptWarnings, droppedWarnings)
 	result.Stats.Mapped, result.Stats.ReviewRequired, result.Stats.AdapterRequired = tallyJMeterCategories(sourceMappings)
 	for _, script := range result.Scripts {
 		if script.Metadata == nil {
@@ -560,6 +716,7 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	reconcileJMeterBatchSourceMappingNames(result.Scripts, sourceMappings)
 	result.Findings = importreview.NormalizeFindings(allFindings)
+	result.ProtectedRequirements.Store(allRequirements)
 	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
 	populateJMeterWorkloadAccounting(trees, sourceMappings, &result.Stats)
 	for _, script := range result.Scripts {
@@ -579,6 +736,105 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	result.NormalizeReviewEvidence()
 	return result, nil
+}
+
+// attributeJMeterScriptWarnings orders each script's warnings as the
+// plan-wide list orders them. own[i] belongs to scripts[i].
+func attributeJMeterScriptWarnings(warnings []string, scripts []*dsl.Script, own [][]string, dropped []string) map[*dsl.Script][]string {
+	if len(scripts) == 0 {
+		return nil
+	}
+	owned := make(map[string]bool)
+	// A dropped thread group's warnings are owned, by a group with no script.
+	for _, warning := range dropped {
+		owned[warning] = true
+	}
+	sets := make([]map[string]bool, len(scripts))
+	for i := range scripts {
+		sets[i] = make(map[string]bool)
+		if i < len(own) {
+			for _, warning := range own[i] {
+				sets[i][warning] = true
+				owned[warning] = true
+			}
+		}
+	}
+	out := make(map[*dsl.Script][]string, len(scripts))
+	for i, script := range scripts {
+		list := []string{}
+		for _, warning := range warnings {
+			if sets[i][warning] || !owned[warning] {
+				list = append(list, warning)
+			}
+		}
+		out[script] = list
+	}
+	return out
+}
+
+// maxJMeterCommentBytes bounds a retained element comment; comments are
+// free text and are kept as review context, not as a document store.
+const maxJMeterCommentBytes = 4096
+
+// jmeterElementComment returns the element's own TestPlan.comments value.
+// Only direct properties are read, so a nested element's comment is never
+// attributed to its parent.
+func jmeterElementComment(element *xmlNode) string {
+	if element == nil {
+		return ""
+	}
+	for _, child := range element.Children {
+		if child.Attrs["name"] == "TestPlan.comments" {
+			comment := strings.TrimSpace(child.Text)
+			if len(comment) > maxJMeterCommentBytes {
+				comment = strings.ToValidUTF8(comment[:maxJMeterCommentBytes], "")
+			}
+			return comment
+		}
+	}
+	return ""
+}
+
+// jmeterScriptNames names one script per thread group. A positional suffix is
+// added only to names that collide (case-insensitively, after sanitizing):
+// suffixing every group made script names, and the secret names suggested from
+// them, change whenever another group was added, removed, reordered or
+// disabled. Colliding names are numbered in plan order among themselves.
+func jmeterScriptNames(threadGroups []*treeNode, requested string) []string {
+	base := make([]string, len(threadGroups))
+	counts := make(map[string]int, len(threadGroups))
+	for i, tg := range threadGroups {
+		base[i] = strings.TrimSpace(requested)
+		if base[i] == "" {
+			base[i] = sanitizeName(attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1)))
+		}
+		counts[strings.ToLower(base[i])]++
+	}
+	used := make(map[string]bool, len(threadGroups))
+	for _, name := range base {
+		if counts[strings.ToLower(name)] == 1 {
+			used[strings.ToLower(name)] = true
+		}
+	}
+	names := make([]string, len(threadGroups))
+	ordinal := make(map[string]int, len(threadGroups))
+	for i, name := range base {
+		key := strings.ToLower(name)
+		if counts[key] == 1 {
+			names[i] = name
+			continue
+		}
+		for {
+			ordinal[key]++
+			candidate := fmt.Sprintf("%s_%d", name, ordinal[key])
+			if !used[strings.ToLower(candidate)] {
+				used[strings.ToLower(candidate)] = true
+				names[i] = candidate
+				break
+			}
+		}
+	}
+	return names
 }
 
 func rebaseJMeterBatchMappingPaths(mappings []sourceview.Mapping, scriptIndex int) {
@@ -743,6 +999,7 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	// bootstrapped separately when conversion starts directly at a selected
 	// ThreadGroup.
 	for _, config := range jmeterDirectScopeConfigs(node) {
+		appendJMeterContributorMapping(sourceMappings, sourceFileName, config.Element, "", jmeterElementLocation(config.Element))
 		applyJMeterScopeConfig(
 			config,
 			ctx,
@@ -1029,6 +1286,13 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 	}
 }
 
+// applyJMeterScopeConfig applies one in-scope config element to a thread
+// group's script. An ancestor-scope element is applied once per thread group
+// it covers; countStats is true only for the first, so plan statistics count
+// the element once. Diagnostics are reported on every application, never
+// under countStats: the collector lists a repeat once but credits it to each
+// group's window, so the warning reaches every script the element covers
+// (see ConvertResult.ScriptWarnings).
 func applyJMeterScopeConfig(
 	config *treeNode,
 	ctx *convertContext,
@@ -1099,11 +1363,9 @@ func applyJMeterScopeConfig(
 				result.Stats.CSVSources++
 			}
 		}
-		if countStats {
-			if shareMode := strings.TrimSpace(prop(element, "shareMode")); shareMode != "" &&
-				!strings.EqualFold(shareMode, "shareMode.all") && !strings.EqualFold(shareMode, "all") {
-				diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(element), "CSV shareMode has no equivalent and requires review")
-			}
+		if shareMode := strings.TrimSpace(prop(element, "shareMode")); shareMode != "" &&
+			!strings.EqualFold(shareMode, "shareMode.all") && !strings.EqualFold(shareMode, "all") {
+			diagnostics.Add(diag.Warning, "JMeter CSVDataSet", jmeterElementLocation(element), "CSV shareMode has no equivalent and requires review")
 		}
 		// stopThread only affects what happens after a finite CSV reaches EOF. With
 		// recycling enabled EOF is never reached, so stopThread=true alone is not a

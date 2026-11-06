@@ -1,19 +1,23 @@
 import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
 import { importSourceName } from '../appTopbar'
-import JMeterBatchRepairs from './JMeterBatchRepairs'
+import JMeterBatchRepairs, { type JMeterBatchRepairRequest } from './JMeterBatchRepairs'
+import ImportRepairSuggestions from './ImportRepairSuggestions'
+import { JMETER_CREDENTIAL_GATE_CODES, jmeterBatchRepairLabel, jmeterDiagnosticsWithGuidance, jmeterIssueAction, jmeterScriptIndex, jmeterSourceGroupIndex, jmeterSuggestionInFormWords, jmeterSuggestionTarget } from './jmeterIssueActions'
 import { importActionEntries } from './importReviewIssues'
 import JMeterMessagingPreview from './JMeterMessagingPreview'
+import JMeterSourceComments from './JMeterSourceComments'
+import { countLabel } from '../utils/numberFormat'
 import JMeterScenarioRuntimeEditor from './JMeterScenarioRuntimeEditor'
 import { ImportConversionDetails } from './ImportConversionDetails'
 import ImportWorkflowGuide from './ImportWorkflowGuide'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { importScenarioName, useImportScenario } from './useImportScenario'
 import { useImportSaveOutcome, type ImportSaveDestination } from './useImportSaveOutcome'
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { ApiError } from '../hooks/apiClient'
-import { summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
-import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SharedValues, type SupportMatrix } from '../types/scriptImports'
+import { batchSecretKey, generatedParameterCount, jmeterScenarioPopulation, jmeterSourceComments, summarizeImportExtractors, summarizeSupportMatrix, summarizeSupportMatrixEntries } from './jmeterImportUtils'
+import { type JMeterBatchRepairResponse, type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry, type JMeterSupportMatrixResponse, type SecretBindingSelection, type SharedValues, type SupportMatrix } from '../types/scriptImports'
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -33,6 +37,7 @@ import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { useSourceSecretSessionLifecycle } from './sourceSecretSessionLifecycle'
+import JMeterBatchSecretMigration, { type MigratedBatchSecret } from './JMeterBatchSecretMigration'
 import './EnterpriseArchiveImport.css'
 import { useSuggestImportFolderName } from './importDestinationContext'
 
@@ -78,6 +83,12 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const sourceSecretSessions = useSourceSecretSessionLifecycle(api.discardImportSecretSession)
   const fileRef = useRef<HTMLInputElement>(null)
   const dropzoneRef = useRef<HTMLDivElement>(null)
+  const sourceOptionsRef = useRef<HTMLDetailsElement>(null)
+  const timestampPolicyRef = useRef<HTMLSelectElement>(null)
+  const [batchRepairRequest, setBatchRepairRequest] = useState<JMeterBatchRepairRequest | null>(null)
+  // Recorded credential values a batch review migrated into Project Secrets,
+  // for the bind repairs that follow; scoped to the batch they came from.
+  const [migratedBatchSecrets, setMigratedBatchSecrets] = useState<{ batchId: string; secrets: MigratedBatchSecret[] } | null>(null)
   const [file, setFile] = useState<File | null>(null)
   useSuggestImportFolderName(file?.name)
   const [dragOver, setDragOver] = useState(false)
@@ -128,6 +139,15 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   const parameterizationApplying = Object.values(parameterizationApplyingByScript).some(Boolean)
   const [settingsEditing, setSettingsEditing] = useState(false)
   const [credentialActionInProgress, setCredentialActionInProgress] = useState(false)
+  // The batch request that raised credentialActionInProgress. A review reset
+  // clears it, so a request that settles after its review was replaced does
+  // not unlock a request the newer review started.
+  const credentialBusyOwnerRef = useRef<string | null>(null)
+  const setCredentialBusy = useCallback((owner: string, busy: boolean) => {
+    if (!busy && credentialBusyOwnerRef.current !== owner) return
+    credentialBusyOwnerRef.current = busy ? owner : null
+    setCredentialActionInProgress(busy)
+  }, [])
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const operationBusy = workingMode !== null || saving || parameterizationApplying || credentialActionInProgress
   const sourceMutationLocked = settingsEditing || saving
@@ -141,6 +161,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     sourceSecretSessions.clear('review')
     advanceReviewGeneration()
     setWorkingMode(null)
+    setMigratedBatchSecrets(null)
     // Invalidating the visible review does not cancel an HTTP save already in
     // flight. Its physical fence stays raised until that promise settles.
     setResult(null)
@@ -150,6 +171,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     setParameterizationScriptIndex(0)
     setAssetPage(0)
     setExtractorPage(0)
+    credentialBusyOwnerRef.current = null
     setCredentialActionInProgress(false)
   }, [advanceReviewGeneration, sourceSecretSessions])
   useEffect(() => () => {
@@ -183,7 +205,17 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
   if (result) repairEvidenceRef.current = result
   const unresolvedVariables = [...new Set((repairEvidenceRef.current?.scripts || []).flatMap(script => importActionEntries(script).flatMap(({ action }) => Array.isArray(action.metadata?.missing_variables) ? action.metadata.missing_variables.filter((name): name is string => typeof name === 'string') : [])))]
   const declaredVariables = repairEvidenceRef.current?.summary?.variables_discovered || []
+  // Kept across the invalidation a policy change causes, so the hint stays
+  // until the next inspection applies the policy.
+  const timestampPolicyRequired = Boolean(repairEvidenceRef.current?.diagnostics?.some(item => item.code === 'jmeter_timestamp_timezone_required'))
+  const timestampPolicyHint = !timestampPolicyRequired ? ''
+    : !options.time_mode ? 'This plan sends timestamps labelled UTC (a literal Z) from the local clock, which blocks replay. Choose a policy, then select Inspect & review again: the new inspection replaces the current review.'
+      : !result ? 'Select Inspect & review to apply this timestamp policy.' : ''
   const parameterization = result?.parameterization
+  // Stable across renders: the review keys its issue state on these diagnostics.
+  const resultDiagnostics = result?.diagnostics
+  const resultSuggestions = result?.repair_suggestions
+  const reviewDiagnostics = useMemo(() => jmeterDiagnosticsWithGuidance(resultDiagnostics, resultSuggestions), [resultDiagnostics, resultSuggestions])
   const resultScripts = result?.scripts || []
   const saveChoices = useImportSaveChoices(result?.existing_scripts)
   const safeParameterizationScriptIndex = Math.min(parameterizationScriptIndex, Math.max(0, resultScripts.length - 1))
@@ -520,6 +552,111 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
     setNotice('Runtime settings were updated. Existing review findings remain until server-side revalidation resolves them.')
   }
 
+  // The timestamp policy is a conversion option: it lives in the source panel,
+  // which is collapsed while a review is shown, and applies on the next inspection.
+  const openTimestampPolicy = () => {
+    if (sourceOptionsRef.current) sourceOptionsRef.current.open = true
+    timestampPolicyRef.current?.scrollIntoView?.({ block: 'center', behavior: 'smooth' })
+    timestampPolicyRef.current?.focus()
+  }
+  const openBatchRepair = (type: string, group: number) => {
+    // The request names the revision it opens: a later revision (an applied
+    // repair, a new inspection) remounts the form without reopening it.
+    const revision = result?.batch?.revision || ''
+    setBatchRepairRequest(previous => ({ type, group, revision, nonce: (previous?.nonce || 0) + 1 }))
+  }
+  // A batch review has no Credentials tab: its credential gates clear through
+  // the batch repairs, so credential links open the first one still blocking.
+  const openCredentialRepair = () => {
+    const gate = result?.diagnostics?.find(item => item.severity === 'blocker' && (JMETER_CREDENTIAL_GATE_CODES as readonly string[]).includes(item.code || ''))
+    if (gate?.code === 'jmeter_kafka_oauth_credentials_required') openBatchRepair('bind_kafka_credentials', jmeterScriptIndex(gate.location || gate.source_ref))
+    else if (gate) openBatchRepair('bind_eventhubs_credentials', jmeterScriptIndex(gate.location || gate.source_ref))
+    else openBatchRepair('', 0)
+  }
+
+  const migratedSecrets = migratedBatchSecrets && migratedBatchSecrets.batchId === result?.batch?.id ? migratedBatchSecrets.secrets : []
+  const migratedSecretNames = Object.fromEntries(migratedSecrets.map(secret => [batchSecretKey(secret.script_index, secret.path), secret.secret_name]))
+
+  // Drops the review's source-secret offer once the server used it up: the
+  // lifecycle settles it without a discard call that could only 404.
+  const dropSourceSecretSession = (sessionId: string, consumed: boolean) => {
+    if (consumed) sourceSecretSessions.settle('review', reviewProjectIdRef.current, sessionId)
+    else sourceSecretSessions.clear('review')
+    setResult(previous => {
+      if (!previous || previous.source_secret_session_id !== sessionId) return previous
+      const next = { ...previous, source_secret_session_id: undefined, source_secret_session_expires_at: undefined, source_secret_migration_allowed: false }
+      latestResultRef.current = next
+      return next
+    })
+  }
+
+  const handleBatchSecretsMigrated = (sessionId: string, migrated: MigratedBatchSecret[], failureMessage?: string) => {
+    const batchId = latestResultRef.current?.batch?.id
+    if (latestResultRef.current?.source_secret_session_id !== sessionId || !batchId) {
+      // A newer review replaced this one while the request was in flight; the
+      // values are in Project Secrets, but this review no longer owns them.
+      sourceSecretSessions.settle('review', reviewProjectIdRef.current, sessionId)
+      return
+    }
+    const migratedKeys = new Set(migrated.map(secret => batchSecretKey(secret.script_index, secret.path)))
+    dropSourceSecretSession(sessionId, true)
+    setResult(previous => {
+      if (!previous) return previous
+      const next = { ...previous, secret_binding_requirements: (previous.secret_binding_requirements || []).map(requirement => migratedKeys.has(batchSecretKey(requirement.script_index ?? 0, requirement.path)) ? { ...requirement, source_value_available: false } : requirement) }
+      latestResultRef.current = next
+      return next
+    })
+    setMigratedBatchSecrets(current => ({
+      batchId,
+      secrets: [...(current?.batchId === batchId ? current.secrets.filter(secret => !migratedKeys.has(batchSecretKey(secret.script_index, secret.path))) : []), ...migrated],
+    }))
+    const names = Array.from(new Set(migrated.map(secret => secret.secret_name)))
+    setError(failureMessage || '')
+    setNotice(`Migrated the recorded value${migrated.length === 1 ? '' : 's'} into Project Secrets as ${names.join(', ')}. Bind each script to its secret with the batch repairs; the names are filled in.`)
+  }
+
+  const handleBatchSecretSessionEnded = (sessionId: string, consumed: boolean, message: string) => {
+    if (latestResultRef.current?.source_secret_session_id !== sessionId) return
+    dropSourceSecretSession(sessionId, consumed)
+    setError(message)
+  }
+
+  const handleBatchRepairApplied = (updated: JMeterBatchRepairResponse) => {
+    if (latestResultRef.current?.batch?.id !== updated.batch.id) {
+      // A newer inspection replaced the batch while the apply was in flight:
+      // its replacement session belongs to no review shown here.
+      if (updated.source_secret_session_id) sourceSecretSessions.discardUnaccepted(reviewProjectIdRef.current, updated.source_secret_session_id)
+      return
+    }
+    advanceReviewGeneration()
+    // An applied repair consumes the source-secret session the import offered
+    // and returns its replacement, or "" once the offer is gone. Absent, the
+    // import offered none and nothing changes.
+    const previousSessionId = latestResultRef.current?.source_secret_session_id
+    const sessionReplaced = updated.source_secret_session_id !== undefined
+    const nextSessionId = sessionReplaced && updated.source_secret_migration_allowed !== false ? updated.source_secret_session_id || '' : ''
+    if (sessionReplaced) {
+      if (previousSessionId) sourceSecretSessions.settle('review', reviewProjectIdRef.current, previousSessionId)
+      if (nextSessionId) sourceSecretSessions.replace('review', reviewProjectIdRef.current, nextSessionId)
+      else if (updated.source_secret_session_id) {
+        // A replacement the response says cannot migrate is never offered.
+        sourceSecretSessions.discardUnaccepted(reviewProjectIdRef.current, updated.source_secret_session_id)
+      }
+    }
+    setResult(previous => {
+      if (!previous) return previous
+      const next = {
+        ...previous, diagnostics: updated.diagnostics, review_summary: updated.review_summary, warnings: updated.warnings || [], unsupported_elements: updated.unsupported_elements || [], preflight: updated.preflight, batch: updated.batch, scripts: updated.scripts, script: updated.scripts[0], scenario_draft: updated.scenario_draft, secret_binding_requirements: updated.secret_binding_requirements || [], repair_suggestions: updated.repair_suggestions || [],
+        ...(sessionReplaced ? nextSessionId
+          ? { source_secret_session_id: nextSessionId, source_secret_session_expires_at: updated.source_secret_session_expires_at, source_secret_migration_allowed: true }
+          : { source_secret_session_id: undefined, source_secret_session_expires_at: undefined, source_secret_migration_allowed: false } : {}),
+      }
+      latestResultRef.current = next
+      return next
+    })
+    setNotice('The complete import was updated. Remaining replay blockers are still enforced.')
+  }
+
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!result) return
     const sourceGeneration = reviewGenerationRef.current
@@ -596,7 +733,13 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
         onOpen={openSaved}
         disabled={sourceMutationLocked}
         onCreateScenario={importScenario.available && savedResult?.scripts.length
-          ? () => void importScenario.create(importScenarioName(file?.name, savedResult.scripts), savedResult.scripts)
+          ? () => void importScenario.create(
+            importScenarioName(file?.name, savedResult.scripts),
+            savedResult.scripts,
+            // The save left the source's scenario draft out (its scripts need
+            // review first): the scenario starts from the thread-group load.
+            jmeterScenarioPopulation(result?.scenario_draft, result?.scripts || []),
+          )
           : undefined}
         scenarioBusy={importScenario.busy}
         scenarioError={savedResult ? importScenario.errorFor(savedResult.scripts) : ''}
@@ -616,7 +759,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
 
       <ImportWorkflowGuide stage={savedResult ? 'saved' : result ? 'review' : 'source'} />
-      <details className="import-source-setup" open={!result}><summary>Source & conversion options — changing these requires a new review</summary>
+      <details ref={sourceOptionsRef} className="import-source-setup" open={!result}><summary>Source & conversion options — changing these requires a new review</summary>
       <div
         ref={dropzoneRef}
         className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
@@ -667,11 +810,12 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             <input value={options.base_url} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, base_url: event.target.value })) }} placeholder="Default: HTTP Request Defaults or first sampler" />
           </label>
           <label><span>Timestamp policy</span>
-            <select aria-label="Timestamp policy" value={options.time_mode} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, time_mode: event.target.value })) }}>
+            <select ref={timestampPolicyRef} aria-label="Timestamp policy" aria-describedby={timestampPolicyHint ? 'jmeter-timestamp-policy-hint' : undefined} value={options.time_mode} disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, time_mode: event.target.value })) }}>
               <option value="">Require review for ambiguous timestamps</option>
               <option value="utc">Normalize to UTC with milliseconds</option>
               <option value="source">Preserve wall clock and acknowledge literal Z suffix</option>
             </select>
+            {timestampPolicyHint && <small id="jmeter-timestamp-policy-hint" role="status">{timestampPolicyHint}</small>}
           </label>
           {options.time_mode === 'source' && <label><span>Source timezone (IANA)</span><input aria-label="Source timezone" value={options.timezone} placeholder="America/New_York" disabled={sourceMutationLocked} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, timezone: event.target.value })) }} /></label>}
           <label className="lr-checkbox">
@@ -788,11 +932,18 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
 
       {result && (
         <div className="lr-result">
-          {result.batch && <JMeterBatchRepairs key={result.batch.revision} result={result} projectId={projectId || result.scripts[0]?.project_id || ''} disabled={operationBusy || Boolean(savedResult)} onBusyChange={setCredentialActionInProgress} onApplied={updated => {
-            advanceReviewGeneration()
-            setResult(previous => previous ? { ...previous, diagnostics: updated.diagnostics, review_summary: updated.review_summary, warnings: updated.warnings || [], unsupported_elements: updated.unsupported_elements || [], preflight: updated.preflight, batch: updated.batch, scripts: updated.scripts, script: updated.scripts[0], scenario_draft: updated.scenario_draft, secret_binding_requirements: updated.secret_binding_requirements || [] } : previous)
-            setNotice('The complete import was updated. Remaining replay blockers are still enforced.')
-          }} />}
+          {result.batch && !savedResult && <JMeterBatchSecretMigration
+            key={`${result.batch.id}:${result.source_secret_session_id || ''}`}
+            result={result}
+            projectId={projectId || result.scripts[0]?.project_id || ''}
+            migrated={migratedSecrets}
+            disabled={operationBusy}
+            onBusyChange={busy => setCredentialBusy(`migration:${result.batch?.id}:${result.batch?.revision}`, busy)}
+            onMigrated={handleBatchSecretsMigrated}
+            onSessionEnded={handleBatchSecretSessionEnded}
+            onBind={openBatchRepair}
+          />}
+          {result.batch && <JMeterBatchRepairs key={result.batch.revision} result={result} request={batchRepairRequest} projectId={projectId || result.scripts[0]?.project_id || ''} disabled={operationBusy || Boolean(savedResult)} onBusyChange={busy => setCredentialBusy(`repair:${result.batch?.id}:${result.batch?.revision}`, busy)} migratedSecretNames={migratedSecretNames} onApplied={handleBatchRepairApplied} />}
 
           <ScriptImportReview
             tabbed
@@ -801,6 +952,8 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             onSettingsApplied={updated => handleParameterizationApplied(0)(updated.script, [], [], updated.import_draft_expires_at, updated.secret_binding_requirements || [])}
             settingsDisabled={Boolean(savedResult) || Boolean(result.batch)}
             showCredentials={!result.batch}
+            onCredentialSetup={result.batch && !savedResult ? openCredentialRepair : undefined}
+            issueAction={issue => jmeterIssueAction(issue, { batch: Boolean(result.batch), saved: Boolean(savedResult), suggestions: result.repair_suggestions, scripts: result.scripts, openTimestampPolicy, openBatchRepair })}
             dataContent={!result.batch && (parameterization?.suggestions.length || extractorSummary.length) ? <>
             {parameterization && parameterization.suggestions.length > 0 && parameterizationScript && (
               <>
@@ -874,7 +1027,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             unsupportedElements={result.unsupported_elements}
-            diagnostics={result.diagnostics}
+            diagnostics={reviewDiagnostics}
             reviewSummary={result.review_summary}
             reviewSections={result.review_sections}
             secretBindingRequirements={result.secret_binding_requirements}
@@ -927,13 +1080,16 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                     <span className="lr-preserved-label">Script</span>
                     <strong>{script.name}</strong>
                     <small>{script.actions?.length || 0} actions / {script.data_sources?.length || 0} data sources / {script.actions?.reduce((count, action) => count + (action.extractors?.length || 0), 0) || 0} extractors</small>
+                    <JMeterSourceComments comment={jmeterSourceComments(script)} />
                   </div>
                 ))}
                 {result.scenario_draft && (
                   <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Scenario Draft</span>
-                    <strong>{result.scenario_draft.groups?.length || 0} groups</strong>
-                    <small>{result.scenario_draft.termination_mode === 'iterations' ? 'Iteration completion' : result.scenario_draft.duration || 'Duration not set'}</small>
+                    <span className="lr-preserved-label">Scenario draft</span>
+                    {/* Named after the source's Test Plan. */}
+                    <strong>{result.scenario_draft.name || 'Scenario draft'}</strong>
+                    <small>{countLabel(result.scenario_draft.groups?.length || 0, 'group')} · {result.scenario_draft.termination_mode === 'iterations' ? 'Iteration completion' : result.scenario_draft.duration || 'Duration not set'}</small>
+                    <JMeterSourceComments comment={jmeterSourceComments(result.scenario_draft)} label="Test Plan comments" />
                     {saveChoices.updateTargets(resultScripts.length)?.every(Boolean) && (
                       <small>Not saved: every script updates one imported before, so the scenarios that use them run the new versions. Choose Create a copy for a script to save this scenario too.</small>
                     )}
@@ -941,6 +1097,17 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                 )}
               </div>
             </div>
+            <ImportRepairSuggestions
+              suggestions={result.repair_suggestions?.map(suggestion => jmeterSuggestionInFormWords(suggestion, { batch: Boolean(result.batch), saved: Boolean(savedResult) }))}
+              disabled={operationBusy}
+              actionFor={suggestion => {
+                const target = jmeterSuggestionTarget(suggestion, result.scripts)
+                if (target?.kind === 'timestamp_policy') return { label: 'Choose a timestamp policy', run: openTimestampPolicy }
+                if (target?.kind === 'batch_repair' && result.batch && !savedResult) return { label: jmeterBatchRepairLabel(target.type), run: () => openBatchRepair(target.type, target.group) }
+                return undefined
+              }}
+              scopeFor={suggestion => suggestion.source_group_id && result.scripts.length > 1 ? result.scripts[jmeterSourceGroupIndex(result.scripts, suggestion.source_group_id)]?.name : undefined}
+            />
             <JMeterMessagingPreview result={result} />
             <ImportConversionDetails facts={[
               { label: 'Actions', value: result.stats.converted_actions },
@@ -949,7 +1116,9 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
               { label: 'Skipped Samplers', value: result.stats.skipped_samplers ?? 0 },
               { label: 'Thread Groups', value: result.stats.thread_groups },
               { label: 'CSV Sources', value: result.stats.csv_sources },
-              { label: 'Variables', value: result.stats.variables },
+              // A newer server counts generated parameters in variables too.
+              { label: 'Declared variables', value: Math.max(0, result.stats.variables - (result.stats.generated_parameters ?? 0)), detail: 'User Defined Variables and arguments in the source' },
+              { label: 'Generated parameters', value: result.stats.generated_parameters ?? generatedParameterCount(resultScripts), detail: 'Counters, random values and timestamps converted to script parameters' },
               { label: 'Assertions', value: result.stats.assertions },
               { label: 'Unsupported', value: result.stats.unsupported }
             ]} />

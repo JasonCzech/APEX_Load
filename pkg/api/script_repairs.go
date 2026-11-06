@@ -11,6 +11,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 // ScriptRepairRequest names one import finding on a saved script and the
@@ -77,6 +78,10 @@ var storedScriptRepairOperations = map[string]bool{
 	"add_parameter":          true,
 	"add_extractor":          true,
 	"inspect":                true,
+	// The JMeter messaging credential bindings: the batch repairs of the same
+	// names, which a saved import can no longer reach.
+	"bind_kafka_credentials":     true,
+	"bind_eventhubs_credentials": true,
 }
 
 func (s *Server) handlePreviewScriptRepair(w http.ResponseWriter, r *http.Request) {
@@ -148,6 +153,22 @@ func (s *Server) processScriptRepair(w http.ResponseWriter, r *http.Request, app
 		return
 	}
 	resolver := s.runner.secretResolverForBinding(s.runner.secretBindingForScript(draft))
+	// A credential binding clears the review code that holds the script, so
+	// it must name secrets the script can resolve; otherwise the gate would
+	// only move to launch, as a missing secret.
+	if names := jmeterCredentialRepairSecrets(req.Operation); len(names) > 0 {
+		ctx, cancel := engine.WithSecretResolutionBudget(r.Context())
+		_, unresolved, resolveErr := engine.ResolveSecretNames(ctx, names, resolver)
+		cancel()
+		if resolveErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "Cannot check the project secrets")
+			return
+		}
+		if len(unresolved) > 0 {
+			writeError(w, http.StatusBadRequest, "Create the project secret "+strings.Join(unresolved, ", ")+" before binding it")
+			return
+		}
+	}
 	findings, requirements, readiness, report, err := evaluateRepairedScript(draft, resolver)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -243,8 +264,10 @@ func (s *Server) processScriptRepair(w http.ResponseWriter, r *http.Request, app
 	switch req.Operation.Type {
 	case "select_tls":
 		details["tls_min"], details["tls_max"] = req.Operation.TLSMin, req.Operation.TLSMax
-	case "replace_proxy_secret":
+	case "replace_proxy_secret", "bind_eventhubs_credentials":
 		details["secret_name"] = req.Operation.SecretName
+	case "bind_kafka_credentials":
+		details["secret_name"], details["client_id_secret"] = req.Operation.SecretName, req.Operation.ClientIDSecret
 	}
 	s.recordAuditEvent(r, "script.repair.apply", "success", "script", updated.ID, updated.ProjectID, details)
 	w.Header().Set("X-APEX-Script-Save-Mode", "conditioned")
@@ -379,6 +402,14 @@ func storedRepairCredentialComparison(prior, draft *dsl.Script, operation string
 		}
 	case "replace_proxy_secret":
 		allowance.Config.HTTP.Proxy.Password = draft.Config.HTTP.Proxy.Password
+	case "bind_kafka_credentials":
+		if allowance.Config.Kafka.OAuth != nil && draft.Config.Kafka.OAuth != nil {
+			allowance.Config.Kafka.OAuth.ClientID = draft.Config.Kafka.OAuth.ClientID
+			allowance.Config.Kafka.OAuth.ClientSecretRef = draft.Config.Kafka.OAuth.ClientSecretRef
+		}
+	case "bind_eventhubs_credentials":
+		allowance.Config.EventHubs.ConnectionString = draft.Config.EventHubs.ConnectionString
+		allowance.Config.EventHubs.ConnectionStringSecret = draft.Config.EventHubs.ConnectionStringSecret
 	case "omit_proxy_credentials", "disable_imported_proxy":
 		allowance.Config.HTTP.ProxyMode = draft.Config.HTTP.ProxyMode
 		allowance.Config.HTTP.Proxy = draft.Config.HTTP.Proxy

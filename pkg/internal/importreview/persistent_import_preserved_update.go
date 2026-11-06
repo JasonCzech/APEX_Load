@@ -1528,9 +1528,35 @@ func ImportGlobalCredentialContext(
 	return map[string]any{
 		"transport":    transport,
 		"actions":      orderedActions,
-		"parameters":   script["parameters"],
+		"parameters":   importClockZoneFreeParameters(script["parameters"]),
 		"data_sources": script["data_sources"],
 	}
+}
+
+// importClockZoneFreeParameters is the parameter list without the zone of each
+// clock parameter (importClockTimezone), which a script-level credential does
+// not need to pin. Every other field, and every other parameter, is kept.
+func importClockZoneFreeParameters(raw any) any {
+	parameters, ok := raw.([]any)
+	if !ok {
+		return raw
+	}
+	out := make([]any, len(parameters))
+	for index, value := range parameters {
+		out[index] = value
+		parameter, isMap := value.(map[string]any)
+		if !isMap || !importClockParameter(parameter) || !importClockTimezone(parameter["timezone"]) {
+			continue
+		}
+		held := make(map[string]any, len(parameter))
+		for field, fieldValue := range parameter {
+			if field != "timezone" {
+				held[field] = fieldValue
+			}
+		}
+		out[index] = held
+	}
+	return out
 }
 
 func ImportActionContexts(script map[string]any) (map[string]any, []string) {

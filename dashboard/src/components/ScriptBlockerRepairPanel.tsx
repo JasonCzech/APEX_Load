@@ -6,7 +6,7 @@ import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ScriptAuthoringBaseline } from '../types/storedContent'
 import { scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import { GuidedRepairForm, RepairPreview } from './GuidedRepairForm'
-import { actionImportFindings, groupImportFindings, importActionEntries, importReviewFindings, readinessCounts, storedRepairOptions, type ImportFinding, type RepairFields, type RepairOperation } from './importReviewIssues'
+import { actionAwaitsRuntimeSupport, actionImportFindings, AWAITING_RUNTIME_SUPPORT_TEXT, groupImportFindings, importActionEntries, importReviewFindings, jmeterCredentialRepairFindings, readinessCounts, storedRepairOptions, type ImportFinding, type RepairFields, type RepairOperation } from './importReviewIssues'
 import { blockerTitle, distinctBlockerCodes, REPLAY_REFUSAL_SENTENCE, storedScriptImpactText, type ProtectedBodySource } from './replayReadinessIssues'
 
 type Props = {
@@ -59,7 +59,26 @@ function revisionsUnavailable(cause: unknown): boolean {
   return cause instanceof ApiError && cause.status === 503
     && (cause.code === 'script_revisions_unavailable' || /^durable script content revisions unavailable\b/i.test(cause.message))
 }
-const emptyFields = (code: string): RepairFields => ({ kind: storedRepairOptions(code)[0]?.value || '', value: '', responsePath: '', extractorType: 'jsonpath' })
+// The Create-the-secret refusal of a credential binding (pkg/api
+// script_repairs.go): the names it lists do not resolve in the project.
+const MISSING_SECRET = /^Create the project secret (.+) before binding it$/
+const SECRET_REFERENCE = /^\s*\{\{\s*secret\.([\w.-]+)\s*\}\}\s*$/
+const secretReferenceName = (value: unknown) => typeof value === 'string' ? SECRET_REFERENCE.exec(value)?.[1] || '' : ''
+// A credential binding starts from the secret names the script already
+// references, so confirming the importer's choice is one Preview.
+function emptyFields(code: string, script?: ScriptDefinition): RepairFields {
+  const kind = storedRepairOptions(code)[0]?.value || ''
+  const fields: RepairFields = { kind, value: '', responsePath: '', extractorType: 'jsonpath' }
+  if (kind === 'bind_kafka_credentials') {
+    const oauth = script?.config?.kafka?.oauth
+    return { ...fields, value: secretReferenceName(oauth?.client_secret_ref), clientIdSecret: secretReferenceName(oauth?.client_id) }
+  }
+  if (kind === 'bind_eventhubs_credentials') {
+    const eventhubs = script?.config?.eventhubs
+    return { ...fields, value: secretReferenceName(eventhubs?.connection_string_secret) || secretReferenceName(eventhubs?.connection_string) }
+  }
+  return fields
+}
 
 // Blocking issues after a repair, grouped as the import review groups them.
 function repairedBlockers(result: ScriptRepairPreviewResponse): number {
@@ -93,17 +112,23 @@ export default function ScriptBlockerRepairPanel({
     const codes = new Set(distinctBlockerCodes(gated.map(finding => finding.code)))
     return gated.filter(finding => codes.has(finding.code))
   }, [action, actionPath])
-  const repairable = findings.filter(finding => storedRepairOptions(finding.code).length > 0)
+  // A JMeter credential code is a reason of the step's review gate, repaired
+  // by its own code (the server reads it from import_review.reason_codes).
+  const credentialFindings = useMemo(() => jmeterCredentialRepairFindings(action, actionPath), [action, actionPath])
+  const repairable = [...findings.filter(finding => storedRepairOptions(finding.code).length > 0), ...credentialFindings]
+  const awaitingRuntimeSupport = actionAwaitsRuntimeSupport(action)
   const entries = useMemo(() => importActionEntries(script), [script])
   const revision = baseline?.projection.content_revision || ''
   const [selectedCode, setSelectedCode] = useState('')
   const finding = repairable.find(item => item.code === selectedCode) || repairable[0]
-  const [fieldDraft, setFields] = useState<RepairFields>(() => emptyFields(finding?.code || ''))
+  const [fieldDraft, setFields] = useState<RepairFields>(() => emptyFields(finding?.code || '', script))
   const [preview, setPreview] = useState<ScriptRepairPreviewResponse | null>(null)
   const [pending, setPending] = useState<{ operation: RepairOperation; finding: ImportFinding } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  // The project secrets a credential binding named that do not exist yet.
+  const [missingSecrets, setMissingSecrets] = useState('')
   // The controller has no saved-script repairs for this script.
   const [unavailable, setUnavailable] = useState('')
   // Whether the editor has unsaved edits now, for a response to a request
@@ -117,7 +142,7 @@ export default function ScriptBlockerRepairPanel({
   useEffect(() => {
     scopeRef.current = scope
     previewVersion.current++
-    setPreview(null); setPending(null); setError(''); setBusy(false)
+    setPreview(null); setPending(null); setError(''); setMissingSecrets(''); setBusy(false)
     return () => { scopeRef.current = '' }
   }, [scope])
   // Grouping the repaired copy analyzes the whole script, so it runs once per
@@ -126,15 +151,16 @@ export default function ScriptBlockerRepairPanel({
   const locked = busy || saving
   const options = finding ? storedRepairOptions(finding.code) : []
   // A draft for another blocker's operation starts afresh for this one.
-  const fields = options.some(option => option.value === fieldDraft.kind) ? fieldDraft : emptyFields(finding?.code || '')
+  const fields = options.some(option => option.value === fieldDraft.kind) ? fieldDraft : emptyFields(finding?.code || '', script)
 
   function resetPreview() { previewVersion.current++; setPreview(null); setPending(null) }
   function changeFields(change: Partial<RepairFields>) {
     setFields({ ...fields, ...change })
+    setMissingSecrets('')
     resetPreview()
   }
   function chooseFinding(code: string) {
-    setSelectedCode(code); setFields(emptyFields(code)); setError(''); setNotice(''); resetPreview()
+    setSelectedCode(code); setFields(emptyFields(code, script)); setError(''); setNotice(''); setMissingSecrets(''); resetPreview()
   }
 
   // Preview and apply both read the saved copy at the editor's step path,
@@ -145,7 +171,7 @@ export default function ScriptBlockerRepairPanel({
     const requestScope = scopeRef.current
     const requestPreviewVersion = previewVersion.current
     const current = () => scopeRef.current === requestScope
-    setBusy(true); setError(''); setNotice('')
+    setBusy(true); setError(''); setNotice(''); setMissingSecrets('')
     try {
       const request = { finding: target.code, action_path: target.action_path || actionPath, operation }
       if (apply) {
@@ -153,7 +179,7 @@ export default function ScriptBlockerRepairPanel({
         // Saved: the editor adopts it even if this step is no longer open,
         // and says so in its own live region, which outlives this panel.
         onApplied(result)
-        if (current()) { resetPreview(); setSelectedCode(''); setFields(emptyFields('')) }
+        if (current()) { resetPreview(); setSelectedCode(''); setFields(emptyFields('', script)) }
       } else {
         const result = await api.previewScriptRepair(scriptId, request, baseline, projectId)
         if (current() && requestPreviewVersion === previewVersion.current) { setPreview(result); setPending({ operation, finding: target }) }
@@ -183,6 +209,7 @@ export default function ScriptBlockerRepairPanel({
       else if (revisionsUnavailable(cause)) setUnavailable('This controller keeps no script revisions, so it cannot repair saved scripts.')
       else if (status >= 500) setError(`Previewing the repair failed on the server. Choose Preview repair to try again. Server detail: ${message}`)
       else if (status === 409) setUnavailable(message)
+      else if (status === 400 && MISSING_SECRET.test(message)) setMissingSecrets(MISSING_SECRET.exec(message)![1])
       else if (message.includes(FINDING_GONE)) {
         resetPreview()
         // A reload would discard edits made since the request was sent.
@@ -238,7 +265,9 @@ export default function ScriptBlockerRepairPanel({
     } else {
       // A protected body's reason above already says where it is restored.
       const protectedBody = findings.some(item => item.code === 'restored_body_required')
-      body = <p className="script-blocker-repair-note">{protectedBody && bodySource === 'import-review' ? 'Needs the body repair in the import review.' : 'Needs a source change or re-import.'}{protectedBody ? '' : ' Correct the source and import it again; no guided repair applies to this blocker.'}</p>
+      body = awaitingRuntimeSupport
+        ? null
+        : <p className="script-blocker-repair-note">{protectedBody && bodySource === 'import-review' ? 'Needs the body repair in the import review.' : 'Needs a source change or re-import.'}{protectedBody ? '' : ' Correct the source and import it again; no guided repair applies to this blocker.'}</p>
     }
   } else if (!scriptId) {
     // Saving an unsaved draft opened from the import review returns to that
@@ -256,7 +285,9 @@ export default function ScriptBlockerRepairPanel({
       {repairable.length > 1 && <label>Blocker to repair<select aria-label="Blocker to repair" value={finding.code} disabled={locked} onChange={event => chooseFinding(event.target.value)}>{repairable.map(item => <option key={item.code} value={item.code}>{blockerTitle(item.code)}</option>)}</select></label>}
       {dirty && <div className="script-blocker-repair-guard" role="note"><p>Repairs are saved directly to the script. Save or discard your changes first.</p><button type="button" className="btn btn-secondary btn-sm" disabled={saving} onClick={onSaveFirst}>{saving ? 'Saving…' : 'Save changes'}</button></div>}
       <GuidedRepairForm finding={finding} occurrences={[finding]} options={options} entries={entries} fields={fields} onChange={changeFields} onOccurrence={() => undefined}
-        locked={locked} busy={busy} onPreview={operation => { void run(operation) }} previewBlockedReason={dirty ? DIRTY_REASON : undefined} subject="script">
+        locked={locked} busy={busy} onPreview={operation => { void run(operation) }} previewBlockedReason={dirty ? DIRTY_REASON : undefined} subject="script"
+        eventHub={script.config?.eventhubs?.event_hub}>
+        {missingSecrets && <div className="script-blocker-repair-guard" role="alert"><p>Create the project secret <strong>{missingSecrets}</strong> in Project Secrets first, then preview this repair again. The repair binds a secret by name; it never stores the value here.</p></div>}
         {preview && <RepairPreview preview={preview} blockers={previewBlockers} apply={pending ? {
           disabled: locked || dirty, title: dirty ? DIRTY_REASON : undefined,
           onApply: () => { void run(pending.operation, true) },
@@ -275,6 +306,7 @@ export default function ScriptBlockerRepairPanel({
         <p>{blockerReason(item, bodySource)}</p>
       </li>)}
     </ul>
+    {awaitingRuntimeSupport && <p className="script-blocker-repair-note" role="note">{AWAITING_RUNTIME_SUPPORT_TEXT}{repairable.length > 0 ? ' The repair below still resolves its own requirement.' : ''}</p>}
     {repairable.length > 0 && unexportedHarBodyControls}
     {body}
     <p className="script-blocker-repair-status" role="status">{notice}</p>

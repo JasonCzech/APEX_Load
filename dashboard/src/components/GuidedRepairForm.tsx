@@ -1,5 +1,6 @@
 import SourceCodeViewer from './SourceCodeViewer'
-import { useMemo, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
+import { EventHubsConnectionFormat } from './EventHubsConnectionFormat'
 import type { ScriptDefinition } from '../types/scripts'
 import { buildRepairOperation, changedRepairPaths, type ActionEntry, type ImportFinding, type RepairFields, type RepairOperation } from './importReviewIssues'
 
@@ -12,7 +13,8 @@ export type RepairPreviewModel = {
   allocation?: { name: string; rows: number; block_size: number; population: number }[]
 }
 
-const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name' }
+const labels: Record<string, string> = { restore_body: 'Restored body', add_parameter: 'Parameter values, one per line', add_extractor: 'Extractor expression', bind_variable: 'Existing producer or parameter name', replace_proxy_secret: 'Project secret name', bind_kafka_credentials: 'Client secret name', bind_eventhubs_credentials: 'Connection string secret name' }
+const CREDENTIAL_BINDINGS = new Set(['bind_kafka_credentials', 'bind_eventhubs_credentials'])
 
 /**
  * A repair preview: the outcome, the changed field paths and the redacted
@@ -51,7 +53,7 @@ export function RepairPreview({ preview, blockers, apply }: {
  * the fields (so a draft survives navigation) and sends the operation; the
  * preview, when there is one, follows the form.
  */
-export function GuidedRepairForm({ finding, occurrences, options, entries, fields, onChange, onOccurrence, locked, busy, onPreview, previewBlockedReason, subject = 'draft', children }: {
+export function GuidedRepairForm({ finding, occurrences, options, entries, fields, onChange, onOccurrence, locked, busy, onPreview, previewBlockedReason, subject = 'draft', eventHub, connectionFormat, children }: {
   finding: ImportFinding
   // The issue's findings; a consumer picker shows when there are several.
   occurrences: ImportFinding[]
@@ -69,20 +71,31 @@ export function GuidedRepairForm({ finding, occurrences, options, entries, field
   previewBlockedReason?: string
   // What a script-wide repair changes: the import draft or the saved script.
   subject?: 'draft' | 'script'
+  // An Event Hubs credential binding: the script's event hub, and the
+  // connection-string format the server states, when known.
+  eventHub?: string
+  connectionFormat?: string
   children?: ReactNode
 }) {
   const { kind, value, responsePath, extractorType } = fields
+  const formatId = useId()
   const proxyExclusion = kind === 'omit_proxy_credentials' || kind === 'disable_imported_proxy'
+  const credentialBinding = CREDENTIAL_BINDINGS.has(kind)
+  const clientIdSecret = fields.clientIdSecret || ''
   const preceding = entries.slice(0, entries.findIndex(e => e.path === finding.action_path)).filter(e => !!e.action.target && e.action.type !== 'http_sequence')
   return <div className="lr-repair-form"><h5>Fix this issue</h5>
     <label>Repair operation<select aria-label="Repair operation" value={kind} disabled={locked} onChange={e => onChange({ kind: e.target.value, value: '' })}>{options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}</select></label>
     {occurrences.length > 1 && <label>Consumer to repair<select aria-label="Repair finding" value={finding.action_path || ''} disabled={locked} onChange={e => onOccurrence(e.target.value)}>{occurrences.map(f => <option key={f.action_path} value={f.action_path}>{f.source_ref || f.action_path} — {entries.find(e => e.path === f.action_path)?.action.name || f.action_path}</option>)}</select></label>}
     {finding.code === 'encrypted_proxy_password' && <p>Proxy settings contain an encrypted password. Choose how to import these settings. The encrypted password cannot be used directly.</p>}
     {proxyExclusion && <p role="status">{kind === 'disable_imported_proxy' ? 'Disables proxying for this script and removes its imported proxy URL, PAC configuration, credentials, and bypass settings. Protected source evidence is retained as ignored during import.' : 'Keeps proxy routing and removes its username and password, including URL userinfo. The proxy must support unauthenticated access. Protected source evidence is retained.'}</p>}
-    <p className="lr-subtitle">{proxyExclusion ? 'Applies to the script-wide proxy configuration. Preview shows the changed fields and remaining requirements.' : kind === 'add_parameter' ? 'Adds a script-wide parameter. Preview checks which occurrences it satisfies.' : kind === 'select_tls' ? `Sets the script's TLS range, which resolves every legacy TLS step in this ${subject} at once.` : 'Repairs the selected consumer or setting. Other occurrences stay unresolved until the updated checks prove they are satisfied.'}</p>
+    {credentialBinding && <p>Enter the name of an existing project secret, not its value. Create the secret in Project Secrets first.</p>}
+    <p className="lr-subtitle">{credentialBinding ? `Binds the ${subject}'s credential configuration to project secrets, which clears this requirement from every step of this ${subject}.` : proxyExclusion ? 'Applies to the script-wide proxy configuration. Preview shows the changed fields and remaining requirements.' : kind === 'add_parameter' ? 'Adds a script-wide parameter. Preview checks which occurrences it satisfies.' : kind === 'select_tls' ? `Sets the script's TLS range, which resolves every legacy TLS step in this ${subject} at once.` : 'Repairs the selected consumer or setting. Other occurrences stay unresolved until the updated checks prove they are satisfied.'}</p>
     {kind === 'add_extractor' && <><label>Preceding response<select aria-label="Preceding response path" value={responsePath} disabled={locked} onChange={e => onChange({ responsePath: e.target.value })}><option value="">Choose a preceding response</option>{preceding.map(e => <option key={e.path} value={e.path}>{e.action.name || e.path} · {e.path}</option>)}</select></label><label>Extractor type<select value={extractorType} disabled={locked} onChange={e => onChange({ extractorType: e.target.value })}><option value="jsonpath">JSONPath</option><option value="regex">Regular expression</option></select></label></>}
-    {kind === 'select_tls' ? <label>Minimum TLS<select value={value || '1.2'} disabled={locked} onChange={e => onChange({ value: e.target.value })}><option value="1.2">TLS 1.2 (up to 1.3)</option><option value="1.3">TLS 1.3 only</option></select><span>This records an intentional migration change, not exact SSL 2/3 parity.</span></label> : !proxyExclusion && <label>{labels[kind]}<textarea aria-label="Repair value" autoComplete="off" value={value} onChange={e => onChange({ value: e.target.value })} disabled={locked} rows={kind === 'restore_body' ? 6 : 3} /></label>}
-    <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked || Boolean(previewBlockedReason) || (!proxyExclusion && kind !== 'restore_body' && kind !== 'select_tls' && !value.trim()) || (kind === 'add_extractor' && !responsePath)} title={previewBlockedReason} onClick={() => onPreview(buildRepairOperation(kind, finding, fields))}>{busy ? 'Checking repair…' : 'Preview repair'}</button><span>Preview first. Nothing changes until you apply.</span></div>
+    {kind === 'bind_kafka_credentials' && <label>Client ID secret name<input aria-label="Client ID secret name" autoComplete="off" value={clientIdSecret} onChange={e => onChange({ clientIdSecret: e.target.value })} disabled={locked} /></label>}
+    {credentialBinding ? <label>{labels[kind]}<input aria-label={labels[kind]} autoComplete="off" value={value} onChange={e => onChange({ value: e.target.value })} disabled={locked} aria-describedby={kind === 'bind_eventhubs_credentials' ? formatId : undefined} /></label>
+      : kind === 'select_tls' ? <label>Minimum TLS<select value={value || '1.2'} disabled={locked} onChange={e => onChange({ value: e.target.value })}><option value="1.2">TLS 1.2 (up to 1.3)</option><option value="1.3">TLS 1.3 only</option></select><span>This records an intentional migration change, not exact SSL 2/3 parity.</span></label> : !proxyExclusion && <label>{labels[kind]}<textarea aria-label="Repair value" autoComplete="off" value={value} onChange={e => onChange({ value: e.target.value })} disabled={locked} rows={kind === 'restore_body' ? 6 : 3} /></label>}
+    {kind === 'bind_eventhubs_credentials' && <EventHubsConnectionFormat id={formatId} context={connectionFormat} eventHub={eventHub} />}
+    <div className="lr-issue-action-row"><button className="btn btn-primary" type="button" disabled={locked || Boolean(previewBlockedReason) || (!proxyExclusion && kind !== 'restore_body' && kind !== 'select_tls' && !value.trim()) || (kind === 'add_extractor' && !responsePath) || (kind === 'bind_kafka_credentials' && !clientIdSecret.trim())} title={previewBlockedReason} onClick={() => onPreview(buildRepairOperation(kind, finding, fields))}>{busy ? 'Checking repair…' : 'Preview repair'}</button><span>Preview first. Nothing changes until you apply.</span></div>
     {children}
   </div>
 }

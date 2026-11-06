@@ -1401,6 +1401,20 @@ func ProjectScriptString(value string, ctx ScriptProjectionContext) string {
 	if IsSecretReferenceKey(ctx.key) && IsNamedSecretReference(value) {
 		return value
 	}
+	if IsNonSecretIdentifierScriptKey(ctx.key) {
+		// Hub and SAS policy names are identifiers the reviewer must read, so
+		// they skip the random-looking-text heuristic but keep the structured
+		// credential scrub: a connection string pasted where a hub name
+		// belongs still masks its SharedAccessKey.
+		return ctx.TextMemo.Scrubber().ValueLabel(value)
+	}
+	if ctx.metadata && isCredentialReviewLocatorKey(ctx.key) {
+		// Secret names and the paths a credential requirement points at are
+		// identifiers the reviewer must read; the random-looking-text scrub
+		// below hid them. The disclosure projection that follows still masks a
+		// known credential inside them.
+		return value
+	}
 	if IsSensitiveScriptKey(ctx.key) {
 		return ProjectSensitiveScriptValue(value)
 	}
@@ -1482,6 +1496,12 @@ func IsSensitiveScriptKey(key string) bool {
 	// session components as sensitive in otherwise opaque extension maps.
 	if normalized == "tokenurl" || normalized == "persistsessionacrossiterations" ||
 		normalized == "credentialpolicy" {
+		return false
+	}
+	// Kafka's sasl.oauthbearer.token.endpoint.url is the same endpoint address
+	// (IsScriptURLKey masks credentials in its userinfo), and an Event Hubs
+	// shared_access_key_name is a SAS policy name, not the key.
+	if isScriptTokenEndpointKey(normalized) || IsNonSecretIdentifierScriptKey(key) {
 		return false
 	}
 	// Keep script projection aligned with the shared credential vocabulary used
@@ -1812,8 +1832,40 @@ func IsNamedSecretReference(value string) bool {
 }
 
 func IsScriptURLKey(key string) bool {
-	switch NormalizeScriptFieldName(key) {
+	normalized := NormalizeScriptFieldName(key)
+	switch normalized {
 	case "baseurl", "url", "tokenurl", "brokerurl", "schemaregistryurl", "server", "origin", "target", "address":
+		return true
+	default:
+		return isScriptTokenEndpointKey(normalized)
+	}
+}
+
+// isScriptTokenEndpointKey reports Kafka's OAuth token endpoint setting
+// (sasl.oauthbearer.token.endpoint.url) by its normalized name.
+func isScriptTokenEndpointKey(normalized string) bool {
+	return strings.HasSuffix(normalized, "tokenendpointurl")
+}
+
+// IsNonSecretIdentifierScriptKey reports fields that name a messaging
+// resource rather than hold a credential: the event hub, and the Event Hubs
+// SAS policy name (the key itself is the connection string's SharedAccessKey).
+func IsNonSecretIdentifierScriptKey(key string) bool {
+	switch NormalizeScriptFieldName(key) {
+	case "sharedaccesskeyname", "eventhub":
+		return true
+	default:
+		return false
+	}
+}
+
+// isCredentialReviewLocatorKey reports import-review metadata that names a
+// secret or the fields a credential requirement covers: a protected
+// requirement's suggested_name and affected_paths, and the replay preflight's
+// required and missing secret names.
+func isCredentialReviewLocatorKey(key string) bool {
+	switch NormalizeScriptFieldName(key) {
+	case "suggestedname", "affectedpaths", "requiredsecrets", "missingsecrets":
 		return true
 	default:
 		return false

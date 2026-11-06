@@ -184,3 +184,217 @@ func TestJavaKafkaInventoryBoundAndNonKafkaSource(t *testing.T) {
 		t.Fatal("commented constructor was treated as Kafka source")
 	}
 }
+
+func javaKafkaInFlightSetting(t *testing.T, props string) JavaKafkaSetting {
+	t.Helper()
+	program, err := parseJavaProgram(map[string]string{"Actions.java": "public class Actions { public int action() { Properties props = new Properties();\n" + props + "\nKafkaProducer producer = new KafkaProducer(props); return 0; } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := buildJavaKafkaSettingsReport(program)
+	if report == nil {
+		t.Fatal("no Kafka inventory")
+	}
+	total := 0
+	for _, count := range report.StatusCounts {
+		total += count
+	}
+	if total != len(report.Settings) {
+		t.Fatalf("status counts %v do not cover %d settings", report.StatusCounts, len(report.Settings))
+	}
+	for _, setting := range report.Settings {
+		if setting.Name == "max.in.flight.requests.per.connection" {
+			return setting
+		}
+	}
+	t.Fatal("max.in.flight setting missing")
+	return JavaKafkaSetting{}
+}
+
+func TestJavaKafkaMaxInFlightFollowsIdempotence(t *testing.T) {
+	nonIdempotent := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("enable.idempotence", "false"); props.put("max.in.flight.requests.per.connection", "5");`)
+	if nonIdempotent.GoSupport != "supported" || len(nonIdempotent.GoFields) != 1 || nonIdempotent.GoFields[0] != "config.kafka.producer.max_in_flight_requests" {
+		t.Fatalf("non-idempotent producer: %+v", nonIdempotent)
+	}
+	leaderAcks := javaKafkaInFlightSetting(t, `props.put("acks", "1"); props.put("max.in.flight.requests.per.connection", "10");`)
+	if leaderAcks.GoSupport != "supported" {
+		t.Fatalf("acks=1 producer is not idempotent: %+v", leaderAcks)
+	}
+	idempotent := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("max.in.flight.requests.per.connection", "5");`)
+	if idempotent.GoSupport != "partial" {
+		t.Fatalf("idempotent producer must not claim a direct mapping: %+v", idempotent)
+	}
+	tooMany := javaKafkaInFlightSetting(t, `props.put("enable.idempotence", "true"); props.put("max.in.flight.requests.per.connection", "6");`)
+	if tooMany.GoSupport != "unsupported" || len(tooMany.GoFields) != 0 || tooMany.Value != "[value withheld]" {
+		t.Fatalf("idempotent producer above 5: %+v", tooMany)
+	}
+	dynamic := javaKafkaInFlightSetting(t, `props.put("acks", System.getenv("ACKS")); props.put("max.in.flight.requests.per.connection", "5");`)
+	if dynamic.GoSupport != "partial" {
+		t.Fatalf("undecidable idempotence must stay partial: %+v", dynamic)
+	}
+}
+
+func javaKafkaSettingFields(setting JavaKafkaSetting) string {
+	return strings.Join(setting.GoFields, ",")
+}
+
+// Kafka 3.x turns an unset enable.idempotence off when another setting
+// conflicts with it, so those rows are supported with idempotence disabled.
+func TestJavaKafkaImplicitIdempotenceTurnsOffLikeJava(t *testing.T) {
+	const inFlightAndIdempotence = "config.kafka.producer.max_in_flight_requests,config.kafka.idempotence"
+	aboveFive := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("max.in.flight.requests.per.connection", "10");`)
+	if aboveFive.GoSupport != "supported" || javaKafkaSettingFields(aboveFive) != inFlightAndIdempotence || aboveFive.Value != "10" || !strings.Contains(aboveFive.Notes, "config.kafka.idempotence: disabled") {
+		t.Fatalf("unset idempotence with 10 in flight: %+v", aboveFive)
+	}
+	defaultAcks := javaKafkaInFlightSetting(t, `props.put("max.in.flight.requests.per.connection", "6");`)
+	if defaultAcks.GoSupport != "supported" || javaKafkaSettingFields(defaultAcks) != inFlightAndIdempotence {
+		t.Fatalf("default acks with 6 in flight: %+v", defaultAcks)
+	}
+	retriesZero := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("retries", "0"); props.put("max.in.flight.requests.per.connection", "3");`)
+	if retriesZero.GoSupport != "supported" || javaKafkaSettingFields(retriesZero) != inFlightAndIdempotence || !strings.Contains(retriesZero.Notes, "retries 0") {
+		t.Fatalf("retries=0 leaves the producer non-idempotent: %+v", retriesZero)
+	}
+	explicit := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("enable.idempotence", "true"); props.put("retries", "0"); props.put("max.in.flight.requests.per.connection", "6");`)
+	if explicit.GoSupport != "unsupported" || len(explicit.GoFields) != 0 || explicit.Value != "[value withheld]" {
+		t.Fatalf("explicit enable.idempotence=true must stay unsupported: %+v", explicit)
+	}
+	replaced := javaKafkaInFlightSetting(t, `props.put("max.in.flight.requests.per.connection", "3"); props.put("retries", "5");`)
+	if replaced.GoSupport != "partial" {
+		t.Fatalf("no conflict keeps the idempotent producer partial: %+v", replaced)
+	}
+	conditional := javaKafkaInFlightSetting(t, `props.put("max.in.flight.requests.per.connection", "3"); if (true) { props.put("retries", "0"); }`)
+	if conditional.GoSupport != "partial" {
+		t.Fatalf("a conditional retries=0 cannot decide idempotence: %+v", conditional)
+	}
+
+	// The retries=0 row is the trigger and also maps to idempotence disabled;
+	// the status counts still cover every row.
+	program, err := parseJavaProgram(map[string]string{"Actions.java": "public class Actions { public int action() { Properties props = new Properties();\nprops.put(\"retries\", \"0\");\nKafkaProducer producer = new KafkaProducer(props); return 0; } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := buildJavaKafkaSettingsReport(program)
+	if report == nil || len(report.Settings) != 1 || report.StatusCounts["supported"] != 1 || len(report.StatusCounts) != 1 {
+		t.Fatalf("retries-only inventory: %#v", report)
+	}
+	if retries := report.Settings[0]; javaKafkaSettingFields(retries) != "config.kafka.producer.retries,config.kafka.idempotence" || !strings.Contains(retries.Notes, "config.kafka.idempotence: disabled") {
+		t.Fatalf("retries=0 row: %+v", retries)
+	}
+	program, _ = parseJavaProgram(map[string]string{"Actions.java": "public class Actions { public int action() { Properties props = new Properties();\nprops.put(\"enable.idempotence\", \"true\"); props.put(\"retries\", \"0\");\nKafkaProducer producer = new KafkaProducer(props); return 0; } }"})
+	for _, setting := range buildJavaKafkaSettingsReport(program).Settings {
+		if setting.Name == "retries" && strings.Contains(javaKafkaSettingFields(setting), "config.kafka.idempotence") {
+			t.Fatalf("explicit idempotence was reported as implicitly disabled: %+v", setting)
+		}
+	}
+}
+
+// An explicit enable.idempotence=true makes the Java client refuse retries=0.
+func TestJavaKafkaExplicitIdempotenceRefusesZeroRetries(t *testing.T) {
+	program, err := parseJavaProgram(map[string]string{"Actions.java": "public class Actions { public int action() { Properties props = new Properties();\nprops.put(\"acks\", \"all\"); props.put(\"enable.idempotence\", \"true\"); props.put(\"retries\", \"0\");\nKafkaProducer producer = new KafkaProducer(props); return 0; } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := buildJavaKafkaSettingsReport(program)
+	total := 0
+	for _, count := range report.StatusCounts {
+		total += count
+	}
+	if total != len(report.Settings) {
+		t.Fatalf("status counts %v do not cover %d settings", report.StatusCounts, len(report.Settings))
+	}
+	for _, setting := range report.Settings {
+		if setting.Name == "retries" {
+			if setting.GoSupport != "unsupported" || len(setting.GoFields) != 0 || setting.Value != "[value withheld]" {
+				t.Fatalf("retries=0 with explicit idempotence: %+v", setting)
+			}
+			return
+		}
+	}
+	t.Fatal("retries setting missing")
+}
+
+// javaKafkaRows converts one action() method body and returns its rows.
+func javaKafkaRows(t *testing.T, body string) []JavaKafkaSetting {
+	t.Helper()
+	program, err := parseJavaProgram(map[string]string{"Actions.java": "public class Actions { public int action() {\n" + body + "\nreturn 0; } }"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := buildJavaKafkaSettingsReport(program)
+	if report == nil {
+		t.Fatal("no Kafka report")
+	}
+	total := 0
+	for _, count := range report.StatusCounts {
+		total += count
+	}
+	if total != len(report.Settings) {
+		t.Fatalf("status counts %v do not cover %d settings", report.StatusCounts, len(report.Settings))
+	}
+	return report.Settings
+}
+
+// Two producers in one method are judged by their own Properties receiver.
+func TestJavaKafkaProducersInOneMethodKeepTheirOwnIdentity(t *testing.T) {
+	rows := javaKafkaRows(t, `Properties a = new Properties();
+a.put("enable.idempotence", "true");
+a.put("max.in.flight.requests.per.connection", "10");
+Properties b = new Properties();
+b.put("acks", "1");
+KafkaProducer p1 = new KafkaProducer(a);
+KafkaProducer p2 = new KafkaProducer(b);`)
+	for _, row := range rows {
+		if row.Name == "max.in.flight.requests.per.connection" && (row.GoSupport != "unsupported" || strings.Contains(row.Notes, "not idempotent")) {
+			t.Fatalf("producer a is explicitly idempotent with 10 in flight; b's acks must not apply: %+v", row)
+		}
+	}
+	rows = javaKafkaRows(t, `Properties a = new Properties();
+a.put("acks", "1");
+a.put("max.in.flight.requests.per.connection", "10");
+Properties b = new Properties();
+b.put("acks", "all");
+KafkaProducer p1 = new KafkaProducer(a);
+KafkaProducer p2 = new KafkaProducer(b);`)
+	for _, row := range rows {
+		if row.Name == "max.in.flight.requests.per.connection" && (row.GoSupport != "supported" || strings.Contains(row.Notes, "enable.idempotence is unset")) {
+			t.Fatalf("producer a is not idempotent (acks=1); b's acks must not apply: %+v", row)
+		}
+	}
+}
+
+// Only an effective retries=0 is refused for an explicitly idempotent
+// producer; a value a later assignment replaces is not.
+func TestJavaKafkaReplacedZeroRetriesIsNotRefused(t *testing.T) {
+	rows := javaKafkaRows(t, `Properties a = new Properties();
+a.put("enable.idempotence", "true");
+a.put("retries", "0");
+a.put("retries", "3");
+KafkaProducer p = new KafkaProducer(a);`)
+	seen := 0
+	for _, row := range rows {
+		if row.Name != "retries" {
+			continue
+		}
+		seen++
+		if row.GoSupport != "supported" || strings.Contains(row.Notes, "refuses retries=0 for an idempotent producer") {
+			t.Fatalf("the effective producer has retries=3, which Java accepts: %+v", row)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("retries rows = %d, want 2", seen)
+	}
+	rows = javaKafkaRows(t, `Properties a = new Properties();
+a.put("enable.idempotence", "true");
+a.put("retries", "3");
+a.put("retries", "0");
+KafkaProducer p = new KafkaProducer(a);`)
+	refused := 0
+	for _, row := range rows {
+		if row.Name == "retries" && row.GoSupport == "unsupported" {
+			refused++
+		}
+	}
+	if refused != 1 {
+		t.Fatalf("the effective retries=0 row must be refused once: %+v", rows)
+	}
+}

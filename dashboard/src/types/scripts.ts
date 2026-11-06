@@ -715,6 +715,8 @@ export interface KafkaConfig {
   sasl_password?: string
   sasl_password_secret?: string
   oauth_scope?: string
+  /** OAuth client-credentials settings (dsl.KafkaOAuthConfig); credentials are project-secret references. */
+  oauth?: { mode?: string; token_url?: string; client_id?: string; client_secret_ref?: string; scope?: string; authentication_method?: string }
   tls?: KafkaTLSConfig
   client_id?: string
   consumer_group?: string
@@ -1011,6 +1013,11 @@ export interface ScriptDataSource {
 export interface ScriptParameterDefinition {
   name: string
   type: string
+  // The source scope a generated parameter came from (a JMeter config
+  // element's tree position, say): one element attached to several scripts
+  // carries the same scope_id in each.
+  scope?: string
+  scope_id?: string
   update?: string
   selection?: string
   on_exhaustion?: string

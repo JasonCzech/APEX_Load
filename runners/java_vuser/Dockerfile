@@ -41,8 +41,10 @@ FROM alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cab
 
 # A JDK, not just the runtime: the runner compiles imported Java Vuser source
 # (/v1/compile) with the script's runtime, as VuGen does. The jmods serve only
-# jlink, so they are dropped (about 80 MB).
-RUN apk add --no-cache ca-certificates curl openjdk21-jdk \
+# jlink, so they are dropped (about 80 MB). Upgrading the base packages first
+# keeps a fixed OS CVE (the Trivy gate) from waiting for a base-image bump.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache ca-certificates curl openjdk21-jdk \
     && rm -rf /usr/lib/jvm/java-21-openjdk/jmods \
     && mkdir -p /opt/apexload/java-vuser /opt/java /tmp \
     && ln -s /usr/lib/jvm/java-21-openjdk /opt/java/openjdk \

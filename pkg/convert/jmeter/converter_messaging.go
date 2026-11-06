@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
+	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
 
 const diKafkaSampler = "com.di.jmeter.kafka.sampler.KafkaProducerSampler"
@@ -106,7 +107,7 @@ func handleJMeterMessagingSampler(node *treeNode, ctx *convertContext, script *d
 		script.Config.JMeter.SampleTiming = "send_acknowledgement"
 		previous := script.Config.Kafka
 		previousIdentity := script.Config.JMeter.ConfigurationID
-		convertDIKafka(e, scope, ctx, script, &a, file, block)
+		convertDIKafka(e, scope, ctx, script, &a, file, block, diagnostics)
 		if meta, ok := a.Metadata["jmeter_kafka"].(map[string]interface{}); ok {
 			meta["native_config"] = script.Config.Kafka
 			// Topics are already sampler-local. Other differing producer settings
@@ -175,7 +176,10 @@ func handleJMeterMessagingSampler(node *treeNode, ctx *convertContext, script *d
 		case throughputShapingTimer:
 			schedule, err := messagingSchedule(c, plan)
 			if err != nil {
-				block("jmeter_throughput_schedule_invalid")
+				// The diagnostic carries the cause (bad row, no positive rate);
+				// the schedule text holds only the profile's numbers.
+				gateJMeterAction(&a, "jmeter_throughput_schedule_invalid", jmeterElementLocation(e))
+				diagnostics.AddCoded(diag.Blocker, "jmeter_throughput_schedule_invalid", "JMeter "+e.Name, jmeterElementLocation(e), "Throughput Shaping Timer "+jmeterElementLocation(c)+" cannot become a sampler schedule: "+err.Error())
 				continue
 			}
 			exists := false
@@ -308,7 +312,25 @@ func messagingSchedule(e *xmlNode, plan string) (dsl.SamplerSchedule, error) {
 	return s, nil
 }
 
-func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *dsl.Script, a *dsl.Action, file string, block func(string)) {
+// javaKafkaImplicitIdempotenceConflict names the effective setting that makes
+// the Java producer turn its default idempotence off (more than five requests
+// in flight, or retries=0), or returns "" when none does. Values are parsed as
+// the producer-setting loop parses them; unparseable ones are left to it.
+func javaKafkaImplicitIdempotenceConflict(effective map[string]string) string {
+	if raw := effective["max.in.flight.requests.per.connection"]; raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value > kafkacontract.MaxIdempotentInFlightRequests {
+			return "max.in.flight.requests.per.connection " + raw
+		}
+	}
+	if raw := effective["retries"]; raw != "" {
+		if value, err := strconv.Atoi(raw); err == nil && value == 0 {
+			return "retries 0"
+		}
+	}
+	return ""
+}
+
+func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *dsl.Script, a *dsl.Action, file string, block func(string), diagnostics *diag.Collector) {
 	identity := prop(e, "kafkaProducerClientVariableName")
 	var configs []*xmlNode
 	seen := map[*xmlNode]bool{}
@@ -358,13 +380,36 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	case "0":
 		cfg.Acks = "none"
 	}
-	if effective["enable.idempotence"] == "false" {
-		cfg.Idempotence = "disabled"
-	}
-	if effective["enable.idempotence"] == "true" {
-		cfg.Idempotence = "enabled"
+	// Java reads a boolean setting trimmed and ignoring case, and a present key
+	// counts as set by the user even when it is neither true nor false (the
+	// client then refuses to start).
+	idempotenceRaw, idempotenceSet := effective["enable.idempotence"]
+	if idempotenceSet {
+		switch idempotenceRaw = strings.TrimSpace(idempotenceRaw); {
+		case strings.EqualFold(idempotenceRaw, "false"):
+			cfg.Idempotence = "disabled"
+		case strings.EqualFold(idempotenceRaw, "true"):
+			cfg.Idempotence = "enabled"
+		default:
+			block("jmeter_kafka_producer_setting_invalid")
+		}
 	}
 	cfg.Producer = &dsl.KafkaProducerConfig{}
+	// safe is the disclosure-safe effective settings evidence. Defaults the
+	// converter resolves (batch, compression, in-flight) are recorded too, so
+	// the evidence states what the Java producer actually used.
+	safe := map[string]string{}
+	// Java 3.x (KAFKA-13598, so the 3.3.1 reference client) defaults
+	// enable.idempotence to true but, when the plan leaves it unset, turns
+	// idempotence off instead of failing when another setting conflicts with it:
+	// more than five requests in flight or retries=0 (acks 0/1 already make the
+	// producer non-idempotent here). Only an explicit enable.idempotence=true
+	// makes those settings invalid.
+	if conflict := javaKafkaImplicitIdempotenceConflict(effective); !idempotenceSet && conflict != "" && kafkacontract.IdempotentProducer(cfg.Acks, cfg.Idempotence) {
+		cfg.Idempotence = "disabled"
+		safe["enable.idempotence"] = "false"
+		diagnostics.Add(diag.Info, "JMeter "+diKafkaConfig, jmeterElementLocation(c), "the Kafka producer leaves enable.idempotence unset and sets "+conflict+", so the Java client turns idempotence off rather than failing; APEX matches it with config.kafka.idempotence: disabled.")
+	}
 	tuning := map[string]any{}
 	invalidTuning := false
 	for _, setting := range []struct {
@@ -372,7 +417,8 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 		target   **int
 		fallback int
 	}{
-		{"retries", &cfg.Producer.Retries, 2147483647}, {"linger.ms", &cfg.Producer.LingerMs, 0}, {"batch.size", &cfg.Producer.BatchBytes, 16384}, {"buffer.memory", &cfg.Producer.BufferBytes, 33554432}, {"max.block.ms", &cfg.Producer.AdmissionTimeoutMs, 60000}, {"delivery.timeout.ms", &cfg.Producer.DeliveryTimeoutMs, 120000}, {"request.timeout.ms", &cfg.Producer.RequestTimeoutMs, 30000},
+		// batch.size is deliberately absent: see the batch note below.
+		{"retries", &cfg.Producer.Retries, 2147483647}, {"linger.ms", &cfg.Producer.LingerMs, 0}, {"buffer.memory", &cfg.Producer.BufferBytes, 33554432}, {"max.block.ms", &cfg.Producer.AdmissionTimeoutMs, 60000}, {"delivery.timeout.ms", &cfg.Producer.DeliveryTimeoutMs, 120000}, {"request.timeout.ms", &cfg.Producer.RequestTimeoutMs, 30000}, {"max.in.flight.requests.per.connection", &cfg.Producer.MaxInFlightRequests, 5},
 	} {
 		value := setting.fallback
 		if raw, exists := effective[setting.source]; exists && raw != "" {
@@ -384,18 +430,71 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 			}
 			value = parsed
 		}
-		nativeKey := map[string]string{"retries": "retries", "linger.ms": "linger_ms", "batch.size": "batch_bytes", "buffer.memory": "buffer_bytes", "max.block.ms": "admission_timeout_ms", "delivery.timeout.ms": "delivery_timeout_ms", "request.timeout.ms": "request_timeout_ms"}[setting.source]
+		nativeKey := map[string]string{"retries": "retries", "linger.ms": "linger_ms", "buffer.memory": "buffer_bytes", "max.block.ms": "admission_timeout_ms", "delivery.timeout.ms": "delivery_timeout_ms", "request.timeout.ms": "request_timeout_ms", "max.in.flight.requests.per.connection": "max_in_flight_requests"}[setting.source]
+		if nativeKey == "retries" && value == 0 && cfg.Idempotence == "enabled" {
+			// An explicit enable.idempotence=true makes the Java client refuse
+			// retries=0 (an unset one was turned off above).
+			block("jmeter_kafka_producer_setting_invalid")
+			invalidTuning = true
+		}
+		if nativeKey == "max_in_flight_requests" {
+			// The Java effective value is always evidence, but it is applied only
+			// to a non-idempotent producer. An idempotent franz producer pipelines
+			// up to five requests itself and refuses any in-flight setting. The
+			// Java client refuses more than five only with enable.idempotence=true
+			// set explicitly (an unset one was turned off above).
+			safe["max.in.flight.requests.per.connection"] = strconv.Itoa(value)
+			if kafkacontract.IdempotentProducer(cfg.Acks, cfg.Idempotence) {
+				// Java requires at least 1 in flight for every producer.
+				if value > kafkacontract.MaxIdempotentInFlightRequests || value < 1 {
+					block("jmeter_kafka_producer_setting_invalid")
+					invalidTuning = true
+				} else if value < kafkacontract.MaxIdempotentInFlightRequests {
+					diagnostics.Add(diag.Info, "JMeter "+diKafkaConfig, jmeterElementLocation(c), "Kafka max.in.flight.requests.per.connection "+strconv.Itoa(value)+" is kept in the effective settings but not applied: the producer is idempotent, and APEX's Kafka client pipelines up to "+strconv.Itoa(kafkacontract.MaxIdempotentInFlightRequests)+" idempotent requests per broker whatever the setting, so send-to-ack times can be lower than with Java's "+strconv.Itoa(value)+" in flight. Record order is still kept by idempotence.")
+				}
+				continue
+			}
+		}
 		tuning["kafka_producer_"+nativeKey] = value
 		*setting.target = &value
+	}
+	// Java batch.size is an allocation target that still lets a larger single
+	// record through; franz's batch_bytes is a hard per-batch ceiling that
+	// rejects such records. Copying it would fail sends Java makes, so it is
+	// kept as evidence only and batching parity stays gated.
+	batchSize := "16384"
+	if raw := strings.TrimSpace(effective["batch.size"]); raw != "" {
+		batchSize = raw
+	}
+	if parsed, err := strconv.Atoi(batchSize); err != nil || parsed < 0 {
+		block("jmeter_kafka_producer_setting_invalid")
+		invalidTuning = true
+	} else {
+		safe["batch.size"] = batchSize
+		diagnostics.Add(diag.Info, "JMeter "+diKafkaConfig, jmeterElementLocation(c), "Kafka batch.size "+batchSize+" is kept in the effective settings but not applied: Java uses it as a batch allocation target and still sends a larger single record, while APEX's producer would treat it as a hard per-batch limit and reject such records. APEX keeps its client's default batch limit, and batching parity stays unverified.")
 	}
 	if err := kafkaprotocol.ValidateProducerSettings(tuning); err != nil || invalidTuning {
 		block("jmeter_kafka_producer_setting_invalid")
 		cfg.Producer = nil // Raw settings survive in evidence; invalid native fields must not prevent saving the blocked draft.
 	} else {
-		// Kafka batch.size is an allocation target and permits larger singleton
-		// records. franz-go's batch maximum rejects them; it is not equivalent.
-		cfg.Producer.BatchBytes = nil
 		block("jmeter_kafka_batch_allocation_parity_unverified")
+	}
+	// Java's KafkaProducer compresses nothing unless compression.type says so;
+	// franz would otherwise prefer snappy. Emitting "none" keeps the bytes on
+	// the wire, and the broker-side batch sizes, the same.
+	compression := strings.ToLower(strings.TrimSpace(effective["compression.type"]))
+	if compression == "" {
+		compression = "none"
+	}
+	switch compression {
+	case "none", "gzip", "snappy", "lz4", "zstd":
+		cfg.Compression = compression
+		safe["compression.type"] = compression
+	default:
+		block("jmeter_kafka_effective_property_unsupported")
+	}
+	if strings.TrimSpace(effective["client.id"]) == "" {
+		diagnostics.Add(diag.Info, "JMeter "+diKafkaConfig, jmeterElementLocation(c), "the Kafka producer's client.id is empty, so the Java client names each producer producer-1, producer-2 and so on; APEX connects with its Kafka client's default id (kgo) instead. Set config.kafka.client_id if broker quotas or metrics are keyed by client id.")
 	}
 	if protocols, exists := effective["ssl.enabled.protocols"]; exists {
 		cfg.TLS = &dsl.KafkaTLSConfig{}
@@ -420,11 +519,10 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	if _, explicit := a.Params["partition"]; explicit {
 		cfg.PartitionStrategy = "explicit"
 	}
-	safe := map[string]string{}
 	ignored := []string{}
 	oauthSource := map[string]interface{}{}
 	allowed := map[string]bool{}
-	for _, key := range []string{"bootstrap.servers", "batch.size", "client.id", "security.protocol", "key.serializer", "value.serializer", "acks", "retries", "linger.ms", "max.block.ms", "delivery.timeout.ms", "request.timeout.ms", "buffer.memory", "enable.idempotence", "ssl.enabled.protocols", "sasl.mechanism", "sasl.oauthbearer.token.endpoint.url", "sasl.login.callback.handler.class"} {
+	for _, key := range []string{"bootstrap.servers", "batch.size", "client.id", "compression.type", "max.in.flight.requests.per.connection", "security.protocol", "key.serializer", "value.serializer", "acks", "retries", "linger.ms", "max.block.ms", "delivery.timeout.ms", "request.timeout.ms", "buffer.memory", "enable.idempotence", "ssl.enabled.protocols", "sasl.mechanism", "sasl.oauthbearer.token.endpoint.url", "sasl.login.callback.handler.class"} {
 		allowed[key] = true
 	}
 	for key, value := range effective {
@@ -481,7 +579,11 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 			ignored = append(ignored, key)
 		default:
 			if allowed[key] {
-				safe[key] = value
+				// A value the converter already resolved (a default or a
+				// normalized form) is what the producer uses; keep it.
+				if _, resolved := safe[key]; !resolved {
+					safe[key] = value
+				}
 			} else {
 				block("jmeter_kafka_effective_property_unsupported")
 			}
@@ -572,7 +674,7 @@ func convertPNOPEventHubs(e *xmlNode, ctx *convertContext, script *dsl.Script, a
 	if key := prop(e, "sharedAccessKey"); credentialpolicy.ClassifySourceCredentialValue(key) == credentialpolicy.SourceCredentialValueAvailable {
 		sourceCredential = "Endpoint=sb://" + cfg.Namespace + "/;SharedAccessKeyName=" + prop(e, "sharedAccessKeyName") + ";SharedAccessKey=" + key + ";EntityPath=" + cfg.EventHub
 	}
-	requirement, replacement, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "eventhubs_connection_string", Label: "Event Hubs connection for " + script.Name, NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_EVENTHUBS", Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, e), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: sourceCredential, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
+	requirement, replacement, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "eventhubs_connection_string", Label: "Event Hubs connection for " + script.Name, Context: eventHubsConnectionStringContext(cfg.EventHub), NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_EVENTHUBS", Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, e), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: sourceCredential, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
 	if err != nil {
 		if ctx.importErr != nil {
 			*ctx.importErr = err
@@ -584,6 +686,26 @@ func convertPNOPEventHubs(e *xmlNode, ctx *convertContext, script *dsl.Script, a
 	ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
 	block("jmeter_eventhubs_credentials_required")
 }
+
+// eventHubsConnectionStringContext states the value the Event Hubs runtime
+// accepts (pkg/protocol/eventhubs ResolveConnectionStringEventHub): a
+// namespace-level string, or a hub-scoped one whose EntityPath names this
+// sampler's hub. The source-secret migration value is the hub-scoped form, so
+// both paths agree. It never carries any part of the source credential.
+func eventHubsConnectionStringContext(hub string) string {
+	context := "Event Hubs connection string: Endpoint=sb://<namespace>.servicebus.windows.net/;SharedAccessKeyName=<policy>;SharedAccessKey=<key>, optionally followed by ;EntityPath=<event hub>"
+	if strings.TrimSpace(hub) != "" {
+		context += fmt.Sprintf(", which must name this sampler's event hub %q", hub)
+	} else {
+		context += ", which must name this sampler's event hub"
+	}
+	return context + ". Whitespace around each key and value is trimmed at run time."
+}
+
+// jmeterSamplerScheduleUnavailable is the import's plain statement that the
+// preserved load model cannot run yet (pkg/engine import_execution_gates
+// refuses any action with pacing_ids).
+const jmeterSamplerScheduleUnavailable = "The Throughput Shaping Timer load model is preserved as sampler schedules (config.sampler_schedules and the scenario draft), but sampler schedules have no execution path in this release. Scripts that carry them can be saved and reviewed; no review step, repair or acknowledgement makes them run."
 
 func messagingAdvisories(script *dsl.Script, result *ConvertResult) {
 	if script.Config.JMeter == nil {

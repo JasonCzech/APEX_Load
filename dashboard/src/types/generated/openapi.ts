@@ -16999,6 +16999,7 @@ export interface operations {
           "finding"?: string;
           "operation"?: {
             "body"?: (string) | null;
+            "client_id_secret"?: string;
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
@@ -19226,6 +19227,22 @@ export interface operations {
             }) | null;
             "preview_digest": string;
             "readiness": Record<string, Record<string, unknown>>;
+            "repair_suggestions": Array<{
+              "action": string;
+              "batch_operation"?: string;
+              "category": string;
+              "clearable"?: (boolean) | null;
+              "code"?: string;
+              "description": string;
+              "id": string;
+              "reinspect_options"?: Array<Record<string, unknown>>;
+              "selector_signals"?: Array<string>;
+              "selector_stability_score"?: number;
+              "severity": string;
+              "source_group_id"?: string;
+              "target_action"?: string;
+              "title": string;
+            }>;
             "review_summary": (Record<string, unknown>) | null;
             "scenario_draft"?: (Record<string, unknown>) | null;
             "scripts": Array<({
@@ -19809,6 +19826,9 @@ export interface operations {
               "unresolved_source_variable"?: boolean;
               "value_group_id"?: string;
             }>;
+            "source_secret_migration_allowed"?: boolean;
+            "source_secret_session_expires_at"?: (string) | null;
+            "source_secret_session_id"?: (string) | null;
             "unsupported_elements": Array<string>;
             "warnings": Array<string>;
           });
@@ -22806,6 +22826,7 @@ export interface operations {
           "finding"?: string;
           "operation"?: {
             "body"?: (string) | null;
+            "client_id_secret"?: string;
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
@@ -35769,6 +35790,7 @@ export interface operations {
                   "buffer_bytes"?: (number) | null;
                   "delivery_timeout_ms"?: (number) | null;
                   "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
                   "request_timeout_ms"?: (number) | null;
                   "retries"?: (number) | null;
                 }) | null;
@@ -50059,6 +50081,7 @@ export interface operations {
                   "buffer_bytes"?: (number) | null;
                   "delivery_timeout_ms"?: (number) | null;
                   "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
                   "request_timeout_ms"?: (number) | null;
                   "retries"?: (number) | null;
                 }) | null;
@@ -144930,6 +144953,7 @@ export interface operations {
           "finding"?: string;
           "operation"?: {
             "body"?: (string) | null;
+            "client_id_secret"?: string;
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
@@ -147157,6 +147181,22 @@ export interface operations {
             }) | null;
             "preview_digest": string;
             "readiness": Record<string, Record<string, unknown>>;
+            "repair_suggestions": Array<{
+              "action": string;
+              "batch_operation"?: string;
+              "category": string;
+              "clearable"?: (boolean) | null;
+              "code"?: string;
+              "description": string;
+              "id": string;
+              "reinspect_options"?: Array<Record<string, unknown>>;
+              "selector_signals"?: Array<string>;
+              "selector_stability_score"?: number;
+              "severity": string;
+              "source_group_id"?: string;
+              "target_action"?: string;
+              "title": string;
+            }>;
             "review_summary": (Record<string, unknown>) | null;
             "scenario_draft"?: (Record<string, unknown>) | null;
             "scripts": Array<({
@@ -147740,6 +147780,9 @@ export interface operations {
               "unresolved_source_variable"?: boolean;
               "value_group_id"?: string;
             }>;
+            "source_secret_migration_allowed"?: boolean;
+            "source_secret_session_expires_at"?: (string) | null;
+            "source_secret_session_id"?: (string) | null;
             "unsupported_elements": Array<string>;
             "warnings": Array<string>;
           });
@@ -148123,6 +148166,7 @@ export interface operations {
           "finding"?: string;
           "operation"?: {
             "body"?: (string) | null;
+            "client_id_secret"?: string;
             "extractor"?: ({
               "convert"?: string;
               "default_value"?: (string) | null;
@@ -179315,12 +179359,17 @@ export interface operations {
             "project_id"?: string;
             "repair_suggestions": Array<{
               "action": string;
+              "batch_operation"?: string;
               "category": string;
+              "clearable"?: (boolean) | null;
+              "code"?: string;
               "description": string;
               "id": string;
+              "reinspect_options"?: Array<Record<string, unknown>>;
               "selector_signals"?: Array<string>;
               "selector_stability_score"?: number;
               "severity": string;
+              "source_group_id"?: string;
               "target_action"?: string;
               "title": string;
             }>;
@@ -213693,6 +213742,7 @@ export interface operations {
                   "buffer_bytes"?: (number) | null;
                   "delivery_timeout_ms"?: (number) | null;
                   "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
                   "request_timeout_ms"?: (number) | null;
                   "retries"?: (number) | null;
                 }) | null;
@@ -220669,6 +220719,7 @@ export interface operations {
                   "buffer_bytes"?: (number) | null;
                   "delivery_timeout_ms"?: (number) | null;
                   "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
                   "request_timeout_ms"?: (number) | null;
                   "retries"?: (number) | null;
                 }) | null;
@@ -223081,6 +223132,7 @@ export interface operations {
                   "buffer_bytes"?: (number) | null;
                   "delivery_timeout_ms"?: (number) | null;
                   "linger_ms"?: (number) | null;
+                  "max_in_flight_requests"?: (number) | null;
                   "request_timeout_ms"?: (number) | null;
                   "retries"?: (number) | null;
                 }) | null;

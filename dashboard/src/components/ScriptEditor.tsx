@@ -106,7 +106,7 @@ import ReplayPreflightCard from './ReplayPreflightCard'
 import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, replayReviewGateIssues, templateVariableNames, withRefusedReviewGates } from './replayPreflightUtils'
 import { draftImportFindings } from './importReviewIssues'
-import { blockerTitle, dependencyCodeValue, headerIssueText, openingEditorFocus, parseReviewGateIssue, replayReadinessIssues, replayRefusalSummary, type ProtectedBodySource, type ReadinessFacts } from './replayReadinessIssues'
+import { blockedStepBadgeTitle, dependencyCodeValue, headerIssueText, openingEditorFocus, parseReviewGateIssue, replayReadinessIssues, replayRefusalSummary, type ProtectedBodySource, type ReadinessFacts } from './replayReadinessIssues'
 import { coveredByAuthoring, isPromotionOnlyValidationIssue, promotionFoldCoveredByGate, promotionReviewText, replayBlockers, replayGateAction, replayStartBlockedReason, replayStartGate, storedGateProblemCount, type ReplayGateAction, type ReplayStartGate } from './replayStartGate'
 import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
@@ -7197,7 +7197,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                                 <span
                                   className={`action-signal-pill ${executionBlocked ? 'error' : 'warning'}`}
                                   title={executionBlocked
-                                    ? `Blocks replay: ${executionBlockers.map(blockerTitle).join(', ')}`
+                                    ? blockedStepBadgeTitle(a, executionBlockers)
                                     : isReviewGatedJavaScriptAction(a)
                                       ? 'JavaScript review gate — must be reviewed before this script can replay'
                                       : 'Review gate — must be reviewed before this script can replay'}

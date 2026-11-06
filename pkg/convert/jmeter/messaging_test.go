@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -151,11 +152,34 @@ func TestScenarioAssociationUsesSourceIdentityAfterOmittedGroup(t *testing.T) {
 	}
 }
 func TestMessagingScheduleRejectsInvalidRows(t *testing.T) {
-	for _, row := range []string{"NaN", "0", "-1", "+Inf", "10000001"} {
+	// "0" was rejected here before: TST accepts 0 requests/s (see
+	// TestMessagingScheduleAcceptsZeroRateWarmUp), so it is no longer invalid.
+	for _, row := range []string{"NaN", "-1", "+Inf", "10000001"} {
 		n := &xmlNode{Name: throughputShapingTimer, Children: []*xmlNode{{Attrs: map[string]string{"name": "load_profile"}, Children: []*xmlNode{{Children: []*xmlNode{{Text: row}, {Text: "42"}, {Text: "300"}}}}}}}
 		if _, e := messagingSchedule(n, "plan"); e == nil {
 			t.Fatalf("accepted %s", row)
 		}
+	}
+}
+
+func shapingTimerNode(rows ...[3]string) *xmlNode {
+	collection := &xmlNode{Attrs: map[string]string{"name": "load_profile"}}
+	for _, row := range rows {
+		collection.Children = append(collection.Children, &xmlNode{Children: []*xmlNode{{Text: row[0]}, {Text: row[1]}, {Text: row[2]}}})
+	}
+	return &xmlNode{Name: throughputShapingTimer, Children: []*xmlNode{collection}}
+}
+
+func TestMessagingScheduleAcceptsZeroRateWarmUp(t *testing.T) {
+	schedule, err := messagingSchedule(shapingTimerNode([3]string{"0", "18", "60"}, [3]string{"18", "18", "3600"}), "plan")
+	if err != nil {
+		t.Fatalf("0 -> 18 rps warm-up rejected: %v", err)
+	}
+	if len(schedule.Segments) != 2 || schedule.Segments[0].StartRPS != 0 || schedule.Segments[0].EndRPS != 18 {
+		t.Fatalf("schedule = %+v", schedule)
+	}
+	if _, err := messagingSchedule(shapingTimerNode([3]string{"0", "0", "60"}), "plan"); err == nil {
+		t.Fatal("accepted an all-zero schedule, which is not supported")
 	}
 }
 
@@ -473,5 +497,36 @@ func TestMissingEventHubsMessagesRemainSaveableBlockedDrafts(t *testing.T) {
 		if count := script.Actions[0].Metadata["jmeter_eventhubs"].(map[string]interface{})["message_count"]; count != 0 {
 			t.Fatal("missing source message count", count)
 		}
+	}
+}
+
+// An all-zero messaging profile is gated, and the import says why instead of
+// showing only the gate code.
+func TestMessagingInvalidScheduleExplainsTheCause(t *testing.T) {
+	source := string(messagingFixture(t, "original"))
+	const rows = `<stringProp name="49">1</stringProp>
+                <stringProp name="1788">84</stringProp>
+                <stringProp name="50547">300</stringProp>
+              </collectionProp>
+              <collectionProp name="451796357">
+                <stringProp name="1788">84</stringProp>
+                <stringProp name="1788">84</stringProp>`
+	if !strings.Contains(source, rows) {
+		t.Fatal("fixture has no shaping profile")
+	}
+	source = strings.Replace(source, rows, strings.ReplaceAll(strings.ReplaceAll(rows, ">84<", ">0<"), ">1<", ">0<"), 1)
+	r, err := ConvertJMX([]byte(source), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gated, explained := false, false
+	for _, script := range r.Scripts {
+		gated = gated || hasJMeterReviewReason(script.Actions, "jmeter_throughput_schedule_invalid")
+	}
+	for _, d := range r.Diagnostics {
+		explained = explained || (d.Severity == diag.Blocker && strings.Contains(d.Detail, "Throughput Shaping Timer") && strings.Contains(d.Detail, "at least one positive rate"))
+	}
+	if !gated || !explained {
+		t.Fatalf("gated=%v explained=%v diagnostics=%+v", gated, explained, r.Diagnostics)
 	}
 }

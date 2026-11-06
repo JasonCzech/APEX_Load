@@ -117,6 +117,24 @@ func samplerRateForSecond(schedule dsl.SamplerSchedule, second int64) float64 {
 }
 
 func samplerDelayMillis(millis, sent int64, waiting int, rate float64) int64 {
+	// A second whose msecPerReq overflows, ported deliberately from TST 2.6
+	// rather than left to Go's float rules. Java's msecPerReq = 1000/rps is
+	// +Inf at 0 requests/s and at every positive rate below 1000/MaxFloat64
+	// (about 5.56e-306), so with nothing sent yet the guard
+	// `millis < 0 * Inf` compares against NaN, is false, and admits the call.
+	// Every later call that second waits (int)(1 + 1000*(cntDelayed+1)/rps),
+	// which overflows too, so Integer.MAX_VALUE, until an admission notifies
+	// it. The inverted comparison below would turn that NaN into a wait
+	// instead, so such a second would never admit anything and nothing would
+	// ever notify the waiters. (A -0 rate gives -Inf, which Java's guard never
+	// passes: it always admits.) With a finite msecPerReq, sent*msecPerReq is
+	// never NaN, so the inverted comparison below matches Java exactly.
+	if interval := 1000 / rate; math.IsInf(interval, 0) {
+		if sent == 0 || interval < 0 {
+			return 0
+		}
+		return math.MaxInt32
+	}
 	if float64(millis) >= float64(sent)*(1000/rate) {
 		return 0
 	}

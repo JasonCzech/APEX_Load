@@ -608,28 +608,35 @@ type KafkaProducerConfig struct {
 	AdmissionTimeoutMs *int `json:"admission_timeout_ms,omitempty"`
 	DeliveryTimeoutMs  *int `json:"delivery_timeout_ms,omitempty"`
 	RequestTimeoutMs   *int `json:"request_timeout_ms,omitempty"`
+	// MaxInFlightRequests is the Java producer's
+	// max.in.flight.requests.per.connection. It applies only to a
+	// non-idempotent producer (acks none/leader or idempotence disabled), where
+	// unset keeps one request in flight per broker. An idempotent producer (the
+	// acks=all default) does not apply it: the client pipelines up to five
+	// requests per broker, and validation refuses values above five.
+	MaxInFlightRequests *int `json:"max_in_flight_requests,omitempty"`
 }
 
 type KafkaConfig struct {
 	ConsumerTransactions bool                 `json:"consumer_transactions,omitempty"` // Atomically commit consumed offsets and produced records (real adapter).
 	Producer             *KafkaProducerConfig `json:"producer,omitempty"`
 	OAuth                *KafkaOAuthConfig    `json:"oauth,omitempty"`
-	Brokers              []string             `json:"brokers,omitempty"`                                                   // bootstrap brokers, e.g. ["broker:9092"]
-	Profile              string               `json:"profile,omitempty"`                                                   // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
-	SecurityProtocol     string               `json:"security_protocol,omitempty"`                                         // plaintext|ssl|sasl_ssl|sasl_plaintext
-	SASLMechanism        string               `json:"sasl_mechanism,omitempty"`                                            // plain|scram-sha-256|scram-sha-512|oauthbearer
-	SASLUsername         string               `json:"sasl_username,omitempty"`                                             // SASL username
-	SASLPassword         string               `json:"sasl_password,omitempty"`                                             // SASL password (inline)
-	SASLPasswordSecret   string               `json:"sasl_password_secret,omitempty"`                                      // secret reference resolved at runtime
-	OAuthScope           string               `json:"oauth_scope,omitempty"`                                               // Managed-identity OAUTHBEARER is Event Hubs-only and fixed to https://eventhubs.azure.net/.default.
-	TLS                  *KafkaTLSConfig      `json:"tls,omitempty"`                                                       // TLS material for ssl/sasl_ssl
-	ClientID             string               `json:"client_id,omitempty"`                                                 // Kafka client.id
-	ConsumerGroup        string               `json:"consumer_group,omitempty"`                                            // consumer group id for kafka_consume
-	Topic                string               `json:"topic,omitempty"`                                                     // default topic
-	Acks                 string               `json:"acks,omitempty"`                                                      // none|leader|all
-	Idempotence          string               `json:"idempotence,omitempty"`                                               // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
-	TransactionalID      string               `json:"transactional_id,omitempty"`                                          // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
-	Compression          string               `json:"compression,omitempty"`                                               // none|gzip|snappy|lz4|zstd
+	Brokers              []string             `json:"brokers,omitempty"`              // bootstrap brokers, e.g. ["broker:9092"]
+	Profile              string               `json:"profile,omitempty"`              // ""|eventhubs — Azure Event Hubs Kafka-endpoint profile (forces sasl_ssl + $ConnectionString PLAIN, 1 MiB cap)
+	SecurityProtocol     string               `json:"security_protocol,omitempty"`    // plaintext|ssl|sasl_ssl|sasl_plaintext
+	SASLMechanism        string               `json:"sasl_mechanism,omitempty"`       // plain|scram-sha-256|scram-sha-512|oauthbearer
+	SASLUsername         string               `json:"sasl_username,omitempty"`        // SASL username
+	SASLPassword         string               `json:"sasl_password,omitempty"`        // SASL password (inline)
+	SASLPasswordSecret   string               `json:"sasl_password_secret,omitempty"` // secret reference resolved at runtime
+	OAuthScope           string               `json:"oauth_scope,omitempty"`          // Managed-identity OAUTHBEARER is Event Hubs-only and fixed to https://eventhubs.azure.net/.default.
+	TLS                  *KafkaTLSConfig      `json:"tls,omitempty"`                  // TLS material for ssl/sasl_ssl
+	ClientID             string               `json:"client_id,omitempty"`            // Kafka client.id
+	ConsumerGroup        string               `json:"consumer_group,omitempty"`       // consumer group id for kafka_consume
+	Topic                string               `json:"topic,omitempty"`                // default topic
+	Acks                 string               `json:"acks,omitempty"`                 // none|leader|all
+	Idempotence          string               `json:"idempotence,omitempty"`          // ""(default)|enabled|disabled — idempotent producer (requires acks=all)
+	TransactionalID      string               `json:"transactional_id,omitempty"`     // producer transactional.id; enables Kafka transactions / EOS (requires acks=all)
+	Compression          string               `json:"compression,omitempty" jsonschema:"default=none" jsonschema_description:"Producer batch compression: none (the default; uncompressed, as the Java producer's compression.type=none), gzip, snappy, lz4 or zstd. Real-adapter (kafka_real) scripts that relied on the earlier implicit snappy batches must set compression: snappy to keep them."`
 	PartitionStrategy    string               `json:"partition_strategy,omitempty"`                                        // key-hash|round-robin|explicit
 	AutoOffsetReset      string               `json:"auto_offset_reset,omitempty"`                                         // earliest|latest
 	IsolationLevel       string               `json:"isolation_level,omitempty"`                                           // ""(default)|read_uncommitted|read_committed (consumer)

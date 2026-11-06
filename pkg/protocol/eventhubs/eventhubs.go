@@ -75,6 +75,9 @@ type config struct {
 	Timeout                   time.Duration
 	Mock                      bool
 	AllowedTargetHosts        []string
+	// connectionEntityPath is the EntityPath of a hub-scoped ConnectionString;
+	// the real client must then pass an empty hub to azeventhubs.
+	connectionEntityPath string
 }
 
 // EventHubs is a per-VUser Azure Event Hubs client.
@@ -202,6 +205,9 @@ func (e *EventHubs) Init(ctx context.Context, cfg map[string]any) error {
 	}
 	if e.cfg.ConnectionString == "" {
 		e.cfg.ConnectionString = stringValue(cfg, "eventhubs_connection_string_secret")
+	}
+	if err := e.cfg.resolveConnectionString(); err != nil {
+		return err
 	}
 	if err := ValidateProcessorSettings(e.cfg.ConsumerMode, e.cfg.CheckpointContainerURL, e.cfg.AuthType, e.cfg.Namespace, e.cfg.ConsumerGroup, e.cfg.PartitionID, e.cfg.Mock); err != nil {
 		return err
@@ -469,6 +475,29 @@ func (e *EventHubs) produce(ctx context.Context, action *protocol.Action, result
 		return event{}, err
 	}
 	return ev, evaluateAssertions(action.Assertions, result, ev)
+}
+
+// resolveConnectionString normalizes a connection string the run will
+// authenticate with and reconciles its EntityPath with config.eventhubs.event_hub
+// up front, so a hub-scoped portal string works and a config-level mismatch
+// fails at Init instead of at the first send. Init sees only the script's
+// config, not its actions, so a hub named by an action target or
+// params.event_hub is checked when its producer or consumer is created
+// (connectionStringEventHub). Mock runs and AAD auth never use the string.
+func (cfg *config) resolveConnectionString() error {
+	if cfg.Mock || cfg.AuthType == "aad" || strings.TrimSpace(cfg.ConnectionString) == "" {
+		return nil
+	}
+	normalized, entityPath, err := normalizeConnectionString(cfg.ConnectionString)
+	if err != nil {
+		return err
+	}
+	hub, err := ResolveConnectionStringEventHub(normalized, cfg.EventHub)
+	if err != nil {
+		return err
+	}
+	cfg.ConnectionString, cfg.connectionEntityPath, cfg.EventHub = normalized, entityPath, hub
+	return nil
 }
 
 func validateEventHubsConfigBounds(cfg config) error {

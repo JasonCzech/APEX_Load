@@ -21,6 +21,7 @@ const apiMock = {
   discardImportSecretSession: vi.fn(),
   applyImportParameterization: vi.fn(),
   createScenarioDraft: vi.fn(),
+  repairJMeterBatch: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -1365,6 +1366,452 @@ describe('JMeterImport', () => {
       await clickButton('Change')
       expect(zone().className).not.toContain('is-working')
       expect(zoneStatus()).toBe('')
+    })
+  })
+})
+
+describe('JMeterImport fidelity review routing', () => {
+  let container: HTMLDivElement
+  let root: Root
+  const buttons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+  const button = (name: string | RegExp) => buttons().find(item => typeof name === 'string' ? item.textContent === name : name.test(item.textContent || ''))
+  const baseResult = {
+    warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+    stats: { thread_groups: 1, samplers: 1, converted_actions: 1, headers: 0, variables: 2, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 },
+    summary: { file_name: 'plan.jmx' },
+  }
+  const review = async (response: Record<string, unknown>, props: Record<string, unknown> = {}) => {
+    apiMock.validateJMeterImport.mockResolvedValueOnce({ ...baseResult, ...response })
+    await act(async () => root.render(<JMeterImport projectId="project-1" onImported={vi.fn()} {...props} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'plan.jmx')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => button('Validate Only')!.click())
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    apiMock.getJMeterSupportMatrix.mockResolvedValue({})
+    apiMock.getProjectSecretStatuses.mockResolvedValue({ project_id: 'project-1', capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true }, secrets: [] })
+    apiMock.discardImportSecretSession.mockResolvedValue(undefined)
+    apiMock.saveJMeterImport.mockReset()
+    apiMock.createScenarioDraft.mockReset()
+    apiMock.repairJMeterBatch.mockReset()
+  })
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.clearAllMocks()
+  })
+
+  it('opens the timestamp policy option for the timestamp blocker and says a new inspection is needed', async () => {
+    await review({
+      scripts: [{ name: 'Balance', protocol: 'http', config: {}, actions: [{ name: 'Balance', type: 'http' }] }],
+      review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 },
+      diagnostics: [{ code: 'jmeter_timestamp_timezone_required', severity: 'blocker', element: 'Balance', source_ref: 'plan.jmx:7', location: 'actions[0]', detail: 'Select a timestamp policy: UTC normalization or a source timezone and acknowledge the literal Z suffix.' }],
+    })
+    const details = container.querySelector<HTMLDetailsElement>('details.import-source-setup')!
+    expect(details.open).toBe(false)
+    expect(button('Review runtime settings')).toBeUndefined()
+    expect(container.querySelector('.shared-import-issue-resolution')?.textContent).toContain('Inspect & review again')
+    await act(async () => button('Choose a timestamp policy')!.click())
+    expect(details.open).toBe(true)
+    const select = container.querySelector<HTMLSelectElement>('select[aria-label="Timestamp policy"]')!
+    expect(document.activeElement).toBe(select)
+    expect(container.querySelector('#jmeter-timestamp-policy-hint')?.textContent).toContain('Inspect & review again')
+    await act(async () => {
+      select.value = 'utc'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(container.querySelector('#jmeter-timestamp-policy-hint')?.textContent).toBe('Select Inspect & review to apply this timestamp policy.')
+  })
+
+  it('routes batch credential blockers to the batch repairs and has no empty Credentials tab', async () => {
+    await review({
+      batch: { id: 'batch-1', revision: 'rev-1' },
+      scripts: [
+        { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [{ name: 'Send', type: 'kafka_produce' }] },
+        { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' }, eventhubs: { event_hub: 'hub-east' } }, actions: [{ name: 'Send', type: 'eventhubs_send' }] },
+      ],
+      stats: { ...baseResult.stats, enabled_workload_samplers: 2, converted_workload_samplers: 2, blocked_workload_samplers: 2, disabled_workload_samplers: 1 },
+      review_summary: { blocking_behaviors: 2, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 },
+      diagnostics: [
+        { code: 'jmeter_eventhubs_credentials_required', severity: 'blocker', element: 'Hub east', source_ref: 'plan.jmx#scripts[1].actions[0]#Hub east', location: 'scripts[1].actions[0]', detail: 'Resolve imported behavior before replay: jmeter_eventhubs_credentials_required' },
+        { code: 'jmeter_messaging_compatibility_unverified', severity: 'blocker', element: 'Hub east', source_ref: 'plan.jmx#scripts[1].actions[0]#Hub east', location: 'scripts[1].actions[0]', detail: 'Resolve imported behavior before replay: jmeter_messaging_compatibility_unverified' },
+      ],
+      secret_binding_requirements: [{ id: 'req-1', script_index: 1, script_name: 'Hub east', path: '/config/eventhubs/connection_string', label: 'Event Hubs connection', suggested_name: 'HUB_EAST_CONNECTION', replacement: '{{secret.HUB_EAST_CONNECTION}}' }],
+    })
+    const tabs = Array.from(container.querySelectorAll('[role="tab"]')).map(tab => tab.textContent)
+    expect(tabs.some(tab => tab?.startsWith('Credentials'))).toBe(false)
+    expect(container.textContent).toContain('2 of 2 enabled workload samplers have a converted draft; 2 of 2 are blocked from replay.')
+    expect(container.textContent).toContain('JMeter messaging replay is not available yet')
+
+    const row = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(item => item.textContent?.includes('Bind the Event Hubs connection string'))!
+    await act(async () => row.click())
+    expect(button('Review credentials')).toBeUndefined()
+    await act(async () => button('Bind Event Hubs connection string')!.click())
+    const form = container.querySelector('[aria-label="Reviewed JMeter batch repairs"]')!
+    const [repairSelect, groupSelect] = Array.from(form.querySelectorAll('select'))
+    expect(repairSelect.value).toBe('bind_eventhubs_credentials')
+    expect(groupSelect.value).toBe('1')
+    expect(form.querySelector<HTMLInputElement>('input:not([type])')!.value).toBe('HUB_EAST_CONNECTION')
+    expect(form.textContent).toContain('Endpoint=sb://<namespace>/')
+
+    // The readiness link for credential setup goes to the same repair.
+    await act(async () => {
+      repairSelect.value = 'confirm_reference_context'
+      repairSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(form.querySelectorAll('select')[0].value).toBe('confirm_reference_context')
+    await act(async () => button(/credential binding to configure/)!.click())
+    expect(form.querySelectorAll('select')[0].value).toBe('bind_eventhubs_credentials')
+  })
+
+  it('offers no Credentials tab button for a saved batch review\'s credential blocker', async () => {
+    const scripts = [
+      { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [{ name: 'Send', type: 'kafka_produce' }] },
+      { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' }, eventhubs: { event_hub: 'hub-east' } }, actions: [{ name: 'Send', type: 'eventhubs_send' }] },
+    ]
+    await review({
+      batch: { id: 'batch-1', revision: 'rev-1' },
+      scripts,
+      review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 },
+      diagnostics: [
+        { code: 'jmeter_eventhubs_credentials_required', severity: 'blocker', element: 'Hub east', source_ref: 'plan.jmx#scripts[1].actions[0]#Hub east', location: 'scripts[1].actions[0]', detail: 'Resolve imported behavior before replay: jmeter_eventhubs_credentials_required' },
+      ],
+    })
+    apiMock.saveJMeterImport.mockResolvedValueOnce({ count: 2, scripts: scripts.map((script, index) => ({ ...script, id: `saved-${index}`, version: '1.0.0', created_at: '2026-11-05T00:00:00Z' })) })
+    await act(async () => button(/^Save \d+ drafts?/)!.click())
+    await flushPromises()
+    expect(button('Saved to script library')).toBeDefined()
+    const row = Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(item => item.textContent?.includes('Bind the Event Hubs connection string'))!
+    await act(async () => row.click())
+    // The Credentials tab is hidden and the batch repairs are locked: the
+    // resolution names the Visual Editor, and no button opens a hidden tab.
+    expect(container.querySelector('.shared-import-issue-resolution')!.textContent).toContain('already saved')
+    expect(button('Review credentials')).toBeUndefined()
+    expect(container.querySelector('.shared-import-issue-actions .btn-primary')).toBeNull()
+  })
+
+  it('shows the disjoint workload sampler counts, generated parameters and the source comments', async () => {
+    await review({
+      scripts: [
+        { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [{ name: 'Send', type: 'kafka_produce' }], metadata: { import: { source: 'jmeter', preserved: { source_comments: 'Billing System = TLG' } } } },
+        { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' } }, actions: [{ name: 'Send', type: 'eventhubs_send' }] },
+      ],
+      stats: { ...baseResult.stats, variables: 5, generated_parameters: 2, enabled_workload_samplers: 4, converted_workload_samplers: 3, blocked_workload_samplers: 3, replay_ready_workload_samplers: 1, review_gated_workload_samplers: 2, unconverted_workload_samplers: 1, disabled_workload_samplers: 1 },
+      scenario_draft: { name: 'Billing load plan', duration: '1m', scenario_mode: 'vuser_driven', groups: [{ name: 'Kafka', script_name: 'Kafka', vusers: 1 }, { name: 'Hub east', script_name: 'Hub east', vusers: 1 }], metadata: { source_comments: 'Owned by the billing team' } },
+    })
+    const status = container.querySelector('[aria-label="Workload sampler status"]')!
+    expect(Array.from(status.querySelectorAll('li')).map(item => item.textContent)).toEqual(['1 ready to replay', '2 converted, held for review', '1 not converted'])
+    expect(container.textContent).toContain('Of 4 enabled workload samplers:')
+    expect(container.textContent).not.toContain('have a converted draft')
+    // variables now counts the generated parameters too.
+    const facts = container.querySelector('.import-conversion-details')!.textContent || ''
+    expect(facts).toContain('Declared variables3')
+    expect(facts).toContain('Generated parameters2')
+    const cards = Array.from(container.querySelectorAll('.lr-preserved-card'))
+    expect(cards[0].querySelector('[role="note"]')?.textContent).toBe('Source comments: Billing System = TLG')
+    expect(cards[1].querySelector('[role="note"]')).toBeNull()
+    const scenario = cards.find(card => card.textContent?.startsWith('Scenario draft'))!
+    expect(scenario.querySelector('strong')?.textContent).toBe('Billing load plan')
+    expect(scenario.querySelector('[role="note"]')?.textContent).toBe('Test Plan comments: Owned by the billing team')
+  })
+
+  it('creates the fallback scenario from the thread-group load when the save left the draft out', async () => {
+    await review({
+      scripts: [{ name: 'Balance', protocol: 'http', config: {}, actions: [{ name: 'Balance', type: 'http' }], parameters: [{ name: 'stamp', type: 'date_time' }, { name: 'n', type: 'counter' }] }],
+      scenario_draft: { name: 'Plan', duration: '', termination_mode: 'iterations', scenario_mode: 'vuser_driven', groups: [{ name: 'Balance', script_name: 'Balance', vusers: 50, ramp_up: '1s', iterations: 200, initialization: 'at_runtime' }] },
+    })
+    // Conversion counts say which variables they cover.
+    const facts = container.querySelector('.import-conversion-details')!.textContent || ''
+    expect(facts).toContain('Declared variables2')
+    expect(facts).toContain('Generated parameters2')
+
+    const saved = { id: 'saved-1', name: 'Balance', protocol: 'http', version: '1.0.0', created_at: '2026-11-05T00:00:00Z' }
+    apiMock.saveJMeterImport
+      .mockRejectedValueOnce(new ApiError('blocked', 422, { error: 'blocked', code: 'import_scenario_scripts_blocked' }))
+      .mockResolvedValueOnce({ count: 1, scripts: [saved] })
+    apiMock.createScenarioDraft.mockResolvedValueOnce({ id: 'draft-7' })
+    await act(async () => button(/^Save \d+ drafts?/)!.click())
+    await flushPromises()
+    await act(async () => button('Save the scripts without the scenario')!.click())
+    await flushPromises()
+    await act(async () => button('Create a scenario from this script')!.click())
+    await flushPromises()
+    const document = apiMock.createScenarioDraft.mock.calls[0][1].document
+    expect(document.form.termination_mode).toBe('iterations')
+    expect(document.form.groups[0]).toMatchObject({ script_id: 'saved-1', vusers: 50, ramp_up: '1s', iterations: 200 })
+  })
+
+  it('renders repair suggestions, opening the ones the importer can act on', async () => {
+    // The API's suggestion shape: action is resolution text; the routing
+    // fields are reinspect_options, batch_operation/source_group_id and clearable.
+    await review({
+      scripts: [{ name: 'Balance', protocol: 'http', config: {}, actions: [{ name: 'Balance', type: 'http' }] }],
+      repair_suggestions: [
+        { id: 'jmeter:jmeter_timestamp_timezone_required', code: 'jmeter_timestamp_timezone_required', category: 'review_gate', severity: 'blocker', title: 'Choose how JMeter timestamps are evaluated', description: 'The plan labels local time as UTC.', action: 'Convert the plan again with a timestamp policy.', clearable: true, reinspect_options: [{ field: 'time_mode', values: ['utc', 'source'] }, { field: 'timezone', description: 'IANA timezone' }] },
+        { id: 'new', category: 'jmeter', severity: 'warning', title: 'A future kind', description: 'Not known to this page.', action: 'some_future_repair' },
+      ],
+    })
+    const list = container.querySelector('[aria-label="Suggested repairs"]')!
+    expect(list.textContent).toContain('A future kind')
+    expect(list.textContent).toContain('Suggested action: Some future repair')
+    expect(list.textContent).toContain('To clear it: Convert the plan again with a timestamp policy.')
+    await act(async () => Array.from(list.querySelectorAll('button')).find(item => item.textContent === 'Choose a timestamp policy')!.click())
+    expect(container.querySelector<HTMLDetailsElement>('details.import-source-setup')!.open).toBe(true)
+  })
+
+  it('opens a suggestion\'s batch operation on its source group and words each gate\'s resolution by the form\'s labels', async () => {
+    const ehDetail = 'The Event Hubs sampler authenticates with a shared access key.'
+    const ehResolution = 'Create a project secret that holds the full connection string, then apply the bind_eventhubs_credentials repair with its name.'
+    const compatResolution = 'Nothing in the plan or the import can clear this gate in this release.'
+    await review({
+      batch: { id: 'batch-1', revision: 'rev-1' },
+      scripts: [
+        { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [{ name: 'Send', type: 'kafka_produce' }] },
+        { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' } }, actions: [{ name: 'Publish', type: 'eventhubs_send' }] },
+      ],
+      review_summary: { blocking_behaviors: 2, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 },
+      diagnostics: [
+        // The API writes "<Detail> <Resolution>" for the gates it explains.
+        { code: 'jmeter_eventhubs_credentials_required', severity: 'blocker', element: 'Hub east', location: 'scripts[1].actions[0]', detail: `${ehDetail} ${ehResolution}` },
+        { code: 'jmeter_messaging_compatibility_unverified', severity: 'blocker', element: 'Hub east', location: 'scripts[1].actions[0]', detail: `Not verified against a live broker. ${compatResolution}` },
+      ],
+      repair_suggestions: [
+        { id: 'jmeter:jmeter_eventhubs_credentials_required:g1', code: 'jmeter_eventhubs_credentials_required', category: 'review_gate', severity: 'blocker', title: 'Bind the Event Hubs connection string', description: ehDetail, action: ehResolution, target_action: 'Publish', clearable: true, batch_operation: 'bind_eventhubs_credentials', source_group_id: 'g1' },
+        { id: 'jmeter:jmeter_messaging_compatibility_unverified', code: 'jmeter_messaging_compatibility_unverified', category: 'review_gate', severity: 'blocker', title: 'JMeter messaging replay is not available yet', description: 'Not verified against a live broker.', action: compatResolution, clearable: false },
+      ],
+    })
+    const list = container.querySelector('[aria-label="Suggested repairs"]')!
+    const items = Array.from(list.querySelectorAll('li'))
+    expect(items[0].textContent).toContain('Hub east · first held step: Publish')
+    // The API's resolution names the operation; the list names the form's repair.
+    expect(items[0].textContent).toContain('To clear it: Create a project secret whose value is the connection string')
+    expect(items[0].textContent).toContain('apply the repair "Bind Event Hubs credential reference" for this group in Reviewed repairs for all scripts')
+    expect(items[0].textContent).not.toContain('bind_eventhubs_credentials')
+    expect(items[1].textContent).toContain('Cannot be cleared yet.')
+    expect(items[1].querySelector('button')).toBeNull()
+
+    // The issue shows the server's explanation once, and the resolution in
+    // the form's words.
+    const row = (text: string) => Array.from(container.querySelectorAll<HTMLButtonElement>('.shared-import-issue-row')).find(item => item.textContent?.includes(text))!
+    await act(async () => row('Bind the Event Hubs connection string').click())
+    expect(container.querySelector('.shared-import-issue-impact')!.textContent).toContain(ehDetail)
+    expect(container.querySelector('.shared-import-issue-impact')!.textContent).not.toContain(ehResolution)
+    expect(container.querySelector('.shared-import-issue-resolution')!.textContent).toContain('apply the repair "Bind Event Hubs credential reference" for this group in Reviewed repairs for all scripts')
+    expect(container.querySelector('.shared-import-issue-resolution')!.textContent).not.toContain('bind_eventhubs_credentials')
+    await act(async () => row('JMeter messaging replay is not available yet').click())
+    expect(container.querySelector('.shared-import-issue-actions')!.textContent).toContain('Cannot be cleared yet')
+    expect(container.querySelector('.shared-import-issue-resolution')!.textContent).toContain(compatResolution)
+
+    await act(async () => items[0].querySelector('button')!.click())
+    const form = container.querySelector('[aria-label="Reviewed JMeter batch repairs"]')!
+    const [repairSelect, groupSelect] = Array.from(form.querySelectorAll('select'))
+    expect(repairSelect.value).toBe('bind_eventhubs_credentials')
+    expect(groupSelect.value).toBe('1')
+
+    // The applied revision's suggestions replace the earlier ones.
+    const scripts = [
+      { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [] },
+      { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' } }, actions: [] },
+    ]
+    const repaired = { batch: { id: 'batch-1', revision: 'rev-2' }, preview_digest: 'digest', scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, repair_suggestions: [{ id: 'jmeter:jmeter_messaging_compatibility_unverified', code: 'jmeter_messaging_compatibility_unverified', category: 'review_gate', severity: 'blocker', title: 'JMeter messaging replay is not available yet', description: 'Not verified.', action: compatResolution, clearable: false }] }
+    apiMock.repairJMeterBatch.mockResolvedValue(repaired)
+    await act(async () => button('Preview batch repair')!.click())
+    await flushPromises()
+    await act(async () => button('Apply reviewed batch repair')!.click())
+    await flushPromises()
+    expect(container.querySelector('[aria-label="Suggested repairs"]')!.textContent).toContain('Suggested repairs (1)')
+    // The applied revision remounts the form, which does not reopen the
+    // repair the suggestion opened on the earlier revision.
+    const remounted = container.querySelector('[aria-label="Reviewed JMeter batch repairs"]')!.querySelectorAll('select')[0]
+    expect(remounted.value).toBe('confirm_reference_context')
+    expect(document.activeElement).not.toBe(remounted)
+  })
+
+  describe('batch source-secret migration', () => {
+    const scripts = [
+      { name: 'Kafka', protocol: 'kafka', config: { jmeter: { source_group_id: 'g0' } }, actions: [{ name: 'Send', type: 'kafka_produce' }] },
+      { name: 'Hub east', protocol: 'eventhubs', config: { jmeter: { source_group_id: 'g1' }, eventhubs: { event_hub: 'hub-east' } }, actions: [{ name: 'Send', type: 'eventhubs_send' }] },
+    ]
+    const requirement = (id: string, available = true) => ({ id, script_index: 1, script_name: 'Hub east', path: '/config/eventhubs/connection_string', label: 'Event Hubs connection', context: '', suggested_name: 'HUB_EAST_CONNECTION', replacement: '{{secret.HUB_EAST_CONNECTION}}', ...(available ? { source_value_available: true } : {}) })
+    const batchReview = (extra: Record<string, unknown> = {}) => review({
+      batch: { id: 'batch-1', revision: 'rev-1' },
+      scripts,
+      review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 },
+      diagnostics: [{ code: 'jmeter_eventhubs_credentials_required', severity: 'blocker', element: 'Hub east', location: 'scripts[1].actions[0]', detail: 'Bind the connection string.' }],
+      secret_binding_requirements: [requirement('req-1')],
+      source_secret_session_id: 'session-1',
+      source_secret_session_expires_at: '2999-01-01T00:00:00Z',
+      source_secret_migration_allowed: true,
+      ...extra,
+    })
+    const migration = () => container.querySelector('[aria-label="Recorded credential migration"]')
+    const repairForm = () => container.querySelector('[aria-label="Reviewed JMeter batch repairs"]')!
+    const setInput = async (input: HTMLInputElement, value: string) => {
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+      })
+    }
+    const discardedSessions = () => apiMock.discardImportSecretSession.mock.calls.map(([payload]) => (payload as { source_secret_session_id: string }).source_secret_session_id)
+
+    it('migrates a batch review\'s recorded values into Project Secrets and fills the migrated name into the bind repair', async () => {
+      apiMock.migrateImportSecrets.mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+      await batchReview()
+      // The Credentials tab stays hidden: the migration is its own step.
+      expect(Array.from(container.querySelectorAll('[role="tab"]')).some(tab => tab.textContent?.startsWith('Credentials'))).toBe(false)
+      const section = migration()!
+      expect(section).not.toBeNull()
+      const nameInput = Array.from(section.querySelectorAll<HTMLInputElement>('input')).find(input => input.type !== 'checkbox')!
+      expect(nameInput.value).toBe('HUB_EAST_CONNECTION')
+      await setInput(nameInput, 'HUB_EAST_MIGRATED')
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['HUB_EAST_MIGRATED'])
+      expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({ project_id: 'project-1', source_secret_session_id: 'session-1', secrets: [{ requirement_id: 'req-1', secret_name: 'HUB_EAST_MIGRATED' }] })
+      expect(container.textContent).toContain('Migrated the recorded value into Project Secrets as HUB_EAST_MIGRATED.')
+      // The offer is used up: no second migration, and the consumed session
+      // is settled without a discard call.
+      expect(button(/^Migrate \d+ values? into Project Secrets$/)).toBeUndefined()
+      expect(discardedSessions()).not.toContain('session-1')
+
+      // The bind repair opens on the script and fills in the migrated name.
+      await act(async () => migration()!.querySelector<HTMLButtonElement>('button')!.click())
+      const [repairSelect, groupSelect] = Array.from(repairForm().querySelectorAll('select'))
+      expect(repairSelect.value).toBe('bind_eventhubs_credentials')
+      expect(groupSelect.value).toBe('1')
+      expect(repairForm().querySelector<HTMLInputElement>('input:not([type])')!.value).toBe('HUB_EAST_MIGRATED')
+    })
+
+    it('checks the names first and sends nothing while a project secret of that name exists', async () => {
+      // The hidden binding card probes the names as well, so every probe answers.
+      apiMock.getProjectSecretStatuses.mockResolvedValue({ project_id: 'project-1', capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: true }, secrets: [{ name: 'HUB_EAST_CONNECTION', configured: true }] })
+      await batchReview()
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
+      expect(migration()!.querySelector('[role="alert"]')!.textContent).toContain('HUB_EAST_CONNECTION already exists in Project Secrets. Nothing was migrated')
+      // The offer is kept for another name.
+      expect(button('Migrate 1 value into Project Secrets')).toBeDefined()
+      expect(discardedSessions()).not.toContain('session-1')
+    })
+
+    it('drops the offer when a failed migration used up the session', async () => {
+      apiMock.migrateImportSecrets.mockRejectedValueOnce(new ApiError('failed', 409, { error: 'project secret exists', source_secret_session_consumed: true, remaining_names: ['HUB_EAST_CONNECTION'] }))
+      await batchReview()
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(migration()).toBeNull()
+      expect(container.textContent).toContain('The protected source session cannot be retried')
+      expect(discardedSessions()).not.toContain('session-1')
+    })
+
+    it('lists the secrets a partial migration created and fills their names into the bind repair', async () => {
+      apiMock.migrateImportSecrets.mockRejectedValueOnce(new ApiError('failed', 503, { error: 'source credential migration failed', partial: true, source_secret_session_consumed: true, migrated: [{ name: 'HUB_EAST_MIGRATED', provider: 'database' }], remaining_names: ['HUB_WEST_CONNECTION'] }))
+      await batchReview()
+      const nameInput = Array.from(migration()!.querySelectorAll<HTMLInputElement>('input')).find(input => input.type !== 'checkbox')!
+      await setInput(nameInput, 'HUB_EAST_MIGRATED')
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(container.textContent).toContain('The protected source session cannot be retried')
+      expect(container.querySelector('[aria-label="Migrated secrets to bind"]')!.textContent).toContain('HUB_EAST_MIGRATED')
+      expect(discardedSessions()).not.toContain('session-1')
+      await act(async () => migration()!.querySelector<HTMLButtonElement>('button')!.click())
+      expect(repairForm().querySelector<HTMLInputElement>('input:not([type])')!.value).toBe('HUB_EAST_MIGRATED')
+    })
+
+    it('adopts the replacement session an applied batch repair returns', async () => {
+      await batchReview()
+      const repaired = (revision: string, extra: Record<string, unknown>) => ({ batch: { id: 'batch-1', revision }, preview_digest: `digest-${revision}`, scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, secret_binding_requirements: [requirement(`req-${revision}`)], ...extra })
+      const apply = async (response: Record<string, unknown>) => {
+        apiMock.repairJMeterBatch.mockResolvedValue(response)
+        await act(async () => button('Preview batch repair')!.click())
+        await flushPromises()
+        await act(async () => button('Apply reviewed batch repair')!.click())
+        await flushPromises()
+      }
+      await apply(repaired('rev-2', { source_secret_session_id: 'session-2', source_secret_session_expires_at: '2999-01-01T00:00:00Z', source_secret_migration_allowed: true }))
+      // The apply consumed session-1: it is settled, not discarded.
+      expect(discardedSessions()).not.toContain('session-1')
+      apiMock.migrateImportSecrets.mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(apiMock.migrateImportSecrets).toHaveBeenLastCalledWith({ project_id: 'project-1', source_secret_session_id: 'session-2', secrets: [{ requirement_id: 'req-rev-2', secret_name: 'HUB_EAST_CONNECTION' }] })
+    })
+
+    it('discards a stale apply\'s replacement session and keeps the newer review it finishes after', async () => {
+      await batchReview()
+      let resolveApply: (value: unknown) => void = () => undefined
+      apiMock.repairJMeterBatch.mockResolvedValueOnce({ batch: { id: 'batch-1', revision: 'rev-2' }, preview_digest: 'digest', scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 } })
+      await act(async () => button('Preview batch repair')!.click())
+      await flushPromises()
+      apiMock.repairJMeterBatch.mockImplementationOnce(() => new Promise(resolve => { resolveApply = resolve }))
+      await act(async () => button('Apply reviewed batch repair')!.click())
+      // A new inspection lands while the apply is still in flight.
+      apiMock.validateJMeterImport.mockResolvedValueOnce({ warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], stats: { thread_groups: 1, samplers: 1, converted_actions: 1, headers: 0, variables: 2, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 }, summary: { file_name: 'plan.jmx' }, batch: { id: 'batch-2', revision: 'rev-1' }, scripts, review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, diagnostics: [], secret_binding_requirements: [requirement('req-new')], source_secret_session_id: 'session-new', source_secret_session_expires_at: '2999-01-01T00:00:00Z', source_secret_migration_allowed: true })
+      await act(async () => button('Validate Only')!.click())
+      await flushPromises()
+      await act(async () => { resolveApply({ batch: { id: 'batch-1', revision: 'rev-2' }, preview_digest: 'digest', scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, secret_binding_requirements: [requirement('req-stale')], source_secret_session_id: 'session-stale', source_secret_session_expires_at: '2999-01-01T00:00:00Z', source_secret_migration_allowed: true }) })
+      await flushPromises()
+      await flushPromises()
+      // The stale replacement is discarded; the newer review keeps its offer.
+      expect(discardedSessions()).toContain('session-stale')
+      expect(discardedSessions()).not.toContain('session-new')
+      apiMock.migrateImportSecrets.mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(apiMock.migrateImportSecrets).toHaveBeenLastCalledWith({ project_id: 'project-1', source_secret_session_id: 'session-new', secrets: [{ requirement_id: 'req-new', secret_name: 'HUB_EAST_CONNECTION' }] })
+    })
+
+    it('keeps a newer review locked while its migration runs when a stale apply settles', async () => {
+      await batchReview()
+      const repaired = { batch: { id: 'batch-1', revision: 'rev-2' }, preview_digest: 'digest', scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 } }
+      apiMock.repairJMeterBatch.mockResolvedValueOnce(repaired)
+      await act(async () => button('Preview batch repair')!.click())
+      await flushPromises()
+      let resolveApply: (value: unknown) => void = () => undefined
+      apiMock.repairJMeterBatch.mockImplementationOnce(() => new Promise(resolve => { resolveApply = resolve }))
+      await act(async () => button('Apply reviewed batch repair')!.click())
+      // An option edit resets the review while the apply is in flight, and a
+      // new inspection replaces it.
+      await act(async () => container.querySelector<HTMLInputElement>('details.import-source-setup input[type="checkbox"]')!.click())
+      apiMock.validateJMeterImport.mockResolvedValueOnce({ warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], stats: { thread_groups: 1, samplers: 1, converted_actions: 1, headers: 0, variables: 2, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 }, summary: { file_name: 'plan.jmx' }, batch: { id: 'batch-2', revision: 'rev-1' }, scripts, review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, diagnostics: [], secret_binding_requirements: [requirement('req-new')], source_secret_session_id: 'session-new', source_secret_session_expires_at: '2999-01-01T00:00:00Z', source_secret_migration_allowed: true })
+      await act(async () => button('Validate Only')!.click())
+      await flushPromises()
+      expect(repairForm().querySelector('fieldset')!.disabled).toBe(false)
+      // The newer review starts a migration on its session.
+      let resolveMigration: (value: unknown) => void = () => undefined
+      apiMock.migrateImportSecrets.mockImplementationOnce(() => new Promise(resolve => { resolveMigration = resolve }))
+      await act(async () => button('Migrate 1 value into Project Secrets')!.click())
+      await flushPromises()
+      expect(apiMock.migrateImportSecrets).toHaveBeenCalled()
+      expect(repairForm().querySelector('fieldset')!.disabled).toBe(true)
+      // The stale apply settling does not unlock the batch repairs mid-migration.
+      await act(async () => { resolveApply(repaired) })
+      await flushPromises()
+      expect(repairForm().querySelector('fieldset')!.disabled).toBe(true)
+      await act(async () => { resolveMigration({ project_id: 'project-1', secrets: [], count: 1 }) })
+      await flushPromises()
+      expect(repairForm().querySelector('fieldset')!.disabled).toBe(false)
+    })
+
+    it('stops offering migration when an applied repair reports the offer gone', async () => {
+      await batchReview()
+      apiMock.repairJMeterBatch.mockResolvedValue({ batch: { id: 'batch-1', revision: 'rev-2' }, preview_digest: 'digest', scripts, before: scripts, readiness: {}, findings: {}, diagnostics: [], review_summary: { blocking_behaviors: 1, review_behaviors: 0, unsupported_behaviors: 0, warnings: 0, informational: 0 }, secret_binding_requirements: [requirement('req-2')], source_secret_session_id: '' })
+      await act(async () => button('Preview batch repair')!.click())
+      await flushPromises()
+      await act(async () => button('Apply reviewed batch repair')!.click())
+      await flushPromises()
+      expect(migration()).toBeNull()
+      expect(discardedSessions()).not.toContain('session-1')
     })
   })
 })

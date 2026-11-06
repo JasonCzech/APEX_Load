@@ -9674,6 +9674,8 @@
           "type": "string"
         },
         "compression": {
+          "default": "none",
+          "description": "Producer batch compression: none (the default; uncompressed, as the Java producer's compression.type=none), gzip, snappy, lz4 or zstd. Real-adapter (kafka_real) scripts that relied on the earlier implicit snappy batches must set compression: snappy to keep them.",
           "type": "string"
         },
         "consumer_group": {
@@ -9811,6 +9813,9 @@
           "type": "integer"
         },
         "linger_ms": {
+          "type": "integer"
+        },
+        "max_in_flight_requests": {
           "type": "integer"
         },
         "request_timeout_ms": {

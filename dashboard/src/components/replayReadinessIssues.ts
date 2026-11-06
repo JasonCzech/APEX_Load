@@ -1,5 +1,5 @@
-import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
-import { configReferenceText, issueTitle, repairImpactText } from './importReviewIssues'
+import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import { actionAwaitsRuntimeSupport, AWAITING_RUNTIME_SUPPORT_TEXT, configReferenceText, issueTitle, repairImpactText } from './importReviewIssues'
 import { replayBlockingKinds } from './replayPreflightUtils'
 import { phaseActionsForScript, stepPathForJsonSubPath } from './scriptEditorJsonModel'
 import type { ScriptActionPhase } from './scriptEditorWorkbench'
@@ -157,6 +157,15 @@ function unquoteName(quoted: string): string {
 /** The reader-facing title of an execution blocker code. */
 export function blockerTitle(code: string): string {
   return sentence(issueTitle(code))
+}
+
+/**
+ * A blocked step's badge title: what blocks replay and, for a step the import
+ * review marks awaiting runtime support, that nothing clears it yet.
+ */
+export function blockedStepBadgeTitle(action: ScriptActionDefinition, blockers: readonly string[]): string {
+  const title = `Blocks replay: ${blockers.map(blockerTitle).join(', ')}`
+  return actionAwaitsRuntimeSupport(action) ? `${title}. ${AWAITING_RUNTIME_SUPPORT_TEXT}` : title
 }
 
 /**

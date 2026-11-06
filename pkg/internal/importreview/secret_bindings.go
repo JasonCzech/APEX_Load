@@ -1241,6 +1241,7 @@ func ApplyPreservedRedactedSecretBindings(
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	defaultHeaderBindings := make([]defaultHeaderBinding, 0)
 	for _, path := range paths {
 		replacements := replacementsByPath[path]
 		rawValue, rawOK := JsonPointerString(rawRoot, path)
@@ -1281,6 +1282,14 @@ func ApplyPreservedRedactedSecretBindings(
 		if !SetJSONPointerStringValue(rawRoot, path, rebuilt.String()) {
 			return nil, requirements, &StaleSecretBindingRequirementsError{requirements: requirements}
 		}
+		if name, ok := defaultHeaderNameAt(rawRoot, path); ok {
+			defaultHeaderBindings = append(defaultHeaderBindings, defaultHeaderBinding{name: name, recorded: rawValue, bound: rebuilt.String()})
+		}
+	}
+	// Runs after every selected path is rebuilt, so an action copy the
+	// operator bound on its own keeps the name chosen for it.
+	for _, binding := range defaultHeaderBindings {
+		bindShadowingActionHeaders(rawRoot, binding)
 	}
 
 	payload, err := json.Marshal(rawRoot)
@@ -1309,6 +1318,66 @@ func ApplyPreservedRedactedSecretBindings(
 	}
 	remaining = AnnotateSingleScriptSecretBindingRequirements(remaining, scriptIndex, rawResult, projectedResultRoot, true)
 	return &result, remaining, nil
+}
+
+// defaultHeaderBinding is a script-level default header whose recorded value
+// a binding replaced.
+type defaultHeaderBinding struct {
+	name     string
+	recorded string
+	bound    string
+}
+
+// defaultHeaderNameAt names the script-level default header the path holds the
+// value of, in either the default_headers map or the default_header_list.
+func defaultHeaderNameAt(root any, path string) (string, bool) {
+	tokens, err := SplitJSONPointer(path)
+	if err != nil || len(tokens) < 4 || tokens[0] != "config" || tokens[1] != "http" {
+		return "", false
+	}
+	switch {
+	case len(tokens) == 4 && tokens[2] == "default_headers":
+		return tokens[3], true
+	case len(tokens) == 5 && tokens[2] == "default_header_list" && IsDecimalToken(tokens[3]) && tokens[4] == "value":
+		name, ok := JsonPointerString(root, "/config/http/default_header_list/"+tokens[3]+"/name")
+		return name, ok && strings.TrimSpace(name) != ""
+	}
+	return "", false
+}
+
+// bindShadowingActionHeaders gives every action-level copy of a bound default
+// header the same binding. An action header of the same name replaces the
+// default on the wire (httpcontract.EffectiveAuthoredHeaderList), and importers
+// such as JMeter copy an inherited header manager into both places. Binding
+// only the default would leave the recorded value as the one sent, while the
+// review reports the credential as bound. Only a copy that still holds the
+// exact recorded value is rewritten, so a header the action sets to something
+// else, or one bound separately, is left alone.
+func bindShadowingActionHeaders(root any, binding defaultHeaderBinding) {
+	script, ok := root.(map[string]any)
+	if !ok {
+		return
+	}
+	walkImportActions(script, func(_ string, action map[string]any) {
+		if headers, ok := action["headers"].(map[string]any); ok {
+			for name, value := range headers {
+				if text, isString := value.(string); isString && text == binding.recorded && strings.EqualFold(name, binding.name) {
+					headers[name] = binding.bound
+				}
+			}
+		}
+		entries, _ := action["header_list"].([]any)
+		for _, raw := range entries {
+			entry, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			name, _ := entry["name"].(string)
+			if text, isString := entry["value"].(string); isString && text == binding.recorded && strings.EqualFold(strings.TrimSpace(name), binding.name) {
+				entry["value"] = binding.bound
+			}
+		}
+	})
 }
 
 func AnnotateSingleScriptSecretBindingRequirements(

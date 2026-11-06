@@ -46,17 +46,39 @@ func (r *ConvertResult) NormalizeReviewEvidence() {
 	if source == "" && len(mappings) > 0 {
 		source = mappings[0].SourceFile
 	}
-	locate := func(location, element string) (string, string) {
-		for _, m := range mappings {
+	// locateFor resolves a location to the first matching mapping. With
+	// preferConfig a configuration contributor of that name wins: a non-gating
+	// diagnostic about a thread group or config element must not be claimed by
+	// a review gate that merely shares the name. A contributor names where its
+	// settings went, not what the diagnostic concerns, so the diagnostic keeps
+	// its own location.
+	locateFor := func(location, element string, preferConfig bool) (string, string) {
+		var first *sourceview.Mapping
+		for i := range mappings {
+			m := &mappings[i]
 			if m.TargetKind == "disabled" {
 				continue
 			}
 			if m.TargetName == location || (m.TargetPath == location && (m.TargetKind == "action" || m.TargetKind == "controller")) {
-				return fmt.Sprintf("%s:%d#%s", m.SourceFile, m.StartLine, m.ID), m.TargetPath
+				if first == nil {
+					first = m
+				}
+				if !preferConfig || m.TargetKind == "config" {
+					first = m
+					break
+				}
 			}
 		}
-		return source + "#" + location + "#" + element, location
+		if first == nil {
+			return source + "#" + location + "#" + element, location
+		}
+		path := first.TargetPath
+		if first.TargetKind == "config" {
+			path = location
+		}
+		return fmt.Sprintf("%s:%d#%s", first.SourceFile, first.StartLine, first.ID), path
 	}
+	locate := func(location, element string) (string, string) { return locateFor(location, element, false) }
 	unsupportedPaths := map[string]bool{}
 	controllerGaps := map[string]sourceview.Mapping{}
 	for _, m := range mappings {
@@ -188,7 +210,7 @@ func (r *ConvertResult) NormalizeReviewEvidence() {
 	}
 	// Retain typed diagnostics not already represented by a durable source decision.
 	for _, d := range r.Unsupported {
-		src, path := locate(d.Location, d.Element)
+		src, path := locateFor(d.Location, d.Element, d.Severity != diag.Blocker)
 		// A coded diagnostic has its own reason identity. Only legacy uncoded
 		// diagnostics need the location-based compatibility matching below.
 		if d.Code != "" {

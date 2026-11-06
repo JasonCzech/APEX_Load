@@ -32,6 +32,14 @@ type ImportDraft struct {
 	// Warnings are the converter's warnings. Validation issues are appended to
 	// the augmented copy, never to this slice.
 	Warnings []string
+	// ScriptWarnings, when a format attributes its warnings to the scripts
+	// they concern (JMeter: each thread group's own warnings plus the
+	// plan-level ones), is the per-script list each script's replay preflight
+	// is built from. A script without an entry uses Warnings. The augmented
+	// Warnings stay the plan-wide list either way. The lists reach responses
+	// only inside each script's preflight, so they pass through the same
+	// script disclosure projection as the rest of the draft.
+	ScriptWarnings map[*dsl.Script][]string
 	// SuppressedMuleSoftPolicies drops named Anypoint policies from the MuleSoft
 	// section. RAML sets it for client_id_enforcement because its own review
 	// section already reports that policy from the converter's summary.
@@ -124,7 +132,7 @@ func (d *ImportDraft) AugmentWithAgentforceTransformChecked(agentforceTransform 
 	for _, script := range scripts {
 		issues := ValidateScript(script)
 		allIssues = AppendUniqueStrings(allIssues, issues...)
-		preflight := BuildReplayPreflight(script, nil, issues, d.Warnings)
+		preflight := BuildReplayPreflight(script, nil, issues, d.warningsFor(script))
 		AttachImportReplayPreflight(script, d.Source, preflight)
 		if script == Primary {
 			augmented.Preflight = preflight
@@ -132,6 +140,15 @@ func (d *ImportDraft) AugmentWithAgentforceTransformChecked(agentforceTransform 
 	}
 	augmented.Warnings = AppendUniqueStrings(append([]string(nil), d.Warnings...), allIssues...)
 	return augmented, nil
+}
+
+// warningsFor is the converter warning list for one script's preflight: its
+// attributed list when the format supplies one, else the plan-wide list.
+func (d *ImportDraft) warningsFor(script *dsl.Script) []string {
+	if warnings, ok := d.ScriptWarnings[script]; ok {
+		return warnings
+	}
+	return d.Warnings
 }
 
 func (d *ImportDraft) AllScripts() []*dsl.Script {

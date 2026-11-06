@@ -11,9 +11,34 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol/eventhubs"
+	"github.com/jasonczech/apexload/pkg/protocol/kafka"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
+)
+
+// The real Kafka and Event Hubs network clients are compiled in only with the
+// kafka_real and eventhubs_real build tags (the enterprise image). Without
+// them the protocol still loads, so mock replay works, but every non-mock
+// send fails at run time. The capability probes do no network I/O.
+var (
+	realKafkaAdapterCompiled = func() bool {
+		return slices.Contains((&kafka.Kafka{}).RuntimeCapabilities().Features, kafka.FeatureRealSeekV1)
+	}
+	realEventHubsAdapterCompiled = func() bool {
+		return (&eventhubs.EventHubs{}).RuntimePauseSupported()
+	}
+)
+
+const (
+	kafkaAdapterMissingWarning = "This APEX Load build has no real Kafka client (it was built without the kafka_real tag), " +
+		"so sends to the configured brokers fail when the script runs. Run it on an enterprise build, " +
+		"or turn on config.kafka.mock for a local shakeout."
+	eventHubsAdapterMissingWarning = "This APEX Load build has no real Azure Event Hubs client (it was built without the " +
+		"eventhubs_real tag), so sends to the configured namespace fail when the script runs. Run it on an " +
+		"enterprise build, or turn on config.eventhubs.mock for a local shakeout."
 )
 
 type ReplayPreflight struct {
@@ -210,7 +235,11 @@ func ReplayMessagingPreflight(script *dsl.Script) (issues []string, warnings []s
 			if len(kafka.Brokers) == 0 {
 				issues = append(issues, "config.kafka.brokers is required when mock mode is disabled")
 			}
-			detail = append(detail, "real Kafka adapter required (-tags kafka_real)")
+			if realKafkaAdapterCompiled() {
+				detail = append(detail, "real Kafka client available")
+			} else {
+				warnings = append(warnings, kafkaAdapterMissingWarning)
+			}
 		}
 		if strings.EqualFold(strings.TrimSpace(kafka.Profile), "eventhubs") && !kafka.Mock {
 			if strings.EqualFold(strings.TrimSpace(kafka.SASLMechanism), "plain") || strings.TrimSpace(kafka.SASLMechanism) == "" {
@@ -232,7 +261,23 @@ func ReplayMessagingPreflight(script *dsl.Script) (issues []string, warnings []s
 			ID:     "messaging_kafka",
 			Label:  "Kafka readiness",
 			Status: ReplayCheckStatus(len(issues) == 0, len(warnings) > 0 || kafka.Mock),
-			Detail: ReplayListDetail(issues, strings.Join(detail, "; ")),
+			Detail: ReplayListDetail(issues, strings.Join(slices.Concat(warnings, detail), "; ")),
+		})
+	case "eventhubs":
+		mock := script.Config.EventHubs.Mock
+		detail := "real Azure Event Hubs client available"
+		switch {
+		case mock:
+			detail = "mock Event Hubs enabled"
+		case !realEventHubsAdapterCompiled():
+			warnings = append(warnings, eventHubsAdapterMissingWarning)
+			detail = eventHubsAdapterMissingWarning
+		}
+		checks = append(checks, ReplayPreflightCheck{
+			ID:     "messaging_eventhubs",
+			Label:  "Event Hubs readiness",
+			Status: ReplayCheckStatus(true, len(warnings) > 0 || mock),
+			Detail: detail,
 		})
 	case "jms-solace", "jms-servicebus", "jms-ibmmq":
 		jms := script.Config.JMS

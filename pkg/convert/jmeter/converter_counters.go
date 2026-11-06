@@ -39,6 +39,12 @@ const (
 	// jmeterCounterSharedUnmapped is a shared counter whose increment unique
 	// blocks cannot express (they step by 1); it keeps the cross-thread gate.
 	jmeterCounterSharedUnmapped
+	// jmeterCounterSharedBounded is a shared counter whose range holds fewer
+	// values than the plan's literal thread count, too narrow to give each
+	// VUser its own unique-number block. Blocks would issue values past the
+	// source maximum, so it becomes a per-VUser counter that keeps the range
+	// and wraps as JMeter does.
+	jmeterCounterSharedBounded
 )
 
 // jmeterCounterConversion is a Counter element mapped onto a native parameter.
@@ -141,6 +147,13 @@ func jmeterCounterParameter(e *xmlNode, threads int) (jmeterCounterConversion, e
 		conversion.scope = jmeterCounterPerUser
 	case p.Step != 1:
 		conversion.scope = jmeterCounterSharedUnmapped
+	case bounded && !jmeterCounterRangeHoldsBlocks(p.Start, p.End, threads):
+		// A bounded shared counter usually cycles through a small fixed set
+		// (partition IDs, shard numbers): leaving its range breaks every
+		// request, while distinctness across VUsers is impossible anyway once
+		// the range holds fewer values than there are VUsers.
+		conversion.scope = jmeterCounterSharedBounded
+		conversion.note = fmt.Sprintf("shared counter %s has a range of %d..%d, too narrow to give each VUser its own block of unique numbers, so it became a per-VUser counter that wraps from %d back to %d as JMeter does; each VUser cycles through the range on its own, so VUsers send the same values at the same time instead of taking turns in one global sequence", p.Name, p.Start, p.End, p.End, p.Start)
 	default:
 		block := jmeterSharedCounterBlockSize(p.Start, p.End, bounded, threads)
 		conversion.scope = jmeterCounterUniqueBlocks
@@ -174,6 +187,19 @@ func jmeterSharedCounterBlockSize(start, end int, bounded bool, threads int) int
 	return int(block)
 }
 
+// jmeterCounterRangeHoldsBlocks reports whether start..end gives each of the
+// plan's threads its own unique-number block. When the thread count is not a
+// literal the scenario's VUser count is unknown, so the range cannot be shown
+// to be too narrow: the counter keeps unique-number blocks, which keep values
+// distinct across VUsers (VUsers beyond the range go past its maximum, as the
+// conversion note says), rather than wrapping into duplicates.
+func jmeterCounterRangeHoldsBlocks(start, end, threads int) bool {
+	if threads <= 0 {
+		return true
+	}
+	return jmeterCounterSpan(start, end) >= uint64(threads)
+}
+
 // jmeterCounterSpan counts the values in start..end (end >= start); unsigned
 // arithmetic keeps the whole int range.
 func jmeterCounterSpan(start, end int) uint64 {
@@ -195,11 +221,14 @@ func jmeterCounterBlocksInRange(start, end, block int) uint64 {
 // scopes same-named counters to their controllers, which one parameter cannot
 // express, so requests using a conflicting name stay gated. A shared counter
 // becomes a unique-number counter; one whose increment blocks cannot express
-// carries the cross-thread gate once a request uses it.
-func attachJMeterCounterParameters(script *dsl.Script, counters []jmeterScopedCounter, threads int, diagnostics *diag.Collector, sourceMappings *[]sourceview.Mapping, sourceFileName string) {
+// carries the cross-thread gate once a request uses it. It returns the source
+// Counter element each declared parameter was converted from, keyed by
+// parameter name, so the plan can count each source counter once.
+func attachJMeterCounterParameters(script *dsl.Script, counters []jmeterScopedCounter, threads int, diagnostics *diag.Collector, sourceMappings *[]sourceview.Mapping, sourceFileName string) map[string]*xmlNode {
 	if script == nil || len(counters) == 0 {
-		return
+		return nil
 	}
+	sources := make(map[string]*xmlNode)
 	type declaration struct {
 		counter    jmeterScopedCounter
 		conversion jmeterCounterConversion
@@ -253,8 +282,11 @@ func attachJMeterCounterParameters(script *dsl.Script, counters []jmeterScopedCo
 				diagnostics.Add(diag.Warning, "JMeter CounterConfig", location, "counter sits inside a looping controller; JMeter advances it once per loop pass, the converted counter once per script iteration")
 			}
 			status, mappingNote := "converted", "Counter was converted into a native counter parameter."
-			if first.scope == jmeterCounterUniqueBlocks {
+			switch first.scope {
+			case jmeterCounterUniqueBlocks:
 				mappingNote = "Shared counter was converted into a unique-number counter parameter."
+			case jmeterCounterSharedBounded:
+				mappingNote = "Shared counter with a narrow range was converted into a per-VUser counter that keeps the source range and wrap."
 			}
 			if position > 0 {
 				status, mappingNote = "contributor", "Counter repeats an identical counter declared in another scope."
@@ -264,8 +296,9 @@ func attachJMeterCounterParameters(script *dsl.Script, counters []jmeterScopedCo
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, d.counter.node.Element, "CounterConfig", fmt.Sprintf("parameters[%d]", index), first.parameter.Name, "parameter", status, mappingNote))
 		}
 		script.Parameters = append(script.Parameters, first.parameter)
+		sources[first.parameter.Name] = declarations[0].counter.node.Element
 		switch first.scope {
-		case jmeterCounterUniqueBlocks:
+		case jmeterCounterUniqueBlocks, jmeterCounterSharedBounded:
 			setJMeterRuntimeParity(script, "counterConfig.shared", "partial")
 		case jmeterCounterSharedUnmapped:
 			unmapped[key] = true
@@ -277,6 +310,7 @@ func attachJMeterCounterParameters(script *dsl.Script, counters []jmeterScopedCo
 			break
 		}
 	}
+	return sources
 }
 
 // jmeterScriptReferencesVariable reports whether any action uses the variable
@@ -308,7 +342,10 @@ func gateJMeterGlobalCounter(script *dsl.Script, element, parityKey, detail, fun
 			function,
 			fmt.Sprintf("actions[%d]", actionIndex),
 			"Cross-thread counter review gate",
-			"dynamic_function",
+			// The gate is a script-level review placeholder like the others
+			// ("controller"), so it counts as review_required; generated
+			// parameters and dynamic functions are not counted (support.go).
+			"controller",
 			"review_only",
 			"JMeter cross-thread counter scope has no equivalent in the per-VUser parameter runtime.",
 		))

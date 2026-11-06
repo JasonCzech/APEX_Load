@@ -68,10 +68,32 @@ export interface ImportRepairSuggestion {
   severity: 'info' | 'warning' | 'blocker' | string
   title: string
   description: string
+  /**
+   * For JMeter review gates: the resolution as a sentence. Other importers may
+   * still send an identifier here.
+   */
   action: string
+  /** For JMeter review gates: the first step the gate holds, by name. */
   target_action?: string
   selector_stability_score?: number
   selector_signals?: string[]
+  /** The review code the suggestion resolves. */
+  code?: string
+  /** false: nothing available in this release clears the gate. Omitted for non-JMeter suggestions. */
+  clearable?: boolean
+  /** The JMeter batch repair operation type (POST /import/repairs) that clears the gate. */
+  batch_operation?: string
+  /** The source group batch_operation must target (config.jmeter.source_group_id). */
+  source_group_id?: string
+  /** Conversion options that clear the gate when the same source is inspected again. */
+  reinspect_options?: ImportReinspectOption[]
+}
+
+/** A conversion option to resend with the same source (for JMeter, a form field such as time_mode). */
+export interface ImportReinspectOption {
+  field: string
+  values?: string[]
+  description?: string
 }
 
 export type ParameterizationKind = 'correlation' | 'generated' | 'data_param' | 'secret'
@@ -426,7 +448,8 @@ export interface ScriptImportResult<
   warnings: string[]
   unsupported_elements: string[]
   review_summary?: JMeterReviewSummary
-  diagnostics?: { code?: string; source_ref?: string; element: string; detail: string; severity: 'blocker' | 'warning' | 'info'; location?: string; count?: number; locations?: string[]; locations_truncated?: boolean }[]
+  /** resolution, when present, is the importer's own sentence for what clears the finding. */
+  diagnostics?: { code?: string; source_ref?: string; element: string; detail: string; resolution?: string; severity: 'blocker' | 'warning' | 'info'; location?: string; count?: number; locations?: string[]; locations_truncated?: boolean }[]
   assumptions: string[]
   review_sections: ImportReviewSection[]
   repair_suggestions: ImportRepairSuggestion[]
@@ -969,8 +992,16 @@ export interface EnterpriseArchiveSupportMatrixExample {
 export interface JMeterConvertStats {
   enabled_workload_samplers?: number
   disabled_workload_samplers?: number
+  /** Ready plus review-gated: every enabled sampler with a draft. Overlaps blocked. */
   converted_workload_samplers?: number
+  /** Review-gated plus unconverted. Overlaps converted. */
   blocked_workload_samplers?: number
+  // Disjoint, and summing to enabled_workload_samplers (newer servers).
+  replay_ready_workload_samplers?: number
+  review_gated_workload_samplers?: number
+  unconverted_workload_samplers?: number
+  /** Counter, random-number and date-time parameters; variables includes them. */
+  generated_parameters?: number
   configuration_contributors?: number
   ignored_reporting_elements?: number
   thread_groups: number
@@ -1256,6 +1287,17 @@ export interface JMeterBatchRepairResponse {
   findings: Record<string, unknown[]>
   readiness: Record<string, unknown>
   secret_binding_requirements?: SecretBindingRequirement[]
+  /** The review-gate suggestions for the repaired drafts. */
+  repair_suggestions?: ImportRepairSuggestion[]
+  /**
+   * Set on an apply when the import offered source-secret migration. The
+   * apply consumed the previous session: this is its replacement, or "" when
+   * the offer is gone (migrated, discarded, expired or no longer allowed) and
+   * the client must drop its ID.
+   */
+  source_secret_session_id?: string
+  source_secret_session_expires_at?: string
+  source_secret_migration_allowed?: boolean
 }
 export type JMeterImportResult = ScriptImportResult<JMeterConvertStats, unknown, ScriptDefinition, JMeterScenarioDraft, JMeterImportSummary> & { batch?: JMeterBatchIdentity }
 export type SampleImportResult = ScriptImportResult<SampleImportStats, SampleCorrelation>

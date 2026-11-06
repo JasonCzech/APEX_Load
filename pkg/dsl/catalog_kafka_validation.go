@@ -18,12 +18,14 @@ func validateKafkaScriptIssues(script *Script) []string {
 	}
 	if p := kafka.Producer; p != nil {
 		values := map[string]any{}
-		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs} {
+		for key, value := range map[string]*int{"retries": p.Retries, "linger_ms": p.LingerMs, "batch_bytes": p.BatchBytes, "buffer_bytes": p.BufferBytes, "admission_timeout_ms": p.AdmissionTimeoutMs, "delivery_timeout_ms": p.DeliveryTimeoutMs, "request_timeout_ms": p.RequestTimeoutMs, "max_in_flight_requests": p.MaxInFlightRequests} {
 			if value != nil {
 				values["kafka_producer_"+key] = *value
 			}
 		}
-		if err := kafkaprotocol.ValidateProducerSettings(values); err != nil {
+		if tuning, err := kafkaprotocol.ParseProducerTuning(values); err != nil {
+			issues = append(issues, err.Error())
+		} else if err := kafkaprotocol.ValidateProducerInFlight(tuning, kafka.Acks, kafka.Idempotence); err != nil {
 			issues = append(issues, err.Error())
 		}
 	}
