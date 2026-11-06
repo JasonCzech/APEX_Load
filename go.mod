@@ -8,7 +8,7 @@ require (
 	github.com/Azure/go-amqp v1.7.0
 	github.com/PuerkitoBio/goquery v1.13.0
 	github.com/alicebob/miniredis/v2 v2.39.0
-	github.com/andybalholm/brotli v1.2.6
+	github.com/andybalholm/brotli v1.2.7
 	github.com/antchfx/htmlquery v1.3.7
 	github.com/antchfx/xmlquery v1.5.2
 	github.com/antchfx/xpath v1.3.9
@@ -170,7 +170,7 @@ require (
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jchv/go-winloader v0.0.0-20210711035445-715c2860da7e // indirect
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.2
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/labstack/echo/v4 v4.15.3 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
