@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import type { StoredScript } from '../types'
-import { requiredScriptSecrets, scriptContainsSecretReferences } from './scriptSecretReferenceModel'
+import type { ScriptDefinition } from '../types/scripts'
+import { requiredScriptSecrets, scriptContainsSecretReferences, scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
 
 function storedScript(script: StoredScript['script']): StoredScript {
   return {
@@ -63,5 +64,18 @@ describe('scriptSecretReferenceModel', () => {
     })
 
     expect(requiredScriptSecrets(script)).toEqual(['RUNTIME_TOKEN'])
+  })
+})
+
+describe('messaging secret reference fields', () => {
+  it('lists a Kafka OAuth client secret named by its plain client_secret_ref', () => {
+    const script = {
+      name: 'Orders', version: '1', protocol: 'kafka', actions: [],
+      config: { kafka: { oauth: { client_id: '{{secret.KAFKA_CLIENT_ID}}', client_secret_ref: 'kafka.client-secret' } } },
+    } as unknown as ScriptDefinition
+    expect(scriptSecretReferenceSummaries(script).map(summary => [summary.name, summary.locations])).toEqual([
+      ['KAFKA_CLIENT_ID', ['/config/kafka/oauth/client_id']],
+      ['KAFKA_CLIENT_SECRET', ['/config/kafka/oauth/client_secret_ref']],
+    ])
   })
 })

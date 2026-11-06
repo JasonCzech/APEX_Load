@@ -14,9 +14,10 @@ interface Props {
   onClose: () => void
   onConfigured: () => void | Promise<void>
   onSaved: (saved: StoredScript, changedLocations: string[]) => void | Promise<void>
+  canCreateSecrets?: boolean
 }
 
-export default function StoredScriptSecretBindingsDialog({ stored, projectId, onClose, onConfigured, onSaved }: Props) {
+export default function StoredScriptSecretBindingsDialog({ stored, projectId, onClose, onConfigured, onSaved, canCreateSecrets }: Props) {
   const api = useApi()
   const [baseline, setBaseline] = useState<ScriptAuthoringBaseline | null>(null)
   const [draft, setDraft] = useState<ScriptDefinition | null>(null)
@@ -91,7 +92,7 @@ export default function StoredScriptSecretBindingsDialog({ stored, projectId, on
   return <ScriptSecretBindingsDialog
     scriptId={stored.id} script={draft} projectId={projectId} authoringBaseline={baseline}
     applicationId={baseline.projection.library_placement.application_id || undefined}
-    scriptName={draft.name} onClose={onClose} onConfigured={onConfigured}
+    scriptName={draft.name} onClose={onClose} onConfigured={onConfigured} canCreateSecrets={canCreateSecrets}
     rebindDisabled={Boolean(reason) || loading || saving || Boolean(pending)}
     onRebound={(next, locations, outcome) => save(next, locations, outcome?.createdSecretName)}
     reconciliation={<>

@@ -14,6 +14,9 @@ interface Props {
   valueAriaLabel?: string
   valuePlaceholder?: string
   referenceKind?: string
+  // The name the reference preview shows, when the store will spell the typed
+  // name differently (uppercase, underscores). Defaults to `name`.
+  referenceName?: string
   collapseReference?: boolean
 }
 
@@ -36,11 +39,13 @@ export default function SecretReferenceValueControl({
   valueAriaLabel,
   valuePlaceholder,
   referenceKind = 'Script reference',
+  referenceName,
   collapseReference = false,
 }: Props) {
   const valueId = `${id}-value`
   const referenceId = `${id}-reference`
-  const reference = name.trim() ? `{{secret.${name.trim()}}}` : '{{secret.NAME}}'
+  const previewName = (referenceName ?? name).trim()
+  const reference = previewName ? `{{secret.${previewName}}}` : '{{secret.NAME}}'
   return (
     <>
       {collapseReference ? (

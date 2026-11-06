@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { type SecretBindingRequirement } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
+  normalizeNewSecretName,
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
   requirementsPreserveDestinationValues,
   secretBindingDisplayNames,
   secretBindingRequirementsForScript,
   secretDisplayName,
+  suggestedNewSecretName,
   updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 
@@ -219,5 +221,19 @@ describe('secret binding requirement scoping', () => {
       'API_TOKEN',
     ])
     expect(updated[2]).toBe(requirements[2])
+  })
+})
+
+describe('new secret names', () => {
+  it('normalizes typed names to the canonical store spelling', () => {
+    expect(normalizeNewSecretName('  orders-oauth.secret ')).toBe('ORDERS_OAUTH_SECRET')
+    expect(normalizeNewSecretName('api key')).toBe('API_KEY')
+  })
+
+  it('suggests the readable reference name, numbered past taken names', () => {
+    expect(suggestedNewSecretName('LOGIN_TOKEN', null, new Set())).toBe('LOGIN_TOKEN')
+    expect(suggestedNewSecretName('LOGIN_TOKEN', null, new Set(['LOGIN_TOKEN', 'LOGIN_TOKEN_2']))).toBe('LOGIN_TOKEN_3')
+    const imported = { name: 'Imported', version: '1', protocol: 'http', config: {}, actions: [], metadata: { import: { source: 'har' } } } as unknown as ScriptDefinition
+    expect(suggestedNewSecretName('API_TOKEN_0A1B2C3D4E5F', imported, new Set(['API_TOKEN_0A1B2C3D4E5F']))).toBe('API_TOKEN')
   })
 })

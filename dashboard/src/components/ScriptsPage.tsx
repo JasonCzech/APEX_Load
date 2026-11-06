@@ -1532,7 +1532,7 @@ export default function ScriptsPage({ onScriptSaved, initialCreateWorkflow, appl
       }} />}
       {secretDialogScript?.script && activeProjectId && (
         <StoredScriptSecretBindingsDialog key={`${activeProjectId}:${secretDialogScript.id}`}
-          stored={secretDialogScript} projectId={activeProjectId}
+          stored={secretDialogScript} projectId={activeProjectId} canCreateSecrets={canManageScripts}
           onClose={() => setSecretDialogScript(null)}
           onConfigured={async () => { retryScriptSecretStatus(secretDialogScript); await refresh() }}
           onSaved={async (saved, changedLocations) => {

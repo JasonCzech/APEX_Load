@@ -83,6 +83,33 @@ export function collisionSafeSecretName(base: string, ordinal: number): string {
   return `${base.slice(0, MAX_SECRET_BINDING_NAME_LENGTH - suffix.length)}${suffix}`
 }
 
+// The canonical store name for one a user typed: the server treats dots and
+// hyphens as underscore aliases and stores names in uppercase.
+export function normalizeNewSecretName(value: string): string {
+  return value.trim().toUpperCase().replace(/[\s.-]+/g, '_')
+}
+
+// The name a new secret for one script reference starts with: the reference's
+// readable name (an older import's hashed suffix removed), readable-numbered
+// (API_TOKEN_2) past any name in `taken`. A name over the 32nd is left to the
+// operator to choose.
+export function suggestedNewSecretName(
+  reference: string,
+  script: ScriptDefinition | null | undefined,
+  taken: ReadonlySet<string>,
+): string {
+  const base = normalizeNewSecretName(friendlySecretBindingBaseName(reference, script))
+    .replace(/[^A-Z0-9_]/g, '_')
+    .slice(0, MAX_SECRET_BINDING_NAME_LENGTH)
+  if (!isValidSecretBindingName(base)) return ''
+  if (!taken.has(base)) return base
+  for (let ordinal = 2; ordinal <= 32; ordinal += 1) {
+    const candidate = collisionSafeSecretName(base, ordinal)
+    if (!taken.has(candidate)) return candidate
+  }
+  return ''
+}
+
 export function requirementsPreserveDestinationValues(
   requirements: readonly SecretBindingRequirement[],
 ): boolean {

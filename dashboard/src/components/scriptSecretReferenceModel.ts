@@ -3,8 +3,11 @@ import type { ScriptDefinition } from '../types/scripts'
 
 const LOGICAL_SECRET_NAME = /^[A-Za-z0-9_.-]{1,249}$/
 const SECRET_TEMPLATE = /\{\{\s*secret\.\s*([A-Za-z0-9_.-]{1,249})\s*\}\}/g
+// Fields whose plain value is a logical secret name, as the controller's
+// dedicatedLogicalSecretFields (pkg/engine/secret_references.go) reads them.
 const DEDICATED_SECRET_FIELDS = new Set([
   'ca_cert_secret',
+  'client_secret_ref',
   'connection_string_secret',
   'dsn_secret',
   'sasl_password_secret',
