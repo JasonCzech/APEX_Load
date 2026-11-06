@@ -2,8 +2,10 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSP
 import { createPortal } from 'react-dom'
 import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 
+import { isMacLike } from '../hooks/KeyboardShortcutProvider'
 import { debugSequenceKey, type DebugRailRenderRow, type ScriptPhaseActionRow } from './scriptEditorWorkbench'
-import { fitOutlineName, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
+import { carryGroupKeys, fitOutlineName, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
+import TooltipButton from './ux/TooltipButton'
 import './ux/TooltipButton.css'
 
 const ROW_HEIGHT = 28
@@ -96,6 +98,23 @@ export interface OutlineDebug {
   status: (row: OutlineRow) => OutlineRunStatus | null
 }
 
+/**
+ * What the Author outline adds for acting on several rows: Cmd-click (Ctrl-click
+ * off macOS) adds or removes a row, Shift-click and Shift+arrows select a
+ * range, Cmd/Ctrl+A the rows at one level and Escape clears. A right-click, the
+ * context-menu key or Shift+F10 opens the row menu.
+ */
+export interface OutlineMultiSelect {
+  /** The selected rows' keys; empty when only the editor's own selection applies. */
+  keys: ReadonlySet<string>
+  onChange: (keys: string[]) => void
+  /** `keys` are the rows the menu acts on (the selection, or the row alone); `point` is in viewport pixels. */
+  onContextMenu: (row: OutlineRow, point: { x: number; y: number }, keys: string[]) => void
+  /** The selection bar's "Wrap in transaction…" (`point`: where its dialog opens), with why it is unavailable (or ''). */
+  onWrap: (point: { x: number; y: number }) => void
+  wrapUnavailable: string
+}
+
 const STATUS_TEXT: Record<OutlineRunStatus, string> = { pass: 'Passed', fail: 'Failed', current: 'Current', 'not-run': 'Not run' }
 const BREAKPOINT_TEXT: Record<OutlineBreakpoint['state'], string> = { active: 'Breakpoint', disabled: 'Breakpoint disabled', partial: 'Breakpoints inside', none: '' }
 
@@ -107,7 +126,8 @@ interface Props {
   expandedContainers: Set<string>
   onToggleContainer: (key: string) => void
   selection: ScriptOutlineSelection | null
-  onSelect: (item: DebugRailRenderRow) => void
+  /** `fromMenu`: chosen by opening the row menu on it, so focus stays with the menu. */
+  onSelect: (item: DebugRailRenderRow, options?: { fromMenu?: boolean }) => void
   hasBreakpoint: (key: string) => boolean
   hasIssue: (row: ScriptPhaseActionRow) => boolean
   showMarkers: boolean
@@ -122,6 +142,8 @@ interface Props {
    * that takes a breakpoint (see outlineRowTakesBreakpoint).
    */
   onToggleRowBreakpoint?: (item: DebugRailRenderRow) => void
+  /** Author only: selecting several rows, and the row menu. */
+  multiSelect?: OutlineMultiSelect
 }
 
 /**
@@ -145,7 +167,11 @@ function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutl
  * tree. A long outline renders only the rows in view, and names are cut at the
  * end on a word boundary to fit, never inside an identifier.
  */
-export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint }: Props) {
+export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint, multiSelect: multiSelectProp }: Props) {
+  // Debug keeps one selection and no row menu.
+  const multiSelect = debug ? undefined : multiSelectProp
+  const multiKeys = multiSelect?.keys
+  const multiActive = Boolean(multiKeys && multiKeys.size > 0)
   const id = useId()
   const treeRef = useRef<HTMLDivElement>(null)
   const [expansion, setExpansion] = useState(() => ({ key: resetKey, state: freshExpansion(model) }))
@@ -155,6 +181,20 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   }
   const state = expansion.key === resetKey ? expansion.state : freshExpansion(model)
   const update = (change: (current: ExpansionState) => ExpansionState) => setExpansion(previous => ({ key: previous.key, state: change(previous.state) }))
+
+  // A group's key holds its name and occurrence: its open or closed state
+  // follows it through a rename or another group's removal (carryGroupKeys).
+  const previousModel = useRef(model)
+  useEffect(() => {
+    const before = previousModel.current
+    previousModel.current = model
+    if (before === model) return
+    setExpansion(previous => {
+      const moved = carryGroupKeys(before, model, previous.state.flipped)
+      if (moved.length === previous.state.flipped.size && moved.every(key => previous.state.flipped.has(key))) return previous
+      return { key: previous.key, state: { ...previous.state, flipped: new Set(moved) } }
+    })
+  }, [model])
 
   // Selecting a step inside a closed group (from Problems, the debugger or the
   // action list) opens the groups above it.
@@ -192,6 +232,38 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   const [focusKey, setFocusKey] = useState<string | null>(null)
   const tabStop = rows.some(row => row.key === focusKey) ? focusKey : rows.some(row => row.key === selectedKey) ? selectedKey : rows[0]?.key
   const pendingFocus = useRef<string | null>(null)
+  // Where a Shift-click or Shift+arrow range starts.
+  const anchorKey = useRef<string | null>(null)
+  // A selection made elsewhere (Problems, the action list) starts the next range.
+  useEffect(() => { if (!multiActive) anchorKey.current = selectedKey }, [selectedKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  const isSelected = (row: OutlineRow) => multiActive ? multiKeys!.has(row.key) : row.key === selectedKey
+  const rangeKeys = (fromKey: string | null, toIndex: number) => {
+    const fromIndex = fromKey ? rows.findIndex(row => row.key === fromKey) : -1
+    const start = fromIndex < 0 ? toIndex : Math.min(fromIndex, toIndex)
+    const end = fromIndex < 0 ? toIndex : Math.max(fromIndex, toIndex)
+    return rows.slice(start, end + 1).filter(outlineRowSelectable).map(row => row.key)
+  }
+  // The selection a Cmd/Ctrl-click adds to: the rows already chosen, or the editor's own row.
+  const currentKeys = () => multiActive ? [...multiKeys!] : selectedKey && rows.some(row => row.key === selectedKey && outlineRowSelectable(row)) ? [selectedKey] : []
+  const openMenu = (row: OutlineRow, point: { x: number; y: number }) => {
+    if (!multiSelect || !outlineRowSelectable(row)) return
+    if (isSelected(row) && multiActive) {
+      multiSelect.onContextMenu(row, point, [...multiKeys!])
+      return
+    }
+    // A row outside the selection is chosen on its own, as a click would.
+    if (multiActive) multiSelect.onChange([])
+    anchorKey.current = row.key
+    if (row.select && row.key !== selectedKey) {
+      menuSelectedKey.current = row.key
+      onSelect(row.select, { fromMenu: true })
+    }
+    multiSelect.onContextMenu(row, point, [row.key])
+  }
+  const menuPointFor = (element: HTMLElement) => {
+    const box = element.getBoundingClientRect()
+    return { x: box.left + 24, y: box.bottom }
+  }
 
   const virtual = rows.length > VIRTUALIZE_ABOVE
   const tabStopIndex = rows.findIndex(row => row.key === tabStop)
@@ -212,7 +284,12 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   // earlier selection does not scroll.
   const selectedIndex = selectedKey ? rows.findIndex(row => row.key === selectedKey) : -1
   const scrollPending = useRef<string | null>(null)
-  useEffect(() => { scrollPending.current = selectedKey }, [selectedKey])
+  // A row chosen by opening its menu is in view already; scrolling would close the menu.
+  const menuSelectedKey = useRef<string | null>(null)
+  useEffect(() => {
+    scrollPending.current = selectedKey === menuSelectedKey.current ? null : selectedKey
+    menuSelectedKey.current = null
+  }, [selectedKey])
   useEffect(() => {
     if (!scrollPending.current || scrollPending.current !== selectedKey || selectedIndex < 0) return
     scrollPending.current = null
@@ -283,10 +360,39 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     const index = rows.findIndex(row => row.key === event.currentTarget.getAttribute('data-row-key'))
     const row = rows[index]
     if (!row) return
+    const command = isMacLike() ? event.metaKey : event.ctrlKey
+    const extend = (to: number) => {
+      const target = Math.max(0, Math.min(rows.length - 1, to))
+      if (!anchorKey.current || !rows.some(candidate => candidate.key === anchorKey.current)) anchorKey.current = row.key
+      moveTo(target)
+      multiSelect!.onChange(rangeKeys(anchorKey.current, target))
+    }
     const handled = (() => {
       switch (event.key) {
-        case 'ArrowDown': moveTo(index + 1); return true
-        case 'ArrowUp': moveTo(index - 1); return true
+        case 'ArrowDown':
+          if (event.shiftKey && multiSelect) { extend(index + 1); return true }
+          moveTo(index + 1); return true
+        case 'ArrowUp':
+          if (event.shiftKey && multiSelect) { extend(index - 1); return true }
+          moveTo(index - 1); return true
+        case 'a':
+        case 'A':
+          if (!multiSelect || !command || event.altKey || event.shiftKey) return false
+          multiSelect.onChange(rows.filter(candidate => candidate.parentKey === row.parentKey && outlineRowSelectable(candidate)).map(candidate => candidate.key))
+          return true
+        case 'Escape':
+          if (!multiActive) return false
+          multiSelect!.onChange([])
+          return true
+        case 'ContextMenu':
+          if (!multiSelect) return false
+          openMenu(row, menuPointFor(event.currentTarget))
+          return true
+        case 'F10':
+          // F10 alone is the debugger's Step Over, which the editor handles.
+          if (!multiSelect || !event.shiftKey) return false
+          openMenu(row, menuPointFor(event.currentTarget))
+          return true
         case 'Home': moveTo(0); return true
         case 'End': moveTo(rows.length - 1); return true
         case 'ArrowRight':
@@ -299,6 +405,11 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
           return true
         case 'Enter':
         case ' ':
+          // As a plain click: this row alone.
+          if (multiSelect) {
+            anchorKey.current = row.key
+            if (multiActive) multiSelect.onChange([])
+          }
           activate(row)
           return true
         case 'b':
@@ -312,7 +423,11 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
           return false
       }
     })()
-    if (handled) event.preventDefault()
+    if (handled) {
+      event.preventDefault()
+      // Escape cleared this tree's selection; it goes no further.
+      if (event.key === 'Escape' || event.key === 'ContextMenu' || event.key === 'F10') event.stopPropagation()
+    }
   }
 
   // The full name, for a row whose label is shorter: on hover and on focus.
@@ -323,6 +438,8 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     const box = element.getBoundingClientRect()
     setTip({ key: row.key, text, left: Math.max(8, box.left + 24), top: box.bottom + 4, focused })
   }
+  // An edit (a wrap, an undo) can give a row another name: its tip goes.
+  useEffect(() => { setTip(null) }, [model])
   useEffect(() => {
     if (!tip) return undefined
     const tree = treeRef.current
@@ -375,7 +492,8 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     const gutter = state?.breakpoint ?? null
     const status = state?.status ?? null
     const { breakpoint, issue } = rowFlags(row, gutter)
-    const selected = row.key === selectedKey
+    const selected = isSelected(row)
+    const multiSelected = multiActive && selected
     const group = row.kind === 'phase' || row.kind === 'transaction' || row.kind === 'subtransaction'
     const room = width - rowChrome(row, { breakpoint, issue }, status)
     const shown = width > 0 ? fitOutlineName(row.label, room, text => measure(fontOf(row), text), row.short) : row.label
@@ -396,22 +514,51 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         aria-posinset={row.posInSet}
         aria-setsize={row.setSize}
         aria-expanded={row.expandable ? row.expanded : undefined}
-        aria-selected={row.select ? selected : undefined}
+        aria-selected={row.select || (multiSelect && outlineRowSelectable(row)) ? selected : undefined}
         aria-current={status === 'current' ? 'step' : undefined}
         aria-keyshortcuts={gutter ? 'F9' : undefined}
         aria-describedby={tip?.key === row.key ? `${id}-tip` : undefined}
         tabIndex={row.key === tabStop ? 0 : -1}
-        className={`script-outline-row kind-${row.kind}${group ? ' group' : ''}${selected ? ' selected' : ''}${row.measuredAs ? ' measured' : ''}${status === 'current' ? ' current' : ''}`}
+        className={`script-outline-row kind-${row.kind}${group ? ' group' : ''}${selected ? ' selected' : ''}${multiSelected ? ' multi-selected' : ''}${row.measuredAs ? ' measured' : ''}${status === 'current' ? ' current' : ''}`}
         style={{ ...style, paddingLeft: indent, ['--outline-level' as string]: row.level }}
         onClick={event => {
           setFocusKey(row.key)
           // The chevron opens or closes; the rest of the row selects.
-          if (row.expandable && (event.target as HTMLElement).closest('.script-outline-toggle')) toggleRow(row)
-          else activate(row)
+          if (row.expandable && (event.target as HTMLElement).closest('.script-outline-toggle')) { toggleRow(row); return }
+          if (multiSelect) {
+            const mac = isMacLike()
+            // On macOS Ctrl-click is the context menu (contextmenu handles it).
+            if (mac && event.ctrlKey) return
+            if (event.shiftKey && outlineRowSelectable(row)) {
+              if (!anchorKey.current || !rows.some(candidate => candidate.key === anchorKey.current)) anchorKey.current = selectedKey
+              multiSelect.onChange(rangeKeys(anchorKey.current, index))
+              return
+            }
+            if ((mac ? event.metaKey : event.ctrlKey) && outlineRowSelectable(row)) {
+              const keys = currentKeys()
+              anchorKey.current = row.key
+              multiSelect.onChange(keys.includes(row.key) ? keys.filter(key => key !== row.key) : [...keys, row.key])
+              return
+            }
+            anchorKey.current = row.key
+            if (multiActive) multiSelect.onChange([])
+          }
+          activate(row)
         }}
+        onContextMenu={multiSelect && outlineRowSelectable(row) ? event => {
+          event.preventDefault()
+          setFocusKey(row.key)
+          openMenu(row, { x: event.clientX, y: event.clientY })
+        } : undefined}
         // Not on the chevron: opening and closing a block quickly is two clicks there.
         onDoubleClick={gutter ? event => { if (!(event.target as HTMLElement).closest('.script-outline-toggle')) toggleBreakpoint() } : undefined}
         onKeyDown={onKeyDown}
+        // A Shift-click selects a range, not the text between.
+        onMouseDown={multiSelect ? event => {
+          if (!event.shiftKey) return
+          event.preventDefault()
+          event.currentTarget.focus({ preventScroll: true })
+        } : undefined}
         onFocus={event => { if (event.target === event.currentTarget) { setFocusKey(row.key); showTip(row, shown, event.currentTarget, true) } }}
         onBlur={() => setTip(null)}
         onMouseEnter={event => showTip(row, shown, event.currentTarget, false)}
@@ -443,8 +590,20 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   }
 
   const groupCount = model.groupsByKey.size
+  const selectionCount = multiKeys?.size || 0
   return (
     <>
+      {multiSelect && selectionCount > 1 ? (
+        <div className="script-outline-selection" role="toolbar" aria-label="Selected steps">
+          <span>{selectionCount} selected</span>
+          <TooltipButton type="button" className="btn btn-secondary btn-sm" disabled={Boolean(multiSelect.wrapUnavailable)} title={multiSelect.wrapUnavailable || 'Wrap the selected steps in a named transaction'} onClick={event => { const box = event.currentTarget.getBoundingClientRect(); multiSelect.onWrap({ x: box.left, y: box.bottom + 4 }) }}>Wrap in transaction…</TooltipButton>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => {
+            // The bar goes; focus returns to the tree.
+            pendingFocus.current = tabStop ?? null
+            multiSelect.onChange([])
+          }}>Clear</button>
+        </div>
+      ) : (
       <div className="script-outline-tools">
         <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => update(current => ({ ...current, base: 'expanded', flipped: new Set(), collapsedPhases: new Set() }))}>Expand all</button>
         <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => update(current => ({ ...current, base: 'collapsed', flipped: new Set() }))}>Collapse all</button>
@@ -453,8 +612,9 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
           <span>Show markers</span>
         </label>
       </div>
+      )}
       {/* A tree with no steps to own is not a tree (a search that matches nothing). */}
-      <div ref={treeRef} className="script-outline-treeview" role={rows.length ? 'tree' : undefined} aria-label={rows.length ? 'Script steps' : undefined}>
+      <div ref={treeRef} className="script-outline-treeview" role={rows.length ? 'tree' : undefined} aria-label={rows.length ? 'Script steps' : undefined} aria-multiselectable={rows.length && multiSelect ? true : undefined}>
         {virtual ? (
           <div className="script-outline-virtual" style={{ height: virtualizer.getTotalSize() }}>
             {virtualizer.getVirtualItems().map(item => renderRow(rows[item.index], item.index, { position: 'absolute', top: 0, left: 0, right: 0, height: ROW_HEIGHT, transform: `translateY(${item.start}px)` }))}
@@ -462,6 +622,7 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         ) : rows.map((row, index) => renderRow(row, index))}
         {!rows.length && <p className="script-outline-empty">{query.trim() ? 'No matching steps' : 'No actions'}</p>}
       </div>
+      {multiSelect && <span className="sr-only" aria-live="polite">{selectionCount > 1 ? `${selectionCount} selected` : ''}</span>}
       {tip && createPortal(<div id={`${id}-tip`} role="tooltip" className="ux-tooltip" style={{ left: tip.left, top: tip.top }}>{tip.text}</div>, document.body)}
     </>
   )

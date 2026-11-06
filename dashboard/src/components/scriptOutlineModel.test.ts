@@ -4,6 +4,7 @@ import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { buildScriptPhaseActionRows } from './scriptEditorWorkbench'
 import {
   buildOutlineModel,
+  carryGroupKeys,
   commonNamePrefix,
   dropNamePrefix,
   fitOutlineName,
@@ -293,5 +294,33 @@ describe('renameTransactionMarker', () => {
   it('splits a sub-transaction name into its parent and its own name', () => {
     expect(splitMeasureName('T02||HostConfigController/ACTION$getConfigData')).toEqual({ parent: 'T02', child: 'HostConfigController/ACTION$getConfigData' })
     expect(splitMeasureName('Alone')).toEqual({ parent: '', child: 'Alone' })
+  })
+})
+
+describe('carryGroupKeys', () => {
+  const pair = (name: string, step: string) => [marker('start', name), request(step), marker('end', name)]
+  const keyOf = (model: OutlineModel, name: string, nth = 1) => [...model.groupsByKey.entries()].filter(([, group]) => group.name === name)[nth - 1]?.[0]
+
+  it('follows a group through another of the same name being renamed or removed', () => {
+    const first = pair('A', 'one')
+    const second = pair('A', 'two')
+    const before = modelOf([...first, ...second])
+    const secondKey = keyOf(before, 'A', 2)!
+    const firstKey = keyOf(before, 'A', 1)!
+    // The first A renamed: the second keeps its state under its new key, A#1.
+    const renamed = modelOf([{ ...first[0], params: { function: 'lr_start_transaction', args: ['C'] } }, first[1], { ...first[2], params: { function: 'lr_end_transaction', args: ['C', 'LR_AUTO'] } }, ...second])
+    expect(carryGroupKeys(before, renamed, [secondKey])).toEqual([keyOf(renamed, 'A')])
+    expect(carryGroupKeys(before, renamed, [firstKey])).toEqual([keyOf(renamed, 'C')])
+    // The first A removed: its state is not passed to the second, now A#1.
+    const removed = modelOf(second)
+    expect(carryGroupKeys(before, removed, [firstKey])).toEqual([])
+    expect(carryGroupKeys(before, removed, [secondKey])).toEqual([keyOf(removed, 'A')])
+  })
+
+  it('keeps a key in use when the edit copied every step', () => {
+    const actions = [...pair('A', 'one'), ...pair('B', 'two')]
+    const before = modelOf(actions)
+    const after = modelOf([request('new'), ...structuredClone(actions)])
+    expect(carryGroupKeys(before, after, [keyOf(before, 'B')!])).toEqual([keyOf(after, 'B')])
   })
 })

@@ -151,3 +151,67 @@ test('Author creates, reverses, validates, edits source and saves without losing
   await expect(page.getByRole('button', { name: 'Undo document change', exact: true }).locator('svg')).toHaveCSS('fill', 'none')
   await page.screenshot({ path: testInfo.outputPath('author-operator-experience.png'), fullPage: true })
 })
+
+test('Author wraps outline steps in a transaction from the row menu', async ({ page }) => {
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
+  const request = page.context().request
+  const workspace = await createWorkspace(request)
+  const step = (name: string, target: string) => ({ name, type: 'request', method: 'GET', target })
+  const id = idOf(await json(await request.post('/api/v1/scripts', { data: { project_id: workspace.projectId, script: {
+    name: 'Author_transaction_wrap', version: '1.0', protocol: 'http', config: { base_url: 'http://127.0.0.1:18787' },
+    actions: [step('Home', '/'), step('Cart', '/cart'), step('Pay', '/pay'),
+      { name: 'Poll cart', type: 'control_loop', control: { count: 2, steps: [step('Read cart', '/cart/1'), step('Price cart', '/cart/1/price')] } }],
+  } } })))
+  await page.setViewportSize({ width: 1600, height: 1000 })
+  await page.goto(`/#/scripts?mode=edit&scriptId=${id}&${scopeQuery(workspace)}`)
+  if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
+  const outline = page.getByRole('navigation', { name: 'Script outline' })
+
+  // Cmd/Ctrl-click two steps, then right-click one of them.
+  await outline.getByRole('treeitem', { name: /^Home GET/ }).click()
+  await outline.getByRole('treeitem', { name: /^Cart GET/ }).click({ modifiers: ['ControlOrMeta'] })
+  await expect(outline.getByRole('toolbar', { name: 'Selected steps' })).toContainText('2 selected')
+  await outline.getByRole('treeitem', { name: /^Cart GET/ }).click({ button: 'right' })
+  const menu = page.getByRole('menu', { name: 'Actions for 2 selected rows' })
+  await expect(menu.getByRole('menuitem', { name: 'Wrap 2 rows in transaction…' })).toBeFocused()
+  await expect(menu.getByRole('menuitem', { name: 'Duplicate' })).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Enter')
+  let dialog = page.getByRole('dialog', { name: 'Wrap in transaction' })
+  await expect(dialog.getByLabel('Transaction name')).toBeFocused()
+  await dialog.getByLabel('Transaction name').fill('Checkout')
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(outline.getByRole('treeitem', { name: /^Checkout 2 steps/ })).toBeFocused()
+
+  // A right-click on a row not selected selects it and keeps focus in the menu; Escape returns it.
+  const pay = outline.getByRole('treeitem', { name: /^Pay GET/ })
+  await pay.click({ button: 'right' })
+  await expect(page.getByRole('menu', { name: 'Step actions' }).getByRole('menuitem', { name: 'Wrap in transaction…' })).toBeFocused()
+  await expect(pay).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('menu')).toHaveCount(0)
+  await expect(pay).toBeFocused()
+
+  // Inside a loop, by keyboard: Shift+Down extends, Shift+F10 opens the menu.
+  // (Selecting a row moves focus to its editor, so keys go to the row itself.)
+  const loop = outline.getByRole('treeitem', { name: /^Poll cart Loop/ })
+  await loop.click()
+  await loop.press('ArrowRight')
+  const readCart = outline.getByRole('treeitem', { name: /^Read cart GET/ })
+  await readCart.click()
+  await readCart.press('Shift+ArrowDown')
+  await expect(outline.getByRole('toolbar', { name: 'Selected steps' })).toContainText('2 selected')
+  await outline.getByRole('treeitem', { name: /^Price cart GET/ }).press('Shift+F10')
+  await page.getByRole('menu', { name: 'Actions for 2 selected rows' }).getByRole('menuitem', { name: 'Wrap 2 rows in transaction…' }).click()
+  dialog = page.getByRole('dialog', { name: 'Wrap in transaction' })
+  await dialog.getByLabel('Transaction name').fill('Cart poll')
+  await dialog.getByRole('button', { name: 'Wrap', exact: true }).click()
+
+  await page.keyboard.press('ControlOrMeta+s')
+  await expectEditorSaved(page)
+  const saved = await json(await request.get(`/api/v1/scripts/${id}`)) as { script?: { actions?: Array<{ name: string; params?: { args?: string[] }; control?: { steps?: Array<{ name: string }> } }> } }
+  const actions = saved.script?.actions || []
+  expect(actions.map(action => action.name)).toEqual(['Start Checkout transaction', 'Home', 'Cart', 'End Checkout transaction', 'Pay', 'Poll cart'])
+  expect(actions[3].params?.args).toEqual(['Checkout', 'LR_AUTO'])
+  expect(actions[5].control?.steps?.map(child => child.name)).toEqual(['Start Cart poll transaction', 'Read cart', 'Price cart', 'End Cart poll transaction'])
+})

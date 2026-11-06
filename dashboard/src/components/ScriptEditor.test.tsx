@@ -1860,6 +1860,83 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('wraps outline rows in a transaction from the row menu, and undo restores them', async () => {
+    const platform = Object.getOwnPropertyDescriptor(navigator, 'platform')
+    Object.defineProperty(navigator, 'platform', { configurable: true, value: 'Win32' })
+    try {
+      const flowScript: ScriptDefinition = { ...initialScript, actions: [
+        { ...initialScript.actions[0], name: 'Home', target: '/home' },
+        { ...initialScript.actions[0], name: 'Cart', target: '/cart' },
+        { ...initialScript.actions[0], name: 'Pay', method: 'POST', target: '/pay' },
+      ] }
+      await act(async () => { root.render(<ScriptEditor initialScript={flowScript} />) })
+      const tree = container.querySelector('nav[aria-label="Script outline"] [role="tree"]')!
+      const items = () => Array.from(tree.querySelectorAll('[role="treeitem"]')).map(item => `${item.getAttribute('aria-level')}:${item.getAttribute('data-tooltip')}`)
+      const row = (name: string) => tree.querySelector<HTMLElement>(`[role="treeitem"][data-tooltip="${name}"]`)!
+      expect(tree.getAttribute('aria-multiselectable')).toBe('true')
+
+      await act(async () => { row('Home').dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await act(async () => { row('Cart').dispatchEvent(new MouseEvent('click', { bubbles: true, ctrlKey: true })) })
+      expect(container.querySelector('.script-outline-selection')?.textContent).toContain('2 selected')
+      await act(async () => { row('Cart').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 60 })) })
+
+      const menu = document.querySelector('[role="menu"]')!
+      const menuItem = (label: string) => Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')).find(item => item.textContent === label)
+      expect(menuItem('Duplicate')?.getAttribute('aria-disabled')).toBe('true')
+      expect(menuItem('Delete 2 rows')).toBeDefined()
+      await act(async () => { menuItem('Wrap 2 rows in transaction…')!.click() })
+      expect(document.querySelector('[role="menu"]')).toBeNull()
+
+      const dialog = document.querySelector<HTMLFormElement>('form[role="dialog"]')!
+      const name = dialog.querySelector<HTMLInputElement>('input[aria-label="Transaction name"]')!
+      expect(name.value).toBe('Transaction 1')
+      expect(dialog.textContent).toContain('Times the 2 selected rows')
+      await act(async () => { changeInputValue(name, 'Checkout') })
+      await act(async () => { findButtonByText(dialog, 'Wrap')!.click() })
+
+      expect(document.querySelector('form[role="dialog"]')).toBeNull()
+      expect(items()).toEqual(['1:Actions', '2:Checkout', '3:Home', '3:Cart', '2:Pay'])
+      expect(container.textContent).toContain('Wrapped 2 rows in transaction Checkout.')
+
+      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="Undo document change"]')!.click() })
+      expect(items()).toEqual(['1:Actions', '2:Home', '2:Cart', '2:Pay'])
+    } finally {
+      if (platform) Object.defineProperty(navigator, 'platform', platform)
+      else delete (navigator as unknown as Record<string, unknown>).platform
+    }
+  })
+
+  it('renames and removes a transaction from its outline row menu', async () => {
+    const marker = (fn: string) => ({ name: `${fn} Checkout`, type: 'source_transaction', params: { function: fn, args: fn.includes('end') ? ['Checkout', 'LR_AUTO'] : ['Checkout'] } }) as unknown as ScriptDefinition['actions'][number]
+    const transactionScript: ScriptDefinition = { ...initialScript, actions: [
+      marker('lr_start_transaction'),
+      { ...initialScript.actions[0], name: 'Cart', target: '/cart' },
+      marker('lr_end_transaction'),
+      { ...initialScript.actions[0], name: 'Pay', method: 'POST', target: '/pay' },
+    ] }
+    await act(async () => { root.render(<ScriptEditor initialScript={transactionScript} />) })
+    const tree = container.querySelector('nav[aria-label="Script outline"] [role="tree"]')!
+    const items = () => Array.from(tree.querySelectorAll('[role="treeitem"]')).map(item => `${item.getAttribute('aria-level')}:${item.getAttribute('data-tooltip')}`)
+    const openMenu = async (name: string) => {
+      const target = tree.querySelector<HTMLElement>(`[role="treeitem"][data-tooltip="${name}"]`)!
+      await act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', shiftKey: true, bubbles: true, cancelable: true })) })
+      return (label: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="menu"] [role="menuitem"]')).find(item => item.textContent === label)!
+    }
+
+    let choose = await openMenu('Checkout')
+    await act(async () => { choose('Rename transaction…').click() })
+    const dialog = document.querySelector<HTMLFormElement>('form[role="dialog"]')!
+    expect(dialog.querySelector('h3')?.textContent).toBe('Rename transaction')
+    await act(async () => { changeInputValue(dialog.querySelector<HTMLInputElement>('input')!, 'Basket') })
+    await act(async () => { findButtonByText(dialog, 'Rename')!.click() })
+    expect(items()).toEqual(['1:Actions', '2:Basket', '3:Cart', '2:Pay'])
+
+    choose = await openMenu('Basket')
+    await act(async () => { choose('Remove transaction').click() })
+    expect(items()).toEqual(['1:Actions', '2:Cart', '2:Pay'])
+    expect(container.textContent).toContain('Removed the transaction Basket; its steps stay.')
+  })
+
   it('renders grouped HTTP sequence actions with parent summary details', async () => {
     const sequenceScript: ScriptDefinition = {
       ...initialScript,

@@ -8330,3 +8330,22 @@ span.script-outline-gutter { cursor: inherit; }
 .debugger-settings-popover .debug-har-options { grid-column: 1 / -1; }
 .debug-har-options legend { margin-bottom: 12px; font-weight: 600; }
 .debug-har-options p { grid-column: 1 / -1; }
+/* Author outline: several rows selected (Cmd/Ctrl-click, Shift-click), with a bar to act on them. */
+.script-outline-treeview .script-outline-row.multi-selected { background: var(--accent-soft); box-shadow: inset 3px 0 var(--accent); }
+.script-outline-treeview .script-outline-row.multi-selected:hover { background: var(--accent-soft); }
+.script-outline-selection { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-height: 28px; padding: 0 8px 4px; font-size: 12px; }
+.script-outline-selection > span { margin-right: auto; color: var(--text-secondary); font-weight: 600; }
+.script-outline-selection .btn { min-height: 24px; padding: 2px 8px; }
+/* Naming a transaction (TransactionNameDialog): a small panel beside the outline, on document.body. */
+.txn-name-dialog { position: fixed; z-index: 1000; display: grid; gap: 8px; box-sizing: border-box; width: min(320px, calc((100vw - 16px) * var(--dashboard-zoom-inverse, 1))); margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); color: var(--text-primary); font-size: 13px; }
+.txn-name-dialog h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.txn-name-field { display: grid; gap: 4px; }
+.txn-name-field > span { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+.txn-name-field input { box-sizing: border-box; width: 100%; min-height: 32px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.txn-name-field input:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.txn-name-field input[aria-invalid="true"] { border-color: var(--danger); }
+.txn-name-problem { color: var(--danger-text); font-size: 12px; }
+.txn-name-warning { color: var(--text-secondary); font-size: 12px; }
+.txn-name-timing { display: inline-flex; gap: 4px; }
+.txn-name-summary { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
+.txn-name-actions { display: flex; justify-content: flex-end; gap: 6px; }

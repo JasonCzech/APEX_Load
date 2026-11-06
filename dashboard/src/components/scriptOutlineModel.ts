@@ -439,10 +439,11 @@ function rowItem(row: ScriptPhaseActionRow): DebugRailRenderRow {
   return { kind: 'action', key: debugSequenceKey(row.phase, row.actionIndex), depth: 0, row }
 }
 
-function nodeRows(node: OutlineNode): ScriptPhaseActionRow[] {
+/** The phase rows a node covers: a group's markers and every step inside it, a folded step's markers. */
+export function outlineNodeRows(node: OutlineNode): ScriptPhaseActionRow[] {
   if (node.kind === 'step') return node.measuredAs ? [node.measuredAs.start, node.row, node.measuredAs.end] : [node.row]
   if (node.kind === 'marker') return [node.row]
-  return [...(node.start ? [node.start] : []), ...node.children.flatMap(nodeRows), ...(node.end ? [node.end] : [])]
+  return [...(node.start ? [node.start] : []), ...node.children.flatMap(outlineNodeRows), ...(node.end ? [node.end] : [])]
 }
 
 /** Whether a request or step inside a sequence or block (at any depth) matches the search. */
@@ -495,7 +496,7 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
         const expanded = Boolean(container) && (searchOpens || view.expandedContainers.has(node.key))
         out.push({
           key: node.key, level, kind: 'step', label: node.label, short: node.short, occurrence: node.occurrence, title: node.title, badge: node.badge,
-          expandable: Boolean(container), expanded, parentKey, select: rowItem(node.row), rows: nodeRows(node), measuredAs: node.measuredAs, posInSet: 0, setSize: 0,
+          expandable: Boolean(container), expanded, parentKey, select: rowItem(node.row), rows: outlineNodeRows(node), measuredAs: node.measuredAs, posInSet: 0, setSize: 0,
         })
         if (expanded) {
           const [head, ...nested] = buildDebugRailRenderRows([node.row], searchOpens ? openingEveryBlock(node.row, view.expandedContainers) : view.expandedContainers)
@@ -538,7 +539,7 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
         key: node.key, level, kind: node.kind, label: node.label, occurrence: node.occurrence, title: node.name,
         badge: `${node.stepCount} step${node.stepCount === 1 ? '' : 's'}`,
         expandable: node.children.length > 0, expanded: expanded && node.children.length > 0, parentKey,
-        select: node.start ? rowItem(node.start) : undefined, rows: nodeRows(node), posInSet: 0, setSize: 0,
+        select: node.start ? rowItem(node.start) : undefined, rows: outlineNodeRows(node), posInSet: 0, setSize: 0,
       })
       if (expanded) walk(node.children, level + 1, node.key, forced)
     }
@@ -567,6 +568,62 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
   }
   for (const list of siblings.values()) list.forEach((row, index) => { row.posInSet = index + 1; row.setSize = list.length })
   return out
+}
+
+/**
+ * The key `group` (of an earlier model) has in `model`, found by its first row,
+ * which a rename does not move: its start marker, or a tagged run's first step
+ * (whose innermost enclosing group is the run). Null when no group is there.
+ */
+export function outlineGroupKeyAfterEdit(model: OutlineModel, group: OutlineGroup): string | null {
+  const first = group.start ?? outlineNodeRows(group)[0]
+  if (!first) return null
+  const key = model.rowKeyByAction.get(debugSequenceKey(first.phase, first.actionIndex))
+  if (!key) return null
+  if (model.groupsByKey.has(key)) return key
+  const ancestors = model.ancestorsByKey.get(key) || []
+  const innermost = ancestors[ancestors.length - 1]
+  return innermost && model.groupsByKey.has(innermost) ? innermost : null
+}
+
+/**
+ * Where the groups `keys` of `before` are in `after`, the outline of the same
+ * script after an edit. Group keys hold a name and an occurrence number, so a
+ * key can change (a rename) or come to name another group (one named alike was
+ * removed). A group is followed by the step it starts with, when the edit kept
+ * that step as it was; else a key still in use stays; else (a renamed group,
+ * whose start marker changed) by the position of its first row, when that
+ * leads to a key that is new.
+ */
+export function carryGroupKeys(before: OutlineModel, after: OutlineModel, keys: Iterable<string>): string[] {
+  const firstAction = (group: OutlineGroup) => (group.start ?? outlineNodeRows(group)[0])?.action
+  const afterByAction = new Map<object, string>()
+  for (const [key, group] of after.groupsByKey) {
+    const action = firstAction(group)
+    if (action && !afterByAction.has(action)) afterByAction.set(action, key)
+  }
+  const followed = new Map<string, string>()
+  for (const [key, group] of before.groupsByKey) {
+    const action = firstAction(group)
+    const next = action ? afterByAction.get(action) : undefined
+    if (next) followed.set(key, next)
+  }
+  const claimed = new Set(followed.values())
+  const out = new Set<string>()
+  for (const key of keys) {
+    const followedTo = followed.get(key)
+    if (followedTo) { out.add(followedTo); continue }
+    if (after.groupsByKey.has(key) && !claimed.has(key)) { out.add(key); continue }
+    const group = before.groupsByKey.get(key)
+    const renamed = group ? outlineGroupKeyAfterEdit(after, group) : null
+    if (renamed && !claimed.has(renamed) && !before.groupsByKey.has(renamed)) out.add(renamed)
+  }
+  return [...out]
+}
+
+/** Rows that can join the outline's multi-selection: not a phase, not Debug's "All requests". */
+export function outlineRowSelectable(row: OutlineRow): boolean {
+  return row.kind !== 'phase' && !row.allRequests
 }
 
 /** The groups that start collapsed: all of them in a long script, none otherwise. */
