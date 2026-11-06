@@ -34,7 +34,11 @@ const (
 
 var ErrBrowserRecordingActive = errors.New("a browser recording is already in progress on this controller")
 
-const DefaultBrowserRecordingStopTimeout = 20 * time.Second
+// DefaultBrowserRecordingStopTimeout is how long a graceful stop may run before
+// the watchdog force-finishes it. It outlasts the recorder's own end-to-end stop
+// budget, so the watchdog never stops the driver while the HAR is still being
+// exported.
+const DefaultBrowserRecordingStopTimeout = recbrowser.MaxStopDuration + 15*time.Second
 const DefaultBrowserRecordingRetention = 24 * time.Hour
 
 // RecorderBackend abstracts recbrowser.Recorder so manager and handler
@@ -145,6 +149,9 @@ type BrowserRecordingSession struct {
 	Markers              []recbrowser.Marker              `json:"markers,omitempty"`
 	Annotations          []recbrowser.Annotation          `json:"annotations,omitempty"`
 	Warnings             []string                         `json:"warnings,omitempty"`
+	// HARFinalization reports how the side-car HAR export finished, or why
+	// it did not, without any captured value.
+	HARFinalization *recbrowser.HARFinalization `json:"har_finalization,omitempty"`
 
 	mu      sync.RWMutex
 	backend RecorderBackend
@@ -963,6 +970,11 @@ func (m *BrowserRecordingManager) finishStop(session *BrowserRecordingSession) {
 		if final != nil && !session.curated {
 			session.final = recoverLateBrowserRecordingArtifact(session.final, final)
 			reconcileBrowserRecordingArtifactCountsLocked(session, session.final)
+		} else if final != nil && session.final != nil && (len(final.HAR) > 0 || lateHARReportsOwnCause(final)) {
+			// The operator's step edits stay; the HAR the graceful stop
+			// finished, or its own reason for having none, is still adopted.
+			adoptLateBrowserRecordingHARLocked(session.final, final)
+			reconcileBrowserRecordingArtifactCountsLocked(session, session.final)
 		}
 		session.mu.Unlock()
 		return
@@ -1034,6 +1046,7 @@ func reconcileBrowserRecordingArtifactCountsLocked(session *BrowserRecordingSess
 	// fixes the single-session GET.
 	session.HARAvailable = len(artifact.HAR) > 0
 	session.StorageStateReady = len(artifact.StorageState) > 0
+	session.HARFinalization = artifact.HARFinalization.Clone()
 }
 
 func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *recbrowser.Session {
@@ -1058,7 +1071,54 @@ func recoverLateBrowserRecordingArtifact(existing, late *recbrowser.Session) *re
 			late.Warnings = append(late.Warnings, warning)
 		}
 	}
+	// A late result that brings no HAR keeps the force-finish report unless it
+	// knows a cause the force did not create (a size limit, an invalid
+	// archive, a processing budget): an in-progress phase, or an export the
+	// force itself cut short, reads as force-finished.
+	if len(late.HAR) == 0 {
+		lateReport := late.HARFinalization
+		ownCause := lateHARReportsOwnCause(late)
+		switch {
+		case ownCause:
+		case existing.HARFinalization != nil:
+			late.HARFinalization = existing.HARFinalization.Clone()
+		case lateReport != nil:
+			lateReport.Phase, lateReport.Reason = recbrowser.HARFinalizationFailed, recbrowser.HARFinalizationForceStopped
+		}
+	}
 	return late
+}
+
+// lateHARReportsOwnCause reports a late result without a HAR whose report
+// names a cause the force did not create.
+func lateHARReportsOwnCause(late *recbrowser.Session) bool {
+	report := late.HARFinalization
+	return len(late.HAR) == 0 && report != nil && report.Phase == recbrowser.HARFinalizationFailed && !forcedHARFailureReason(report.Reason)
+}
+
+// forcedHARFailureReason is a HAR failure a forced finish causes itself. The
+// recorder already reports an export a force cut short as force_stopped, so
+// a late export_failed or export_budget_exhausted is the export's own cause.
+func forcedHARFailureReason(reason string) bool {
+	switch reason {
+	case "", recbrowser.HARFinalizationForceStopped:
+		return true
+	}
+	return false
+}
+
+// adoptLateBrowserRecordingHARLocked copies a late result's HAR, its report
+// and its warnings onto a curated artifact, leaving the steps alone.
+func adoptLateBrowserRecordingHARLocked(curated, late *recbrowser.Session) {
+	if len(late.HAR) > 0 {
+		curated.HAR = append([]byte(nil), late.HAR...)
+	}
+	curated.HARFinalization = late.HARFinalization.Clone()
+	for _, warning := range late.Warnings {
+		if warning != "" && strings.Contains(warning, "HAR") && !browserRecordingStringSliceContains(curated.Warnings, warning) {
+			curated.Warnings = append(curated.Warnings, warning)
+		}
+	}
 }
 
 func browserRecordingStringSliceContains(values []string, want string) bool {
@@ -1090,6 +1150,18 @@ func finalizeForcedBrowserRecordingArtifact(session *recbrowser.Session, stopped
 	session.OpenTransactions = nil
 	if warning != "" {
 		session.Warnings = append(session.Warnings, warning)
+	}
+	// A forced finish stops the driver, so an unfinished HAR export never
+	// completes; say so rather than leaving it reported as exporting.
+	if len(session.HAR) == 0 && (session.HARFinalization != nil || session.HARPath != "") {
+		report := session.HARFinalization.Clone()
+		if report == nil {
+			report = &recbrowser.HARFinalization{}
+		}
+		if report.Phase != recbrowser.HARFinalizationFailed {
+			report.Phase, report.Reason = recbrowser.HARFinalizationFailed, recbrowser.HARFinalizationForceStopped
+		}
+		session.HARFinalization = report
 	}
 }
 
@@ -1336,6 +1408,7 @@ func (s *BrowserRecordingSession) summaryLocked() *BrowserRecordingSession {
 		Picking:              s.Picking,
 		HARAvailable:         s.HARAvailable,
 		StorageStateReady:    s.StorageStateReady,
+		HARFinalization:      s.HARFinalization.Clone(),
 	}
 }
 
@@ -1362,6 +1435,9 @@ func (s *BrowserRecordingSession) fullSnapshot() *BrowserRecordingSession {
 	clone.OpenTransactions = artifact.OpenTransactions
 	clone.HARAvailable = len(artifact.HAR) > 0
 	clone.StorageStateReady = len(artifact.StorageState) > 0
+	if artifact.HARFinalization != nil {
+		clone.HARFinalization = artifact.HARFinalization.Clone()
+	}
 	if artifact.DeviceProfile != "" {
 		clone.DeviceProfile = artifact.DeviceProfile
 	}

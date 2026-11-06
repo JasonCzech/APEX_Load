@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"golang.org/x/text/encoding/charmap"
 	"hash/fnv"
 	"io"
@@ -1063,6 +1064,12 @@ func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(in
 			if resolvedOK {
 				redactedValue = "[FILE:" + strings.TrimSpace(strings.TrimPrefix(expr, "file.")) + "]"
 			}
+		} else if resolvedOK && strings.HasPrefix(expr, "env.") && credential.SensitiveEnvName(strings.TrimSpace(strings.TrimPrefix(expr, "env."))) {
+			// An allowlisted {{env.*}} name that reads as a credential
+			// (PW, CLIENT_SCRT, ACCESS_TKN) holds one: evidence shows it as
+			// a secret reference does.
+			hasRedaction = true
+			redactedValue = "[REDACTED]"
 		}
 		if resolvedOK && transform != nil {
 			var err error

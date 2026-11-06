@@ -75,6 +75,10 @@ function selectorQuality(step: BrowserRecorderStep): { tone: 'high' | 'medium' |
 const INTERACTION_KINDS = new Set(['click', 'fill', 'select', 'press_key', 'set_files'])
 
 const LIVE_STATUSES = new Set(['recording', 'paused', 'stopping'])
+// How often, and for how long, a force-finished recording checks for a HAR its
+// graceful stop finishes late (the recorder's stop budget is under two minutes).
+const LATE_HAR_POLL_MS = 3000
+const LATE_HAR_POLL_WINDOW_MS = 120_000
 const CONTROLLABLE_STATUSES = new Set(['recording', 'paused'])
 const IMPORT_DRAFT_EXPIRED_MESSAGE = 'This credential-preserving import draft has expired. Re-run the import before saving, editing, or changing it.'
 
@@ -120,6 +124,34 @@ function statusLabel(session: BrowserRecorderSession): string {
     default:
       return session.status
   }
+}
+
+const HAR_UNAVAILABLE_REASONS: Record<string, string> = {
+  export_budget_exhausted: 'The HAR export did not finish within its time budget.',
+  writer_not_confirmed: 'The HAR export did not finish and could not be confirmed stopped, so the archive was not read.',
+  export_failed: 'The HAR export failed.',
+  archive_invalid: 'The HAR archive was incomplete or invalid.',
+  processing_budget_exhausted: 'The HAR was exported but could not be processed within its time budget.',
+  size_limit: 'The HAR exceeded the capture size limit and was discarded.',
+  browser_closed_before_export: 'The browser closed before the HAR could be exported.',
+  force_stopped: 'The recording was force-finished before the HAR was finalized.',
+}
+
+// The HAR stat follows the recording: capturing while live, finalizing while
+// stopping, and Unavailable (not "Capturing") once a stop produced no HAR.
+function harStatLabel(session: BrowserRecorderSession): string {
+  if (session.har_available) return 'Ready'
+  if (!session.capture_har) return 'Off'
+  if (session.status === 'recording' || session.status === 'paused') return 'Capturing'
+  // A stop can still be closing the browser after the export already failed.
+  if (session.status === 'stopping' && session.har_finalization?.phase !== 'unavailable') return 'Finalizing'
+  return 'Unavailable'
+}
+
+function harStatTitle(session: BrowserRecorderSession): string | undefined {
+  if (harStatLabel(session) !== 'Unavailable') return undefined
+  const reason = session.har_finalization?.reason
+  return (reason && HAR_UNAVAILABLE_REASONS[reason]) || 'No HAR was produced for this recording; see the warnings for details.'
 }
 
 function safeRecordingFileName(name?: string): string {
@@ -610,6 +642,18 @@ export default function BrowserRecorderControlPanel({
     const interval = setInterval(refresh, 1500)
     return () => clearInterval(interval)
   }, [live, refresh])
+
+  // A force-finish can cut the HAR short while the graceful stop is still
+  // finishing it; the controller adopts that late HAR without a status change,
+  // so keep checking for a bounded time after a forced finish without one.
+  const awaitingLateHAR = !!session && session.status === 'stopped' && session.stop_reason === 'forced' &&
+    session.capture_har && !session.har_available && session.har_finalization?.reason === 'force_stopped'
+  useEffect(() => {
+    if (!awaitingLateHAR) return
+    const interval = setInterval(refresh, LATE_HAR_POLL_MS)
+    const timeout = setTimeout(() => clearInterval(interval), LATE_HAR_POLL_WINDOW_MS)
+    return () => { clearInterval(interval); clearTimeout(timeout) }
+  }, [awaitingLateHAR, refresh])
 
   useEffect(() => {
     if (session && !scriptName) {
@@ -1831,8 +1875,8 @@ export default function BrowserRecorderControlPanel({
           <span className="rec-stat-value">{session.websocket_count}</span>
           <span className="rec-stat-label">WebSockets</span>
         </div>
-        <div className="rec-stat">
-          <span className="rec-stat-value">{session.har_available ? 'Ready' : session.capture_har ? 'Capturing' : 'Off'}</span>
+        <div className="rec-stat" title={harStatTitle(session)}>
+          <span className="rec-stat-value">{harStatLabel(session)}</span>
           <span className="rec-stat-label">HAR</span>
         </div>
         {/* An older controller sends no capture_hovers: it always recorded hovers, so say nothing rather than "Not recorded". */}

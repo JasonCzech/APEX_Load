@@ -189,12 +189,41 @@ func recordCmd() {
 
 	interrupt := make(chan os.Signal, 1)
 	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	interrupted := false
 	select {
 	case <-recorder.Done():
 	case <-interrupt:
+		interrupted = true
 	}
 
+	if !args.noHAR {
+		again := "Press Ctrl-C to force-finish (the HAR may be lost), and again to quit."
+		if interrupted {
+			again = "Press Ctrl-C again to force-finish (the HAR may be lost), and a third time to quit."
+		}
+		fmt.Fprintln(os.Stderr, "Finishing the recording and its HAR; a long recording can take a minute. "+again)
+	}
+	// A second interrupt force-finishes: the captured steps are kept and the
+	// HAR export is abandoned, instead of the interrupt being swallowed.
+	stopDone := make(chan struct{})
+	forceDone := make(chan struct{})
+	go func() {
+		defer close(forceDone)
+		select {
+		case <-interrupt:
+			fmt.Fprintln(os.Stderr, "Force-finishing the recording...")
+			// Hand the next interrupt back to the default handler, which ends
+			// the process, in case a HAR already being processed keeps Stop.
+			signal.Stop(interrupt)
+			recorder.ForceStop()
+		case <-stopDone:
+		}
+	}()
 	session, err := recorder.Stop()
+	close(stopDone)
+	// A force that started still closes the browser before the driver and
+	// removes the temporary HAR; exiting first would leave both to chance.
+	<-forceDone
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "error: stop recorder: %v\n", err)
 		os.Exit(exitCodeControllerOrTransport)

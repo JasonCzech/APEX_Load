@@ -367,7 +367,7 @@ func (tr *TestRunner) repairLegacyStoredScenarioRuntime(scenario *storage.Scenar
 		return nil
 	}
 	changed := false
-	protectedRoot, rootValues, rootChanged, err := protectLegacyRuntimeOverrideSecrets(
+	protectedRoot, rootValues, rootChanged, err := protectStoredRuntimeOverrideSecrets(
 		scenario.ID, -1, nil, decodeStoredRuntimeSettings(scenario.RuntimeSettings),
 	)
 	for name := range rootValues {
@@ -382,7 +382,7 @@ func (tr *TestRunner) repairLegacyStoredScenarioRuntime(scenario *storage.Scenar
 		changed = true
 	}
 	for index := range scripts {
-		protected, values, groupChanged, protectErr := protectLegacyRuntimeOverrideSecrets(
+		protected, values, groupChanged, protectErr := protectStoredRuntimeOverrideSecrets(
 			scenario.ID, index, nil, decodeStoredRuntimeSettings(scripts[index].RuntimeSettings),
 		)
 		for name := range values {
@@ -1180,7 +1180,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	// script can be trusted. No value is written to the project secret store:
 	// unattributed historical rows must never gain secret-write authority during
 	// startup, failover, or an ordinary read.
-	protectedRuntimeSettings, rootValues, rootChanged, err := protectLegacyRuntimeOverrideSecrets(test.ID, -1, nil, test.RuntimeSettings)
+	protectedRuntimeSettings, rootValues, rootChanged, err := protectStoredRuntimeOverrideSecrets(test.ID, -1, nil, test.RuntimeSettings)
 	if err != nil {
 		return fmt.Errorf("protect restored test runtime credentials: %w", err)
 	}
@@ -1194,7 +1194,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	runtimeOverridesChanged := rootChanged
 	protectedGroupSettings := make([]*RuntimeSettingsOverride, len(test.Groups))
 	for index := range test.Groups {
-		protected, values, changed, protectErr := protectLegacyRuntimeOverrideSecrets(test.ID, index, test.Groups[index].script, test.Groups[index].RuntimeSettings)
+		protected, values, changed, protectErr := protectStoredRuntimeOverrideSecrets(test.ID, index, test.Groups[index].script, test.Groups[index].RuntimeSettings)
 		if protectErr != nil {
 			clearValues(values)
 			return fmt.Errorf("protect restored group[%d] runtime credentials: %w", index, protectErr)
@@ -1404,7 +1404,9 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] restore redaction config: %w", index, err)
 		}
-		_, projectedRuntimeSecrets, err := protectRuntimeOverrideSecrets(test.ID, index, group.script, mergeRuntimeSettings(test.RuntimeSettings, group.RuntimeSettings), false)
+		// A restore classifies env keys by the rule the row was stored under,
+		// like the repair before it, so a literal it kept stays a literal.
+		_, projectedRuntimeSecrets, _, err := protectRuntimeOverrideSecretsWithOptions(test.ID, index, group.script, mergeRuntimeSettings(test.RuntimeSettings, group.RuntimeSettings), false, false, true)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] restore runtime credentials: %w", index, err)
 		}

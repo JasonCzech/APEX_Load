@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"reflect"
 	"strings"
 	"testing"
@@ -357,12 +358,12 @@ func TestSecretEnvKey(t *testing.T) {
 		want string
 	}{
 		{"name attribute", Step{Element: &selector.ElementMetadata{Name: "user_password"}}, "USER_PW"},
-		{"id fallback", Step{Element: &selector.ElementMetadata{ID: "loginPwd"}}, "LOGINPWD"},
+		{"id fallback", Step{Element: &selector.ElementMetadata{ID: "loginPwd"}}, "LOGINPWD_PW"},
 		{"placeholder with punctuation", Step{Element: &selector.ElementMetadata{Placeholder: "Your password!"}}, "YOUR_PW"},
-		{"digit prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "2fa-code"}}, "REC_2FA_CODE"},
+		{"digit prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "2fa-code"}}, "REC_2FA_CODE_PW"},
 		{"secret word shortened", Step{Element: &selector.ElementMetadata{Name: "client_secret"}}, "CLIENT_SCRT"},
 		{"token word shortened", Step{Element: &selector.ElementMetadata{ID: "otp-token"}}, "OTP_TKN"},
-		{"cloud prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "aws_key"}}, "REC_AWS_KEY"},
+		{"cloud prefix gets REC prefix", Step{Element: &selector.ElementMetadata{Name: "aws_key"}}, "REC_AWS_KEY_PW"},
 		{"no element falls back", Step{}, "PW"},
 		{"non-alphanumeric only falls back", Step{Element: &selector.ElementMetadata{Name: "----"}}, "PW"},
 	}
@@ -376,6 +377,11 @@ func TestSecretEnvKey(t *testing.T) {
 			// operator allows it.
 			if engine.ScriptEnvKeyAlwaysBlocked(got) {
 				t.Errorf("secretEnvKey() = %q, which scripts can never read", got)
+			}
+			// The name of a masked fill reads as a credential, so its value is
+			// stored as a secret and masked when supplied at run time.
+			if !credential.SensitiveEnvName(got) {
+				t.Errorf("secretEnvKey() = %q, which is not masked as a credential", got)
 			}
 		})
 	}

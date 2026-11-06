@@ -254,3 +254,22 @@ func TestConvertSignInMovesOnlyTheLeadingSignInRun(t *testing.T) {
 		t.Fatalf("warnings = %v, want the split sign-in reported", result.Warnings)
 	}
 }
+
+// A long pause between two fills of a search-as-you-type field is reading the
+// results: each query keeps its own fill, and the requests it caused.
+func TestConvertDoesNotMergeFillsAcrossALongPause(t *testing.T) {
+	search := qualityElement("input", "search")
+	session := &Session{ID: "rec_typeahead", StartURL: "https://app.example.test/form", StartedAt: ts(0)}
+	session.appendStep(qualityStep(StepFill, search, 1000, "acme"))
+	session.appendStep(qualityStep(StepFill, search, 9000, "acme corp"))
+	session.appendStep(qualityStep(StepFill, search, 9800, "acme corpo"))
+
+	result := Convert(session, ConvertOptions{})
+	fills := fillActions(t, result)
+	if len(fills) != 2 {
+		t.Fatalf("actions = %v, want the first query and the merged second burst", actionTypes(result.Script.Actions))
+	}
+	if got := result.Script.Actions[fills[1]].Value; got != "acme corpo" {
+		t.Fatalf("second fill = %q, want the burst's final value", got)
+	}
+}

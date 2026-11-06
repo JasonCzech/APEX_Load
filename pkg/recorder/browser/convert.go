@@ -1289,6 +1289,12 @@ func secretEnvKey(step Step) string {
 	}
 	for _, raw := range candidates {
 		if key := scriptReadableEnvKey(sanitizeEnvKey(raw)); key != "" {
+			// The fill is masked, so its name must read as a credential:
+			// runtime settings then store the value as a secret reference
+			// and mask it (loginPwd, 2fa-code would not).
+			if !credential.SensitiveEnvName(key) {
+				key += "_PW"
+			}
 			return key
 		}
 	}

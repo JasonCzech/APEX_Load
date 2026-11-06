@@ -287,6 +287,10 @@ type Session struct {
 	Warnings            []string         `json:"warnings,omitempty"`
 	CapHits             map[string]int64 `json:"cap_hits,omitempty"`
 	retainedMarkerBytes int
+
+	// HARFinalization reports how the side-car HAR export finished, or why
+	// it did not. Nil when the recording captured no HAR.
+	HARFinalization *HARFinalization `json:"har_finalization,omitempty"`
 }
 
 var validStepKinds = map[string]bool{
@@ -539,6 +543,7 @@ func (s *Session) clone() *Session {
 	if len(s.StorageState) > 0 {
 		clone.StorageState = append([]byte(nil), s.StorageState...)
 	}
+	clone.HARFinalization = s.HARFinalization.Clone()
 	return &clone
 }
 

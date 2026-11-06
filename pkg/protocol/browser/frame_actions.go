@@ -698,28 +698,40 @@ func (b *Browser) dispatchSwitchWindow(ctx context.Context, action *protocol.Act
 	// the switch began; an older one counts only after a grace period, so a
 	// popup still loading wins over the opener showing the same page.
 	// Windows opened since the last switch (a popup an earlier step opened
-	// included) count as new; before any switch, every window but the current
-	// one does.
+	// included) count as new; before any switch, every window but the first
+	// one does (an activated popup is current, but still new).
 	existing := b.windowsAtLastSwitch
 	if existing == nil {
 		existing = map[playwright.Page]bool{}
-		if current := b.currentPage(); current != nil {
+		if pages := b.contextPages(); len(pages) > 0 {
+			existing[pages[0]] = true
+		} else if current := b.currentPage(); current != nil {
 			existing[current] = true
 		}
 	}
 	started := time.Now()
 	grace := min(timeout/2, 2*time.Second)
+	// The current window is the one meant only when the switch goes back to
+	// it: a window closed since the last switch (the popup this returns
+	// from). Otherwise a switch whose window has not opened must not settle
+	// on the one already in front, which can show the same page.
 	for {
-		err := b.trySwitchWindow(action, windowMatchScope{existing: existing, allowOlder: time.Since(started) >= grace})
+		// Checked on each attempt: the popup this returns from often closes
+		// itself while the switch is already waiting.
+		returning := b.windowClosedSinceLastSwitch() || b.returnAfterClose
+		// A return still waits out the grace: the window it means may be a
+		// popup opening late after one closed.
+		pastGrace := time.Since(started) >= grace
+		scope := windowMatchScope{existing: existing, allowOlder: pastGrace, allowCurrent: returning && pastGrace}
+		err := b.trySwitchWindow(action, scope)
 		if err == nil {
 			b.rememberWindowsAtSwitch()
 			return nil
 		}
 		select {
 		case <-switchCtx.Done():
-			// The window showing the recorded page may be the current one;
-			// accept it only once no other window has appeared in time.
-			if b.trySwitchWindow(action, windowMatchScope{existing: existing, allowOlder: true, allowCurrent: true}) == nil {
+			// A window still blank at the timeout is not the one meant.
+			if b.trySwitchWindow(action, windowMatchScope{existing: existing, allowOlder: true, allowCurrent: b.windowClosedSinceLastSwitch() || b.returnAfterClose, ignoreLoading: true}) == nil {
 				b.rememberWindowsAtSwitch()
 				return nil
 			}
@@ -729,7 +741,33 @@ func (b *Browser) dispatchSwitchWindow(ctx context.Context, action *protocol.Act
 	}
 }
 
+// switchScopeAction is an action that leaves a pending return in place: the
+// switch itself, another close, or a wait between them.
+func switchScopeAction(actionType string) bool {
+	actionType = strings.ToLower(strings.TrimSpace(actionType))
+	return actionType == "browser_switch_window" || actionType == "browser_close_window" || strings.HasPrefix(actionType, "browser_wait")
+}
+
+// windowClosedSinceLastSwitch reports a window open at the last switch that
+// has closed since.
+func (b *Browser) windowClosedSinceLastSwitch() bool {
+	if len(b.windowsAtLastSwitch) == 0 {
+		return false
+	}
+	open := map[playwright.Page]bool{}
+	for _, page := range b.contextPages() {
+		open[page] = true
+	}
+	for page := range b.windowsAtLastSwitch {
+		if !open[page] {
+			return true
+		}
+	}
+	return false
+}
+
 func (b *Browser) rememberWindowsAtSwitch() {
+	b.returnAfterClose = false
 	open := map[playwright.Page]bool{}
 	for _, page := range b.contextPages() {
 		open[page] = true
@@ -743,6 +781,9 @@ type windowMatchScope struct {
 	existing     map[playwright.Page]bool
 	allowOlder   bool
 	allowCurrent bool
+	// ignoreLoading skips new windows still showing about:blank instead of
+	// waiting for them.
+	ignoreLoading bool
 }
 
 // trySwitchWindow switches to the window the action names. Matching by page
@@ -819,24 +860,46 @@ func (b *Browser) trySwitchWindow(action *protocol.Action, scope windowMatchScop
 	return fmt.Errorf("browser_switch_window could not find page matching %q", target)
 }
 
-// newestWindowShowingPage returns the most recently opened page other than
-// current whose URL has the page key want, or current itself when allowed and
-// no other page has it; nil if none.
+// newestWindowShowingPage returns the window whose URL has the page key want:
+// the newest window opened since the last switch (current or not, since an
+// activated popup is current already); after the grace (allowOlder) an older
+// one; the current one only when allowed. A new window still showing
+// about:blank may be the one meant: until the grace ends it outranks another
+// new window, and until the timeout an older or the current one. After the
+// grace, a window that stays blank (a document.write helper) no longer holds
+// up a loaded new window that matches.
 func newestWindowShowingPage(pages []playwright.Page, want string, current playwright.Page, scope windowMatchScope) playwright.Page {
 	var older, currentMatch playwright.Page
+	waitForBlank := !scope.allowOlder && !scope.ignoreLoading
+	sawBlank := false
 	for index := len(pages) - 1; index >= 0; index-- {
-		key, ok := browsercontract.WindowPageKey(pages[index].URL())
+		page := pages[index]
+		pageURL := page.URL()
+		isNew := !scope.existing[page]
+		if isNew && (pageURL == "" || pageURL == "about:blank") {
+			sawBlank = true
+			continue
+		}
+		key, ok := browsercontract.WindowPageKey(pageURL)
 		if !ok || key != want {
 			continue
 		}
 		switch {
-		case pages[index] == current:
-			currentMatch = pages[index]
-		case !scope.existing[pages[index]]:
-			return pages[index]
+		case isNew && !(sawBlank && waitForBlank):
+			return page
+		case isNew:
+			// A newer window is still loading; it may be the one meant.
+			return nil
+		case page == current:
+			currentMatch = page
 		case older == nil:
-			older = pages[index]
+			older = page
 		}
+	}
+	// An older or the current window never wins while a new one is still
+	// blank, until the switch times out.
+	if sawBlank && !scope.ignoreLoading {
+		return nil
 	}
 	if scope.allowOlder && older != nil {
 		return older
@@ -889,6 +952,11 @@ func (b *Browser) tryCloseWindow(ctx context.Context, action *protocol.Action) (
 	}
 	b.censorDocumentEvidence(targetPage, "context_closed")
 	b.removePage(targetPage)
+	// A window a step closed ends its switch scope. A switch right after the
+	// close goes back to a window still open; one after another action (a
+	// click opening a new popup) is not a return.
+	delete(b.windowsAtLastSwitch, targetPage)
+	b.returnAfterClose = true
 	b.mu.Lock()
 	if b.refusedPage == targetPage {
 		b.refusedPage, b.refusedURL, b.refusal = nil, "", ""

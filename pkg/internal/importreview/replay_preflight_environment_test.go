@@ -155,3 +155,17 @@ func TestBuildReplayPreflightScansParallelBranchesLikeSteps(t *testing.T) {
 		t.Fatalf("required = %q, want the branch step's name and not its metadata's", got)
 	}
 }
+
+// A messaging send carries its string metadata as headers, so an {{env.*}}
+// name there is read; a recorder note in another step's metadata is not.
+func TestBuildReplayPreflightReadsEnvironmentInSentMessagingMetadata(t *testing.T) {
+	t.Setenv(engine.EnvScriptEnvAllowlist, "")
+	script := &dsl.Script{Name: "Kafka", Version: "1", Protocol: "kafka", Actions: []dsl.Action{{
+		Name: "send", Type: "kafka_produce", Target: "orders", Body: "{}",
+		Metadata: map[string]any{"x-api-tkn": "{{env.APEXLOAD_PREFLIGHT_HEADER}}"},
+	}}}
+	preflight := BuildReplayPreflight(script, nil, nil, nil, noProjectSecrets)
+	if got := strings.Join(preflight.RequiredEnvironment, ","); got != "APEXLOAD_PREFLIGHT_HEADER" {
+		t.Fatalf("required = %q, want the header's env name", got)
+	}
+}

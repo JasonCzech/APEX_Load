@@ -106,10 +106,22 @@ export type BrowserRecorderSession = {
   picking?: boolean
   har_available: boolean
   storage_state_available?: boolean
+  /** How the side-car HAR export finished, or why it did not. Older controllers omit it. */
+  har_finalization?: BrowserRecorderHARFinalization
   steps?: BrowserRecorderStep[]
   markers?: BrowserRecorderMarker[]
   annotations?: BrowserRecorderAnnotation[]
   warnings?: string[]
+}
+
+export interface BrowserRecorderHARFinalization {
+  phase: 'exporting' | 'processing' | 'complete' | 'unavailable' | string
+  reason?: string
+  writer_completed: boolean
+  export_ms?: number
+  process_ms?: number
+  archive_bytes?: number
+  budget_ms?: number
 }
 
 // A login state saved from one of the project's browser recordings; path is

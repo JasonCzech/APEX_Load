@@ -82,12 +82,21 @@ func ReadableScriptEnvName(key string) string {
 // arbitrary field names. It errs toward protecting: an ordinary env name with
 // a CRED or PW component (CRED_SCORE) is treated as a credential too.
 func ReadableCredentialEnvName(name string) bool {
-	for _, part := range strings.FieldsFunc(strings.ToUpper(strings.TrimSpace(name)), func(r rune) bool {
+	parts := strings.FieldsFunc(strings.ToUpper(strings.TrimSpace(name)), func(r rune) bool {
 		return r == '_' || r == '-' || r == '.' || r == ' '
-	}) {
+	})
+	// As in SensitiveName, a credential word followed by a final property
+	// word (PW_MIN_LENGTH, CRED_TYPE) names a property, not the credential.
+	describesCredential := false
+	if len(parts) > 1 {
+		_, describesCredential = credentialPropertyWords[NormalizeName(parts[len(parts)-1])]
+	}
+	for index, part := range parts {
 		switch part {
 		case "TKN", "SCRT", "PRIVKEY", "CRED", "PW":
-			return true
+			if !(describesCredential && index < len(parts)-1) {
+				return true
+			}
 		}
 	}
 	return false

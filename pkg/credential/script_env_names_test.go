@@ -92,3 +92,18 @@ func TestReadableScriptEnvNameNeverRebuildsABlockedName(t *testing.T) {
 		}
 	}
 }
+
+// A credential word followed by a property word names a property of the
+// credential, as SensitiveName already treats it.
+func TestReadableCredentialEnvNameSkipsPropertyNames(t *testing.T) {
+	for _, name := range []string{"PW_MIN_LENGTH", "CRED_TYPE", "TKN_TTL", "API_TKN_EXPIRES"} {
+		if ReadableCredentialEnvName(name) || SensitiveEnvName(name) {
+			t.Errorf("%s treated as a credential", name)
+		}
+	}
+	for _, name := range []string{"PW", "API_TKN", "CLIENT_SCRT", "LOGIN_PW", "PW_2"} {
+		if !ReadableCredentialEnvName(name) {
+			t.Errorf("%s not treated as a credential", name)
+		}
+	}
+}

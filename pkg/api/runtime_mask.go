@@ -47,7 +47,16 @@ type managedTestMaskOptions struct {
 func sensitiveEnvKey(name string) bool {
 	// A readable name an import wrote for a credential (API_TKN for
 	// API_TOKEN) is one too.
-	if scrub.SensitiveName(name) || credential.SensitiveEnvName(name) {
+	return credential.SensitiveEnvName(name) || legacySensitiveEnvKey(name)
+}
+
+// legacySensitiveEnvKey is the rule stored rows were classified by before
+// readable credential names existed. Repairing a legacy row moves a literal
+// it matches into an unattributed secret reference and drops the value, so
+// that repair keeps this rule: a stored CRED_ID or API_TKN literal written
+// under it is kept, while new saves use sensitiveEnvKey.
+func legacySensitiveEnvKey(name string) bool {
+	if scrub.SensitiveName(name) {
 		return true
 	}
 	normalized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(name)))
@@ -115,8 +124,13 @@ func sensitiveEnvValue(value string) bool {
 // replaced by scrub.Redacted. The input is never mutated; a nil input returns nil.
 // Library export, sync-link and import-claim hashes, manifests and provenance
 // use this form, so it never changes for stored content.
+//
+// Its env keys are classified by legacySensitiveEnvKey, the rule stored rows
+// were written under: a literal a stored row keeps (CRED_ID) keeps its hash.
+// New saves store readable credential names as secret references, so the
+// wider rule adds nothing here.
 func maskRuntimeSettings(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
-	return maskRuntimeSettingsShowingReferences(o, false)
+	return maskRuntimeSettingsWithKeyRule(o, false, legacySensitiveEnvKey)
 }
 
 // maskRuntimeSettingsForEditor is maskRuntimeSettings for a scenario response
@@ -129,6 +143,10 @@ func maskRuntimeSettingsForEditor(o *RuntimeSettingsOverride) *RuntimeSettingsOv
 }
 
 func maskRuntimeSettingsShowingReferences(o *RuntimeSettingsOverride, showReferences bool) *RuntimeSettingsOverride {
+	return maskRuntimeSettingsWithKeyRule(o, showReferences, sensitiveEnvKey)
+}
+
+func maskRuntimeSettingsWithKeyRule(o *RuntimeSettingsOverride, showReferences bool, sensitiveKey func(string) bool) *RuntimeSettingsOverride {
 	if o == nil {
 		return nil
 	}
@@ -137,7 +155,7 @@ func maskRuntimeSettingsShowingReferences(o *RuntimeSettingsOverride, showRefere
 		if showReferences && runtimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(value)) && !isReservedRuntimeOverrideSecretReference(value) {
 			continue
 		}
-		if value != "" && (sensitiveEnvKey(key) || sensitiveEnvValue(value)) {
+		if value != "" && (sensitiveKey(key) || sensitiveEnvValue(value)) {
 			clone.Env[key] = scrub.Redacted
 		}
 	}

@@ -95,12 +95,12 @@ func Candidates(meta ElementMetadata) []Candidate {
 			confidence = ConfidenceVolatileAuraID
 			reason = "Lightning Web Components id, which gets a generated numeric suffix at render; ranked below role/text fallbacks because it changes between page loads."
 		}
-		out = append(out, Candidate{
+		out = append(out, demoteIfRecordSpecific(Candidate{
 			Kind:       "css",
 			Value:      idSelector,
 			Confidence: confidence,
 			Reason:     reason,
-		})
+		}, RecordSpecificID(value)))
 	}
 	if value := strings.TrimSpace(meta.AriaLabel); value != "" {
 		confidence := ConfidenceAriaLabel
@@ -109,12 +109,12 @@ func Candidates(meta ElementMetadata) []Candidate {
 			confidence = ConfidenceLightningAriaLabel
 			reason = "Lightning component ARIA label captured at recording time."
 		}
-		out = append(out, Candidate{
+		out = append(out, demoteIfRecordSpecific(Candidate{
 			Kind:       "css",
 			Value:      tagPrefixed(tag, CSSAttributeSelector("aria-label", value)),
 			Confidence: confidence,
 			Reason:     reason,
-		})
+		}, RecordSpecificText(value)))
 	}
 	if lightningElement {
 		if value := strings.TrimSpace(meta.Attributes["data-aura-class"]); value != "" {
@@ -126,12 +126,12 @@ func Candidates(meta ElementMetadata) []Candidate {
 			})
 		}
 		if value := strings.TrimSpace(meta.Attributes["title"]); value != "" {
-			out = append(out, Candidate{
+			out = append(out, demoteIfRecordSpecific(Candidate{
 				Kind:       "css",
 				Value:      tagPrefixed(tag, CSSAttributeSelector("title", value)),
 				Confidence: ConfidenceLightningTitle,
 				Reason:     "Lightning component title captured at recording time.",
-			})
+			}, RecordSpecificText(value)))
 		}
 	}
 	if value := strings.TrimSpace(meta.Name); value != "" {
@@ -156,15 +156,17 @@ func Candidates(meta ElementMetadata) []Candidate {
 				confidence = ConfidenceLightningRoleName
 				reason = "Lightning accessible role and name captured at recording time."
 			}
-			out = append(out, Candidate{
+			out = append(out, demoteIfRecordSpecific(Candidate{
 				Kind:       "role",
 				Value:      RoleSelector(role, accessibleName),
 				Confidence: confidence,
 				Reason:     reason,
-			})
+			}, RecordSpecificText(accessibleName)))
 		}
 	}
 	if value := strings.TrimSpace(meta.Placeholder); value != "" {
+		// A placeholder describes the expected input ("e.g. 0412345678"),
+		// never the record open, so its digits are no reason to demote it.
 		out = append(out, Candidate{
 			Kind:       "css",
 			Value:      tagPrefixed(tag, CSSAttributeSelector("placeholder", value)),
@@ -185,12 +187,12 @@ func Candidates(meta ElementMetadata) []Candidate {
 		})
 	}
 	if value := shortText(meta.Text); value != "" {
-		out = append(out, Candidate{
+		out = append(out, demoteIfRecordSpecific(Candidate{
 			Kind:       "text",
 			Value:      TextSelector(value),
 			Confidence: ConfidenceText,
 			Reason:     "Visible text captured at recording time; verify uniqueness on replay.",
-		})
+		}, RecordSpecificText(value)))
 	}
 	if value := strings.TrimSpace(meta.XPath); value != "" && !meta.InShadowDOM {
 		out = append(out, Candidate{
@@ -200,7 +202,6 @@ func Candidates(meta ElementMetadata) []Candidate {
 			Reason:     "Computed XPath captured at recording time; validate stability on replay.",
 		})
 	}
-	out = demoteRecordSpecific(out, meta)
 	out = Unique(out)
 	if meta.Lightning {
 		out = visibleOnly(out)
@@ -214,7 +215,11 @@ var selectorTextToken = regexp.MustCompile(`[A-Za-z0-9-]+`)
 
 var (
 	// autoNumber is a Salesforce-style auto-number: I-0463595045, CASE-000123.
-	autoNumber = regexp.MustCompile(`^[A-Za-z]{1,6}-[0-9]{5,}$`)
+	// Six or more digits: a short code such as ISO-27001 or sku-12345 names
+	// a fixed thing, not a record.
+	autoNumber = regexp.MustCompile(`^[A-Za-z]{1,6}-[0-9]{6,}$`)
+	// phoneCue marks text that labels a phone number.
+	phoneCue = regexp.MustCompile(`(?i)\b(?:call|phone|tel|telephone|fax|toll[- ]free|mobile|sms|whatsapp)\b|\+[0-9]`)
 	// longNumber is an order, account or ticket number, or a timestamp.
 	longNumber = regexp.MustCompile(`^[0-9]{8,}$`)
 	uuidToken  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -226,8 +231,13 @@ var (
 // RecordSpecificText reports text that names one record rather than a kind of
 // element, such as the tab label "Subtabs for I-0463595045 | Interaction".
 func RecordSpecificText(text string) bool {
+	// A phone number in a label ("Call 18005551234") is the same every run.
+	phone := phoneCue.MatchString(text)
 	for _, token := range selectorTextToken.FindAllString(text, -1) {
 		token = strings.Trim(token, "-")
+		if phone && longNumber.MatchString(strings.TrimLeft(token, "+")) {
+			continue
+		}
 		if uuidToken.MatchString(token) || recordSpecificWord(token) {
 			return true
 		}
@@ -247,10 +257,10 @@ func recordSpecificWord(word string) bool {
 	switch {
 	case autoNumber.MatchString(word), longNumber.MatchString(word):
 		return true
-	case salesforceID.MatchString(word) && strings.Contains(word, "000") && strings.ContainsAny(word, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+	case salesforceRecordID(word):
 		// Ids of metadata (custom fields 00N, record types 012, layouts
 		// 00h, profiles 00e) are the same in every run of an org.
-		return !salesforceMetadataIDPrefix(word)
+		return true
 	}
 	return false
 }
@@ -264,23 +274,53 @@ func salesforceMetadataIDPrefix(id string) bool {
 	return false
 }
 
-// demoteRecordSpecific ranks below the positional candidates every candidate
-// built from an element's text or attributes that names one record. The CSS
-// path and XPath candidates, which describe position, keep their rank.
-func demoteRecordSpecific(candidates []Candidate, meta ElementMetadata) []Candidate {
-	cssPath := strings.TrimSpace(meta.CSSPath)
-	for i := range candidates {
-		candidate := &candidates[i]
-		if candidate.Kind == "xpath" || (cssPath != "" && candidate.Value == cssPath) {
-			continue
-		}
-		if candidate.Confidence <= ConfidenceRecordSpecific || !RecordSpecificText(candidate.Value) {
-			continue
-		}
-		candidate.Confidence = ConfidenceRecordSpecific
-		candidate.Reason = "Names one record (" + strings.TrimSuffix(candidate.Reason, ".") + "); the next run opens or creates another record, so this will not match it."
+// demoteIfRecordSpecific ranks a candidate below the positional ones when
+// the text it was built from names one record. Only human-visible text (an
+// ARIA label, title, role name or visible text) and ids are
+// checked: a form control's name, a test hook or an Aura class is fixed by
+// the page, whatever digits it holds (entry.1234567890, sku-12345).
+func demoteIfRecordSpecific(candidate Candidate, recordSpecific bool) Candidate {
+	if !recordSpecific || candidate.Confidence <= ConfidenceRecordSpecific {
+		return candidate
 	}
-	return candidates
+	candidate.Confidence = ConfidenceRecordSpecific
+	candidate.Reason = "Names one record (" + strings.TrimSuffix(candidate.Reason, ".") + "); the next run opens or creates another record, so this will not match it."
+	return candidate
+}
+
+// recordAutoNumberID is an auto-number inside an id, zero-padded to six or
+// more digits (tab-I-0463595045, row-CASE-000123); a short code such as
+// zip-90210 or sku-12345 is a fixed field.
+var recordAutoNumberID = regexp.MustCompile(`^[A-Za-z]{1,6}-[0-9]{6,}$`)
+
+// uuidInText finds a UUID anywhere in an id (row-3f2504e0-4f89-...).
+var uuidInText = regexp.MustCompile(`[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}`)
+
+// RecordSpecificID reports an element id that embeds a record identifier: a
+// UUID, a Salesforce record id, or a record auto-number. A bare number in an
+// id (field_20240101) is a fixed field id.
+func RecordSpecificID(id string) bool {
+	if uuidInText.MatchString(id) {
+		return true
+	}
+	for _, token := range selectorTextToken.FindAllString(id, -1) {
+		token = strings.Trim(token, "-")
+		if uuidToken.MatchString(token) || recordAutoNumberID.MatchString(token) || salesforceRecordID(token) {
+			return true
+		}
+		parts := strings.Split(token, "-")
+		for index, part := range parts {
+			if salesforceRecordID(part) || (index+1 < len(parts) && recordAutoNumberID.MatchString(part+"-"+parts[index+1])) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func salesforceRecordID(word string) bool {
+	return salesforceID.MatchString(word) && strings.Contains(word, "000") &&
+		strings.ContainsAny(word, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ") && !salesforceMetadataIDPrefix(word)
 }
 
 func dataTestAttributeName(meta ElementMetadata) string {

@@ -531,6 +531,44 @@ describe('BrowserRecorderControlPanel', () => {
     expect(stat?.querySelector('.rec-stat-value')?.textContent).toBe(want)
   })
 
+  it.each([
+    ['recording', undefined, false, 'Capturing', undefined],
+    ['stopping', { phase: 'exporting', writer_completed: false }, false, 'Finalizing', undefined],
+    ['stopping', { phase: 'processing', writer_completed: true }, false, 'Finalizing', undefined],
+    ['stopping', { phase: 'unavailable', reason: 'export_budget_exhausted', writer_completed: true }, false, 'Unavailable', 'time budget'],
+    ['stopped', { phase: 'unavailable', reason: 'processing_budget_exhausted', writer_completed: true }, false, 'Unavailable', 'could not be processed'],
+    ['stopped', { phase: 'unavailable', reason: 'writer_not_confirmed', writer_completed: false }, false, 'Unavailable', 'could not be confirmed stopped'],
+    ['stopped', undefined, false, 'Unavailable', 'see the warnings'],
+    ['stopped', { phase: 'complete', writer_completed: true }, true, 'Ready', undefined],
+  ] as const)('labels the HAR stat for a %s session (%j)', async (status, finalization, available, want, titleHas) => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: {
+      ...recordingSession, status, capture_har: true, har_available: available, har_finalization: finalization,
+    } })
+    await renderPanel()
+    const stat = Array.from(container.querySelectorAll('.rec-stat')).find(el => el.querySelector('.rec-stat-label')?.textContent === 'HAR')
+    expect(stat?.querySelector('.rec-stat-value')?.textContent).toBe(want)
+    if (titleHas) expect(stat?.getAttribute('title')).toContain(titleHas)
+    else expect(stat?.hasAttribute('title')).toBe(false)
+  })
+
+  it('keeps checking a force-finished recording for a HAR its graceful stop finishes late', async () => {
+    vi.useFakeTimers()
+    try {
+      const forced = { ...stoppedSession, stop_reason: 'forced', capture_har: true, har_available: false,
+        har_finalization: { phase: 'unavailable', reason: 'force_stopped', writer_completed: true } }
+      apiMock.getBrowserRecording.mockResolvedValueOnce({ session: forced })
+        .mockResolvedValue({ session: { ...forced, har_available: true, har_finalization: { phase: 'complete', writer_completed: true } } })
+      await renderPanel()
+      const harValue = () => Array.from(container.querySelectorAll('.rec-stat')).find(el => el.querySelector('.rec-stat-label')?.textContent === 'HAR')?.querySelector('.rec-stat-value')?.textContent
+      expect(harValue()).toBe('Unavailable')
+      await act(async () => { await vi.advanceTimersByTimeAsync(3100) })
+      expect(harValue()).toBe('Ready')
+      const calls = apiMock.getBrowserRecording.mock.calls.length
+      await act(async () => { await vi.advanceTimersByTimeAsync(10_000) })
+      expect(apiMock.getBrowserRecording.mock.calls.length).toBe(calls)
+    } finally { vi.useRealTimers() }
+  })
+
   it('says nothing about hovers for an older controller that does not report them', async () => {
     // recordingSession has no capture_hovers, as an older controller sends it.
     await renderPanel()

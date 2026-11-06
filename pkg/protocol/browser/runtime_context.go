@@ -584,6 +584,7 @@ func (b *Browser) setBrowserContext(browserContext playwright.BrowserContext) {
 	b.lastActionPopup = nil
 	b.lastDownloadOutcome = nil
 	b.windowsAtLastSwitch = nil
+	b.returnAfterClose = false
 	b.mu.Unlock()
 }
 

@@ -8,6 +8,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
+	"github.com/jasonczech/apexload/pkg/selector"
 	"reflect"
 	"slices"
 	"sort"
@@ -416,11 +417,32 @@ func ValidatePreservedImportCredentialEditsWithOptions(
 		return fmt.Errorf("script introduces new executable credentials; bind a runtime secret or run the source import again")
 	}
 	if disclosed := retainedCredentialDisclosedAtPath(rawCandidate, safeCandidate, rawPrior, safePrior, ""); disclosed != "" {
+		if selectorLocatorPath(disclosed) {
+			// A recorded locator quotes a kept value; binding that value to a
+			// runtime secret unmasks the quote, so the locator has to go with it.
+			return fmt.Errorf(
+				"this edit would show an imported credential that the recorded selector locator at %s quotes, in plain "+
+					"text: when you bind or remove a kept value, remove the recorded selector candidates and fallbacks "+
+					"that quote it in the same save (if that step keeps a value of its own, bind it first), or run the "+
+					"source import again",
+				ImportContextDisplayPath(disclosed),
+			)
+		}
 		return fmt.Errorf(
 			"this edit would show the imported credential kept at %s in plain text: restore what kept it masked "+
 				"(such as a removed or cleared source_marked_secret mark), bind it to a runtime secret, or run the "+
 				"source import again",
 			ImportContextDisplayPath(disclosed),
+		)
+	}
+	// However the steps align, no value the stored version kept masked may
+	// show in plain text after the edit: a binding that unmasks a quote of it
+	// (a click's text= selector, a title) is refused like a cleared mark.
+	if quoted := keptValueQuotedInPlainText(safeCandidate, rawPrior, safePrior); quoted != "" {
+		return fmt.Errorf(
+			"this edit would show an imported credential that %s quotes, in plain text: when you bind or remove a kept "+
+				"value, rewrite or remove every step field that quotes it in the same save, or run the source import again",
+			ImportContextDisplayPath(quoted),
 		)
 	}
 	if change, changed := retainedImportCredentialContextChangeDetail(
@@ -436,7 +458,7 @@ func ValidatePreservedImportCredentialEditsWithOptions(
 					"(first change at %s): a step could type the credential into another page or read it from "+
 					"the page. While a recording keeps a captured value you can only delete hovers, scrolls and "+
 					"fills, add or remove waits and screenshots, rename steps (unless run logic runs them by that name), and change think time or browser "+
-					"display settings; the parameters, data and run logic the steps use are held too. Bind it to a runtime secret first, or record again",
+					"display settings; the parameters, data and run logic the steps use are held too. Bind the kept values to runtime secrets first (a typed value can be bound on its own; one kept in a URL, locator or page script is bound in the same save as every other kept value), or record again",
 				change.Path,
 				change.ChangedAt,
 			)
@@ -486,6 +508,103 @@ func newProjectedCredentialAtPath(candidate, projectedCandidate, prior, projecte
 		return true, finding.positional
 	}
 	return true, ""
+}
+
+// keptValueQuotedInPlainText returns the first path in the candidate's
+// projection whose text holds, unmasked, a value the prior's projection kept
+// masked, or "".
+func keptValueQuotedInPlainText(safeCandidate, rawPrior, safePrior any) string {
+	spans := map[string]struct{}{}
+	collectMaskedSpans(rawPrior, safePrior, spans)
+	// A value the stored read already shows somewhere (an unsent step left
+	// for review) is not disclosed by the edit.
+	for span := range spans {
+		if firstPathQuotingSpan(safePrior, map[string]struct{}{span: {}}, "") != "" {
+			delete(spans, span)
+		}
+	}
+	if len(spans) == 0 {
+		return ""
+	}
+	return firstPathQuotingSpan(safeCandidate, spans, "")
+}
+
+// minQuotedKeptSpan is the shortest kept value looked for as a quote: a
+// shorter one (a PIN digit) would match ordinary text.
+const minQuotedKeptSpan = 4
+
+// collectMaskedSpans adds the raw text behind each masked span of prior's
+// projection: a whole leaf masked, or the part of a leaf a sentinel replaced.
+func collectMaskedSpans(raw, projected any, out map[string]struct{}) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		projectedMap, _ := projected.(map[string]any)
+		for key, child := range typed {
+			collectMaskedSpans(child, projectedMap[key], out)
+		}
+	case []any:
+		projectedSlice, _ := projected.([]any)
+		for index, child := range typed {
+			var projectedChild any
+			if index < len(projectedSlice) {
+				projectedChild = projectedSlice[index]
+			}
+			collectMaskedSpans(child, projectedChild, out)
+		}
+	case string:
+		masked, ok := projected.(string)
+		if !ok || !strings.Contains(masked, MaskedScriptSecret) {
+			return
+		}
+		pieces := strings.Split(masked, MaskedScriptSecret)
+		rest := typed
+		if !strings.HasPrefix(rest, pieces[0]) {
+			return
+		}
+		rest = rest[len(pieces[0]):]
+		for index, piece := range pieces[1:] {
+			var span string
+			if index == len(pieces)-2 {
+				if !strings.HasSuffix(rest, piece) {
+					return
+				}
+				span = rest[:len(rest)-len(piece)]
+			} else {
+				at := strings.Index(rest, piece)
+				if piece == "" || at < 0 {
+					return
+				}
+				span, rest = rest[:at], rest[at+len(piece):]
+			}
+			if len(span) >= minQuotedKeptSpan {
+				out[span] = struct{}{}
+			}
+		}
+	}
+}
+
+func firstPathQuotingSpan(value any, spans map[string]struct{}, path string) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range sortedMapKeys(typed) {
+			if found := firstPathQuotingSpan(typed[key], spans, AppendImportContextPath(path, key)); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for index, child := range typed {
+			if found := firstPathQuotingSpan(child, spans, AppendImportContextPath(path, strconv.Itoa(index))); found != "" {
+				return found
+			}
+		}
+	case string:
+		for span := range spans {
+			if strings.Contains(typed, span) {
+				return path
+			}
+		}
+	}
+	return ""
 }
 
 // collectMaskedLeafValues adds every scalar of raw that projected changes.
@@ -611,6 +730,18 @@ func hasNewProjectedCredentialAtPath(candidate, projectedCandidate, prior, proje
 // change what decides its masking around it: clear the mark on a recorded
 // fill, for example, and the next read would show the value. A value the
 // candidate masks whole, or exactly as prior did, discloses nothing.
+// selectorLocatorPath reports a path inside a step's recorded selector
+// candidates or fallbacks.
+func selectorLocatorPath(path string) bool {
+	for _, segment := range strings.Split(path, "/") {
+		switch segment {
+		case selector.MetadataCandidatesKey, selector.MetadataFallbacksKey, "source_target_selector_candidates":
+			return true
+		}
+	}
+	return false
+}
+
 func retainedCredentialDisclosedAtPath(candidate, projectedCandidate, prior, projectedPrior any, path string) string {
 	switch typed := candidate.(type) {
 	case map[string]any:

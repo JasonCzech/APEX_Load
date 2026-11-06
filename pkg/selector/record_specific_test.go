@@ -21,6 +21,7 @@ func TestRecordSpecificText(t *testing.T) {
 		"Search Customer", "Interaction Type", "input-237", "Customer_Search",
 		"brandBand_3", "Account Name", "555-1234", "Comfy", "Workspace tabs for Customer Central",
 		"00N5e00000ABcDe", "0125e000000AbCd",
+		"Call 18005551234", "Phone: +4412345678901", "ISO-27001 certified",
 	} {
 		if RecordSpecificText(text) {
 			t.Errorf("RecordSpecificText(%q) = true, want false", text)
@@ -57,5 +58,37 @@ func TestCandidatesKeepStableLabels(t *testing.T) {
 	candidates := Candidates(ElementMetadata{Tag: "button", AriaLabel: "Search Customer", CSSPath: "#app > button"})
 	if candidates[0].Confidence != ConfidenceAriaLabel {
 		t.Fatalf("best candidate = %+v, want the ARIA label kept first", candidates[0])
+	}
+}
+
+// Fixed form fields keep their rank whatever digits their name, id or test
+// hook holds; record numbers in visible text and record ids still demote.
+func TestCandidatesKeepFixedFieldsWithDigits(t *testing.T) {
+	top := func(meta ElementMetadata) Candidate {
+		meta.CSSPath, meta.XPath = "#form > div:nth-child(2) > input", "/html/body/form/div[2]/input"
+		return Candidates(meta)[0]
+	}
+	for _, meta := range []ElementMetadata{
+		{Tag: "input", Name: "entry.1234567890"},
+		{Tag: "input", ID: "field_20240101"},
+		{Tag: "input", ID: "zip-90210"},
+		{Tag: "button", DataTestID: "sku-12345"},
+		{Tag: "input", Placeholder: "e.g. 0412345678"},
+	} {
+		if got := top(meta); got.Confidence == ConfidenceRecordSpecific || got.Value == "#form > div:nth-child(2) > input" {
+			t.Errorf("%+v: top candidate %+v, want the fixed field's own selector", meta, got)
+		}
+	}
+	for _, meta := range []ElementMetadata{
+		{Tag: "a", ID: "tab-I-0463595045"},
+		{Tag: "div", ID: "row-3f2504e0-4f89-11d3-9a0c-0305e82c3301"},
+		{Tag: "a", AriaLabel: "Subtabs for I-0463595045 | Interaction"},
+		{Tag: "span", Text: "Order 2024010112"},
+	} {
+		for _, candidate := range Candidates(meta) {
+			if candidate.Kind != "xpath" && candidate.Confidence > ConfidenceRecordSpecific {
+				t.Errorf("%+v: candidate %+v kept its rank, want record-specific demotion", meta, candidate)
+			}
+		}
 	}
 }

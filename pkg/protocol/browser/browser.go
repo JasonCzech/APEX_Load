@@ -238,6 +238,9 @@ type Browser struct {
 	// windowsAtLastSwitch are the windows open at the last successful
 	// browser_switch_window; a later switch treats any other window as new.
 	windowsAtLastSwitch map[playwright.Page]bool
+	// returnAfterClose: a step closed a window and no other action ran since,
+	// so the next switch goes back to a window still open.
+	returnAfterClose bool
 }
 
 // SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.
@@ -470,6 +473,9 @@ func (b *Browser) Execute(ctx context.Context, action *protocol.Action) (*protoc
 	// following action the way the strict (default) immediate policy does.
 	dialogGuardsThisAction := dialogArmedBefore && dialogExpectImmediate && action.Type != "browser_handle_dialog"
 	b.clearActionTransientEvidence()
+	if !switchScopeAction(action.Type) {
+		b.returnAfterClose = false
+	}
 	preActionPage := b.currentPage()
 	preActionNavSeq := b.recordNavPreSequence(preActionPage)
 	actionCtx, cancel := context.WithCancel(ctx)

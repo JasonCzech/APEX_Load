@@ -3,6 +3,7 @@ package importreview
 import (
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,8 +69,9 @@ const (
 // not listed is pinned (TestImportBrowserPageStepClassesCoverCatalog keeps
 // this list complete).
 var browserStepClasses = map[string]browserStepClass{
-	// Observe only: waits run engine-quoted checks, and screenshots are
-	// dropped while a kept credential is live.
+	// Observe only: they change no page and send nothing. A screenshot can
+	// show a field a kept value was typed into; imported values are not run
+	// evidence secrets (a standing decision), so they are not suppressed.
 	"browser_wait":          browserStepInert,
 	"browser_wait_response": browserStepInert,
 	"browser_ws_wait":       browserStepInert,
@@ -190,6 +192,11 @@ type browserPageStep struct {
 	path      string
 	droppable bool
 	entry     map[string]any
+	// keptValue: the step is pinned because its own fields hold a kept value.
+	// Binding that value (or, for a droppable type, deleting the step) is not
+	// a change to the page flow the other kept values travel.
+	keptValue     bool
+	baseDroppable bool
 }
 
 // importBrowserPageSteps lists the page flow of a projected script: every
@@ -214,17 +221,19 @@ func importBrowserPageSteps(script map[string]any) ([]browserPageStep, map[strin
 				fields[key] = value
 			}
 		}
+		baseDroppable := class == browserStepDroppable
+		keptValue := false
 		if jsonValueContainsMaskedSentinel(fields) {
-			class = browserStepPinned
+			keptValue, class = true, browserStepPinned
 		}
 		if class == browserStepInert {
 			return
 		}
-		entry := map[string]any{"in": wildcardImportPathIndices(parentImportContextPath(path)), "context": context}
-		if block := importControlBlock(action); len(block) > 0 {
+		entry := map[string]any{"in": pageFlowPathPattern(parentImportContextPath(path)), "context": context}
+		if block := pageFlowControlBlock(action); len(block) > 0 {
 			entry["control"] = block
 		}
-		steps = append(steps, browserPageStep{path: path, droppable: class == browserStepDroppable, entry: entry})
+		steps = append(steps, browserPageStep{path: path, droppable: class == browserStepDroppable, entry: entry, keptValue: keptValue, baseDroppable: baseDroppable})
 	})
 	config, _ := script["config"].(map[string]any)
 	runLogic, _ := config["run_logic"].(map[string]any)
@@ -292,7 +301,7 @@ func importBrowserPageSteps(script map[string]any) ([]browserPageStep, map[strin
 				top := "/actions/" + strconv.Itoa(index)
 				for _, step := range byTop[index] {
 					member := step
-					member.entry = map[string]any{"at": wildcardImportPathIndices(strings.TrimPrefix(step.path, top)), "step": step.entry}
+					member.entry = map[string]any{"at": pageFlowPathPattern(strings.TrimPrefix(step.path, top)), "step": step.entry}
 					members = append(members, member)
 				}
 			}
@@ -353,14 +362,52 @@ func parentImportContextPath(path string) string {
 	return ""
 }
 
-func wildcardImportPathIndices(path string) string {
+// pageFlowStepLists are the containers whose numeric children are step
+// positions. Only those indices are wildcarded in the page flow; a switch
+// case or parallel branch index stays literal, so a step moved into another
+// case or branch is a change.
+var pageFlowStepLists = map[string]struct{}{
+	"init": {}, "actions": {}, "teardown": {}, "steps": {}, "else": {}, "default": {}, "requests": {},
+}
+
+func pageFlowPathPattern(path string) string {
 	segments := strings.Split(path, "/")
 	for index, segment := range segments {
-		if segment != "" && strings.Trim(segment, "0123456789") == "" {
+		if index == 0 || segment == "" || strings.Trim(segment, "0123456789") != "" {
+			continue
+		}
+		if _, stepList := pageFlowStepLists[NormalizeScriptFieldName(segments[index-1])]; stepList {
 			segments[index] = "*"
 		}
 	}
 	return strings.Join(segments, "/")
+}
+
+// pageFlowControlBlock is a control step's own settings plus, in order, each
+// switch case's and parallel branch's settings without their steps: which
+// case matches decides which pinned steps run.
+func pageFlowControlBlock(action map[string]any) map[string]any {
+	block := importControlBlock(action)
+	control, _ := action["control"].(map[string]any)
+	for _, key := range []string{"cases", "branches"} {
+		arms, _ := control[key].([]any)
+		if len(arms) == 0 {
+			continue
+		}
+		heads := make([]any, 0, len(arms))
+		for _, arm := range arms {
+			fields, _ := arm.(map[string]any)
+			head := make(map[string]any, len(fields))
+			for field, value := range fields {
+				if NormalizeScriptFieldName(field) != "steps" {
+					head[field] = value
+				}
+			}
+			heads = append(heads, head)
+		}
+		block[key] = heads
+	}
+	return block
 }
 
 // alignBrowserPageSteps checks that candidate is prior with only droppable
@@ -374,12 +421,14 @@ func alignBrowserPageSteps(candidate, prior []browserPageStep) (pairs [][2]strin
 			if next >= len(prior) {
 				return nil, step.path, true
 			}
-			if reflect.DeepEqual(step.entry, prior[next].entry) {
+			if reflect.DeepEqual(step.entry, prior[next].entry) || entryDropsOnlyLocatorLists(step.entry, prior[next].entry) ||
+				prior[next].keptValue && !step.keptValue && keptValueBindable(prior[next].entry) &&
+					(pageEntryBindsKeptValue(step.entry, prior[next].entry) || pageEntryBindsKeptValue(step.entry, priorWithoutDroppedLocatorLists(step.entry, prior[next].entry))) {
 				pairs = append(pairs, [2]string{step.path, prior[next].path})
 				next++
 				break
 			}
-			if !prior[next].droppable {
+			if !prior[next].droppable && !(prior[next].keptValue && prior[next].baseDroppable) {
 				// An added or edited step lands here too: whatever the
 				// candidate holds instead does not match this pinned one.
 				return nil, firstNonEmptyImportPath(step.path, prior[next].path), true
@@ -388,11 +437,225 @@ func alignBrowserPageSteps(candidate, prior []browserPageStep) (pairs [][2]strin
 		}
 	}
 	for ; next < len(prior); next++ {
-		if !prior[next].droppable {
+		if !prior[next].droppable && !(prior[next].keptValue && prior[next].baseDroppable) {
 			return nil, prior[next].path, true
 		}
 	}
 	return pairs, "", false
+}
+
+// pageEntryBindsKeptValue reports a candidate step that is the prior step with
+// its kept values replaced (bound to a runtime secret or cleared) and nothing
+// else changed but the marks that recorded the value as captured.
+func pageEntryBindsKeptValue(candidate, prior any) bool {
+	switch typed := prior.(type) {
+	case string:
+		if strings.Contains(typed, MaskedScriptSecret) {
+			text, ok := candidate.(string)
+			return ok && stringBindsMaskedSpans(text, typed)
+		}
+		return candidate == prior
+	case map[string]any:
+		other, ok := candidate.(map[string]any)
+		if !ok {
+			return false
+		}
+		for key, value := range typed {
+			counterpart, present := other[key]
+			if !present {
+				if keptValueMarkKey(key) {
+					continue
+				}
+				// Metadata that held only the marks is dropped with them.
+				if nested, ok := value.(map[string]any); ok && pageEntryBindsKeptValue(map[string]any{}, nested) {
+					continue
+				}
+				return false
+			}
+			if !pageEntryBindsKeptValue(counterpart, value) {
+				return false
+			}
+		}
+		for key := range other {
+			if _, present := typed[key]; !present && !keptValueMarkKey(key) {
+				return false
+			}
+		}
+		return true
+	case []any:
+		other, ok := candidate.([]any)
+		if !ok || len(other) != len(typed) {
+			return false
+		}
+		for index := range typed {
+			if !pageEntryBindsKeptValue(other[index], typed[index]) {
+				return false
+			}
+		}
+		return true
+	}
+	return reflect.DeepEqual(candidate, prior)
+}
+
+// entryDropsOnlyLocatorLists reports a candidate that is the prior step with
+// whole recorded selector-candidate or fallback lists removed. That only
+// narrows where the step can self-heal, and is how a recorded locator that
+// quotes a kept value is dropped when the value is bound.
+func entryDropsOnlyLocatorLists(candidate, prior map[string]any) bool {
+	trimmed := priorWithoutDroppedLocatorLists(candidate, prior)
+	return trimmed != nil && reflect.DeepEqual(candidate, trimmed)
+}
+
+// priorWithoutDroppedLocatorLists is prior without the recorded locator
+// lists the candidate no longer has, or nil when it dropped none.
+func priorWithoutDroppedLocatorLists(candidate, prior map[string]any) map[string]any {
+	// A run-logic group member is wrapped as {at, step}: compare its step at
+	// the same place.
+	if priorStep, wrapped := prior["step"].(map[string]any); wrapped {
+		candidateStep, _ := candidate["step"].(map[string]any)
+		if !reflect.DeepEqual(candidate["at"], prior["at"]) {
+			return nil
+		}
+		trimmed := priorWithoutDroppedLocatorLists(candidateStep, priorStep)
+		if trimmed == nil {
+			return nil
+		}
+		rebuilt := make(map[string]any, len(prior))
+		for key, value := range prior {
+			rebuilt[key] = value
+		}
+		rebuilt["step"] = trimmed
+		return rebuilt
+	}
+	priorContext, _ := prior["context"].(map[string]any)
+	priorMetadata, _ := priorContext["metadata"].(map[string]any)
+	if len(priorMetadata) == 0 {
+		return nil
+	}
+	candidateContext, _ := candidate["context"].(map[string]any)
+	candidateMetadata, _ := candidateContext["metadata"].(map[string]any)
+	trimmed := make(map[string]any, len(priorMetadata))
+	dropped := false
+	for key, value := range priorMetadata {
+		if _, kept := candidateMetadata[key]; !kept && selectorLocatorListKey(key) {
+			dropped = true
+			continue
+		}
+		trimmed[key] = value
+	}
+	if !dropped {
+		return nil
+	}
+	context := make(map[string]any, len(priorContext))
+	for key, value := range priorContext {
+		context[key] = value
+	}
+	if len(trimmed) == 0 {
+		delete(context, "metadata")
+	} else {
+		context["metadata"] = trimmed
+	}
+	rebuilt := make(map[string]any, len(prior))
+	for key, value := range prior {
+		rebuilt[key] = value
+	}
+	rebuilt["context"] = context
+	return rebuilt
+}
+
+func selectorLocatorListKey(key string) bool {
+	switch key {
+	case selector.MetadataCandidatesKey, selector.MetadataFallbacksKey, "source_target_selector_candidates":
+		return true
+	}
+	return false
+}
+
+// keptValueBindable reports a pinned step whose kept value can be bound on
+// its own while other kept values remain: only a value the step types or
+// picks (a fill, select or key press value, or a select's values). Bound
+// there, whatever the binding resolves to is typed into the same pinned
+// field. Anywhere else (a URL, a locator, a page script) a binding the
+// editor controls could choose where the step goes or what it runs, so those
+// kept values are bound together with the rest in one save.
+func keptValueBindable(entry map[string]any) bool {
+	if step, wrapped := entry["step"].(map[string]any); wrapped {
+		entry = step
+	}
+	context, _ := entry["context"].(map[string]any)
+	rest := make(map[string]any, len(context))
+	for key, value := range context {
+		switch NormalizeScriptFieldName(key) {
+		case "value", "type":
+			continue
+		case "params":
+			if params, ok := value.(map[string]any); ok {
+				trimmed := make(map[string]any, len(params))
+				for name, param := range params {
+					if NormalizeScriptFieldName(name) != "values" {
+						trimmed[name] = param
+					}
+				}
+				value = trimmed
+			}
+		case "metadata":
+			// Recorded locator lists may be dropped with the binding.
+			if metadata, ok := value.(map[string]any); ok {
+				trimmed := make(map[string]any, len(metadata))
+				for name, entry := range metadata {
+					if !selectorLocatorListKey(name) {
+						trimmed[name] = entry
+					}
+				}
+				value = trimmed
+			}
+		}
+		rest[key] = value
+	}
+	return !jsonValueContainsMaskedSentinel(rest)
+}
+
+// keptValueBinding is what a kept value may become: a runtime binding.
+var keptValueBinding = regexp.MustCompile(`^\{\{\s*(?:secret|env)\.[A-Za-z0-9_.-]+\s*\}\}$`)
+
+// stringBindsMaskedSpans reports a candidate equal to prior outside its
+// masked spans, each span replaced by a runtime binding or removed. Anything
+// else (a retargeted URL, a rewritten page script) is a change.
+func stringBindsMaskedSpans(candidate, prior string) bool {
+	pieces := strings.Split(prior, MaskedScriptSecret)
+	if !strings.HasPrefix(candidate, pieces[0]) {
+		return false
+	}
+	rest := candidate[len(pieces[0]):]
+	for index, piece := range pieces[1:] {
+		last := index == len(pieces)-2
+		var span string
+		if last {
+			if !strings.HasSuffix(rest, piece) || len(rest) < len(piece) {
+				return false
+			}
+			span, rest = rest[:len(rest)-len(piece)], ""
+		} else {
+			at := strings.Index(rest, piece)
+			if piece == "" || at < 0 {
+				// Adjacent spans cannot be told apart; refuse rather than guess.
+				return false
+			}
+			span, rest = rest[:at], rest[at+len(piece):]
+		}
+		if span != "" && !keptValueBinding.MatchString(span) {
+			return false
+		}
+	}
+	return true
+}
+
+func keptValueMarkKey(key string) bool {
+	switch NormalizeScriptFieldName(key) {
+	case "sourcemarkedsecret", "sourcemaskedsecret":
+		return true
+	}
+	return false
 }
 
 func firstNonEmptyImportPath(paths ...string) string {

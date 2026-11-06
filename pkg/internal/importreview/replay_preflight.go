@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"regexp"
 	"sort"
@@ -479,7 +480,8 @@ const ReplayUnreadableEnvironmentWarning = "environment variable(s) scripts cann
 
 const replayEnvironmentRemedy = "Set each where the script runs (this controller for replay and debugging, " +
 	"every load generator for a test) and list it in " + engine.EnvScriptEnvAllowlist + "; a name that is always " +
-	"blocked has to be renamed, here and in the {{env.*}} reference"
+	"blocked is never read from a process or pod variable, so supply it as a test's runtime environment override " +
+	"or rename it, here and in the {{env.*}} reference"
 
 // ReplayEnvironmentRefs lists the {{env.*}} names the script's executable
 // steps and configuration read, those a script cannot read, and a detail
@@ -499,7 +501,7 @@ func ReplayEnvironmentRefs(script *dsl.Script, onThisController bool) (required 
 		case status == engine.ScriptEnvKeyReadable:
 			continue
 		case status == engine.ScriptEnvKeyBlockedName:
-			reason = "the name is always blocked (it names a password, token, secret, key or credential, or a cloud or secret-store namespace)"
+			reason = "the name is always blocked from the process environment (it names a password, token, secret, key or credential, or a cloud or secret-store namespace)"
 		case !onThisController:
 			continue
 		case status == engine.ScriptEnvKeyNotAllowlisted:
@@ -542,8 +544,18 @@ func replayEnvironmentNames(script *dsl.Script) []string {
 			// A control step arrives as its shell (its condition, without the
 			// steps it holds, which are listed on their own); a parallel
 			// block's branches are walked here, step by step.
+			// Metadata records provenance, except entries a messaging send
+			// carries as headers or properties, which are interpolated.
 			executable := action
 			executable.Metadata = nil
+			for key, value := range action.Metadata {
+				if sent, _ := varflow.MetadataReads(action, key); sent {
+					if executable.Metadata == nil {
+						executable.Metadata = map[string]any{}
+					}
+					executable.Metadata[key] = value
+				}
+			}
 			if action.Control != nil && len(action.Control.Branches) > 0 {
 				control := *action.Control
 				control.Branches = nil

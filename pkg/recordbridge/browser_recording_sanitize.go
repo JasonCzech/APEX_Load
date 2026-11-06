@@ -45,6 +45,7 @@ func SanitizeBrowserRecordingSessionForResponse(session *BrowserRecordingSession
 		Picking:              session.Picking,
 		HARAvailable:         session.HARAvailable,
 		StorageStateReady:    session.StorageStateReady,
+		HARFinalization:      session.HARFinalization.Clone(),
 	}
 	if session.StoppedAt != nil {
 		stoppedAt := *session.StoppedAt

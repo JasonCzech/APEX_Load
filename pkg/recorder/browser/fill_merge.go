@@ -2,6 +2,7 @@ package browser
 
 import (
 	"strings"
+	"time"
 
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 )
@@ -12,6 +13,11 @@ import (
 // each holding the text so far. A fill replaces the field's value, so only
 // the last one decides what the field holds; the others are steps that can
 // fail, and for a masked password each one replays the whole secret again.
+
+// maxFillBurstGap is the longest pause between two fills of one burst. A
+// longer one is deliberate (reading search-as-you-type results), so each
+// fill keeps its own step and the requests it caused.
+const maxFillBurstGap = 3 * time.Second
 
 // fillBurst returns the timeline indexes of the fill at start and of the fills
 // right after it into the same field, in the same section and frame and with
@@ -35,6 +41,9 @@ func fillBurst(timeline []timelineEntry, start int) []int {
 		}
 		key, ok := fillFieldKey(*entry.step)
 		if !ok || key != field || entry.step.Masked != first.Masked || browserprotocol.IsBrowserInternalURL(entry.step.URL) {
+			break
+		}
+		if previous := timeline[burst[len(burst)-1]].timestamp; !previous.IsZero() && entry.timestamp.Sub(previous) > maxFillBurstGap {
 			break
 		}
 		burst = append(burst, next)

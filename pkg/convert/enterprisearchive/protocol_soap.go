@@ -3,6 +3,8 @@ package enterprisearchive
 // protocol_soap.go — split from converter.go (same package, behavior-preserving).
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -211,8 +213,24 @@ func sourceSOAPEndpointPlaceholder(fn ParsedFunction) string {
 		key = "SOAP_SERVICE"
 	}
 	// A service named after a token or secret would make a name scripts can
-	// never read (credential.ReadableScriptEnvName).
-	return "{{env." + credential.ReadableScriptEnvName(key+"_URL") + "}}"
+	// never read (credential.ReadableScriptEnvName). The endpoint is not a
+	// credential, so the readable service name is joined into one word: as
+	// SECURITY_TKN_SERVICE_URL it would read as a token, and be refused as a
+	// CI variable and masked as a runtime override.
+	name := credential.ReadableScriptEnvName(key + "_URL")
+	if name == key+"_URL" {
+		return "{{env." + name + "}}"
+	}
+	// The rewrite folds words (TOKEN and TOKENSVC, PASSWORD and PASSWD), so
+	// a short digest of the service as written keeps two services apart.
+	digest := sha256.Sum256([]byte(key))
+	suffix := "_" + strings.ToUpper(hex.EncodeToString(digest[:2])) + "_URL"
+	name = credential.ReadableScriptEnvName(key) + suffix
+	if credential.SensitiveEnvName(name) {
+		// One word for the service would still read as a token: join it.
+		name = strings.ReplaceAll(credential.ReadableScriptEnvName(key), "_", "") + "SVC" + suffix
+	}
+	return "{{env." + name + "}}"
 }
 
 func splitSourceSOAPMethod(value string) (service, binding, operation string) {

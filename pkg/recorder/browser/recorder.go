@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -155,6 +156,10 @@ type Recorder struct {
 	harTemp              bool
 	harCapturePath       string
 	harLimitExceeded     bool
+	harOwnedByStop       bool
+	harExportFailure     string
+	forceStopped         bool
+	stopFinished         chan struct{}
 	wsFrames             int
 	wsBytes              int
 	bindingBytes         int64
@@ -1564,6 +1569,14 @@ func (r *Recorder) Stop() (*Session, error) {
 		return session, nil
 	}
 	r.stopped = true
+	// From here the graceful stop owns the HAR capture: a ForceStop racing it
+	// must not delete an archive this stop is exporting or reading.
+	r.harOwnedByStop = r.harCapturePath != ""
+	if r.harOwnedByStop {
+		finished := make(chan struct{})
+		r.stopFinished = finished
+		defer close(finished)
+	}
 	r.mu.Unlock()
 
 	// Drain in-flight screenshot goroutines; once they observe r.stopped they
@@ -1576,6 +1589,7 @@ func (r *Recorder) Stop() (*Session, error) {
 
 	r.mu.Lock()
 	context := r.context
+	capturingHAR := r.harCapturePath != ""
 	pages := append([]playwright.Page(nil), r.recordablePagesLocked()...)
 	r.mu.Unlock()
 	if context != nil {
@@ -1604,37 +1618,28 @@ func (r *Recorder) Stop() (*Session, error) {
 			r.appendWarningLocked("browser storage-state export timed out during recorder shutdown")
 			r.mu.Unlock()
 		}
-		if r.harCapturePath == "" {
+		if !capturingHAR {
 			if err := runOperationUntil(stopDeadline, func() error { return context.Close() }, r.closeBrowserAsync); err != nil {
 				r.mu.Lock()
 				r.appendWarningLocked("browser context close timed out during recorder shutdown")
 				r.mu.Unlock()
 			}
 		} else {
-			exceeded, flushErr := policeHARFlushUntil(r.harCapturePath, maxBrowserHARCaptureBytes, func() error {
-				return context.Close()
-			}, func() {
-				r.closeBrowserAsync()
-			}, minTime(stopDeadline, time.Now().Add(maxBrowserHARFlushDuration)))
-			if exceeded {
-				r.mu.Lock()
-				r.harLimitExceeded = true
-				r.appendWarningLocked(fmt.Sprintf("side-car HAR capture exceeded %d bytes during final flush and was discarded", maxBrowserHARCaptureBytes))
-				r.mu.Unlock()
-			}
-			if flushErr != nil {
-				r.mu.Lock()
-				r.appendWarningLocked(fmt.Sprintf("side-car HAR final flush did not complete cleanly: %v", flushErr))
-				r.mu.Unlock()
-			}
+			r.finalizeHARExport(context)
 		}
 	}
-	if !r.cleanupUntil(stopDeadline) {
+	// Cleanup has its own budget: a HAR export that used its whole budget
+	// still leaves the browser time to close before the driver stops.
+	if !r.cleanupUntil(time.Now().Add(browserCleanupBudget)) {
 		r.mu.Lock()
 		r.appendWarningLocked("browser process cleanup exceeded the recorder shutdown deadline")
 		r.mu.Unlock()
 	}
 	r.signalDone()
+	// The driver has stopped, so no writer can still change the archive.
+	// Reading and filtering it runs outside the recorder lock so status reads
+	// stay answerable during a long stop.
+	harOutcome := r.processHARArchive()
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1650,26 +1655,7 @@ func (r *Recorder) Stop() (*Session, error) {
 	}
 	r.session.setMarkerBook(book)
 	if r.harCapturePath != "" {
-		if r.harLimitExceeded {
-			_ = os.Remove(r.harCapturePath)
-		} else {
-			artifact, err := loadAndFilterHARUntil(r.harCapturePath, maxBrowserHARBytes, r.opts.HARFilters, stopDeadline)
-			if err != nil {
-				r.appendWarningLocked(fmt.Sprintf("side-car HAR unavailable: %v", err))
-			} else {
-				for _, warning := range artifact.warnings(maxBrowserHARBytes) {
-					r.appendWarningLocked(warning)
-				}
-				data := artifact.data
-				r.session.HAR = data
-				if !r.harTemp && r.session.HARPath != r.harCapturePath {
-					path := r.session.HARPath
-					if writeErr := runOperationUntil(stopDeadline, func() error { return os.WriteFile(path, data, 0o600) }, nil); writeErr != nil {
-						r.appendWarningLocked(fmt.Sprintf("write side-car HAR: %v", writeErr))
-					}
-				}
-			}
-		}
+		r.applyHARArchiveLocked(harOutcome)
 		if r.harTemp {
 			_ = os.Remove(r.harCapturePath)
 			r.session.HARPath = ""
@@ -1678,7 +1664,13 @@ func (r *Recorder) Stop() (*Session, error) {
 		}
 		r.harCapturePath = ""
 		r.harLimitExceeded = false
+	} else if report := r.session.HARFinalization; report != nil && report.Phase != HARFinalizationFailed && report.Phase != HARFinalizationComplete {
+		// A ForceStop removed the capture while this stop owned it; a finished
+		// session never reports a phase still in progress.
+		report.Phase, report.Reason = HARFinalizationFailed, HARFinalizationForceStopped
+		r.appendWarningLocked("side-car HAR unavailable: the recording was force-finished before the HAR was finalized")
 	}
+	r.harOwnedByStop = false
 	return r.session, nil
 }
 
@@ -1689,7 +1681,7 @@ type harShutdownLoadResult struct {
 
 func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadline time.Time) (harArtifact, error) {
 	if !deadline.After(time.Now()) {
-		return harArtifact{}, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+		return harArtifact{}, errHARProcessingBudget
 	}
 	done := make(chan harShutdownLoadResult, 1)
 	go func() {
@@ -1706,8 +1698,8 @@ func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadlin
 	select {
 	case result := <-done:
 		return result.artifact, result.err
-	case <-time.After(durationUntil(deadline, maxBrowserStopDuration)):
-		return harArtifact{}, fmt.Errorf("HAR processing exceeded recorder shutdown deadline")
+	case <-time.After(durationUntil(deadline, harProcessingBudget)):
+		return harArtifact{}, errHARProcessingBudget
 	}
 }
 
@@ -1717,16 +1709,39 @@ func loadAndFilterHARUntil(path string, limit int64, filters HARFilters, deadlin
 func (r *Recorder) ForceStop() {
 	r.mu.Lock()
 	r.stopped = true
+	r.forceStopped = true
 	r.mu.Unlock()
 	r.signalDone()
 	_ = r.cleanupUntil(time.Now().Add(maxBrowserOperationDuration))
+	// A graceful stop that owns the capture usually finishes with it soon:
+	// the driver has just stopped, so its export returns at once. Give it a
+	// bounded wait so a shutdown lets it clean up the archive itself.
+	r.mu.Lock()
+	finished := r.stopFinished
+	r.mu.Unlock()
+	if finished != nil {
+		select {
+		case <-finished:
+		case <-time.After(forceStopHARWait):
+		}
+	}
 	r.discardManagedHARTemp()
 }
 
+// discardManagedHARTemp removes a managed HAR capture after a ForceStop.
+// A graceful stop whose export already returned owns the archive: no writer
+// is left, its read is bounded, and it removes the file when done. Before
+// that point ForceStop has stopped the driver, so the export fails and nothing
+// reads the file. The path is cleared only once the file is gone; a removal
+// refused because a reader still holds it (Windows) leaves it for the owning
+// stop.
 func (r *Recorder) discardManagedHARTemp() {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.session == nil {
-		r.mu.Unlock()
+		return
+	}
+	if report := r.session.HARFinalization; r.harOwnedByStop && report != nil && report.Phase != HARFinalizationExporting {
 		return
 	}
 	capturePath := r.harCapturePath
@@ -1734,16 +1749,15 @@ func (r *Recorder) discardManagedHARTemp() {
 		capturePath = r.session.HARPath
 	}
 	if strings.TrimSpace(capturePath) == "" || (!r.harTemp && capturePath == r.session.HARPath) {
-		r.mu.Unlock()
 		return
 	}
-	path := capturePath
+	if err := os.Remove(capturePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return
+	}
 	r.harCapturePath = ""
 	if r.harTemp {
 		r.session.HARPath = ""
 	}
-	r.mu.Unlock()
-	_ = os.Remove(path)
 }
 
 // SetSection switches the active recording section (init|actions|teardown).
@@ -2216,14 +2230,14 @@ func readFileLimited(path string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if info.Size() > limit {
-		return nil, fmt.Errorf("artifact is %d bytes; maximum is %d", info.Size(), limit)
+		return nil, fmt.Errorf("artifact is %d bytes; maximum is %d: %w", info.Size(), limit, errArtifactTooLarge)
 	}
 	data, err := io.ReadAll(io.LimitReader(file, limit+1))
 	if err != nil {
 		return nil, err
 	}
 	if int64(len(data)) > limit {
-		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes: %w", limit, errArtifactTooLarge)
 	}
 	return data, nil
 }
@@ -2396,7 +2410,7 @@ func readAttachedHARZip(path string, limit int64, filters HARFilters) (harArtifa
 	}
 	remaining := limit - int64(len(base)) - int64(len(attachments))*harAttachmentOverheadBytes
 	if remaining < 0 {
-		return harArtifact{}, fmt.Errorf("HAR document exceeds maximum of %d bytes", limit)
+		return harArtifact{}, fmt.Errorf("HAR document exceeds maximum of %d bytes: %w", limit, errArtifactTooLarge)
 	}
 	// Bodies replay needs come first, then text responses, smallest first,
 	// so a limit reached leaves out the fewest, least useful bodies.
@@ -2441,7 +2455,7 @@ func readAttachedHARZip(path string, limit int64, filters HARFilters) (harArtifa
 		return harArtifact{}, err
 	}
 	if int64(len(data)) > limit {
-		return harArtifact{}, fmt.Errorf("hydrated HAR exceeds maximum of %d bytes", limit)
+		return harArtifact{}, fmt.Errorf("hydrated HAR exceeds maximum of %d bytes: %w", limit, errArtifactTooLarge)
 	}
 	artifact.data = data
 	return artifact, nil
@@ -2564,7 +2578,7 @@ func readHARZipEntry(file *zip.File, limit int64) ([]byte, error) {
 		return nil, fmt.Errorf("HAR zip entry is missing")
 	}
 	if limit > 0 && file.UncompressedSize64 > uint64(limit) {
-		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes: %w", limit, errArtifactTooLarge)
 	}
 	reader, err := file.Open()
 	if err != nil {
@@ -2580,7 +2594,7 @@ func readHARZipEntry(file *zip.File, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	if limit > 0 && int64(len(data)) > limit {
-		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes", limit)
+		return nil, fmt.Errorf("artifact exceeds maximum of %d bytes: %w", limit, errArtifactTooLarge)
 	}
 	return data, nil
 }
@@ -2842,7 +2856,9 @@ func (r *Recorder) cleanupUntil(deadline time.Time) bool {
 	}
 	// A stop that spent its deadline on the HAR flush still lets the browser
 	// close before the driver goes.
-	wait := max(durationUntil(deadline, maxBrowserOperationDuration), minBrowserCloseGrace)
+	// The deadline sets the wait (ForceStop passes a short one); the ceiling
+	// is the graceful stop's cleanup budget.
+	wait := max(durationUntil(deadline, browserCleanupBudget), minBrowserCloseGrace)
 	return pwshutdown.CloseThenStop(wait, stopDriver, closeBrowser)
 }
 

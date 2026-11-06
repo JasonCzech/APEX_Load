@@ -63,7 +63,7 @@ func isReservedRuntimeOverrideSecretReference(value string) bool {
 // The logical names depend on group/field identity, never on credential bytes,
 // so script hashes and caches cannot fingerprint values.
 func protectRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride, rejectExistingRefs bool) (*RuntimeSettingsOverride, map[string]string, error) {
-	protected, values, _, err := protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, rejectExistingRefs, false)
+	protected, values, _, err := protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, rejectExistingRefs, false, false)
 	return protected, values, err
 }
 
@@ -73,10 +73,18 @@ func protectRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Scr
 // row non-executable until an operator configures the secret, without treating
 // the sentinel itself as credential material.
 func protectLegacyRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride) (*RuntimeSettingsOverride, map[string]string, bool, error) {
-	return protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, false, true)
+	return protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, false, true, false)
 }
 
-func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride, rejectExistingRefs, deferRedacted bool) (*RuntimeSettingsOverride, map[string]string, bool, error) {
+// protectStoredRuntimeOverrideSecrets repairs a row loaded from storage. It
+// classifies env keys by the rule the row was written under
+// (legacySensitiveEnvKey), so a literal stored before readable credential
+// names existed is kept rather than replaced by an unattributed reference.
+func protectStoredRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride) (*RuntimeSettingsOverride, map[string]string, bool, error) {
+	return protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, false, true, true)
+}
+
+func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride, rejectExistingRefs, deferRedacted, storedKeyRule bool) (*RuntimeSettingsOverride, map[string]string, bool, error) {
 	protected := cloneRuntimeSettings(overrides)
 	if protected == nil {
 		return nil, nil, false, nil
@@ -124,7 +132,11 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 	}
 	var err error
 	for key, value := range protected.Env {
-		protected.Env[key], err = protect("env."+key, value, sensitiveEnvKey(key) || sensitiveEnvValue(value))
+		keySensitive := sensitiveEnvKey(key)
+		if storedKeyRule {
+			keySensitive = legacySensitiveEnvKey(key)
+		}
+		protected.Env[key], err = protect("env."+key, value, keySensitive || sensitiveEnvValue(value))
 		if err != nil {
 			return nil, nil, false, err
 		}

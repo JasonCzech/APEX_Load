@@ -640,3 +640,126 @@ func executeSuccessfulBrowserAction(t *testing.T, b *Browser, action *protocol.A
 	}
 	return result
 }
+
+// Back to the opener after the popup closed: the opener is current and shows
+// the page with another query, so the switch takes it after the grace period
+// instead of waiting out the whole action timeout.
+func TestBrowserSwitchWindowBackToTheCurrentOpenerDoesNotWaitOutTheTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "print" {
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Print view</title></head><body>print</body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main view</title></head>
+<body><a id="open-popup" target="_blank" href="/app?view=print&run=live">Print</a></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/app?view=main&code=live"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open popup", Type: "browser_click", Selector: "#open-popup"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "To popup", Type: "browser_switch_window", Target: server.URL + "/app?view=print&run=recorded"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Close popup", Type: "browser_close_window"})
+	start := time.Now()
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Back to main", Type: "browser_switch_window", Target: server.URL + "/app?view=main&code=recorded", TimeoutMs: 10000,
+	})
+	if result.PageTitle != "Main view" {
+		t.Fatalf("PageTitle = %q, want the opener", result.PageTitle)
+	}
+	if elapsed := time.Since(start); elapsed > 4*time.Second {
+		t.Fatalf("switch back took %s, want it done after the grace period, not the 10s timeout", elapsed)
+	}
+}
+
+// A popup that opens after the grace period is waited for: the switch does
+// not settle on the opener, which shows the same path with another query.
+func TestBrowserSwitchWindowWaitsForASlowPopupInsteadOfTheOpener(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "print" {
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Print view</title></head><body>print</body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main view</title></head>
+<body><button id="later" onclick="setTimeout(() => window.open('/app?view=print&run=live'), 3000)">Print</button></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/app?view=main"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Print later", Type: "browser_click", Selector: "#later"})
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "To popup", Type: "browser_switch_window", Target: server.URL + "/app?view=print&run=recorded", TimeoutMs: 8000,
+	})
+	if result.PageTitle != "Print view" {
+		t.Fatalf("PageTitle = %q, want the slow popup, not the opener", result.PageTitle)
+	}
+}
+
+// The popup closes itself while the switch back to the opener is already
+// waiting: the switch still takes the opener.
+func TestBrowserSwitchWindowBackWhileThePopupClosesItself(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "picker" {
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Picker</title></head>
+<body><button id="done" onclick="setTimeout(() => window.close(), 600)">Done</button></body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main view</title></head>
+<body><a id="open-popup" target="_blank" href="/app?view=picker">Pick</a></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/app?view=main&session=live"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open popup", Type: "browser_click", Selector: "#open-popup"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "To popup", Type: "browser_switch_window", Target: server.URL + "/app?view=picker"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Done", Type: "browser_click", Selector: "#done"})
+	start := time.Now()
+	result := executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "Back to main", Type: "browser_switch_window", Target: server.URL + "/app?view=main&session=recorded", TimeoutMs: 10000,
+	})
+	if result.PageTitle != "Main view" {
+		t.Fatalf("PageTitle = %q, want the opener", result.PageTitle)
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("switch back took %s, want it done once the popup closed and the grace ended", elapsed)
+	}
+}
+
+// After a step closed the popup, another action that opens a new same-page
+// popup ends the pending return: the switch waits for the new popup instead
+// of settling on the opener.
+func TestBrowserSwitchWindowAfterACloseAndANewPopupWaitsForThePopup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("view") == "print" {
+			_, _ = w.Write([]byte(`<!doctype html><html><head><title>Print view</title></head><body>print</body></html>`))
+			return
+		}
+		_, _ = w.Write([]byte(`<!doctype html><html><head><title>Main view</title></head>
+<body><a id="open-popup" target="_blank" href="/app?view=print&run=first">Print</a>
+<button id="later" onclick="setTimeout(() => window.open('/app?view=main&run=popup'), 2600)">Again</button></body></html>`))
+	}))
+	defer server.Close()
+
+	b := newChromiumIntegrationBrowser(t, server.URL)
+	defer b.Teardown(context.Background())
+
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open main", Type: "browser_navigate", Target: "/app?view=main&run=main"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Open popup", Type: "browser_click", Selector: "#open-popup"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "To popup", Type: "browser_switch_window", Target: server.URL + "/app?view=print&run=recorded"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Close popup", Type: "browser_close_window"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{Name: "Again", Type: "browser_click", Selector: "#later"})
+	executeSuccessfulBrowserAction(t, b, &protocol.Action{
+		Name: "To new popup", Type: "browser_switch_window", Target: server.URL + "/app?view=main&run=recorded", TimeoutMs: 8000,
+	})
+	if url := b.currentPage().URL(); !strings.Contains(url, "run=popup") {
+		t.Fatalf("switched to %q, want the new popup, not the opener", url)
+	}
+}
