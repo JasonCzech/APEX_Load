@@ -492,28 +492,48 @@ func jmeterReferenceTimezone(zone string) (string, bool) {
 // jmeterZoneSpelledExactly reports whether zone is spelled as the zoneinfo
 // file it loads from. On a case-insensitive filesystem (macOS)
 // time.LoadLocation also loads "america/chicago", which a Linux generator
-// cannot. The directories are the ones time.LoadLocation searches; a zone
-// found in none of them came from a zip, whose lookup is case-sensitive.
+// cannot. The directories are the ones time.LoadLocation searches. Each is
+// walked by its own directory entries, so no path is built from zone: a
+// component found only under another case is misspelled, and a zone found in
+// none of them came from a zip, whose lookup is case-sensitive.
 func jmeterZoneSpelledExactly(zone string) bool {
+	parts := strings.Split(zone, "/")
+	if slices.ContainsFunc(parts, func(part string) bool { return part == "" || part == "." || part == ".." }) {
+		return false
+	}
 	roots := []string{"/usr/share/zoneinfo", "/usr/share/lib/zoneinfo", "/usr/lib/locale/TZ", "/etc/zoneinfo"}
 	if env := os.Getenv("ZONEINFO"); env != "" {
 		roots = append([]string{env}, roots...)
 	}
 	for _, root := range roots {
-		if _, err := os.Stat(filepath.Join(root, zone)); err != nil {
-			continue
+		if spelled, found := jmeterZoneInRoot(root, parts); found {
+			return spelled
 		}
-		dir := root
-		for _, part := range strings.Split(zone, "/") {
-			entries, err := os.ReadDir(dir)
-			if err != nil || !slices.ContainsFunc(entries, func(e os.DirEntry) bool { return e.Name() == part }) {
-				return false
-			}
-			dir = filepath.Join(dir, part)
-		}
-		return true
 	}
 	return true
+}
+
+// jmeterZoneInRoot walks root one zone component at a time. found reports
+// whether every component exists under some case; spelled whether each one
+// matched exactly.
+func jmeterZoneInRoot(root string, parts []string) (spelled, found bool) {
+	dir, spelled := root, true
+	for _, part := range parts {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return false, false
+		}
+		at := slices.IndexFunc(entries, func(e os.DirEntry) bool { return e.Name() == part })
+		if at < 0 {
+			at = slices.IndexFunc(entries, func(e os.DirEntry) bool { return strings.EqualFold(e.Name(), part) })
+			spelled = false
+		}
+		if at < 0 {
+			return false, false
+		}
+		dir = filepath.Join(dir, entries[at].Name())
+	}
+	return spelled, true
 }
 
 func removeJMeterRepairCode(s *dsl.Script, code string) {
