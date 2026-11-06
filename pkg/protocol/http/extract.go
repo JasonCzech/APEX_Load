@@ -148,6 +148,24 @@ const (
 
 var errExtractorResourceLimit = errors.New("extractor resource limit exceeded")
 
+// errExtractorUnreadableBody marks a response body a JSONPath extractor cannot
+// parse as JSON (an HTML error page, say).
+var errExtractorUnreadableBody = errors.New("response body is not valid JSON")
+
+// unreadableBodyError keeps the decoder's message and classifies it as an
+// extraction miss. JMeter's JSON Extractor stores its default value for a body
+// that is not JSON rather than failing the sample, and a scoped search moves
+// on to the next response, as it does for a body a dfes transform cannot read.
+// A malformed expression is rejected before the body is read, and resource
+// limits keep their own error, so neither becomes a miss.
+type unreadableBodyError struct{ err error }
+
+func (e unreadableBodyError) Error() string { return e.err.Error() }
+
+func (e unreadableBodyError) Unwrap() []error {
+	return []error{protocol.ErrExtractionMiss, errExtractorUnreadableBody, e.err}
+}
+
 type extractorInputWorkBudget struct {
 	used              int64
 	limit             int64
@@ -1028,7 +1046,10 @@ func extractJSONPathValue(expr string, body []byte) (any, error) {
 	}
 	current, err := decodeExtractorJSON(body)
 	if err != nil {
-		return nil, err
+		if errors.Is(err, errExtractorResourceLimit) {
+			return nil, err
+		}
+		return nil, unreadableBodyError{err: err}
 	}
 	for _, step := range steps {
 		if step.array {

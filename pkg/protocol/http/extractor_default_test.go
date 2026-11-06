@@ -43,7 +43,6 @@ func TestHTTPExtractorDefaultDoesNotSuppressErrors(t *testing.T) {
 		name, body, expression string
 		defaultValue           *string
 	}{
-		{"malformed JSON", `{`, "$.id", &fallback},
 		{"invalid expression", `{}`, "broken", &fallback},
 		{"missing ancestor invalid index", `{}`, "$.missing[", &fallback},
 		{"missing ancestor invalid field", `{}`, "$.missing..id", &fallback},

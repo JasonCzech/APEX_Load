@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 
@@ -167,13 +168,35 @@ func chargeCandidates(budget *extractorInputWorkBudget, ext protocol.Extractor, 
 	return nil
 }
 
+// candidateMisses keeps the miss a scoped search reports. A miss on a body
+// the extractor could read wins over one on a body it could not, so the
+// unreadable-body warning is recorded only when no searched response was JSON.
+type candidateMisses struct {
+	readable, unreadable error
+}
+
+func (misses *candidateMisses) add(err error) {
+	if errors.Is(err, errExtractorUnreadableBody) {
+		misses.unreadable = err
+		return
+	}
+	misses.readable = err
+}
+
+func (misses candidateMisses) err() error {
+	if misses.readable != nil {
+		return misses.readable
+	}
+	return misses.unreadable
+}
+
 // extractFromCandidates returns the first match across candidates. A
 // non-miss error (a bad expression, a resource limit) stops the search.
 func extractFromCandidates(ext protocol.Extractor, candidates []responseSurfaces) (string, error) {
 	if len(candidates) == 0 {
 		return "", fmt.Errorf("%w: no response matches the extractor scope", protocol.ErrExtractionMiss)
 	}
-	var lastMiss error
+	var misses candidateMisses
 	for _, candidate := range candidates {
 		value, err := extractResponse(ext, candidate)
 		if err == nil {
@@ -182,9 +205,9 @@ func extractFromCandidates(ext protocol.Extractor, candidates []responseSurfaces
 		if !errors.Is(err, protocol.ErrExtractionMiss) {
 			return "", err
 		}
-		lastMiss = err
+		misses.add(err)
 	}
-	return "", lastMiss
+	return "", misses.err()
 }
 
 // extractAllFromCandidates returns every match across candidates, in order.
@@ -193,17 +216,39 @@ func extractAllFromCandidates(ext protocol.Extractor, candidates []responseSurfa
 		return extractAllResponse(ext, candidates[0])
 	}
 	var values []string
+	var misses candidateMisses
 	for _, candidate := range candidates {
 		matches, err := extractAllResponse(ext, candidate)
 		if err != nil && !errors.Is(err, protocol.ErrExtractionMiss) {
 			return nil, err
+		}
+		if err != nil {
+			misses.add(err)
 		}
 		values = append(values, matches...)
 		if len(values) > maxAllExtractorMatches {
 			return nil, fmt.Errorf("%w: all extractor matches exceed %d", errExtractorResourceLimit, maxAllExtractorMatches)
 		}
 	}
+	if len(values) == 0 {
+		// Report why nothing matched, as a single candidate does.
+		return nil, misses.err()
+	}
 	return values, nil
+}
+
+// noteUnreadableBodyDefault records, as a replay warning, that an extractor
+// stored its default because the response body was not JSON, so a debug
+// session shows why the variable holds the default (JMeter logs it).
+func noteUnreadableBodyDefault(result *protocol.Result, ext protocol.Extractor, err error) {
+	if !errors.Is(err, errExtractorUnreadableBody) {
+		return
+	}
+	addReplayWarning(result, "extractor_default_unreadable_body")
+	names, _ := result.ProtocolEvidence["extractor_defaults_unreadable_body"].([]string)
+	if !slices.Contains(names, ext.Name) && len(names) < 16 {
+		result.ProtocolEvidence["extractor_defaults_unreadable_body"] = append(names, ext.Name)
+	}
 }
 
 // applyHTTPExtractor evaluates one extractor against its candidate responses
@@ -251,6 +296,7 @@ func applyHTTPExtractor(result *protocol.Result, ext protocol.Extractor, candida
 			if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
 				return true
 			}
+			noteUnreadableBodyDefault(result, ext, err)
 		}
 		if ext.OnMiss == "empty" {
 			// Mirror single-value "empty" semantics: assign the base
@@ -283,6 +329,7 @@ func applyHTTPExtractor(result *protocol.Result, ext protocol.Extractor, candida
 		if !storeHTTPExtraction(result, ext, ext.Name, *ext.DefaultValue) {
 			return true
 		}
+		noteUnreadableBodyDefault(result, ext, err)
 	case "fail":
 		if result.Success {
 			result.Success = false
