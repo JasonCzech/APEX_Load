@@ -1085,7 +1085,7 @@ export default function JMeterImport({ initialFile, projectId, folderId, onImpor
                 ))}
                 {result.scenario_draft && (
                   <div className="lr-preserved-card">
-                    <span className="lr-preserved-label">Scenario Draft</span>
+                    <span className="lr-preserved-label">Scenario draft</span>
                     {/* Named after the source's Test Plan. */}
                     <strong>{result.scenario_draft.name || 'Scenario draft'}</strong>
                     <small>{countLabel(result.scenario_draft.groups?.length || 0, 'group')} · {result.scenario_draft.termination_mode === 'iterations' ? 'Iteration completion' : result.scenario_draft.duration || 'Duration not set'}</small>

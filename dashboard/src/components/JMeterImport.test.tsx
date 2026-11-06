@@ -1519,7 +1519,7 @@ describe('JMeterImport fidelity review routing', () => {
     const cards = Array.from(container.querySelectorAll('.lr-preserved-card'))
     expect(cards[0].querySelector('[role="note"]')?.textContent).toBe('Source comments: Billing System = TLG')
     expect(cards[1].querySelector('[role="note"]')).toBeNull()
-    const scenario = cards.find(card => card.textContent?.startsWith('Scenario Draft'))!
+    const scenario = cards.find(card => card.textContent?.startsWith('Scenario draft'))!
     expect(scenario.querySelector('strong')?.textContent).toBe('Billing load plan')
     expect(scenario.querySelector('[role="note"]')?.textContent).toBe('Test Plan comments: Owned by the billing team')
   })
