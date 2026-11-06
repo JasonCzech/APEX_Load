@@ -14,8 +14,11 @@ import TooltipButton from './ux/TooltipButton'
 import { isSavedBlock } from './savedBlocks'
 import SharedAssetsDialog from './SharedAssetsDialog'
 import type { SharedAssetsSection } from './sharedAssetsNavigation'
-import ScriptOutlineTree, { OutlineMeasureCard } from './ScriptOutlineTree'
-import { buildOutlineModel, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
+import ScriptOutlineTree, { OutlineMeasureCard, type OutlineMultiSelect } from './ScriptOutlineTree'
+import { buildOutlineModel, outlineGroupKeyAfterEdit, outlineNodeRows, renameTransactionMarker, splitMeasureName, type OutlineMeasure } from './scriptOutlineModel'
+import ContextMenu, { type ContextMenuItem } from './ux/ContextMenu'
+import TransactionNameDialog from './TransactionNameDialog'
+import { defaultTransactionName, groupSpan, nestedNameConflict, remapLocationKey, removeTopLevelRows, removeTransaction, renameTransaction, resolveWrapTarget, scriptTransactionNames, wrapInTransaction, type LocationRemap, type StepLocation, type TransactionTiming, type WrapTarget } from './outlineTransactionEdits'
 import { NO_RESPONSE_ACTION_TYPES, HTTP_RUNTIME_ACTION_TYPES, liveTableFormContext } from './catalogActionFormModel'
 import { buildReferenceScope, type InsertionPoint } from './referenceScopeModel'
 import { ReferenceFieldContext, type FieldPath, type ReferenceFieldContextValue } from './referenceFieldContext'
@@ -184,10 +187,6 @@ import {
   actionTransactionName,
   actionTransactionMarker,
   computeTransactionBands,
-  tagActionsTransaction,
-  uniqueTransactionName,
-  wrapActionsInTransactionMarkers,
-  remapIndexAfterMarkerWrap,
   codePathForDebugRow,
   formatDebugPhaseLabel,
   readCenterTabsState,
@@ -218,6 +217,7 @@ import {
   type ParameterCandidate,
 } from './scriptEditorState'
 import {
+  authorFocusFromKey,
   authorFocusKey,
   codePathForAuthorFocus,
   findCandidateLiteralRangeInJson,
@@ -318,6 +318,9 @@ import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
 export type { ActionEditorSelectionState } from './scriptEditorJsonModel'
+
+// focusOutlineRow's stand-in for "the outline's selected row".
+const SELECTED_OUTLINE_ROW = '\u0000selected'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -1091,17 +1094,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // How many seed rows the auto_params data source gets. >1 lets each VUser draw a distinct
   // value once the operator fills the extra rows (the first row holds the detected literal).
   const [autoParamSeedRows, setAutoParamSeedRows] = useState(1)
-  // Multi-select of outline actions/sub-actions for "Save as block" (project-scoped reusable block).
+  // The rows selected together, in the outline (Cmd/Ctrl-click, Shift-click)
+  // or by the Overview & bulk checkboxes: what Wrap in transaction, Save as
+  // block and the row menu act on. Keys are the outline's row keys.
   const [blockSelection, setBlockSelection] = useState<Set<string>>(new Set())
-  // Inline naming draft when wrapping the block selection in a transaction
-  // (null = not naming). Pre-filled with a unique default; null cancels.
-  const [txnWrapDraft, setTxnWrapDraft] = useState<string | null>(null)
-  // 'span' = lr_start/end_transaction marker pair (wall-clock span incl. think
-  // time); 'grouped' = tag each selected action under one name (per-action).
-  const [txnWrapMode, setTxnWrapMode] = useState<'span' | 'grouped'>('span')
+  // The outline's row menu (right-click, Shift+F10): where it opened and the rows it acts on.
+  const [outlineMenu, setOutlineMenu] = useState<{ point: { x: number; y: number }; keys: string[]; rowKey: string } | null>(null)
+  // Naming a transaction: wrapping rows, or renaming one. `returnKey` is the
+  // outline row that takes focus back when it closes.
+  const [txnNaming, setTxnNaming] = useState<
+    | { kind: 'wrap'; keys: string[]; point: { x: number; y: number }; returnKey?: string; opener?: HTMLElement | null }
+    | { kind: 'rename'; groupKey: string; point: { x: number; y: number }; returnKey?: string }
+    | null
+  >(null)
   const [showSaveBlockModal, setShowSaveBlockModal] = useState(false)
   const [saveBlockName, setSaveBlockName] = useState('')
   const [saveBlockKind, setSaveBlockKind] = useState('request_group')
+  // The rows the outline's row menu saves as a block (null: the selected rows).
+  const [saveBlockKeys, setSaveBlockKeys] = useState<string[] | null>(null)
   const [savingBlock, setSavingBlock] = useState(false)
   const isBrowserScript = script.protocol === 'browser'
   const isJmsScript = script.protocol.startsWith('jms')
@@ -1259,14 +1269,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       .filter((scope): scope is AuthorJsonScope => Boolean(scope)),
     [blockSelection, script],
   )
-  const selectedTopLevelActionIndices = useMemo(
-    () => selectedBlockScopes
-      .filter(scope => scope.phase === 'action' && !scope.subAction)
-      .map(scope => scope.actionIndex)
-      .sort((a, b) => a - b),
-    [selectedBlockScopes],
+  // What the selected rows can be wrapped in (one list's span), or why not.
+  const blockWrapTarget = useMemo(() => resolveWrapTarget(script, outlineModel, blockSelection), [blockSelection, outlineModel, script])
+  const canWrapBlockSelection = blockSelection.size > 0 && blockWrapTarget.ok
+  const blockScopesToSave = useMemo(
+    () => saveBlockKeys
+      ? saveBlockKeys.map(key => resolveAuthorJsonScopeByKey(script, key)).filter((scope): scope is AuthorJsonScope => Boolean(scope))
+      : selectedBlockScopes,
+    [saveBlockKeys, script, selectedBlockScopes],
   )
-  const canWrapBlockSelection = selectedBlockScopes.length > 0 && selectedTopLevelActionIndices.length === selectedBlockScopes.length
   // Virtualize the Author Action List so a multi-thousand-action import renders only the
   // visible rows instead of one DOM subtree per action.
   const actionListScrollRef = useRef<HTMLDivElement | null>(null)
@@ -1444,7 +1455,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const saveBlockDialogRef = useRef<HTMLDivElement | null>(null)
   const closeServerParameterizationDialog = useCallback(() => setServerParameterization(null), [])
   const closeSaveBlockDialog = useCallback(() => {
-    if (!savingBlock) setShowSaveBlockModal(false)
+    if (!savingBlock) { setShowSaveBlockModal(false); setSaveBlockKeys(null) }
   }, [savingBlock])
   useModalDialog({
     dialogRef: serverParameterizationDialogRef,
@@ -2274,12 +2285,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // The outline selects in place (keepCenterTab): the open tab stays, so DSL
   // and Source Mapping follow the selection. Links to a step from elsewhere,
   // such as a problem or a data usage, open the Action editor.
-  const selectAuthorPhaseAction = (row: ScriptPhaseActionRow, { keepCenterTab = false } = {}) => {
+  // `focusInspector: false` selects without moving focus (the outline's row menu has it).
+  const selectAuthorPhaseAction = (row: ScriptPhaseActionRow, { keepCenterTab = false, focusInspector = true } = {}) => {
     setAuthorOverview(false)
     if (!keepCenterTab) openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
-    setNarrowAuthorPane('editor')
-    requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
+    // From the row menu, a narrow layout keeps showing the outline.
+    if (focusInspector) {
+      setNarrowAuthorPane('editor')
+      requestInspectorFocus({ phase: row.phase, actionIndex: row.actionIndex })
+    }
     setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(null)
     setScriptJsonSidebarTab('details')
@@ -2292,12 +2307,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const selectAuthorPhaseActionRef = useRef(selectAuthorPhaseAction)
   selectAuthorPhaseActionRef.current = selectAuthorPhaseAction
 
-  const focusNestedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath: string[], key: string, label: string, { keepCenterTab = false } = {}) => {
+  const focusNestedStep = (phase: ScriptActionPhase, actionIndex: number, stepPath: string[], key: string, label: string, { keepCenterTab = false, focusInspector = true } = {}) => {
     setAuthorOverview(false)
     if (!keepCenterTab) openCenterTab(ACTION_LIST_TAB_ID)
     setInspectorFocusSection('request')
-    setNarrowAuthorPane('editor')
-    requestInspectorFocus({ phase, actionIndex, stepPath })
+    if (focusInspector) {
+      setNarrowAuthorPane('editor')
+      requestInspectorFocus({ phase, actionIndex, stepPath })
+    }
     setAuthorRightSidebarCollapsed(false)
     setSelectedOutlineParameterName(null)
     setScriptJsonSidebarTab('details')
@@ -2317,7 +2334,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
   const selectAuthorStepRef = useRef(selectAuthorStep)
   selectAuthorStepRef.current = selectAuthorStep
-  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>, options?: { keepCenterTab?: boolean }) => {
+  const selectAuthorNestedItem = (item: Extract<DebugRailRenderRow, { kind: 'container' | 'leaf' }>, options?: { keepCenterTab?: boolean; focusInspector?: boolean }) => {
     const label = item.kind === 'leaf'
       ? item.childAction.name || item.name || humanizeStepSegment(item.stepPath[item.stepPath.length - 1] || '')
       : item.name
@@ -2806,7 +2823,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     phase === 'init' ? 'Init' : phase === 'teardown' ? 'Teardown' : 'Action'
   )
 
-  const addAction = (phase: ScriptActionPhase = 'action') => {
+  // `at` places the new step next to a step chosen just now (the outline's
+  // row menu), before the selection state has caught up with it.
+  const addAction = (phase: ScriptActionPhase = 'action', at?: InsertPosition) => {
     const template = isBrowserScript
       ? EMPTY_BROWSER_ACTION
       : isJmsScript
@@ -2835,6 +2854,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     // A template's closing step takes the user's steps before it; an empty
     // loop or if block selected is where the new step belongs.
     const focused = authorCodeFocus?.phase === phase ? activeInspectorScope?.action : undefined
+    if (at) {
+      setInsertPosition(at)
+      setInsertSeed(a)
+      return
+    }
     setInsertPosition(!focused ? 'end'
       : templateSpot && templateSpot.action === focused ? templateSpot.position
         : ['control_if', 'control_loop'].includes(focused.type) && !focused.control?.steps?.length ? 'inside' : 'after')
@@ -5831,41 +5855,250 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
 
   const openSaveBlockModal = () => {
     if (selectedBlockScopes.length === 0) return
+    setSaveBlockKeys(null)
     setSaveBlockName('')
     setSaveBlockKind('request_group')
     setShowSaveBlockModal(true)
   }
 
-  const beginWrapSelectionInTransaction = () => {
-    if (!canWrapBlockSelection) return
-    setTxnWrapDraft(uniqueTransactionName(script.actions))
+  // --- Outline row commands: transactions, insert, duplicate, delete -------
+
+  // Focus back on an outline row once a menu or dialog has closed (or on the
+  // selected row, after an edit that moved the rows).
+  const focusOutlineRow = (key?: string) => {
+    if (!key) return
+    window.setTimeout(() => {
+      const outline = document.querySelector('nav[aria-label="Script outline"]')
+      const row = key === SELECTED_OUTLINE_ROW
+        ? outline?.querySelector<HTMLElement>('[role="treeitem"].selected')
+        : outline?.querySelector<HTMLElement>(`[data-row-key="${CSS.escape(key)}"]`)
+      // The row may be gone (deleted, renamed): the tree's own tab stop then.
+      ;(row || outline?.querySelector<HTMLElement>('[role="treeitem"][tabindex="0"]'))?.focus({ preventScroll: true })
+    }, 0)
   }
 
-  const applyWrapSelectionInTransaction = () => {
-    const name = (txnWrapDraft || '').trim()
-    const indices = selectedTopLevelActionIndices
-    if (!name || indices.length === 0) { setTxnWrapDraft(null); return }
-    if (txnWrapMode === 'span') {
-      const lo = indices[0]
-      const hi = indices[indices.length - 1]
-      setScript(prev => ({ ...prev, actions: wrapActionsInTransactionMarkers(prev.actions, lo, hi, name) }))
-      // Two markers are inserted (start at lo, end after hi); keep breakpoints AND
-      // the active selection / JSON focus pinned so they don't drift onto a shifted
-      // action or an inserted marker (same family as duplicateAction).
-      remapStepLocations(prev => prev.map(bp => {
-        if (bp.phase !== 'action') return bp
-        const shifted = remapIndexAfterMarkerWrap(bp.action_index, lo, hi)
-        return shifted === bp.action_index ? bp : { ...bp, action_index: shifted }
-      }))
-      setActiveAction(prev => (prev === null ? prev : remapIndexAfterMarkerWrap(prev, lo, hi)))
-      setAuthorCodeFocus(prev => (prev && prev.phase === 'action'
-        ? { ...prev, actionIndex: remapIndexAfterMarkerWrap(prev.actionIndex, lo, hi) }
-        : prev))
-    } else {
-      setScript(prev => ({ ...prev, actions: tagActionsTransaction(prev.actions, indices, name) }))
-    }
+  // A structural edit rewrites the Source pane, which would lose an unapplied draft.
+  const structuralEditBlocked = () => {
+    if (!jsonDirty && !jsonParseMessage) return false
+    setError('Apply or reset your Source changes first, then change the steps.')
+    return true
+  }
+
+  // Breakpoints, the selection, open blocks and pending envelope edits follow
+  // their steps through an edit that moved or removed steps.
+  const followLocationRemap = (remap: LocationRemap) => {
+    remapStepLocations(previous => previous.flatMap(bp => {
+      const location: StepLocation = { phase: bp.phase as ScriptActionPhase, actionIndex: bp.action_index, stepPath: bp.step_path }
+      const moved = remap(location)
+      if (!moved) return []
+      if (moved === location) return [bp]
+      const next: ScriptDebugBreakpoint = { ...bp, action_index: moved.actionIndex }
+      if (moved.stepPath?.length) next.step_path = moved.stepPath
+      else delete next.step_path
+      return [next]
+    }))
+    setActiveAction(previous => previous === null ? previous : remap({ phase: 'action', actionIndex: previous })?.actionIndex ?? null)
+    setAuthorCodeFocus(previous => {
+      if (!previous) return previous
+      const moved = remap({ phase: previous.phase, actionIndex: previous.actionIndex, stepPath: previous.stepPath })
+      if (!moved) return null
+      const key = previous.key ? remapLocationKey(previous.key, remap) : null
+      return { ...previous, actionIndex: moved.actionIndex, stepPath: moved.stepPath, key: key || undefined }
+    })
+    setExpandedAuthorContainers(previous => {
+      const next = new Set<string>()
+      for (const key of previous) { const moved = remapLocationKey(key, remap); if (moved) next.add(moved) }
+      return next
+    })
     setBlockSelection(new Set())
-    setTxnWrapDraft(null)
+  }
+
+  // Select a step as the outline does, keeping the open center tab.
+  const selectLocation = (location: StepLocation | null) => {
+    if (!location) return
+    setActiveAction(location.phase === 'action' && !location.stepPath?.length ? location.actionIndex : null)
+    setAuthorCodeFocus({ phase: location.phase, actionIndex: location.actionIndex, stepPath: location.stepPath, key: location.stepPath?.length ? authorFocusKey(location) : undefined })
+    setShowFullScriptJson(false)
+  }
+
+  const transactionNameInUse = (name: string) => scriptTransactionNames(script).has(name.trim().toLowerCase())
+
+  const wrapSummary = (target: WrapTarget, timing: TransactionTiming) => {
+    const rows = `${target.selected} selected ${target.selected === 1 ? 'row' : 'rows'}`
+    if (timing === 'per-step') return `Each of the ${rows} is measured under this name; no span is timed.`
+    const between = target.between ? `, and the ${target.between} ${target.between === 1 ? 'step' : 'steps'} between them,` : ''
+    return `Times the ${rows}${between} from start to end, think time included.`
+  }
+
+  // From the row menu, focus returns to its row; from a button (the selection bar, the bulk list), to that button.
+  const beginWrapSelectionInTransaction = (point: { x: number; y: number }, keys: string[] = [...blockSelection], returnKey?: string) => {
+    if (!resolveWrapTarget(script, outlineModel, keys).ok) return
+    setTxnNaming({ kind: 'wrap', keys, point, returnKey, opener: returnKey ? null : document.activeElement as HTMLElement | null })
+  }
+
+  const applyWrapInTransaction = (keys: string[], name: string, timing: TransactionTiming) => {
+    if (structuralEditBlocked()) return
+    const resolved = resolveWrapTarget(script, outlineModel, keys)
+    if (!resolved.ok) { setError(resolved.reason); return }
+    const edit = wrapInTransaction(script, resolved.target, name, timing)
+    if (edit.script === script) return
+    setScript(edit.script)
+    followLocationRemap(edit.remap)
+    selectLocation(edit.focus)
+    const rows = resolved.target.selected + resolved.target.between
+    setSuccess(`Wrapped ${rows} ${rows === 1 ? 'row' : 'rows'} in transaction ${name}. Changes are not saved yet; Undo restores the steps as they were.`)
+    setError('')
+  }
+
+  // Returns the renamed group's row key (its key holds its name), or null.
+  const applyRenameTransaction = (groupKey: string, name: string): string | null => {
+    if (structuralEditBlocked()) return null
+    const group = outlineModel.groupsByKey.get(groupKey)
+    if (!group) return null
+    const parent = group.kind === 'subtransaction' ? splitMeasureName(group.name).parent : ''
+    const next = renameTransaction(script, group, parent ? `${parent}||${name}` : name)
+    if (next === script) return null
+    setScript(next)
+    setBlockSelection(new Set())
+    setSuccess(`Renamed the ${group.kind === 'subtransaction' ? 'sub-transaction' : 'transaction'} to ${name}. Changes are not saved yet.`)
+    setError('')
+    return outlineGroupKeyAfterEdit(buildOutlineModel(buildScriptPhaseActionRows(next), { showMarkers: outlineShowMarkers }), group)
+  }
+
+  const applyRemoveTransaction = (groupKey: string) => {
+    if (structuralEditBlocked()) return
+    const group = outlineModel.groupsByKey.get(groupKey)
+    if (!group) return
+    const edit = removeTransaction(script, group)
+    if (edit.problem) { setError(edit.problem); return }
+    setScript(edit.script)
+    followLocationRemap(edit.remap)
+    selectLocation(edit.focus)
+    const subs = edit.subTransactions ? ` Its ${edit.subTransactions} ${edit.subTransactions === 1 ? 'sub-transaction was' : 'sub-transactions were'} removed with it.` : ''
+    setSuccess(`Removed the ${group.kind === 'subtransaction' ? 'sub-transaction' : 'transaction'} ${group.label}; its steps stay.${subs} Undo restores it.`)
+    setError('')
+  }
+
+  // Delete outline rows: top-level ones together (a transaction with its
+  // steps), or one step inside a block.
+  const deleteOutlineRows = (keys: string[]) => {
+    if (structuralEditBlocked()) return
+    const top = removeTopLevelRows(script, outlineModel, keys)
+    if (top) {
+      if (!top.removed) return
+      setScript(top.script)
+      followLocationRemap(top.remap)
+      setSuccess(`Deleted ${top.removed} ${top.removed === 1 ? 'step' : 'steps'}. Changes are not saved yet; Undo restores them.`)
+      setError('')
+      return
+    }
+    const focus = keys.length === 1 ? authorFocusFromKey(keys[0]) : null
+    if (!focus?.stepPath?.length) return
+    if (removeStepAt(focus.phase, focus.actionIndex, focus.stepPath)) {
+      setBlockSelection(new Set())
+      setSuccess('Deleted the step. Changes are not saved yet; Undo restores it.')
+      setError('')
+    }
+  }
+
+  // Insert a step before or after a row: a transaction's (or a measured
+  // step's) outside edge, so the new step does not land inside it.
+  const insertNextToOutlineRow = (key: string, position: 'before' | 'after') => {
+    const node = outlineModel.groupsByKey.get(key) || outlineModel.stepsByKey.get(key)
+    const rows = node ? outlineNodeRows(node) : []
+    const edge = position === 'before' ? rows[0] : rows[rows.length - 1]
+    const focus = edge ? null : authorFocusFromKey(key)
+    const location: StepLocation | null = edge
+      ? { phase: edge.phase as ScriptActionPhase, actionIndex: edge.actionIndex }
+      : focus ? { phase: focus.phase, actionIndex: focus.actionIndex, stepPath: focus.stepPath } : null
+    if (!location) return
+    selectLocation(location)
+    addAction(location.phase, position)
+  }
+
+  // A transaction is saved with its markers and steps. A sub-transaction's
+  // markers stay behind (pasted elsewhere, their parent would not be open), so
+  // a measured step or sub-transaction saves its steps only.
+  const saveOutlineRowsAsBlock = (keys: string[]) => {
+    const rowKeys = keys.flatMap(key => {
+      const group = outlineModel.groupsByKey.get(key)
+      const step = outlineModel.stepsByKey.get(key)
+      if (step) return [debugSequenceKey(step.row.phase, step.row.actionIndex)]
+      if (!group) return [key]
+      return outlineNodeRows(group)
+        .filter(row => group.kind === 'transaction' || !actionTransactionMarker(row.action)?.sub || !actionTransactionMarker(row.action)!.name.startsWith(group.name))
+        .map(row => debugSequenceKey(row.phase, row.actionIndex))
+    })
+    setSaveBlockKeys([...new Set(rowKeys)])
+    setSaveBlockName('')
+    setSaveBlockKind('request_group')
+    setShowSaveBlockModal(true)
+  }
+
+  const outlineMenuItems = (keys: string[]): ContextMenuItem[] => {
+    const single = keys.length === 1 ? keys[0] : null
+    const group = single ? outlineModel.groupsByKey.get(single) : undefined
+    const focus = single ? authorFocusFromKey(single) : null
+    const nested = keys.some(key => Boolean(authorFocusFromKey(key)?.stepPath?.length))
+    const wrap = resolveWrapTarget(script, outlineModel, keys)
+    const topLevelStep = Boolean(focus && !focus.stepPath?.length && !outlineModel.groupsByKey.has(single!))
+    const marker = topLevelStep ? actionTransactionMarker(phaseActionsForScript(script, focus!.phase)[focus!.actionIndex] || ({} as Action)) : null
+    const groupWord = group?.kind === 'subtransaction' ? 'sub-transaction' : 'transaction'
+    const items: ContextMenuItem[] = [
+      { id: 'wrap', label: keys.length > 1 ? `Wrap ${keys.length} rows in transaction…` : 'Wrap in transaction…', disabled: !wrap.ok, reason: wrap.ok ? undefined : wrap.reason },
+    ]
+    if (group) {
+      items.push({ id: 'rename', label: `Rename ${groupWord}…` })
+      items.push({ id: 'remove-transaction', label: `Remove ${groupWord}` })
+    }
+    const one = single ? undefined : 'Select one row to insert next to it.'
+    items.push({ id: 'insert-before', label: 'Insert step before…', disabled: Boolean(one), reason: one, separatorBefore: true })
+    items.push({ id: 'insert-after', label: 'Insert step after…', disabled: Boolean(one), reason: one })
+    const duplicateReason = !single ? 'Select one step to duplicate it.'
+      : group ? 'Duplicate works on one step, not a transaction.'
+        : !topLevelStep ? 'Steps inside a block are duplicated from the block’s editor.'
+          : marker ? 'A transaction marker cannot be duplicated on its own.'
+            : outlineModel.stepsByKey.get(single)?.measuredAs ? 'This step is measured by its own sub-transaction; a copy would land inside it.' : undefined
+    items.push({ id: 'duplicate', label: 'Duplicate', disabled: Boolean(duplicateReason), reason: duplicateReason, separatorBefore: true })
+    const blockReason = keys.some(key => /\|all-requests$/.test(key)) ? 'Select steps to save as a block.' : undefined
+    items.push({ id: 'save-block', label: 'Save as block…', disabled: Boolean(blockReason), reason: blockReason })
+    const deleteReason = nested && keys.length > 1 ? 'Delete steps inside a block one at a time.' : undefined
+    items.push({
+      id: 'delete',
+      label: group ? `Delete ${groupWord} and its steps` : keys.length > 1 ? `Delete ${keys.length} rows` : 'Delete',
+      danger: true, disabled: Boolean(deleteReason), reason: deleteReason, separatorBefore: true,
+    })
+    return items
+  }
+
+  const runOutlineMenuCommand = (id: string, menu: { point: { x: number; y: number }; keys: string[]; rowKey: string }) => {
+    const { keys, point, rowKey } = menu
+    const single = keys.length === 1 ? keys[0] : null
+    // Commands that open a dialog hand focus to it; the rest return it to the
+    // outline's selected row (which an edit may have moved).
+    switch (id) {
+      case 'wrap': beginWrapSelectionInTransaction(point, keys, rowKey); return
+      case 'rename': if (single) setTxnNaming({ kind: 'rename', groupKey: single, point, returnKey: rowKey }); return
+      case 'insert-before': if (single) insertNextToOutlineRow(single, 'before'); return
+      case 'insert-after': if (single) insertNextToOutlineRow(single, 'after'); return
+      case 'save-block': saveOutlineRowsAsBlock(keys); return
+      case 'remove-transaction': if (single) applyRemoveTransaction(single); break
+      case 'duplicate': {
+        const focus = single ? authorFocusFromKey(single) : null
+        if (focus && !focus.stepPath?.length && !structuralEditBlocked()) duplicatePhaseAction(focus.phase, focus.actionIndex)
+        break
+      }
+      case 'delete': deleteOutlineRows(keys); break
+    }
+    focusOutlineRow(SELECTED_OUTLINE_ROW)
+  }
+
+  const outlineMultiSelect: OutlineMultiSelect = {
+    keys: blockSelection,
+    onChange: keys => setBlockSelection(new Set(keys)),
+    onContextMenu: (row, point, keys) => { setTxnNaming(null); setOutlineMenu({ point, keys, rowKey: row.key }) },
+    onWrap: point => beginWrapSelectionInTransaction(point),
+    wrapUnavailable: blockSelection.size && !blockWrapTarget.ok ? blockWrapTarget.reason : '',
   }
 
   // Capture the selected outline actions as a project-scoped reusable block.
@@ -5879,7 +6112,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setError('A project is required to save a reusable block.')
       return
     }
-    const actions = selectedBlockScopes.map(scope => JSON.parse(JSON.stringify(scope.action)) as Action)
+    const actions = blockScopesToSave.map(scope => JSON.parse(JSON.stringify(scope.action)) as Action)
     if (actions.length === 0) {
       setError('Select at least one action to save as a block.')
       return
@@ -5896,7 +6129,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         project_id: projectId,
       })
       await reloadAuthoringComponents()
-      setBlockSelection(new Set())
+      if (!saveBlockKeys) setBlockSelection(new Set())
+      setSaveBlockKeys(null)
       setShowSaveBlockModal(false)
       setReusableBlocksCollapsed(false)
       setSuccess(`Saved "${name}" as a reusable block.`)
@@ -6647,10 +6881,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setError('Apply or reset your Source changes first, then delete the blocked step.')
       return
     }
+    if (!removeStepAt(phase, actionIndex, stepPath)) return
+    setSuccess('Removed the blocked step from the draft. Save the script to persist this change.')
+    setError('')
+  }
+  // Removes a top-level action, or a step inside a block, keeping each block
+  // around it valid (removeNestedAction) and the breakpoints on their steps.
+  const removeStepAt = (phase: ScriptActionPhase, actionIndex: number, stepPath?: string[]) => {
     const currentRoot = phaseActionsForScript(script, phase)[actionIndex]
-    if (!currentRoot) return
+    if (!currentRoot) return false
     const removal = stepPath?.length ? removeNestedAction(currentRoot, stepPath) : null
-    if (stepPath?.length && !removal) return
+    if (stepPath?.length && !removal) return false
     if (!removal || removal.replacement.length === 0) {
       removePhaseAction(phase, actionIndex)
     } else {
@@ -6666,8 +6907,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (shift !== 0 && phase === 'action') setActiveAction(previous => previous !== null && previous > actionIndex ? previous + shift : previous)
       setAuthorCodeFocus({ phase, actionIndex })
     }
-    setSuccess('Removed the blocked step from the draft. Save the script to persist this change.')
-    setError('')
+    return true
   }
   const deleteBlockedInspectorStep = () => {
     if (!activeInspectorScope) return
@@ -6900,64 +7140,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                       </span>
                     </button>
                     <div className="actions-sidebar-controls">
-                      {selectedBlockScopes.length > 0 && txnWrapDraft === null && (
+                      {blockSelection.size > 0 && (
                         <>
                           {canWrapBlockSelection && (
-                            <TooltipButton className="btn btn-sm btn-secondary" onClick={beginWrapSelectionInTransaction} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
-                              Wrap {selectedBlockScopes.length} in transaction
+                            <TooltipButton className="btn btn-sm btn-secondary" onClick={event => { const box = event.currentTarget.getBoundingClientRect(); beginWrapSelectionInTransaction({ x: box.left, y: box.bottom + 4 }) }} title="Wrap the selected actions in a named transaction (timed; SLAs attach to it)">
+                              Wrap {blockSelection.size} in transaction
                             </TooltipButton>
                           )}
-                          <TooltipButton className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
-                            Save {selectedBlockScopes.length} as block
-                          </TooltipButton>
+                          {selectedBlockScopes.length > 0 && (
+                            <TooltipButton className="btn btn-sm btn-secondary" onClick={openSaveBlockModal} title="Save the selected actions as a reusable block">
+                              Save {selectedBlockScopes.length} as block
+                            </TooltipButton>
+                          )}
                         </>
                       )}
-                      {txnWrapDraft !== null && (() => {
-                        const wrapSel = selectedTopLevelActionIndices
-                        const wrapLo = wrapSel.length ? wrapSel[0] : 0
-                        const wrapHi = wrapSel.length ? wrapSel[wrapSel.length - 1] : 0
-                        const wrapBetween = (wrapHi - wrapLo + 1) - wrapSel.length
-                        const wrapName = (txnWrapDraft || '').trim()
-                        const wrapNameClash = wrapName.length > 0 && script.actions.some(a => actionTransactionName(a) === wrapName || actionTransactionMarker(a)?.name === wrapName)
-                        return (
-                        <span className="txn-wrap-inline">
-                          <span className="txn-wrap-modes" role="group" aria-label="Transaction timing">
-                            <TooltipButton
-                              type="button"
-                              className={`btn btn-sm ${txnWrapMode === 'span' ? 'btn-secondary' : 'btn-ghost'}`}
-                              onClick={() => setTxnWrapMode('span')}
-                              title="Timed span — lr_start/end_transaction markers measure wall-clock time across the selection (includes think time)"
-                            >
-                              Timed span
-                            </TooltipButton>
-                            <TooltipButton
-                              type="button"
-                              className={`btn btn-sm ${txnWrapMode === 'grouped' ? 'btn-secondary' : 'btn-ghost'}`}
-                              onClick={() => setTxnWrapMode('grouped')}
-                              title="Grouped — tag each selected action under one name (per-action response times, no span)"
-                            >
-                              Grouped
-                            </TooltipButton>
-                          </span>
-                          <input
-                            className="txn-wrap-input"
-                            value={txnWrapDraft}
-                            placeholder="Transaction name"
-                            aria-label="Transaction name"
-                            onChange={e => setTxnWrapDraft(e.target.value)}
-                            onKeyDown={e => { if (e.key === 'Enter') applyWrapSelectionInTransaction(); else if (e.key === 'Escape') setTxnWrapDraft(null) }}
-                          />
-                          <button className="btn btn-sm btn-primary" onClick={applyWrapSelectionInTransaction} disabled={!txnWrapDraft.trim()}>Wrap</button>
-                          <button className="btn btn-sm btn-ghost" onClick={() => setTxnWrapDraft(null)}>Cancel</button>
-                          {txnWrapMode === 'span' && (
-                            <span className="txn-wrap-hint" title="Timed span brackets every action between the first and last selected row">
-                              times rows {wrapLo + 1}–{wrapHi + 1}{wrapBetween > 0 ? ` (+${wrapBetween} between)` : ''}
-                            </span>
-                          )}
-                          {wrapNameClash && <span className="txn-wrap-hint warning" title="Another transaction already uses this name">name in use</span>}
-                        </span>
-                        )
-                      })()}
                       <button className="btn btn-sm btn-primary" onClick={() => addAction('action')}>+ Add</button>
                     </div>
                   </div>
@@ -7871,6 +8067,58 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       if (event.shiftKey) redoEditorChange(); else undoEditorChange()
     }}>
       <p className="sr-only" role="status" data-repair-announcement>{repairAnnouncement}</p>
+      {outlineMenu && (
+        <ContextMenu
+          label={outlineMenu.keys.length > 1 ? `Actions for ${outlineMenu.keys.length} selected rows` : 'Step actions'}
+          point={outlineMenu.point}
+          items={outlineMenuItems(outlineMenu.keys)}
+          onSelect={id => runOutlineMenuCommand(id, outlineMenu)}
+          onClose={returnFocus => { if (returnFocus) focusOutlineRow(outlineMenu.rowKey); setOutlineMenu(null) }}
+        />
+      )}
+      {txnNaming?.kind === 'wrap' && (() => {
+        const resolved = resolveWrapTarget(script, outlineModel, txnNaming.keys)
+        if (!resolved.ok) return null
+        const close = (returnFocus: boolean) => {
+          if (returnFocus) { if (txnNaming.returnKey) focusOutlineRow(txnNaming.returnKey); else if (txnNaming.opener?.isConnected) txnNaming.opener.focus() }
+          setTxnNaming(null)
+        }
+        return (
+          <TransactionNameDialog
+            title="Wrap in transaction"
+            point={txnNaming.point}
+            initialName={defaultTransactionName(script)}
+            submitLabel="Wrap"
+            timing={{ perStep: resolved.target.perStep, summary: timing => wrapSummary(resolved.target, timing) }}
+            nameInUse={transactionNameInUse}
+            nameConflict={name => nestedNameConflict(script, resolved.target, name)}
+            onSubmit={(name, timing) => { applyWrapInTransaction(txnNaming.keys, name, timing); close(false); focusOutlineRow(SELECTED_OUTLINE_ROW) }}
+            onCancel={close}
+          />
+        )
+      })()}
+      {txnNaming?.kind === 'rename' && (() => {
+        const group = outlineModel.groupsByKey.get(txnNaming.groupKey)
+        if (!group) return null
+        const current = group.kind === 'subtransaction' ? splitMeasureName(group.name).child : group.name
+        // A sub-transaction's name is "Parent||child"; the dialog edits the child.
+        const parent = group.kind === 'subtransaction' ? splitMeasureName(group.name).parent : ''
+        const fullName = (name: string) => parent ? `${parent}||${name.trim()}` : name
+        // A renamed group's row has a new key, which focus follows.
+        const close = (returnFocus: boolean, renamedKey: string | null = null) => { if (returnFocus) focusOutlineRow(renamedKey ?? txnNaming.returnKey); setTxnNaming(null) }
+        return (
+          <TransactionNameDialog
+            title={group.kind === 'subtransaction' ? 'Rename sub-transaction' : 'Rename transaction'}
+            point={txnNaming.point}
+            initialName={current}
+            submitLabel="Rename"
+            nameInUse={name => transactionNameInUse(fullName(name))}
+            nameConflict={name => nestedNameConflict(script, groupSpan(group), fullName(name), group.name)}
+            onSubmit={name => close(true, name !== current ? applyRenameTransaction(txnNaming.groupKey, name) : null)}
+            onCancel={close}
+          />
+        )
+      })()}
       {insertSeed && <AuthorInsertDialog protocol={script.protocol} seed={insertSeed} phase={insertPhase} position={insertPosition} anchorLabel={authorCodeFocus?.phase === insertPhase ? actionBreadcrumb(script, authorCodeFocus) : undefined} canInsertInside={Boolean(activeInspectorScope && ['control_loop', 'control_if'].includes(activeInspectorScope.action.type))} onPlan={(phase, position) => { setInsertPhase(phase); setInsertPosition(position) }} onInsert={insertPreparedAction} onInsertMany={insertPreparedActions} sharedData={insertSharedData} onClose={() => setInsertSeed(null)} onOpenThinkTime={() => { setInsertSeed(null); openCenterTab('runtime-settings'); selectRuntimeSettingsSection('think') }} library={renderActionLibrary()} />}
       {correlationReview && <CorrelationReviewDialog value={correlationReview.value} sourceName={correlationReview.sourceName} suggestedName={correlationReview.suggestedName} taken={correlationReview.taken} uses={correlationReview.uses} onApply={applyCorrelationReview} onClose={() => setCorrelationReview(null)} />}
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
@@ -8025,7 +8273,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               <div>
                 <h3 className="panel-title">Save as Reusable Block</h3>
                 <p className="editor-dialog-subtitle">
-                  {selectedBlockScopes.length} action{selectedBlockScopes.length === 1 ? '' : 's'} will be saved to this project's block library.
+                  {blockScopesToSave.length} action{blockScopesToSave.length === 1 ? '' : 's'} will be saved to this project's block library.
                 </p>
               </div>
               <button type="button" className="btn btn-sm btn-ghost" disabled={savingBlock} onClick={closeSaveBlockDialog}>Close</button>
@@ -8591,13 +8839,18 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     expandedContainers={expandedAuthorContainers}
                     onToggleContainer={toggleAuthorContainer}
                     selection={selectedOutlineParameterName ? null : authorCodeFocus}
-                    onSelect={item => item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0) ? selectAuthorNestedItem(item, { keepCenterTab: true }) : selectAuthorPhaseAction(item.row, { keepCenterTab: true })}
+                    onSelect={(item, options) => {
+                      const focusInspector = !options?.fromMenu
+                      if (item.kind === 'leaf' || (item.kind === 'container' && item.depth > 0)) selectAuthorNestedItem(item, { keepCenterTab: true, focusInspector })
+                      else selectAuthorPhaseAction(item.row, { keepCenterTab: true, focusInspector })
+                    }}
                     hasBreakpoint={key => outlineBreakpointKeys.has(key)}
                     hasIssue={row => (actionIssueBuckets[row.phase]?.[row.actionIndex] || []).length > 0}
                     showMarkers={outlineShowMarkers}
                     onShowMarkersChange={changeOutlineShowMarkers}
                     naturalWidthRef={outlineNaturalWidthRef}
                     onToggleRowBreakpoint={toggleOutlineRowBreakpoint}
+                    multiSelect={outlineMultiSelect}
                   />
                 </nav>
                 </>

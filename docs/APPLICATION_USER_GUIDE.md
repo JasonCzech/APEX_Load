@@ -171,6 +171,21 @@ block tools. **Add Action** stages a new action or block: choose its phase and
 place it before, after, inside a supported block, or at the end of the phase.
 Canceling insertion leaves the script unchanged.
 
+To time several steps as one transaction, select them in the outline and right-click
+(or press Shift+F10) to open the row menu, then choose **Wrap in transaction…**.
+Cmd-click (Ctrl-click on Windows and Linux) adds or removes a row, Shift-click or
+Shift+arrow keys select a range, and Escape clears the selection; with two or more rows
+selected, a bar above the outline also offers **Wrap in transaction…**. Name the
+transaction and choose how it is timed: **Timed span** brackets the rows with a start
+and end marker and times everything between them, think time included; **Grouped**
+(top-level steps only) measures each selected step under the name. A span can wrap
+transactions inside a new one, and steps inside an if, loop, switch or parallel block,
+as long as all the rows sit in the same list and the span holds both ends of every
+transaction it touches; a sequence's requests are timed by the sequence. The same
+menu renames a transaction, removes one while keeping its steps, inserts a step before
+or after the row, duplicates a step, saves the rows as a block, and deletes them.
+Undo reverses each of these.
+
 Use **Undo** and **Redo** for document changes, including action properties,
 runtime settings, and insertions. The keyboard shortcuts are Cmd/Ctrl+Z and
 Cmd/Ctrl+Shift+Z; code editors retain their own text history. **Review changes**

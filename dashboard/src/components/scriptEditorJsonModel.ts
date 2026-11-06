@@ -411,6 +411,58 @@ function stepSegmentAt(parsed: ParsedActionStepSegment, index: number, group?: n
 }
 
 /**
+ * The list a nested step sits in, among its siblings: the path of the block
+ * that holds the list, which list of that block (then, else, a loop's steps, a
+ * switch case, a parallel branch or a sequence's requests), and the step's
+ * index in it. `segmentAt` names another index of the same list.
+ */
+export interface SiblingList {
+  parentPath: string[]
+  /** The same for every step of one list ("steps", "else", "case2", "branch0", ...). */
+  listId: string
+  index: number
+  requests: boolean
+  segmentAt: (index: number) => string
+}
+
+export function siblingListOf(stepPath: readonly string[] | undefined): SiblingList | null {
+  if (!stepPath?.length) return null
+  const last = stepPath[stepPath.length - 1]
+  const parsed = parseActionStepSegment(last)
+  if (!parsed) return null
+  const list = stepListOf(parsed)
+  return {
+    parentPath: stepPath.slice(0, -1),
+    listId: `${list.key}${list.group ?? ''}`,
+    index: parsed.index,
+    requests: list.key === 'requests',
+    segmentAt: index => stepSegmentAt(parsed, index),
+  }
+}
+
+/** The steps of the list the nested step at `stepPath` sits in. */
+export function readSiblingList(root: ScriptActionDefinition | undefined, stepPath: readonly string[]): ScriptActionDefinition[] | undefined {
+  const parsed = stepPath.length ? parseActionStepSegment(stepPath[stepPath.length - 1]) : null
+  const parent = parsed ? resolveNestedAction(root, stepPath.slice(0, -1)) : null
+  return parent && parsed ? readStepList(parent, stepListOf(parsed)) : undefined
+}
+
+/**
+ * `root` with the list the nested step at `stepPath` sits in replaced by
+ * `items`, every other field kept; `root` itself is not changed. Returns null
+ * when the path does not name a list of `root`.
+ */
+export function replaceSiblingList(root: ScriptActionDefinition, stepPath: readonly string[], items: ScriptActionDefinition[]): ScriptActionDefinition | null {
+  if (!readSiblingList(root, stepPath)) return null
+  const parsed = parseActionStepSegment(stepPath[stepPath.length - 1])!
+  return updateNestedAction(root, stepPath.slice(0, -1), parent => {
+    const next = { ...parent }
+    writeStepList(next, stepListOf(parsed), items)
+    return next
+  })
+}
+
+/**
  * Where a step path of the root action before a removal now points: an index
  * into the removal's replacement actions and the step path inside that action,
  * or null when the step was removed (or was a container that collapsed).

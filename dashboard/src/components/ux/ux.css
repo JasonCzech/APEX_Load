@@ -267,3 +267,14 @@
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+/* A context menu at the pointer (ContextMenu.tsx): the row-actions panel's look, one command per line. */
+.ux-context-menu { position: fixed; z-index: 1000; display: flex; flex-direction: column; min-width: 200px; max-width: min(320px, calc((100vw - 16px) * var(--dashboard-zoom-inverse, 1))); padding: 4px; border: 1px solid var(--border); border-radius: 8px; background: linear-gradient(var(--bg-elevated), var(--bg-elevated)), var(--bg-primary); box-shadow: 0 8px 24px rgb(0 0 0 / 18%); color: var(--text-primary); font-size: 13px; }
+.ux-context-menu-group { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); }
+.ux-context-menu-item { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 28px; margin: 0; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ux-context-menu-item:focus { outline: none; background: var(--bg-hover); }
+.ux-context-menu-item:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
+.ux-context-menu-item[aria-disabled="true"] { color: var(--text-muted); cursor: default; }
+.ux-context-menu-item.danger:not([aria-disabled="true"]) { color: var(--danger-text); }
+.ux-context-menu-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ux-context-menu-shortcut { flex: 0 0 auto; color: var(--text-secondary); font: inherit; font-size: 12px; }
+.ux-context-menu-tip { position: fixed; z-index: 1001; max-width: 260px; }
