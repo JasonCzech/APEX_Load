@@ -741,7 +741,7 @@ export function wrapActionsInTransactionMarkers(
  * its role and name; otherwise null. Used to render marker rows distinctly.
  * The name is the call's first argument, as LoadRunner pairs them: an import
  * names the step itself "Start_<name>_transaction" / "End_<name>_transaction".
- * `sub` marks lr_start_sub_transaction / lr_end_sub_transaction.
+ * `sub` marks lr_start_sub_transaction / lr_end_sub_transaction (and lr_end_sub_trans).
  */
 export function actionTransactionMarker(
   action: ScriptActionDefinition,
@@ -751,9 +751,11 @@ export function actionTransactionMarker(
   const fn = String(params?.function || '').toLowerCase()
   const args = Array.isArray(params?.args) ? params.args : []
   const name = (typeof args[0] === 'string' && args[0].trim()) || (action.name || '').trim()
-  const sub = fn.includes('sub_transaction') ? { sub: true as const } : {}
+  // lr_end_sub_trans is an alias the importer and engine accept.
+  const sub = fn.includes('sub_trans') ? { sub: true as const } : {}
   if (fn.includes('start')) return { role: 'start', name, ...sub }
-  if (fn.includes('end') || fn.includes('stop')) return { role: 'end', name, ...sub }
+  // lr_stop_transaction pauses a transaction (lr_resume_transaction goes on); it does not end it.
+  if (fn.includes('end')) return { role: 'end', name, ...sub }
   return null
 }
 

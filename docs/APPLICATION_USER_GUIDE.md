@@ -181,9 +181,13 @@ and end marker and times everything between them, think time included; **Grouped
 (top-level steps only) measures each selected step under the name. A span can wrap
 transactions inside a new one, and steps inside an if, loop, switch or parallel block,
 as long as all the rows sit in the same list and the span holds both ends of every
-transaction it touches; a sequence's requests are timed by the sequence. The same
-menu renames a transaction, removes one while keeping its steps, inserts a step before
-or after the row, duplicates a step, saves the rows as a block, and deletes them.
+transaction it touches; a sequence's requests are timed by the sequence. A long
+script opens with its transactions collapsed; a transaction you wrap opens to show what
+it contains. The same menu renames a transaction (its sub-transactions and tagged
+steps follow), inserts a step before or after the row, duplicates a step, saves the
+rows as a block, and deletes them. **Remove transaction** removes only the wrapper: its
+start and end markers go, its steps stay, and its sub-transactions keep measuring their
+steps, as transactions of their own (or, inside a sub-transaction, under its parent).
 Undo reverses each of these.
 
 Use **Undo** and **Redo** for document changes, including action properties,

@@ -324,3 +324,19 @@ describe('carryGroupKeys', () => {
     expect(carryGroupKeys(before, after, [keyOf(before, 'B')!])).toEqual([keyOf(after, 'B')])
   })
 })
+
+describe('tagged runs inside marker transactions', () => {
+  const tagged = (name: string, tag: string) => ({ ...request(name), metadata: { source_transaction: tag } })
+  it('groups a run tagged with another transaction, not one tagged with the transaction around it', () => {
+    const model = modelOf([
+      marker('start', 'Outer'),
+      tagged('a', 'Outer'),
+      tagged('b', 'Inner'), tagged('c', 'Inner'),
+      marker('end', 'Outer'),
+    ])
+    const outer = model.phases.find(phase => phase.phase === 'action')!.children[0] as OutlineGroup
+    expect(outer.name).toBe('Outer')
+    expect(outer.children.map(child => child.kind === 'step' ? `step:${child.row.action.name}` : `${child.kind}:${(child as OutlineGroup).name}`)).toEqual(['step:a', 'transaction:Inner'])
+    expect((outer.children[1] as OutlineGroup).stepCount).toBe(2)
+  })
+})

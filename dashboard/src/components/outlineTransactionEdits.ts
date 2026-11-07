@@ -312,32 +312,6 @@ function subParentOf(action: ScriptActionDefinition): string {
   return Array.isArray(args) && typeof args[1] === 'string' ? args[1].trim() : ''
 }
 
-/**
- * A start's parent argument renamed from `from` to `to`: the parent itself, or
- * a sub-transaction under it ("from||a" becomes "to||a").
- */
-function renameParentArgument(action: ScriptActionDefinition, from: string, to: string): ScriptActionDefinition {
-  const rewrite = (value: unknown): string | null => {
-    if (typeof value !== 'string') return null
-    const trimmed = value.trim()
-    if (sameName(trimmed, from)) return to
-    return trimmed.toLowerCase().startsWith(`${lowerName(from)}||`) ? `${to}||${trimmed.slice(from.trim().length + 2)}` : null
-  }
-  const params: Record<string, unknown> = { ...((action.params as Record<string, unknown> | undefined) || {}) }
-  let changed = false
-  const parentArg = Array.isArray(params.args) ? rewrite(params.args[1]) : null
-  if (parentArg !== null && Array.isArray(params.args)) { params.args = [params.args[0], parentArg, ...params.args.slice(2)]; changed = true }
-  if (Array.isArray(params.call_args)) {
-    const second = params.call_args[1] as Record<string, unknown> | undefined
-    const value = second && typeof second === 'object' ? rewrite(second.value) : null
-    if (second && value !== null) {
-      params.call_args = [params.call_args[0], { ...second, value, raw: JSON.stringify(value) }, ...params.call_args.slice(2)]
-      changed = true
-    }
-  }
-  return changed ? { ...action, params } as ScriptActionDefinition : action
-}
-
 /** Whether a sub-transaction start belongs under one of `parents` (lower-cased): it names one as its parent, or is named "parent||…". */
 function startTiedTo(action: ScriptActionDefinition, parents: Set<string>): boolean {
   const marker = actionTransactionMarker(action)
@@ -371,11 +345,324 @@ function transactionFamily(items: ScriptActionDefinition[], parent: string): Set
 }
 
 /**
+ * A marker's call with its transaction named `name`: for a start, `parent` is
+ * the parent it names as a sub-transaction, null when it is (now) a
+ * transaction's own, and undefined to keep what it is. The step's name follows.
+ */
+function withMarkerCall(action: ScriptActionDefinition, name: string, parent?: string | null): ScriptActionDefinition {
+  const marker = actionTransactionMarker(action)
+  if (!marker) return action
+  const sub = parent === undefined ? Boolean(marker.sub) : parent !== null
+  const params: Record<string, unknown> = { ...((action.params as Record<string, unknown> | undefined) || {}) }
+  // A change of kind writes the canonical call (an import may use an alias such as lr_end_sub_trans).
+  if (sub !== Boolean(marker.sub)) params.function = `lr_${marker.role}_${sub ? 'sub_' : ''}transaction`
+  const args = Array.isArray(params.args) ? [...params.args] : [name]
+  args[0] = name
+  if (marker.role === 'start') {
+    if (sub && typeof parent === 'string') args[1] = parent
+    else if (!sub && marker.sub) args.splice(1, 1)
+  }
+  params.args = args
+  if (Array.isArray(params.call_args)) {
+    const callArgs = [...params.call_args] as unknown[]
+    const set = (index: number, value: string) => {
+      const current = callArgs[index]
+      if (current && typeof current === 'object') callArgs[index] = { ...(current as Record<string, unknown>), value, raw: JSON.stringify(value) }
+    }
+    set(0, name)
+    if (marker.role === 'start') {
+      if (sub && typeof parent === 'string') set(1, parent)
+      else if (!sub && marker.sub) callArgs.splice(1, 1)
+    }
+    params.call_args = callArgs
+  }
+  const label = action.name && marker.name && action.name.includes(marker.name) ? action.name.split(marker.name).join(name) : action.name
+  return { ...action, name: label, params } as ScriptActionDefinition
+}
+
+/** A tied sub-transaction start still open where an end may close it, with what was decided for it. */
+interface OpenMember { name: string; promoted: boolean }
+
+interface TransactionRewrite {
+  /** Its own start or end; null removes it. */
+  own: (action: ScriptActionDefinition) => ScriptActionDefinition | null
+  /** A tied sub-transaction start: the rewritten start, and whether it became a transaction of its own. */
+  start: (action: ScriptActionDefinition) => { action: ScriptActionDefinition; promoted: boolean }
+  /** The end that closes a rewritten start. */
+  end: (action: ScriptActionDefinition, opened: OpenMember) => ScriptActionDefinition
+  /** A step's tags (an http_sequence's requests carry them too). */
+  retag: (action: ScriptActionDefinition) => ScriptActionDefinition
+}
+
+interface TransactionWalk {
+  /** Indices removed from each list (its own markers, and a block they left empty), by list. */
+  removed: Map<string, Set<number>>
+  /** Why the edit cannot be made, or ''. */
+  problem: string
+}
+
+/** A list's identity for remapping: the phase list, or one list of a block of the step at `rootIndex`. */
+function listKeyOf(rootIndex: number | null, parentPath: string[], firstSegment: string | null): string {
+  if (rootIndex === null) return 'phase'
+  return `${rootIndex}|${parentPath.join('/')}|${firstSegment ? siblingListOf([firstSegment])?.listId ?? '' : ''}`
+}
+
+type BlockList = {
+  items: ScriptActionDefinition[]
+  segmentAt: (index: number) => string
+  /** A switch case or parallel branch may not be left empty (the validator refuses it). */
+  required: boolean
+  put: (control: NonNullable<ScriptActionDefinition['control']>, items: ScriptActionDefinition[]) => void
+}
+
+/** A block's lists, each with how its steps are named and how to put it back. */
+function blockLists(action: ScriptActionDefinition): BlockList[] {
+  const kind = debugContainerKind(action)
+  const control = action.control
+  if (!kind || kind === 'http_sequence' || !control) return []
+  const lists: BlockList[] = []
+  if (kind === 'control_if') {
+    if (control.steps) lists.push({ items: control.steps, segmentAt: index => `then[${index}]`, required: false, put: (next, items) => { next.steps = items } })
+    if (control.else) lists.push({ items: control.else, segmentAt: index => `else[${index}]`, required: false, put: (next, items) => { next.else = items } })
+  } else if (kind === 'control_loop') {
+    if (control.steps) lists.push({ items: control.steps, segmentAt: index => `loop[${index}]`, required: false, put: (next, items) => { next.steps = items } })
+  } else if (kind === 'control_switch') {
+    ;(control.cases || []).forEach((item, caseIndex) => {
+      if (item.steps) lists.push({ items: item.steps, segmentAt: index => `case[${caseIndex}][${index}]`, required: true, put: (next, items) => { next.cases = (next.cases || []).map((current, at) => at === caseIndex ? { ...current, steps: items } : current) } })
+    })
+    if (control.default) lists.push({ items: control.default, segmentAt: index => `default[${index}]`, required: false, put: (next, items) => { next.default = items } })
+  } else {
+    ;(control.branches || []).forEach((branch, branchIndex) => {
+      if (branch.steps) lists.push({ items: branch.steps, segmentAt: index => `branches[${branchIndex}].steps[${index}]`, required: true, put: (next, items) => { next.branches = (next.branches || []).map((current, at) => at === branchIndex ? { ...current, steps: items } : current) } })
+    })
+  }
+  return lists
+}
+
+/** A pause call (lr_stop/resume_transaction) naming `from`, renamed to `to`. */
+function renamePause(action: ScriptActionDefinition, from: string, to: string): ScriptActionDefinition {
+  const params: Record<string, unknown> = { ...((action.params as Record<string, unknown> | undefined) || {}) }
+  const was = Array.isArray(params.args) ? params.args[0] : undefined
+  if (!sameName(was, from)) return action
+  params.args = [to, ...(params.args as unknown[]).slice(1)]
+  if (Array.isArray(params.call_args) && params.call_args[0] && typeof params.call_args[0] === 'object') {
+    params.call_args = [{ ...(params.call_args[0] as Record<string, unknown>), value: to, raw: JSON.stringify(to) }, ...params.call_args.slice(1)]
+  }
+  const label = action.name && typeof was === 'string' && action.name.includes(was) ? action.name.split(was).join(to) : action.name
+  return { ...action, name: label, params } as ScriptActionDefinition
+}
+
+/** lr_stop_transaction / lr_resume_transaction for transaction `name`: a pause, not a marker. */
+function pausesTransaction(action: ScriptActionDefinition, name: string): boolean {
+  if ((action.type || '').toLowerCase() !== 'source_transaction') return false
+  const params = action.params as Record<string, unknown> | undefined
+  const fn = String(params?.function || '').toLowerCase()
+  const args = Array.isArray(params?.args) ? params.args : []
+  return (fn.includes('stop') || fn.includes('resume')) && sameName(args[0], name)
+}
+
+const hasThinkTime = (action: ScriptActionDefinition) => Boolean(action.think_time_after)
+
+interface ListWalk {
+  items: ScriptActionDefinition[]
+  /** Think time a removed marker carried that no step in the list could take (it went first). */
+  leftover: ScriptActionDefinition['think_time'] | null
+  /** Inherited sub-transactions this list closed. */
+  closed: Set<OpenMember>
+}
+
+/**
+ * The steps of a list (and of the blocks inside them, at any depth) with a
+ * transaction's markers rewritten. A tied sub-transaction's start and the end
+ * that closes it are rewritten together, even when the end is in a block
+ * inside the start's list (an import writes `if (…) lr_end_…(LR_PASS); else
+ * lr_end_…(LR_FAIL);`); another transaction's sub-transaction of the same name
+ * is left alone. An if or loop that loses every step to the edit goes too. The
+ * think time a removed marker carried moves to the step before it.
+ */
+function walkTransaction(
+  items: ScriptActionDefinition[],
+  where: { rootIndex: number | null; parentPath: string[]; segmentAt: ((index: number) => string) | null; offset: number },
+  own: { name: string; sub: boolean },
+  family: Set<string>,
+  rewrite: TransactionRewrite,
+  inherited: OpenMember[],
+  walk: TransactionWalk,
+): ListWalk {
+  const open = [...inherited]
+  const closed = new Set<OpenMember>()
+  const out: ScriptActionDefinition[] = []
+  const removed = new Set<number>()
+  let leftover: ListWalk['leftover'] = null
+  // A removed step's think time goes onto the step before it, as think time after it.
+  const keepThinkTime = (think: ScriptActionDefinition['think_time']) => {
+    const previous = out[out.length - 1]
+    if (!previous) { if (leftover) walk.problem = THINK_PROBLEM; leftover = think; return }
+    if (hasThinkTime(previous)) { walk.problem = THINK_PROBLEM; return }
+    out[out.length - 1] = { ...previous, think_time: think, think_time_after: true }
+  }
+  const drop = (at: number, item: ScriptActionDefinition) => {
+    removed.add(at)
+    if (hasThinkTime(item)) keepThinkTime(item.think_time)
+  }
+  items.forEach((item, at) => {
+    const marker = actionTransactionMarker(item)
+    if (!marker) {
+      if (pausesTransaction(item, own.name)) {
+        const next = rewrite.own(item)
+        if (next) out.push(next)
+        else drop(at, item)
+        return
+      }
+      const lists = blockLists(item)
+      if (!lists.length) { out.push(rewrite.retag(item)); return }
+      const rootIndex = where.rootIndex ?? where.offset + at
+      const path = where.rootIndex === null ? [] : [...where.parentPath, where.segmentAt!(at)]
+      const control = { ...item.control! }
+      const leftovers: Array<ListWalk['leftover']> = []
+      const closedInAll: Set<OpenMember>[] = []
+      for (const list of lists) {
+        const next = walkTransaction(list.items, { rootIndex, parentPath: path, segmentAt: list.segmentAt, offset: 0 }, own, family, rewrite, open, walk)
+        if (list.required && list.items.length && !next.items.length) walk.problem = 'Removing it would leave a switch case or parallel branch with no steps. Remove the markers inside that block first.'
+        leftovers.push(next.leftover)
+        closedInAll.push(next.closed)
+        list.put(control, next.items)
+      }
+      // A sub-transaction every list of the block closes is closed after it.
+      const kind = debugContainerKind(item)
+      const everyPath = kind === 'control_loop' || (kind === 'control_if' && Array.isArray(item.control?.steps) && Array.isArray(item.control?.else))
+      for (const member of closedInAll[0] || []) {
+        if (everyPath && closedInAll.every(set => set.has(member))) {
+          const index = open.indexOf(member)
+          if (index >= 0) open.splice(index, 1)
+          if (inherited.includes(member)) closed.add(member)
+        }
+      }
+      const block = { ...item, control } as ScriptActionDefinition
+      const stepsLeft = blockLists(block).some(list => list.items.length > 0)
+      const anyLeftover = leftovers.some(Boolean)
+      if ((kind === 'control_if' || kind === 'control_loop') && !stepsLeft && blockLists(item).some(list => list.items.length > 0)) {
+        drop(at, item)
+        // A wait the block made on every path stays; one only some paths made cannot.
+        if (anyLeftover) {
+          if (everyPath && leftovers.every(think => JSON.stringify(think) === JSON.stringify(leftovers[0]))) keepThinkTime(leftovers[0] ?? undefined)
+          else walk.problem = THINK_PROBLEM
+        }
+        return
+      }
+      if (anyLeftover) walk.problem = THINK_PROBLEM
+      out.push(rewrite.retag(block))
+      return
+    }
+    if (Boolean(marker.sub) === own.sub && marker.name === own.name) {
+      const next = rewrite.own(item)
+      if (next) out.push(next)
+      else drop(at, item)
+      return
+    }
+    const name = marker.name.toLowerCase()
+    if (marker.sub && marker.role === 'start' && startTiedTo(item, family)) {
+      const started = rewrite.start(item)
+      open.push({ name, promoted: started.promoted })
+      out.push(started.action)
+      return
+    }
+    const closing = marker.sub && marker.role === 'end' ? open.map(entry => entry.name).lastIndexOf(name) : -1
+    if (closing >= 0) {
+      const [opened] = open.splice(closing, 1)
+      if (inherited.includes(opened)) closed.add(opened)
+      out.push(rewrite.end(item, opened))
+      return
+    }
+    out.push(item)
+  })
+  if (removed.size) walk.removed.set(listKeyOf(where.rootIndex, where.parentPath, where.segmentAt ? where.segmentAt(0) : null), new Set([...removed].map(index => index + where.offset)))
+  return { items: out, leftover, closed }
+}
+
+const THINK_PROBLEM = 'Its start or end marker carries think time that cannot move to the step before it (that step has think time of its own, there is none, or only some branches wait). Move or clear that think time first, then remove the transaction.'
+
+/**
+ * A marker group's span in its phase list. A transaction an import ends in an
+ * if/else has no end the outline sees, so its group runs on: it ends at that
+ * if/else, or else before the next start of the same transaction (the engine
+ * cannot start it twice).
+ */
+function markerSpan(list: ScriptActionDefinition[], group: OutlineGroup, lo: number, hi: number): number {
+  if (!group.start || group.end) return hi
+  const sub = group.kind === 'subtransaction'
+  const restarts = (action: ScriptActionDefinition): boolean => {
+    const marker = actionTransactionMarker(action)
+    if (marker) return marker.role === 'start' && Boolean(marker.sub) === sub && sameName(marker.name, group.name)
+    return blockLists(action).some(block => block.items.some(restarts))
+  }
+  // An if/else whose every branch ends it (`if (…) lr_end_…(LR_PASS); else lr_end_…(LR_FAIL);`) is where it ends.
+  const endsOnEveryPath = (action: ScriptActionDefinition) => debugContainerKind(action) === 'control_if'
+    && Array.isArray(action.control?.steps) && Array.isArray(action.control?.else)
+    && [action.control!.steps!, action.control!.else!].every(branch => branch.some(item => {
+      const marker = actionTransactionMarker(item)
+      return marker?.role === 'end' && Boolean(marker.sub) === sub && sameName(marker.name, group.name)
+    }))
+  for (let index = lo + 1; index <= hi; index += 1) {
+    if (!list[index]) continue
+    // An if/else that ends it on every path is its end, even when a branch then retries it.
+    if (endsOnEveryPath(list[index])) return index
+    if (restarts(list[index])) return index - 1
+  }
+  return hi
+}
+
+/** A name or parent under `from` ("from||rest") moved under `to` ("to||rest", or "rest" when `to` is empty); others as they are. */
+function moveUnder(value: string, from: string, to: string): string {
+  const prefix = `${from.toLowerCase()}||`
+  if (!value.toLowerCase().startsWith(prefix)) return value
+  const rest = value.slice(prefix.length)
+  return to ? `${to}||${rest}` : rest
+}
+
+/** A step's tag (and its sequence requests' tags) renamed from `from` to `to` ('' clears it). */
+function retagFrom(from: string, to: string) {
+  const retag = (action: ScriptActionDefinition) => sameName(actionTransactionName(action), from) ? setActionTransactionName(action, to) : action
+  return (action: ScriptActionDefinition) => {
+    const next = retag(action)
+    const requests = (next.params as Record<string, unknown> | undefined)?.requests
+    if (debugContainerKind(next) !== 'http_sequence' || !Array.isArray(requests)) return next
+    const retagged = requests.map(request => request && typeof request === 'object' ? retag(request as ScriptActionDefinition) : request)
+    return retagged.some((request, index) => request !== requests[index]) ? { ...next, params: { ...(next.params || {}), requests: retagged } } as ScriptActionDefinition : next
+  }
+}
+
+/** A remap for a walk's removals: a location in a removed step goes; later ones in its list move up. */
+function walkRemap(phase: ScriptActionPhase, walk: TransactionWalk): LocationRemap {
+  const shiftIn = (removed: Set<number> | undefined, index: number) => {
+    if (!removed?.size) return index
+    if (removed.has(index)) return null
+    return index - [...removed].filter(at => at < index).length
+  }
+  return location => {
+    if (location.phase !== phase) return location
+    const actionIndex = shiftIn(walk.removed.get('phase'), location.actionIndex)
+    if (actionIndex === null) return null
+    const path = location.stepPath || []
+    const nextPath: string[] = []
+    for (let depth = 0; depth < path.length; depth += 1) {
+      const sibling = siblingListOf(path.slice(0, depth + 1))
+      if (!sibling) return location
+      const moved = shiftIn(walk.removed.get(listKeyOf(location.actionIndex, sibling.parentPath, path[depth])), sibling.index)
+      if (moved === null) return null
+      nextPath.push(sibling.segmentAt(moved))
+    }
+    if (actionIndex === location.actionIndex && nextPath.every((segment, depth) => segment === path[depth])) return location
+    return { ...location, actionIndex, stepPath: path.length ? nextPath : location.stepPath }
+  }
+}
+
+/**
  * Rename a transaction group to `to` (for a sub-transaction, its full
  * "Parent||child" name). The sub-transactions under it, inside blocks and
  * under one another too, follow: a "parent||…" name takes the new name, and a
  * start naming it (or a sub-transaction under it) as its parent names the new
- * one. A tagged run's steps are re-tagged.
+ * one. Steps tagged with it, and a sequence's requests, are re-tagged.
  */
 export function renameTransaction(script: ScriptDefinition, group: OutlineGroup, to: string): ScriptDefinition {
   const next = to.trim()
@@ -385,119 +672,105 @@ export function renameTransaction(script: ScriptDefinition, group: OutlineGroup,
   const list = scriptActionsForPhase(script, phase)
   if (!groupHasMarkers(group)) {
     const indices = new Set(rows.filter(row => actionTransactionName(row.action) === from).map(row => row.actionIndex))
-    return withPhaseList(script, phase, list.map((action, index) => indices.has(index) ? setActionTransactionName(action, next) : action))
+    const retag = retagFrom(from, next)
+    return withPhaseList(script, phase, list.map((action, index) => indices.has(index) ? retag(action) : action))
   }
-  const sub = group.kind === 'subtransaction'
-  const family = transactionFamily(list.slice(lo, hi + 1), from)
-  const prefix = `${from.toLowerCase()}||`
-  const rename = (action: ScriptActionDefinition) => {
-    const marker = actionTransactionMarker(action)
-    if (!marker) return action
-    if (Boolean(marker.sub) === sub && marker.name === from) return renameTransactionMarker(action, from, next)
-    if (!marker.sub) return action
-    const named = marker.name.toLowerCase().startsWith(prefix) ? renameTransactionMarker(action, marker.name, `${next}||${marker.name.slice(prefix.length)}`) : action
-    return marker.role === 'start' && startTiedTo(action, family) ? renameParentArgument(named, from, next) : named
-  }
-  return withPhaseList(script, phase, list.map((action, index) => {
-    if (index < lo || index > hi) return action
-    return rename(mapBlockLists(action, [], items => items.map(rename)))
-  }))
+  const last = markerSpan(list, group, lo, hi)
+  const span = list.slice(lo, last + 1)
+  const walk: TransactionWalk = { removed: new Map(), problem: '' }
+  const renamed = walkTransaction(span, { rootIndex: null, parentPath: [], segmentAt: null, offset: lo }, { name: from, sub: group.kind === 'subtransaction' }, transactionFamily(span, from), {
+    own: action => actionTransactionMarker(action) ? renameTransactionMarker(action, from, next) : renamePause(action, from, next),
+    start: action => {
+      const parent = subParentOf(action)
+      return { action: withMarkerCall(action, moveUnder(actionTransactionMarker(action)!.name, from, next), sameName(parent, from) ? next : moveUnder(parent, from, next)), promoted: false }
+    },
+    end: action => withMarkerCall(action, moveUnder(actionTransactionMarker(action)!.name, from, next)),
+    retag: retagFrom(from, next),
+  }, [], walk).items
+  return withPhaseList(script, phase, [...list.slice(0, lo), ...renamed, ...list.slice(last + 1)])
 }
 
 export interface TransactionRemoval extends TransactionEdit {
-  /** Sub-transactions removed with their parent. */
-  subTransactions: number
-  /** Why nothing was removed (a block would be left with no step), or ''. */
+  /** Sub-transactions that moved up a level, and how many of them are now transactions of their own. */
+  movedUp: number
+  promoted: number
+  /** Why nothing was removed, or ''. */
   problem: string
+  /** Request groups it owned, which now time their own requests (under their own names). */
+  sequences: string[]
 }
 
 /**
- * Remove a transaction and keep its steps: a marker pair's markers go, and
- * those of the sub-transactions under it (inside blocks, and under one another,
- * too: the engine refuses a sub-transaction whose parent is not open); an end
- * goes with the start it closes in its list, so another transaction's
- * sub-transaction of the same name stays. A tagged run's steps lose the tag.
+ * Remove a transaction and keep everything inside it: its start and end
+ * markers go (an if or loop left with nothing but them goes too) and its steps
+ * lose its tag. The sub-transactions under it move up a level and keep
+ * measuring their steps: under a transaction's removal each becomes a
+ * transaction of its own ("Login||submit" becomes "submit"); under a
+ * sub-transaction's, a sub-transaction of its parent. A tagged run's steps
+ * lose the tag.
  */
 export function removeTransaction(script: ScriptDefinition, group: OutlineGroup): TransactionRemoval {
-  const unchanged: TransactionRemoval = { script, remap: location => location, focus: null, subTransactions: 0, problem: '' }
   const { phase, rows, lo, hi } = groupList(group)
   const list = scriptActionsForPhase(script, phase)
+  const unchanged = { script, remap: (location: StepLocation) => location, focus: null, movedUp: 0, promoted: 0, problem: '', sequences: [] as string[] }
   if (!groupHasMarkers(group)) {
     const indices = new Set(rows.filter(row => actionTransactionName(row.action) === group.name).map(row => row.actionIndex))
+    const retag = retagFrom(group.name, '')
     return {
       ...unchanged,
-      script: withPhaseList(script, phase, list.map((action, index) => indices.has(index) ? setActionTransactionName(action, '') : action)),
+      script: withPhaseList(script, phase, list.map((action, index) => indices.has(index) ? retag(action) : action)),
       focus: indices.size ? { phase, actionIndex: Math.min(...indices) } : null,
     }
   }
+  const removed = group.name
   const sub = group.kind === 'subtransaction'
-  const family = transactionFamily(list.slice(lo, hi + 1), group.name)
-  let subTransactions = 0
-  // The markers that go from items[from..to]: the transaction's own, and each
-  // tied sub-transaction start with the end that closes it in the same list.
-  const goingIn = (items: ScriptActionDefinition[], from: number, to: number) => {
-    const removed = new Set<number>()
-    const open: string[] = []
-    for (let index = from; index <= to; index += 1) {
-      const marker = items[index] ? actionTransactionMarker(items[index]) : null
-      if (!marker) continue
-      if (Boolean(marker.sub) === sub && marker.name === group.name) { removed.add(index); continue }
-      if (!marker.sub) continue
-      const name = marker.name.toLowerCase()
-      if (marker.role === 'start') {
-        if (startTiedTo(items[index], family)) { removed.add(index); open.push(name); subTransactions += 1 }
-        continue
-      }
-      const at = open.lastIndexOf(name)
-      if (at >= 0) { open.splice(at, 1); removed.add(index) }
-    }
-    return removed
+  // Where its sub-transactions go: up to its own parent, or out to stand alone.
+  const parent = sub && group.start ? subParentOf(group.start.action) || removed.slice(0, Math.max(0, removed.lastIndexOf('||'))) : ''
+  const last = markerSpan(list, group, lo, hi)
+  const span = list.slice(lo, last + 1)
+  let movedUp = 0
+  let promoted = 0
+  // A request group (http_sequence) the transaction owned times its requests again once it is gone.
+  const sequences: string[] = []
+  const noteSequences = (action: ScriptActionDefinition) => {
+    // A transparent concurrent group records no transaction of its own.
+    const transparent = action.metadata?.transparent_request_group === true && (action.params as Record<string, unknown> | undefined)?.execution_mode === 'concurrent'
+    if (debugContainerKind(action) === 'http_sequence' && !transparent && sameName(actionTransactionName(action), removed)) sequences.push(action.name || 'Request group')
+    blockLists(action).forEach(list => list.items.forEach(noteSequences))
   }
-  // The indices removed from each list, keyed by the list ("phase|root|block path|list").
-  const removedBy = new Map<string, Set<number>>()
-  let emptied = false
-  const listKey = (rootIndex: number | null, parentPath: string[], firstSegment: string | null) =>
-    `${rootIndex ?? ''}|${parentPath.join('/')}|${firstSegment ? siblingListOf([firstSegment])?.listId ?? '' : ''}`
-  const top = goingIn(list, lo, hi)
-  const kept = list.map((action, index) => {
-    if (index < lo || index > hi || top.has(index)) return action
-    return mapBlockLists(action, [], (items, parentPath, segmentAt) => {
-      const removed = goingIn(items, 0, items.length - 1)
-      if (!removed.size) return items
-      if (removed.size === items.length) emptied = true
-      removedBy.set(listKey(index, parentPath, segmentAt(0)), removed)
-      return items.filter((_, at) => !removed.has(at))
-    })
-  })
-  if (emptied) return { ...unchanged, problem: 'Removing it would leave a block with no steps. Remove the markers inside that block first.' }
-  const shiftIn = (removed: Set<number> | undefined, index: number) => {
-    if (!removed?.size) return index
-    if (removed.has(index)) return null
-    return index - [...removed].filter(at => at < index).length
+  span.forEach(noteSequences)
+  const walk: TransactionWalk = { removed: new Map(), problem: '' }
+  const kept = walkTransaction(span, { rootIndex: null, parentPath: [], segmentAt: null, offset: lo }, { name: removed, sub }, transactionFamily(span, removed), {
+    own: () => null,
+    start: action => {
+      const was = subParentOf(action)
+      const next = sameName(was, removed) ? parent : moveUnder(was, removed, parent)
+      movedUp += 1
+      if (!next) promoted += 1
+      return { action: withMarkerCall(action, moveUnder(actionTransactionMarker(action)!.name, removed, parent), next || null), promoted: !next }
+    },
+    end: (action, opened) => withMarkerCall(action, moveUnder(actionTransactionMarker(action)!.name, removed, parent), opened.promoted ? null : undefined),
+    retag: retagFrom(removed, ''),
+  }, [], walk)
+  if (walk.problem) return { ...unchanged, problem: walk.problem }
+  // Think time its start marker carried goes to the step that runs before the transaction.
+  const before = list.slice(0, lo)
+  if (kept.leftover) {
+    const previous = before[before.length - 1]
+    if (!previous || hasThinkTime(previous)) return { ...unchanged, problem: THINK_PROBLEM }
+    before[before.length - 1] = { ...previous, think_time: kept.leftover, think_time_after: true }
   }
-  const remap: LocationRemap = location => {
-    if (location.phase !== phase) return location
-    const actionIndex = shiftIn(top, location.actionIndex)
-    if (actionIndex === null) return null
-    const path = location.stepPath || []
-    const nextPath: string[] = []
-    for (let depth = 0; depth < path.length; depth += 1) {
-      const sibling = siblingListOf(path.slice(0, depth + 1))
-      if (!sibling) return location
-      const moved = shiftIn(removedBy.get(listKey(location.actionIndex, sibling.parentPath, path[depth])), sibling.index)
-      if (moved === null) return null
-      nextPath.push(sibling.segmentAt(moved))
-    }
-    if (actionIndex === location.actionIndex && nextPath.every((segment, depth) => segment === path[depth])) return location
-    return { ...location, actionIndex, stepPath: path.length ? nextPath : location.stepPath }
-  }
-  const firstKept = (() => { for (let index = lo; index <= hi; index += 1) if (!top.has(index)) return shiftIn(top, index); return null })()
+  const remap = walkRemap(phase, walk)
+  const top = walk.removed.get('phase') || new Set<number>()
+  const firstKept = (() => { for (let index = lo; index <= last; index += 1) if (!top.has(index)) return remap({ phase, actionIndex: index })?.actionIndex ?? null; return null })()
   return {
-    script: withPhaseList(script, phase, kept.filter((_, index) => !top.has(index))),
+    script: withPhaseList(script, phase, [...before, ...kept.items, ...list.slice(last + 1)]),
     remap,
     focus: firstKept === null ? null : { phase, actionIndex: firstKept },
-    subTransactions,
+    movedUp,
+    promoted,
     problem: '',
+    sequences,
   }
 }
 
@@ -548,9 +821,9 @@ export function nestedNameConflict(script: ScriptDefinition, target: Pick<WrapTa
 }
 
 /** A transaction group of the outline as a span of its phase's list (for nestedNameConflict when renaming). */
-export function groupSpan(group: OutlineGroup): Pick<WrapTarget, 'phase' | 'rootIndex' | 'memberPath' | 'lo' | 'hi'> {
+export function groupSpan(script: ScriptDefinition, group: OutlineGroup): Pick<WrapTarget, 'phase' | 'rootIndex' | 'memberPath' | 'lo' | 'hi'> {
   const { phase, lo, hi } = groupList(group)
-  return { phase, rootIndex: null, memberPath: [], lo, hi }
+  return { phase, rootIndex: null, memberPath: [], lo, hi: markerSpan(scriptActionsForPhase(script, phase), group, lo, hi) }
 }
 
 export interface StepRemoval extends TransactionEdit {
