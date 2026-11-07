@@ -42,6 +42,7 @@ import ImportIssueSeverityTag from './ImportIssueSeverityTag'
 import { groupImportFindings, importReviewFindings, readinessCounts, readinessSummaryText, unresolvedIssueCount, type ImportReadiness, type IssueCategory } from './importReviewIssues'
 import SharedAssetsDialog from './SharedAssetsDialog'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
+import { withoutInactiveProxySecretNames } from './scriptSecretReferenceModel'
 import AuraOutcomeReview from './AuraOutcomeReview'
 import SalesforceCorrelationReview from './SalesforceCorrelationReview'
 import AuraParameterLocationDetails from './AuraParameterLocationDetails'
@@ -495,15 +496,32 @@ function uniquifyEnterpriseArchiveResultScriptNames(
   }
 }
 
+// The stamped preflight without the secrets only a not-in-use proxy
+// credential references (an older controller lists them), kept by identity
+// per preflight and script so a comparison by identity still holds.
+const proxyFilteredPreflights = new WeakMap<ReplayPreflight, { script: ScriptDefinition; preflight: ReplayPreflight }>()
+function withoutInactiveProxySecrets(preflight: ReplayPreflight | null, script: ScriptDefinition | null): ReplayPreflight | null {
+  if (!preflight || !script) return preflight
+  const cached = proxyFilteredPreflights.get(preflight)
+  if (cached && cached.script === script) return cached.preflight
+  const required = withoutInactiveProxySecretNames(preflight.required_secrets || [], script)
+  const missing = withoutInactiveProxySecretNames(preflight.missing_secrets || [], script)
+  const filtered = required.length === (preflight.required_secrets || []).length && missing.length === (preflight.missing_secrets || []).length
+    ? preflight
+    : { ...preflight, required_secrets: required, missing_secrets: missing }
+  proxyFilteredPreflights.set(preflight, { script, preflight: filtered })
+  return filtered
+}
+
 function getEnterpriseArchiveReplayPreflight(
   script: ScriptDefinition | null,
   result: EnterpriseArchiveImportResult | null,
 ): ReplayPreflight | null {
   const lanePreflight = script?.metadata?.import?.preserved?.replay_preflight
   if (lanePreflight && typeof lanePreflight === 'object' && !Array.isArray(lanePreflight)) {
-    return lanePreflight as ReplayPreflight
+    return withoutInactiveProxySecrets(lanePreflight as ReplayPreflight, script)
   }
-  return result?.preflight || null
+  return withoutInactiveProxySecrets(result?.preflight || null, script)
 }
 
 function enterpriseArchiveResultScriptIsHandled(item: EnterpriseArchiveImportQueueItem, scriptIndex: number): boolean {

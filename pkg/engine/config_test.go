@@ -542,8 +542,11 @@ func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			HTTP: dsl.HTTPConfig{
-				Proxy: dsl.ProxyConfig{Password: "{{secret.proxy_password}}"},
-				Auth:  dsl.AuthConfig{Type: "bearer", Token: "{{secret.auth_token}}"},
+				// Proxy credentials are handed to the runtime only for an active
+				// custom proxy (dsl.HTTPProxyCredentialsActive).
+				ProxyMode: "custom",
+				Proxy:     dsl.ProxyConfig{URL: "http://proxy.example:8080", Password: "{{secret.proxy_password}}"},
+				Auth:      dsl.AuthConfig{Type: "bearer", Token: "{{secret.auth_token}}"},
 			},
 			SOAP: dsl.SOAPConfig{
 				WSSecurity: &dsl.SOAPWSSecurityConfig{

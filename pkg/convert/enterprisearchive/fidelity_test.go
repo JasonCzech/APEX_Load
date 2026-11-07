@@ -136,3 +136,41 @@ func combinedJavaVuserFidelityResult() *ConvertResult {
 		},
 	}
 }
+
+// A report stored before the encrypted proxy callout became advisory lists it
+// as a blocker. Readers drop that line, a report it alone held blocked turns
+// promotable, and the stored report is never modified.
+func TestImportFidelityReportWithoutAdvisoryBlockers(t *testing.T) {
+	const sentence = "One or more source request bodies were detected but not converted."
+	for _, tc := range []struct {
+		name       string
+		blockers   []string
+		wantStatus string
+		want       []string
+	}{
+		{name: "converter line only", blockers: []string{"encrypted_proxy_password at init[0]"}, wantStatus: ImportPromotionPromotable},
+		{name: "repaired bare code only", blockers: []string{" encrypted_proxy_password "}, wantStatus: ImportPromotionPromotable},
+		{name: "beside real blockers", blockers: []string{"encrypted_proxy_password at init[0]", "legacy_tls_replacement at actions[0]", sentence}, wantStatus: ImportPromotionBlocked, want: []string{"legacy_tls_replacement at actions[0]", sentence}},
+		{name: "real blockers only", blockers: []string{sentence}, wantStatus: ImportPromotionBlocked, want: []string{sentence}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := &ImportFidelityReport{PromotionStatus: ImportPromotionBlocked, Blockers: append([]string(nil), tc.blockers...), Warnings: []string{"kept"}}
+			got := stored.WithoutAdvisoryBlockers()
+			if got.PromotionStatus != tc.wantStatus || strings.Join(got.Blockers, "|") != strings.Join(tc.want, "|") || len(got.Warnings) != 1 {
+				t.Fatalf("normalized = %+v, want status %q blockers %q", got, tc.wantStatus, tc.want)
+			}
+			if stored.PromotionStatus != ImportPromotionBlocked || strings.Join(stored.Blockers, "|") != strings.Join(tc.blockers, "|") {
+				t.Fatalf("stored report was modified: %+v", stored)
+			}
+			if len(tc.want) == len(tc.blockers) && got != stored {
+				t.Fatal("a report with nothing to drop was copied")
+			}
+		})
+	}
+	if (*ImportFidelityReport)(nil).WithoutAdvisoryBlockers() != nil {
+		t.Fatal("nil report normalized to non-nil")
+	}
+	if AdvisoryFidelityBlocker("encrypted_proxy_password is required at init[0] before promotion") {
+		t.Fatal("a converter sentence was treated as an advisory callout")
+	}
+}

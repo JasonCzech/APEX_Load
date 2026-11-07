@@ -143,17 +143,8 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		// they are also listed on their own for a client to show as blockers.
 		preflight.DataSourceIssues = append([]string(nil), dataWarnings...)
 	}
-	if len(preflight.MissingSecrets) > 0 {
-		if controllerManagedSecrets {
-			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("configure project secret(s) before replay: %s", strings.Join(preflight.MissingSecrets, ", ")))
-		} else {
-			// Import and authoring previews intentionally have no governed
-			// project resolver. They remain saveable and show configure-later
-			// guidance instead of pretending the legacy environment probe is a
-			// complete project-secret status check.
-			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) require project configuration before execution: %s", strings.Join(preflight.MissingSecrets, ", ")))
-		}
-	}
+	preflight.Warnings = append(preflight.Warnings, ReplaySecretWarnings(script, preflight.MissingSecrets, controllerManagedSecrets)...)
+	preflight.Warnings = append(preflight.Warnings, ReplayInactiveProxySecretNotes(script, secretResolver)...)
 	var environmentDetail string
 	preflight.RequiredEnvironment, preflight.UnreadableEnvironment, environmentDetail = ReplayEnvironmentRefs(script, controllerManagedSecrets)
 	if len(preflight.UnreadableEnvironment) > 0 {
@@ -184,7 +175,7 @@ func BuildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			ID:     "secrets",
 			Label:  "Secret bindings",
 			Status: ReplayCheckStatus(!controllerManagedSecrets || len(preflight.MissingSecrets) == 0, len(preflight.RequiredSecrets) > 0),
-			Detail: ReplaySecretDetail(preflight.RequiredSecrets, preflight.MissingSecrets),
+			Detail: ReplaySecretCheckDetail(script, preflight.RequiredSecrets, preflight.MissingSecrets),
 		},
 		{
 			ID:     "data_sources",
@@ -639,7 +630,10 @@ func ReplaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([
 	required := make(map[string]struct{})
 	missing := make(map[string]struct{})
 	checkedSecrets := make(map[string]struct{})
-	secretNames, err := engine.ReferencedSecretNames(script)
+	// Required, not referenced: a proxy credential the runtime never sends
+	// for the current proxy settings is neither required nor missing
+	// (ReplayInactiveProxySecretNotes reports it without blocking).
+	secretNames, err := engine.RequiredSecretNames(script)
 	if err != nil {
 		secretNames = nil
 		for _, action := range ReplayOrderedActions(script) {
@@ -674,6 +668,177 @@ func ReplaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([
 		}
 	}
 	return SortedSetKeys(required), SortedSetKeys(missing)
+}
+
+// Replay secret warning prefixes. Missing secrets used only by an active proxy
+// credential are worded by dsl.ProxyCredentialSecretReference.BlockerMessage
+// instead.
+const (
+	ReplayMissingSecretsWarning      = "configure project secret(s) before replay: "
+	ReplayUnconfiguredSecretsWarning = "secret(s) require project configuration before execution: "
+)
+
+// ReplaySecretWarnings words missing required secrets. A name only an active
+// custom (or browser) proxy credential uses gets the proxy-specific blocker
+// text, which says to bind a secret or change the proxy setting; every other
+// name keeps the generic configure line. Controller-managed checks (a governed
+// resolver) say "before replay"; import and authoring previews, which have no
+// resolver and stay saveable, say "before execution".
+func ReplaySecretWarnings(script *dsl.Script, missing []string, controllerManaged bool) []string {
+	if len(missing) == 0 {
+		return nil
+	}
+	proxyMessages, others := engine.MissingSecretProxyBlockers(script, missing)
+	warnings := append([]string(nil), proxyMessages...)
+	if len(others) > 0 {
+		prefix := ReplayUnconfiguredSecretsWarning
+		if controllerManaged {
+			prefix = ReplayMissingSecretsWarning
+		}
+		warnings = append(warnings, prefix+strings.Join(others, ", "))
+	}
+	return warnings
+}
+
+// ReplayInactiveProxySecretNotes returns the non-blocking notes for unbound
+// secrets referenced only from proxy credential fields the runtime does not
+// send (an HTTP proxy in No proxy, System or PAC mode, or a browser proxy
+// without a server). The reference stays in the script so it is ready if the
+// proxy later becomes custom; until then it never blocks. A resolver checks
+// binding the way ReplaySecretRefs does; without one the legacy environment
+// probe answers.
+func ReplayInactiveProxySecretNotes(script *dsl.Script, resolvers ...engine.SecretResolver) []string {
+	if script == nil {
+		return nil
+	}
+	var inactive []dsl.ProxyCredentialSecretReference
+	for _, ref := range dsl.ProxyCredentialSecretReferences(script) {
+		if !ref.Active {
+			inactive = append(inactive, ref)
+		}
+	}
+	if len(inactive) == 0 {
+		return nil
+	}
+	requiredNames, err := engine.RequiredSecretNames(script)
+	if err != nil {
+		return nil
+	}
+	required := make(map[string]struct{}, len(requiredNames))
+	for _, name := range requiredNames {
+		required[name] = struct{}{}
+	}
+	var candidates []string
+	for _, ref := range inactive {
+		if _, ok := required[ref.Name]; !ok {
+			candidates = append(candidates, ref.Name)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	var resolver engine.SecretResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
+	unbound := make(map[string]struct{})
+	if resolver != nil {
+		ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+		_, unresolved, resolutionErr := engine.ResolveSecretNames(ctx, candidates, resolver)
+		cancel()
+		if resolutionErr != nil {
+			unresolved = candidates
+		}
+		for _, name := range unresolved {
+			unbound[name] = struct{}{}
+		}
+	} else {
+		for _, name := range candidates {
+			if !ReplaySecretAvailable(script.ProjectID, name) {
+				unbound[name] = struct{}{}
+			}
+		}
+	}
+	var notes []string
+	for _, ref := range inactive {
+		if _, ok := unbound[ref.Name]; ok {
+			notes = append(notes, ref.InactiveNote())
+		}
+	}
+	return notes
+}
+
+// ReplaySecretCheckDetail is the secrets check detail: the proxy-specific
+// blocker for a missing name only an active proxy credential uses, then the
+// generic ReplaySecretDetail wording for the rest. A name referenced only by
+// an inactive proxy credential field is not required, but the script still
+// references it, so the detail names it as not needed instead of claiming
+// the script has no secret references.
+func ReplaySecretCheckDetail(script *dsl.Script, required []string, missing []string) string {
+	inactive := replayInactiveProxySecretDetail(script, required)
+	if len(required) == 0 && inactive != "" {
+		return "No required project secrets. " + inactive
+	}
+	detail := replaySecretRequiredDetail(script, required, missing)
+	if inactive != "" {
+		detail += "; " + inactive
+	}
+	return detail
+}
+
+func replaySecretRequiredDetail(script *dsl.Script, required []string, missing []string) string {
+	if len(required) == 0 || len(missing) == 0 {
+		return ReplaySecretDetail(required, missing)
+	}
+	proxyMessages, others := engine.MissingSecretProxyBlockers(script, missing)
+	if len(proxyMessages) == 0 {
+		return ReplaySecretDetail(required, missing)
+	}
+	parts := append([]string(nil), proxyMessages...)
+	if len(others) > 0 {
+		parts = append(parts, "Missing: "+strings.Join(others, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+// replayInactiveProxySecretDetail names the secrets referenced only by proxy
+// credential fields the runtime does not send ("" when there are none).
+func replayInactiveProxySecretDetail(script *dsl.Script, required []string) string {
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, name := range required {
+		requiredSet[name] = struct{}{}
+	}
+	var httpNames, browserNames []string
+	for _, ref := range dsl.ProxyCredentialSecretReferences(script) {
+		if ref.Active {
+			continue
+		}
+		if _, ok := requiredSet[ref.Name]; ok {
+			continue
+		}
+		if ref.Browser {
+			browserNames = append(browserNames, ref.Name)
+		} else {
+			httpNames = append(httpNames, ref.Name)
+		}
+	}
+	var parts []string
+	if names := sortedUniqueNames(httpNames); len(names) > 0 {
+		parts = append(parts, "Not needed for the current Proxy mode: "+strings.Join(names, ", "))
+	}
+	if names := sortedUniqueNames(browserNames); len(names) > 0 {
+		parts = append(parts, "Not needed without a browser proxy server: "+strings.Join(names, ", "))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func sortedUniqueNames(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	out := append([]string(nil), names...)
+	slices.Sort(out)
+	return slices.Compact(out)
 }
 
 func ReplaySecretAvailable(projectID, name string) bool {

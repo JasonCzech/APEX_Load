@@ -449,3 +449,107 @@ describe('blockedStepBadgeTitle', () => {
     expect(blockedStepBadgeTitle(step('awaiting_runtime_support'), ['import_review_required'])).toBe('Blocks replay: Review imported behavior. Cannot be cleared yet: APEX cannot yet run this step as the source does, so it stays blocked after any repair. No edit or review mark makes it runnable in this release.')
   })
 })
+
+describe('replayReadinessIssues proxy credential secrets', () => {
+  const proxied = (mode: string, actions: ScriptDefinition['actions'] = []): ScriptDefinition => ({
+    name: 'Proxy', version: '1', protocol: 'http', actions,
+    config: { base_url: 'https://example.test', http: { proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+  })
+
+  it('titles a missing Custom proxy secret as the proxy\'s problem, with both ways out', () => {
+    const issues = replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }), [], new Map(), proxied('custom'))
+    expect(issues).toEqual([{
+      id: 'readiness:secret:ENTERPRISE_PROXY_PASSWORD',
+      severity: 'blocker',
+      title: 'Custom proxy credential not bound',
+      description: 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.',
+      secret: 'ENTERPRISE_PROXY_PASSWORD',
+    }])
+  })
+
+  it('never lists a secret only a not-in-use proxy credential references, even where an older controller does', () => {
+    for (const mode of ['none', 'system', 'pac']) {
+      expect(replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }), [], new Map(), proxied(mode))).toEqual([])
+    }
+  })
+
+  it('words a proxy secret a step also uses as any other missing secret', () => {
+    const script = proxied('custom', [{ name: 'Login', type: 'POST', target: '/login', body: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' }])
+    const [issue] = replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }), [], new Map(), script)
+    expect(issue.title).toBe('Configure project secret: ENTERPRISE_PROXY_PASSWORD')
+    expect(replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }), [], new Map(), proxied('system', script.actions))[0].title).toBe('Configure project secret: ENTERPRISE_PROXY_PASSWORD')
+  })
+
+  it('titles a missing browser proxy secret only while the browser proxy has a server', () => {
+    const browser = (server?: string): ScriptDefinition => ({
+      name: 'Browser', version: '1', protocol: 'browser', actions: [],
+      config: { base_url: '', browser: { proxy: { ...(server ? { server } : {}), password: '{{secret.BROWSER_PROXY_PASSWORD}}' } } },
+    })
+    const facts = preflight({ missing_secrets: ['BROWSER_PROXY_PASSWORD'] })
+    expect(replayReadinessIssues(facts, [], new Map(), browser('http://proxy.example.test:3128')).map(issue => [issue.title, issue.description])).toEqual([[
+      'Browser proxy credential not bound',
+      'The browser proxy password uses the secret BROWSER_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or clear the browser proxy server.',
+    ]])
+    expect(replayReadinessIssues(facts, [], new Map(), browser())).toEqual([])
+  })
+
+  // The server writes the proxy blocker line beside missing_secrets
+  // (dsl ProxyCredentialSecretReference BlockerMessage).
+  const serverBlockerLine = 'Custom proxy credential not bound: The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.'
+
+  it('lists the server\'s proxy blocker line once, as the blocker missing_secrets itemizes', () => {
+    const issues = replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'], warnings: [serverBlockerLine] }), [], new Map(), proxied('custom'))
+    expect(issues.map(issue => [issue.severity, issue.title])).toEqual([['blocker', 'Custom proxy credential not bound']])
+    const browserLine = 'Browser proxy credential not bound: The browser proxy password uses the secret BROWSER_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or clear the browser proxy server.'
+    expect(replayReadinessIssues(preflight({ warnings: [browserLine] }), [], new Map(), proxied('custom'))).toEqual([])
+  })
+
+  it('drops the server\'s proxy blocker line once the secret is bound after validation', () => {
+    expect(replayReadinessIssues(preflight({ missing_secrets: [], warnings: [serverBlockerLine] }), [], new Map(), proxied('custom'))).toEqual([])
+  })
+
+  it('counts no note for a proxy secret that is not needed, in the server\'s or the editor\'s words', () => {
+    const notes = [
+      'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, but Proxy mode is System, so it is not needed. It becomes required if you switch Proxy mode to Custom.',
+      'The proxy username and password use the secret ENTERPRISE_PROXY_PASSWORD, but Proxy mode is PAC, so it is not needed. It becomes required if you switch Proxy mode to Custom.',
+      'The browser proxy username uses the secret BROWSER_PROXY_USER, but no browser proxy server is set, so it is not needed. It becomes required if you set a browser proxy server.',
+    ]
+    expect(replayReadinessIssues(preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'], warnings: notes }), [], new Map(), proxied('system'))).toEqual([])
+    // Any other warning stays listed.
+    expect(replayReadinessIssues(preflight({ warnings: ['The proxy URL is unreachable'] }), [], new Map(), proxied('system')).map(issue => issue.title)).toEqual(['The proxy URL is unreachable'])
+  })
+
+  it('words the proxy blocker by field and proxy for a secret the preflight lists as the script writes it', () => {
+    // The controller's missing_secrets keeps the name as written (the Debug
+    // refusal passes its preflight through unchanged).
+    const username: ScriptDefinition = {
+      name: 'Proxy', version: '1', protocol: 'http', actions: [],
+      config: { base_url: 'https://example.test', http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080', username: '{{secret.proxy_user}}' } } },
+    }
+    expect(replayReadinessIssues(preflight({ missing_secrets: ['proxy_user'] }), [], new Map(), username)).toEqual([{
+      id: 'readiness:secret:proxy_user',
+      severity: 'blocker',
+      title: 'Custom proxy credential not bound',
+      description: 'The proxy username uses the secret proxy_user, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.',
+      secret: 'proxy_user',
+    }])
+    const browser: ScriptDefinition = {
+      name: 'Browser', version: '1', protocol: 'browser', actions: [],
+      config: { base_url: 'https://example.test', browser: { proxy: { server: 'http://proxy.example.test:3128', password: '{{secret.bp.pw}}' } } } as ScriptDefinition['config'],
+    }
+    expect(replayReadinessIssues(preflight({ missing_secrets: ['bp.pw'] }), [], new Map(), browser)).toEqual([{
+      id: 'readiness:secret:bp.pw',
+      severity: 'blocker',
+      title: 'Browser proxy credential not bound',
+      description: 'The browser proxy password uses the secret bp.pw, which is not bound to a project secret. Bind a project secret to it, or clear the browser proxy server.',
+      secret: 'bp.pw',
+    }])
+  })
+
+  it('judges whether a proxy credential is in use from the proxy source when it differs from the script', () => {
+    const facts = preflight({ missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] })
+    // The structured script still says No proxy; the JSON draft says Custom.
+    expect(replayReadinessIssues(facts, [], new Map(), proxied('none'), 'reimport', proxied('custom')).map(issue => issue.title)).toEqual(['Custom proxy credential not bound'])
+    expect(replayReadinessIssues(facts, [], new Map(), proxied('custom'), 'reimport', proxied('none'))).toEqual([])
+  })
+})

@@ -1202,11 +1202,21 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 		return nil, status.Errorf(codes.InvalidArgument, "validate script: %s", message)
 	}
+	// The controller always bundles every required name and may also bundle
+	// bound referenced-but-not-required names, such as a secret behind an
+	// inactive proxy credential, so generators without
+	// secret_bundle_required_only_v1 still receive them. Staging demands only
+	// the required names (engine.RequiredSecretNames) and admits any
+	// referenced name, but no name the script does not reference.
 	referencedSecrets, err := engine.ReferencedSecretNames(&script)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "inspect script secret references")
 	}
-	if err := validateAssignmentSecretReferences(referencedSecrets, request.GetSecretBundle()); err != nil {
+	requiredSecrets, err := engine.RequiredSecretNames(&script)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "inspect script secret references")
+	}
+	if err := validateAssignmentSecretBundle(requiredSecrets, referencedSecrets, request.GetSecretBundle()); err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 	runLogic := script.Config.RunLogic

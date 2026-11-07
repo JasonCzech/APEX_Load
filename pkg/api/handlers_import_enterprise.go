@@ -841,7 +841,7 @@ func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.Con
 	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != enterprisearchive.ImportModeExecutable {
 		combinedJavaVuser := result.DetectedProtocol.ImportMode == enterprisearchive.ImportModeExternalRunnerRequired &&
 			isGovernedJavaVuserDraft(result.Script)
-		fidelityReport := result.FidelityReport
+		fidelityReport := result.FidelityReport.WithoutAdvisoryBlockers()
 		if fidelityReport == nil {
 			fidelityReport = summary.FidelityReport
 		}
@@ -1193,7 +1193,9 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 		summary.SourceReview = result.SourceReview
 	}
 	if result != nil && result.FidelityReport != nil {
-		summary.FidelityReport = result.FidelityReport
+		// A draft stored before the advisory rule carries its old callout
+		// as a blocker; the summary, and the report it persists, drop it.
+		summary.FidelityReport = result.FidelityReport.WithoutAdvisoryBlockers()
 	}
 
 	if result == nil || result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {

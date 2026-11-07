@@ -1,7 +1,9 @@
 import type { ImportReviewSection } from '../types/scriptImports'
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition, SourceReview } from '../types/scripts'
 import { countLabel } from '../utils/numberFormat'
+import { ADVISORY_CALLOUTS_METADATA_KEY, canonicalSecretName, ENCRYPTED_PROXY_PASSWORD_CODE, executionBlockerCodeBlocks, httpProxyCredentialsActive, proxyCredentialBlockerText } from './proxyCredentialSecrets'
 import { replayBlockingKinds } from './replayPreflightUtils'
+import { activeProxyOnlySecretRefs, inactiveProxyOnlySecretNames } from './scriptSecretReferenceModel'
 import { analyzeVariableReadiness } from './variableFlow'
 
 export type ImportFinding = { code: string; action_path?: string; source_ref?: string; detail: string; gate?: string; severity?: string; title?: string; evidence?: string[]; source_mapping_id?: string; source_file?: string }
@@ -48,8 +50,15 @@ export function actionImportFindings(action: ScriptActionDefinition, path: strin
   const blockers = sortedCodes([...strings(meta.execution_blockers), ...(typeof meta.execution_blocker === 'string' ? [meta.execution_blocker] : [])])
   const reviews = sortedCodes([...strings(meta.review_reasons), ...(typeof meta.review_gate === 'string' ? [meta.review_gate] : [])])
   if (!reviews.length && (meta.review_required === true || meta.promotion_blocker === true)) reviews.push('import_review_required')
+  // An encrypted proxy password is a call-out with guided repairs, never a
+  // gate by itself (executionBlockerCodeBlocks): only an unbound secret on an
+  // in-use proxy credential blocks. Imports write it to advisory_callouts
+  // (dsl.AdvisoryCalloutsMetadataKey); a step stored earlier carries it as
+  // execution_blocker(s). Both spellings are one ungated finding.
+  const advisories = strings(meta[ADVISORY_CALLOUTS_METADATA_KEY]).filter(code => !executionBlockerCodeBlocks(code))
+  const codes = sortedCodes([...blockers, ...advisories])
   return [
-    ...blockers.map(code => ({ code, gate: 'execution', source_ref: strings(review.source_refs)[0] || located })),
+    ...codes.map(code => ({ code, gate: executionBlockerCodeBlocks(code) ? 'execution' : '', source_ref: strings(review.source_refs)[0] || located })),
     ...reviews.map(code => ({ code, gate: 'promotion', source_ref: located })),
   ].map(f => ({ ...f, action_path: path, detail: f.code === 'request_body_xml_json_content_type_mismatch' ? "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate." : '' }))
 }
@@ -62,6 +71,10 @@ export function draftImportFindings(script: ScriptDefinition): ImportFinding[] {
 // value no step can supply: `config_reference:<name>`. Import review never
 // stamps it on a step; it comes from replay readiness (importReviewFindings).
 const CONFIG_CODE = 'config_reference:'
+// An unbound secret an in-use proxy credential references:
+// `proxy_credential_unbound:<name>`, from replay readiness like a
+// configuration reference.
+const PROXY_CREDENTIAL_CODE = 'proxy_credential_unbound:'
 /**
  * Whether an issue is a configuration reference. It leads with its
  * configuration finding, and a step's finding for the same value folded into
@@ -188,7 +201,9 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
     const category = findingCategory(finding.code)
     const path = finding.action_path || ''
     // A missing producer blocks only when the server gates it: replay sends most placeholders with a warning.
-    const blocking = finding.gate === 'execution' || finding.severity === 'blocker' || /^(restored_body_required|har_request_body_not_exported|encrypted_proxy_password|legacy_tls_replacement)$/.test(finding.code)
+    // An encrypted proxy password never blocks by itself, however an older
+    // server gates it: an unbound secret on an in-use proxy credential does.
+    const blocking = executionBlockerCodeBlocks(finding.code) && (finding.gate === 'execution' || finding.severity === 'blocker' || /^(restored_body_required|har_request_body_not_exported|legacy_tls_replacement)$/.test(finding.code))
     const action = actions.get(path)
     // Keep branch scopes and parameter namespaces separate. Grouping never applies a bulk repair.
     // A value the server gates is one problem script-wide, wherever its
@@ -214,8 +229,12 @@ export function groupImportFindings(findings: ImportFinding[], script: ScriptDef
   }
   // "<what to do> — <where>", so issues with the same fix at different places
   // read apart. Issues spanning several places show their count instead.
+  // The encrypted proxy password matters only while the proxy sends its
+  // credentials (Custom): otherwise it is a note, not a warning.
+  const proxyCredentialsActive = httpProxyCredentialsActive(script.config)
   for (const issue of grouped.values()) {
     issue.severity = issueSeverity(issue)
+    if (!proxyCredentialsActive && issue.severity === 'warning' && issue.findings.every(finding => finding.code === ENCRYPTED_PROXY_PASSWORD_CODE)) issue.severity = 'note'
     const locations = new Set(issue.findings.map(finding => findingLocation(finding, actions)).filter(Boolean))
     // A configuration reference is script-wide, wherever a step also uses the value.
     if (locations.size === 1 && !issue.id.startsWith(CONFIG_CODE)) issue.title = `${issue.title} — ${[...locations][0]}`
@@ -378,7 +397,9 @@ export type ImportReadiness = { replay_ready: boolean; promotion_ready?: boolean
 export type ImportReviewInput = {
   script: ScriptDefinition
   // The protected candidate's inspection, only when it describes this script.
-  inspection?: { findings: ImportFinding[]; readiness: ImportReadiness } | null
+  // Its script carries the replay preflight the server restamped for it with
+  // the project's secret resolver.
+  inspection?: { findings: ImportFinding[]; readiness: ImportReadiness; script?: ScriptDefinition | null } | null
   preflight?: Pick<ReplayPreflight, 'valid' | 'checks' | 'missing_secrets' | 'blocking_variables' | 'param_blocking_variables' | 'config_blocking_variables'> | null
   fidelityBlockers?: readonly string[]
   reviewSections?: readonly ImportReviewSection[]
@@ -394,6 +415,17 @@ export type ImportReviewInput = {
 // the readiness the inspection or else the stamped preflight reports.
 // Protocol configuration references come from the preflight's blocking facts,
 // as the editor lists them (the draft's own analysis without a preflight).
+// The missing secrets of the replay preflight the server restamped on an
+// inspected script (pkg/api repairReplayPreflight): resolved against the
+// project, unlike the preflight stamped at import. Undefined when the script
+// carries none.
+function inspectedMissingSecrets(script: ScriptDefinition | null | undefined): string[] | undefined {
+  const preflight = script?.metadata?.import?.preserved?.replay_preflight
+  if (!preflight || typeof preflight !== 'object' || Array.isArray(preflight)) return undefined
+  const missing = (preflight as Partial<ReplayPreflight>).missing_secrets
+  return Array.isArray(missing) ? missing.filter((name): name is string => typeof name === 'string') : undefined
+}
+
 export function importReviewFindings(input: ImportReviewInput): ImportFinding[] {
   const base = input.inspection?.findings ?? draftImportFindings(input.script)
   const codes = new Set(base.map(f => f.code))
@@ -417,7 +449,28 @@ export function importReviewFindings(input: ImportReviewInput): ImportFinding[] 
   // The inspection's readiness resolves secrets against the project and omits
   // a zero count; a preflight stamped without that resolver lists every
   // project secret as missing, so it counts only until an inspection answers.
-  const bindings = readiness ? (readiness.unresolved_bindings ?? 0) : (preflight?.missing_secrets?.length || 0)
+  // A secret only a proxy credential that is not in use references is not
+  // required (it never blocks); one only an in-use proxy credential
+  // references is its own blocker, worded with both ways out: bind it, or
+  // change the proxy. The inspection's count is the server's, by the same rule.
+  const inactiveProxySecrets = inactiveProxyOnlySecretNames(input.script)
+  const activeProxySecrets = activeProxyOnlySecretRefs(input.script)
+  const missingNames = (names: readonly string[] | undefined) => [...new Set((names || []).map(canonicalSecretName))].filter(name => name && !inactiveProxySecrets.has(name))
+  const missingSecrets = readiness ? [] : missingNames(preflight?.missing_secrets)
+  // Once the inspection answers, its count includes each unbound in-use proxy
+  // secret, and the preflight the server restamped on the inspected script
+  // names them, so they keep the proxy wording and leave the generic count.
+  // A list longer than the count is not that answer, so the count stands alone.
+  const unresolvedBindings = readiness?.unresolved_bindings ?? 0
+  const inspectedProxyMissing = readiness ? missingNames(inspectedMissingSecrets(input.inspection?.script)).filter(name => activeProxySecrets.has(name)) : []
+  const proxyMissing = readiness
+    ? inspectedProxyMissing.length <= unresolvedBindings ? inspectedProxyMissing : []
+    : missingSecrets.filter(name => activeProxySecrets.has(name))
+  for (const name of proxyMissing) {
+    const text = proxyCredentialBlockerText(name, activeProxySecrets.get(name) || [])
+    extra.push({ code: `${PROXY_CREDENTIAL_CODE}${name}`, title: text.title, detail: text.description, gate: 'execution' })
+  }
+  const bindings = readiness ? unresolvedBindings - proxyMissing.length : missingSecrets.filter(name => !activeProxySecrets.has(name)).length
   if (bindings) extra.push({ code: 'diagnostic:credential_bindings', detail: `${bindings} credential requirements remain unresolved. Review project secret bindings and protected body requirements. Counts may include several requirements for one request.`, gate: 'execution' })
   const failedValidation = preflight?.checks?.find(check => check.id === 'validation' && check.status === 'fail')
   const validation = readiness ? readiness.validation_issues || [] : failedValidation ? [failedValidation.detail || 'Script validation failed.'] : []
@@ -426,13 +479,14 @@ export function importReviewFindings(input: ImportReviewInput): ImportFinding[] 
   // A blocker-severity section (unsupported elements, a blocked runtime
   // setting) refuses nothing itself: it blocks replay here only when replay is
   // refused and nothing else says why. Otherwise it stays listed as a note.
-  const explained = [...base, ...extra].some(f => f.gate === 'execution')
+  const gatesExecution = (f: ImportFinding) => f.gate === 'execution' && executionBlockerCodeBlocks(f.code)
+  const explained = [...base, ...extra].some(gatesExecution)
   const sections = (input.reviewSections || []).filter(section => IMPORT_NOTE_SECTIONS.has(section.key))
   const warningFallback = input.warnings?.length ? [{ key: 'warnings', title: 'Conversion warnings', severity: 'warning', summary: '', items: [...input.warnings] }] : []
   for (const finding of reviewSectionFindings([...sections, ...warningFallback], input.sourceReview)) {
     extra.push(finding.gate === 'execution' && (explained || !replayBlocked) ? { ...finding, gate: 'promotion' } : finding)
   }
-  if (replayBlocked && ![...base, ...extra].some(f => f.gate === 'execution')) extra.push({ code: 'diagnostic:execution', detail: 'Additional protocol or execution checks need attention. Inspect conversion details and the related review sections before replay.', gate: 'execution' })
+  if (replayBlocked && ![...base, ...extra].some(gatesExecution)) extra.push({ code: 'diagnostic:execution', detail: 'Additional protocol or execution checks need attention. Inspect conversion details and the related review sections before replay.', gate: 'execution' })
   return [...base, ...extra]
 }
 

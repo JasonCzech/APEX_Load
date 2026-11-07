@@ -20,6 +20,7 @@ export default function ReplayPreflightCard({
   secretStatusState,
   onRetrySecretStatus,
   configureSecretsLabel = 'Configure secrets',
+  secretDescriptions,
   onSelectIssue,
   issueBreadcrumb = reviewGateBreadcrumb,
   script,
@@ -30,6 +31,12 @@ export default function ReplayPreflightCard({
   secretStatusState?: 'checking' | 'unavailable'
   onRetrySecretStatus?: () => void
   configureSecretsLabel?: string
+  /**
+   * What a missing secret's alert says instead of `Missing secret: NAME`, by
+   * the name as missing_secrets lists it: an unbound in-use proxy credential
+   * is worded with both ways out (bind it, or change the proxy).
+   */
+  secretDescriptions?: ReadonlyMap<string, string>
   /**
    * Opens a review gate's step, given the gate and the row's own problem
    * (its code, empty for a gate that names none); without it the gates are
@@ -137,7 +144,7 @@ export default function ReplayPreflightCard({
             <span key={`missing-var-${name}`}>Missing variable: {name}</span>
           ))}
           {(preflight.missing_secrets || []).map(name => (
-            <span key={`missing-secret-${name}`}>Missing secret: {name}</span>
+            <span key={`missing-secret-${name}`}>{secretDescriptions?.get(name) ?? `Missing secret: ${name}`}</span>
           ))}
           {(preflight.missing_secrets?.length || 0) > 0 && onConfigureSecrets && (
             <button className="btn btn-secondary btn-sm" type="button" onClick={onConfigureSecrets}>

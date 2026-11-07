@@ -2,6 +2,7 @@ import PropertyAnalyticsFields from './PropertyAnalyticsFields'
 import NativeServicesEditor from './NativeServicesEditor'
 import AuthHostsField from './AuthHostsField'
 import { requiresScriptBaseURL } from './scriptAuthoringAssist'
+import { scriptInactiveProxyCredentialNotes } from './scriptSecretReferenceModel'
 import { MessageDetailFields } from './MessageDetailFields'
 import { HTTPReplayPolicyFields } from './HTTPReplayPolicyFields'
 import ThinkTimePercentageInputs from './ThinkTimePercentageInputs'
@@ -259,6 +260,7 @@ export function ScriptRuntimeSettingsView({
   const effectiveHTTPTransportTab: HTTPTransportTabId = visibleHTTPTransportTabs.some(tab => tab.id === activeHTTPTransportTab)
     ? activeHTTPTransportTab
     : (visibleHTTPTransportTabs[0]?.id ?? 'request_defaults')
+  const browserTransportTabVisible = visibleHTTPTransportTabs.some(tab => tab.id === 'browser')
 
   // Browser-emulation catalog: seeded with the bundled fallback, refreshed from
   // the controller so dropdowns stay in lockstep with replay UA resolution.
@@ -1319,6 +1321,14 @@ export function ScriptRuntimeSettingsView({
               <textarea rows={3} value={formatLineList(script.config.http?.proxy?.no_proxy)} placeholder={'localhost\n*.internal.example.com'}
                 onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
           </div>
+          {/* The username and password are hidden outside Custom, but a secret
+              they reference stays in the script for a later switch. The
+              browser proxy's notes sit in the Browser sub-tab; a script
+              without that sub-tab shows them here. */}
+          {[
+            ...scriptInactiveProxyCredentialNotes(script, 'http'),
+            ...(browserTransportTabVisible ? [] : scriptInactiveProxyCredentialNotes(script, 'browser')),
+          ].map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
         </div>}
         {effectiveHTTPTransportTab === 'authentication' && <div
           id="http-transport-panel-authentication"
@@ -1549,6 +1559,9 @@ export function ScriptRuntimeSettingsView({
               Page timings and Web Vitals (TTFB, FCP, LCP, INP, CLS) fill Command Center&apos;s Browser groups panel and the run report&apos;s Browser tab. Interaction evidence records where each gesture landed, never typed values. Both are off by default and need generators that support browser evidence. A scenario or group that sets its own browser runtime settings replaces this script&apos;s, these two included; the run readiness review names any browser group left without page timings.
             </p>
           </div>
+          {/* A browser proxy secret stays in the script with no proxy server
+              set, ready for one; nothing needs it until then. */}
+          {scriptInactiveProxyCredentialNotes(script, 'browser').map(note => <p key={note} className="new-test-inline-note" data-inactive-proxy-credential-note>{note}</p>)}
         </div>}
       </div>
     )}

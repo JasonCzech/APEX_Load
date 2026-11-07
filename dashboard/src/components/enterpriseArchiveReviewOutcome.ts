@@ -2,6 +2,7 @@ import type { EnterpriseArchiveFidelityReport, EnterpriseArchiveImportResult } f
 import type { ReplayPreflight, ScriptDefinition } from '../types/scripts'
 import { draftImportFindings, type ImportReadiness } from './importReviewIssues'
 import { requirementsPreserveDestinationValues } from './secretBindingUtils'
+import { withoutInactiveProxySecretNames } from './scriptSecretReferenceModel'
 
 // The archive review's unsaved-work guard. An editor opened from the review
 // keeps it when it returns there, since the review stays open behind it.
@@ -91,7 +92,8 @@ export function archiveReviewOutcome(item: ReviewState, optionsIdentity: string,
     // stamped without that resolver lists every project secret as missing, so
     // it counts only until an inspection answers.
     const readiness = inspectedReadiness?.(script)
-    const unresolvedCredentials = readiness ? (readiness.unresolved_bindings ?? 0) > 0 : Boolean(preflight?.missing_secrets?.length)
+    // A secret only a not-in-use proxy credential references never blocks.
+    const unresolvedCredentials = readiness ? (readiness.unresolved_bindings ?? 0) > 0 : withoutInactiveProxySecretNames(preflight?.missing_secrets || [], script).length > 0
     // Missing variables block only through valid/checks: replay sends most as placeholder text.
     return preflight?.valid === false || unresolvedCredentials || preflight?.checks?.some(check => check.status === 'fail')
   })) return 'Blocker'

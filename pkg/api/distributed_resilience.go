@@ -1424,7 +1424,12 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				}
 				runSecrets, found := tr.distributedRunSecretSnapshot(managedTest, groupName)
 				if !found {
-					names, inspectErr := engine.ReferencedSecretNames(group.script)
+					// The snapshot carries every required name plus the bound
+					// names behind inactive proxy credentials
+					// (resolveDistributedSecretBundle). Only required names
+					// make its absence fail closed; the others are checked
+					// against the replacement below.
+					names, inspectErr := engine.RequiredSecretNames(group.script)
 					if inspectErr != nil {
 						return fail(fmt.Errorf("inspect evacuation secrets for group %q", groupName))
 					}
@@ -1434,6 +1439,10 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				}
 				secretBundle := runSecrets.Values
 				if err := validateDistributedSecretTransport(secretBundle); err != nil {
+					return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
+				}
+				unbundledSecrets, err := distributedUnbundledSecretNames(group.script, secretBundle)
+				if err != nil {
 					return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
 				}
 				secretBundleID := runSecrets.ID
@@ -1467,12 +1476,15 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 						jointProjection = nil
 					}
 				}
-				if len(secretBundle) > 0 {
+				if inactiveBrowserProxy := distributedInactiveBrowserProxyCredentials(group.script); len(secretBundle) > 0 || len(unbundledSecrets) > 0 || inactiveBrowserProxy {
 					ctx, cancel := context.WithTimeout(parent, b.timeout)
 					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
 					cancel()
-					if err := validateDistributedSecretTarget(shard.Target, snapshot, secretBundle); err != nil {
+					if err := validateDistributedSecretTarget(shard.Target, snapshot, secretBundle, unbundledSecrets); err != nil {
 						return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
+					}
+					if err := validateDistributedBrowserProxyTarget(shard.Target, snapshot, group.script); err != nil {
+						return fail(fmt.Errorf("prepare evacuation for group %q: %w", groupName, err))
 					}
 				}
 				if _, ok := client.(coordinatedWorkCommitClient); !ok {

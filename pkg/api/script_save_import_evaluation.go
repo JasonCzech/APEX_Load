@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -79,13 +81,35 @@ func (tr *TestRunner) savedImportSecretSnapshot(id, projectID string, script *ds
 	if strings.TrimSpace(projectID) != "" {
 		scoped.ProjectID = projectID
 	}
-	required, missing := replaySecretRefs(&scoped, tr.secretResolverForBinding(tr.secretBindingForScript(&scoped)))
+	resolver := tr.secretResolverForBinding(tr.secretBindingForScript(&scoped))
+	required, missing := replaySecretRefs(&scoped, resolver)
 	resolved := make(map[string]struct{}, len(required))
 	for _, name := range required {
 		resolved[name] = struct{}{}
 	}
 	for _, name := range missing {
 		delete(resolved, name)
+	}
+	// The preflight also asks whether a secret only an inactive proxy
+	// credential references is bound, to decide its non-blocking note.
+	if referenced, err := engine.ReferencedSecretNames(&scoped); err == nil && resolver != nil {
+		var optional []string
+		for _, name := range referenced {
+			if _, ok := resolved[name]; !ok && !slices.Contains(missing, name) {
+				optional = append(optional, name)
+			}
+		}
+		if len(optional) > 0 {
+			ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+			values, _, resolveErr := engine.ResolveSecretNames(ctx, optional, resolver)
+			cancel()
+			if resolveErr == nil {
+				for name := range values {
+					resolved[name] = struct{}{}
+				}
+			}
+			clear(values)
+		}
 	}
 	return engine.SecretResolverFunc(func(name string) (string, bool) {
 		if _, ok := resolved[strings.TrimSpace(name)]; ok {

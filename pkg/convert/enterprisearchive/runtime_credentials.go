@@ -27,6 +27,10 @@ const (
 	enterpriseProxyPasswordSecretName    = "ENTERPRISE_PROXY_PASSWORD"
 	enterpriseHTTPAuthPasswordSecretName = "ENTERPRISE_HTTP_AUTH_PASSWORD"
 	enterpriseHTTPAuthTokenSecretName    = "ENTERPRISE_HTTP_AUTH_TOKEN"
+
+	// encryptedRuntimeProxyPasswordPlaceholder stands in for a VuGen-encrypted
+	// proxy password, which the importer cannot decrypt.
+	encryptedRuntimeProxyPasswordPlaceholder = "{{secret." + enterpriseProxyPasswordSecretName + "}}"
 )
 
 type enterpriseRuntimeSourceCredential struct {
@@ -65,6 +69,11 @@ func applyEnterpriseRuntimeBindings(
 		}
 	}
 	sourceValues := enterpriseRuntimeSourceValues(ctx)
+	if ctx.RuntimeConfig != nil {
+		status := credentialpolicy.ClassifySourceCredentialValue(sourceValues["config.http.proxy.password"].value)
+		ctx.RuntimeConfig.proxyPasswordSourceUnavailable = status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
+			status == credentialpolicy.SourceCredentialValueUnsafeEncoding
+	}
 
 	appendRequirement := func(requirement credentialpolicy.Requirement) {
 		if requirement.ID == "" {
@@ -616,6 +625,9 @@ func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]en
 		proxyUser = ctx.RuntimeConfig.proxyReviewUser
 	}
 	proxyUserSource := source("Proxy/ProxyUserName")
+	if ctx.RuntimeConfig.proxyUserFromURL {
+		proxyUserSource = source("Proxy/ProxyServer")
+	}
 	if strings.TrimSpace(proxyUser) == "" && embeddedProxyUser != "" {
 		proxyUser = embeddedProxyUser
 		proxyUserSource = source("Proxy/ProxyServer")
@@ -625,6 +637,9 @@ func enterpriseRuntimeSourceValues(ctx archiveFinalizationContext) map[string]en
 		proxyPass = ctx.RuntimeConfig.proxyReviewPass
 	}
 	proxyPassSource := source("Proxy/ProxyPassword")
+	if ctx.RuntimeConfig.proxyPassFromURL {
+		proxyPassSource = source("Proxy/ProxyServer")
+	}
 	if strings.TrimSpace(proxyPass) == "" && embeddedProxyPass != "" {
 		proxyPass = embeddedProxyPass
 		proxyPassSource = source("Proxy/ProxyServer")

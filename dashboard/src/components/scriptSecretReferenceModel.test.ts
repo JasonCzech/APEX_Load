@@ -78,4 +78,34 @@ describe('messaging secret reference fields', () => {
       ['KAFKA_CLIENT_SECRET', ['/config/kafka/oauth/client_secret_ref']],
     ])
   })
+
+  it('requires a proxy credential secret only while that proxy sends its credentials', () => {
+    const proxied = (mode: string, browserServer?: string) => storedScript({
+      name: 'Proxy', version: '1.0.0', protocol: 'http',
+      config: {
+        base_url: '',
+        http: { proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', username: 'svc', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } },
+        browser: { proxy: { ...(browserServer ? { server: browserServer } : {}), password: '{{secret.BROWSER_PROXY_PASSWORD}}' } },
+      },
+      actions: [{ name: 'Home', type: 'GET', target: '/' }],
+    })
+    for (const mode of ['none', 'system', 'pac']) {
+      const script = proxied(mode)
+      expect(requiredScriptSecrets(script)).toEqual([])
+      // Still a reference: the bindings dialog lists it and it stays bindable.
+      expect(scriptContainsSecretReferences(script)).toBe(true)
+      expect(scriptSecretReferenceSummaries(script.script).map(summary => summary.name)).toEqual(['BROWSER_PROXY_PASSWORD', 'ENTERPRISE_PROXY_PASSWORD'])
+    }
+    expect(requiredScriptSecrets(proxied('custom'))).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+    expect(requiredScriptSecrets(proxied('none', 'http://proxy.example.test:3128'))).toEqual(['BROWSER_PROXY_PASSWORD'])
+  })
+
+  it('keeps requiring a secret an inactive proxy credential shares with a step', () => {
+    const script = storedScript({
+      name: 'Proxy', version: '1.0.0', protocol: 'http',
+      config: { base_url: '', http: { proxy_mode: 'system', proxy: { password: '{{secret.SHARED}}' } } },
+      actions: [{ name: 'Login', type: 'POST', target: '/login', body: '{"p":"{{secret.SHARED}}"}' }],
+    })
+    expect(requiredScriptSecrets(script)).toEqual(['SHARED'])
+  })
 })

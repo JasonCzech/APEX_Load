@@ -513,9 +513,18 @@ describe('ActionEditor transaction field', () => {
   })
 
   it('titles a blocked pill by what each blocker asks for', () => {
-    renderEditor({ name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blockers: ['legacy_tls_replacement', 'encrypted_proxy_password'] } } as unknown as ScriptActionDefinition)
+    renderEditor({ name: 'web_set_sockets_option_15', type: 'source_review', target: 'web_set_sockets_option', metadata: { execution_blockers: ['restored_body_required', 'legacy_tls_replacement'] } } as unknown as ScriptActionDefinition)
     const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')].find(element => element.textContent === 'blocked')
-    expect(pill?.getAttribute('title')).toBe('Blocks replay: Replace encrypted proxy password, Choose supported TLS settings')
+    expect(pill?.getAttribute('title')).toBe('Blocks replay: Choose supported TLS settings, Restore protected request body')
+  })
+
+  it('never titles a step blocked for an encrypted proxy password an older import stamped', () => {
+    // Only an unbound secret on a Custom proxy blocks; the stamped code is a call-out.
+    renderEditor({ name: 'Proxy settings', type: 'source_review', target: '', metadata: { execution_blockers: ['legacy_tls_replacement', 'encrypted_proxy_password'] } } as unknown as ScriptActionDefinition)
+    const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')].find(element => element.textContent === 'blocked')
+    expect(pill?.getAttribute('title')).toBe('Blocks replay: Choose supported TLS settings')
+    renderEditor({ name: 'Proxy settings', type: 'source_review', target: '', metadata: { execution_blocker: 'encrypted_proxy_password' } } as unknown as ScriptActionDefinition)
+    expect([...container.querySelectorAll<HTMLElement>('.action-signal-pill')].some(element => element.textContent === 'blocked')).toBe(false)
   })
 
   it('shows the blocker repair slot under the header only while the step blocks replay', () => {

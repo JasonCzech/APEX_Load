@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
@@ -320,6 +321,11 @@ func evaluateRepairedScript(draft *dsl.Script, resolver engine.SecretResolver) (
 	// a script saved without one, which launch does not hold, does not become
 	// blocked over them.
 	priorStatus, _ := report["promotion_status"].(string)
+	if priorBlockers := fidelityReportLines(report["blockers"]); len(priorBlockers) > 0 && allAdvisoryFidelityBlockers(priorBlockers) {
+		// A report that only an advisory callout held blocked (a converter
+		// that predates the advisory rule listed it) was never review-held.
+		priorStatus = enterprisearchive.ImportPromotionPromotable
+	}
 	reviewHeld := len(persisted.ReviewCodes) > 0 && strings.EqualFold(strings.TrimSpace(priorStatus), "blocked")
 	blocked := len(blockers) > 0 || len(persisted.ValidationIssues) > 0 || reviewHeld
 	report["promotion_status"] = map[bool]string{true: "blocked", false: "promotable"}[blocked]
@@ -346,6 +352,15 @@ const secretGatedFidelityBlocker = "One or more lr_unmask request bodies require
 // wrote. Readiness evaluates every surviving gate again, so such a line is
 // replaced rather than carried; every other line is a converter sentence.
 var recomputedFidelityBlocker = regexp.MustCompile(`^\S+( at \S+)?$`)
+
+func allAdvisoryFidelityBlockers(lines []string) bool {
+	for _, line := range lines {
+		if !enterprisearchive.AdvisoryFidelityBlocker(line) {
+			return false
+		}
+	}
+	return true
+}
 
 // fidelityReportLines reads a list of strings from a fidelity report decoded
 // from JSON.
@@ -382,17 +397,19 @@ func repairReplayPreflight(draft, prior *dsl.Script, resolver engine.SecretResol
 	required, missing := replaySecretRefs(draft, resolver)
 	warnings := make([]string, 0, len(preflight.Warnings))
 	for _, line := range preflight.Warnings {
-		if !strings.HasPrefix(line, unconfiguredSecretsWarning) {
+		if !strings.HasPrefix(line, unconfiguredSecretsWarning) && !replayPreflightProxySecretLine(line) {
 			warnings = append(warnings, line)
 		}
 	}
-	if len(missing) > 0 {
-		warnings = append(warnings, unconfiguredSecretsWarning+strings.Join(missing, ", "))
-	}
+	// The configure-later wording (no governed resolver), with the
+	// proxy-specific blocker for a name only an active custom proxy uses and
+	// the non-blocking note for a proxy credential not in use.
+	warnings = append(warnings, draftreview.ReplaySecretWarnings(draft, missing, false)...)
+	warnings = append(warnings, draftreview.ReplayInactiveProxySecretNotes(draft, resolver)...)
 	preflight.RequiredSecrets, preflight.MissingSecrets, preflight.Warnings = required, missing, warnings
 	for index := range preflight.Checks {
 		if preflight.Checks[index].ID == "secrets" {
-			preflight.Checks[index].Detail = replaySecretDetail(required, missing)
+			preflight.Checks[index].Detail = draftreview.ReplaySecretCheckDetail(draft, required, missing)
 		}
 	}
 	return preflight
@@ -401,7 +418,25 @@ func repairReplayPreflight(draft, prior *dsl.Script, resolver engine.SecretResol
 // unconfiguredSecretsWarning begins the configure-later line BuildReplayPreflight
 // writes for missing secrets when it has no resolver
 // (pkg/internal/importreview/replay_preflight.go).
-const unconfiguredSecretsWarning = "secret(s) require project configuration before execution: "
+const unconfiguredSecretsWarning = draftreview.ReplayUnconfiguredSecretsWarning
+
+// replayPreflightProxySecretPatterns match the proxy credential lines
+// BuildReplayPreflight writes from the script's proxy settings and secret
+// state (dsl.ProxyCredentialSecretReference BlockerMessage / InactiveNote).
+var replayPreflightProxySecretPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`^(Custom|Browser) proxy credential not bound: `),
+	regexp.MustCompile(`^The proxy (username|password) uses the secret \S+, but Proxy mode is `),
+	regexp.MustCompile(`^The browser proxy (username|password) uses the secret \S+, but no browser proxy server is set`),
+}
+
+func replayPreflightProxySecretLine(line string) bool {
+	for _, pattern := range replayPreflightProxySecretPatterns {
+		if pattern.MatchString(line) {
+			return true
+		}
+	}
+	return false
+}
 
 // carriedConverterWarnings returns the converter warnings the prior preserved
 // preflight was built from. BuildReplayPreflight appends its own messaging,
@@ -446,6 +481,9 @@ var replayPreflightGeneratedWarnings = []*regexp.Regexp{
 }
 
 func replayPreflightGeneratedWarning(line string) bool {
+	if replayPreflightProxySecretLine(line) {
+		return true
+	}
 	for _, pattern := range replayPreflightGeneratedWarnings {
 		if pattern.MatchString(line) {
 			return true
@@ -479,14 +517,18 @@ func preservedReplayPreflight(script *dsl.Script) *ReplayPreflight {
 }
 
 // hasExecutionCode reports whether code gates execution of the surface that
-// carries this metadata.
+// carries this metadata, or is an advisory callout on it
+// (dsl.AdvisoryCalloutsMetadataKey, or the legacy execution_blocker spelling
+// scripts stored before the callout became advisory still carry).
 func hasExecutionCode(metadata map[string]any, code string) bool {
 	if dslwalk.MetadataString(metadata, "execution_blocker") == code {
 		return true
 	}
-	for _, c := range dslwalk.MetadataStrings(metadata, "execution_blockers") {
-		if c == code {
-			return true
+	for _, key := range []string{"execution_blockers", dsl.AdvisoryCalloutsMetadataKey} {
+		for _, c := range dslwalk.MetadataStrings(metadata, key) {
+			if c == code {
+				return true
+			}
 		}
 	}
 	return false

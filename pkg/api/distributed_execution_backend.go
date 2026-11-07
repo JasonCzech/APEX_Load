@@ -1474,6 +1474,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
 			return
 		}
+		unbundledSecrets, err := distributedUnbundledSecretNames(group.script, secretBundle)
+		if err != nil {
+			failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
+			return
+		}
 		secretBundleID := ""
 		if len(secretBundle) > 0 {
 			secretBundleID = uuid.NewString()
@@ -1483,8 +1488,12 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			if strings.TrimSpace(shard.Target) == "" {
 				continue
 			}
-			if err := validateDistributedSecretTarget(shard.Target, loadByTarget[shard.Target], secretBundle); err != nil {
+			if err := validateDistributedSecretTarget(shard.Target, loadByTarget[shard.Target], secretBundle, unbundledSecrets); err != nil {
 				failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
+				return
+			}
+			if err := validateDistributedBrowserProxyTarget(shard.Target, loadByTarget[shard.Target], group.script); err != nil {
+				failStartup(fmt.Sprintf("prepare group %q: %v", group.Name, err))
 				return
 			}
 		}

@@ -40,6 +40,25 @@ const baseScript: ScriptDefinition = {
 }
 
 describe('buildLocalReplayPreflight', () => {
+  it('names a secret only an inactive proxy credential uses instead of claiming none is referenced', () => {
+    const script: ScriptDefinition = {
+      ...baseScript,
+      config: {
+        ...baseScript.config,
+        http: { proxy_mode: 'system', proxy: { password: '{{secret.PROXY_PW}}' } },
+        browser: { proxy: { password: '{{secret.BROWSER_PW}}' } },
+      },
+    }
+    const preflight = buildLocalReplayPreflight(script)
+    const secrets = preflight.checks?.find(check => check.id === 'secrets')
+    expect(preflight.required_secrets).toEqual([])
+    expect(secrets?.status).toBe('pass')
+    expect(secrets?.detail).toBe('No required project secrets. Not needed for the current Proxy mode: PROXY_PW; Not needed without a browser proxy server: BROWSER_PW')
+    const reconciled = reconcileReplayPreflightSecretStatus(preflight, [], true, false, new Map(), script)
+    expect(reconciled.checks?.find(check => check.id === 'secrets')?.detail).toBe(secrets?.detail)
+    expect(buildLocalReplayPreflight(baseScript).checks?.find(check => check.id === 'secrets')?.detail).toBe('No project secret references detected.')
+  })
+
   it('reports durable execution blockers as replay-blocking readiness failures', () => {
     const preflight = buildLocalReplayPreflight({
       ...baseScript,
@@ -944,5 +963,108 @@ describe('withRefusedReviewGates', () => {
     const merged = withRefusedReviewGates(local, [` ${tls(0)}`, tls(2)])
     expect(merged.issues).toEqual([tls(0), tls(2)])
     expect(merged.checks?.[0].detail).toBe(`${tls(0)}; ${tls(2)}`)
+  })
+})
+
+describe('proxy credential secrets', () => {
+  const proxied = (mode: string | undefined, extra: Partial<ScriptDefinition> = {}): ScriptDefinition => ({
+    ...baseScript,
+    config: {
+      ...baseScript.config,
+      http: { ...(mode === undefined ? {} : { proxy_mode: mode }), proxy: { url: 'http://proxy.example.test:8080', username: 'svc', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } },
+    },
+    ...extra,
+  })
+
+  it('does not require a secret only a not-in-use proxy credential references', () => {
+    for (const mode of ['none', 'system', 'pac']) {
+      const local = buildLocalReplayPreflight(proxied(mode))
+      expect(local.required_secrets).toEqual([])
+      expect(local.missing_secrets).toEqual([])
+      expect(local.valid).toBe(true)
+      const reconciled = reconcileReplayPreflightSecretStatus(local, [], true)
+      expect(reconciled.valid).toBe(true)
+      expect(reconciled.checks?.find(check => check.id === 'secrets')?.status).toBe('pass')
+    }
+  })
+
+  it('requires a Custom proxy credential secret, worded as the proxy\'s until it is bound', () => {
+    const script = proxied('custom')
+    const local = buildLocalReplayPreflight(script)
+    expect(local.required_secrets).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+    const unbound = reconcileReplayPreflightSecretStatus(local, [{ name: 'ENTERPRISE_PROXY_PASSWORD', configured: false }], true, false, new Map(), script)
+    expect(unbound.valid).toBe(false)
+    expect(unbound.missing_secrets).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+    expect(unbound.checks?.find(check => check.id === 'secrets')).toMatchObject({
+      status: 'fail',
+      detail: 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.',
+    })
+    const bound = reconcileReplayPreflightSecretStatus(local, [{ name: 'ENTERPRISE_PROXY_PASSWORD', configured: true }], true, false, new Map(), script)
+    expect(bound.valid).toBe(true)
+    expect(bound.missing_secrets).toEqual([])
+    // No mode and a proxy URL is Custom to the runtime.
+    expect(buildLocalReplayPreflight(proxied(undefined)).required_secrets).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+  })
+
+  it('keeps a secret an inactive proxy credential shares with a step required, worded generically', () => {
+    const script = proxied('system', { actions: [{ ...baseScript.actions[0], headers: { 'X-Proxy': '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } }] })
+    const local = buildLocalReplayPreflight(script)
+    expect(local.required_secrets).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+    const reconciled = reconcileReplayPreflightSecretStatus(local, [], true, false, new Map(), script)
+    expect(reconciled.checks?.find(check => check.id === 'secrets')?.detail).toBe('Configure missing project secret: ENTERPRISE_PROXY_PASSWORD.')
+  })
+
+  it('names an inactive proxy-only secret after the required wording when a step needs another secret', () => {
+    const script = proxied('system', { actions: [{ ...baseScript.actions[0], headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] })
+    const inactive = 'Not needed for the current Proxy mode: ENTERPRISE_PROXY_PASSWORD'
+    const local = buildLocalReplayPreflight(script)
+    expect(local.required_secrets).toEqual(['LOGIN_TOKEN'])
+    expect(local.checks?.find(check => check.id === 'secrets')?.detail).toBe(`LOGIN_TOKEN; ${inactive}`)
+    const configured = reconcileReplayPreflightSecretStatus(local, [{ name: 'LOGIN_TOKEN', configured: true }], true, false, new Map(), script)
+    expect(configured.valid).toBe(true)
+    expect(configured.checks?.find(check => check.id === 'secrets')).toMatchObject({ status: 'pass', detail: `1 project secret configured; ${inactive}` })
+    const missing = reconcileReplayPreflightSecretStatus(local, [], true, false, new Map(), script)
+    expect(missing.valid).toBe(false)
+    expect(missing.missing_secrets).toEqual(['LOGIN_TOKEN'])
+    expect(missing.checks?.find(check => check.id === 'secrets')).toMatchObject({ status: 'fail', detail: `Configure missing project secret: LOGIN_TOKEN; ${inactive}` })
+    // A script with no inactive proxy secret keeps the plain wording.
+    const plain = { ...script, config: baseScript.config }
+    expect(reconcileReplayPreflightSecretStatus(buildLocalReplayPreflight(plain), [{ name: 'LOGIN_TOKEN', configured: true }], true, false, new Map(), plain)
+      .checks?.find(check => check.id === 'secrets')?.detail).toBe('1 project secret configured.')
+  })
+
+  it('drops an inactive proxy-only secret an older controller\'s preflight still requires', () => {
+    const script = proxied('pac')
+    const older: ReplayPreflight = { ...buildLocalReplayPreflight(script), required_secrets: ['ENTERPRISE_PROXY_PASSWORD'], missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }
+    const reconciled = reconcileReplayPreflightSecretStatus(older, [], true, false, new Map(), script)
+    expect(reconciled.required_secrets).toEqual([])
+    expect(reconciled.missing_secrets).toEqual([])
+    expect(reconciled.valid).toBe(true)
+    // Without the script the list is the controller's.
+    expect(reconcileReplayPreflightSecretStatus(older, [], true).missing_secrets).toEqual(['ENTERPRISE_PROXY_PASSWORD'])
+  })
+
+  it('applies the same rule to the browser proxy', () => {
+    const browser = (server?: string): ScriptDefinition => ({
+      ...baseScript,
+      protocol: 'browser',
+      config: { ...baseScript.config, browser: { proxy: { ...(server ? { server } : {}), username: 'svc', password: '{{secret.BROWSER_PROXY_PASSWORD}}' } } },
+    })
+    expect(buildLocalReplayPreflight(browser()).required_secrets).toEqual([])
+    const script = browser('http://proxy.example.test:3128')
+    const local = buildLocalReplayPreflight(script)
+    expect(local.required_secrets).toEqual(['BROWSER_PROXY_PASSWORD'])
+    expect(reconcileReplayPreflightSecretStatus(local, [], true, false, new Map(), script).checks?.find(check => check.id === 'secrets')?.detail)
+      .toBe('The browser proxy password uses the secret BROWSER_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or clear the browser proxy server.')
+  })
+
+  it('never gates replay on an encrypted proxy password an older import stamped on a step', () => {
+    const script: ScriptDefinition = {
+      ...proxied('custom'),
+      init: [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: { execution_blocker: 'encrypted_proxy_password' } }],
+    } as ScriptDefinition
+    expect(replayReviewGateIssues(script)).toEqual([])
+    const both = { ...script, init: [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: { execution_blockers: ['encrypted_proxy_password', 'legacy_tls_replacement'] } }] } as ScriptDefinition
+    expect(replayReviewGateIssues(both)).toEqual(['init[0] "Proxy settings": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved'])
   })
 })

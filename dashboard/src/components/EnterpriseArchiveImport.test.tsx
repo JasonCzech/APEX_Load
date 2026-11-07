@@ -2054,12 +2054,16 @@ describe('EnterpriseArchiveImport', () => {
     // unresolved binding and omits the count.
     const draft = (token: string, repaired: boolean) => ({
       name, version: '1.0.0', protocol: 'http',
-      config: { base_url: 'https://example.test', ...(repaired ? { http: { proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.proxy_pw}}' } } } : {}) },
+      config: { base_url: 'https://example.test', http: { proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080', password: repaired ? '{{secret.proxy_pw}}' : '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
       init: [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: repaired ? { source_file: 'vuser_init.c', source_line: 4 } : { source_file: 'vuser_init.c', source_line: 4, execution_blocker: 'encrypted_proxy_password' } }],
       actions: [{ name: 'Home', type: 'GET', method: 'GET', target: '/home' }],
       metadata: { import: { source: 'enterprise_script_archive', preserved: {
         server_import_attestation_v1: token,
-        ...(repaired ? { replay_preflight: { valid: true, action_count: 2, expected_action_count: 2, data_source_count: 0, parameter_count: 0, required_secrets: ['proxy_pw'], missing_secrets: ['proxy_pw'], checks: [{ id: 'secrets', label: 'Secret bindings', status: 'warn' }] } } : {}),
+        // Unrepaired, the server restamps the inspected candidate with the
+        // project resolver: the Custom proxy's secret is unbound.
+        replay_preflight: repaired
+          ? { valid: true, action_count: 2, expected_action_count: 2, data_source_count: 0, parameter_count: 0, required_secrets: ['proxy_pw'], missing_secrets: ['proxy_pw'], checks: [{ id: 'secrets', label: 'Secret bindings', status: 'warn' }] }
+          : { valid: true, action_count: 2, expected_action_count: 2, data_source_count: 0, parameter_count: 0, required_secrets: ['ENTERPRISE_PROXY_PASSWORD'], missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'], checks: [{ id: 'secrets', label: 'Secret bindings', status: 'warn' }] },
       } } },
     })
     const fetchMock = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input, init) => {
@@ -2070,7 +2074,9 @@ describe('EnterpriseArchiveImport', () => {
       return new Response(JSON.stringify({
         candidate_id: candidate, revision: candidate, before: draft(body.candidate_id, false), script: draft(candidate, repaired),
         findings: repaired ? [] : [{ code: 'encrypted_proxy_password', action_path: 'init[0]', source_ref: 'vuser_init.c:4', gate: 'execution', detail: '' }],
-        readiness: repaired ? { replay_ready: true, promotion_ready: true } : { replay_ready: false, promotion_ready: false, blocking_codes: ['encrypted_proxy_password'] },
+        // Unrepaired, the Custom proxy's secret is unbound: that blocks, not
+        // the encrypted password call-out (stamped as an older import did).
+        readiness: repaired ? { replay_ready: true, promotion_ready: true } : { replay_ready: false, promotion_ready: false, unresolved_bindings: 1 },
         secret_binding_requirements: [], fidelity_report: { promotion_status: repaired ? 'promotable' : 'blocked', blockers: [] }, expires_at: '2099-09-19T00:00:00Z',
       }), { status: 200, headers: { 'content-type': 'application/json' } })
     })
@@ -2084,7 +2090,11 @@ describe('EnterpriseArchiveImport', () => {
       await addArchiveFiles(container, [new File(['zip'], 'proxy.zip', { type: 'application/zip' })])
       await clickImportAction(container, 'Validate Only')
       await settle(() => Boolean(proxyIssue()) && !checking())
-      expect(importReadinessCounts(container).line).toBe('1 blocks replay · 0 warnings · 0 review notes')
+      expect(importReadinessCounts(container).line).toBe('1 blocks replay · 1 warning · 0 review notes')
+      expect(proxyIssue()?.querySelector('.import-issue-severity-tag.warning')).not.toBeNull()
+      // Once the inspection answers, the blocker keeps the proxy wording.
+      expect(container.textContent).toContain('Custom proxy credential not bound')
+      expect(container.textContent).not.toContain('Configure unresolved credential bindings')
       await clickButton(proxyIssue()!)
       const input = container.querySelector<HTMLTextAreaElement>('[aria-label="Repair value"]')!
       await act(async () => {

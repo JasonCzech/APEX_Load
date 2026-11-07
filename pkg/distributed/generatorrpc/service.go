@@ -1847,7 +1847,7 @@ func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool
 	names := protocol.List()
 	sort.Strings(names)
 	available := make([]string, 0, len(names))
-	features := []string{dsl.FeatureParallelLoopControlV1, dsl.FeatureOpenArrivalV2, dsl.FeatureDataJSONLV1, dsl.FeatureLLMInferenceV1, dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, FeaturePreparationReadinessV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
+	features := []string{dsl.FeatureParallelLoopControlV1, dsl.FeatureOpenArrivalV2, dsl.FeatureDataJSONLV1, dsl.FeatureLLMInferenceV1, dsl.FeaturePropertyAnalyticsV1, FeaturePreparationV1, FeaturePreparationReadinessV1, dsl.FeatureLRFidelityV1, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1, FeatureSecretBundleRequiredOnlyV1, FeatureRunSupervisionV1, FeatureMessageDetailCaptureV1, FeatureControlParallelV1, FeatureMessageDetailControlParallelV1}
 	if http3ExecutionError() == nil {
 		// Only a generator whose operator enabled HTTP/3 and whose build
 		// carries the transport may receive exact-3 work.

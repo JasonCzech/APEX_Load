@@ -5,6 +5,8 @@ import {
   actionMetadataBool,
 } from './scriptActionHelpers'
 import { analyzeVariableReadiness } from './variableFlow'
+import { proxyCredentialBlockerText, withoutProxyCredentials } from './proxyCredentialSecrets'
+import { activeProxyOnlySecretRefs, inactiveProxySecretCheckDetail, withoutInactiveProxySecretNames } from './scriptSecretReferenceModel'
 
 type ScriptWithPhases = ScriptDefinition & {
   init?: ScriptActionDefinition[]
@@ -292,6 +294,21 @@ function collectDedicatedProjectSecretRefs(value: unknown, refs: Set<string>, ro
   if (/^[A-Z0-9_]{1,249}$/.test(name)) refs.add(name)
 }
 
+// The secrets check detail when nothing is required: secrets referenced only
+// by proxy credentials that are not in use are named, as the server does.
+function noRequiredSecretsDetail(script: ScriptDefinition | null | undefined): string {
+  const inactive = inactiveProxySecretCheckDetail(script)
+  return inactive ? `No required project secrets. ${inactive}` : 'No project secret references detected.'
+}
+
+// The secrets check detail when some secret is required: the server's
+// ReplaySecretCheckDetail appends the not-in-use proxy secrets after the
+// required/missing wording, so the dashboard names them on every surface.
+function withInactiveProxySecretsDetail(detail: string, script: ScriptDefinition | null | undefined): string {
+  const inactive = inactiveProxySecretCheckDetail(script)
+  return inactive ? `${detail.replace(/\.$/, '')}; ${inactive}` : detail
+}
+
 export function reconcileReplayPreflightSecretStatus(
   preflight: ReplayPreflight,
   statuses: readonly ProjectSecretStatus[],
@@ -299,8 +316,15 @@ export function reconcileReplayPreflightSecretStatus(
   statusUnavailable = false,
   // Display names for the secrets (secretBindingDisplayNames), by exact name.
   secretLabels: ReadonlyMap<string, string> = new Map(),
+  // The script the preflight describes: a secret only a proxy credential that
+  // is not in use references is not required, even where an older
+  // controller's preflight lists it.
+  script?: ScriptDefinition | null,
 ): ReplayPreflight {
-  const required = Array.from(new Set((preflight.required_secrets || []).map(canonicalProjectSecretName).filter(Boolean))).sort()
+  const required = withoutInactiveProxySecretNames(
+    Array.from(new Set((preflight.required_secrets || []).map(canonicalProjectSecretName).filter(Boolean))).sort(),
+    script,
+  )
   if (!statusKnown) {
     return {
       ...preflight,
@@ -327,19 +351,26 @@ export function reconcileReplayPreflightSecretStatus(
   const checks = (preflight.checks || []).map(check => {
     if (check.id !== 'secrets') return check
     if (required.length === 0) {
-      return { ...check, status: 'pass' as const, detail: 'No project secret references detected.' }
+      return { ...check, status: 'pass' as const, detail: noRequiredSecretsDetail(script) }
     }
     if (missing.length === 0) {
       return {
         ...check,
         status: 'pass' as const,
-        detail: `${required.length} project secret${required.length === 1 ? '' : 's'} configured.`,
+        detail: withInactiveProxySecretsDetail(`${required.length} project secret${required.length === 1 ? '' : 's'} configured.`, script),
       }
     }
+    // A secret only an in-use proxy credential references is worded as the
+    // proxy's problem, with both ways out.
+    const proxyRefs = activeProxyOnlySecretRefs(script)
+    const generic = missing.filter(name => !proxyRefs.has(name))
     return {
       ...check,
       status: 'fail' as const,
-      detail: `Configure missing project secret${missing.length === 1 ? '' : 's'}: ${missing.map(name => secretLabels.get(name) || name).join(', ')}.`,
+      detail: withInactiveProxySecretsDetail([
+        generic.length > 0 ? `Configure missing project secret${generic.length === 1 ? '' : 's'}: ${generic.map(name => secretLabels.get(name) || name).join(', ')}.` : '',
+        ...missing.filter(name => proxyRefs.has(name)).map(name => proxyCredentialBlockerText(name, proxyRefs.get(name) || []).description),
+      ].filter(Boolean).join(' '), script),
     }
   })
   return {
@@ -477,7 +508,9 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
   const phaseActions = phaseReplayActions(script)
   const definitionCount = actionDefinitionCount(phaseActions, 0)
   const expectedCount = expectedReplayActionCount(phaseActions, 0)
-  const requiredSecrets = new Set<string>(collectTemplateRefs(script.config, 'secret'))
+  // A proxy credential that is not in use (proxy mode none, system or PAC; a
+  // browser proxy with no server) is never sent, so its secret is not required.
+  const requiredSecrets = new Set<string>(collectTemplateRefs(withoutProxyCredentials(script, 'inactive').config, 'secret'))
   collectDedicatedProjectSecretRefs(script, requiredSecrets, true)
   collectReadinessSecretRefs(phaseActions, requiredSecrets, 0)
   // HTTP replay sends a missing variable as its placeholder text and warns, as
@@ -519,7 +552,7 @@ export function buildLocalReplayPreflight(script: ScriptDefinition, variables?: 
       id: 'secrets',
       label: 'Secret bindings',
       status: requiredSecretList.length > 0 ? 'warn' : 'pass',
-      detail: requiredSecretList.length > 0 ? requiredSecretList.join(', ') : 'No project secret references detected.',
+      detail: requiredSecretList.length > 0 ? withInactiveProxySecretsDetail(requiredSecretList.join(', '), script) : noRequiredSecretsDetail(script),
     },
     {
       id: 'data_sources',

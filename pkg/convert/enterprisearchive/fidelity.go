@@ -2,6 +2,7 @@ package enterprisearchive
 
 import (
 	filepath "path"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -114,6 +115,50 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.PromotionStatus = ImportPromotionBlocked
 	}
 	return report
+}
+
+// fidelityGateBlockerLine matches a fidelity blocker line that restates a
+// step gate: the converter's "<code> at <path>" line, or a bare code a guided
+// repair wrote. Converter sentences never match.
+var fidelityGateBlockerLine = regexp.MustCompile(`^(\S+)( at \S+)?$`)
+
+// AdvisoryFidelityBlocker reports whether a stored fidelity blocker line only
+// restates an advisory callout (dsl.AdvisoryExecutionBlockerCode), such as
+// "encrypted_proxy_password at init[0]". A converter that predates the
+// advisory rule listed that callout as a blocker; it never blocks now.
+func AdvisoryFidelityBlocker(line string) bool {
+	match := fidelityGateBlockerLine.FindStringSubmatch(strings.TrimSpace(line))
+	return match != nil && dsl.AdvisoryExecutionBlockerCode(match[1])
+}
+
+// WithoutAdvisoryBlockers returns the report without blocker lines that only
+// restate an advisory callout (AdvisoryFidelityBlocker). The converter marks a
+// report blocked exactly when it lists a blocker, so a report that advisory
+// lines alone held blocked becomes promotable. Every reader of a stored
+// report applies this, so a script or import draft saved before the advisory
+// rule is not held by its old callout. The receiver is never modified: a
+// report with nothing to drop is returned as is, and any other gets a copy.
+func (report *ImportFidelityReport) WithoutAdvisoryBlockers() *ImportFidelityReport {
+	if report == nil {
+		return nil
+	}
+	kept := make([]string, 0, len(report.Blockers))
+	for _, blocker := range report.Blockers {
+		if !AdvisoryFidelityBlocker(blocker) {
+			kept = append(kept, blocker)
+		}
+	}
+	if len(kept) == len(report.Blockers) {
+		return report
+	}
+	normalized := *report
+	normalized.Blockers = nil
+	if len(kept) > 0 {
+		normalized.Blockers = kept
+	} else if strings.EqualFold(strings.TrimSpace(normalized.PromotionStatus), ImportPromotionBlocked) {
+		normalized.PromotionStatus = ImportPromotionPromotable
+	}
+	return &normalized
 }
 
 func hasTrailingRequestContributors(script *dsl.Script) bool {

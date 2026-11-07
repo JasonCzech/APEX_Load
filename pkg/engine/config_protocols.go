@@ -588,11 +588,16 @@ func appendBrowserConfig(cfg map[string]any, script *dsl.Script) {
 	if browserCfg.Proxy.Bypass != "" {
 		cfg["browser_proxy_bypass"] = browserCfg.Proxy.Bypass
 	}
-	if browserCfg.Proxy.Username != "" {
-		cfg["browser_proxy_username"] = browserCfg.Proxy.Username
-	}
-	if browserCfg.Proxy.Password != "" {
-		cfg["browser_proxy_password"] = browserCfg.Proxy.Password
+	// Without a proxy server the browser never uses proxy credentials, and
+	// their secrets are not required (dsl.BrowserProxyCredentialsActive), so
+	// they are not handed to the runtime to resolve.
+	if dsl.BrowserProxyCredentialsActive(browserCfg.Proxy) {
+		if browserCfg.Proxy.Username != "" {
+			cfg["browser_proxy_username"] = browserCfg.Proxy.Username
+		}
+		if browserCfg.Proxy.Password != "" {
+			cfg["browser_proxy_password"] = browserCfg.Proxy.Password
+		}
 	}
 	if len(browserCfg.ClientCertificates) > 0 {
 		certificates := make([]map[string]any, 0, len(browserCfg.ClientCertificates))
@@ -933,11 +938,16 @@ func appendHTTPSecurityConfig(cfg map[string]any, script *dsl.Script) {
 	if proxy.URL != "" {
 		cfg["proxy_url"] = proxy.URL
 	}
-	if proxy.Username != "" {
-		cfg["proxy_username"] = proxy.Username
-	}
-	if proxy.Password != "" {
-		cfg["proxy_password"] = proxy.Password
+	// No proxy, System and PAC never authenticate to a proxy, and their
+	// credential secrets are not required (dsl.HTTPProxyCredentialsActive), so
+	// they are not handed to the runtime to resolve.
+	if dsl.HTTPProxyCredentialsActive(httpCfg) {
+		if proxy.Username != "" {
+			cfg["proxy_username"] = proxy.Username
+		}
+		if proxy.Password != "" {
+			cfg["proxy_password"] = proxy.Password
+		}
 	}
 	if len(proxy.NoProxy) > 0 {
 		cfg["proxy_no_proxy"] = proxy.NoProxy
