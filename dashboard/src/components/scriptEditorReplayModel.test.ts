@@ -177,6 +177,9 @@ describe('script editor replay model', () => {
       ['HTTP/1.1 404 Not Found', ['plain', 'status-warning', 'plain']],
       ['HTTP/2 503 Unavailable', ['plain', 'status-error', 'plain']],
       ['Content-Type: application/json', ['header', 'punctuation', 'plain']],
+      ['TIMINGS', ['header']],
+      ['COOKIES & REDIRECTS', ['header']],
+      ['NETWORK HOPS', ['header']],
       ['{"order_id":42,"ready":true,"state":"created"}', ['punctuation', 'key', 'punctuation', 'number', 'punctuation', 'key', 'punctuation', 'literal', 'punctuation', 'key', 'punctuation', 'string', 'punctuation']],
     ] as const
 

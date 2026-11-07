@@ -111,7 +111,7 @@ import ScriptSecretBindingsDialog from './ScriptSecretBindingsDialog'
 import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel, replayReviewGateIssues, templateVariableNames, withRefusedReviewGates } from './replayPreflightUtils'
 import { draftImportFindings } from './importReviewIssues'
 import { blockedStepBadgeTitle, dependencyCodeValue, headerIssueText, openingEditorFocus, parseReviewGateIssue, replayReadinessIssues, replayRefusalSummary, type ProtectedBodySource, type ReadinessFacts } from './replayReadinessIssues'
-import { coveredByAuthoring, isPromotionOnlyValidationIssue, promotionFoldCoveredByGate, promotionReviewText, replayBlockers, replayGateAction, replayStartBlockedReason, replayStartGate, storedGateProblemCount, type ReplayGateAction, type ReplayStartGate } from './replayStartGate'
+import { coveredByAuthoring, isPromotionOnlyValidationIssue, promotionFoldCoveredByGate, promotionReviewText, replayBlockers, replayGateAction, replayStartBlockedReason, replayStartGate, storedGateProblemCount, type ReplayStartGate } from './replayStartGate'
 import { secretBindingDisplayNames, secretDisplayName } from './secretBindingUtils'
 import {
   applyMigrationAssistantSuggestion,
@@ -1415,8 +1415,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const selectCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (!availableCenterTabIds.has(tabId)) return
     setNarrowAuthorPane('editor')
-    setCenterTabsState(prev => prev.activeTabId === tabId ? prev : { ...prev, activeTabId: tabId })
-  }, [availableCenterTabIds])
+    setCenterTabsState(prev => {
+      if (prev.activeTabId === 'debug-summary' && tabId !== 'debug-summary') setDebugDetailCollapsed(false)
+      return prev.activeTabId === tabId ? prev : { ...prev, activeTabId: tabId }
+    })
+  }, [availableCenterTabIds, setDebugDetailCollapsed])
   const openCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (!availableCenterTabIds.has(tabId)) return
     setCenterTabsState(prev => {
@@ -1439,14 +1442,16 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [openCenterTab, setParameterPaneShowAuto, setScriptJsonSidebarTab, setSelectedOutlineParameterName, setShowFullScriptJson, setDebugDetailCollapsed, setDebuggerTab, setAuthorRightSidebarCollapsed])
   const closeCenterTab = useCallback((tabId: CenterWorkbenchTabId) => {
     if (!centerTabDescriptorById.get(tabId)?.closeable) return
+    if (tabId === 'debug-summary') setDebugDetailCollapsed(false)
     setCenterTabPanelElements(prev => prev[tabId] ? { ...prev, [tabId]: null } : prev)
     setCenterTabsState(prev => {
       if (!prev.tabs.includes(tabId)) return prev
       const nextTabs = prev.tabs.filter(candidate => candidate !== tabId)
-      const activeTabId = prev.activeTabId === tabId ? ACTION_LIST_TAB_ID : prev.activeTabId
-      return { tabs: nextTabs.length > 0 ? nextTabs : [ACTION_LIST_TAB_ID, SCRIPT_JSON_TAB_ID], activeTabId }
+      const fallbackTabId = isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID
+      const activeTabId = prev.activeTabId === tabId ? fallbackTabId : prev.activeTabId
+      return { tabs: nextTabs.length > 0 ? nextTabs : [fallbackTabId, SCRIPT_JSON_TAB_ID], activeTabId }
     })
-  }, [centerTabDescriptorById])
+  }, [centerTabDescriptorById, isBrowserScript, setDebugDetailCollapsed])
   const setCenterTabPanelElement = useCallback((tabId: CenterWorkbenchTabId, element: HTMLDivElement | null) => {
     setCenterTabPanelElements(prev => {
       if (prev[tabId] === element) return prev
@@ -3608,10 +3613,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
 
   const workspaceDocuments = useRef<Partial<Record<WorkbenchMode, CenterWorkbenchTabId>>>({})
+  const workspaceTabRef = useRef<WorkbenchMode>(workspaceTab)
+  workspaceTabRef.current = workspaceTab
   useEffect(() => { workspaceDocuments.current = {} }, [scriptId, projectId, folderId])
   const activateWorkspaceTab = useCallback((nextTab: WorkbenchMode) => {
-    if (nextTab === workspaceTab) return
-    workspaceDocuments.current[workspaceTab] = centerTabsState.activeTabId
+    const currentTab = workspaceTabRef.current
+    if (nextTab === currentTab) return
+    workspaceTabRef.current = nextTab
+    workspaceDocuments.current[currentTab] = centerTabsState.activeTabId
     const nextDocument = workspaceDocuments.current[nextTab]
       || (nextTab === 'debug' && isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID)
     setWorkspaceTab(nextTab)
@@ -3619,7 +3628,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (nextTab === 'debug') {
       setDebuggerTab('request')
     }
-  }, [centerTabsState.activeTabId, isBrowserScript, openCenterTab, setDebuggerTab, workspaceTab])
+  }, [centerTabsState.activeTabId, isBrowserScript, openCenterTab, setDebuggerTab])
 
   const openReplayDebugger = useCallback((openSettings = false) => {
     activateWorkspaceTab('debug')
@@ -3627,7 +3636,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
   const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
-  const showDebugSummary = useCallback(() => { setWorkspaceTab('debug'); setDebugDetailCollapsed(true); openCenterTab('debug-summary') }, [openCenterTab, setDebugDetailCollapsed])
+  const showDebugSummary = useCallback(() => { workspaceTabRef.current = 'debug'; setWorkspaceTab('debug'); setDebugDetailCollapsed(true); openCenterTab('debug-summary') }, [openCenterTab, setDebugDetailCollapsed])
   const debugCompletionSnapshot = useDebugCompletionSummary({
     session: browserReplaySession, report: replayReport, running: replaying,
     scriptName: currentRunRef.current?.scriptName || script.name,
@@ -3651,7 +3660,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setDebugRunHistory([])
   }, [scriptId, projectId, folderId, initialScript])
 
-  const handleReplay = useCallback(async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; afterSave?: boolean }) => {
+  const handleReplay = useCallback(async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; afterSave?: boolean; ignoreBreakpoints?: boolean; iterations?: number }) => {
     const replayResourceScope = editorResourceScopeRef.current
     if (replayStartInFlightRef.current === replayResourceScope) return
     const replayResourceIsCurrent = () => (
@@ -3715,7 +3724,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         notFoundCount: 0,
       }
       const startPaused = options?.startPaused ?? replayOptions.startPaused
-      const baseReplayPayload = buildReplayStartPayload(captureScript(currentScript, replayOptions.capture), {
+      const activeBreakpoints = options?.ignoreBreakpoints ? [] : debugBreakpoints.filter(bp => !bp.once)
+      const requestedIterations = options?.iterations && options.iterations > 1 ? Math.min(100, Math.max(1, Math.trunc(options.iterations))) : undefined
+      const baseReplayPayload = buildReplayStartPayload(captureScript(currentScript, replayOptions.capture, replayOptions.networkTrace !== false), {
         projectId,
         groupName: replayOptions.groupName,
         replaySessionId,
@@ -3726,13 +3737,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const payload = {
         ...baseReplayPayload,
         live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
-        runtime_profile: { capture_mode: replayOptions.capture || 'diagnostic', har_options: { bodies: replayOptions.harBodies || 'none', redirects: replayOptions.harRedirects ?? true, timings: replayOptions.harTimings ?? true, max_body_bytes: replayOptions.harMaxBodyBytes || 65536, max_total_body_bytes: replayOptions.harMaxTotalBodyBytes || 4194304 } },
+        runtime_profile: { capture_mode: replayOptions.capture || 'diagnostic', network_trace: replayOptions.networkTrace !== false, har_options: { bodies: replayOptions.harBodies || 'none', redirects: replayOptions.harRedirects ?? true, timings: replayOptions.harTimings ?? true, max_body_bytes: replayOptions.harMaxBodyBytes || 65536, max_total_body_bytes: replayOptions.harMaxTotalBodyBytes || 4194304 } },
         browser: currentScript.protocol === 'browser'
           ? { ...(baseReplayPayload.browser || {}), capture_screenshots: replayOptions.capture === 'script' ? baseReplayPayload.browser?.capture_screenshots : replayOptions.capture === 'errors' ? 'on_error' : 'per_action' }
           : baseReplayPayload.browser,
         group_name: replayOptions.groupName.trim() || `${currentScript.name || 'script'}-debug`,
         start_paused: startPaused,
-        breakpoints: options?.runTo ? [{ ...options.runTo, once: true }, ...debugBreakpoints.filter(bp => !bp.once)] : debugBreakpoints.filter(bp => !bp.once),
+        ...(requestedIterations ? { iterations: requestedIterations } : {}),
+        breakpoints: options?.runTo ? [{ ...options.runTo, once: true }, ...activeBreakpoints] : activeBreakpoints,
         break_on_failure: replayOptions.breakOnFailure,
         log_level: replayOptions.logLevel,
         ...(replayOptions.runId.trim() ? { run_id: replayOptions.runId.trim() } : {}),
@@ -3972,8 +3984,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // for approval, which keeps its notice. The page's echo of the save
   // is the same script, so it is compared by ID, not by the props object.
   // waitingOn is the document the start waited with for secret status.
-  const [replayAfterSave, setReplayAfterSave] = useState<{ options: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }; scriptId?: string | null; projectId?: string; waitingOn?: string | null } | null>(null)
-  const saveAndReplay = async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint }) => {
+  const [replayAfterSave, setReplayAfterSave] = useState<{ options: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; ignoreBreakpoints?: boolean; iterations?: number }; scriptId?: string | null; projectId?: string; waitingOn?: string | null } | null>(null)
+  const saveAndReplay = async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; ignoreBreakpoints?: boolean; iterations?: number }) => {
     const { scriptId: savedId, projectId: savedProjectId } = editorResourceScopeRef.current
     // The run starts in this editor, so the page hosting it keeps it open.
     const saved = await handleSaveRef.current({ keepAuthoringOpen: true, libraryCopy: true }).catch(() => false)
@@ -4580,7 +4592,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     void handleReplay({ ...pending.options, afterSave: true })
   }, [afterSaveDocument, handleReplay, projectId, replayAfterSave, replayGateKey, replaySecretStatusState, scriptId])
   const replayGateButton = replayGateAction(replayGate, { hasReport: Boolean(replayReport), readyTitle: replayRunButtonTitle })
-  const replayGateButtonKey = JSON.stringify(replayGateButton)
   // Why a new run cannot start, for the controls that would start one; the
   // step controls keep their own titles while the editor is only waiting.
   const runStartBlockedReason = replayStartBlockedReason(replayGate)
@@ -6637,40 +6648,47 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     ),
     secondaryActions: [
       { id: 'save-script', label: saving ? 'Saving…' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
-      // Debug follows the start gate: while the server would refuse the
-      // script it reads "Resolve N blockers" and opens them; while only the
-      // saved copy is gated, it saves first.
-      (() => {
-        const action = JSON.parse(replayGateButtonKey) as ReplayGateAction
-        return {
-          id: 'run-debug',
-          label: action.label,
-          hidden: replaying,
-          compactLabel: action.compactLabel,
-          icon: <DebugTopbarIcon kind={action.icon} />,
-          className: `topbar-debug-action topbar-debug-action-${action.intent === 'resolve' ? 'blocker' : 'run'}`,
-          title: action.title,
-          ariaLabel: action.ariaLabel,
-          tone: action.tone,
-          disabled: action.disabled,
-          onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
-        }
-      })(),
     ],
-  }), [currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, replayGateButtonKey, replaying, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
+  }), [currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
+  const [debugRunMenuOpen, setDebugRunMenuOpen] = useState(false)
+  const [debugIterationCount, setDebugIterationCount] = useState(2)
+  const debugRunMenuRef = useRef<HTMLDivElement | null>(null)
+  const hasEnabledDebugBreakpoint = useMemo(() => debugBreakpoints.some(bp => !bp.disabled), [debugBreakpoints])
+  useEffect(() => {
+    if (replaying || workspaceTab !== 'debug') setDebugRunMenuOpen(false)
+  }, [replaying, workspaceTab])
+  useEffect(() => {
+    if (!debugRunMenuOpen) return
+    const onDown = (event: globalThis.MouseEvent) => {
+      if (debugRunMenuRef.current?.contains(event.target as Node)) return
+      setDebugRunMenuOpen(false)
+    }
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDebugRunMenuOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [debugRunMenuOpen])
   // The step controls belong to the debug session, beside its evidence: the
-  // top bar keeps Save and the one action that starts a debug run, so it
-  // never wraps while a run is paused.
+  // top bar keeps Save, while Debug and the active session controls lead the
+  // debugger's session bar above the left rail.
   const debugControlActions = useMemo<TopbarAction[]>(() => [
     {
       id: 'step-debug',
-      label: replayReport?.completed_at ? 'Restart in step mode' : 'Step',
-      compactLabel: replayReport?.completed_at ? 'Restart step' : 'Step',
+      label: 'Step',
+      compactLabel: 'Step',
       icon: <DebugTopbarIcon kind="step" />,
       className: 'topbar-debug-action topbar-debug-action-step',
-      hidden: workspaceTab !== 'debug',
-      title: !replaying && stepStartBlockedTitle ? stepStartBlockedTitle : replayReport?.completed_at ? 'Restart in step mode at the first action; previous replay evidence is retained' : 'Step to next action',
+      hidden: workspaceTab !== 'debug' || !replaying,
+      title: 'Step to next action',
       tone: 'secondary',
       disabled: stepReplayDisabled,
       onClick: () => { void topbarActionHandlersRef.current.handleStepReplay('into') },
@@ -6690,8 +6708,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     },
     {
       id: 'step-over-debug',
-      label: replayReport?.completed_at ? 'Restart in step mode (over)' : 'Step Over',
-      compactLabel: replayReport?.completed_at ? 'Restart over' : 'Over',
+      label: 'Step Over',
+      compactLabel: 'Over',
       icon: <DebugTopbarIcon kind="stepOver" />,
       className: 'topbar-debug-action topbar-debug-action-step-over',
       hidden: workspaceTab !== 'debug' || !isReplayPaused,
@@ -6739,14 +6757,123 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       pressed: replayOptions.breakOnFailure,
       onClick: () => { void topbarActionHandlersRef.current.setBreakOnFailure(!replayOptions.breakOnFailure) },
     },
-  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replayReport, replaying, stepReplayDisabled, stepStartBlockedTitle, workspaceTab])
+  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replayOptions.breakOnFailure, replaying, stepReplayDisabled, workspaceTab])
   // Run controls come and go with the run, so they lead the session bar and
   // Break on failure sits with the controls that never move: when a run ends,
   // nothing persistent slides under the pointer that just pressed Continue.
-  // Step is the one run control always shown (Restart in step mode once a run
-  // ends), so it leads and keeps its place.
   const debugSessionControls = (
     <div className="debug-session-controls" role="group" aria-label="Debugger controls">
+      {!replaying && workspaceTab === 'debug' && (
+        replayGateButton.intent !== 'start' ? (
+          <TopbarActionButton
+            action={{
+              id: 'run-debug',
+              label: replayGateButton.label,
+              compactLabel: replayGateButton.compactLabel,
+              icon: <DebugTopbarIcon kind={replayGateButton.icon} />,
+              className: `topbar-debug-action ${replayGateButton.intent === 'resolve' ? 'topbar-debug-action-blocker' : 'topbar-debug-action-run'}`,
+              title: replayGateButton.title,
+              ariaLabel: replayGateButton.ariaLabel,
+              tone: replayGateButton.tone,
+              disabled: replayGateButton.disabled,
+              onClick: () => { void topbarActionHandlersRef.current.handleReplay() },
+            }}
+          />
+        ) : (
+          <div className="debug-run-dropdown" ref={debugRunMenuRef}>
+            <button
+              type="button"
+              className="topbar-action-button topbar-action-secondary topbar-debug-action topbar-debug-action-run"
+              aria-haspopup="menu"
+              aria-expanded={debugRunMenuOpen}
+              aria-controls="debug-run-menu"
+              disabled={replayGateButton.disabled}
+              title={replayGateButton.title}
+              onClick={() => setDebugRunMenuOpen(open => !open)}
+            >
+              <span className="topbar-action-icon" aria-hidden="true">
+                <DebugTopbarIcon kind={replayGateButton.icon} />
+              </span>
+              <span className="topbar-action-label">Debug</span>
+              <span className="debug-run-dropdown-caret" aria-hidden="true">▾</span>
+            </button>
+            {debugRunMenuOpen && (
+              <div id="debug-run-menu" className="debug-run-dropdown-menu" role="menu" aria-label="Debug run modes">
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="debug-run-dropdown-item"
+                  onClick={() => {
+                    setDebugRunMenuOpen(false)
+                    void topbarActionHandlersRef.current.handleReplay({ ignoreBreakpoints: true, iterations: 1 })
+                  }}
+                >
+                  Run a single iteration
+                </button>
+                <div className="debug-run-dropdown-iterations" role="none">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="debug-run-dropdown-item debug-run-dropdown-iterations-btn"
+                    onClick={() => {
+                      setDebugRunMenuOpen(false)
+                      void topbarActionHandlersRef.current.handleReplay({ ignoreBreakpoints: true, iterations: debugIterationCount })
+                    }}
+                  >
+                    <span>Run {debugIterationCount} {debugIterationCount === 1 ? 'iteration' : 'iterations'}</span>
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    aria-label="Iterations to run"
+                    className="debug-run-iterations-input"
+                    value={debugIterationCount}
+                    onClick={event => event.stopPropagation()}
+                    onChange={event => {
+                      const parsed = Number.parseInt(event.target.value, 10)
+                      if (Number.isFinite(parsed)) {
+                        setDebugIterationCount(Math.max(1, Math.min(100, parsed)))
+                      }
+                    }}
+                    onKeyDown={event => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault()
+                        setDebugRunMenuOpen(false)
+                        void topbarActionHandlersRef.current.handleReplay({ ignoreBreakpoints: true, iterations: debugIterationCount })
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="debug-run-dropdown-item"
+                  disabled={!hasEnabledDebugBreakpoint}
+                  title={!hasEnabledDebugBreakpoint ? 'Set at least one enabled breakpoint to run to a breakpoint' : 'Run and pause at the first enabled breakpoint'}
+                  onClick={() => {
+                    setDebugRunMenuOpen(false)
+                    void topbarActionHandlersRef.current.handleReplay({ startPaused: false, ignoreBreakpoints: false, iterations: 1 })
+                  }}
+                >
+                  Run to Breakpoint
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="debug-run-dropdown-item"
+                  onClick={() => {
+                    setDebugRunMenuOpen(false)
+                    void topbarActionHandlersRef.current.handleReplay({ startPaused: true, ignoreBreakpoints: false, iterations: 1 })
+                  }}
+                >
+                  Run in Step Mode
+                </button>
+              </div>
+            )}
+          </div>
+        )
+      )}
       {debugControlActions.filter(action => action.id !== 'break-on-failure').map(action => <TopbarActionButton key={action.id} action={action} />)}
     </div>
   )
@@ -7561,8 +7688,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       return <DebugCompletionSummary key={debugCompletionSnapshot.key}
         snapshot={debugCompletionSnapshot} stale={!replayEvidenceMatchesCurrentDraft}
         unavailable={runtimeVariablesUnavailable}
-        onReturn={returnToDebugger}
-        onDebugAgain={() => { returnToDebugger(); void handleReplay() }}
+        onExportSession={handleDownloadBrowserReplayExport}
         onSelectEvent={index => { returnToDebugger(); setDebuggerTab('request'); setExpandedReplayEvent(index) }}
         onDownloadHAR={async () => {
           const content = await api.exportScriptDebugSession(debugCompletionSnapshot.session.id, 'har')
@@ -8636,6 +8762,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               else selectAuthorPhaseAction(item.row)
               setShowFullScriptJson(true)
               if (!hasEvidence) { setExpandedReplayEvent(null); openCenterTab(SCRIPT_JSON_TAB_ID) }
+              else if (isBrowserScript) openCenterTab(BROWSER_REPLAY_TAB_ID)
             }}
             setBreakOnFailure={setBreakOnFailure}
             setExpandedReplayEvent={update => { changeFollowExecution(false); setExpandedReplayEvent(update) }}

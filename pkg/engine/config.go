@@ -274,6 +274,14 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if carrier := strings.TrimSpace(script.Config.Observability.TraceCarrier); carrier != "" {
 		cfg[protocol.ConfigMessagingTraceCarrier] = strings.ToLower(carrier)
 	}
+	if strings.EqualFold(strings.TrimSpace(script.Config.Log.Level), "extended") || script.Config.Log.OnErrorOnly {
+		for _, opt := range script.Config.Log.ExtendedOptions {
+			if strings.TrimSpace(opt) == "advanced_trace" {
+				cfg[protocol.ReplayNetworkTraceConfigKey] = true
+				break
+			}
+		}
+	}
 	appendHTTPSecurityConfig(cfg, script)
 
 	return resolveProtoConfigSecrets(cfg, resolver).(map[string]any)

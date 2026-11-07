@@ -1551,3 +1551,37 @@ func TestReplayNestedControlLoopIterationPath(t *testing.T) {
 		}
 	}
 }
+
+func TestReplayScriptMultipleIterations(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	script := &dsl.Script{
+		Name:     "MultiIter",
+		Protocol: protocolName,
+		Init:     []dsl.Action{{Name: "init-step", Type: "GET", Method: "GET", Target: "/init"}},
+		Actions:  []dsl.Action{{Name: "main-step", Type: "GET", Method: "GET", Target: "/main"}},
+		Teardown: []dsl.Action{{Name: "teardown-step", Type: "GET", Method: "GET", Target: "/teardown"}},
+	}
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{
+		IgnoreThinkTime: true,
+		Iterations:      3,
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript error: %v", err)
+	}
+	var phases []string
+	for _, ev := range report.Events {
+		phases = append(phases, ev.Phase+":"+ev.ActionName)
+	}
+	want := []string{
+		"init:init-step",
+		"action:main-step",
+		"action:main-step",
+		"action:main-step",
+		"teardown:teardown-step",
+	}
+	if !slices.Equal(phases, want) {
+		t.Fatalf("phases=%v want %v", phases, want)
+	}
+}

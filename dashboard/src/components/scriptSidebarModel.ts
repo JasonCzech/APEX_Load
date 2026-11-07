@@ -27,7 +27,7 @@ export function debugContinuesAfterFailure(options: Pick<ReplayOptionsState, 'af
 }
 
 export function debugOverrideCount(options: ReplayOptionsState): number {
-  return (Object.keys(DEFAULT_REPLAY_OPTIONS) as (keyof ReplayOptionsState)[]).filter(key => key === 'variablesText' ? Boolean(sessionVariablesError(options.variablesText)) || Object.keys(parseReplayVariablesText(options.variablesText) || {}).length > 0 : options[key] !== DEFAULT_REPLAY_OPTIONS[key]).length
+  return (Object.keys(DEFAULT_REPLAY_OPTIONS) as (keyof ReplayOptionsState)[]).filter(key => key === 'variablesText' ? Boolean(sessionVariablesError(options.variablesText)) || Object.keys(parseReplayVariablesText(options.variablesText) || {}).length > 0 : key === 'networkTrace' ? (options.networkTrace ?? true) !== (DEFAULT_REPLAY_OPTIONS.networkTrace ?? true) : options[key] !== DEFAULT_REPLAY_OPTIONS[key]).length
 }
 
 export function parameterUsageLabel(script: ScriptDefinition, path: string): string {

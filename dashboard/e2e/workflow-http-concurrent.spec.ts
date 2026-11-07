@@ -137,6 +137,7 @@ async function runGroup(page: Page, target: Awaited<ReturnType<typeof groupTarge
   await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
   await options.getByRole('button', { name: 'Done', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   if (paused) {
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Login' })).toBeVisible()
     await page.getByRole('button', { name: 'Step', exact: true }).click()
@@ -365,6 +366,7 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   await editor(page, workspace, id)
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await page.getByRole('tab', { name: 'Live Variables', exact: true }).click()
   const watches = page.getByRole('region', { name: 'Variable watches', exact: true })
   await expect(watches.getByRole('combobox', { name: 'Values at', exact: true })).toHaveValue('current')
@@ -407,6 +409,7 @@ test('runtime evidence unavailability hides stale DTO detail, history and export
   // Recent runs exclude the current run. A clean second run exposes the
   // first run as history and proves the unavailable flag remains run-scoped.
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expectDebugOutcome(page, 'passed')
   await expect(watches).toContainText('This is historical evidence, not current engine state.')
   await watches.getByRole('combobox', { name: 'Values at', exact: true }).selectOption('current')

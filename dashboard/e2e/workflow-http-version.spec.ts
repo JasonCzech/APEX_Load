@@ -183,6 +183,7 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
     await options.getByRole('button', { name: 'Done', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Login' })).toBeVisible()
     await page.getByRole('button', { name: 'Step', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Mixed versions' })).toBeVisible()

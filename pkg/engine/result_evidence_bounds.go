@@ -64,6 +64,7 @@ func boundResultEvidence(result *protocol.Result) {
 		}
 	}
 	result.Extractions = boundedExtractions
+	result.NetworkTrace = result.NetworkTrace.Clone()
 	result.ProtocolEvidence = protocol.BoundProtocolEvidence(result.ProtocolEvidence)
 	result.Snapshot, _ = boundedErrorSnapshot(result.Snapshot, defaultErrorSnapshotMaxBytes)
 }

@@ -6,6 +6,7 @@ import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } fr
 import BrowserReplayDebugger from './BrowserReplayDebugger'
 import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
+import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { formatReplayHeaders } from './scriptEditorUtils'
@@ -99,6 +100,7 @@ function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
     <p>{event.error_message || `${event.method || event.action_type} ${event.target}`}</p><p>Response status: {event.status_code ?? 'Not captured'}</p>
     <HTTPVersionReplayEvidence evidence={event.protocol_evidence} />
     <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={event.snapshot?.response_body_state || event.response_body_state} />
+    <HTTPNetworkTraceEvidence evidence={event.protocol_evidence} networkEntries={event.network_entries || event.snapshot?.network_entries} />
     <div className="debug-history-columns"><section><h4>Request</h4>{event.snapshot?.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}{event.snapshot?.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}<SnapshotTextPreview text={`${event.snapshot?.request_method || event.method || event.action_type} ${event.snapshot?.request_url || event.target}\n${formatReplayHeaders(event.snapshot ? event.snapshot.request_headers : event.headers)}`} /><SnapshotBodyPreview body={event.snapshot ? event.snapshot.request_body : event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4><SnapshotTextPreview text={formatReplayHeaders(event.snapshot?.response_headers)} /><SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
     {Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
     {event.protocol_evidence && <details><summary>Protocol evidence</summary><SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence, null, 2)} /></details>}<details><summary>Extracted variables</summary>{event.action_type === 'live_table' ? <SnapshotBodyPreview body={JSON.stringify(event.extractions || {}, null, 2)} /> : <ReplayExtractions event={event} />}</details>

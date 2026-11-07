@@ -55,6 +55,8 @@ type ReplayOptions struct {
 	// ContinueOnError decides what follows a failed action the debugger does
 	// not pause on. Nil uses the script's own setting.
 	ContinueOnError *bool
+	// Iterations is the number of action-phase iterations to run (default 1).
+	Iterations      int
 	OnProgress      func(ReplayProgressEvent)
 	DebugController ReplayDebugController
 	// UnredactedDebug exposes runtime values only to an authorized debugger session.
@@ -283,6 +285,7 @@ type ReplayActionEvent struct {
 
 type ReplayRuntimeProfile struct {
 	HAROptions       *protocol.ReplayHAROptions `json:"har_options,omitempty"`
+	NetworkTrace     *bool                      `json:"network_trace,omitempty"`
 	Name             string                     `json:"name,omitempty"`
 	CaptureMode      string                     `json:"capture_mode,omitempty"`
 	LogLevel         string                     `json:"log_level,omitempty"`
@@ -528,12 +531,33 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 	}
 	if opts.DebugController != nil {
 		protoConfig[protocol.ReplayNetworkCaptureConfigKey] = true
+		wantNetworkTrace := opts.RuntimeProfile == nil || opts.RuntimeProfile.NetworkTrace == nil || *opts.RuntimeProfile.NetworkTrace
+		if wantNetworkTrace {
+			protoConfig[protocol.ReplayNetworkTraceConfigKey] = true
+		} else {
+			delete(protoConfig, protocol.ReplayNetworkTraceConfigKey)
+		}
 		if opts.RuntimeProfile != nil && opts.RuntimeProfile.HAROptions != nil {
 			capture, err := protocol.NewReplayHARCapture(*opts.RuntimeProfile.HAROptions)
 			if err != nil {
 				return nil, err
 			}
 			protoConfig[protocol.ReplayHARCaptureConfigKey] = capture
+		} else {
+			capture, err := protocol.NewReplayHARCapture(protocol.ReplayHAROptions{
+				Bodies:    "none",
+				Redirects: true,
+				Timings:   true,
+			})
+			if err == nil {
+				protoConfig[protocol.ReplayHARCaptureConfigKey] = capture
+			}
+		}
+	} else if opts.RuntimeProfile != nil && opts.RuntimeProfile.NetworkTrace != nil {
+		if *opts.RuntimeProfile.NetworkTrace {
+			protoConfig[protocol.ReplayNetworkTraceConfigKey] = true
+		} else {
+			delete(protoConfig, protocol.ReplayNetworkTraceConfigKey)
 		}
 	}
 	_, harProvider := proto.(protocol.BrowserHARArtifactProvider)
@@ -622,10 +646,14 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 		Report:     cloneReplayReport(report),
 	}))
 
+	iterations := 1
+	if opts.Iterations > 1 {
+		iterations = min(opts.Iterations, 100)
+	}
 	vu = &VUser{
 		unredactedDebug:              opts.UnredactedDebug && opts.DebugController != nil,
 		debugSecretMask:              debugSecretMask,
-		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1},
+		ParameterAllocation:          &ParameterAllocation{Population: 1, Offset: 0, Iterations: iterations},
 		ID:                           0,
 		Group:                        groupName,
 		RunID:                        opts.RunID,
@@ -701,17 +729,35 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 		publishReplayProgress(onProgress, ReplayProgressEvent{Type: ReplayProgressEventRun, EventID: event.EventID, SessionID: report.ReplaySessionID, Timestamp: event.CompletedAt, EventIndex: event.EventIndex, Event: cloneReplayActionEvent(event)})
 	}
 	shouldContinue := runReplayPhase(ctx, vu, script.Init, "init", false, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
-	if shouldContinue {
+	for iter := 0; iter < iterations && shouldContinue; iter++ {
+		vu.currentIteration.Store(int64(iter + 1))
+		if iter > 0 {
+			vu.resetLLMConversations()
+			if err := vu.loadDataRow(); err != nil {
+				report.Success = false
+				report.Error = "prepare replay iteration: " + vu.replayPublicationError(err)
+				shouldContinue = false
+				break
+			}
+			if vu.Parameters != nil {
+				vu.Parameters.RefreshIteration()
+			}
+			if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+				report.Success = false
+				report.Error = "prepare replay credential redaction: " + vu.replayPublicationError(err)
+				shouldContinue = false
+				break
+			}
+		}
 		if controller, ok := vu.Proto.(protocol.IterationController); ok {
 			if err := controller.BeginIteration(ctx); err != nil {
 				report.Success = false
 				report.Error = "prepare replay iteration: " + vu.replayPublicationError(err)
 				shouldContinue = false
+				break
 			}
 		}
-		if shouldContinue {
-			shouldContinue = runReplayPhaseInOrder(ctx, vu, script.Actions, vu.iterationOrder(), "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
-		}
+		shouldContinue = runReplayPhaseInOrder(ctx, vu, script.Actions, vu.iterationOrder(), "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, onProgress, opts.DebugController)
 	}
 	vu.stopAllAsyncConversations(ctx, "replay end")
 	teardownCtx, teardownCancel := teardownContext()
@@ -2463,6 +2509,10 @@ func buildReplayRuntimeProfile(script *dsl.Script, opts ReplayOptions) ReplayRun
 	}
 	if strings.TrimSpace(profile.LogLevel) == "" {
 		profile.LogLevel = "info"
+	}
+	if profile.NetworkTrace == nil && opts.DebugController != nil {
+		networkTrace := true
+		profile.NetworkTrace = &networkTrace
 	}
 	profile.IgnoreThinkTime = opts.IgnoreThinkTime
 	if script != nil {

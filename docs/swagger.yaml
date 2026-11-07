@@ -47391,6 +47391,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -48636,6 +48641,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -48777,6 +48785,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -49534,6 +49545,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -50779,6 +50795,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -50920,6 +50939,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -51724,6 +51746,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -52969,6 +52996,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -53110,6 +53140,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -53782,6 +53815,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -55027,6 +55065,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -55168,6 +55209,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -55840,6 +55884,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -57085,6 +57134,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -57226,6 +57278,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -164678,6 +164733,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -166001,6 +166061,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -166144,6 +166207,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -167014,6 +167080,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -168337,6 +168408,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -168480,6 +168554,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -169420,6 +169497,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -170743,6 +170825,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -170886,6 +170971,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -171762,6 +171850,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -173085,6 +173178,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -173228,6 +173324,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -174098,6 +174197,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -175421,6 +175525,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -175564,6 +175671,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -176439,6 +176549,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -177762,6 +177877,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -177905,6 +178023,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -178781,6 +178902,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -180104,6 +180230,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -180247,6 +180376,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -223804,6 +223936,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -225127,6 +225264,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -225270,6 +225410,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -226141,6 +226284,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -227464,6 +227612,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -227607,6 +227758,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -228549,6 +228703,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -229872,6 +230031,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -230015,6 +230177,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -230892,6 +231057,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -232215,6 +232385,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -232358,6 +232531,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -233229,6 +233405,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -234552,6 +234733,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -234695,6 +234879,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -235571,6 +235758,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -236894,6 +237086,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -237037,6 +237232,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -237914,6 +238112,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -239237,6 +239440,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -239380,6 +239586,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -264901,6 +265110,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -266146,6 +266360,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -266287,6 +266504,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -266883,6 +267103,9 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                iterations:
+                  type: integer
+                  format: int64
                 live_table_seeds:
                   type: array
                   items:
@@ -266976,6 +267199,9 @@ paths:
                       type: string
                     name:
                       type: string
+                    network_trace:
+                      type: boolean
+                      nullable: true
                   nullable: true
                 script:
                   type: object
@@ -269753,6 +269979,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -271076,6 +271307,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -271219,6 +271453,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -286082,6 +286319,9 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                iterations:
+                  type: integer
+                  format: int64
                 live_table_seeds:
                   type: array
                   items:
@@ -286175,6 +286415,9 @@ paths:
                       type: string
                     name:
                       type: string
+                    network_trace:
+                      type: boolean
+                      nullable: true
                   nullable: true
                 script:
                   type: object
@@ -288952,6 +289195,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -290275,6 +290523,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -290418,6 +290669,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -313139,6 +313393,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -314384,6 +314643,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -314525,6 +314787,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       script_id:
                         type: string
                       started_at:
@@ -314869,6 +315134,84 @@ paths:
                       status_code:
                         type: integer
                         format: int64
+                      trace:
+                        type: object
+                        properties:
+                          connection_reused:
+                            type: boolean
+                          content_encoding:
+                            type: string
+                          cookie_names_sent:
+                            type: array
+                            items:
+                              type: string
+                          cookies_sent_count:
+                            type: integer
+                            format: int64
+                          cross_origin_redirect:
+                            type: boolean
+                          decoded_body_bytes:
+                            type: integer
+                            format: int64
+                          dns_coalesced:
+                            type: boolean
+                          dns_resolved_ips:
+                            type: array
+                            items:
+                              type: string
+                          encoded_body_bytes:
+                            type: integer
+                            format: int64
+                          got_100_continue:
+                            type: boolean
+                          http_protocol:
+                            type: string
+                          idle_time_ms:
+                            type: number
+                            format: double
+                          local_addr:
+                            type: string
+                          remote_addr:
+                            type: string
+                          request_compression:
+                            type: string
+                          set_cookie_names_received:
+                            type: array
+                            items:
+                              type: string
+                          set_cookies_received_count:
+                            type: integer
+                            format: int64
+                          stripped_redirect_headers:
+                            type: array
+                            items:
+                              type: string
+                          tls_cert_expiry:
+                            type: string
+                          tls_cert_issuer:
+                            type: string
+                          tls_cert_subject:
+                            type: string
+                          tls_cipher_suite:
+                            type: string
+                          tls_did_resume:
+                            type: boolean
+                          tls_negotiated_proto:
+                            type: string
+                          tls_server_name:
+                            type: string
+                          tls_version:
+                            type: string
+                          transfer_encoding:
+                            type: array
+                            items:
+                              type: string
+                          wait_100_continue_ms:
+                            type: number
+                            format: double
+                          was_idle:
+                            type: boolean
+                        nullable: true
                       url:
                         type: string
                 project_id:
@@ -321416,6 +321759,9 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                iterations:
+                  type: integer
+                  format: int64
                 live_table_seeds:
                   type: array
                   items:
@@ -321509,6 +321855,9 @@ paths:
                       type: string
                     name:
                       type: string
+                    network_trace:
+                      type: boolean
+                      nullable: true
                   nullable: true
                 script:
                   type: object
@@ -324286,6 +324635,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -325609,6 +325963,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -325752,6 +326109,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -379884,6 +380244,9 @@ paths:
                 ignore_think_time:
                   type: boolean
                   nullable: true
+                iterations:
+                  type: integer
+                  format: int64
                 live_table_seeds:
                   type: array
                   items:
@@ -379977,6 +380340,9 @@ paths:
                       type: string
                     name:
                       type: string
+                    network_trace:
+                      type: boolean
+                      nullable: true
                   nullable: true
                 script:
                   type: object
@@ -382754,6 +383120,11 @@ paths:
                                 status_code:
                                   type: integer
                                   format: int64
+                                trace:
+                                  type: object
+                                  description: 'Go type: HTTPNetworkTrace'
+                                  additionalProperties: true
+                                  nullable: true
                                 url:
                                   type: string
                           page_title:
@@ -384077,6 +384448,9 @@ paths:
                                 type: string
                               name:
                                 type: string
+                              network_trace:
+                                type: boolean
+                                nullable: true
                           script_hash:
                             type: string
                           script_revision:
@@ -384220,6 +384594,9 @@ paths:
                             type: string
                           name:
                             type: string
+                          network_trace:
+                            type: boolean
+                            nullable: true
                       runtime_state:
                         type: object
                         properties:
@@ -609195,6 +609572,84 @@ paths:
                             status_code:
                               type: integer
                               format: int64
+                            trace:
+                              type: object
+                              properties:
+                                connection_reused:
+                                  type: boolean
+                                content_encoding:
+                                  type: string
+                                cookie_names_sent:
+                                  type: array
+                                  items:
+                                    type: string
+                                cookies_sent_count:
+                                  type: integer
+                                  format: int64
+                                cross_origin_redirect:
+                                  type: boolean
+                                decoded_body_bytes:
+                                  type: integer
+                                  format: int64
+                                dns_coalesced:
+                                  type: boolean
+                                dns_resolved_ips:
+                                  type: array
+                                  items:
+                                    type: string
+                                encoded_body_bytes:
+                                  type: integer
+                                  format: int64
+                                got_100_continue:
+                                  type: boolean
+                                http_protocol:
+                                  type: string
+                                idle_time_ms:
+                                  type: number
+                                  format: double
+                                local_addr:
+                                  type: string
+                                remote_addr:
+                                  type: string
+                                request_compression:
+                                  type: string
+                                set_cookie_names_received:
+                                  type: array
+                                  items:
+                                    type: string
+                                set_cookies_received_count:
+                                  type: integer
+                                  format: int64
+                                stripped_redirect_headers:
+                                  type: array
+                                  items:
+                                    type: string
+                                tls_cert_expiry:
+                                  type: string
+                                tls_cert_issuer:
+                                  type: string
+                                tls_cert_subject:
+                                  type: string
+                                tls_cipher_suite:
+                                  type: string
+                                tls_did_resume:
+                                  type: boolean
+                                tls_negotiated_proto:
+                                  type: string
+                                tls_server_name:
+                                  type: string
+                                tls_version:
+                                  type: string
+                                transfer_encoding:
+                                  type: array
+                                  items:
+                                    type: string
+                                wait_100_continue_ms:
+                                  type: number
+                                  format: double
+                                was_idle:
+                                  type: boolean
+                              nullable: true
                             url:
                               type: string
                       omitted_resources:

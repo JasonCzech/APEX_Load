@@ -841,6 +841,7 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.HTML = scrubSensitiveTextWithConfig(result.HTML, config)
 	result.ConsoleEntries = scrubSensitiveConsoleEntries(result.ConsoleEntries, config)
 	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
+	result.NetworkTrace = scrubSensitiveNetworkTrace(result.NetworkTrace, config)
 	result.DOMSummary = scrubSensitiveDOMSummary(result.DOMSummary, config)
 	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
 	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
@@ -1034,12 +1035,48 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 			}
 			entries[i].HAR = har
 		}
+		entries[i].Trace = scrubSensitiveNetworkTrace(entries[i].Trace, config)
 		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
 		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
 		entries[i].RequestBody = scrubSensitiveTextWithConfig(entries[i].RequestBody, config)
 		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
 	}
 	return entries
+}
+
+func scrubSensitiveNetworkTrace(trace *protocol.HTTPNetworkTrace, config *RedactionConfig) *protocol.HTTPNetworkTrace {
+	if trace == nil {
+		return nil
+	}
+	cloned := trace.Clone()
+	for i := range cloned.DNSResolvedIPs {
+		cloned.DNSResolvedIPs[i] = scrubSensitiveTextWithConfig(cloned.DNSResolvedIPs[i], config)
+	}
+	cloned.RemoteAddr = scrubSensitiveTextWithConfig(cloned.RemoteAddr, config)
+	cloned.LocalAddr = scrubSensitiveTextWithConfig(cloned.LocalAddr, config)
+	cloned.TLSVersion = scrubSensitiveTextWithConfig(cloned.TLSVersion, config)
+	cloned.TLSCipherSuite = scrubSensitiveTextWithConfig(cloned.TLSCipherSuite, config)
+	cloned.TLSNegotiatedProto = scrubSensitiveTextWithConfig(cloned.TLSNegotiatedProto, config)
+	cloned.TLSServerName = scrubSensitiveTextWithConfig(cloned.TLSServerName, config)
+	cloned.TLSCertSubject = scrubSensitiveTextWithConfig(cloned.TLSCertSubject, config)
+	cloned.TLSCertIssuer = scrubSensitiveTextWithConfig(cloned.TLSCertIssuer, config)
+	cloned.TLSCertExpiry = scrubSensitiveTextWithConfig(cloned.TLSCertExpiry, config)
+	cloned.HTTPProtocol = scrubSensitiveTextWithConfig(cloned.HTTPProtocol, config)
+	cloned.RequestCompression = scrubSensitiveTextWithConfig(cloned.RequestCompression, config)
+	cloned.ContentEncoding = scrubSensitiveTextWithConfig(cloned.ContentEncoding, config)
+	for i := range cloned.TransferEncoding {
+		cloned.TransferEncoding[i] = scrubSensitiveTextWithConfig(cloned.TransferEncoding[i], config)
+	}
+	for i := range cloned.CookieNamesSent {
+		cloned.CookieNamesSent[i] = scrubSensitiveTextWithConfig(cloned.CookieNamesSent[i], config)
+	}
+	for i := range cloned.SetCookieNamesReceived {
+		cloned.SetCookieNamesReceived[i] = scrubSensitiveTextWithConfig(cloned.SetCookieNamesReceived[i], config)
+	}
+	for i := range cloned.StrippedRedirectHeaders {
+		cloned.StrippedRedirectHeaders[i] = scrubSensitiveTextWithConfig(cloned.StrippedRedirectHeaders[i], config)
+	}
+	return cloned
 }
 
 func scrubSensitiveConsoleEntries(entries []protocol.ConsoleEntry, config *RedactionConfig) []protocol.ConsoleEntry {

@@ -197,6 +197,7 @@ test('current paused values and parameter receipts survive inspection without co
   await openDebugger(page, workspace, id)
   const started = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/debug/sessions'))
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const initial = (await (await started).json()).session as RuntimeSession
   const before = await held(request, initial.id, { phase: 'action', action_index: 0 })
   expect(parameter(before.runtime_state.snapshot!, 'sequence')).toMatchObject({ state: 'not_evaluated', update_policy: 'each_occurrence' })
@@ -309,6 +310,7 @@ test('foreach receipts retain original row ordinals and restore enclosing bindin
   await openDebugger(page, workspace, id)
   const started = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/debug/sessions'))
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const initial = (await (await started).json()).session as RuntimeSession
   for (let row = 1; row <= 2; row++) {
     const before = await held(request, initial.id, { action_index: 0, step_path: ['loop[0]'], iteration_path: [row] })
@@ -366,6 +368,7 @@ test('Run To continues after its breakpoint socket precedes the HTTP acknowledge
   await openDebugger(page, workspace, id)
   const started = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/debug/sessions'))
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const initial = (await (await started).json()).session as RuntimeSession
   await held(request, initial.id, { phase: 'action', action_index: 0 })
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: First before target' })).toBeVisible()

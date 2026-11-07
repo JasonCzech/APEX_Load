@@ -23,6 +23,7 @@ type ScriptDebugStartRequest struct {
 	Variables         map[string]string             `json:"variables,omitempty"`
 	RedactionRules    []engine.RedactionRule        `json:"redaction_rules,omitempty"`
 	StartPaused       bool                          `json:"start_paused,omitempty"`
+	Iterations        int                           `json:"iterations,omitempty"`
 	Breakpoints       []ScriptDebugBreakpoint       `json:"breakpoints,omitempty"`
 	BreakOnFailure    bool                          `json:"break_on_failure,omitempty"`
 	RunID             string                        `json:"run_id,omitempty"`
@@ -161,6 +162,10 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 	}
 	if err := validateDebugRunIdentity(req.RunID); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.Iterations < 0 || req.Iterations > 100 {
+		writeError(w, http.StatusBadRequest, "iterations must be between 1 and 100")
 		return
 	}
 	if req.RuntimeProfile != nil && req.RuntimeProfile.HAROptions != nil {

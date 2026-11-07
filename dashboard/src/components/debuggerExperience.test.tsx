@@ -12,7 +12,10 @@ const report = (events: BrowserReplayEvent[]): BrowserReplayReport => ({ group: 
 describe('debugger operator experience', () => {
   it('captures bounded successful HTTP evidence without changing the authored config', () => {
     const script = { name: 'Capture', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test', results: { message_detail: { mode: 'off' } } }, actions: [] } as ScriptDefinition
-    expect(captureScript(script).config.results?.message_detail).toMatchObject({ mode: 'sampled', sample_rate: 1, max_items: 100, max_total_bytes: 4194304 })
+    const captured = captureScript(script)
+    expect(captured.config.results?.message_detail).toMatchObject({ mode: 'sampled', sample_rate: 1, max_items: 100, max_total_bytes: 4194304 })
+    expect(captured.config.log?.extended_options).toContain('advanced_trace')
+    expect(captureScript(script, 'diagnostic', false).config.log?.extended_options).not.toContain('advanced_trace')
     expect(script.config.results?.message_detail?.mode).toBe('off')
     expect(captureScript(script, 'errors').config.results?.message_detail?.mode).toBe('errors')
     expect(captureScript(script, 'script')).toBe(script)

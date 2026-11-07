@@ -74826,6 +74826,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -75237,6 +75238,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -75286,6 +75288,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -77889,6 +77892,37 @@ export interface operations {
                 "resource_type"?: string;
                 "response_headers"?: Record<string, string>;
                 "status_code"?: number;
+                "trace"?: ({
+                  "connection_reused"?: boolean;
+                  "content_encoding"?: string;
+                  "cookie_names_sent"?: Array<string>;
+                  "cookies_sent_count"?: number;
+                  "cross_origin_redirect"?: boolean;
+                  "decoded_body_bytes"?: number;
+                  "dns_coalesced"?: boolean;
+                  "dns_resolved_ips"?: Array<string>;
+                  "encoded_body_bytes"?: number;
+                  "got_100_continue"?: boolean;
+                  "http_protocol"?: string;
+                  "idle_time_ms"?: number;
+                  "local_addr"?: string;
+                  "remote_addr"?: string;
+                  "request_compression"?: string;
+                  "set_cookie_names_received"?: Array<string>;
+                  "set_cookies_received_count"?: number;
+                  "stripped_redirect_headers"?: Array<string>;
+                  "tls_cert_expiry"?: string;
+                  "tls_cert_issuer"?: string;
+                  "tls_cert_subject"?: string;
+                  "tls_cipher_suite"?: string;
+                  "tls_did_resume"?: boolean;
+                  "tls_negotiated_proto"?: string;
+                  "tls_server_name"?: string;
+                  "tls_version"?: string;
+                  "transfer_encoding"?: Array<string>;
+                  "wait_100_continue_ms"?: number;
+                  "was_idle"?: boolean;
+                }) | null;
                 "url"?: string;
               }>;
               "omitted_resources"?: number;
@@ -104001,6 +104035,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -104439,6 +104474,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -104489,6 +104525,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -104794,6 +104831,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -105232,6 +105270,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -105282,6 +105321,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -130111,6 +130151,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -130522,6 +130563,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -130571,6 +130613,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -130964,6 +131007,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -131402,6 +131446,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -131452,6 +131497,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -131762,6 +131808,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -132200,6 +132247,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -132250,6 +132298,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -142422,6 +142471,37 @@ export interface operations {
             "resource_type"?: string;
             "response_headers"?: Record<string, string>;
             "status_code"?: number;
+            "trace"?: ({
+              "connection_reused"?: boolean;
+              "content_encoding"?: string;
+              "cookie_names_sent"?: Array<string>;
+              "cookies_sent_count"?: number;
+              "cross_origin_redirect"?: boolean;
+              "decoded_body_bytes"?: number;
+              "dns_coalesced"?: boolean;
+              "dns_resolved_ips"?: Array<string>;
+              "encoded_body_bytes"?: number;
+              "got_100_continue"?: boolean;
+              "http_protocol"?: string;
+              "idle_time_ms"?: number;
+              "local_addr"?: string;
+              "remote_addr"?: string;
+              "request_compression"?: string;
+              "set_cookie_names_received"?: Array<string>;
+              "set_cookies_received_count"?: number;
+              "stripped_redirect_headers"?: Array<string>;
+              "tls_cert_expiry"?: string;
+              "tls_cert_issuer"?: string;
+              "tls_cert_subject"?: string;
+              "tls_cipher_suite"?: string;
+              "tls_did_resume"?: boolean;
+              "tls_negotiated_proto"?: string;
+              "tls_server_name"?: string;
+              "tls_version"?: string;
+              "transfer_encoding"?: Array<string>;
+              "wait_100_continue_ms"?: number;
+              "was_idle"?: boolean;
+            }) | null;
             "url"?: string;
           }>;
           "project_id"?: string;
@@ -176275,6 +176355,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -176686,6 +176767,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -176735,6 +176817,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -177128,6 +177211,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -177566,6 +177650,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -177616,6 +177701,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -177926,6 +178012,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -178364,6 +178451,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -178414,6 +178502,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -185063,6 +185152,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -185474,6 +185564,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -185523,6 +185614,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -186673,6 +186765,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -187084,6 +187177,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -187133,6 +187227,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -187395,6 +187490,7 @@ export interface operations {
           "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "iterations"?: number;
           "live_table_seeds"?: Array<{
             "alias"?: string;
             "columns"?: Array<string>;
@@ -187435,6 +187531,7 @@ export interface operations {
             "ignore_think_time"?: boolean;
             "log_level"?: string;
             "name"?: string;
+            "network_trace"?: (boolean) | null;
           }) | null;
           "script"?: ({
             "actions"?: Array<{
@@ -188456,6 +188553,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -188894,6 +188992,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -188944,6 +189043,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -189120,6 +189220,7 @@ export interface operations {
           "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "iterations"?: number;
           "live_table_seeds"?: Array<{
             "alias"?: string;
             "columns"?: Array<string>;
@@ -189160,6 +189261,7 @@ export interface operations {
             "ignore_think_time"?: boolean;
             "log_level"?: string;
             "name"?: string;
+            "network_trace"?: (boolean) | null;
           }) | null;
           "script"?: ({
             "actions"?: Array<{
@@ -190181,6 +190283,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -190619,6 +190722,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -190669,6 +190773,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -190841,6 +190946,7 @@ export interface operations {
           "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "iterations"?: number;
           "live_table_seeds"?: Array<{
             "alias"?: string;
             "columns"?: Array<string>;
@@ -190881,6 +190987,7 @@ export interface operations {
             "ignore_think_time"?: boolean;
             "log_level"?: string;
             "name"?: string;
+            "network_trace"?: (boolean) | null;
           }) | null;
           "script"?: ({
             "actions"?: Array<{
@@ -191902,6 +192009,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -192340,6 +192448,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -192390,6 +192499,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -192566,6 +192676,7 @@ export interface operations {
           "continue_on_error"?: (boolean) | null;
           "group_name"?: string;
           "ignore_think_time"?: (boolean) | null;
+          "iterations"?: number;
           "live_table_seeds"?: Array<{
             "alias"?: string;
             "columns"?: Array<string>;
@@ -192606,6 +192717,7 @@ export interface operations {
             "ignore_think_time"?: boolean;
             "log_level"?: string;
             "name"?: string;
+            "network_trace"?: (boolean) | null;
           }) | null;
           "script"?: ({
             "actions"?: Array<{
@@ -193627,6 +193739,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -194065,6 +194178,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -194115,6 +194229,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -194545,6 +194660,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -194983,6 +195099,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -195033,6 +195150,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -195352,6 +195470,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -195790,6 +195909,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -195840,6 +195960,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -196150,6 +196271,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -196561,6 +196683,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -196610,6 +196733,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;
@@ -197047,6 +197171,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -197485,6 +197610,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -197535,6 +197661,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -197840,6 +197967,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -198278,6 +198406,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -198328,6 +198457,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -215625,6 +215755,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -216063,6 +216194,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -216113,6 +216245,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -216432,6 +216565,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -216870,6 +217004,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -216920,6 +217055,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -217239,6 +217375,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -217677,6 +217814,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -217727,6 +217865,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -218046,6 +218185,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -218484,6 +218624,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -218534,6 +218675,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "runtime_state": {
                 "kind": string;
@@ -223949,6 +224091,7 @@ export interface operations {
                   "resource_type"?: string;
                   "response_headers"?: Record<string, string>;
                   "status_code"?: number;
+                  "trace"?: (Record<string, unknown>) | null;
                   "url"?: string;
                 }>;
                 "page_title"?: string;
@@ -224360,6 +224503,7 @@ export interface operations {
                   "ignore_think_time"?: boolean;
                   "log_level"?: string;
                   "name"?: string;
+                  "network_trace"?: (boolean) | null;
                 };
                 "script_hash"?: string;
                 "script_revision"?: string;
@@ -224409,6 +224553,7 @@ export interface operations {
                 "ignore_think_time"?: boolean;
                 "log_level"?: string;
                 "name"?: string;
+                "network_trace"?: (boolean) | null;
               };
               "script_id"?: string;
               "started_at"?: (string) | null;

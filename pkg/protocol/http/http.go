@@ -89,6 +89,7 @@ type HTTP struct {
 	resources                  *resourceFetcher
 	replayHAR                  *protocol.ReplayHARCapture
 	captureReplayNetwork       bool
+	captureNetworkTrace        bool
 	unredactedDebugSnapshots   bool
 	captureCorrelationEvidence bool
 	// page is the virtual user's HTML page context, shared with the
@@ -183,6 +184,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.baseURL, _ = config["base_url"].(string)
 	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
 	h.captureReplayNetwork, _ = config[protocol.ReplayNetworkCaptureConfigKey].(bool)
+	h.captureNetworkTrace, _ = config[protocol.ReplayNetworkTraceConfigKey].(bool)
 	h.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	h.replayHAR = protocol.ReplayHARCaptureFromConfig(config)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
@@ -644,6 +646,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	// request that failed before sending does not claim its trace was sent.
 	wroteHeaders := false
 	startTime := result.StartTime
+	var netTrace *httpTraceCollector
+	if h.captureNetworkTrace {
+		netTrace = newHTTPTraceCollector()
+	}
 	trace := &httptrace.ClientTrace{
 		GetConn: func(string) {
 			if h3Receipt.onGetConn() > h3AttemptLimit && h3Cancel != nil {
@@ -658,28 +664,50 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			dnsStart = time.Now()
 			traceMu.Unlock()
 		},
-		DNSDone: func(_ httptrace.DNSDoneInfo) { traceMu.Lock(); traceDNSTime = time.Since(dnsStart); traceMu.Unlock() },
+		DNSDone: func(info httptrace.DNSDoneInfo) {
+			traceMu.Lock()
+			traceDNSTime = time.Since(dnsStart)
+			traceMu.Unlock()
+			netTrace.onDNSDone(info)
+		},
 		ConnectStart: func(_, _ string) {
 			h3Receipt.onConnectStart()
 			traceMu.Lock()
 			connStart = time.Now()
 			traceMu.Unlock()
 		},
-		ConnectDone:       func(_, _ string, _ error) { traceMu.Lock(); traceConnectTime = time.Since(connStart); traceMu.Unlock() },
+		ConnectDone: func(netw, addr string, err error) {
+			traceMu.Lock()
+			traceConnectTime = time.Since(connStart)
+			traceMu.Unlock()
+			netTrace.onConnectDone(netw, addr, err)
+		},
 		TLSHandshakeStart: func() { traceMu.Lock(); tlsStart = time.Now(); traceMu.Unlock() },
-		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+		TLSHandshakeDone: func(cs tls.ConnectionState, err error) {
 			traceMu.Lock()
 			traceTLSTime = time.Since(tlsStart)
 			traceMu.Unlock()
+			netTrace.onTLSHandshakeDone(cs, err)
 		},
 		GotConn: func(info httptrace.GotConnInfo) {
 			h3Receipt.onGotConn(info.Reused)
 			traceMu.Lock()
 			connectionReused = info.Reused
 			traceMu.Unlock()
+			netTrace.onGotConn(info)
+		},
+		Wait100Continue: func() {
+			netTrace.onWait100Continue()
+		},
+		Got100Continue: func() {
+			netTrace.onGot100Continue()
 		},
 		WroteHeaders: func() { traceMu.Lock(); wroteHeaders = true; traceMu.Unlock() },
+		WroteRequest: func(httptrace.WroteRequestInfo) {
+			netTrace.onWait100ContinueDone()
+		},
 		GotFirstResponseByte: func() {
+			netTrace.onWait100ContinueDone()
 			traceMu.Lock()
 			if traceTTFB == 0 {
 				traceTTFB = time.Since(startTime)
@@ -701,12 +729,23 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	client := *h.client
 	var harRecorder *replayHARTransport
 	if h.captureReplayNetwork {
-		recorder := newReplayHARTransport(client.Transport, h.replayHAR)
+		recorder := newReplayHARTransport(client.Transport, h.replayHAR, h.captureNetworkTrace)
 		harRecorder = recorder
 		client.Transport = recorder
 		defer func() {
 			if returned != nil {
-				returned.NetworkEntries = append(recorder.entries(), returned.NetworkEntries...)
+				mainEntries := recorder.entries()
+				if len(mainEntries) > 0 && returned.NetworkTrace != nil {
+					if mainEntries[0].Trace != nil && returned.NetworkTrace.RequestCompression != "" && mainEntries[0].Trace.RequestCompression == "" {
+						mainEntries[0].Trace.RequestCompression = returned.NetworkTrace.RequestCompression
+					}
+					lastIdx := len(mainEntries) - 1
+					if mainEntries[lastIdx].Trace != nil && returned.NetworkTrace.CrossOriginRedirect {
+						mainEntries[lastIdx].Trace.CrossOriginRedirect = true
+						mainEntries[lastIdx].Trace.StrippedRedirectHeaders = append([]string(nil), returned.NetworkTrace.StrippedRedirectHeaders...)
+					}
+				}
+				returned.NetworkEntries = append(mainEntries, returned.NetworkEntries...)
 			}
 		}()
 	}
@@ -755,8 +794,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		redirectLegStart = time.Now()
 		traceMu.Unlock()
 		if baseCheckRedirect != nil {
-			return baseCheckRedirect(req, via)
+			if err := baseCheckRedirect(req, via); err != nil {
+				return err
+			}
 		}
+		netTrace.observeRedirect(req, via, client.Jar)
 		return nil
 	}
 	// applyTraceTelemetry publishes the trace timings into result and returns the
@@ -764,12 +806,17 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	// before reading the timings.
 	applyTraceTelemetry := func() (bool, int, time.Duration) {
 		traceMu.Lock()
-		defer traceMu.Unlock()
 		result.DNSTime = traceDNSTime
 		result.ConnectTime = traceConnectTime
 		result.TLSTime = traceTLSTime
 		result.TTFB = traceTTFB
-		return connectionReused, redirectCount, redirectDuration
+		reused, rCount, rDur := connectionReused, redirectCount, redirectDuration
+		traceMu.Unlock()
+		if netTrace != nil {
+			netTrace.observeExchange(req, resp, client.Jar, appliedCompression, 0, 0)
+			result.NetworkTrace = netTrace.snapshot()
+		}
+		return reused, rCount, rDur
 	}
 	// markUnsentTraceContext clears Sent when a transport failure happened
 	// before any request headers were written, such as a refused dial.
@@ -980,7 +1027,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	} else {
 		_ = resp.Body.Close()
 	}
-	if harRecorder != nil && !cacheHit && contentDecoded {
+	if netTrace != nil && !cacheHit {
+		netTrace.setBodyBytes(n, int64(buf.Len()))
+	}
+	if harRecorder != nil && !cacheHit && (contentDecoded || h.captureNetworkTrace) {
 		harRecorder.decodedBody(resp, buf.Bytes(), bodyReadErr == nil && contentComplete)
 	}
 	if bodyReadErr == nil && !isEventStream && !contentComplete {

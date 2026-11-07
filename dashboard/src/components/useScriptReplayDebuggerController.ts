@@ -300,8 +300,19 @@ export function useScriptReplayDebuggerController({
       if (debuggerSettingsBtnRef.current?.contains(target)) return
       setDebuggerSettingsOpen(false)
     }
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDebuggerSettingsOpen(false)
+        debuggerSettingsBtnRef.current?.focus()
+      }
+    }
     window.addEventListener('mousedown', onDown)
-    return () => window.removeEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [debuggerSettingsOpen])
 
   const handleDebuggerResizeKeyDown = useCallback((kind: DebuggerResizeKind, event: ReactKeyboardEvent<HTMLDivElement>) => {

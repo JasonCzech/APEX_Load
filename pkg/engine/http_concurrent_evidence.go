@@ -91,6 +91,11 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 	originalBodyBytes := preOmittedBodyBytes + len(result.ResponseBody)
 	originalRich := protocol.ErrorSnapshot{ResponseBody: result.ResponseBody, PageURL: result.PageURL, PageTitle: result.PageTitle, HTML: result.HTML, ScreenshotBase64: result.ScreenshotBase64, ConsoleEntries: result.ConsoleEntries, NetworkEntries: result.NetworkEntries, DOMSummary: result.DOMSummary}
 	originalProtocolEvidence := result.ProtocolEvidence
+	var originalNetworkTrace *protocol.HTTPNetworkTrace
+	if result.NetworkTrace != nil {
+		rawTrace := *result.NetworkTrace
+		originalNetworkTrace = &rawTrace
+	}
 	originalError := result.ErrorMessage
 	rich, _ := boundedErrorSnapshot(&protocol.ErrorSnapshot{ResponseBody: result.ResponseBody, PageURL: result.PageURL, PageTitle: result.PageTitle, HTML: result.HTML, ScreenshotBase64: result.ScreenshotBase64, ConsoleEntries: result.ConsoleEntries, NetworkEntries: result.NetworkEntries, DOMSummary: result.DOMSummary}, bodyLimit)
 
@@ -170,6 +175,7 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 	richComplete := reflect.DeepEqual(originalRich, finalRich)
 	snapshotComplete := reflect.DeepEqual(originalSnapshot, result.Snapshot)
 	protocolComplete := reflect.DeepEqual(originalProtocolEvidence, result.ProtocolEvidence)
+	networkTraceComplete := reflect.DeepEqual(originalNetworkTrace, result.NetworkTrace)
 	if !richComplete {
 		if originalRich.ScreenshotBase64 != "" {
 			result.ScreenshotOmitted = true
@@ -182,10 +188,11 @@ func boundConcurrentCompletedResult(result *protocol.Result, count int, config *
 		}
 		result.Snapshot = nil
 	}
-	if !protocolComplete {
+	if !protocolComplete || !networkTraceComplete {
 		result.ProtocolEvidence = nil
+		result.NetworkTrace = nil
 	}
-	complete := !preOmitted && richComplete && snapshotComplete && protocolComplete && metadataComplete
+	complete := !preOmitted && richComplete && snapshotComplete && protocolComplete && networkTraceComplete && metadataComplete
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = make(map[string]any)
 	}
@@ -273,7 +280,7 @@ func concurrentPublicStringPointers(result *protocol.Result) []*string {
 
 func clearConcurrentRichEvidence(result *protocol.Result) {
 	result.ResponseBody, result.PageURL, result.PageTitle, result.HTML, result.ScreenshotBase64 = "", "", "", "", ""
-	result.ConsoleEntries, result.NetworkEntries, result.DOMSummary = nil, nil, nil
+	result.ConsoleEntries, result.NetworkEntries, result.DOMSummary, result.NetworkTrace = nil, nil, nil, nil
 }
 
 // If a complete group matcher cannot be established, retain numeric outcomes,

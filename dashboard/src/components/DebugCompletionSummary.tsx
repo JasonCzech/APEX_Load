@@ -4,10 +4,11 @@ import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
 import DebugTransactionTable from './DebugTransactionTable'
 
-export default function DebugCompletionSummary({ snapshot, stale, unavailable, onReturn, onDebugAgain, onSelectEvent, onDownloadHAR }: {
+export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
-  onReturn: () => void; onDebugAgain: () => void; onSelectEvent: (index: number) => void
+  onSelectEvent: (index: number) => void
   onDownloadHAR: () => Promise<void>
+  onExportSession: () => Promise<void> | void
 }) {
   const model = debugSummaryModel(snapshot)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -19,7 +20,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
   return <section className="debug-completion-summary" aria-label="Debug run summary">
     <header className="debug-summary-heading">
       <div><h2 ref={heading} tabIndex={-1}>Debug summary</h2><p role="status">{model.outcome}{model.incomplete || hidden ? ' · Incomplete evidence' : ''}</p></div>
-      <div className="debug-summary-actions"><button type="button" className="btn btn-secondary" onClick={onReturn}>Return to debugger</button><button type="button" className="btn btn-primary" onClick={onDebugAgain}>Debug again</button></div>
+      <div className="debug-summary-actions"><button type="button" className="btn btn-secondary" onClick={() => { void onExportSession() }}>Export session</button></div>
     </header>
     {stale && <p className="warning-message">These results describe an earlier draft. Debug again to check your current changes.</p>}
     {hidden && <p className="warning-message">Runtime evidence unavailable. Run details and downloads cannot be shown.</p>}

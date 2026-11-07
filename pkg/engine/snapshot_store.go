@@ -184,6 +184,7 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 		out = append(out, protocol.NetworkEntry{
 			BrowserEvidence: resource, FailureKind: entry.FailureKind,
 			HAR:                  takeSnapshotHAR(entry.HAR, remaining),
+			Trace:                takeSnapshotNetworkTrace(entry.Trace, remaining),
 			URL:                  takeSnapshotString(entry.URL, remaining, 8<<10),
 			Method:               takeSnapshotString(entry.Method, remaining, 64),
 			StatusCode:           entry.StatusCode,
@@ -198,6 +199,20 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 		})
 	}
 	return out
+}
+
+func takeSnapshotNetworkTrace(t *protocol.HTTPNetworkTrace, remaining *int) *protocol.HTTPNetworkTrace {
+	if t == nil || remaining == nil || *remaining < 512 {
+		return nil
+	}
+	*remaining -= 512
+	c := t.Clone()
+	c.RemoteAddr = takeSnapshotString(c.RemoteAddr, remaining, 128)
+	c.LocalAddr = takeSnapshotString(c.LocalAddr, remaining, 128)
+	c.TLSServerName = takeSnapshotString(c.TLSServerName, remaining, 256)
+	c.TLSCertSubject = takeSnapshotString(c.TLSCertSubject, remaining, 256)
+	c.TLSCertIssuer = takeSnapshotString(c.TLSCertIssuer, remaining, 256)
+	return c
 }
 
 func takeSnapshotDOMSummary(summary *protocol.DOMSummary, remaining *int) *protocol.DOMSummary {

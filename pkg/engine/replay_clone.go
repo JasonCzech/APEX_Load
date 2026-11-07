@@ -180,6 +180,10 @@ func cloneReplayRuntimeProfile(profile *ReplayRuntimeProfile) *ReplayRuntimeProf
 		headless := *profile.Headless
 		cloned.Headless = &headless
 	}
+	if profile.NetworkTrace != nil {
+		networkTrace := *profile.NetworkTrace
+		cloned.NetworkTrace = &networkTrace
+	}
 	return &cloned
 }
 

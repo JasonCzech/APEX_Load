@@ -63,6 +63,9 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if timings := evidenceTimings(result); len(timings) > 0 {
 		evidence["timings"] = timings
 	}
+	if traceMap := result.NetworkTrace.EvidenceMap(); len(traceMap) > 0 {
+		evidence["network_trace"] = traceMap
+	}
 	if messages := evidenceMessages(result); len(messages) > 0 {
 		evidence["messages"] = messages
 	}
@@ -447,6 +450,13 @@ func boundEvidenceValue(value any, budget *evidenceBudget, depth int) (any, bool
 			}
 		}
 		return out, len(out) > 0
+	case *HTTPNetworkTrace:
+		if typed == nil {
+			return nil, false
+		}
+		return boundEvidenceValue(typed.EvidenceMap(), budget, depth)
+	case HTTPNetworkTrace:
+		return boundEvidenceValue(typed.EvidenceMap(), budget, depth)
 	default:
 		budget.omitted++
 		return nil, false

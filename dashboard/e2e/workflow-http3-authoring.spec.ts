@@ -145,6 +145,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     expect((await json(await request.get(`/api/v1/scripts/${id}`))).script).toMatchObject({ config: { http: { version: '3' } } })
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Home' }).click()
     const disclosure = page.locator('details.replay-protocol-evidence')
