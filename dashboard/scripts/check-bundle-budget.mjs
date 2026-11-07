@@ -127,13 +127,26 @@ const mib = (value) => value * 1024 * 1024
 // LLM requests, and the run monitor sources editor loads the Prometheus
 // source fields only for a prometheus-query source (route 420.44 KiB).
 // Every limit stays as it was.
+//
+// 2026-11-06 Script Author outline transaction editing. PRs #327/#328 add
+// outline multi-select, the row context menu, the transaction naming dialog
+// and the pure wrap/rename/remove rules (outlineTransactionEdits.ts, which
+// follows sub-transactions, if/else ends and think time). Those rules run
+// while the outline renders (menu and selection-bar enablement), so they
+// belong to the deferred ScriptEditor chunk, now 887.36 KiB raw / 241.83 KiB
+// gzip, and take aggregate JS to 9.32 MiB raw / 2.70 MiB gzip. Initial shell
+// (204.88 KiB gzip), Scripts route (236.94 KiB gzip) and Test execution route
+// (420.45 KiB gzip) stay within their existing guards and off ScriptEditor.
+// Move the JS per-asset ceiling to 905 KiB raw / 246 KiB gzip and aggregate
+// JS to 9.5 MiB raw / 2.76 MiB gzip (~2% headroom); CSS and every route and
+// startup guard stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(865),
-    maxAssetGzipBytes: kib(236),
-    maxTotalBytes: mib(9.3),
-    maxTotalGzipBytes: mib(2.7),
+    maxAssetBytes: kib(905),
+    maxAssetGzipBytes: kib(246),
+    maxTotalBytes: mib(9.5),
+    maxTotalGzipBytes: mib(2.76),
   }),
   '.css': Object.freeze({
     label: 'CSS',
