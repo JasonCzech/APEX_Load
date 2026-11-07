@@ -132,12 +132,13 @@ async function runGroup(page: Page, target: Awaited<ReturnType<typeof groupTarge
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await page.getByRole('button', { name: 'Debug options (0)', exact: true }).click()
   const options = page.getByRole('region', { name: 'Session Overrides' })
-  await options.getByRole('checkbox', { name: 'Step through (start paused)' }).setChecked(paused)
   await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).uncheck()
   await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
   await options.getByRole('button', { name: 'Done', exact: true }).click()
   await page.locator('.topbar-debug-action-run').click()
-  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
+  // Step mode starts paused; a single iteration runs through, whatever
+  // Step through (start paused) says.
+  await page.getByRole('menuitem', { name: paused ? 'Run in step mode' : 'Run a single iteration', exact: true }).click()
   if (paused) {
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Login' })).toBeVisible()
     await page.getByRole('button', { name: 'Step', exact: true }).click()

@@ -83,7 +83,11 @@ test('a narrow browser cockpit keeps assertion evidence and the captured viewpor
   await expectDebugOutcome(page, 'failed')
   const cockpit = page.locator('.script-browser-evidence')
   await expect(cockpit.locator('[aria-label="Assertion result"]')).toContainText('Hello operator')
-  await expect(page.locator('.topbar-debug-action-run')).toContainText('Debug')
+  // After a finished run the Debug dropdown is closed and ready to start another run.
+  const runTrigger = page.locator('.topbar-debug-action-run')
+  await expect(runTrigger).toBeEnabled()
+  await expect(runTrigger).toHaveAttribute('aria-haspopup', 'menu')
+  await expect(runTrigger).toHaveAttribute('aria-expanded', 'false')
   const bounds = await cockpit.boundingBox()
   const viewport = await cockpit.locator('.selected-evidence-screenshot').boundingBox()
   expect(viewport!.width).toBeGreaterThan(bounds!.width * 0.8)

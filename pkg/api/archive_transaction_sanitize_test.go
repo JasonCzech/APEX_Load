@@ -456,3 +456,42 @@ func TestNetworkFailureKindsRemainBoundedThroughArchivesAndReports(t *testing.T)
 		})
 	}
 }
+
+// An advanced-trace load run archives protocol_evidence.network_trace. Its
+// cookie name lists keep their list shape (names only) instead of becoming a
+// redaction string, while unknown keys under the trace are dropped.
+func TestArchivedNetworkTraceKeepsCookieNameLists(t *testing.T) {
+	evidence := map[string]any{
+		"network_trace": map[string]any{
+			"connection_reused":         false,
+			"cookies_sent_count":        json.Number("2"),
+			"cookie_names_sent":         []any{"sid", "csrf"},
+			"set_cookie_names_received": []any{"session"},
+			"unknown_secret_field":      "should-not-survive",
+		},
+		"cookie_jar": "kept-secret",
+	}
+	out, ok := sanitizeArchivedEvidenceValue(evidence, scrub.Policy{}).(map[string]any)
+	if !ok {
+		t.Fatalf("expected a map, got %T", out)
+	}
+	if out["cookie_jar"] != scrub.Redacted {
+		t.Fatalf("expected the key-name rule to still apply elsewhere, got %v", out["cookie_jar"])
+	}
+	trace, ok := out["network_trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected network_trace to stay an object, got %T", out["network_trace"])
+	}
+	if names, ok := trace["cookie_names_sent"].([]string); !ok || len(names) != 2 {
+		t.Fatalf("expected cookie_names_sent to stay a list, got %T %v", trace["cookie_names_sent"], trace["cookie_names_sent"])
+	}
+	if names, ok := trace["set_cookie_names_received"].([]string); !ok || len(names) != 1 {
+		t.Fatalf("expected set_cookie_names_received to stay a list, got %T %v", trace["set_cookie_names_received"], trace["set_cookie_names_received"])
+	}
+	if trace["connection_reused"] != false || trace["cookies_sent_count"] != 2 {
+		t.Fatalf("expected scalars kept, got %+v", trace)
+	}
+	if _, present := trace["unknown_secret_field"]; present {
+		t.Fatalf("expected unknown trace keys dropped, got %+v", trace)
+	}
+}

@@ -471,7 +471,7 @@ func TestAgentFindingDetailExtractsNetworkTraceSample(t *testing.T) {
 					TLSVersion:         "TLS 1.3",
 					TLSCipherSuite:     "TLS_AES_128_GCM_SHA256",
 					TLSNegotiatedProto: "h2",
-					ConnectionReused:   false,
+					ConnectionReused:   ptr(false),
 				},
 			}},
 		},

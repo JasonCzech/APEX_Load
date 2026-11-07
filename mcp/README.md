@@ -12,7 +12,7 @@ Run this bridge on a machine that can reach your APEX Load controller. File impo
 
 | Toolset | Tools |
 | --- | --- |
-| `agent` (the default) | 10 curated tools for reading load-test results, debugging scripts with `TRACE`/`HTTPNetworkTrace` evidence, and validating pre-run readiness, listed below |
+| `agent` (the default) | 11 curated tools for reading load-test results, debugging scripts with `TRACE`/`HTTPNetworkTrace` evidence, and validating pre-run readiness, listed below |
 | `full` | the REST proxy: one tool per documented endpoint (`system_*`, `run_*`, `replay_session_*`, …), as described under Capabilities |
 
 Set `APEXLOAD_MCP_TOOLSETS=agent,full` to get both. Before the agent toolset existed, the proxy was the only toolset; set `full` to keep that behavior. An unknown name stops the server at startup.
@@ -21,7 +21,7 @@ Set `APEXLOAD_MCP_TOOLSETS=agent,full` to get both. Before the agent toolset exi
 
 The agent tools read the controller's agent brief (`apexload.agent_brief.v1`, contract in `docs/contracts/agent-v1`) as well as replay/debug session diagnostics and preflight readiness. Each one returns a bounded result:
 
-- **Structured content:** `apex_run_brief`, `apex_get_finding` and `apex_compare_runs` return structured content that matches the published agent-v1 schema, which they advertise as their `outputSchema`. `apex_list_runs`, `apex_wait_for_run`, `apex_ci_run`, `apex_debug_script`, `apex_inspect_replay_session` and `apex_run_preflight` return structured content without a published schema. `apex_rca_bundle` returns the bundle JSON as text.
+- **Structured content:** `apex_run_brief`, `apex_get_finding` and `apex_compare_runs` return structured content that matches the published agent-v1 schema, which they advertise as their `outputSchema`. `apex_list_runs`, `apex_wait_for_run`, `apex_ci_run`, `apex_debug_script`, `apex_inspect_replay_session`, `apex_control_replay_session` and `apex_run_preflight` return structured content without a published schema. `apex_rca_bundle` returns the bundle JSON as text.
 - **Markdown:** the same result as Markdown, the text most clients show the model.
 - **Finding and log links:** `resource_link` items pointing to related findings or session logs.
 - **Errors:** a failure is a tool error carrying `{"error": {"code", "message", "remediation"}}`.
@@ -35,9 +35,10 @@ The agent tools read the controller's agent brief (`apexload.agent_brief.v1`, co
 | `apex_ci_run` | Get a CI run's outcome and exit code, as `apexctl ci run` gates on it. It reads them from the run's brief, so a viewer key works and the GitHub Check is never touched. The code is the controller's outcome; `apexctl ci run` can still fail a job for a local reason, such as a required Check it could not publish. |
 | `apex_compare_runs` | Save a baseline comparison, then return the brief against it. Writes state, so it requires `confirm=true`. |
 | `apex_rca_bundle` | Get the run's root-cause analysis with its evidence, capped by `max_kib` (default 48 KiB) |
-| `apex_debug_script` | Run a bounded diagnostic debug/replay session on a saved `script_id` or inline `script` draft with `TRACE` wire/transport logging and `HTTPNetworkTrace` enabled. Sends outbound target requests, so it requires `confirm=true`. |
-| `apex_inspect_replay_session` | Inspect an existing replay or debug `session_id` (optionally filtered by `step_index` and `log_level`) including step snapshots, variable extractions, `network_trace`, and `TRACE`/`DEBUG` logs. |
-| `apex_run_preflight` | Validate pre-run readiness (secret bindings, data pools, generator capacity, SLAs, and telemetry policies) for a `scenario_id` or `script_id` before starting a load test. |
+| `apex_debug_script` | Run a bounded diagnostic debug/replay session on a saved `script_id` or inline `script` draft with `TRACE` wire/transport logging and `HTTPNetworkTrace` enabled, waiting up to `timeout_s` (max 60 s) for it to finish or pause. A session still paused (for example by `break_on_failure`) or running when the call returns is stopped, so it frees its replay slot and sends no more target traffic; pass `keep_session=true` (implied by `start_paused`) to keep it for `apex_control_replay_session`. If polling the session fails, the call still stops it (unless kept) and reports `poll_error`; an error result names the `session_id`. `stopped_by_tool` appears only when the tool's stop ended the session, not when it finished on its own first. A saved script runs in its stored project, so `APEXLOAD_PROJECT_ID` is sent only for an inline draft that names no project; pass `project_id` to send one explicitly, or `""` to send none. Sends outbound target requests, so it requires `confirm=true`. |
+| `apex_inspect_replay_session` | Inspect an existing replay or debug `session_id`: step events, variable extractions, `network_trace`, and logs. Long sessions keep failing steps and error/warning lines plus the newest entries, and report events the controller dropped from its retention budget. `log_level` shows entries at that level or more severe (`error` < `warn` < `info` < `debug` < `trace`). `step_index` is an event index as the `#` column shows it (the event's `event_index`, which the controller assigns once per event across phases, iterations and loop passes); it narrows the result to that one event with its snapshot and its own log lines, including their `TRACE` transport detail (`raw`, which the controller only fills at `debug` or `trace`), never the lines of other iterations or passes of the same action. Lines are matched by the `event_index` the controller stamps on each event's result line (plus that action's `Started`/`Ready to execute` lines just before it); when that result line is absent (an older controller, a line trimmed from the bounded log, a passed step in a session logged below `info`, which keeps only failed steps' result lines, or a step Stop cut off), none are shown and `step_logs_unmatched` is set. A paused session reports `finished: false` with a `next` hint. |
+| `apex_control_replay_session` | `step` (`step_mode` `into`, `over` or `loop_end`), `resume` or `stop` a paused or running session, then report it; step and resume wait up to `timeout_s` for the session to pause again or finish. Step and resume send target requests, so every action requires `confirm=true`. |
+| `apex_run_preflight` | Check launch readiness for a `scenario_id` or `script_id` before starting a load test, using the controller's launch preflight: generator capacity and placement, browser density, fleet-pool readiness, quotas and launch windows, and external-runner, Java-runner and import-promotion gates. Invalid data-pool bindings and invalid telemetry/analysis policies come back as request errors rather than conflicts. It does not check that `{{secret.*}}` values exist and does not evaluate SLAs: a missing secret is caught by run preparation (`run_preparation_*`) or the start itself. A saved script or scenario runs in its stored project, so no `project_id` is sent unless you pass one. Reports the controller's `decision` as READY (`start_now`), QUEUEABLE (`queue`: the run would wait for capacity, with `queue_reason`), SCHEDULABLE (`schedule`) or BLOCKED, listing blocking conflicts before warnings. |
 
 Read in this order:
 
@@ -56,7 +57,7 @@ The agent toolset also adds these resources:
 - `apexload://runs/{run_id}/comparisons/{comparison_id}/findings/{finding_id}`, for a finding against a specific comparison (a brief's links use it whenever the brief read a comparison)
 - `apexload://runs/{run_id}/baselines/none/findings/{finding_id}`, for a finding read without a baseline (a `baseline=none` brief's links use it)
 - `apexload://contracts/agent-v1/{name}`
-- `apexload://replay/sessions/{session_id}/logs`
+- `apexload://replay/sessions/{session_id}/logs`, the session's log export, fenced in `<untrusted_sut_data>` and sanitized like the tool results. A log longer than `APEXLOAD_MCP_MAX_TEXT_CHARS` keeps its newest lines (the controller also drops the oldest first), with a marker saying how much was omitted
 
 `python mcp/generate_schemas.py` copies the contract schemas into `apexload_mcp/contracts/`. A test fails when the copies are stale.
 
@@ -137,7 +138,7 @@ Service-account authentication is the recommended mode for agents and CI/CD auto
 | `APEXLOAD_URL` | `http://localhost:8080/api/v1` | Controller API base URL. |
 | `APEXLOAD_API_KEY` | empty | Preferred service-account key header. |
 | `APEXLOAD_BEARER_TOKEN` | empty | Alternate bearer token if no API key is set. |
-| `APEXLOAD_PROJECT_ID` | empty | Optional default project scope for list/read tools. |
+| `APEXLOAD_PROJECT_ID` | empty | Optional default project scope for list/read tools and `apex_debug_script` inline drafts (a saved script, and `apex_run_preflight`'s saved script or scenario, use their stored project). |
 | `APEXLOAD_TIMEOUT_SECONDS` | `30` | HTTP request timeout. |
 | `APEXLOAD_MCP_MAX_TEXT_CHARS` | `65536` | Max characters retained in `text_preview` for non-JSON text/log/CSV exports (clamped to `1024`–`262144`). |
 | `APEXLOAD_MCP_TOOLSETS` | `agent` | Toolsets to expose: `agent`, `full`, or `agent,full` (see Toolsets). |
@@ -148,7 +149,7 @@ When both `APEXLOAD_API_KEY` and `APEXLOAD_BEARER_TOKEN` are set, the API key is
 
 APEX Load RBAC remains the source of authorization truth. The MCP server adds an agent-facing guardrail before requests reach the API:
 
-- Mutating or target-executing tools require `confirm: true` (in the `agent` toolset, `apex_compare_runs` and `apex_debug_script` require `confirm: true`).
+- Mutating or target-executing tools require `confirm: true` (in the `agent` toolset, `apex_compare_runs`, `apex_debug_script` and `apex_control_replay_session` require `confirm: true`).
 - Destructive/admin tools require both `confirm: true` and a non-empty `reason`.
 - Validate and preview tools do not require confirmation unless they mutate controller state.
 - File import tools require paths that are visible to the machine running the MCP server.

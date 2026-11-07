@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -19,13 +20,23 @@ const ReplayNetworkTraceConfigKey = "apexload_internal_capture_network_trace"
 
 // HTTPNetworkTrace carries bounded, secret-safe transport, TLS, compression,
 // cookie, and redirect diagnostics for a single HTTP hop or aggregate request.
+//
+// An aggregate (request-level) trace describes the connection of the final
+// hop: socket, DNS, 100-continue and TLS fields are reset at each hop
+// boundary. Only the redirect receipts (CrossOriginRedirect,
+// StrippedRedirectHeaders) and RequestCompression accumulate across hops.
+// Per-hop traces on NetworkEntries remain authoritative for earlier hops.
+//
+// ConnectionReused is nil when no connection was observed for the hop (for
+// example a dial or DNS failure); otherwise it is on the wire as true (pooled
+// socket) or false (fresh socket).
 type HTTPNetworkTrace struct {
 	// DNS & Socket
 	DNSResolvedIPs    []string `json:"dns_resolved_ips,omitempty"`
 	DNSCoalesced      bool     `json:"dns_coalesced,omitempty"`
 	RemoteAddr        string   `json:"remote_addr,omitempty"`
 	LocalAddr         string   `json:"local_addr,omitempty"`
-	ConnectionReused  bool     `json:"connection_reused,omitempty"`
+	ConnectionReused  *bool    `json:"connection_reused,omitempty"`
 	WasIdle           bool     `json:"was_idle,omitempty"`
 	IdleTimeMs        float64  `json:"idle_time_ms,omitempty"`
 	Wait100ContinueMs float64  `json:"wait_100_continue_ms,omitempty"`
@@ -64,6 +75,10 @@ func (t *HTTPNetworkTrace) Clone() *HTTPNetworkTrace {
 		return nil
 	}
 	out := *t
+	if t.ConnectionReused != nil {
+		reused := *t.ConnectionReused
+		out.ConnectionReused = &reused
+	}
 	out.RemoteAddr = cloneBoundedTraceString(t.RemoteAddr, maxNetworkTraceString)
 	out.LocalAddr = cloneBoundedTraceString(t.LocalAddr, maxNetworkTraceString)
 	out.TLSVersion = cloneBoundedTraceString(t.TLSVersion, maxNetworkTraceString)
@@ -108,6 +123,36 @@ func cloneBoundedTraceSlice(values []string, maxItems, maxItemBytes int) []strin
 	return out
 }
 
+// TransformStrings returns a bounded copy of the trace with transform applied
+// to every retained string, including each element of the list fields. List
+// fields stay lists, so a redaction pass never turns a name list into a scalar.
+// Items the transform empties are dropped.
+func (t *HTTPNetworkTrace) TransformStrings(transform func(string) string) *HTTPNetworkTrace {
+	out := t.Clone()
+	if out == nil || transform == nil {
+		return out
+	}
+	for _, field := range []*string{
+		&out.RemoteAddr, &out.LocalAddr,
+		&out.TLSVersion, &out.TLSCipherSuite, &out.TLSNegotiatedProto, &out.TLSServerName,
+		&out.TLSCertSubject, &out.TLSCertIssuer, &out.TLSCertExpiry,
+		&out.HTTPProtocol, &out.RequestCompression, &out.ContentEncoding,
+	} {
+		if *field != "" {
+			*field = transform(*field)
+		}
+	}
+	for _, list := range []*[]string{
+		&out.DNSResolvedIPs, &out.TransferEncoding, &out.CookieNamesSent,
+		&out.SetCookieNamesReceived, &out.StrippedRedirectHeaders,
+	} {
+		for i := range *list {
+			(*list)[i] = transform((*list)[i])
+		}
+	}
+	return out.Clone()
+}
+
 // EvidenceMap converts the network trace into a bounded-evidence compatible map.
 func (t *HTTPNetworkTrace) EvidenceMap() map[string]any {
 	if t == nil {
@@ -126,8 +171,8 @@ func (t *HTTPNetworkTrace) EvidenceMap() map[string]any {
 	if t.LocalAddr != "" {
 		m["local_addr"] = t.LocalAddr
 	}
-	if t.ConnectionReused {
-		m["connection_reused"] = true
+	if t.ConnectionReused != nil {
+		m["connection_reused"] = *t.ConnectionReused
 	}
 	if t.WasIdle {
 		m["was_idle"] = true
@@ -224,7 +269,7 @@ func HTTPNetworkTraceFromEvidence(raw any) *HTTPNetworkTrace {
 			DNSCoalesced:            evidenceBool(v["dns_coalesced"]),
 			RemoteAddr:              evidenceString(v["remote_addr"]),
 			LocalAddr:               evidenceString(v["local_addr"]),
-			ConnectionReused:        evidenceBool(v["connection_reused"]),
+			ConnectionReused:        evidenceBoolPointer(v["connection_reused"]),
 			WasIdle:                 evidenceBool(v["was_idle"]),
 			IdleTimeMs:              evidenceFloat64(v["idle_time_ms"]),
 			Wait100ContinueMs:       evidenceFloat64(v["wait_100_continue_ms"]),
@@ -266,8 +311,19 @@ func evidenceBool(v any) bool {
 	return b
 }
 
+func evidenceBoolPointer(v any) *bool {
+	b, ok := v.(bool)
+	if !ok {
+		return nil
+	}
+	return &b
+}
+
 func evidenceFloat64(v any) float64 {
 	switch n := v.(type) {
+	case json.Number:
+		f, _ := n.Float64()
+		return f
 	case float64:
 		return n
 	case float32:
@@ -283,6 +339,12 @@ func evidenceFloat64(v any) float64 {
 
 func evidenceInt64(v any) int64 {
 	switch n := v.(type) {
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i
+		}
+		f, _ := n.Float64()
+		return int64(f)
 	case int64:
 		return n
 	case int:

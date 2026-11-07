@@ -153,6 +153,47 @@ func browserEmulationNewUserEachIteration(cfg *dsl.ScriptConfig) bool {
 	return emu != nil && emu.Cache != nil && emu.Cache.NewUserEachIteration != nil && *emu.Cache.NewUserEachIteration
 }
 
+// clearIterationUserState applies the cookie and cache resets a new
+// iteration's simulated user starts with (browser_emulation new user each
+// iteration, http.clear_cookies_per_iteration). It returns the failed step.
+func (vu *VUser) clearIterationUserState(ctx context.Context, cfg *dsl.ScriptConfig) (string, error) {
+	if vu == nil || cfg == nil {
+		return "", nil
+	}
+	newUser := browserEmulationNewUserEachIteration(cfg)
+	if newUser || (vu.Script != nil && vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
+		if err := vu.clearProtocolCookies(ctx); err != nil {
+			return "cookie clear", err
+		}
+	}
+	if newUser && (cfg.BrowserEmulation.Cache.ClearCacheForNewUser == nil || *cfg.BrowserEmulation.Cache.ClearCacheForNewUser) {
+		if err := vu.clearProtocolCache(ctx); err != nil {
+			return "cache clear", err
+		}
+	}
+	return "", nil
+}
+
+// clearReplayIterationUserState is the debug replay's iteration boundary
+// reset. A load run replaces a browser's whole context for
+// browser.new_user_per_iteration; a replay keeps its debug-instrumented
+// protocol instance, so it clears that browser's cookies and cache instead.
+func (vu *VUser) clearReplayIterationUserState(ctx context.Context, cfg *dsl.ScriptConfig) (string, error) {
+	if step, err := vu.clearIterationUserState(ctx, cfg); err != nil {
+		return step, err
+	}
+	if vu == nil || cfg == nil || vu.Script == nil || vu.Script.Protocol != "browser" || cfg.Browser.NewUserPerIter == nil || !*cfg.Browser.NewUserPerIter {
+		return "", nil
+	}
+	if err := vu.clearProtocolCookies(ctx); err != nil {
+		return "cookie clear", err
+	}
+	if err := vu.clearProtocolCache(ctx); err != nil {
+		return "cache clear", err
+	}
+	return "", nil
+}
+
 // clearProtocolCache dispatches to the protocol.CacheController capability
 // (HTTP's simulated browser cache). Safe no-op when the protocol keeps no
 // response cache.

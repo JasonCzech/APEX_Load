@@ -3507,12 +3507,14 @@
 }
 
 details.replay-code-block > summary,
-.replay-protocol-evidence > summary {
+.replay-protocol-evidence > summary,
+.replay-network-trace > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.replay-protocol-evidence {
+.replay-protocol-evidence,
+.replay-network-trace {
   margin-top: 8px;
 }
 
@@ -6808,13 +6810,30 @@ details.replay-code-block > summary,
   opacity: 0.55;
   cursor: not-allowed;
 }
+.debug-run-dropdown-menu > [role="menu"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debug-run-dropdown-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
 .debug-run-dropdown-iterations {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 4px;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
 }
-.debug-run-dropdown-iterations-btn {
-  flex: 1 1 auto;
+.debug-run-dropdown-iterations small {
+  color: var(--text-muted);
+}
+.debug-run-dropdown-iterations small.debug-run-iterations-invalid {
+  color: var(--danger-text);
 }
 .debug-run-iterations-input {
   width: 56px;
@@ -6825,6 +6844,9 @@ details.replay-code-block > summary,
   color: var(--text-primary);
   font-size: 12px;
   text-align: center;
+}
+.debug-run-iterations-input[aria-invalid="true"] {
+  border-color: var(--danger-text);
 }
 .debugger-settings-head {
   display: flex;

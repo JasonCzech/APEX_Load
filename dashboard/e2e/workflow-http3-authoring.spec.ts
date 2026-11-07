@@ -148,7 +148,7 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Home' }).click()
-    const disclosure = page.locator('details.replay-protocol-evidence')
+    const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
     if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
     const offer = page.getByRole('group', { name: 'Switch to auto+h3' })
     await expect(offer).toContainText('The origin advertises HTTP/3; this request used HTTP/2. Switch to auto+h3?')

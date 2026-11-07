@@ -76,6 +76,10 @@ type ScriptDebugLogEntry struct {
 	Phase       string    `json:"phase,omitempty"`
 	ActionIndex int       `json:"action_index,omitempty"`
 	ActionName  string    `json:"action_name,omitempty"`
+	// EventIndex identifies the replay event this line reports. Only the
+	// per-event result line carries it, so clients can attribute log lines to
+	// one event by identity instead of counting lines per action.
+	EventIndex *int `json:"event_index,omitempty"`
 }
 
 type ScriptDebugSession struct {
@@ -1768,6 +1772,12 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 	}
 	if len(s.Logs) > 0 {
 		clone.Logs = append([]ScriptDebugLogEntry(nil), s.Logs...)
+		for i := range clone.Logs {
+			if clone.Logs[i].EventIndex != nil {
+				eventIndex := *clone.Logs[i].EventIndex
+				clone.Logs[i].EventIndex = &eventIndex
+			}
+		}
 	}
 	if len(s.RawOutput) > 0 {
 		clone.RawOutput = append([]string(nil), s.RawOutput...)
@@ -1855,6 +1865,8 @@ func (s *ScriptDebugSession) appendLogLocked(level string, category string, mess
 		entry.Phase = event.Phase
 		entry.ActionName = event.ActionName
 		entry.ActionIndex = s.CurrentActionIndexForEvent(event)
+		eventIndex := event.EventIndex
+		entry.EventIndex = &eventIndex
 	}
 	line := formatDebugLogLine(entry)
 	if entry.Raw != "" {
@@ -1923,7 +1935,9 @@ func (c scriptDebugController) ObserveCorrelationEvidence(_ context.Context, act
 		return
 	}
 	c.session.mu.Lock()
-	if c.session.workerAbandoned {
+	if c.session.workerAbandoned || action.MainIteration > 1 {
+		// Only the first action iteration is retained (see
+		// appendCorrelationObservationLocked).
 		c.session.mu.Unlock()
 		return
 	}
@@ -1946,6 +1960,12 @@ func (c scriptDebugController) ObserveCorrelationEvidence(_ context.Context, act
 
 func (s *ScriptDebugSession) appendCorrelationObservationLocked(action engine.ReplayDebugAction, event *engine.ReplayActionEvent, retainedAt time.Time) {
 	if s == nil || event == nil || event.CorrelationEvidence == nil {
+		return
+	}
+	if action.MainIteration > 1 {
+		// The first action iteration is the baseline that pairs with the
+		// recording; later iterations of a multi-iteration run repeat the
+		// same top-level action ids and add nothing to bind.
 		return
 	}
 	if s.Status == ScriptDebugStopped {
@@ -2528,6 +2548,13 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 		networkTrace := true
 		profile.NetworkTrace = &networkTrace
 	}
+	if profile.HAROptions == nil {
+		// The engine captures with these defaults when no options are chosen;
+		// recording them keeps the HAR availability, export metadata and UI
+		// in step with what was captured.
+		defaults := engine.DefaultDebugReplayHAROptions()
+		profile.HAROptions = &defaults
+	}
 	profile.LogLevel = normalizeDebugLogLevel(req.LogLevel)
 	profile.IgnoreThinkTime = ignoreThinkTime
 	if script != nil {
@@ -2646,7 +2673,9 @@ func formatDebugEventRawWithMode(event engine.ReplayActionEvent, includeTrace bo
 		if netTrace.LocalAddr != "" {
 			transportParts = append(transportParts, "local="+netTrace.LocalAddr)
 		}
-		transportParts = append(transportParts, fmt.Sprintf("conn_reused=%t", netTrace.ConnectionReused))
+		if netTrace.ConnectionReused != nil {
+			transportParts = append(transportParts, fmt.Sprintf("conn_reused=%t", *netTrace.ConnectionReused))
+		}
 		if netTrace.WasIdle && netTrace.IdleTimeMs > 0 {
 			transportParts = append(transportParts, fmt.Sprintf("idle_ms=%.1f", netTrace.IdleTimeMs))
 		}
@@ -2882,7 +2911,9 @@ func formatDebugTraceNetworkHops(entries []protocol.NetworkEntry) []string {
 			if entry.Trace.RemoteAddr != "" {
 				hop += ", remote=" + entry.Trace.RemoteAddr
 			}
-			hop += fmt.Sprintf(", conn_reused=%t", entry.Trace.ConnectionReused)
+			if entry.Trace.ConnectionReused != nil {
+				hop += fmt.Sprintf(", conn_reused=%t", *entry.Trace.ConnectionReused)
+			}
 		}
 		if entry.HAR != nil {
 			for _, phase := range entry.HAR.Phases {

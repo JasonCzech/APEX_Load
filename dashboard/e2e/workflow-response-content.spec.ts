@@ -143,9 +143,10 @@ async function reopenSavedScript(page: Page, workspace: Workspace, id: string) {
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible()
 }
 
-// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
+// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response
+// (the network trace beside it is a separate disclosure, details.replay-network-trace).
 async function openProtocolEvidence(page: Page) {
-  const disclosure = page.locator('details.replay-protocol-evidence')
+  const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
   await expect(disclosure).toBeVisible()
   if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
 }

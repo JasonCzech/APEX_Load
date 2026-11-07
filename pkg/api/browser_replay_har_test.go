@@ -594,11 +594,12 @@ func acquireAllReplayHARFixtureSlots(t *testing.T, manager *BrowserReplayManager
 }
 
 func TestFormatDebugEventRawForLogLevelTraceVsDebug(t *testing.T) {
+	reused := true
 	trace := &protocol.HTTPNetworkTrace{
 		HTTPProtocol:            "HTTP/2.0",
 		RemoteAddr:              "203.0.113.5:443",
 		LocalAddr:               "10.0.0.2:54321",
-		ConnectionReused:        true,
+		ConnectionReused:        &reused,
 		WasIdle:                 true,
 		IdleTimeMs:              14.2,
 		DNSResolvedIPs:          []string{"203.0.113.5"},
@@ -682,7 +683,9 @@ func TestFormatDebugEventRawForLogLevelTraceVsDebug(t *testing.T) {
 	gotTrace := formatDebugEventRawForLogLevel("trace", event)
 	for _, want := range []string{
 		"TIMINGS",
-		"TLS",
+		// The TLS section header on its own line; a bare "TLS" would also
+		// match tls=TLS 1.3 in the TRANSPORT line.
+		"\nTLS\n",
 		"version=TLS 1.3 cipher=TLS_AES_128_GCM_SHA256 alpn=h2 sni=api.example.com resumed=true",
 		"COOKIES & REDIRECTS",
 		"cookies_sent=1 (sid) set_cookies=1 (csrf)",

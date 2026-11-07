@@ -2,7 +2,9 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -72,13 +74,14 @@ func TestAdvancedTraceProtoConfigAndActionLogAttrs(t *testing.T) {
 		t.Fatal("expected ReplayNetworkTraceConfigKey=true when log level is extended with advanced_trace")
 	}
 
+	reused := true
 	result := &protocol.Result{
 		StatusCode:       200,
 		DependencyTarget: "api.example.com",
 		NetworkTrace: &protocol.HTTPNetworkTrace{
 			HTTPProtocol:            "HTTP/2.0",
 			RemoteAddr:              "203.0.113.10:443",
-			ConnectionReused:        true,
+			ConnectionReused:        &reused,
 			WasIdle:                 true,
 			IdleTimeMs:              18.5,
 			TLSVersion:              "TLS 1.3",
@@ -230,3 +233,181 @@ func TestReplayDebugNetworkTraceExplicitDisableOverridesScriptConfig(t *testing.
 	}
 }
 
+// The network_trace evidence keys cookie_names_sent and
+// set_cookie_names_received contain "cookie"; the generic key-name rule must
+// not turn those name lists into the string "[REDACTED]", which the debugger
+// panel cannot render. Each name is still value-scrubbed.
+func TestNetworkTraceEvidenceKeepsCookieNameListsThroughResultRedaction(t *testing.T) {
+	config := WithSecretValueRedaction(nil, []string{"leaked-secret-name"})
+	fresh := false
+	trace := &protocol.HTTPNetworkTrace{
+		RemoteAddr:              "203.0.113.7:443",
+		ConnectionReused:        &fresh,
+		CookiesSentCount:        2,
+		CookieNamesSent:         []string{"sid", "leaked-secret-name"},
+		SetCookiesReceivedCount: 1,
+		SetCookieNamesReceived:  []string{"csrf"},
+		StrippedRedirectHeaders: []string{"Cookie"},
+	}
+	result := &protocol.Result{
+		StatusCode:       200,
+		NetworkTrace:     trace,
+		ProtocolEvidence: map[string]any{"network_trace": trace.EvidenceMap(), "cookie_jar": "kept-secret"},
+	}
+	scrubSensitiveResultWithOptions(result, config, true)
+
+	if result.ProtocolEvidence["cookie_jar"] != redactedPayloadValue {
+		t.Fatalf("expected the ordinary key-name rule to still apply, got %v", result.ProtocolEvidence["cookie_jar"])
+	}
+	encoded, err := json.Marshal(result.ProtocolEvidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "leaked-secret-name") {
+		t.Fatalf("secret cookie name survived redaction: %s", encoded)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	evidence, ok := decoded["network_trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected network_trace to stay an object, got %T", decoded["network_trace"])
+	}
+	for _, key := range []string{"cookie_names_sent", "set_cookie_names_received", "stripped_redirect_headers"} {
+		if _, isList := evidence[key].([]any); !isList {
+			t.Fatalf("expected %s to stay a list after redaction, got %T (%v)", key, evidence[key], evidence[key])
+		}
+	}
+	if reused, present := evidence["connection_reused"]; !present || reused != false {
+		t.Fatalf("expected connection_reused=false kept, got %v (present=%v)", reused, present)
+	}
+	roundTrip := protocol.HTTPNetworkTraceFromEvidence(evidence)
+	if roundTrip == nil || len(roundTrip.CookieNamesSent) != 2 || roundTrip.CookieNamesSent[0] != "sid" {
+		t.Fatalf("expected both cookie names to round-trip (one value-scrubbed), got %+v", roundTrip)
+	}
+	if !slices.Equal(roundTrip.SetCookieNamesReceived, []string{"csrf"}) || roundTrip.CookiesSentCount != 2 {
+		t.Fatalf("expected the struct and evidence views to agree, got %+v", roundTrip)
+	}
+	if !slices.Equal(result.NetworkTrace.SetCookieNamesReceived, roundTrip.SetCookieNamesReceived) {
+		t.Fatalf("struct view %v and evidence view %v disagree", result.NetworkTrace.SetCookieNamesReceived, roundTrip.SetCookieNamesReceived)
+	}
+}
+
+// A web_concurrent child's scrubbed network_trace evidence must already be
+// JSON-native: boundConcurrentCompletedResult compares the scrubbed evidence
+// with its bounded copy and drops all protocol evidence on any difference, and
+// the bounder turns []string lists into []any.
+func TestConcurrentChildKeepsNetworkTraceEvidenceWithLists(t *testing.T) {
+	trace := &protocol.HTTPNetworkTrace{
+		RemoteAddr:       "203.0.113.7:443",
+		DNSResolvedIPs:   []string{"203.0.113.7", "203.0.113.8"},
+		TransferEncoding: []string{"chunked"},
+		CookiesSentCount: 1,
+		CookieNamesSent:  []string{"sid"},
+	}
+	result := &protocol.Result{
+		Success:          true,
+		StatusCode:       200,
+		NetworkTrace:     trace,
+		ProtocolEvidence: map[string]any{"network_trace": trace.EvidenceMap()},
+	}
+	if _, err := boundConcurrentCompletedResult(result, 2, nil); err != nil {
+		t.Fatalf("boundConcurrentCompletedResult: %v", err)
+	}
+	if complete, _ := result.ProtocolEvidence["concurrent_group_evidence_details_complete"].(bool); !complete {
+		t.Fatalf("expected complete concurrent evidence, got %v", result.ProtocolEvidence)
+	}
+	if result.NetworkTrace == nil {
+		t.Fatal("expected the typed network trace to survive bounding")
+	}
+	evidence, ok := result.ProtocolEvidence["network_trace"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected network_trace evidence to survive bounding, got %T", result.ProtocolEvidence["network_trace"])
+	}
+	names, isList := evidence["cookie_names_sent"].([]any)
+	if !isList || len(names) != 1 || names[0] != "sid" {
+		t.Fatalf("expected cookie_names_sent to stay a list of names, got %T (%v)", evidence["cookie_names_sent"], evidence["cookie_names_sent"])
+	}
+	roundTrip := protocol.HTTPNetworkTraceFromEvidence(evidence)
+	if roundTrip == nil || !slices.Equal(roundTrip.DNSResolvedIPs, trace.DNSResolvedIPs) || !slices.Equal(roundTrip.TransferEncoding, []string{"chunked"}) {
+		t.Fatalf("expected list fields to round-trip, got %+v", roundTrip)
+	}
+}
+
+// Every byte a retained trace keeps is charged to the snapshot budget.
+func TestNetworkTraceSnapshotChargesEveryRetainedString(t *testing.T) {
+	longNames := make([]string, 32)
+	for i := range longNames {
+		longNames[i] = fmt.Sprintf("%03d-%s", i, strings.Repeat("n", 120))
+	}
+	headers := make([]string, 16)
+	for i := range headers {
+		headers[i] = fmt.Sprintf("X-Header-%02d-%s", i, strings.Repeat("h", 200))
+	}
+	trace := &protocol.HTTPNetworkTrace{
+		RemoteAddr:              "203.0.113.9:443",
+		TLSVersion:              "TLS 1.3",
+		TLSCertExpiry:           "2030-01-01T00:00:00Z",
+		ContentEncoding:         "gzip",
+		CookieNamesSent:         longNames,
+		SetCookieNamesReceived:  longNames,
+		StrippedRedirectHeaders: headers,
+		TransferEncoding:        headers,
+		DNSResolvedIPs:          []string{"203.0.113.9", "203.0.113.10"},
+	}
+	retainedBytes := func(c *protocol.HTTPNetworkTrace) int {
+		total := 0
+		for _, value := range []string{c.RemoteAddr, c.LocalAddr, c.TLSVersion, c.TLSCipherSuite, c.TLSNegotiatedProto, c.TLSServerName, c.TLSCertSubject, c.TLSCertIssuer, c.TLSCertExpiry, c.HTTPProtocol, c.RequestCompression, c.ContentEncoding} {
+			total += len(value)
+		}
+		for _, list := range [][]string{c.DNSResolvedIPs, c.TransferEncoding, c.StrippedRedirectHeaders, c.CookieNamesSent, c.SetCookieNamesReceived} {
+			for _, value := range list {
+				total += len(value)
+			}
+		}
+		return total
+	}
+
+	const budget = 64 << 10
+	remaining := budget
+	got := takeSnapshotNetworkTrace(trace, &remaining)
+	if got == nil || len(got.CookieNamesSent) != 32 {
+		t.Fatalf("expected the trace retained within a large budget, got %+v", got)
+	}
+	if charged := budget - remaining; charged < retainedBytes(got) {
+		t.Fatalf("charged %d bytes for a trace that retains %d", charged, retainedBytes(got))
+	}
+
+	const tight = 2048
+	remaining = tight
+	got = takeSnapshotNetworkTrace(trace, &remaining)
+	if remaining < 0 {
+		t.Fatalf("snapshot budget overdrawn: remaining=%d", remaining)
+	}
+	if got != nil && tight-remaining < retainedBytes(got) {
+		t.Fatalf("charged %d bytes for a trace that retains %d under a tight budget", tight-remaining, retainedBytes(got))
+	}
+}
+
+func TestCompactMetricsResultDropsNetworkTrace(t *testing.T) {
+	compacted := compactMetricsResult(&protocol.Result{ActionName: "a", NetworkTrace: &protocol.HTTPNetworkTrace{RemoteAddr: "203.0.113.1:443"}})
+	if compacted.NetworkTrace != nil {
+		t.Fatalf("expected queued metric copies not to retain the network trace, got %+v", compacted.NetworkTrace)
+	}
+}
+
+// A debug replay with no chosen HAR options records the implicit capture
+// defaults, so its report and HAR export describe what was captured.
+func TestDebugReplayRuntimeProfileRecordsDefaultHAROptions(t *testing.T) {
+	profile := buildReplayRuntimeProfile(&dsl.Script{Name: "s", Protocol: "http"}, ReplayOptions{DebugController: noopDebugController{}})
+	if profile.HAROptions == nil || *profile.HAROptions != DefaultDebugReplayHAROptions() {
+		t.Fatalf("expected default HAR options recorded, got %+v", profile.HAROptions)
+	}
+	if !profile.HAROptions.Redirects || !profile.HAROptions.Timings || profile.HAROptions.Bodies != "none" || profile.HAROptions.MaxBodyBytes == 0 {
+		t.Fatalf("expected normalized none/redirects/timings defaults, got %+v", profile.HAROptions)
+	}
+	if plain := buildReplayRuntimeProfile(&dsl.Script{Name: "s", Protocol: "http"}, ReplayOptions{}); plain.HAROptions != nil {
+		t.Fatalf("expected a non-debug replay to keep HAR options unset, got %+v", plain.HAROptions)
+	}
+}

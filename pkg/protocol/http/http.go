@@ -652,6 +652,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	}
 	trace := &httptrace.ClientTrace{
 		GetConn: func(string) {
+			netTrace.onGetConn()
 			if h3Receipt.onGetConn() > h3AttemptLimit && h3Cancel != nil {
 				// One logical action gets the hops its redirects allow plus a
 				// single library retry; more would multiply load on the target.
@@ -702,7 +703,12 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		Got100Continue: func() {
 			netTrace.onGot100Continue()
 		},
-		WroteHeaders: func() { traceMu.Lock(); wroteHeaders = true; traceMu.Unlock() },
+		WroteHeaders: func() {
+			traceMu.Lock()
+			wroteHeaders = true
+			traceMu.Unlock()
+			netTrace.onWroteHeaders()
+		},
 		WroteRequest: func(httptrace.WroteRequestInfo) {
 			netTrace.onWait100ContinueDone()
 		},
@@ -813,7 +819,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		reused, rCount, rDur := connectionReused, redirectCount, redirectDuration
 		traceMu.Unlock()
 		if netTrace != nil {
-			netTrace.observeExchange(req, resp, client.Jar, appliedCompression, 0, 0)
+			netTrace.observeExchange(req, resp, appliedCompression, 0, 0)
 			result.NetworkTrace = netTrace.snapshot()
 		}
 		return reused, rCount, rDur

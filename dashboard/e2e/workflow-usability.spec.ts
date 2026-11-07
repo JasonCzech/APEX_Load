@@ -133,7 +133,7 @@ test('debugger keeps request details readable at narrow width and browser zoom e
  const detailBounds=await page.getByRole('region',{name:'Debug detail'}).boundingBox()
  expect(detailBounds!.height).toBeGreaterThan(300)
  expect(detailBounds!.width).toBeLessThanOrEqual(bounds!.width + 1)
- await expect(page.getByRole('button',{name:'Debug',exact:true}).last()).toBeVisible()
+ await expect(page.getByRole('group',{name:'Debugger controls'}).getByRole('button',{name:'Debug',exact:true})).toBeVisible()
 })
 
 for (const status of [200,503]) {
@@ -142,7 +142,8 @@ for (const status of [200,503]) {
   const scriptId=await seedScript(request,workspace,`Debug_${status}`,target.url,status===503?'/unavailable':'/orders')
   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`)
   await page.getByRole('group',{name:'Script workspace'}).getByRole('button',{name:'Debug',exact:true}).click()
-  await page.getByLabel('Contextual secondary actions', { exact: true }).getByRole('button', { name: 'Debug', exact: true }).click()
+  await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expect(page.locator('.debugger-live-strip')).toContainText(status===503?'Failed':'Passed')
   const panes=page.getByRole('group',{name:'Debug panes'})
   if(await panes.isVisible()) await panes.getByRole('button',{name:'Outline',exact:true}).click()

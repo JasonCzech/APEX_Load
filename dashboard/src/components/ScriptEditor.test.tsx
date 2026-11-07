@@ -3513,7 +3513,7 @@ describe('ScriptEditor', () => {
     expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-browser-evidence')).not.toBeNull()
     expect(container.textContent).toContain('Browser evidence')
-    expect(container.textContent).toContain('Debug one iteration to capture')
+    expect(container.textContent).toContain('Choose Debug > Run a single iteration to capture')
   })
 
   it('renders a dedicated http_oauth2_token param editor', async () => {
@@ -10546,6 +10546,8 @@ describe('ScriptEditor', () => {
       group_name: 'Checkout Flow-debug',
       ignore_think_time: true,
       start_paused: false,
+      network_trace: true,
+      iterations: 1,
       seed_variable_names: [],
     })
     expect(parsed.session).toMatchObject({
@@ -12984,27 +12986,24 @@ describe('ScriptEditor', () => {
     const ungatedScript = { ...initialScript, init: [{ ...tlsGate(0), metadata: {} }, warmUp, { ...tlsGate(2), metadata: {} }] } as ScriptDefinition
     const legacyRefusal = () => new ApiError(`script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}`, 400, { error: `script replay is blocked: ${gateMessage(0)}; ${gateMessage(2)}` })
     const withTopbar = (editor: ReactNode) => <TopbarContributionProvider><TopbarContributionHarness />{editor}</TopbarContributionProvider>
+    // The Debug start button lives in the Debug workspace; switch there once (never back) so reads
+    // do not round-trip through Author mode and mutate editor state.
+    // Reads run outside act() and flush effects with it; click() already runs inside the caller's act().
+    const enterDebugWorkspace = (flush: (fn: () => void) => void) => {
+      if (container.querySelector('.debug-session-controls .topbar-debug-action')) return
+      const debugChip = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
+        .find(chip => chip.textContent?.trim() === 'Debug')
+      flush(() => { debugChip?.click() })
+    }
     const readDebugBtn = () => {
-      const wasAuthor = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
-        .find(chip => chip.textContent?.trim() === 'Author')?.classList.contains('active')
-      if (!container.querySelector('.debug-session-controls .topbar-debug-action')) {
-        const debugChip = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
-          .find(chip => chip.textContent?.trim() === 'Debug')
-        act(() => { debugChip?.click() })
-      }
+      enterDebugWorkspace(fn => { act(fn) })
       const btn = container.querySelector<HTMLButtonElement>('.debug-session-controls .topbar-debug-action')!
-      const snapshot = {
+      return {
         textContent: btn.querySelector('.topbar-action-label')?.textContent ?? btn.textContent,
         disabled: btn.disabled,
         title: btn.getAttribute('data-tooltip') || btn.title,
         className: btn.className,
       }
-      if (wasAuthor) {
-        const authorChip = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
-          .find(chip => chip.textContent?.trim() === 'Author')
-        act(() => { authorChip?.click() })
-      }
-      return snapshot
     }
     const topbarDebug = () => ({
       get textContent() { return readDebugBtn().textContent },
@@ -13015,11 +13014,7 @@ describe('ScriptEditor', () => {
         return { contains: (cls: string) => className.split(/\s+/).includes(cls) }
       },
       click: () => {
-        if (!container.querySelector('.debug-session-controls .topbar-debug-action')) {
-          const debugChip = Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
-            .find(chip => chip.textContent?.trim() === 'Debug')
-          flushSync(() => { debugChip?.click() })
-        }
+        enterDebugWorkspace(fn => { flushSync(fn) })
         const liveBtn = container.querySelector<HTMLButtonElement>('.debug-session-controls .topbar-debug-action')!
         flushSync(() => { liveBtn.click() })
         const singleIter = container.querySelector<HTMLButtonElement>('#debug-run-menu button[role="menuitem"]')
@@ -13172,6 +13167,90 @@ describe('ScriptEditor', () => {
       // The run's lifecycle records why nothing ran.
       await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(tab => tab.textContent === 'Timeline')!.click() })
       expect(container.querySelector('.debugger-timeline')?.textContent).toContain('Debug did not start')
+    })
+
+    it('closes the Debug run modes menu when a blocker replaces it, so its Escape listener lets go', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      enterDebugWorkspace(fn => { act(fn) })
+      await flushReact()
+      const trigger = () => container.querySelector<HTMLButtonElement>('.debug-session-controls button[aria-haspopup="menu"]')
+      await act(async () => { trigger()!.click() })
+      await flushReact()
+      expect(container.querySelector('#debug-run-menu')).not.toBeNull()
+      // A blocker arrives while the menu is open: the dropdown gives way to
+      // "Resolve 2 blockers" and the menu's open state goes with it.
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      expect(trigger()).toBeNull()
+      // The next Escape reaches its target instead of being swallowed.
+      const reached = vi.fn()
+      document.body.addEventListener('keydown', reached)
+      try {
+        await act(async () => { document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })) })
+      } finally { document.body.removeEventListener('keydown', reached) }
+      expect(reached).toHaveBeenCalledTimes(1)
+      expect((reached.mock.calls[0][0] as KeyboardEvent).defaultPrevented).toBe(false)
+      // The dropdown that returns once the gate clears is closed.
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      expect(trigger()?.getAttribute('aria-expanded')).toBe('false')
+      expect(container.querySelector('#debug-run-menu')).toBeNull()
+    })
+
+    it('moves focus to "Resolve N blockers" when a blocker closes the Debug menu under keyboard focus', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      enterDebugWorkspace(fn => { act(fn) })
+      await flushReact()
+      const trigger = container.querySelector<HTMLButtonElement>('.debug-session-controls button[aria-haspopup="menu"]')!
+      trigger.focus()
+      await act(async () => { trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })) })
+      await flushReact()
+      expect(document.activeElement?.textContent).toBe('Run a single iteration')
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={gatedScript} projectId="project-1" />)) })
+      await flushReact()
+      expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
+      const resolve = container.querySelector<HTMLButtonElement>('.debug-session-controls .topbar-debug-action')!
+      expect(document.activeElement).toBe(resolve)
+    })
+
+    it('keeps focus in the session bar when a secret check disables the Debug menu under keyboard focus', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      enterDebugWorkspace(fn => { act(fn) })
+      await flushReact()
+      const trigger = () => container.querySelector<HTMLButtonElement>('.debug-session-controls button[aria-haspopup="menu"]')!
+      trigger().focus()
+      await act(async () => { trigger().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true })) })
+      await flushReact()
+      expect(document.activeElement?.getAttribute('role')).toBe('menuitem')
+      // A script that needs a project secret: the start waits on its status.
+      apiMock.getProjectSecretStatuses.mockReturnValueOnce(new Promise(() => {}))
+      const secretScript = { ...ungatedScript, actions: [{ ...ungatedScript.actions[0], headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }] } as ScriptDefinition
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={secretScript} projectId="project-1" />)) })
+      await flushReact()
+      expect(trigger().disabled).toBe(true)
+      expect(container.querySelector('#debug-run-menu')).toBeNull()
+      const group = container.querySelector<HTMLElement>('.debug-session-controls')!
+      expect(document.activeElement).not.toBe(document.body)
+      expect(group.contains(document.activeElement)).toBe(true)
+    })
+
+    it('titles the Debug menu trigger neutrally, not after Step through (start paused)', async () => {
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={ungatedScript} projectId="project-1" />)) })
+      await flushReact()
+      enterDebugWorkspace(fn => { act(fn) })
+      await flushReact()
+      const trigger = () => container.querySelector<HTMLButtonElement>('.debug-session-controls button[aria-haspopup="menu"]')!
+      expect(trigger().title).toBe('Choose how to run the debugger')
+      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-controls="debug-session-options"]')!.click() })
+      const stepThrough = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Step through'))!.querySelector<HTMLInputElement>('input[type="checkbox"]')!
+      await act(async () => { stepThrough.click() })
+      await flushReact()
+      expect(stepThrough.checked).toBe(true)
+      expect(trigger().title).toBe('Choose how to run the debugger')
     })
 
     it('counts a saved copy\'s gate with two codes as two blockers when asking for a save', async () => {
@@ -13896,6 +13975,8 @@ describe('ScriptEditor', () => {
       await act(async () => { findButtonByText(container, 'Recheck')!.click(); await Promise.resolve() })
       await flushReact()
       expect(topbarDebug().disabled).toBe(false)
+      // The readiness card lives in the Author workspace.
+      await act(async () => { modeChip('Author').click() })
       expect(checkedChip().classList.contains('warn')).toBe(true)
       expect(checkedChip().classList.contains('bad')).toBe(false)
       expect(checkedChip().textContent?.startsWith('Needs review:')).toBe(true)
@@ -14102,7 +14183,10 @@ describe('ScriptEditor', () => {
       await act(async () => { findButtonByText(container, `Author Problems (${before - 2})`)!.click() })
       expect(document.querySelector('[role="dialog"]')?.textContent || '').not.toContain('Current operation')
       // The next start runs against the repaired revision.
-      await act(async () => { (document.querySelector('[role="dialog"] button[aria-label="Close"]') as HTMLButtonElement | null)?.click() })
+      // Close the Problems dialog first: while it is open it holds focus, which
+      // would close the Debug menu as soon as it opens.
+      await act(async () => { findButtonByText(document.querySelector<HTMLElement>('[role="dialog"]')!, 'Close')!.click() })
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
       await act(async () => { topbarDebug().click(); await Promise.resolve() })
       await flushReact()
       expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
@@ -14512,6 +14596,10 @@ describe('ScriptEditor', () => {
       await act(async () => { debugOptionsBtn.click() })
       expect(debugOptionsBtn.getAttribute('aria-expanded')).toBe('true')
       expect(container.querySelector('#debug-session-options.debugger-settings-popover')).not.toBeNull()
+      // Start paused is on: the run modes that run through still must not pause.
+      const startPausedBox = findInputByLabelText(container, 'Step through (start paused)')!
+      await act(async () => { startPausedBox.click() })
+      expect(startPausedBox.checked).toBe(true)
       await act(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })) })
       expect(debugOptionsBtn.getAttribute('aria-expanded')).toBe('false')
 
@@ -14520,19 +14608,26 @@ describe('ScriptEditor', () => {
       const menu = () => container.querySelector<HTMLElement>('#debug-run-menu')
       expect(menu()).not.toBeNull()
       const runToBreakpointBtn = () => Array.from(menu()?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') || [])
-        .find(item => item.textContent?.trim() === 'Run to Breakpoint')!
+        .find(item => item.textContent?.trim() === 'Run to breakpoint')!
       // Grayed out when no enabled breakpoint is set
       expect(runToBreakpointBtn().disabled).toBe(true)
 
-      // Enable a breakpoint and verify Run to Breakpoint
+      // Enable a breakpoint and verify Run to breakpoint
       await act(async () => { debugOutlineGutter(container, initialScript.actions[0].name)!.click() })
       await flushReact()
       expect(runToBreakpointBtn().disabled).toBe(false)
 
-      // Run X iterations (ignores breakpoints, so completes without pausing)
-      const iterInput = menu()!.querySelector<HTMLInputElement>('input[aria-label="Iterations to run"]')!
+      // Run X iterations (ignores breakpoints and Start paused, so completes without pausing).
+      // The count field sits below the menu, which may hold only commands.
+      expect(menu()!.querySelector('input')).toBeNull()
+      const iterInput = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
       expect(iterInput.value).toBe('2')
+      // The field can be cleared while it is edited: it does not snap back to the last count.
+      await act(async () => { changeInputValue(iterInput, '') })
+      expect(iterInput.value).toBe('')
+      expect(iterInput.getAttribute('aria-invalid')).toBe('true')
       await act(async () => { changeInputValue(iterInput, '3') })
+      expect(iterInput.getAttribute('aria-invalid')).toBeNull()
       const runXBtn = menu()!.querySelector<HTMLButtonElement>('.debug-run-dropdown-iterations-btn')!
       expect(runXBtn.textContent).toContain('Run 3 iterations')
       await act(async () => { runXBtn.click(); await Promise.resolve() })
@@ -14542,8 +14637,16 @@ describe('ScriptEditor', () => {
         start_paused: false,
         breakpoints: [],
       }))
+      // The run records the count it asked for, shown in the effective configuration.
+      await returnToDebugger(container)
+      await act(async () => {
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Variables')?.click()
+      })
+      const effective = (term: string) => Array.from(container.querySelectorAll('.debugger-center .debug-effective-settings dt')).find(dt => dt.textContent === term)?.nextElementSibling?.textContent
+      expect(effective('Iterations')).toBe('3')
+      expect(effective('Network trace')).toBe('On')
 
-      // Run to Breakpoint (passes breakpoints and pauses)
+      // Run to breakpoint (passes breakpoints and pauses)
       await act(async () => { debugBtn().click() })
       await act(async () => { runToBreakpointBtn().click(); await Promise.resolve() })
       await flushReact()
@@ -14552,15 +14655,119 @@ describe('ScriptEditor', () => {
         breakpoints: [expect.objectContaining({ phase: 'action', action_index: 0 })],
       }))
 
-      // Run in Step Mode (starts paused)
+      // Run a single iteration ignores Start paused too
+      await act(async () => { debugBtn().click() })
+      const singleBtn = Array.from(menu()?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') || [])
+        .find(item => item.textContent?.trim() === 'Run a single iteration')!
+      await act(async () => { singleBtn.click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenLastCalledWith('script-1', expect.objectContaining({
+        start_paused: false,
+        breakpoints: [],
+      }))
+
+      // Run in step mode (starts paused)
       await act(async () => { debugBtn().click() })
       const stepModeBtn = Array.from(menu()?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') || [])
-        .find(item => item.textContent?.trim() === 'Run in Step Mode')!
+        .find(item => item.textContent?.trim() === 'Run in step mode')!
       await act(async () => { stepModeBtn.click(); await Promise.resolve() })
       await flushReact()
       expect(apiMock.startScriptDebugSession).toHaveBeenLastCalledWith('script-1', expect.objectContaining({
         start_paused: true,
       }))
+    })
+
+    it('operates the Debug run modes menu from the keyboard and keeps Escape inside it', async () => {
+      await act(async () => { root.render(<KeyboardShortcutProvider>{withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)}</KeyboardShortcutProvider>) })
+      await flushReact()
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      const trigger = () => container.querySelector<HTMLButtonElement>('.debug-session-controls .topbar-debug-action-run')
+      const menu = () => container.querySelector<HTMLElement>('#debug-run-menu')
+      const focusedLabel = () => (document.activeElement as HTMLElement | null)?.textContent?.trim()
+      const press = async (key: string, target: EventTarget = document.activeElement || document.body) => {
+        await act(async () => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })) })
+        await flushReact()
+      }
+      expect(trigger()?.getAttribute('aria-haspopup')).toBe('menu')
+
+      // Opening focuses the first command; arrows, Home and End move between the
+      // enabled commands (Run to breakpoint is disabled with no breakpoint set).
+      await act(async () => { trigger()!.click() })
+      await flushReact()
+      expect(trigger()!.getAttribute('aria-expanded')).toBe('true')
+      expect(focusedLabel()).toBe('Run a single iteration')
+      await press('ArrowDown')
+      expect(focusedLabel()).toBe('Run 2 iterations')
+      await press('ArrowDown')
+      expect(focusedLabel()).toBe('Run in step mode')
+      await press('ArrowDown')
+      expect(focusedLabel()).toBe('Run a single iteration')
+      await press('ArrowUp')
+      expect(focusedLabel()).toBe('Run in step mode')
+      await press('Home')
+      expect(focusedLabel()).toBe('Run a single iteration')
+      await press('End')
+      expect(focusedLabel()).toBe('Run in step mode')
+
+      // Escape from a command closes the menu, returns focus to the trigger and
+      // does not reach the Escape shortcut, which would leave the Debug workspace.
+      await press('Escape')
+      expect(menu()).toBeNull()
+      expect(trigger()).not.toBeNull()
+      expect(document.activeElement).toBe(trigger())
+
+      // The same from the iteration count field.
+      await act(async () => { trigger()!.click() })
+      await flushReact()
+      const field = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
+      await act(async () => { field.focus() })
+      await press('Escape', field)
+      expect(menu()).toBeNull()
+      expect(trigger()).not.toBeNull()
+      expect(document.activeElement).toBe(trigger())
+
+      // And with focus outside the menu (an Escape the window receives).
+      await act(async () => { trigger()!.click() })
+      await flushReact()
+      await act(async () => { (document.activeElement as HTMLElement | null)?.blur() })
+      await press('Escape', document.body)
+      expect(menu()).toBeNull()
+      expect(trigger()).not.toBeNull()
+
+      // ArrowDown on the closed trigger opens the menu; focus leaving it (Tab past
+      // the count field) closes it.
+      await act(async () => { trigger()!.focus() })
+      await press('ArrowDown', trigger()!)
+      expect(menu()).not.toBeNull()
+      expect(focusedLabel()).toBe('Run a single iteration')
+      const outside = container.querySelector<HTMLButtonElement>('.debug-session-bar > button')!
+      expect(outside.textContent).toContain('Debug options')
+      await act(async () => { outside.focus() })
+      await flushReact()
+      expect(menu()).toBeNull()
+
+      // ArrowUp on the closed trigger opens it on the last enabled command
+      // (WAI-ARIA menu button pattern).
+      await act(async () => { trigger()!.focus() })
+      await press('ArrowUp', trigger()!)
+      expect(menu()).not.toBeNull()
+      expect(focusedLabel()).toBe('Run in step mode')
+      await press('Escape')
+      expect(menu()).toBeNull()
+
+      // A cleared count falls back to the last good one when the field is left.
+      // A click opens on the first command again.
+      await act(async () => { trigger()!.click() })
+      await flushReact()
+      expect(focusedLabel()).toBe('Run a single iteration')
+      const countField = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
+      await act(async () => { countField.focus(); changeInputValue(countField, '250') })
+      expect(countField.getAttribute('aria-invalid')).toBe('true')
+      await act(async () => { countField.blur() })
+      await flushReact()
+      expect(countField.value).toBe('100')
+      expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
     })
   })
 })

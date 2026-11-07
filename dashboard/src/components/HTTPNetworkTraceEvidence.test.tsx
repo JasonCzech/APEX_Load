@@ -110,6 +110,61 @@ describe('HTTPNetworkTraceEvidence', () => {
     expect(html).toContain('dns 1.2 ms · connect 3.4 ms · tls 4.5 ms · send 0.5 ms · request_wait 7.8 ms · response 1.0 ms')
   })
 
+  it('uses its own disclosure class so it is not mistaken for the Protocol evidence disclosure', () => {
+    const html = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={fullEvidence} networkEntries={hops} />)
+    expect(html).toMatch(/^<details class="replay-network-trace">/)
+    expect(html).not.toContain('replay-protocol-evidence')
+  })
+
+  it('shows socket reuse as unknown when the trace omits connection_reused, and fresh only when it is explicitly false', () => {
+    const unknown = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={{ network_trace: { http_protocol: 'HTTP/1.1', remote_addr: '203.0.113.10:443' } }} />)
+    expect(unknown).toContain('Socket reuse')
+    expect(unknown).toContain('Unknown (not observed)')
+    expect(unknown).not.toContain('Fresh connection')
+    expect(unknown).not.toContain('new socket')
+    expect(unknown).toContain('Network &amp; transport trace · HTTP/1.1</summary>')
+
+    const fresh = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={{ network_trace: { http_protocol: 'HTTP/1.1', connection_reused: false } }} />)
+    expect(fresh).toContain('Fresh connection')
+    expect(fresh).toContain('Network &amp; transport trace · HTTP/1.1 · new socket</summary>')
+  })
+
+  it('labels a hop socket only when its trace observed the connection', () => {
+    const html = renderToStaticMarkup(<HTTPNetworkTraceEvidence networkEntries={[
+      { method: 'GET', url: 'https://a.example.test/', status_code: 302, trace: { cross_origin_redirect: true, stripped_redirect_headers: ['Authorization'] } },
+      { method: 'GET', url: 'https://b.example.test/', status_code: 200, trace: { connection_reused: false, remote_addr: '203.0.113.9:443' } },
+    ]} />)
+    const hopItems = html.split('<li ').slice(1)
+    expect(hopItems).toHaveLength(2)
+    expect(hopItems[0]).toContain('stripped Authorization')
+    expect(hopItems[0]).not.toMatch(/new socket|reused socket/)
+    expect(hopItems[1]).toContain('new socket · remote 203.0.113.9:443')
+  })
+
+  it('renders redacted (non-array) list fields without crashing', () => {
+    const redacted = {
+      network_trace: {
+        http_protocol: 'HTTP/1.1',
+        cookies_sent_count: 2,
+        cookie_names_sent: '[REDACTED]',
+        set_cookies_received_count: 1,
+        set_cookie_names_received: '[REDACTED]',
+        transfer_encoding: { unexpected: true },
+        stripped_redirect_headers: 42,
+        dns_resolved_ips: null,
+      },
+    } as unknown as ProtocolEvidence
+    const hop = { method: 'GET', url: 'https://a.example.test/', har: { phases: '[REDACTED]' }, trace: { stripped_redirect_headers: '[REDACTED]' } } as unknown as BrowserReplayNetworkEntry
+    let html = ''
+    expect(() => { html = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={redacted} networkEntries={[hop]} />) }).not.toThrow()
+    expect(html).toContain('sent 2 ([REDACTED]) · received 1 ([REDACTED])')
+    expect(html).not.toContain('Resolved DNS IPs')
+    expect(html).not.toContain('transfer ')
+    expect(html).toContain('stripped [REDACTED]')
+    // A trace that is itself not an object is ignored rather than rendered.
+    expect(renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={{ network_trace: '[REDACTED]' } as unknown as ProtocolEvidence} />)).toBe('')
+  })
+
   it('renders nothing when unavailable or when no trace or hop HAR is present', () => {
     expect(renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={fullEvidence} networkEntries={hops} unavailable />)).toBe('')
     expect(renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={{}} networkEntries={[{ url: 'https://example.test', method: 'GET' }]} />)).toBe('')

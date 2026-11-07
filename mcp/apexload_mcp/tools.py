@@ -445,7 +445,7 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("run_live_table_rows", "GET", "/tests/{id}/live-tables/{tableID}/rows", f"{READ} Read rows from a run-scoped Live Table."),
     EndpointTool("run_live_table_export", "GET", "/tests/{id}/live-tables/{tableID}/export", f"{READ} Export a run-scoped Live Table."),
     EndpointTool("run_live_table_finalize", "POST", "/tests/{id}/live-tables/{tableID}/finalize", f"{WRITE} Finalize a run-scoped Live Table.", True),
-    EndpointTool("run_preflight", "POST", "/tests/preflight", f"{READ} Validate pre-run launch readiness (script secret bindings, data pools, generator capacity, SLAs, and telemetry policies) without creating a test.", default_project=True),
+    EndpointTool("run_preflight", "POST", "/tests/preflight", f"{READ} Check pre-run launch readiness (generator capacity and placement, browser density, fleet-pool readiness, quotas and launch windows, and external-runner, Java-runner and import-promotion gates) without creating a test; it does not check secret values or SLAs.", default_project=True),
 
     # Live Run Diagnostics, Mid-Run Adjustments & Archive Deep-Dive
     EndpointTool("system_execution_readiness", "GET", "/system/execution-readiness", f"{READ} Check controller execution leadership and generator fleet readiness for starting runs."),

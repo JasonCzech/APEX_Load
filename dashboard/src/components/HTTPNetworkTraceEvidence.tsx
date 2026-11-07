@@ -1,10 +1,33 @@
 import type { BrowserReplayNetworkEntry, HTTPNetworkTrace, ProtocolEvidence, ReplayHARPhase } from '../types/replay'
 
+// Evidence is published after redaction, which may replace a field whose key
+// names a credential (cookie_names_sent, set_cookie_names_received) with the
+// string "[REDACTED]". Every list is therefore read defensively: an array keeps
+// its string entries, a non-empty string is shown as given, anything else is
+// treated as absent.
+function traceList(value: unknown): string {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string' && item !== '').join(', ')
+  return typeof value === 'string' ? value : ''
+}
+
+function traceObject(value: unknown): HTTPNetworkTrace | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as HTTPNetworkTrace : undefined
+}
+
+// Socket reuse is known only when the trace says so: true is a reused
+// connection, an explicit false a fresh one, and an absent key is unknown.
+function socketReuseLabel(trace: HTTPNetworkTrace): 'reused socket' | 'new socket' | undefined {
+  if (trace.connection_reused === true) return 'reused socket'
+  if (trace.connection_reused === false) return 'new socket'
+  return undefined
+}
+
 function formatHopPhases(phases?: ReplayHARPhase[]): string {
-  if (!phases || phases.length === 0) return ''
+  if (!Array.isArray(phases) || phases.length === 0) return ''
   const parts: string[] = []
   for (const phase of phases) {
     if (
+      phase &&
       typeof phase.start_ms === 'number' &&
       typeof phase.end_ms === 'number' &&
       phase.end_ms >= phase.start_ms
@@ -21,8 +44,9 @@ function formatNetworkTraceSummaryHeadline(trace?: HTTPNetworkTrace, hopCount = 
     if (trace.http_protocol) {
       parts.push(trace.http_protocol)
     }
-    if (trace.connection_reused !== undefined) {
-      parts.push(trace.connection_reused ? 'reused socket' : 'new socket')
+    const socket = socketReuseLabel(trace)
+    if (socket) {
+      parts.push(socket)
     }
     if (trace.tls_version) {
       parts.push(trace.tls_version)
@@ -47,14 +71,19 @@ export function HTTPNetworkTraceEvidence({
   unavailable?: boolean
 }) {
   if (unavailable) return null
-  const hops = (networkEntries || []).filter(entry => Boolean(entry.trace || entry.har))
-  const trace = evidence?.network_trace ?? hops[hops.length - 1]?.trace
+  const hops = (Array.isArray(networkEntries) ? networkEntries : []).filter(entry => Boolean(entry && (traceObject(entry.trace) || entry.har)))
+  const trace = traceObject(evidence?.network_trace) ?? traceObject(hops[hops.length - 1]?.trace)
   if (!trace && hops.length === 0) return null
+  const dnsResolvedIPs = traceList(trace?.dns_resolved_ips)
+  const transferEncoding = traceList(trace?.transfer_encoding)
+  const cookieNamesSent = traceList(trace?.cookie_names_sent)
+  const setCookieNamesReceived = traceList(trace?.set_cookie_names_received)
+  const strippedRedirectHeaders = traceList(trace?.stripped_redirect_headers)
 
   const headline = formatNetworkTraceSummaryHeadline(trace, hops.length)
 
   return (
-    <details className="replay-protocol-evidence replay-network-trace">
+    <details className="replay-network-trace">
       <summary>Network &amp; transport trace{headline ? ` · ${headline}` : ''}</summary>
       {trace && (
         <section className="sub-section" aria-label="HTTP transport and TLS trace">
@@ -65,16 +94,14 @@ export function HTTPNetworkTraceEvidence({
                 <dd><code>{trace.http_protocol}</code></dd>
               </>
             )}
-            {trace.connection_reused !== undefined && (
-              <>
-                <dt>Socket reuse</dt>
-                <dd>
-                  {trace.connection_reused
-                    ? `Reused connection${trace.was_idle ? ` (idle ${typeof trace.idle_time_ms === 'number' ? `${trace.idle_time_ms.toFixed(2)} ms` : 'yes'})` : ''}`
-                    : 'Fresh connection'}
-                </dd>
-              </>
-            )}
+            <dt>Socket reuse</dt>
+            <dd>
+              {trace.connection_reused === true
+                ? `Reused connection${trace.was_idle ? ` (idle ${typeof trace.idle_time_ms === 'number' ? `${trace.idle_time_ms.toFixed(2)} ms` : 'yes'})` : ''}`
+                : trace.connection_reused === false
+                  ? 'Fresh connection'
+                  : 'Unknown (not observed)'}
+            </dd>
             {trace.remote_addr && (
               <>
                 <dt>Remote endpoint</dt>
@@ -87,11 +114,11 @@ export function HTTPNetworkTraceEvidence({
                 <dd><code>{trace.local_addr}</code></dd>
               </>
             )}
-            {trace.dns_resolved_ips && trace.dns_resolved_ips.length > 0 && (
+            {dnsResolvedIPs && (
               <>
                 <dt>Resolved DNS IPs</dt>
                 <dd>
-                  <code>{trace.dns_resolved_ips.join(', ')}</code>
+                  <code>{dnsResolvedIPs}</code>
                   {trace.dns_coalesced ? ' (coalesced)' : ''}
                 </dd>
               </>
@@ -138,14 +165,14 @@ export function HTTPNetworkTraceEvidence({
                 </dd>
               </>
             )}
-            {(trace.request_compression || trace.content_encoding || (trace.transfer_encoding && trace.transfer_encoding.length > 0)) && (
+            {(trace.request_compression || trace.content_encoding || transferEncoding) && (
               <>
                 <dt>Content &amp; transfer encoding</dt>
                 <dd>
                   {[
                     trace.request_compression ? `request ${trace.request_compression}` : '',
                     trace.content_encoding ? `response ${trace.content_encoding}` : '',
-                    trace.transfer_encoding?.length ? `transfer ${trace.transfer_encoding.join(', ')}` : '',
+                    transferEncoding ? `transfer ${transferEncoding}` : '',
                   ].filter(Boolean).join(' · ')}
                 </dd>
               </>
@@ -167,23 +194,23 @@ export function HTTPNetworkTraceEvidence({
                 <dd>
                   {[
                     typeof trace.cookies_sent_count === 'number'
-                      ? `sent ${trace.cookies_sent_count}${trace.cookie_names_sent?.length ? ` (${trace.cookie_names_sent.join(', ')})` : ''}`
+                      ? `sent ${trace.cookies_sent_count}${cookieNamesSent ? ` (${cookieNamesSent})` : ''}`
                       : '',
                     typeof trace.set_cookies_received_count === 'number'
-                      ? `received ${trace.set_cookies_received_count}${trace.set_cookie_names_received?.length ? ` (${trace.set_cookie_names_received.join(', ')})` : ''}`
+                      ? `received ${trace.set_cookies_received_count}${setCookieNamesReceived ? ` (${setCookieNamesReceived})` : ''}`
                       : '',
                   ].filter(Boolean).join(' · ')}
                 </dd>
               </>
             )}
-            {(trace.cross_origin_redirect || (trace.stripped_redirect_headers && trace.stripped_redirect_headers.length > 0)) && (
+            {(trace.cross_origin_redirect || strippedRedirectHeaders) && (
               <>
                 <dt>Redirect chain</dt>
                 <dd>
                   {[
                     hops.length > 1 ? `${hops.length} hops` : 'cross-origin redirect',
-                    trace.stripped_redirect_headers?.length
-                      ? `stripped cross-origin headers: ${trace.stripped_redirect_headers.join(', ')}`
+                    strippedRedirectHeaders
+                      ? `stripped cross-origin headers: ${strippedRedirectHeaders}`
                       : '',
                   ].filter(Boolean).join(' · ')}
                 </dd>
@@ -198,7 +225,8 @@ export function HTTPNetworkTraceEvidence({
           <ol className="replay-network-hop-list">
             {hops.map((hop, idx) => {
               const timingsLabel = formatHopPhases(hop.har?.phases)
-              const hopTrace = hop.trace
+              const hopTrace = traceObject(hop.trace)
+              const hopStripped = traceList(hopTrace?.stripped_redirect_headers)
               return (
                 <li key={`${idx}-${hop.method || 'GET'}-${hop.url || ''}`} className="replay-network-hop-item">
                   <div>
@@ -212,11 +240,11 @@ export function HTTPNetworkTraceEvidence({
                     <div>
                       <small>
                         {[
-                          hopTrace.connection_reused ? 'reused socket' : 'new socket',
+                          socketReuseLabel(hopTrace) || '',
                           hopTrace.remote_addr ? `remote ${hopTrace.remote_addr}` : '',
                           hopTrace.tls_version ? `${hopTrace.tls_version}${hopTrace.tls_negotiated_proto ? ` (${hopTrace.tls_negotiated_proto})` : ''}` : '',
                           hopTrace.content_encoding ? `encoding ${hopTrace.content_encoding}` : '',
-                          hopTrace.stripped_redirect_headers?.length ? `stripped ${hopTrace.stripped_redirect_headers.join(', ')}` : '',
+                          hopStripped ? `stripped ${hopStripped}` : '',
                         ].filter(Boolean).join(' · ')}
                       </small>
                     </div>

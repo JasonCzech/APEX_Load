@@ -274,6 +274,12 @@ func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResol
 	if carrier := strings.TrimSpace(script.Config.Observability.TraceCarrier); carrier != "" {
 		cfg[protocol.ConfigMessagingTraceCarrier] = strings.ToLower(carrier)
 	}
+	// advanced_trace is the script's opt-in to per-request transport detail.
+	// It applies to load runs as well as debug: each HTTP request then
+	// collects a bounded network trace, logged as advanced-trace attributes
+	// and kept as protocol_evidence.network_trace on its archived row
+	// (connection, TLS, compression, cookie and redirect names only, never
+	// values). Debug sessions enable the trace on their own (replay.go).
 	if strings.EqualFold(strings.TrimSpace(script.Config.Log.Level), "extended") || script.Config.Log.OnErrorOnly {
 		for _, opt := range script.Config.Log.ExtendedOptions {
 			if strings.TrimSpace(opt) == "advanced_trace" {

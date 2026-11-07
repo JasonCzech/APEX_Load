@@ -13,6 +13,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
+// ScriptDebugStartRequest starts a debug or replay session. Iterations is the
+// number of action-phase iterations to run, 1 to maxScriptDebugIterations;
+// 0 or omitted runs one.
 type ScriptDebugStartRequest struct {
 	LiveTableSeeds    []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
 	GroupName         string                        `json:"group_name,omitempty"`
@@ -63,6 +66,12 @@ type ScriptDebugStartResponse struct {
 	Preflight       *ReplayPreflight    `json:"preflight,omitempty"`
 	Warnings        []string            `json:"warnings,omitempty"`
 }
+
+// maxScriptDebugIterations bounds the action-phase iterations one debug or
+// replay session may run.
+const maxScriptDebugIterations = 100
+
+var scriptDebugIterationsError = fmt.Sprintf("iterations must be between 1 and %d (0 or omitted runs one iteration)", maxScriptDebugIterations)
 
 type ScriptDebugSessionResponse struct {
 	Session *ScriptDebugSession `json:"session"`
@@ -164,8 +173,8 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if req.Iterations < 0 || req.Iterations > 100 {
-		writeError(w, http.StatusBadRequest, "iterations must be between 1 and 100")
+	if req.Iterations < 0 || req.Iterations > maxScriptDebugIterations {
+		writeError(w, http.StatusBadRequest, scriptDebugIterationsError)
 		return
 	}
 	if req.RuntimeProfile != nil && req.RuntimeProfile.HAROptions != nil {

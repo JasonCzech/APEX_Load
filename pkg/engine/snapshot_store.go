@@ -201,18 +201,54 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 	return out
 }
 
+// snapshotNetworkTraceOverhead charges a retained trace's scalar fields; every
+// retained string and list item is charged on top of it.
+const snapshotNetworkTraceOverhead = 128
+
 func takeSnapshotNetworkTrace(t *protocol.HTTPNetworkTrace, remaining *int) *protocol.HTTPNetworkTrace {
-	if t == nil || remaining == nil || *remaining < 512 {
+	if t == nil || remaining == nil || *remaining < snapshotNetworkTraceOverhead {
 		return nil
 	}
-	*remaining -= 512
+	*remaining -= snapshotNetworkTraceOverhead
 	c := t.Clone()
 	c.RemoteAddr = takeSnapshotString(c.RemoteAddr, remaining, 128)
 	c.LocalAddr = takeSnapshotString(c.LocalAddr, remaining, 128)
-	c.TLSServerName = takeSnapshotString(c.TLSServerName, remaining, 256)
-	c.TLSCertSubject = takeSnapshotString(c.TLSCertSubject, remaining, 256)
-	c.TLSCertIssuer = takeSnapshotString(c.TLSCertIssuer, remaining, 256)
+	for _, field := range []*string{
+		&c.TLSVersion, &c.TLSCipherSuite, &c.TLSNegotiatedProto, &c.TLSServerName,
+		&c.TLSCertSubject, &c.TLSCertIssuer, &c.TLSCertExpiry,
+		&c.HTTPProtocol, &c.RequestCompression, &c.ContentEncoding,
+	} {
+		*field = takeSnapshotString(*field, remaining, 256)
+	}
+	c.DNSResolvedIPs = takeSnapshotStringSlice(c.DNSResolvedIPs, remaining, 8, 256)
+	c.TransferEncoding = takeSnapshotStringSlice(c.TransferEncoding, remaining, 16, 256)
+	c.StrippedRedirectHeaders = takeSnapshotStringSlice(c.StrippedRedirectHeaders, remaining, 16, 256)
+	c.CookieNamesSent = takeSnapshotStringSlice(c.CookieNamesSent, remaining, 32, 128)
+	c.SetCookieNamesReceived = takeSnapshotStringSlice(c.SetCookieNamesReceived, remaining, 32, 128)
 	return c
+}
+
+// takeSnapshotStringSlice retains at most maxItems strings, charging each one
+// its bytes plus snapshotMapEntryOverhead, and stops once the budget cannot
+// hold another entry.
+func takeSnapshotStringSlice(values []string, remaining *int, maxItems, itemLimit int) []string {
+	if len(values) == 0 || remaining == nil || maxItems <= 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(values), maxItems))
+	for _, value := range values {
+		if len(out) >= maxItems || *remaining <= snapshotMapEntryOverhead {
+			break
+		}
+		*remaining -= snapshotMapEntryOverhead
+		if item := takeSnapshotString(value, remaining, itemLimit); item != "" {
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func takeSnapshotDOMSummary(summary *protocol.DOMSummary, remaining *int) *protocol.DOMSummary {

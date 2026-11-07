@@ -90,6 +90,10 @@ describe('debug summary page', () => {
       expect(document.activeElement?.textContent).toBe('Debug summary')
       expect(button('Return to debugger')).toBeUndefined()
       expect(button('Debug again')).toBeUndefined()
+      // Without retained transaction definitions it points at the Debug menu,
+      // not the removed Debug again control.
+      expect(container.textContent).toContain('Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.')
+      expect(container.textContent).not.toContain('Debug again')
       act(() => button('Export session').click())
       expect(onExportSession).toHaveBeenCalledTimes(1)
       act(() => button('Inspect Checkout').click())

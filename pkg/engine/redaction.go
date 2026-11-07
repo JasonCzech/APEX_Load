@@ -1048,35 +1048,42 @@ func scrubSensitiveNetworkTrace(trace *protocol.HTTPNetworkTrace, config *Redact
 	if trace == nil {
 		return nil
 	}
-	cloned := trace.Clone()
-	for i := range cloned.DNSResolvedIPs {
-		cloned.DNSResolvedIPs[i] = scrubSensitiveTextWithConfig(cloned.DNSResolvedIPs[i], config)
+	return trace.TransformStrings(func(value string) string {
+		return scrubSensitiveTextWithConfig(value, config)
+	})
+}
+
+// networkTraceEvidenceKey is the protocol_evidence entry that carries an
+// HTTPNetworkTrace evidence map.
+const networkTraceEvidenceKey = "network_trace"
+
+// scrubSensitiveNetworkTraceEvidence scrubs a network_trace evidence entry
+// through its typed model. The generic key-name rule would replace the
+// cookie_names_sent and set_cookie_names_received lists with a redaction
+// string because their keys contain "cookie"; those lists hold only cookie
+// names (never values), so they stay lists and each name is value-scrubbed.
+// Keys the model does not know are dropped. The result is JSON-native (lists
+// are []any, numbers float64), the same shape normalizeEvidenceValue gives
+// every other entry, so bounding it later is a no-op and completeness checks
+// that compare scrubbed evidence with its bounded copy still hold.
+func scrubSensitiveNetworkTraceEvidence(value any, config *RedactionConfig) (any, bool) {
+	trace := protocol.HTTPNetworkTraceFromEvidence(value)
+	if trace == nil {
+		return nil, false
 	}
-	cloned.RemoteAddr = scrubSensitiveTextWithConfig(cloned.RemoteAddr, config)
-	cloned.LocalAddr = scrubSensitiveTextWithConfig(cloned.LocalAddr, config)
-	cloned.TLSVersion = scrubSensitiveTextWithConfig(cloned.TLSVersion, config)
-	cloned.TLSCipherSuite = scrubSensitiveTextWithConfig(cloned.TLSCipherSuite, config)
-	cloned.TLSNegotiatedProto = scrubSensitiveTextWithConfig(cloned.TLSNegotiatedProto, config)
-	cloned.TLSServerName = scrubSensitiveTextWithConfig(cloned.TLSServerName, config)
-	cloned.TLSCertSubject = scrubSensitiveTextWithConfig(cloned.TLSCertSubject, config)
-	cloned.TLSCertIssuer = scrubSensitiveTextWithConfig(cloned.TLSCertIssuer, config)
-	cloned.TLSCertExpiry = scrubSensitiveTextWithConfig(cloned.TLSCertExpiry, config)
-	cloned.HTTPProtocol = scrubSensitiveTextWithConfig(cloned.HTTPProtocol, config)
-	cloned.RequestCompression = scrubSensitiveTextWithConfig(cloned.RequestCompression, config)
-	cloned.ContentEncoding = scrubSensitiveTextWithConfig(cloned.ContentEncoding, config)
-	for i := range cloned.TransferEncoding {
-		cloned.TransferEncoding[i] = scrubSensitiveTextWithConfig(cloned.TransferEncoding[i], config)
+	evidence := scrubSensitiveNetworkTrace(trace, config).EvidenceMap()
+	if len(evidence) == 0 {
+		return nil, false
 	}
-	for i := range cloned.CookieNamesSent {
-		cloned.CookieNamesSent[i] = scrubSensitiveTextWithConfig(cloned.CookieNamesSent[i], config)
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		return nil, false
 	}
-	for i := range cloned.SetCookieNamesReceived {
-		cloned.SetCookieNamesReceived[i] = scrubSensitiveTextWithConfig(cloned.SetCookieNamesReceived[i], config)
+	var normalized map[string]any
+	if err := json.Unmarshal(encoded, &normalized); err != nil || len(normalized) == 0 {
+		return nil, false
 	}
-	for i := range cloned.StrippedRedirectHeaders {
-		cloned.StrippedRedirectHeaders[i] = scrubSensitiveTextWithConfig(cloned.StrippedRedirectHeaders[i], config)
-	}
-	return cloned
+	return normalized, true
 }
 
 func scrubSensitiveConsoleEntries(entries []protocol.ConsoleEntry, config *RedactionConfig) []protocol.ConsoleEntry {
@@ -1104,6 +1111,12 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 	}
 	out := make(map[string]any, len(input))
 	for key, value := range input {
+		if key == networkTraceEvidenceKey {
+			if trace, ok := scrubSensitiveNetworkTraceEvidence(value, config); ok {
+				out[key] = trace
+			}
+			continue
+		}
 		if scrub.SensitiveName(key) {
 			out[key] = redactedPayloadValue
 			continue

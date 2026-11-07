@@ -17,6 +17,8 @@ export interface DebugRunRecord {
   dataSourceCount?: number
   failurePolicy: string
   inputs?: Array<{ name: string; source: string; selection: string; update?: string; startRow?: number; seed?: number }>
+  /** The iteration count the run requested (1 unless a Run N iterations mode asked for more). */
+  iterations?: number
 }
 export function captureScript(script: ScriptDefinition, capture: DebugCapture = 'diagnostic', networkTrace = true): ScriptDefinition {
   // Other protocols do not implement successful message detail. Leave their

@@ -46,6 +46,7 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	out.NetworkEntries = nil
 	out.DOMSummary = nil
 	out.ProtocolEvidence = nil
+	out.NetworkTrace = nil
 	out.Snapshot = nil
 	out.SourceStepID = ""
 	out.SourceAction = ""

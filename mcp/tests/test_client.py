@@ -89,6 +89,24 @@ async def test_text_log_export_preserves_up_to_configured_window_and_marks_trunc
     assert capped_payload["data"]["truncated"] is True
     assert capped_payload["data"]["total_chars"] == len(long_log)
     assert len(capped_payload["data"]["text_preview"]) == 2048
+    assert "preview_window" not in capped_payload["data"]
+
+    # The tail window keeps the newest characters, from a line boundary.
+    numbered = "\n".join(f"line {i:04d} " + "x" * 40 for i in range(200))
+
+    async def numbered_handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=numbered, headers={"Content-Type": "text/plain; charset=utf-8"})
+
+    tail_client = APEXLoadClient(
+        APEXLoadClientConfig(base_url="http://storm.test/api/v1", max_text_preview_chars=2048),
+        transport=httpx.MockTransport(numbered_handler),
+    )
+    tail = (await tail_client.request("GET", "/replay/sessions/dbg-1/export", query={"format": "log"}, text_preview="tail"))["data"]
+    assert tail["truncated"] is True and tail["preview_window"] == "tail" and tail["total_chars"] == len(numbered)
+    assert numbered.endswith(tail["text_preview"]) and tail["text_preview"].startswith("line ")
+    assert tail["text_preview"].endswith("line 0199 " + "x" * 40) and len(tail["text_preview"]) <= 2048
+    head = (await tail_client.request("GET", "/replay/sessions/dbg-1/export", query={"format": "log"}))["data"]
+    assert head["text_preview"] == numbered[:2048] and "preview_window" not in head
 
 
 @pytest.mark.asyncio

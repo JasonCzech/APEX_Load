@@ -156,6 +156,9 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 			Got100Continue: func() {
 				hopTrace.onGot100Continue()
 			},
+			WroteHeaders: func() {
+				hopTrace.onWroteHeaders()
+			},
 			WroteRequest: func(httptrace.WroteRequestInfo) {
 				hopTrace.onWait100ContinueDone()
 				if wantTimings {
@@ -175,7 +178,7 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 	observed = observed.WithContext(httptrace.WithClientTrace(observed.Context(), trace))
 	resp, err := r.base.RoundTrip(observed)
 	if hopTrace != nil {
-		hopTrace.observeExchange(req, resp, nil, "", 0, 0)
+		hopTrace.observeExchange(req, resp, "", 0, 0)
 	}
 	record.mu.Lock()
 	if resp != nil {

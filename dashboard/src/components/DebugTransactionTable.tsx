@@ -37,6 +37,6 @@ export default function DebugTransactionTable({ snapshot, onSelectEvent }: { sna
       <p>Expand transactions for subtransactions, pages, and repeated executions. Elapsed time includes pauses, think time, and debugger work; action time is the run’s recorded action measurement.</p>
       <p>Parent elapsed includes time outside children and counts overlapping child spans once. Expand a parent to see the breakdown. Values are rounded for display; missing timing is left blank.</p>
       <div className="debug-transaction-table-wrap" tabIndex={0} role="region" aria-label="Transaction timings"><table className="debug-transaction-table" data-table-pagination="off"><caption className="sr-only">Transactions from the completed debug run</caption><thead><tr><th scope="col">Transaction / page</th><th scope="col">Phase</th><th scope="col">Status</th><th scope="col">Start time</th><th scope="col">End time</th><th scope="col">{metricHeader('elapsedTime')}</th><th scope="col">Evidence</th></tr></thead><tbody>{renderRows(rows)}</tbody></table></div>
-    </> : <p>{snapshot.transactions ? 'No transactions were defined in this run’s script.' : 'Transaction definitions were not retained for this run. Debug again to capture the transaction breakdown.'}</p>}
+    </> : <p>{snapshot.transactions ? 'No transactions were defined in this run’s script.' : 'Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.'}</p>}
   </section>
 }

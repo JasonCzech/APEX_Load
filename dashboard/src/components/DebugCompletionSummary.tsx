@@ -22,7 +22,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
       <div><h2 ref={heading} tabIndex={-1}>Debug summary</h2><p role="status">{model.outcome}{model.incomplete || hidden ? ' · Incomplete evidence' : ''}</p></div>
       <div className="debug-summary-actions"><button type="button" className="btn btn-secondary" onClick={() => { void onExportSession() }}>Export session</button></div>
     </header>
-    {stale && <p className="warning-message">These results describe an earlier draft. Debug again to check your current changes.</p>}
+    {stale && <p className="warning-message">These results describe an earlier draft. Start a new run from the Debug menu to check your current changes.</p>}
     {hidden && <p className="warning-message">Runtime evidence unavailable. Run details and downloads cannot be shown.</p>}
     {!hidden && <>
       <dl className="debug-summary-facts">

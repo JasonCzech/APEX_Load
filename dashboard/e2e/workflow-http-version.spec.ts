@@ -12,9 +12,10 @@ import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scri
 import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
-// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
+// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response
+// (the network trace beside it is a separate disclosure, details.replay-network-trace).
 async function openProtocolEvidence(page: Page) {
-  const disclosure = page.locator('details.replay-protocol-evidence')
+  const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
   await expect(disclosure).toBeVisible()
   if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
 }
@@ -178,12 +179,12 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.getByRole('button', { name: 'Debug options (0)', exact: true }).click()
     const options = page.getByRole('region', { name: 'Session Overrides' })
-    await options.getByRole('checkbox', { name: 'Step through (start paused)' }).check()
     await options.getByRole('checkbox', { name: 'Break on failure', exact: true }).uncheck()
     await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
     await options.getByRole('button', { name: 'Done', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
-    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
+    // Step mode starts paused; the run-through modes ignore Step through (start paused).
+    await page.getByRole('menuitem', { name: 'Run in step mode', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Login' })).toBeVisible()
     await page.getByRole('button', { name: 'Step', exact: true }).click()
     await expect(page.getByRole('status').filter({ hasText: 'Paused before: Mixed versions' })).toBeVisible()
@@ -220,6 +221,10 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Auto on H1 only' }).click()
     await openProtocolEvidence(page)
     await expect(actual).toHaveText('HTTP/1.1')
+    // Debug turns network trace on by default: the transport trace is its own disclosure.
+    const trace = page.locator('details.replay-network-trace')
+    await expect(trace).toHaveCount(1)
+    await expect(trace.locator(':scope > summary')).toContainText('Network & transport trace')
     await expect(evidence.locator('dt').filter({ hasText: 'Replay policy' }).locator('xpath=following-sibling::dd[1]')).toContainText('Auto')
     await expect(evidence.locator('dt').filter({ hasText: 'Version evidence source' }).locator('xpath=following-sibling::dd[1]')).toHaveText('Wire response')
     await actual.scrollIntoViewIfNeeded()

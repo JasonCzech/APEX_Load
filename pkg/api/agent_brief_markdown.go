@@ -130,7 +130,13 @@ func neutralizeAgentBoundary(text string) string {
 	return agentBoundaryNamePattern.ReplaceAllString(text, "untrusted-sut-data")
 }
 
-var agentBoundaryNamePattern = regexp.MustCompile(`(?i)untrusted[_\s]*sut[_\s]*data`)
+// agentBoundaryNameSeparators is "_", every Unicode White_Space character
+// and U+2800 BRAILLE PATTERN BLANK (which displays as a space) written out: RE2's \s is ASCII-only while Python's is
+// Unicode-aware, and the MCP server's BOUNDARY_NAME_PATTERN must match the
+// same text.
+const agentBoundaryNameSeparators = `[_\t\n\v\f\r \x{0085}\x{00a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{2800}\x{3000}]*`
+
+var agentBoundaryNamePattern = regexp.MustCompile(`(?i)untrusted` + agentBoundaryNameSeparators + `sut` + agentBoundaryNameSeparators + `data`)
 
 func longestRun(text string, r byte) int {
 	best, run := 0, 0

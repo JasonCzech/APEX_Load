@@ -23,10 +23,67 @@ type httpTraceCollector struct {
 	mu           sync.Mutex
 	trace        protocol.HTTPNetworkTrace
 	wait100Start time.Time
+	// lastHop is the most recent redirect request. net/http adds jar cookies
+	// to it in place when it sends the hop, so after Client.Do returns it
+	// holds the Cookie header that hop actually carried.
+	lastHop *http.Request
+	// lastHopRoot is via[0] of the redirect chain lastHop belongs to: the
+	// exact request passed to Client.Do. net/http forks requests (deadline,
+	// wrapping transports), so Response.Request chains never lead back to it.
+	lastHopRoot *http.Request
+	// hopWroteHeaders records whether the current hop's request headers
+	// reached a connection; a hop that never wrote them sent no cookies.
+	hopWroteHeaders bool
 }
 
 func newHTTPTraceCollector() *httpTraceCollector {
 	return &httpTraceCollector{}
+}
+
+// onGetConn marks a hop (or a transport retry) boundary: the aggregate trace
+// describes the connection of the final attempt, so per-connection fields
+// observed for an earlier hop must not leak into it.
+func (c *httpTraceCollector) onGetConn() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.resetHopLocked()
+	c.mu.Unlock()
+}
+
+// resetHopLocked clears per-connection fields. Request-level receipts
+// (CrossOriginRedirect, StrippedRedirectHeaders, RequestCompression) and the
+// response-derived fields observeExchange sets at the end are kept.
+func (c *httpTraceCollector) resetHopLocked() {
+	c.trace.DNSResolvedIPs = nil
+	c.trace.DNSCoalesced = false
+	c.trace.RemoteAddr = ""
+	c.trace.LocalAddr = ""
+	c.trace.ConnectionReused = nil
+	c.trace.WasIdle = false
+	c.trace.IdleTimeMs = 0
+	c.trace.Got100Continue = false
+	c.trace.Wait100ContinueMs = 0
+	c.wait100Start = time.Time{}
+	c.trace.TLSVersion = ""
+	c.trace.TLSCipherSuite = ""
+	c.trace.TLSNegotiatedProto = ""
+	c.trace.TLSServerName = ""
+	c.trace.TLSDidResume = false
+	c.trace.TLSCertSubject = ""
+	c.trace.TLSCertIssuer = ""
+	c.trace.TLSCertExpiry = ""
+	c.hopWroteHeaders = false
+}
+
+func (c *httpTraceCollector) onWroteHeaders() {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.hopWroteHeaders = true
+	c.mu.Unlock()
 }
 
 func (c *httpTraceCollector) onDNSDone(info httptrace.DNSDoneInfo) {
@@ -75,8 +132,10 @@ func (c *httpTraceCollector) onGotConn(info httptrace.GotConnInfo) {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.trace.ConnectionReused = info.Reused
+	reused := info.Reused
+	c.trace.ConnectionReused = &reused
 	c.trace.WasIdle = info.WasIdle
+	c.trace.IdleTimeMs = 0
 	if info.WasIdle && info.IdleTime > 0 {
 		c.trace.IdleTimeMs = float64(info.IdleTime) / float64(time.Millisecond)
 	}
@@ -122,32 +181,84 @@ func (c *httpTraceCollector) onWait100ContinueDone() {
 	c.mu.Unlock()
 }
 
+// observeRedirect runs inside Client.CheckRedirect, before net/http sends
+// req. At that point req.Header holds only the headers the redirect copier
+// kept, while each earlier request in via already carries the jar cookies
+// net/http added when it sent that hop. The jar already holds any cookies the
+// 3xx response set.
 func (c *httpTraceCollector) observeRedirect(req *http.Request, via []*http.Request, jar http.CookieJar) {
 	if c == nil || req == nil || req.URL == nil || len(via) == 0 {
 		return
 	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// A new hop begins: nothing about its connection is known yet.
+	c.lastHop = req
+	c.lastHopRoot = via[0]
+	c.resetHopLocked()
 	prev := via[len(via)-1]
 	if prev == nil || prev.URL == nil || sameRefreshOrigin(prev.URL, req.URL) {
 		return
 	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.trace.CrossOriginRedirect = true
 	for _, headerName := range []string{"Authorization", "Cookie", "Proxy-Authorization", "Www-Authenticate"} {
-		hadHeader := requestHeaderKeyPresent(prev.Header, headerName) || requestHeaderKeyPresent(via[0].Header, headerName)
-		if !hadHeader && headerName == "Cookie" && jar != nil && prev.URL != nil && len(jar.Cookies(prev.URL)) > 0 {
-			hadHeader = true
+		stripped := false
+		if headerName == "Cookie" {
+			stripped = redirectDroppedCookies(prev, req, jar)
+		} else {
+			// The copier copies from the initial request, so presence in
+			// req.Header is authoritative for these headers.
+			hadHeader := requestHeaderKeyPresent(prev.Header, headerName) || requestHeaderKeyPresent(via[0].Header, headerName)
+			stripped = hadHeader && !requestHeaderKeyPresent(req.Header, headerName)
 		}
-		if hadHeader && !requestHeaderKeyPresent(req.Header, headerName) {
+		if stripped {
 			c.trace.StrippedRedirectHeaders = appendUniqueString(c.trace.StrippedRedirectHeaders, headerName)
 		}
 	}
 }
 
+// redirectDroppedCookies reports whether a cookie the previous hop sent will
+// not be sent to the redirect destination, either as a copied Cookie header
+// or from the jar. Cookies are compared by name only.
+func redirectDroppedCookies(prev, req *http.Request, jar http.CookieJar) bool {
+	sent := prev.Cookies()
+	if len(sent) == 0 {
+		return false
+	}
+	destination := make(map[string]struct{})
+	for _, ck := range req.Cookies() {
+		destination[ck.Name] = struct{}{}
+	}
+	if jar != nil {
+		// Mirror net/http's Client.send, which consults the jar with the
+		// request Host when one is set.
+		cookieURL := req.URL
+		if req.Host != "" {
+			clone := *req.URL
+			clone.Host = req.Host
+			cookieURL = &clone
+		}
+		for _, ck := range jar.Cookies(cookieURL) {
+			if ck != nil {
+				destination[ck.Name] = struct{}{}
+			}
+		}
+	}
+	for _, ck := range sent {
+		if _, ok := destination[ck.Name]; !ok {
+			return true
+		}
+	}
+	return false
+}
+
+// observeExchange records request- and response-derived fields once the
+// exchange finished. net/http has already merged the jar cookies into the
+// Cookie header of every request it sent, so the request's own Cookie header
+// is exactly what went out.
 func (c *httpTraceCollector) observeExchange(
 	req *http.Request,
 	resp *http.Response,
-	jar http.CookieJar,
 	requestCompression string,
 	encodedBytes int64,
 	decodedBytes int64,
@@ -161,6 +272,10 @@ func (c *httpTraceCollector) observeExchange(
 	effectiveReq := req
 	if resp != nil && resp.Request != nil {
 		effectiveReq = resp.Request
+	} else if resp == nil && c.lastHop != nil && c.lastHopRoot == req {
+		// A transport failure on a later redirect hop of req: describe that
+		// hop rather than the first one.
+		effectiveReq = c.lastHop
 	}
 	if requestCompression != "" && !strings.EqualFold(requestCompression, "none") {
 		c.trace.RequestCompression = requestCompression
@@ -170,8 +285,12 @@ func (c *httpTraceCollector) observeExchange(
 		}
 	}
 
-	if effectiveReq != nil {
-		sentCount, sentNames := extractCookieNamesSent(effectiveReq, jar, resp != nil)
+	c.trace.CookiesSentCount = 0
+	c.trace.CookieNamesSent = nil
+	// Without a response, cookies count as sent only when the failing hop
+	// wrote its headers; a refused dial sent none.
+	if effectiveReq != nil && (resp != nil || c.hopWroteHeaders) {
+		sentCount, sentNames := extractCookieNamesSent(effectiveReq)
 		c.trace.CookiesSentCount = sentCount
 		c.trace.CookieNamesSent = sentNames
 	}
@@ -276,18 +395,11 @@ func formatTLSVersion(v uint16) string {
 	}
 }
 
-func extractCookieNamesSent(req *http.Request, jar http.CookieJar, jarAlreadyMerged bool) (int, []string) {
+func extractCookieNamesSent(req *http.Request) (int, []string) {
 	if req == nil {
 		return 0, nil
 	}
 	cookies := req.Cookies()
-	if !jarAlreadyMerged && jar != nil && req.URL != nil {
-		for _, jc := range jar.Cookies(req.URL) {
-			if jc != nil {
-				cookies = append(cookies, jc)
-			}
-		}
-	}
 	if len(cookies) == 0 {
 		return 0, nil
 	}

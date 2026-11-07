@@ -57,7 +57,7 @@ ready-to-load script. In outline:
 1. Set your **Domain**, **Project**, and **Application/Release** in the left sidebar;
    scripts, scenarios, and results are all filtered by it.
 2. Create or import a script, add at least one assertion, then **Validate**
-   and **Debug one iteration** (see [Validating And Replaying](#validating-and-replaying)).
+   and choose **Debug > Run a single iteration** (see [Validating And Replaying](#validating-and-replaying)).
 3. Build a one-group scenario, launch it from **New run**, and watch it in
    **Command Center**.
 4. When the run reaches `COMPLETE`, read the report from **Results** and pin it as the
@@ -552,8 +552,10 @@ Before you run a script at scale, prove it works for a single user.
 1. **Validate** checks the script's structure, action fields, assertions, and settings
    without executing anything. It runs the same validation the runtime applies at
    admission. Launch separately checks current permissions, capacity, secrets, runner capabilities and governance; validation does not guarantee admission.
-2. **Debug one iteration** replays the script once, interactively, through the
-   controller's replay engine.
+2. **Debug > Run a single iteration** replays the script once, interactively, through the
+   controller's replay engine. The same **Debug** menu also offers **Run N iterations**,
+   **Run to breakpoint**, and **Run in step mode**; see the
+   [Script Debugger Guide](SCRIPT_DEBUGGER_GUIDE.md).
 
 The replay debugger gives you:
 

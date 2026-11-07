@@ -77893,7 +77893,7 @@ export interface operations {
                 "response_headers"?: Record<string, string>;
                 "status_code"?: number;
                 "trace"?: ({
-                  "connection_reused"?: boolean;
+                  "connection_reused"?: (boolean) | null;
                   "content_encoding"?: string;
                   "cookie_names_sent"?: Array<string>;
                   "cookies_sent_count"?: number;
@@ -104324,6 +104324,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -105120,6 +105121,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -131296,6 +131298,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -132097,6 +132100,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -142472,7 +142476,7 @@ export interface operations {
             "response_headers"?: Record<string, string>;
             "status_code"?: number;
             "trace"?: ({
-              "connection_reused"?: boolean;
+              "connection_reused"?: (boolean) | null;
               "content_encoding"?: string;
               "cookie_names_sent"?: Array<string>;
               "cookies_sent_count"?: number;
@@ -177500,6 +177504,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -178301,6 +178306,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -188842,6 +188848,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -190572,6 +190579,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -192298,6 +192306,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -194028,6 +194037,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -194949,6 +194959,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -195759,6 +195770,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -197460,6 +197472,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -198256,6 +198269,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -216044,6 +216058,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -216854,6 +216869,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -217664,6 +217680,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;
@@ -218474,6 +218491,7 @@ export interface operations {
                 "action_index"?: number;
                 "action_name"?: string;
                 "category": string;
+                "event_index"?: (number) | null;
                 "id": string;
                 "level": string;
                 "message": string;

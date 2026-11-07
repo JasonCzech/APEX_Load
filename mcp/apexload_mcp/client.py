@@ -4,7 +4,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import quote, urlencode, urlparse
 
 import httpx
@@ -119,7 +119,11 @@ class APEXLoadClient:
         query: JsonMap | None = None,
         payload: Any | None = None,
         headers: dict[str, str] | None = None,
+        text_preview: Literal["head", "tail"] = "head",
     ) -> JsonMap:
+        """Send one request. A text response is kept as a bounded preview:
+        its first characters by default, or with text_preview="tail" its last
+        ones (for a log whose newest lines matter most)."""
         url = self.url_for(path, query)
         request_headers = {**self.auth_headers, **(headers or {})}
         if payload is not None:
@@ -129,7 +133,7 @@ class APEXLoadClient:
                 response = await client.request(method.upper(), url, headers=request_headers, json=payload)
         except httpx.HTTPError as exc:
             return self._transport_error(path, exc)
-        return self._response_payload(response, path)
+        return self._response_payload(response, path, text_preview=text_preview)
 
     async def upload_file(
         self,
@@ -164,9 +168,9 @@ class APEXLoadClient:
         path = parsed.path[:-len(suffix)] if parsed.path.endswith(suffix) else parsed.path
         return parsed._replace(path=path, params="", query="", fragment="").geturl().rstrip("/")
 
-    def _response_payload(self, response: httpx.Response, path: str) -> JsonMap:
+    def _response_payload(self, response: httpx.Response, path: str, *, text_preview: str = "head") -> JsonMap:
         ok = 200 <= response.status_code < 300
-        parsed = self._parse_response_data(response)
+        parsed = self._parse_response_data(response, text_preview=text_preview)
         result = {
             "ok": ok,
             "status_code": response.status_code,
@@ -183,7 +187,7 @@ class APEXLoadClient:
             result["warnings"] = [{"code": "activity_unavailable", "message": "Change saved; activity history could not be recorded."}]
         return result
 
-    def _parse_response_data(self, response: httpx.Response) -> Any:
+    def _parse_response_data(self, response: httpx.Response, *, text_preview: str = "head") -> Any:
         content_type = response.headers.get("content-type", "").lower()
         if "application/json" in content_type:
             try:
@@ -194,14 +198,27 @@ class APEXLoadClient:
         content_disposition = response.headers.get("content-disposition", "")
         max_chars = max(1024, min(self.config.max_text_preview_chars, MAX_TEXT_PREVIEW_CEILING_CHARS))
         text = response.text if text_like else ""
-        return {
+        truncated = len(text) > max_chars
+        if truncated and text_preview == "tail":
+            # The newest characters, starting at a line boundary when one is
+            # in the window, so the preview never opens mid-line.
+            preview = text[-max_chars:]
+            newline = preview.find("\n")
+            if text[-max_chars - 1] != "\n" and 0 <= newline < len(preview) - 1:
+                preview = preview[newline + 1:]
+        else:
+            preview = text[:max_chars]
+        parsed = {
             "content_type": content_type or "application/octet-stream",
             "byte_length": len(response.content),
             "total_chars": len(text),
-            "truncated": len(text) > max_chars,
-            "text_preview": text[:max_chars],
+            "truncated": truncated,
+            "text_preview": preview,
             "content_disposition": content_disposition,
         }
+        if text_preview == "tail":
+            parsed["preview_window"] = "tail"
+        return parsed
 
     def _api_error(self, response: httpx.Response, parsed: Any, path: str) -> JsonMap:
         message = response.reason_phrase or "APEX Load API request failed"

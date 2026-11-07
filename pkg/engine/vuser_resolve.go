@@ -214,7 +214,9 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 			if tr.RemoteAddr != "" {
 				attrs = append(attrs, "remote_addr", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.RemoteAddr, redactionConfig), 128))
 			}
-			attrs = append(attrs, "conn_reused", tr.ConnectionReused)
+			if tr.ConnectionReused != nil {
+				attrs = append(attrs, "conn_reused", *tr.ConnectionReused)
+			}
 			if tr.WasIdle && tr.IdleTimeMs > 0 {
 				attrs = append(attrs, "conn_idle_ms", tr.IdleTimeMs)
 			}

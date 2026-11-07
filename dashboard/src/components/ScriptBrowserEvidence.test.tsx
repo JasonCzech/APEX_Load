@@ -89,7 +89,7 @@ describe('selected browser evidence', () => {
   })
   it('explains capture before a run', async () => {
     const host = document.createElement('div'); const root = createRoot(host)
-    try { await act(async () => root.render(<ScriptBrowserEvidence running={false} />)); expect(host.textContent).toContain('Debug one iteration') } finally { await act(async () => root.unmount()) }
+    try { await act(async () => root.render(<ScriptBrowserEvidence running={false} />)); expect(host.textContent).toContain('Choose Debug > Run a single iteration to capture'); expect(host.textContent).not.toContain('Debug one iteration') } finally { await act(async () => root.unmount()) }
   })
   it('starts a native browser replay session, renders progress, and reports start errors', async () => {
     const host = document.createElement('div'); document.body.append(host)

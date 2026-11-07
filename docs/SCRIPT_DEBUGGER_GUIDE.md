@@ -18,7 +18,16 @@ The right inspector follows the selected item. Action properties are grouped int
 
 In Debug, select text in an executed step's **Response** to use it: **Check that the response contains this**, **Save this as a value** (boundaries are suggested from the text around it, the shortest that save exactly the selection), or **Use this value in later steps**, which lists every later request that sends the same text (URL, body and header values, including the requests of a later sequence, or the later ones of a step's own sequence when it runs them in order) for review: choose the uses and the name, then **Replace**. **Check that the status is …** adds a status check; on a step that already checks another status it becomes **Change the status check from … to …**, so the step never holds two checks that cannot both pass. A step that checks for an error status (400 or above), as the negative tests of an imported collection do, is not offered a change to the status the target answered: a note says the target did not reproduce the error. Text in a formatted view that is not in the response as sent cannot be used. A response the replay kept only in part, or redacted, cannot show that text is missing, so a check or saved value that finds nothing in it is left to the next run; a value is not saved from a redacted response, nor from the very end of a partial one. These write to the step's Saved values and Checks, so Undo, Redo and the script's JSON work as for any edit. They are offered while the script's steps are where the replay left them; added checks and replaced values do not change that, but a moved, added or renamed step does, and a new replay is then needed; the checks say so, as they do for a step the last replay did not run.
 
-At narrow widths, use **Outline**, **Editor**, and **Context** (in Debug, **Inspector**) to select a pane. Browser Debug keeps its integrated evidence in **Editor**, so it offers Outline and Editor. Debug action navigation remains available whether the logs/problems dock is expanded or collapsed. In Debug the outline takes the same keys. In either workspace, `F9` or `Cmd/Ctrl` + `B` toggles the breakpoint of the outline row with keyboard focus, which arrow keys move without selecting it.
+At narrow widths, use **Outline**, **Editor**, and **Context** (in Debug, **Inspector**) to select a pane; Browser Debug offers the same three, with its integrated evidence in **Editor**. Debug action navigation remains available whether the logs/problems dock is expanded or collapsed. In Debug the outline takes the same keys. In either workspace, `F9` or `Cmd/Ctrl` + `B` toggles the breakpoint of the outline row with keyboard focus, which arrow keys move without selecting it.
+
+Debug normally starts from the **Debug** menu at the head of the session bar (the top bar keeps Save; it has no Debug button). Open it and pick how the run goes; arrow keys move between the modes, Enter starts one and Escape closes the menu:
+
+- **Run a single iteration** runs one iteration to the end without pausing at breakpoints.
+- **Run N iterations** runs the count in the menu's **Iterations** field (1–100) to the end, also without pausing at breakpoints.
+- **Run to breakpoint** runs one iteration and pauses at the first enabled breakpoint; it is unavailable until one is set.
+- **Run in step mode** runs one iteration paused before its first action.
+
+None of these depends on the **Step through (start paused)** option in Debug options; **Break on failure** applies to all of them. `F5` starts one iteration that honors breakpoints and **Step through (start paused)**, or continues a paused session. While the script has replay blockers, the button reads **Resolve N blockers** and opens them instead. While only the saved copy is blocked and your unsaved changes would clear it, the button reads **Save and debug**: it saves, then starts one iteration as `F5` does, honoring breakpoints and **Step through (start paused)**. The **Debug** menu returns once the saved script is ready.
 
 **Debug options** shows temporary session overrides and their count. Review logging, think-time handling, start-paused behavior, and seed variables before starting a replay. **After a failure** decides whether the session continues to the next action or stops the iteration; by default it does what a test run of the script would (continue, unless the script stops on error). **Break on failure** pauses at the failed action first, and the session bar shows whether it is on. **Run identity** is the value of `{{run.id}}` in the session; left blank, each session uses its own `debug-<session id>`, so a script that tags requests with its run can be debugged as it runs in a test. Reset restores debugger defaults; these options do not modify saved Runtime Settings.
 
@@ -44,18 +53,19 @@ A pause request while an action is executing remains unavailable until the engin
 
 **Evidence capture** is separate from log verbosity. Diagnostic capture requests successful HTTP/SOAP/Java HTTP message detail, bounded to 100 messages, 64 KiB per message and 4 MiB total; backend redaction and retention limits still apply. Browser diagnostic capture uses per-action screenshots. Other protocols use their native evidence support. **Failures only** reduces capture; **Use saved Runtime Settings (custom)** leaves the script's capture settings intact. These session overrides do not change the saved script.
 
-**Effective run configuration** identifies the target, draft/saved status, capture and failure policy, plus parameter selection controls. Named run profiles store only execution controls in the browser: they exclude seed-variable values, credentials, target URLs, and captured evidence.
+**Effective run configuration** identifies the target, draft/saved status, capture, network trace, iteration count and failure policy, plus parameter selection controls. Named run profiles store only execution controls in the browser: they exclude seed-variable values, credentials, target URLs, and captured evidence.
 
-**Recent runs** retains up to five completed runs in the current editor session, with protocol-appropriate evidence. Pin a comparison baseline to inspect differences in outcomes, assertions, resolved requests, responses, variables and configuration. This is temporary editor history; use **Export session** before closing. The export includes the captured run controls and retained evidence; seed-variable names are exported without their original input values.
+**Recent runs** retains up to five completed runs in the current editor session, with protocol-appropriate evidence. Pin a comparison baseline to inspect differences in outcomes, assertions, resolved requests, responses, variables and configuration. This is temporary editor history; use **Export session** before closing. The export includes the captured run controls (the requested iteration count and network trace among them) and retained evidence; seed-variable names are exported without their original input values.
 
 ## Completion summary
 
 When a debug run completes, fails, or stops, **Summary** opens in the main debug
 workspace. It shows the run outcome, source revision, elapsed time, retained action
-counts, errors, and warnings. **Inspect** opens a failed action's evidence;
-**Return to debugger** restores the evidence view, and **Debug again** checks the
-current draft. Editing the script leaves the completed snapshot intact and marks
-it as results from an earlier draft. Dropped or truncated evidence is identified.
+counts, errors, and warnings. **Inspect** opens a failed action's evidence,
+**Export session** saves the run, and the debugger's tabs return to the evidence
+views. To check the current draft, start a new run from the **Debug** menu.
+Editing the script leaves the completed snapshot intact and marks it as results
+from an earlier draft. Dropped or truncated evidence is identified.
 
 The **Transactions** table lists the transactions defined in the run's script,
 with pass/fail status, phase, start time, end time, and elapsed time. Expand a parent
@@ -158,7 +168,7 @@ These keys work while the script editor is open, and `?` lists them with the res
 | Keys | Action |
 | --- | --- |
 | `Cmd/Ctrl` + `S` | Save script |
-| `F5` | Run the debugger, or continue a paused session |
+| `F5` | Run one iteration that honors breakpoints and **Step through (start paused)**, or continue a paused session |
 | `Shift` + `F5` | Stop the debugger |
 | `F10` | Step (`into`) |
 | `F11` | Step over the current block (`over`) |

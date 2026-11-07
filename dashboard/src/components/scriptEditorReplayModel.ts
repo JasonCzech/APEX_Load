@@ -145,6 +145,15 @@ export function humanizeStepSegment(segment: string): string {
   }
 }
 
+/**
+ * Whether Run to breakpoint has a breakpoint to stop at: an enabled one that
+ * the start payload keeps. A one-shot run-to target left by an interrupted run
+ * is dropped from that payload, so it does not count.
+ */
+export function hasRunToBreakpointTarget(breakpoints: readonly ScriptDebugBreakpoint[]): boolean {
+  return breakpoints.some(bp => !bp.disabled && !bp.once)
+}
+
 export function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[] {
   if (!Array.isArray(raw)) return []
   const breakpoints: ScriptDebugBreakpoint[] = []

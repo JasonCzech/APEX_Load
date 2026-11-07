@@ -11,11 +11,18 @@ export interface BrowserReplayConsoleEntry {
   timestamp?: string
 }
 
+/**
+ * Bounded HTTP transport trace (pkg/protocol HTTPNetworkTrace). The
+ * request-level trace describes the final hop's connection; per-hop traces on
+ * network entries cover earlier hops. List fields are always arrays on the
+ * wire; cookie lists carry names only.
+ */
 export interface HTTPNetworkTrace {
   dns_resolved_ips?: string[]
   dns_coalesced?: boolean
   remote_addr?: string
   local_addr?: string
+  /** true: pooled socket; false: fresh socket; absent: no connection observed. */
   connection_reused?: boolean
   was_idle?: boolean
   idle_time_ms?: number
@@ -404,6 +411,8 @@ export interface ScriptDebugLogEntry {
   phase?: string
   action_index?: number
   action_name?: string
+  /** Replay event this line reports; set only on the per-event result line. */
+  event_index?: number
 }
 
 export interface ScriptDebugAction {
