@@ -13,6 +13,11 @@ import type { RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugRuntimeStateEvidence } from './DebugRuntimeStateEvidence'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { ReplayExtractions } from './ReplayExtractions'
+import {
+  buildDebugTimelineModel,
+  DEBUG_TIMELINE_LEGEND_PHASES,
+  type DebugTimelineScaleMode,
+} from './debugTimelineWaterfallModel'
 
 export function DebugProfiles({ options, onChange, disabled }: { options: ReplayOptionsState; onChange: (options: ReplayOptionsState) => void; disabled: boolean }) {
   const [profiles, setProfiles] = useState(() => { try { return readProfiles(localStorage.getItem('apexload.debug.profiles.v1')) } catch { return [] } })
@@ -75,20 +80,184 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
     <div className="debug-watch-table-scroll" role="region" aria-label="Variable values and provenance" tabIndex={0}>
     <table className="debug-watch-table"><caption className="sr-only">Variable values and provenance</caption><colgroup><col className="debug-watch-column-action" /><col className="debug-watch-column-name" /><col className="debug-watch-column-value" /><col className="debug-watch-column-changed" /></colgroup><thead><tr><th>Watch</th><th>Name / namespace</th><th>Value</th><th>Last changed</th></tr></thead><tbody>{names.map(name => {
       const changed = lastChanged.get(name) ?? -1
-      const value = Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined
-      const originKnown = !historyIncomplete && Object.prototype.hasOwnProperty.call(reconstructed, name) && reconstructed[name] === value
-      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{changedAtExecution(name) && <small>Changed</small>}</td><td>{originKnown && changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : originKnown && Object.prototype.hasOwnProperty.call(seed, name) && seed[name] === value ? 'Session input' : 'Unknown / not retained'}</td></tr>
+      const value = valueForName(values, name)
+      const originKnown = !historyIncomplete && valueForName(reconstructed, name) !== undefined && reconstructed[name] === value
+      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{changedAtExecution(name) && <small>Changed</small>}</td><td>{originKnown && changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : originKnown && valueForName(seed, name) === value ? 'Session input' : 'Unknown / not retained'}</td></tr>
     })}</tbody></table></div>{!names.length && <p>No variables match this view.</p>}
     <details><summary>Values as JSON</summary><SnapshotBodyPreview body={JSON.stringify(values, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></details>
     </>}
   </section>
 }
 
-export function DebugTimeline({ events, onSelect }: { events: BrowserReplayEvent[]; onSelect: (index: number) => void }) {
-  const [search, setSearch] = useState(''), [failures, setFailures] = useState(false)
-  const rows = events.map((event, index) => ({ event, index })).filter(({ event }) => (!failures || !event.success) && `${event.action_name} ${event.target} ${eventLocation(event)}`.toLowerCase().includes(search.toLowerCase()))
-  return <div className="debug-execution-timeline"><div className="debug-session-tools"><label>Find execution<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label></div>{rows.map(({ event, index }) => <button type="button" key={event.event_id || index} className="debug-timeline-row" onClick={() => onSelect(index)}><strong>{event.success ? 'Passed' : 'Failed'} · {event.action_name}</strong><span>{eventLocation(event)} · {event.duration_ms.toFixed(1)} ms</span><small>{event.error_message || event.target}</small>{Object.keys(appliedReplayExtractions(event)).length > 0 && <small>Variables: {Object.keys(appliedReplayExtractions(event)).join(', ')}</small>}</button>)}{!rows.length && <p>{events.length ? 'No executions match these filters.' : 'No completed executions captured yet.'}</p>}</div>
+export function DebugTimeline({
+  events,
+  selectedIndex,
+  onSelect,
+}: {
+  events: BrowserReplayEvent[]
+  selectedIndex?: number | null
+  onSelect: (index: number) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [failures, setFailures] = useState(false)
+  const [scaleMode, setScaleMode] = useState<DebugTimelineScaleMode>('waterfall')
+  const [localSelectedIndex, setLocalSelectedIndex] = useState<number | null>(null)
+
+  const model = useMemo(() => buildDebugTimelineModel(events, scaleMode), [events, scaleMode])
+  const q = search.toLowerCase()
+  const filteredRows = useMemo(
+    () => model.rows.filter(r => (!failures || !r.success) && `${r.actionName} ${r.target} ${r.location}`.toLowerCase().includes(q)),
+    [model.rows, failures, q],
+  )
+
+  useEffect(() => {
+    setLocalSelectedIndex(null)
+  }, [selectedIndex, events])
+
+  const activeIndex = localSelectedIndex ?? selectedIndex
+  const activeRow = filteredRows.find(r => r.index === activeIndex) ?? filteredRows[0] ?? null
+
+  const renderPhaseBar = (t: { trackOffsetPct: number; trackWidthPct: number; segments: typeof model.rows[0]['segments'] }) => (
+    <div className="debug-timeline-bar-track" aria-hidden="true">
+      <div className="debug-timeline-bar-fill" style={{ left: `${t.trackOffsetPct}%`, width: `${t.trackWidthPct}%` }}>
+        {t.segments.map((seg, i) => (
+          <span
+            key={`${seg.key}-${i}`}
+            className={`debug-timeline-bar-segment phase-${seg.key}`}
+            style={{ width: `${seg.widthPct}%` }}
+            title={`${seg.label}: ${seg.durationMs.toFixed(1)} ms`}
+          />
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="debug-execution-timeline">
+      <div className="debug-session-tools debug-timeline-toolbar">
+        <div>
+          <label>Find execution<input value={search} onChange={e => setSearch(e.target.value)} /></label>
+          <label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label>
+        </div>
+        <div>
+          <div className="debug-timeline-scale-switch" role="group" aria-label="Timeline scale">
+            {([['waterfall', 'Waterfall (session)'], ['stacked', 'Stacked (100%)']] as const).map(([mode, label]) => (
+              <button key={mode} type="button" className={scaleMode === mode ? 'active' : ''} aria-pressed={scaleMode === mode} onClick={() => setScaleMode(mode)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <ul className="debug-timeline-legend" aria-label="Traffic phases">
+            {DEBUG_TIMELINE_LEGEND_PHASES.map(p => (
+              <li key={p.key}>
+                <i className={`debug-timeline-swatch phase-${p.key}`} aria-hidden="true" />
+                <span>{p.shortLabel}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {!filteredRows.length ? (
+        <p>{events.length ? 'No executions match these filters.' : 'No completed executions captured yet.'}</p>
+      ) : (
+        <div className="debug-timeline-workspace">
+          <div className="debug-timeline-waterfall-table" role="region" aria-label="Execution timeline waterfall">
+            <div className="debug-timeline-header" aria-hidden="true">
+              <span>Action / target</span>
+              <span>Status / protocol</span>
+              <span className="debug-timeline-col-time">Duration</span>
+              <div className="debug-timeline-ruler">
+                {model.rulerTicks.map((tick, idx) => <span key={idx}>{tick}</span>)}
+              </div>
+            </div>
+            {filteredRows.map(row => {
+              const isSelected = activeRow?.index === row.index
+              const stateCls = row.success ? 'passed' : 'failed'
+              return (
+                <div key={row.id} className="debug-timeline-row-group">
+                  <button
+                    type="button"
+                    className={`debug-timeline-row debug-timeline-waterfall-row ${isSelected ? 'selected' : ''} ${stateCls}`}
+                    aria-current={isSelected ? 'true' : undefined}
+                    onClick={() => { setLocalSelectedIndex(row.index); onSelect(row.index) }}
+                  >
+                    <div className="debug-timeline-cell-main">
+                      <div>
+                        <span className={`debug-timeline-status-dot ${stateCls}`} aria-hidden="true" />
+                        <strong>{row.success ? 'Passed' : 'Failed'} · {row.actionName}</strong>
+                      </div>
+                      <small>{row.errorMessage || row.target}</small>
+                      {row.extractedVariables.length > 0 && <small>Variables: {row.extractedVariables.join(', ')}</small>}
+                    </div>
+                    <div className="debug-timeline-cell-proto">
+                      {row.statusCode != null && <span className={`debug-timeline-status-code ${stateCls}`}>{row.statusCode}</span>}
+                      <span>{row.protocolLabel}{row.connectionReused ? ' · reused' : ''}</span>
+                    </div>
+                    <span className="debug-timeline-cell-duration">{row.location} · {row.durationMs.toFixed(1)} ms</span>
+                    {renderPhaseBar(row)}
+                  </button>
+                  {isSelected && row.hops.length > 1 && (
+                    <div className="debug-timeline-hop-list" aria-label={`Network hops for ${row.actionName}`}>
+                      {row.hops.map(hop => (
+                        <div key={hop.hopIndex} className="debug-timeline-hop-row">
+                          <span>{hop.label}</span>
+                          <span>{hop.protocolLabel}{hop.connectionReused ? ' · reused' : ''}</span>
+                          <span className="debug-timeline-hop-duration">{hop.durationMs.toFixed(1)} ms</span>
+                          {renderPhaseBar(hop)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {activeRow && (
+            <aside className="debug-timeline-inspector" aria-label="Timing breakdown">
+              <header>
+                <div>
+                  <strong>{activeRow.actionName}</strong>
+                  <span>
+                    {activeRow.location} · Queued at +{activeRow.startOffsetMs.toFixed(1)} ms · Started at +{activeRow.startedOffsetMs.toFixed(1)} ms · {activeRow.protocolLabel}
+                    {activeRow.connectionReused ? ' · Reused connection' : ''}
+                  </span>
+                </div>
+                <code>{activeRow.durationMs.toFixed(1)} ms</code>
+              </header>
+              <div className="debug-timeline-breakdown-list">
+                {activeRow.breakdown.map((item, idx) => {
+                  const showCat = item.category !== 'execution' && item.category !== (idx > 0 ? activeRow.breakdown[idx - 1].category : null)
+                  return (
+                    <div key={item.key}>
+                      {showCat && <div className="debug-timeline-breakdown-category">{item.category === 'connection' ? 'Connection preparation' : 'Request and response'}</div>}
+                      <div className="debug-timeline-breakdown-row">
+                        <span>
+                          <i className={`debug-timeline-swatch phase-${item.key}`} aria-hidden="true" />
+                          <span>{item.label}</span>
+                        </span>
+                        <div aria-hidden="true">
+                          {item.durationMs > 0 && <span className={`phase-${item.key}`} style={{ left: `${item.startPct}%`, width: `${item.widthPct}%` }} />}
+                        </div>
+                        <span>{item.durationMs > 0 ? `${item.durationMs.toFixed(1)} ms` : item.unavailableReason || '—'}</span>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <footer>
+                <small>{activeRow.extractedVariables.length > 0 ? `Extracted: ${activeRow.extractedVariables.join(', ')}` : activeRow.errorMessage || `${activeRow.methodOrType} ${activeRow.target}`}</small>
+                <strong>Total: {activeRow.durationMs.toFixed(1)} ms</strong>
+              </footer>
+            </aside>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
+
 
 function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   const [selected, setSelected] = useState(0)

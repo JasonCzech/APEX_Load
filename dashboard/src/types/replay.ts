@@ -11,16 +11,64 @@ export interface BrowserReplayConsoleEntry {
   timestamp?: string
 }
 
+export interface ReplayHARPhase {
+  name: 'dns' | 'connect' | 'tls' | 'send' | 'request_wait' | 'response' | string
+  start_ms?: number | null
+  end_ms?: number | null
+  unavailable_reason?: string
+}
+
+export interface ReplayHARBody {
+  size_bytes?: number | null
+  text?: string
+  state: string
+  mime_type?: string
+}
+
+export interface ReplayHARExchange {
+  id?: string
+  started_at?: string
+  phases?: ReplayHARPhase[] | null
+  redirect_url?: string
+  request_body?: ReplayHARBody | null
+  response_body?: ReplayHARBody | null
+}
+
+export interface HTTPNetworkTrace {
+  connection_reused?: boolean
+  was_idle?: boolean
+  idle_time_ms?: number
+  wait_100_continue_ms?: number
+  http_protocol?: string
+  tls_version?: string
+  alpn?: string
+  local_addr?: string
+  remote_addr?: string
+  first_byte_at?: string
+  completed_at?: string
+  failure_stage?: string
+  failure_reason?: string
+}
+
 export interface BrowserReplayNetworkEntry {
   /** Per-request browser evidence; carries the negotiated protocol when document evidence capture is on. */
   browser_evidence?: import('./browserResourceEvidence').BrowserResourceEvidenceV2 | null
+  har?: ReplayHARExchange | null
+  trace?: HTTPNetworkTrace | null
+  failure_kind?: string
   url?: string
   method?: string
   status_code?: number
   resource_type?: string
   duration_ms?: number
   bytes_received?: number
+  request_headers?: Record<string, string>
+  request_body?: string
+  request_body_encoding?: string
+  request_body_truncated?: boolean
+  response_headers?: Record<string, string>
 }
+
 
 export interface BrowserReplayDomSummary {
   title?: string
