@@ -1242,3 +1242,67 @@ describe('ScriptRuntimeSettingsView runtime tabs', () => {
     expect(container.querySelector('.runtime-settings-detail')?.getAttribute('aria-labelledby')).toBe('runtime-settings-active-heading')
   })
 })
+
+describe('ScriptRuntimeSettingsView proxy credential note', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  const renderScript = (script: ScriptDefinition, tab: 'proxy' | 'browser' = 'proxy') => {
+    act(() => root.render(<ScriptRuntimeSettingsView activeHTTPTransportTab={tab} activeSection="http" canEditProtocol={false}
+      onSave={vi.fn()} onSelectHTTPTransportTab={vi.fn()} onSelectSection={vi.fn()} onUpdateField={vi.fn()}
+      onUpdateProtocol={vi.fn()} saveDisabled saving={false} script={script} />))
+    return Array.from(container.querySelectorAll('[data-inactive-proxy-credential-note]')).map(note => note.textContent)
+  }
+  const proxied = (mode: string, actions: ScriptDefinition['actions'] = []): ScriptDefinition => ({
+    name: 'Proxy', version: '1', protocol: 'http', actions,
+    config: { base_url: '', http: { proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', username: 'svc', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+  })
+  const render = (mode: string) => renderScript(proxied(mode))
+  const browserNote = 'The browser proxy password uses the secret BP, but no browser proxy server is set, so it is not needed. It becomes required if you set a browser proxy server.'
+
+  it('notes a proxy credential secret the hidden fields keep outside Custom, without requiring it', () => {
+    expect(render('system')).toEqual(['The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, but Proxy mode is System, so it is not needed. It becomes required if you switch Proxy mode to Custom.'])
+    expect(render('none')[0]).toContain('Proxy mode is No proxy,')
+    expect(render('pac')[0]).toContain('Proxy mode is PAC,')
+    // Custom shows the fields themselves, and the secret is required there.
+    expect(render('custom')).toEqual([])
+    expect(container.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('{{secret.ENTERPRISE_PROXY_PASSWORD}}')
+  })
+
+  it('does not call a proxy secret not needed when a request also uses it', () => {
+    const shared = proxied('system', [{ name: 'Call', type: 'GET', target: '/', headers: { Authorization: 'Bearer {{secret.ENTERPRISE_PROXY_PASSWORD}}' } }])
+    expect(renderScript(shared)).toEqual([])
+  })
+
+  it('notes a browser proxy secret with no browser proxy server in the Browser sub-tab', () => {
+    const browserScript = (server: string): ScriptDefinition => ({
+      name: 'Browser', version: '1', protocol: 'browser', actions: [],
+      config: { base_url: '', browser: { proxy: { server, password: '{{secret.BP}}' } } } as ScriptDefinition['config'],
+    })
+    expect(renderScript(browserScript(''), 'browser')).toEqual([browserNote])
+    expect(container.querySelector('#http-transport-panel-browser [data-inactive-proxy-credential-note]')).not.toBeNull()
+    // The Proxy sub-tab leaves it to the Browser sub-tab.
+    expect(renderScript(browserScript(''), 'proxy')).toEqual([])
+    // With a server the credential is in use: required, so no note.
+    expect(renderScript(browserScript('http://proxy.example.test:3128'), 'browser')).toEqual([])
+  })
+
+  it('notes a browser proxy secret in the Proxy sub-tab for a script without a Browser sub-tab', () => {
+    const script: ScriptDefinition = {
+      name: 'HTTP', version: '1', protocol: 'http', actions: [],
+      config: { base_url: '', browser: { proxy: { password: '{{secret.BP}}' } } } as ScriptDefinition['config'],
+    }
+    expect(renderScript(script, 'proxy')).toEqual([browserNote])
+  })
+})

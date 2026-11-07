@@ -5,7 +5,8 @@ import { useDebugCompletionSummary } from './debugCompletionModel'
 import { downloadBlob } from '../utils/fileUtils'
 import { liveTableSandboxError, parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
-import { scriptSecretReferenceSummaries } from './scriptSecretReferenceModel'
+import { activeProxyOnlySecretRefs, scriptSecretReferenceSummaries, withoutInactiveProxySecretNames } from './scriptSecretReferenceModel'
+import { canonicalSecretName, proxyCredentialBlockerText } from './proxyCredentialSecrets'
 import type { ScriptApprovalQueued, ScriptAuthoringBaseline, ScriptSaveOptions } from '../types/storedContent'
 import { baselineFromSavedScript, reapplyScriptDraft, scriptSaveFailedOnServer, scriptSaveNeedsReconciliation } from '../utils/scriptAuthoringRevision'
 import ScriptRevisionConflict from './ScriptRevisionConflict'
@@ -3900,8 +3901,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       const refusal = startRequestDispatched && startedDraft ? parseReplayStartRefusal(e) : null
       if (refusal && startedDraft) {
         const refusedFacts = refusal.preflight || { issues: refusal.gateIssues }
-        const refusedBlockers = replayReadinessIssues(refusedFacts).filter(issue => issue.severity === 'blocker')
+        // The refused draft words a missing secret only its in-use proxy
+        // credential references as the proxy's blocker (bind it, or change
+        // the proxy), as the editor's own list does.
         const refusedScript = startedDraft.script
+        const refusedBlockers = replayReadinessIssues(refusedFacts, [], new Map(), refusedScript).filter(issue => issue.severity === 'blocker')
         refusedDetail = refusedBlockers.length
           ? replayRefusalSummary(refusedBlockers, issue => issue.location ? actionBreadcrumb(refusedScript, issue.location) : undefined)
           : `Debug did not start: ${refusal.message || message}`
@@ -4274,12 +4278,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     // A refusal naming only its gates adds them to what this draft lists.
     return refused && !refused.preflight && refused.gateIssues.length > 0 ? withRefusedReviewGates(preflight, refused.gateIssues) : preflight
   }, [appliedReplayRefusal?.refusal, browserReplaySession?.preflight, currentDocumentFingerprint, currentDraftScript, currentReplayVariablesKey, jsonDirty, replayConfiguredVariables, replayDocumentFingerprint, replayRunVariablesKey, validationPreflightFromRun, validationReplayPreflight])
-  const requiredProjectSecretNames = Array.from(new Set([
+  // A secret only a proxy credential that is not in use references is not
+  // required, even where an older controller's status lists it.
+  const requiredProjectSecretNames = withoutInactiveProxySecretNames(Array.from(new Set([
     ...(unreconciledReplayPreflight.required_secrets || []),
     ...(!jsonDirty && scriptSecretStatus
       ? scriptSecretStatus.required || []
       : []),
-  ])).sort()
+  ])).sort(), currentDraftScript)
   const requiredProjectSecretNamesKey = requiredProjectSecretNames.join('\u0000')
 	const secretScopeProjectId = currentDraftScript.project_id || projectId
   const preflightWithAllRequiredSecrets: ReplayPreflight = {
@@ -4358,6 +4364,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     secretStatusKnown,
     projectProbeIsUnavailable,
     secretLabels,
+    currentDraftScript,
   )
   // Validation issues only promotion enforces (import fidelity blockers) do
   // not make the draft's replay readiness fail.
@@ -4388,7 +4395,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // imports its source again, while an unsaved draft opened from the import
   // review (the editor's only return target) goes back to its body repair.
   const protectedBodySource: ProtectedBodySource = !scriptId && returnTarget ? 'import-review' : 'reimport'
-  // The script locates a gate on a nested step at that step.
+  // The script locates a gate on a nested step at that step. Whether a proxy
+  // credential is in use is read from the draft the preflight and the start
+  // gate judge (the JSON pane's unapplied edits included), so a Proxy mode
+  // changed only there lists the same proxy blocker the gate refuses on.
   const readinessIssues = useMemo(
     () => replayReadinessIssues(
       JSON.parse(readinessFactsJson) as ReadinessFacts,
@@ -4396,11 +4406,42 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       new Map(JSON.parse(secretLabelsJson) as [string, string][]),
       script,
       protectedBodySource,
+      currentDraftScript,
     ),
-    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson, script, protectedBodySource],
+    [readinessFactsJson, alreadyListedProblemsJson, secretLabelsJson, script, protectedBodySource, currentDraftScript],
   )
   const missingProjectSecrets = replayPreflight.missing_secrets || []
-  const missingProjectSecretLabels = missingProjectSecrets.map(name => secretDisplayName(secretLabels, name))
+  // A missing secret only an in-use proxy credential references is the
+  // proxy's problem, worded with both ways out (bind it, or change the proxy).
+  const activeProxySecretRefs = useMemo(() => activeProxyOnlySecretRefs(currentDraftScript), [currentDraftScript])
+  // By the name as the preflight lists it; the refs are keyed canonically.
+  const missingProxySecretBlockers = new Map(missingProjectSecrets.flatMap(name => {
+    const refs = activeProxySecretRefs.get(canonicalSecretName(name))
+    return refs ? [[name, proxyCredentialBlockerText(name, refs)] as const] : []
+  }))
+  const otherMissingProjectSecrets = missingProjectSecrets.filter(name => !missingProxySecretBlockers.has(name))
+  const missingProjectSecretLabels = otherMissingProjectSecrets.map(name => secretDisplayName(secretLabels, name))
+  const missingProxySecretDescriptions = [...missingProxySecretBlockers.values()].map(text => text.description)
+  const missingProjectSecretsText = [
+    missingProjectSecretLabels.length > 0 ? `Configure missing project secret${missingProjectSecretLabels.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.` : '',
+    ...missingProxySecretDescriptions,
+  ].filter(Boolean).join(' ')
+  // The secret banner: a proxy-only blocker is titled and worded as the
+  // problem list words it (bind it, or change the proxy), never as a value
+  // that only binding supplies.
+  const missingProxySecretTitles = [...new Set([...missingProxySecretBlockers.values()].map(text => text.title))]
+  const missingSecretBannerTitle = otherMissingProjectSecrets.length > 0
+    ? `${otherMissingProjectSecrets.length} project secret${otherMissingProjectSecrets.length === 1 ? ' still needs' : 's still need'} configuration`
+    : missingProxySecretBlockers.size === 1 ? missingProxySecretTitles[0]
+      : missingProxySecretTitles.length === 1 ? missingProxySecretTitles[0].replace('credential not bound', 'credentials not bound')
+        : 'Proxy credentials not bound'
+  const missingSecretBannerText = [
+    otherMissingProjectSecrets.length > 0 ? 'The script is safely saved with references, but replay will remain blocked until values are available.' : '',
+    ...missingProxySecretDescriptions,
+  ].filter(Boolean).join(' ')
+  const missingSecretDescriptions = missingProxySecretBlockers.size > 0
+    ? new Map([...missingProxySecretBlockers].map(([name, text]) => [name, text.description] as const))
+    : undefined
   const replayBlockedByUnknownSecretStatus = requiredProjectSecretNames.length > 0 && !secretStatusKnown
   const replayBlockedByMissingSecrets = missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus
   const replaySecretStatusState = replayBlockedByUnknownSecretStatus
@@ -4441,7 +4482,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         ? 'Project secret status is temporarily unavailable. Retry the credential check before running.'
         : 'Checking project secret configuration before running…')
     : replayBlockedByMissingSecrets
-      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecretLabels.join(', ')}.`
+      ? missingProjectSecretsText
       : debugOptionsError || replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
   // What the server refuses a debug start for, and so what every start
@@ -7848,6 +7889,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         compact
         onConfigureSecrets={projectId ? openProjectSecrets : undefined}
         configureSecretsLabel={scriptId ? 'Configure secrets' : 'Save & configure secrets'}
+        secretDescriptions={missingSecretDescriptions}
         secretStatusState={replaySecretStatusState}
         onRetrySecretStatus={replaySecretStatusState === 'unavailable'
           ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
@@ -8164,12 +8206,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             <strong>
               {replayBlockedByUnknownSecretStatus
                 ? replaySecretStatusState === 'unavailable' ? 'Project secret status is unavailable' : 'Checking project secret configuration'
-                : `${missingProjectSecrets.length} project secret${missingProjectSecrets.length === 1 ? ' still needs' : 's still need'} configuration`}
+                : missingSecretBannerTitle}
             </strong>
             <span>
               {replayBlockedByUnknownSecretStatus
                 ? 'The script is safely saved with references, but replay remains blocked until credential status can be verified.'
-                : 'The script is safely saved with references, but replay will remain blocked until values are available.'}
+                : missingSecretBannerText}
             </span>
           </div>
           <div className="settings-inline-actions">

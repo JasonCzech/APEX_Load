@@ -180,6 +180,16 @@ func TestGoldenVuGen24RealRuntimeSettings(t *testing.T) {
 		t.Fatalf("unexpected transactions conservation finding: %#v", byID["transactions"])
 	}
 
+	// VuGen writes ProxyPasswordIsEncrypted=false by default: that marker
+	// never asks for a protected proxy password.
+	if dispositions, ok := preserved["runtime_setting_dispositions"].(map[string]map[string]map[string]RuntimeSettingDisposition); ok {
+		row, found := dispositions["default.cfg"]["WEB"]["ProxyPasswordIsEncrypted"]
+		if !found || row.Status == RuntimeSettingDispositionMapped || strings.Contains(row.Note, "provision") ||
+			!strings.Contains(row.Note, "not encrypted") {
+			t.Fatalf("default ProxyPasswordIsEncrypted=false row = %#v (found %t), want the non-applicable not-encrypted note", row, found)
+		}
+	}
+
 	assertVuGen24DispositionCompleteness(t, preserved)
 }
 

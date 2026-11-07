@@ -11,6 +11,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
@@ -114,12 +115,35 @@ func PrepareDistributedScript(script *dsl.Script) ([]byte, string, []DataFile, e
 		staged.Config.JavaVuser.ClasspathAssets[index].StagedAsset = ""
 	}
 
+	if err := moveAdvisoryExecutionBlockers(&staged); err != nil {
+		return nil, "", nil, err
+	}
+
 	content, err = json.Marshal(&staged)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("marshal staged script: %w", err)
 	}
 	digest := sha256.Sum256(content)
 	return content, hex.EncodeToString(digest[:]), files, nil
+}
+
+// moveAdvisoryExecutionBlockers rewrites the dispatched copy so an advisory
+// callout (dsl.AdvisoryExecutionBlockerCode) that a script stored before the
+// callout became advisory still carries as execution_blocker(s) metadata
+// reaches the generator as dsl.AdvisoryCalloutsMetadataKey. A generator built
+// before that change blocks every execution_blocker code it reads, so it would
+// otherwise refuse the assignment over a callout that never blocks. Only the
+// staged copy changes: the stored script, its guided repairs and the shakeout
+// fingerprint keep their shape, and the content hash is computed from the
+// rewritten copy every dispatch path sends.
+func moveAdvisoryExecutionBlockers(script *dsl.Script) error {
+	if err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		dsl.MoveAdvisoryExecutionBlockers(ref.Metadata())
+		return nil
+	}); err != nil {
+		return fmt.Errorf("stage advisory callouts: %w", err)
+	}
+	return nil
 }
 
 func assignmentDataFiles(assignment *pb.WorkAssignment, script *dsl.Script, aggregateLimit int64) (map[string][]byte, error) {

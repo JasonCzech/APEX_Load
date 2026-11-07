@@ -35,7 +35,11 @@ func TestRuntimeOverrideCredentialsBecomeMemoryOnlySecretReferences(t *testing.T
 		BaseURL: "https://user:" + secret + "@example.test",
 		HTTP: &dsl.HTTPConfig{
 			Auth: dsl.AuthConfig{Type: "basic", Username: "runtime-user", Password: secret},
+			// Active proxies, so their credential secrets are required and
+			// bundled (an inactive proxy's are not; see RequiredSecretNames).
+			ProxyMode: "custom",
 			Proxy: dsl.ProxyConfig{
+				URL:      "http://proxy.example.test:8080",
 				Username: "proxy-user",
 				Password: secret,
 			},
@@ -43,7 +47,7 @@ func TestRuntimeOverrideCredentialsBecomeMemoryOnlySecretReferences(t *testing.T
 		},
 		BrowserConfig: &dsl.BrowserConfig{
 			HTTPCredentials: dsl.BrowserHTTPCredentials{Username: "browser-user", Password: secret},
-			Proxy:           dsl.BrowserProxyConfig{Username: "browser-proxy-user", Password: secret},
+			Proxy:           dsl.BrowserProxyConfig{Server: "http://proxy.example.test:3128", Username: "browser-proxy-user", Password: secret},
 			ClientCertificates: []dsl.BrowserClientCertificate{{
 				Origin: "https://example.test", Passphrase: secret,
 			}},

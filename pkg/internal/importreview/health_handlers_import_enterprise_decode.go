@@ -5,12 +5,16 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 )
 
+// FidelityReportValue decodes a stored fidelity report. Blocker lines that
+// only restate an advisory callout, which a converter that predates the
+// advisory rule listed, are dropped (WithoutAdvisoryBlockers), so a stored
+// report never holds promotion, launch or validation over one.
 func FidelityReportValue(value any) *enterprisearchive.ImportFidelityReport {
 	if value == nil {
 		return nil
 	}
 	if report, ok := value.(*enterprisearchive.ImportFidelityReport); ok {
-		return report
+		return report.WithoutAdvisoryBlockers()
 	}
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -20,7 +24,7 @@ func FidelityReportValue(value any) *enterprisearchive.ImportFidelityReport {
 	if err := json.Unmarshal(payload, &report); err != nil {
 		return nil
 	}
-	return &report
+	return report.WithoutAdvisoryBlockers()
 }
 
 func RuntimeSettingsParityValue(value any) []enterprisearchive.RuntimeSettingParityEntry {

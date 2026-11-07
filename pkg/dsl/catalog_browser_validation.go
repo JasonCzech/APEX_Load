@@ -150,13 +150,18 @@ func validateBrowserHTTPCredentialsConfigIssues(credentials BrowserHTTPCredentia
 }
 
 func validateBrowserProxyConfigIssues(proxy BrowserProxyConfig) []string {
-	if strings.TrimSpace(proxy.Server) == "" && strings.TrimSpace(proxy.Bypass) == "" && strings.TrimSpace(proxy.Username) == "" && strings.TrimSpace(proxy.Password) == "" {
+	// Without a server the browser never uses proxy credentials
+	// (BrowserProxyCredentialsActive): a username or password alone is
+	// inactive, kept for when a server is set, and is not an error.
+	if strings.TrimSpace(proxy.Server) == "" && strings.TrimSpace(proxy.Bypass) == "" {
 		return nil
 	}
 	var issues []string
 	if strings.TrimSpace(proxy.Server) == "" {
 		issues = append(issues, "config.browser.proxy.server is required when proxy is set")
-	} else if !validBrowserProxyServerConfig(proxy.Server) {
+		return issues
+	}
+	if !validBrowserProxyServerConfig(proxy.Server) {
 		issues = append(issues, "config.browser.proxy.server must be an HTTP, HTTPS, SOCKS, or host:port proxy")
 	}
 	if strings.TrimSpace(proxy.Password) != "" && strings.TrimSpace(proxy.Username) == "" {

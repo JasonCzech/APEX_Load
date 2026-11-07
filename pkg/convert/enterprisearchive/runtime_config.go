@@ -42,43 +42,66 @@ type RuntimeConfig struct {
 	// enabled proxy selection cannot be represented safely. They are projected
 	// into config.http.proxy beside proxy_mode=none, so the destination keeps
 	// the operator-owned values without allowing the HTTP transport to use
-	// them. They are cleared after final credential projection.
-	proxyReviewUser         string
-	proxyReviewPass         string
-	ProxyNoProxy            []string
-	UserAgent               string
-	ActiveRecordedUserAgent bool
-	AcceptLanguage          string
-	AcceptEncoding          string
-	UseGzip                 bool
-	EnableHTTP2             *bool
-	EnableHTTP2Raw          string
-	SSLVersion              string
-	AuthUser                string
-	AuthPass                string
-	MaxRedirects            int
-	Iterations              int
-	AutoTransactions        string
-	BlockScheduling         string
-	ActionSequence          []string
-	PacingType              string
-	DelayMs                 int
-	MinDelayMs              int
-	MaxDelayMs              int
-	IntervalMs              int
-	MinIntervalMs           int
-	MaxIntervalMs           int
-	ThinkTimeIgnore         bool
-	ThinkTimeType           string
-	ThinkTimeMinPercent     float64
-	ThinkTimeMaxPercent     float64
-	ThinkTimeMultiplier     float64
-	ThinkTimeLimitMs        float64
-	RuntimeFiles            []string
-	RuntimeIssues           []RuntimeMigrationIssue
-	LogLevel                string
-	OnErrorOnly             bool
-	LogExtendedOptions      []string
+	// them. They are cleared after final credential projection. A
+	// VuGen-encrypted password is not retained: its parsed value is only the
+	// encryptedRuntimeProxyPasswordPlaceholder secret reference, and keeping
+	// it would demand a project secret for a proxy that never routes traffic.
+	proxyReviewUser string
+	proxyReviewPass string
+	// proxyPasswordMarkerPresent records that the source carried a
+	// ProxyPasswordIsEncrypted key at all, whatever its value. VuGen writes
+	// ProxyPasswordIsEncrypted=false by default, and that row must not ask for
+	// a protected proxy password either.
+	proxyPasswordMarkerPresent bool
+	// proxyPasswordEncryptedValue records that the source carried an encrypted
+	// proxy password, not just the ProxyPasswordIsEncrypted marker. It
+	// survives credential clearing so review guidance can say what was dropped.
+	proxyPasswordEncryptedValue bool
+	// proxyUserFromURL/proxyPassFromURL record that the encrypted-password
+	// lift took the proxy credentials from the ProxyServer userinfo, so the
+	// credential source points at ProxyServer rather than a ProxyUserName or
+	// ProxyPassword key the source never had.
+	proxyUserFromURL bool
+	proxyPassFromURL bool
+	// proxyPasswordSourceUnavailable records that the source proxy password
+	// is a disclosure placeholder or unsafe encoding rather than an
+	// importable value, so the generated project secret has no value and must
+	// be bound. Set during credential projection; it survives clearing.
+	proxyPasswordSourceUnavailable bool
+	ProxyNoProxy                   []string
+	UserAgent                      string
+	ActiveRecordedUserAgent        bool
+	AcceptLanguage                 string
+	AcceptEncoding                 string
+	UseGzip                        bool
+	EnableHTTP2                    *bool
+	EnableHTTP2Raw                 string
+	SSLVersion                     string
+	AuthUser                       string
+	AuthPass                       string
+	MaxRedirects                   int
+	Iterations                     int
+	AutoTransactions               string
+	BlockScheduling                string
+	ActionSequence                 []string
+	PacingType                     string
+	DelayMs                        int
+	MinDelayMs                     int
+	MaxDelayMs                     int
+	IntervalMs                     int
+	MinIntervalMs                  int
+	MaxIntervalMs                  int
+	ThinkTimeIgnore                bool
+	ThinkTimeType                  string
+	ThinkTimeMinPercent            float64
+	ThinkTimeMaxPercent            float64
+	ThinkTimeMultiplier            float64
+	ThinkTimeLimitMs               float64
+	RuntimeFiles                   []string
+	RuntimeIssues                  []RuntimeMigrationIssue
+	LogLevel                       string
+	OnErrorOnly                    bool
+	LogExtendedOptions             []string
 	// ContinueOnError is tri-state: nil means the source runtime settings never
 	// stated a preference, so the scenario's continue-on-error policy decides.
 	// An explicit "0" in the source stays an explicit false.
@@ -3978,10 +4001,29 @@ func parseRuntimeProxySettings(rc *RuntimeConfig, sections map[string]map[string
 	rc.ProxyUser = strings.TrimSpace(rc.ProxyUser)
 	rc.ProxyPass, _ = firstRuntimeSectionValue(sourceSections, "ProxyPassword", "Password")
 	rc.ProxyPass = strings.TrimSpace(rc.ProxyPass)
-	encrypted, _ := firstRuntimeSectionValue(sourceSections, "ProxyPasswordIsEncrypted")
+	encrypted, markerPresent := firstRuntimeSectionValue(sourceSections, "ProxyPasswordIsEncrypted")
+	rc.proxyPasswordMarkerPresent = markerPresent
 	rc.ProxyPasswordEncrypted = strings.EqualFold(encrypted, "true") || encrypted == "1"
+	if rc.ProxyPasswordEncrypted && rc.ProxyPass == "" {
+		// Without a ProxyPassword key the encrypted password can ride in the
+		// ProxyServer userinfo. Lift it here so the placeholder below replaces
+		// it on every path (custom, portable selectors, disabled for review);
+		// the URL's userinfo is stripped when the draft is projected.
+		// The username rides with it: a portable selector clears the URL
+		// below, so a userinfo username left behind would be lost while its
+		// password reference survives.
+		if _, urlUser, urlPass := splitEnterpriseProxyUserinfo(rc.ProxyURL, "", ""); strings.TrimSpace(urlPass) != "" {
+			rc.ProxyPass = urlPass
+			rc.proxyPassFromURL = true
+			if urlUser = strings.TrimSpace(urlUser); rc.ProxyUser == "" && urlUser != "" {
+				rc.ProxyUser = urlUser
+				rc.proxyUserFromURL = true
+			}
+		}
+	}
 	if rc.ProxyPasswordEncrypted && rc.ProxyPass != "" {
-		rc.ProxyPass = "{{secret." + enterpriseProxyPasswordSecretName + "}}"
+		rc.ProxyPass = encryptedRuntimeProxyPasswordPlaceholder
+		rc.proxyPasswordEncryptedValue = true
 	}
 	// Portable selectors do not require a static endpoint. Read credential
 	// metadata above, then let the unified selector policy make the decision.
@@ -4236,6 +4278,14 @@ func disableRuntimeProxyForReview(rc *RuntimeConfig) {
 	}
 	if rc.proxyReviewPass != "" {
 		password = rc.proxyReviewPass
+	}
+	if rc.ProxyPasswordEncrypted && password == encryptedRuntimeProxyPasswordPlaceholder {
+		// An encrypted source password is never recoverable: the parsed value
+		// is only a secret-name placeholder, not operator-owned material.
+		// Beside proxy_mode=none that placeholder preserves nothing, yet it
+		// left a dangling project-secret reference and an execution gate
+		// demanding a credential for a proxy that never routes traffic.
+		password = ""
 	}
 	disableRuntimeProxy(rc)
 	rc.proxyReviewUser = username

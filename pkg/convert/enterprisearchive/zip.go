@@ -838,9 +838,17 @@ func finalizeEnterpriseArchiveImportResult(
 		if findings, err := importreview.AnalyzeDependencies(script); err == nil {
 			_ = importreview.ApplyToScript(script, findings)
 		}
-		if ctx.RuntimeConfig != nil && ctx.RuntimeConfig.ProxyPasswordEncrypted && (script.Config.HTTP.Proxy.Password != "" || script.Config.HTTP.ProxyMode == "custom") {
+		if encryptedProxyPasswordCallout(ctx.RuntimeConfig, script) {
+			// A non-blocking callout. ApplyToAction stamps it as
+			// advisory_callouts metadata (dsl.AdvisoryCalloutsMetadataKey),
+			// never as execution_blocker(s), which a generator built before
+			// the callout became advisory would block on. Import review and
+			// the guided repairs (replace_proxy_secret,
+			// omit_proxy_credentials, disable_imported_proxy) read it there.
+			// What blocks is the live required-secret check: an active custom
+			// proxy whose password secret is not bound.
 			gate := dsl.Action{Name: "Restore proxy credential", Type: "source_review", Target: "", Metadata: map[string]any{"source_file": ctx.RuntimeFileName}}
-			importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "encrypted_proxy_password", ReasonCode: "encrypted_proxy_password", Severity: diag.Blocker, Gate: importreview.GateExecution, Detail: "The encrypted proxy password requires a project-secret replacement.", Source: "enterprise_script_archive", SourceRef: ctx.RuntimeFileName + "#ProxyPasswordIsEncrypted", Resolution: "replace_proxy_secret"}})
+			importreview.ApplyToAction(&gate, []importreview.Finding{{Code: dsl.EncryptedProxyPasswordFindingCode, ReasonCode: dsl.EncryptedProxyPasswordFindingCode, Severity: diag.Warning, Detail: importreview.EncryptedProxyPasswordDetail, Source: "enterprise_script_archive", SourceRef: ctx.RuntimeFileName + "#ProxyPasswordIsEncrypted", Resolution: "replace_proxy_secret"}})
 			script.Init = append(script.Init, gate)
 		}
 	}
@@ -2488,6 +2496,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
 	dispositions := classifyRuntimeSelectedSections(selectedSections, script.Protocol)
 	refineRuntimeSettingDispositions(dispositions, runtimeCfg, files, script.Protocol, projectConfig)
+	refineEncryptedProxyPasswordDisposition(dispositions, runtimeCfg, script)
 	refineTruClientBrowserRuntimeDispositions(dispositions, script)
 	appendTruClientBrowserProfileRuntimeEvidence(preserved, runtimeSections, dispositions)
 	if len(runtimeSections) > 0 {

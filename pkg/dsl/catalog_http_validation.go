@@ -335,7 +335,12 @@ func hasDurableExecutionBlocker(metadata map[string]any) bool {
 	if metadata == nil {
 		return false
 	}
-	if value, ok := metadata["execution_blocker"].(string); ok && strings.TrimSpace(value) != "" {
+	// An advisory callout (AdvisoryExecutionBlockerCode) does not block
+	// execution, so it never relaxes validation either.
+	blocking := func(value string) bool {
+		return strings.TrimSpace(value) != "" && !AdvisoryExecutionBlockerCode(value)
+	}
+	if value, ok := metadata["execution_blocker"].(string); ok && blocking(value) {
 		return true
 	}
 	// Bruno's native-v1 compatibility contract predates generic execution
@@ -349,13 +354,13 @@ func hasDurableExecutionBlocker(metadata map[string]any) bool {
 	switch values := metadata["execution_blockers"].(type) {
 	case []string:
 		for _, value := range values {
-			if strings.TrimSpace(value) != "" {
+			if blocking(value) {
 				return true
 			}
 		}
 	case []any:
 		for _, value := range values {
-			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+			if text, ok := value.(string); ok && blocking(text) {
 				return true
 			}
 		}

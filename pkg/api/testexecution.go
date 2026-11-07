@@ -622,10 +622,17 @@ func retryableStartSecretRequirement(err error) bool {
 }
 
 // validateStartSecretRequirements keeps saved scripts independently
-// configurable while making StartTest the execution boundary: every static
-// {{secret.*}} reference must resolve before shakeout, INITIALIZING, backend
-// dispatch, or generator assignment. Admission pins each resolved value for
-// the run, including shakeout, so later provider changes do not alter it.
+// configurable while making StartTest the execution boundary: every REQUIRED
+// static {{secret.*}} reference (engine.RequiredSecretNames) must resolve
+// before shakeout, INITIALIZING, backend dispatch, or generator assignment.
+// Admission pins each resolved value for the run, including shakeout, so later
+// provider changes do not alter it.
+//
+// A referenced-but-not-required name (behind a proxy credential the runtime
+// never sends) never holds the start, but its value is pinned when it is
+// bound: the run's pinned resolver (secretResolverForRunGroup) is the only
+// source the distributed bundle reads, and a generator that predates
+// FeatureSecretBundleRequiredOnlyV1 demands every referenced name.
 func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 	tr.mu.RLock()
 	test := tr.tests[id]
@@ -646,22 +653,38 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 	tr.mu.RUnlock()
 
 	valuesByGroup := make(map[int]map[string]string, len(groups))
+	requiresPin := false
 	resolutionCtx, resolutionCancel := engine.WithSecretResolutionBudget(context.Background())
 	defer resolutionCancel()
+	// Optional names resolve under their own budget, so a slow provider for
+	// a name that cannot block never exhausts the required names' deadline.
+	optionalCtx, optionalCancel := engine.WithSecretResolutionBudget(context.Background())
+	defer optionalCancel()
 	for index, group := range groups {
 		if group.Script == nil {
 			continue
 		}
-		names, err := engine.ReferencedSecretNames(group.Script)
+		// Only required names gate the start: an unbound secret behind a proxy
+		// credential the runtime never sends (No proxy / System / PAC, or a
+		// browser proxy without a server) must not hold it.
+		names, err := engine.RequiredSecretNames(group.Script)
 		if err != nil {
 			return &startSecretRequirementError{
 				message: fmt.Sprintf("group[%d] %q: inspect secret references", index, group.Name),
 				cause:   err,
 			}
 		}
-		if len(names) == 0 {
+		referenced, err := engine.ReferencedSecretNames(group.Script)
+		if err != nil {
+			return &startSecretRequirementError{
+				message: fmt.Sprintf("group[%d] %q: inspect secret references", index, group.Name),
+				cause:   err,
+			}
+		}
+		if len(referenced) == 0 && len(names) == 0 {
 			continue
 		}
+		optional := optionalSecretNames(referenced, names)
 		projectID := strings.TrimSpace(group.Script.ProjectID)
 		if projectID == "" {
 			projectID = defaultProjectID
@@ -673,23 +696,41 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		if index < len(runtimeSecrets) {
 			resolver = overlayRuntimeSecretResolver(runtimeSecrets[index], resolver)
 		}
-		resolved, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
-		if err != nil {
-			return &startSecretRequirementError{
-				message:   fmt.Sprintf("group[%d] %q: secret resolution failed: %v", index, group.Name, err),
-				retryable: true,
-				cause:     err,
+		resolved := map[string]string{}
+		if len(names) > 0 {
+			required, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
+			if err != nil {
+				return &startSecretRequirementError{
+					message:   fmt.Sprintf("group[%d] %q: secret resolution failed: %v", index, group.Name, err),
+					retryable: true,
+					cause:     err,
+				}
+			}
+			if len(missing) > 0 {
+				groupName := strings.TrimSpace(group.Name)
+				if groupName == "" {
+					groupName = group.Script.Name
+				}
+				return &startSecretRequirementError{
+					message:   fmt.Sprintf("group %q: %v", groupName, engine.MissingSecretsError(group.Script, "configure the following secret(s) before starting the test: ", missing)),
+					retryable: true,
+				}
+			}
+			resolved = required
+			requiresPin = true
+		}
+		if len(optional) > 0 {
+			// Missing or failing optional names are left out: they never block,
+			// and a target that cannot run without them is refused up front by
+			// validateDistributedSecretTarget.
+			if values, _, err := engine.ResolveSecretNames(optionalCtx, optional, resolver); err == nil {
+				for name, value := range values {
+					resolved[name] = value
+				}
 			}
 		}
-		if len(missing) > 0 {
-			groupName := strings.TrimSpace(group.Name)
-			if groupName == "" {
-				groupName = group.Script.Name
-			}
-			return &startSecretRequirementError{
-				message:   fmt.Sprintf("group %q: configure the following secret(s) before starting the test: %s", groupName, strings.Join(missing, ", ")),
-				retryable: true,
-			}
+		if len(resolved) == 0 {
+			continue
 		}
 		valuesByGroup[index] = resolved
 	}
@@ -699,7 +740,10 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		return errStartAdmissionEvidenceStale
 	}
 	if test.pinnedSecrets == nil {
-		if len(valuesByGroup) == 0 {
+		// Optional values only ride along; without pin state the run still
+		// starts, and the distributed target check decides whether a
+		// generator can run without them.
+		if !requiresPin {
 			return nil
 		}
 		return errors.New("run secret pin state is unavailable")
@@ -716,6 +760,23 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		return &startSecretRequirementError{message: "test changed during secret resolution; retry start", retryable: true}
 	}
 	return nil
+}
+
+// optionalSecretNames lists the referenced names that are not required, in
+// referenced order.
+func optionalSecretNames(referenced, required []string) []string {
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, name := range required {
+		requiredSet[strings.TrimSpace(name)] = struct{}{}
+	}
+	var optional []string
+	for _, name := range referenced {
+		name = strings.TrimSpace(name)
+		if _, ok := requiredSet[name]; !ok && name != "" {
+			optional = append(optional, name)
+		}
+	}
+	return optional
 }
 
 func (tr *TestRunner) validateExpectedStartTerm(expectedTerm *executionLeaseTerm) error {
@@ -1155,7 +1216,9 @@ func (tr *TestRunner) scriptShakeoutExecutableFingerprint(id string) (scriptShak
 			pinnedByProject[groupProjectID][name] = value
 		}
 		if group.script != nil {
-			names, err := engine.ReferencedSecretNames(group.script)
+			// The fingerprint resolves every name it lists, so it lists only
+			// the names the run consumes (see RequiredSecretNames).
+			names, err := engine.RequiredSecretNames(group.script)
 			if err != nil {
 				return scriptShakeoutInputFingerprint{}, fmt.Errorf("collect executable secret references for group %q: %w", group.Name, err)
 			}

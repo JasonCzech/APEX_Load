@@ -125,3 +125,47 @@ func TestImportPromotionLaunchConflicts_RoundTrippedMap(t *testing.T) {
 		t.Fatalf("expected 1 conflict from a round-tripped map report, got %d", len(conflicts))
 	}
 }
+
+// A script stored before the encrypted proxy callout became advisory lists it
+// as a fidelity blocker. It must not hold a test start (CI and scheduled
+// starts take the same gate), and a real blocker beside it still must.
+func TestImportPromotionLaunchConflicts_LegacyAdvisoryProxyCalloutDoesNotBlock(t *testing.T) {
+	legacy := scriptWithPromotion("legacy-proxy", enterprisearchive.ImportPromotionBlocked, []string{"encrypted_proxy_password at init[0]"})
+	legacy.Config.HTTP = dsl.HTTPConfig{ProxyMode: "system", Proxy: dsl.ProxyConfig{Password: "{{secret.ENTERPRISE_PROXY_PASSWORD}}"}}
+	decoded := &dsl.Script{Name: "legacy-proxy-decoded", Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{
+		"fidelity_report": map[string]any{"promotion_status": "blocked", "blockers": []any{"encrypted_proxy_password at init[0]"}},
+	}}}}
+	if conflicts := importPromotionLaunchConflicts([]TestGroup{{script: legacy}, {script: decoded}}); len(conflicts) != 0 {
+		t.Fatalf("conflicts = %+v, want the legacy advisory callout not to block", conflicts)
+	}
+	report := legacy.Metadata.Import.Preserved["fidelity_report"].(*enterprisearchive.ImportFidelityReport)
+	if report.PromotionStatus != enterprisearchive.ImportPromotionBlocked || len(report.Blockers) != 1 {
+		t.Fatalf("stored report = %+v, want a read to leave it untouched", report)
+	}
+
+	mixed := scriptWithPromotion("mixed", enterprisearchive.ImportPromotionBlocked, []string{"encrypted_proxy_password at init[0]", "legacy_tls_replacement at actions[0]"})
+	conflicts := importPromotionLaunchConflicts([]TestGroup{{script: mixed}})
+	if len(conflicts) != 1 || !strings.Contains(conflicts[0].Message, "legacy_tls_replacement at actions[0]") || strings.Contains(conflicts[0].Message, "encrypted_proxy_password") {
+		t.Fatalf("conflicts = %+v, want only the real blocker named", conflicts)
+	}
+}
+
+// An import draft stored before the advisory rule carries the callout in its
+// fidelity report; the draft summary, and the report it persists into the
+// saved script, drop it.
+func TestEnterpriseArchiveImportSummaryDropsLegacyAdvisoryProxyCallout(t *testing.T) {
+	stored := &enterprisearchive.ImportFidelityReport{PromotionStatus: enterprisearchive.ImportPromotionBlocked, Blockers: []string{"encrypted_proxy_password at init[0]"}}
+	script := &dsl.Script{Name: "legacy-draft", Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Preserved: map[string]any{}}}}
+	result := &enterprisearchive.ConvertResult{Script: script, FidelityReport: stored}
+	summary := buildEnterpriseArchiveImportSummary(result, nil, enterprisearchive.RuntimeSettingMigrationPolicy{})
+	if summary.FidelityReport == nil || summary.FidelityReport.PromotionStatus != enterprisearchive.ImportPromotionPromotable || len(summary.FidelityReport.Blockers) != 0 {
+		t.Fatalf("summary fidelity report = %+v, want promotable without the legacy callout", summary.FidelityReport)
+	}
+	persistEnterpriseArchiveImportSummary(result, summary)
+	if conflicts := importPromotionLaunchConflicts([]TestGroup{{script: script}}); len(conflicts) != 0 {
+		t.Fatalf("conflicts = %+v, want the saved draft to launch", conflicts)
+	}
+	if stored.PromotionStatus != enterprisearchive.ImportPromotionBlocked || len(stored.Blockers) != 1 {
+		t.Fatalf("stored draft report = %+v, want it untouched", stored)
+	}
+}

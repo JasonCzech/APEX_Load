@@ -78,8 +78,21 @@ func secretBundleResolver(bundle map[string]string) engine.SecretResolver {
 }
 
 func validateAssignmentSecretReferences(referenced []string, bundle map[string]string) error {
-	referenceSet := make(map[string]struct{}, len(referenced))
+	return validateAssignmentSecretBundle(referenced, referenced, bundle)
+}
+
+// validateAssignmentSecretBundle requires every required name
+// (engine.RequiredSecretNames) and admits only referenced names. A referenced
+// but not required name, such as a proxy credential the current proxy
+// settings never send, may be present (the controller bundles a bound
+// optional name so generators without secret_bundle_required_only_v1 still
+// receive it) but is never demanded.
+func validateAssignmentSecretBundle(required, referenced []string, bundle map[string]string) error {
+	referenceSet := make(map[string]struct{}, len(referenced)+len(required))
 	for _, name := range referenced {
+		referenceSet[name] = struct{}{}
+	}
+	for _, name := range required {
 		referenceSet[name] = struct{}{}
 		if _, ok := bundle[name]; !ok {
 			return fmt.Errorf("secret bundle is missing referenced logical secret %q", name)

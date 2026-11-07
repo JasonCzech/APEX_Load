@@ -185,9 +185,11 @@ func (s *Server) buildValidationContext(ctx context.Context, projectID string, s
 	return result, nil
 }
 
-// validationContextSecrets lists the script's referenced secrets (sorted,
+// validationContextSecrets lists the script's required secrets (sorted,
 // at most validationContextSecretLimit) with their availability, plus the
-// unavailable names.
+// unavailable names. Required, as ReplaySecretRefs reports them: a secret
+// referenced only by an inactive proxy credential is not listed, so it never
+// reads as an unavailable validation prerequisite.
 func validationContextSecrets(ctx context.Context, script *dsl.Script, resolver engine.SecretResolver) ([][2]string, bool, []string, error) {
 	if script == nil {
 		return nil, false, nil, nil

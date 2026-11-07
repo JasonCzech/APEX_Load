@@ -534,3 +534,129 @@ describe('import and editor readiness parity', () => {
     }
   })
 })
+
+describe('import review proxy credentials', () => {
+  const proxied = (mode: string, gate = true): ScriptDefinition => ({
+    ...script,
+    config: { ...script.config, http: { proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', username: 'svc', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+    init: gate ? [{ name: 'Proxy settings', type: 'source_review', target: '', metadata: { source_file: 'default.cfg', source_line: 3, execution_blocker: 'encrypted_proxy_password' } }] : [],
+  } as ScriptDefinition)
+  const stamped = (missing: string[]) => ({ valid: true, checks: [], missing_secrets: missing })
+
+  it('calls out an encrypted proxy password without blocking, keeping its title and guided repairs', () => {
+    const draft = proxied('custom')
+    // As an older import stamped it: an execution gate on the step.
+    expect(draftImportFindings(draft).map(finding => [finding.code, finding.gate])).toEqual([['encrypted_proxy_password', '']])
+    const legacy: ImportFinding = { code: 'encrypted_proxy_password', action_path: 'init[0]', gate: 'execution', severity: 'blocker', detail: '' }
+    const [issue] = groupImportFindings([legacy], draft)
+    expect(issue).toMatchObject({ blocking: false, severity: 'warning', category: 'credentials' })
+    expect(issue.title).toBe('Replace encrypted proxy password — Proxy settings')
+    expect(issueRepairOptions(issue.findings[0].code).map(option => option.value)).toEqual(['replace_proxy_secret', 'omit_proxy_credentials', 'disable_imported_proxy'])
+    // A proxy that does not send its credentials makes it a note.
+    expect(groupImportFindings([legacy], proxied('system'))[0]).toMatchObject({ blocking: false, severity: 'note' })
+  })
+
+  it('calls out an encrypted proxy password the server reports as an ungated warning', () => {
+    // The current server's shape (importreview FindingsFromScript): no gate,
+    // warning severity, whether or not the step still carries the legacy
+    // execution_blocker metadata.
+    const advisory: ImportFinding = { code: 'encrypted_proxy_password', action_path: 'init[0]', severity: 'warning', detail: 'The imported proxy password was encrypted and cannot be used. It is needed only while Proxy mode is Custom: bind a project secret to the proxy password, or change Proxy mode to No proxy, System or PAC.' }
+    for (const draft of [proxied('custom'), proxied('custom', false)]) {
+      const [issue] = groupImportFindings([advisory], draft)
+      expect(issue).toMatchObject({ blocking: false, severity: 'warning', category: 'credentials' })
+      expect(issueRepairOptions(issue.findings[0].code).map(option => option.value)).toEqual(['replace_proxy_secret', 'omit_proxy_credentials', 'disable_imported_proxy'])
+      expect(groupImportFindings([advisory], { ...draft, config: proxied('pac').config })[0]).toMatchObject({ blocking: false, severity: 'note' })
+    }
+    // The server's finding and the draft's own read of the legacy metadata are one issue.
+    expect(groupImportFindings([advisory, ...draftImportFindings(proxied('custom'))], proxied('custom'))).toHaveLength(1)
+    const refused = importReviewFindings({ script: proxied('custom', false), inspection: { findings: [advisory], readiness: { replay_ready: false } } })
+    expect(refused.map(finding => finding.code)).toEqual(['encrypted_proxy_password', 'diagnostic:execution'])
+    expect(importReviewFindings({ script: proxied('custom', false), inspection: { findings: [advisory], readiness: { replay_ready: true, promotion_ready: true } } }).map(finding => finding.code)).toEqual(['encrypted_proxy_password'])
+  })
+
+  it('reads the call-out from advisory_callouts, as imports now write it, and from the legacy blocker spelling as one finding', () => {
+    const current = (metadata: Record<string, unknown>): ScriptDefinition => ({ ...proxied('custom', false), init: [{ name: 'Restore proxy credential', type: 'source_review', target: '', metadata: { source_file: 'default.cfg', ...metadata } }] } as ScriptDefinition)
+    const advisory = current({ advisory_callouts: ['encrypted_proxy_password'] })
+    expect(draftImportFindings(advisory).map(finding => [finding.code, finding.gate, finding.action_path])).toEqual([['encrypted_proxy_password', '', 'init[0]']])
+    // Both spellings on one step, and a real blocker beside it.
+    const both = current({ advisory_callouts: ['encrypted_proxy_password', 'legacy_tls_replacement'], execution_blocker: 'encrypted_proxy_password', execution_blockers: ['legacy_tls_replacement'] })
+    // advisory_callouts holds only call-outs: a blocking code there is not read from it.
+    expect(draftImportFindings(both).map(finding => [finding.code, finding.gate])).toEqual([['encrypted_proxy_password', ''], ['legacy_tls_replacement', 'execution']])
+    expect(draftImportFindings(current({ advisory_callouts: ['legacy_tls_replacement'] }))).toEqual([])
+    const [issue] = groupImportFindings(draftImportFindings(advisory), advisory)
+    expect(issue).toMatchObject({ blocking: false, severity: 'warning', category: 'credentials', title: 'Replace encrypted proxy password — default.cfg' })
+    expect(issueRepairOptions(issue.findings[0].code).map(option => option.value)).toEqual(['replace_proxy_secret', 'omit_proxy_credentials', 'disable_imported_proxy'])
+    // Replay readiness never blocks on it.
+    const readiness = replayReadinessIssues(buildLocalReplayPreflight(advisory), [], new Map(), advisory)
+    expect(readiness.filter(item => item.codes?.includes('encrypted_proxy_password') || /encrypted/i.test(`${item.title} ${item.description || ''}`))).toEqual([])
+  })
+
+  it('does not explain a refused replay by an encrypted proxy password alone', () => {
+    const legacy: ImportFinding = { code: 'encrypted_proxy_password', action_path: 'init[0]', gate: 'execution', detail: '' }
+    const findings = importReviewFindings({ script: proxied('custom'), inspection: { findings: [legacy], readiness: { replay_ready: false } } })
+    expect(findings.map(finding => finding.code)).toEqual(['encrypted_proxy_password', 'diagnostic:execution'])
+  })
+
+  it('blocks on an unbound Custom proxy secret with the proxy wording, and never on a not-in-use one', () => {
+    const custom = importReviewFindings({ script: proxied('custom', false), preflight: stamped(['ENTERPRISE_PROXY_PASSWORD']) })
+    expect(custom).toEqual([{
+      code: 'proxy_credential_unbound:ENTERPRISE_PROXY_PASSWORD',
+      title: 'Custom proxy credential not bound',
+      detail: 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.',
+      gate: 'execution',
+    }])
+    const [issue] = groupImportFindings(custom, proxied('custom', false))
+    expect(issue).toMatchObject({ blocking: true, severity: 'blocker', category: 'credentials', title: 'Custom proxy credential not bound' })
+    for (const mode of ['none', 'system', 'pac']) {
+      expect(importReviewFindings({ script: proxied(mode, false), preflight: stamped(['ENTERPRISE_PROXY_PASSWORD']) })).toEqual([])
+    }
+  })
+
+  it('counts other unresolved secrets apart from the proxy ones', () => {
+    const draft = { ...proxied('system', false), actions: [{ name: 'Login', type: 'POST', target: '/login', body: '{{secret.API_TOKEN}}' }] } as ScriptDefinition
+    const findings = importReviewFindings({ script: draft, preflight: stamped(['API_TOKEN', 'ENTERPRISE_PROXY_PASSWORD']) })
+    expect(findings.map(finding => [finding.code, finding.detail.split('.')[0]])).toEqual([['diagnostic:credential_bindings', '1 credential requirements remain unresolved']])
+  })
+
+  // The inspected script, as the server returns it: the replay preflight it
+  // restamped with the project's secret resolver under metadata.import.preserved.
+  const inspected = (draft: ScriptDefinition, missing: string[]): ScriptDefinition => ({
+    ...draft,
+    metadata: { ...draft.metadata, import: { ...draft.metadata?.import, preserved: { replay_preflight: { valid: true, missing_secrets: missing } } } },
+  } as ScriptDefinition)
+  const inspection = (draft: ScriptDefinition, missing: string[], unresolved: number) => ({
+    findings: [], readiness: { replay_ready: unresolved === 0, unresolved_bindings: unresolved }, script: inspected(draft, missing),
+  })
+
+  it('keeps the proxy wording for an unbound Custom proxy secret once the inspection answers', () => {
+    const draft = proxied('custom', false)
+    const findings = importReviewFindings({ script: draft, inspection: inspection(draft, ['ENTERPRISE_PROXY_PASSWORD'], 1) })
+    expect(findings).toEqual([{
+      code: 'proxy_credential_unbound:ENTERPRISE_PROXY_PASSWORD',
+      title: 'Custom proxy credential not bound',
+      detail: 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.',
+      gate: 'execution',
+    }])
+  })
+
+  it('counts the inspection\'s other unresolved credentials apart from the proxy ones', () => {
+    const draft = proxied('custom', false)
+    const findings = importReviewFindings({ script: draft, inspection: inspection(draft, ['ENTERPRISE_PROXY_PASSWORD'], 2) })
+    expect(findings.map(finding => [finding.code, finding.detail.split('.')[0]])).toEqual([
+      ['proxy_credential_unbound:ENTERPRISE_PROXY_PASSWORD', 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret'],
+      ['diagnostic:credential_bindings', '1 credential requirements remain unresolved'],
+    ])
+  })
+
+  it('trusts only the inspection\'s count when its script names no resolved proxy secret', () => {
+    const draft = proxied('custom', false)
+    // A bound proxy secret: the inspection counts nothing, whatever the import-time stamp says.
+    expect(importReviewFindings({ script: draft, preflight: stamped(['ENTERPRISE_PROXY_PASSWORD']), inspection: inspection(draft, ['ENTERPRISE_PROXY_PASSWORD'], 0) })).toEqual([])
+    // An inspected script without a restamped preflight keeps the generic count.
+    const bare = importReviewFindings({ script: draft, preflight: stamped(['ENTERPRISE_PROXY_PASSWORD']), inspection: { findings: [], readiness: { replay_ready: false, unresolved_bindings: 1 }, script: draft } })
+    expect(bare.map(finding => finding.code)).toEqual(['diagnostic:credential_bindings'])
+    // A not-in-use proxy secret is never the proxy's blocker.
+    const system = proxied('system', false)
+    expect(importReviewFindings({ script: system, inspection: inspection(system, ['ENTERPRISE_PROXY_PASSWORD'], 0) })).toEqual([])
+  })
+})

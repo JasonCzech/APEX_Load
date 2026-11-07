@@ -1,6 +1,8 @@
 import type { ReplayPreflight, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { actionAwaitsRuntimeSupport, AWAITING_RUNTIME_SUPPORT_TEXT, configReferenceText, issueTitle, repairImpactText } from './importReviewIssues'
+import { canonicalSecretName, proxyCredentialBlockerText } from './proxyCredentialSecrets'
 import { replayBlockingKinds } from './replayPreflightUtils'
+import { activeProxyOnlySecretRefs, inactiveProxyOnlySecretNames } from './scriptSecretReferenceModel'
 import { phaseActionsForScript, stepPathForJsonSubPath } from './scriptEditorJsonModel'
 import type { ScriptActionPhase } from './scriptEditorWorkbench'
 
@@ -100,8 +102,18 @@ export function dependencyCodeFolding(facts: DependencyFacts | null | undefined)
 export function savedReviewTitle(name: string): string {
   return `Save to update the import review for ${name}`
 }
-// Warnings the preflight phrases as sentences about lists this module itemizes.
-const ITEMIZED_WARNING = /^(variable\(s\) with no seed|configure project secret\(s\)|secret\(s\) require project configuration)/i
+// Warnings the preflight phrases as sentences about lists this module itemizes:
+// the value and secret lists, and the proxy credential blocker lines the
+// server derives from missing_secrets (dsl ProxyCredentialSecretReference
+// BlockerMessage, replayPreflightProxySecretPatterns in pkg/api), which the
+// missing_secrets loop words itself and reconciles against live secret state.
+const ITEMIZED_WARNING = /^(variable\(s\) with no seed|configure project secret\(s\)|secret\(s\) require project configuration|(custom|browser) proxy credential not bound: )/i
+// The note for a secret only a proxy credential that is not in use references
+// (dsl InactiveNote, scriptInactiveProxyCredentialNotes). It says nothing needs
+// the secret, so it is no problem to count; Runtime Settings shows both forms
+// beside the proxy fields: the HTTP note in the Proxy sub-tab, the browser
+// note in the Browser sub-tab (or the Proxy sub-tab for a script without one).
+const INACTIVE_PROXY_NOTE = /^the (browser )?proxy (username|password|username and password) uses? the secret \S+, but (proxy mode is |no browser proxy server is set)/i
 
 const normalize = (text: string) => text.trim().replace(/\s+/g, ' ').toLowerCase()
 const sentence = (text: string) => text.charAt(0).toUpperCase() + text.slice(1)
@@ -338,6 +350,12 @@ export function replayReadinessIssues(
   secretLabels: ReadonlyMap<string, string> = new Map(),
   script?: ScriptDefinition,
   bodySource: ProtectedBodySource = 'reimport',
+  /**
+   * The document whose proxy settings say which proxy credentials are in use,
+   * when it differs from `script` (the editor's JSON pane draft); `script`
+   * otherwise.
+   */
+  proxySource?: ScriptDefinition,
 ): ReadinessIssue[] {
   if (!preflight) return []
   const listed = new Set(alreadyListed.map(normalize))
@@ -429,8 +447,19 @@ export function replayReadinessIssues(
       : { id: `readiness:placeholder:${name}`, severity: 'warning', title: `Missing value: ${name}`, description: 'Nothing provides it before use, so replay sends the placeholder text.', variable: name })
   }
   // The title uses the secret's display name (secretBindingDisplayNames); the
-  // exact name the script references stays in the description.
+  // exact name the script references stays in the description. A secret only
+  // a proxy credential that is not in use references never blocks, even where
+  // an older controller lists it; one only an in-use proxy credential
+  // references is the proxy's problem, worded with both ways out.
+  const inactiveProxySecrets = inactiveProxyOnlySecretNames(proxySource ?? script)
+  const activeProxySecrets = activeProxyOnlySecretRefs(proxySource ?? script)
   for (const name of preflight.missing_secrets || []) {
+    if (inactiveProxySecrets.has(canonicalSecretName(name))) continue
+    const proxyRefs = activeProxySecrets.get(canonicalSecretName(name))
+    if (proxyRefs) {
+      issues.push({ id: `readiness:secret:${name}`, severity: 'blocker', ...proxyCredentialBlockerText(name, proxyRefs), secret: name })
+      continue
+    }
     const label = secretLabels.get(name) || name
     issues.push({
       id: `readiness:secret:${name}`,
@@ -452,7 +481,7 @@ export function replayReadinessIssues(
     issues.push({ id: `readiness:data:${normalize(message)}`, severity: 'blocker', title: message.trim(), description: 'Replay refuses to run until the data source is fixed.' })
   }
   for (const message of preflight.warnings || []) {
-    if (!message.trim() || ITEMIZED_WARNING.test(message.trim()) || listed.has(normalize(message)) || dataSourceIssues.has(normalize(message))) continue
+    if (!message.trim() || ITEMIZED_WARNING.test(message.trim()) || INACTIVE_PROXY_NOTE.test(message.trim()) || listed.has(normalize(message)) || dataSourceIssues.has(normalize(message))) continue
     issues.push({ id: `readiness:warning:${normalize(message)}`, severity: 'warning', title: message.trim() })
   }
   return issues

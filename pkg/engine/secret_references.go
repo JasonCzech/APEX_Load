@@ -92,7 +92,37 @@ func (r runSecretSnapshot) Resolve(name string) (string, bool) {
 // are deliberately excluded so runtime preflight, CI, and distributed delivery
 // agree on which values can actually be consumed. It never resolves or returns
 // secret values.
+//
+// Listing, binding dialogs, reservations and redaction use this full list.
+// Blocking checks (missing-secret preflight, test start, distributed and CI
+// delivery, the runtime snapshot) use RequiredSecretNames instead.
 func ReferencedSecretNames(script *dsl.Script) ([]string, error) {
+	return executableSecretNames(script, nil)
+}
+
+// RequiredSecretNames returns the referenced secret names an execution
+// actually consumes: ReferencedSecretNames minus names whose only references
+// are proxy credential fields the runtime never sends for the script's current
+// proxy settings (dsl.InactiveProxyCredentialPaths). An unbound secret behind
+// a No proxy, System or PAC HTTP proxy, or behind a browser proxy without a
+// server, therefore never blocks. A name also used anywhere else stays
+// required.
+func RequiredSecretNames(script *dsl.Script) ([]string, error) {
+	return executableSecretNames(script, dsl.InactiveProxyCredentialPaths(script))
+}
+
+// nonProxySecretNames returns the referenced names used outside every proxy
+// credential field, active or not.
+func nonProxySecretNames(script *dsl.Script) ([]string, error) {
+	return executableSecretNames(script, []string{
+		dsl.HTTPProxyUsernamePath, dsl.HTTPProxyPasswordPath,
+		dsl.BrowserProxyUsernamePath, dsl.BrowserProxyPasswordPath,
+	})
+}
+
+// executableSecretNames collects the executable secret names with the
+// excluded slash paths (as the walk spells them) removed first.
+func executableSecretNames(script *dsl.Script, excludedPaths []string) ([]string, error) {
 	if script == nil {
 		return nil, nil
 	}
@@ -104,6 +134,9 @@ func ReferencedSecretNames(script *dsl.Script) ([]string, error) {
 	if err := json.Unmarshal(payload, &definition); err != nil {
 		return nil, err
 	}
+	for _, excluded := range excludedPaths {
+		removeDefinitionPath(definition, excluded)
+	}
 	seen := make(map[string]struct{})
 	if err := collectExecutableSecretNames(definition, "", true, false, seen, nil); err != nil {
 		return nil, err
@@ -114,6 +147,72 @@ func ReferencedSecretNames(script *dsl.Script) ([]string, error) {
 	}
 	sort.Strings(names)
 	return names, nil
+}
+
+// removeDefinitionPath deletes the object member a slash path names from a
+// decoded script definition. The script's JSON members are lowercase, as the
+// walk spells its paths.
+func removeDefinitionPath(definition any, slashPath string) {
+	segments := strings.Split(strings.Trim(slashPath, "/"), "/")
+	current, _ := definition.(map[string]any)
+	for index, segment := range segments {
+		if current == nil {
+			return
+		}
+		if index == len(segments)-1 {
+			delete(current, segment)
+			return
+		}
+		current, _ = current[segment].(map[string]any)
+	}
+}
+
+// MissingSecretProxyBlockers splits missing required secret names into the
+// proxy-specific blocker messages (dsl.ProxyCredentialSecretReference
+// BlockerMessage) for names used only by an active proxy credential field, and
+// the remaining names, which callers report with their own wording.
+func MissingSecretProxyBlockers(script *dsl.Script, missing []string) (proxyMessages []string, others []string) {
+	if len(missing) == 0 {
+		return nil, nil
+	}
+	nonProxy := map[string]struct{}{}
+	if names, err := nonProxySecretNames(script); err == nil {
+		for _, name := range names {
+			nonProxy[name] = struct{}{}
+		}
+	}
+	activeRefs := map[string][]dsl.ProxyCredentialSecretReference{}
+	for _, ref := range dsl.ProxyCredentialSecretReferences(script) {
+		if ref.Active {
+			activeRefs[ref.Name] = append(activeRefs[ref.Name], ref)
+		}
+	}
+	for _, name := range missing {
+		refs := activeRefs[strings.TrimSpace(name)]
+		if _, elsewhere := nonProxy[strings.TrimSpace(name)]; elsewhere || len(refs) == 0 {
+			others = append(others, name)
+			continue
+		}
+		for _, ref := range refs {
+			proxyMessages = append(proxyMessages, ref.BlockerMessage())
+		}
+	}
+	return proxyMessages, others
+}
+
+// MissingSecretsError formats the shared fail-closed error for missing
+// required secrets: the proxy-specific blocker for a name only an active proxy
+// credential uses, and prefix plus the remaining names otherwise.
+func MissingSecretsError(script *dsl.Script, prefix string, missing []string) error {
+	if len(missing) == 0 {
+		return nil
+	}
+	proxyMessages, others := MissingSecretProxyBlockers(script, missing)
+	parts := append([]string(nil), proxyMessages...)
+	if len(others) > 0 {
+		parts = append(parts, prefix+strings.Join(others, ", "))
+	}
+	return errors.New(strings.Join(parts, "; "))
 }
 
 func collectExecutableSecretNames(value any, path string, root, dedicatedField bool, seen, dedicated map[string]struct{}) error {
@@ -309,7 +408,10 @@ func snapshotReferencedSecretsContext(ctx context.Context, script *dsl.Script, r
 	if resolver == nil {
 		return nil, nil, nil
 	}
-	names, err := ReferencedSecretNames(script)
+	// Only required names are snapshotted: a proxy credential the runtime
+	// never sends (appendHTTPSecurityConfig / appendBrowserConfig drop it) is
+	// neither resolved nor allowed to fail the run when it is unbound.
+	names, err := RequiredSecretNames(script)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -347,7 +449,7 @@ func snapshotReferencedSecretsContext(ctx context.Context, script *dsl.Script, r
 		}
 	}
 	if len(missingNames) > 0 {
-		return nil, nil, fmt.Errorf("required project secret(s) are not configured: %s", strings.Join(missingNames, ", "))
+		return nil, nil, MissingSecretsError(script, "required project secret(s) are not configured: ", missingNames)
 	}
 	return snapshot, values, nil
 }

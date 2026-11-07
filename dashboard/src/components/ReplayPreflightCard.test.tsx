@@ -63,6 +63,27 @@ describe('ReplayPreflightCard', () => {
     expect(onConfigureSecrets).toHaveBeenCalledOnce()
   })
 
+  it('words a missing secret by the description the caller gives, and the rest generically', () => {
+    const proxyText = 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.'
+    act(() => {
+      root.render(<ReplayPreflightCard preflight={{
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 0,
+        parameter_count: 0,
+        browser_required: false,
+        missing_secrets: ['ENTERPRISE_PROXY_PASSWORD', 'ORDER_API_TOKEN'],
+        checks: [],
+      }} onConfigureSecrets={vi.fn()} secretDescriptions={new Map([['ENTERPRISE_PROXY_PASSWORD', proxyText]])} />)
+    })
+
+    const alerts = container.querySelector('.replay-preflight-alerts')
+    expect(alerts?.textContent).toContain(proxyText)
+    expect(alerts?.textContent).not.toContain('Missing secret: ENTERPRISE_PROXY_PASSWORD')
+    expect(alerts?.textContent).toContain('Missing secret: ORDER_API_TOKEN')
+  })
+
   it('lists review gates by what to fix and where, not as the raw gate sentences', () => {
     const gate = (index: number) => `init[${index}] "web_set_sockets_option_${index}": execution blocker legacy_tls_replacement blocks replay until the imported behavior is resolved`
     const preflight = {

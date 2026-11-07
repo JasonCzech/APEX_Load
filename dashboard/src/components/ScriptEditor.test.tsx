@@ -1073,6 +1073,207 @@ describe('ScriptEditor', () => {
     expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
   })
 
+  it('blocks on an unbound Custom proxy secret with the proxy wording, and never outside Custom', async () => {
+    const proxied = (mode: string): ScriptDefinition => ({
+      ...initialScript,
+      config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+    })
+    const capabilities = { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false }
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({ project_id: 'project-1', capabilities, secrets: [{ name: 'ENTERPRISE_PROXY_PASSWORD', configured: false }] })
+    await act(async () => { root.render(<ScriptEditor initialScript={proxied('custom')} projectId="project-1" />) })
+    await flushReact()
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['ENTERPRISE_PROXY_PASSWORD'])
+    const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Resolve 1 blocker'))
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('Custom proxy credential not bound')
+    expect(container.textContent).toContain('The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.')
+
+    // Outside Custom the reference stays in the script but nothing requires it.
+    await act(async () => { root.unmount() })
+    root = createRoot(container)
+    apiMock.getProjectSecretStatuses.mockClear()
+    await act(async () => { root.render(<ScriptEditor initialScript={proxied('system')} projectId="project-1" />) })
+    await flushReact()
+    expect(apiMock.getProjectSecretStatuses).not.toHaveBeenCalled()
+    expect(container.querySelector('.script-secret-banner')).toBeNull()
+    expect(container.textContent).not.toContain('Custom proxy credential not bound')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => /Resolve \d+ blocker/.test(button.textContent || ''))).toBe(false)
+  })
+
+  it('drops a saved Custom proxy blocker the server status still lists once the unsaved draft switches Proxy mode, and restores it on switching back', async () => {
+    const proxied = (mode: string): ScriptDefinition => ({
+      ...initialScript,
+      config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+    })
+    const capabilities = { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false }
+    // The persisted status describes the saved Custom script: it keeps
+    // listing the proxy secret as required until a save.
+    apiMock.getScriptSecretStatus.mockResolvedValue({
+      script_id: 'script-1',
+      project_id: 'project-1',
+      required: ['ENTERPRISE_PROXY_PASSWORD'],
+      missing: ['ENTERPRISE_PROXY_PASSWORD'],
+      configured: [],
+      secrets: [{ name: 'ENTERPRISE_PROXY_PASSWORD', configured: false }],
+      capabilities,
+    })
+    apiMock.getProjectSecretStatuses.mockImplementation(async (projectId: string, names: string[]) => ({
+      project_id: projectId, capabilities, secrets: names.map(name => ({ name, configured: false })),
+    }))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={proxied('custom')} projectId="project-1" />) })
+    await flushReact()
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalled()
+    const proxyBody = 'The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.'
+    const resolveButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /Resolve \d+ blocker/.test(button.textContent || ''))
+    const expectBlocked = () => {
+      expect((resolveButton()?.dataset.tooltip || resolveButton()?.title)).toContain('Custom proxy credential not bound')
+      // The banner and the preflight card word it as the problem list does,
+      // with the Proxy mode way out, never as a value only binding supplies.
+      const banner = container.querySelector('.script-secret-banner')
+      expect(banner?.textContent).toContain('Custom proxy credential not bound')
+      expect(banner?.textContent).toContain(proxyBody)
+      expect(banner?.textContent).toContain('change Proxy mode to No proxy, System or PAC')
+      expect(banner?.textContent).not.toContain('project secret still needs configuration')
+      expect(banner?.textContent).not.toContain('until values are available')
+      const alerts = container.querySelector('.replay-preflight-alerts')
+      expect(alerts?.textContent).toContain(proxyBody)
+      expect(alerts?.textContent).not.toContain('Missing secret: ENTERPRISE_PROXY_PASSWORD')
+    }
+    expectBlocked()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web HTTP/HTML Compatibility'))?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const proxyModeSelect = () => Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'system' && option.textContent?.includes('environment proxy')),
+    ) as HTMLSelectElement | undefined
+    expect(proxyModeSelect()?.value).toBe('custom')
+    const chooseMode = async (mode: string) => {
+      const select = proxyModeSelect()
+      expect(select).toBeTruthy()
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(select, mode)
+        select?.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flushReact()
+    }
+
+    apiMock.getProjectSecretStatuses.mockClear()
+    await chooseMode('none')
+    expect(proxyModeSelect()?.value).toBe('none')
+    // Only the unsaved draft changed: the persisted status still lists the
+    // secret, and the draft's Proxy mode decides that nothing needs it.
+    expect(container.textContent).not.toContain('Custom proxy credential not bound')
+    expect(container.querySelector('.script-secret-banner')).toBeNull()
+    expect(container.textContent).not.toContain('Missing secret: ENTERPRISE_PROXY_PASSWORD')
+    expect(resolveButton()).toBeUndefined()
+    expect(apiMock.getProjectSecretStatuses.mock.calls.some(([, names]) => (names as string[]).includes('ENTERPRISE_PROXY_PASSWORD'))).toBe(false)
+
+    await chooseMode('custom')
+    expectBlocked()
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+  })
+
+  it('stops waiting on an unavailable secret check for a saved Custom proxy secret once the unsaved draft switches Proxy mode', async () => {
+    const proxied = (mode: string): ScriptDefinition => ({
+      ...initialScript,
+      config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+    })
+    const capabilities = { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false }
+    apiMock.getScriptSecretStatus.mockResolvedValue({
+      script_id: 'script-1',
+      project_id: 'project-1',
+      required: ['ENTERPRISE_PROXY_PASSWORD'],
+      missing: ['ENTERPRISE_PROXY_PASSWORD'],
+      configured: [],
+      secrets: [{ name: 'ENTERPRISE_PROXY_PASSWORD', configured: false }],
+      capabilities,
+    })
+    // The project-scoped check cannot answer: while the draft needs the
+    // secret, replay waits on it.
+    apiMock.getProjectSecretStatuses.mockRejectedValue(new Error('secret status unavailable'))
+    await act(async () => { root.render(<ScriptEditor scriptId="script-1" initialScript={proxied('custom')} projectId="project-1" />) })
+    await flushReact()
+    expect(container.querySelector('.script-secret-banner')?.textContent).toContain('Project secret status is unavailable')
+
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Runtime Settings'))?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web HTTP/HTML Compatibility'))?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const chooseMode = async (mode: string) => {
+      const select = Array.from(container.querySelectorAll('select')).find(candidate =>
+        Array.from(candidate.options).some(option => option.value === 'system' && option.textContent?.includes('environment proxy')),
+      ) as HTMLSelectElement | undefined
+      expect(select).toBeTruthy()
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(select, mode)
+        select?.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flushReact()
+    }
+    // The persisted status still lists the secret as required; the unsaved
+    // draft's Proxy mode says nothing needs it, so there is nothing to check.
+    await chooseMode('system')
+    expect(container.querySelector('.script-secret-banner')).toBeNull()
+    expect(container.textContent).not.toContain('Project secret status is unavailable')
+    expect(Array.from(container.querySelectorAll<HTMLButtonElement>('button')).some(button => /Resolve \d+ blocker/.test(button.textContent || ''))).toBe(false)
+
+    await chooseMode('custom')
+    expect(container.querySelector('.script-secret-banner')?.textContent).toContain('Project secret status is unavailable')
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+  })
+
+  it('counts only the non-proxy secrets in the banner headline and adds the proxy way out after it', async () => {
+    const script: ScriptDefinition = {
+      ...initialScript,
+      config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+      actions: [{ ...initialScript.actions[0], headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+    }
+    const capabilities = { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false }
+    apiMock.getProjectSecretStatuses.mockImplementation(async (projectId: string, names: string[]) => ({
+      project_id: projectId, capabilities, secrets: names.map(name => ({ name, configured: false })),
+    }))
+    await act(async () => { root.render(<ScriptEditor initialScript={script} projectId="project-1" />) })
+    await flushReact()
+    const banner = container.querySelector('.script-secret-banner')
+    expect(banner?.querySelector('strong')?.textContent).toBe('1 project secret still needs configuration')
+    expect(banner?.textContent).toContain('replay will remain blocked until values are available. The proxy password uses the secret ENTERPRISE_PROXY_PASSWORD, which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC.')
+    const alerts = container.querySelector('.replay-preflight-alerts')
+    expect(alerts?.textContent).toContain('Missing secret: LOGIN_TOKEN')
+    expect(alerts?.textContent).not.toContain('Missing secret: ENTERPRISE_PROXY_PASSWORD')
+  })
+
+  it('lists the Custom proxy blocker when only the unapplied JSON draft switches Proxy mode to Custom', async () => {
+    const proxied = (mode: string): ScriptDefinition => ({
+      ...initialScript,
+      config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: mode, proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+    })
+    const capabilities = { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false }
+    apiMock.getProjectSecretStatuses.mockImplementation(async (projectId: string, names: string[]) => ({
+      project_id: projectId, capabilities, secrets: names.map(name => ({ name, configured: false })),
+    }))
+    await act(async () => { root.render(<ScriptEditor initialScript={proxied('none')} projectId="project-1" />) })
+    await flushReact()
+    expect(container.textContent).not.toContain('Custom proxy credential not bound')
+    await act(async () => { findCenterTab(container, 'DSL')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    await act(async () => { findButtonByText(container, 'Edit JSON')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const codeArea = container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement
+    await act(async () => {
+      changeTextareaValue(codeArea, JSON.stringify({ script: proxied('custom') }, null, 2))
+      await Promise.resolve()
+    })
+    await flushReact()
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['ENTERPRISE_PROXY_PASSWORD'])
+    // The start gate and the problem list tell one story about the draft.
+    const runButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Resolve 1 blocker'))
+    expect((runButton?.dataset.tooltip || runButton?.title)).toContain('Custom proxy credential not bound')
+    expect(container.textContent).toContain('Custom proxy credential not bound')
+  })
+
   it('reports a created dedicated secret when the later editor save fails', async () => {
     const secretScript: ScriptDefinition = {
       ...initialScript,
@@ -13456,6 +13657,28 @@ describe('ScriptEditor', () => {
       expect(topbarDebug().disabled).toBe(false)
     })
 
+    it('words a start refused for a Custom proxy secret the controller could not resolve as the proxy\'s blocker', async () => {
+      const script: ScriptDefinition = {
+        ...initialScript,
+        config: { ...initialScript.config, http: { ...initialScript.config.http, proxy_mode: 'custom', proxy: { url: 'http://proxy.example.test:8080', password: '{{secret.ENTERPRISE_PROXY_PASSWORD}}' } } },
+      }
+      // The project reads the secret as configured; the controller could not
+      // resolve its value, so it refused the start.
+      apiMock.getProjectSecretStatuses.mockImplementation(async (projectId: string, names: string[]) => ({
+        project_id: projectId,
+        capabilities: { provider: 'encrypted_database', writable: true, create_supported: true, replace_supported: true, source_secret_migration_policy_enabled: false },
+        secrets: names.map(name => ({ name, configured: true })),
+      }))
+      const refused = { ...buildLocalReplayPreflight(script), valid: false, required_secrets: ['ENTERPRISE_PROXY_PASSWORD'], missing_secrets: ['ENTERPRISE_PROXY_PASSWORD'] }
+      apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('script replay is not ready', 400, { error: 'script replay is not ready', preflight: refused }))
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
+      await flushReact()
+      await act(async () => { topbarDebug().click(); await Promise.resolve() })
+      await flushReact()
+      expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+      expect(notice()?.textContent).toBe('Debug did not start: 1 problem blocks replay — Custom proxy credential not bound.')
+    })
+
     it('opens a configuration reference where it is replaced, in Runtime Settings, not a step that uses the name', async () => {
       const script: ScriptDefinition = { ...initialScript, config: { ...initialScript.config, base_url: 'https://{{var.host}}' }, actions: [
         { ...initialScript.actions[0], name: 'Store cart', target: '/cart?h={{var.host}}' },
@@ -13826,7 +14049,8 @@ describe('ScriptEditor', () => {
     })
 
     it('moves focus to the next blocker\'s repair after a repair, and announces it in the editor\'s own live region', async () => {
-      const proxyStep = { name: 'Proxy login', type: 'GET', method: 'GET', target: '/proxy', metadata: { execution_blocker: 'encrypted_proxy_password', source_file: 'Action.c', source_line: 4 } }
+      // An encrypted proxy password no longer blocks by itself, so the second blocker is a missing value.
+      const proxyStep = { name: 'Proxy login', type: 'GET', method: 'GET', target: '/proxy/{{var.sid}}', metadata: { execution_blocker: 'missing_producer:sid', source_file: 'Action.c', source_line: 4 } }
       const script = { ...initialScript, init: [tlsGate(0), warmUp], actions: [...initialScript.actions, proxyStep] } as ScriptDefinition
       const pair = authoringFixture(script, 'script-1', 'project-1')
       const repairedScript = { ...pair.projection.script, config: { ...pair.projection.script.config, http: { ...pair.projection.script.config.http, tls: { min_version: '1.2', max_version: '1.3' } } }, init: [{ ...tlsGate(0), metadata: { source_function: 'web_set_sockets_option', migration_change: 'legacy TLS replaced by TLS 1.2-1.3' } }, warmUp] } as ScriptDefinition
@@ -13865,7 +14089,7 @@ describe('ScriptEditor', () => {
       expect(topbarDebug().textContent).toBe('Resolve 1 blocker')
       // Not left on the page: on the repair of the blocker still in the way.
       expect(selectionPath()).toContain(`actions[${script.actions.length - 1}]`)
-      expect(panel()?.textContent).toContain('Replace encrypted proxy password')
+      expect(panel()?.textContent).toContain('Bind existing value')
       expect(document.activeElement).toBe(panel()?.querySelector('select[aria-label="Repair operation"]'))
       expect(document.activeElement).not.toBe(document.body)
       expect(announcement()?.textContent).toBe('Repair applied and saved to the script.')

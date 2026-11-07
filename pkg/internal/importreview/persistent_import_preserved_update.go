@@ -870,6 +870,7 @@ var stepReviewMetadataKeys = map[string]struct{}{
 	"review_reasons":     {},
 	"execution_blocker":  {},
 	"execution_blockers": {},
+	"advisory_callouts":  {},
 	"import_review":      {},
 	"review_required":    {},
 	"promotion_blocker":  {},

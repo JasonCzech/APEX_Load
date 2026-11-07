@@ -682,6 +682,14 @@ const FeatureEvacuationAssignmentStateV1 = "evacuation_assignment_state_v1"
 // referenced secret values and injects it as the assignment's runtime resolver.
 const FeatureSecretBundleV1 = "secret_bundle_v1"
 
+// FeatureSecretBundleRequiredOnlyV1 means AssignWork demands only the secret
+// names the assignment's execution consumes (engine.RequiredSecretNames) and
+// merely admits the other referenced names, such as a proxy credential the
+// current proxy settings never send. A generator without it demands every
+// referenced name, so controllers must not send it an assignment whose bundle
+// omits a referenced name.
+const FeatureSecretBundleRequiredOnlyV1 = "secret_bundle_required_only_v1"
+
 // FeatureMessageDetailCaptureV1 means the generator honors deterministic
 // per-execution success-capture hints and enforces cumulative item/byte budgets
 // in its archive recorder.

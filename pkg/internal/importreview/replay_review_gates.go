@@ -56,7 +56,7 @@ func ScriptReviewGateIssuesWithBrowserPolicy(
 	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		action := ReviewGateSurfaceAction(ref)
 		label := fmt.Sprintf("%s %q", ref.Path, action.Name)
-		if blockers := ExecutionReviewBlockerCodes(action.Metadata); len(blockers) > 0 {
+		if blockers := BlockingExecutionReviewBlockerCodes(action.Metadata); len(blockers) > 0 {
 			details := make([]string, 0, len(blockers))
 			for _, blocker := range blockers {
 				details = append(details, ExecutionBlockerDetail(blocker, action.Metadata))
@@ -113,6 +113,23 @@ func ExecutionReviewBlockerCodes(metadata map[string]any) []string {
 	codes = AppendUniqueStrings(nil, codes...)
 	sort.Strings(codes)
 	return codes
+}
+
+// BlockingExecutionReviewBlockerCodes is ExecutionReviewBlockerCodes without
+// the advisory callouts (dsl.AdvisoryExecutionBlockerCode), such as
+// encrypted_proxy_password, which never block replay, debug or launch. Scripts
+// stored before that callout became advisory still carry it as
+// execution_blocker metadata, so the code is skipped here rather than only no
+// longer written.
+func BlockingExecutionReviewBlockerCodes(metadata map[string]any) []string {
+	codes := ExecutionReviewBlockerCodes(metadata)
+	blocking := codes[:0:0]
+	for _, code := range codes {
+		if !dsl.AdvisoryExecutionBlockerCode(code) {
+			blocking = append(blocking, code)
+		}
+	}
+	return blocking
 }
 
 func ReviewGatedJavaScriptAction(action dsl.Action) bool {

@@ -520,7 +520,8 @@ func legacyTLSGateForTest(name, warning string) dsl.Action {
 	return gate
 }
 
-// encryptedProxyGateForTest is the gate an archive import stamps for an
+// encryptedProxyGateForTest is the advisory callout an archive import stamps
+// (advisory_callouts metadata) for an
 // encrypted proxy password, which replace_proxy_secret repairs.
 func encryptedProxyGateForTest() dsl.Action {
 	gate := dsl.Action{Name: "proxy setting", Type: "source_review"}
@@ -841,14 +842,18 @@ func TestImportRepairRestampedPreflightResolvesProjectSecrets(t *testing.T) {
 		}
 		wantMissing, wantGuidance, wantDetail := []string(nil), []string(nil), "Required: "+secret
 		if missing {
-			wantMissing, wantGuidance, wantDetail = []string{secret}, []string{"secret(s) require project configuration before execution: " + secret}, "Missing: "+secret
+			// The secret is used only by the active custom proxy's password,
+			// so it gets the proxy-specific blocker wording.
+			blocker := "Custom proxy credential not bound: The proxy password uses the secret " + secret + ", which is not bound to a project secret. Bind a project secret to it, or change Proxy mode to No proxy, System or PAC."
+			wantMissing, wantGuidance, wantDetail = []string{secret}, []string{blocker}, blocker
 		}
 		if !slices.Equal(preflight.RequiredSecrets, []string{secret}) || !slices.Equal(preflight.MissingSecrets, wantMissing) {
 			t.Fatalf("%s: required=%v missing=%v, want required [%s] and missing %v", label, preflight.RequiredSecrets, preflight.MissingSecrets, secret, wantMissing)
 		}
 		var guidance []string
 		for _, line := range preflight.Warnings {
-			if strings.HasPrefix(line, "secret(s) require project configuration") || strings.HasPrefix(line, "configure project secret(s)") {
+			if strings.HasPrefix(line, "secret(s) require project configuration") || strings.HasPrefix(line, "configure project secret(s)") ||
+				strings.HasPrefix(line, "Custom proxy credential not bound: ") {
 				guidance = append(guidance, line)
 			}
 		}
@@ -1186,6 +1191,10 @@ func TestEvaluateRepairedScriptReviewCodesKeepThePriorPromotionStatus(t *testing
 		{name: "promotable", report: map[string]any{"promotion_status": "promotable", "warnings": warnings}, status: "promotable"},
 		{name: "no report", status: "promotable"},
 		{name: "blocked", report: map[string]any{"promotion_status": "blocked", "warnings": warnings}, status: "blocked"},
+		// A report that only a legacy advisory callout held blocked (a
+		// converter that predates the advisory rule listed it) was never
+		// review-held, so review codes alone do not keep it blocked.
+		{name: "blocked by a legacy advisory callout", report: map[string]any{"promotion_status": "blocked", "blockers": []any{"encrypted_proxy_password at init[0]"}, "warnings": warnings}, status: "promotable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			script := placeholders(tc.report)

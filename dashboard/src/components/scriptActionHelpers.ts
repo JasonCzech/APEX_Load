@@ -1,5 +1,6 @@
 import type { ScriptActionDefinition } from '../types/scripts'
 import { dslSpecForActionType, type DslActionCatalog } from './dslActionCatalog'
+import { executionBlockerCodeBlocks } from './proxyCredentialSecrets'
 
 // Action is the editor's working alias for a script action definition.
 type Action = ScriptActionDefinition
@@ -143,12 +144,16 @@ export function actionMetadataBool(action: Action, key: string) {
   return false
 }
 
+// The execution blockers a step carries that refuse replay, as the server
+// gates them: an encrypted proxy password a step stored before the proxy
+// credential rule still carries never blocks by itself
+// (executionBlockerCodeBlocks).
 export function actionExecutionBlockers(action: Action): string[] {
   const blockers = new Set<string>()
   const add = (value: unknown) => {
     if (typeof value !== 'string') return
     const normalized = value.trim()
-    if (normalized) blockers.add(normalized)
+    if (normalized && executionBlockerCodeBlocks(normalized)) blockers.add(normalized)
   }
   add(action.metadata?.execution_blocker)
   const values = action.metadata?.execution_blockers

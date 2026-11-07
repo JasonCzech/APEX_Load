@@ -512,8 +512,18 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	required := scriptSecretReferences(stored.Script)
-	statuses, applicationID, err := s.scriptSecretStatuses(r, stored.Script, required)
+	// Statuses (and the binding details) cover every referenced name, so a
+	// binding dialog can still bind a proxy credential that is not in use.
+	// "required" and "missing" cover only the names a run consumes: a secret
+	// referenced only by an inactive proxy credential (No proxy / System /
+	// PAC, or a browser proxy without a server) is neither.
+	referenced := scriptSecretReferences(stored.Script)
+	required := scriptRequiredSecretReferences(stored.Script)
+	requiredSet := make(map[string]struct{}, len(required))
+	for _, name := range required {
+		requiredSet[name] = struct{}{}
+	}
+	statuses, applicationID, err := s.scriptSecretStatuses(r, stored.Script, referenced)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "script secret status is unavailable")
 		return
@@ -523,13 +533,14 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 	for _, status := range statuses {
 		if status.Configured {
 			configured = append(configured, status.Name)
-		} else {
+		} else if _, needed := requiredSet[status.Name]; needed {
 			missing = append(missing, status.Name)
 		}
 	}
 	response := map[string]any{
 		"script_id":    stored.ID,
 		"project_id":   stored.ProjectID,
+		"referenced":   referenced,
 		"required":     required,
 		"configured":   configured,
 		"missing":      missing,
@@ -1372,10 +1383,20 @@ func validateProjectSecretInputs(raw []projectSecretInput) ([]projectSecretInput
 }
 
 func scriptSecretReferences(script *dsl.Script) []string {
+	return normalizedScriptSecretNames(script, engine.ReferencedSecretNames)
+}
+
+// scriptRequiredSecretReferences is scriptSecretReferences restricted to the
+// names a run consumes (engine.RequiredSecretNames).
+func scriptRequiredSecretReferences(script *dsl.Script) []string {
+	return normalizedScriptSecretNames(script, engine.RequiredSecretNames)
+}
+
+func normalizedScriptSecretNames(script *dsl.Script, collect func(*dsl.Script) ([]string, error)) []string {
 	if script == nil {
 		return []string{}
 	}
-	referenced, err := engine.ReferencedSecretNames(script)
+	referenced, err := collect(script)
 	if err != nil {
 		return []string{}
 	}

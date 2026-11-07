@@ -30,6 +30,18 @@ func RemoveActionCodes(a *dsl.Action, remove func(string) bool) {
 			m[pair[1]] = kept
 		}
 	}
+	if advisory := dslwalk.MetadataStrings(m, dsl.AdvisoryCalloutsMetadataKey); len(advisory) > 0 {
+		kept := []string{}
+		for _, c := range advisory {
+			if !remove(c) {
+				kept = append(kept, c)
+			}
+		}
+		delete(m, dsl.AdvisoryCalloutsMetadataKey)
+		if kept = uniqueSorted(kept); len(kept) > 0 {
+			m[dsl.AdvisoryCalloutsMetadataKey] = kept
+		}
+	}
 	if _, ok := m["review_gate"]; !ok && (hadReviewCodes || remove("import_review_required")) {
 		delete(m, "review_required")
 		delete(m, "promotion_blocker")

@@ -1068,10 +1068,17 @@ test('LoadRunner TLS settings can be previewed and applied while remaining on Re
  await page.screenshot({path:testInfo.outputPath('inline-tls-review-narrow.png'),fullPage:true})
 })
 
+const customProxyWithEncryptedPassword = '[Proxy]\nMode=custom\nProxyServer=http://proxy.example.test:8080\nProxyUserName=synthetic-user\nProxyPassword=synthetic-encrypted-value\nProxyPasswordIsEncrypted=true\n'
 for (const scenario of [
-  { operation: 'omit_proxy_credentials', label: 'Import proxy without credentials', mode: 'custom', settings: '[Proxy]\nMode=custom\nProxyServer=http://proxy.example.test:8080\nProxyUserName=synthetic-user\nProxyPassword=synthetic-encrypted-value\nProxyPasswordIsEncrypted=true\n' },
-  { operation: 'disable_imported_proxy', label: 'Ignore imported proxy settings', mode: 'none', settings: '[WEB]\nProxyUseBrowser=0\nProxyUseProxy=0\nProxyUseProxyServer=0\nProxyUseAutoConfigScript=1\nProxyAutoConfigScriptURL=https://proxy.example.test/config.pac\nProxyUserName=synthetic-user\nProxyPassword=synthetic-encrypted-value\nProxyPasswordIsEncrypted=true\n' },
+  { operation: 'omit_proxy_credentials', label: 'Import proxy without credentials', mode: 'custom', settings: customProxyWithEncryptedPassword },
+  { operation: 'disable_imported_proxy', label: 'Ignore imported proxy settings', mode: 'none', settings: customProxyWithEncryptedPassword },
 ]) {
+  // Each scenario is an active CUSTOM proxy with an encrypted password, so the
+  // import calls out the proxy password (a non-blocking call-out with guided
+  // repairs; only an unbound secret on a Custom proxy blocks). A proxy whose
+  // credentials are not in use (no proxy, system or PAC), or one the importer
+  // already turns off, is not called out at all, so it has no repair to
+  // exercise here.
   test(`LoadRunner optional proxy settings: ${scenario.operation} survives save and reopen`, async ({ page }, testInfo) => {
     if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
     const workspace = await createWorkspace(page.context().request)

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -182,6 +183,117 @@ func refineRuntimeSettingDispositions(dispositions map[string]map[string]map[str
 				}
 				if note != "" {
 					keys[key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, Note: note}
+				}
+			}
+		}
+	}
+}
+
+// encryptedProxyPasswordCallout reports whether the import calls out the
+// VuGen-encrypted proxy password: the draft's HTTP proxy credentials are active
+// (dsl.HTTPProxyCredentialsActive: Proxy mode Custom, or a legacy proxy URL
+// with no mode) and its password is still the unrecoverable encrypted
+// placeholder reference. The callout (encrypted_proxy_password, with its
+// guided repairs) never blocks by itself: an unbound proxy secret blocks only
+// through the live required-secret check, and only while the proxy is Custom.
+// A System or PAC proxy keeps the reference, never sends it, and gets no
+// callout. It drives both the callout and the ProxyPasswordIsEncrypted
+// disposition so they agree.
+func encryptedProxyPasswordCallout(rc *RuntimeConfig, script *dsl.Script) bool {
+	if rc == nil || script == nil || !rc.ProxyPasswordEncrypted {
+		return false
+	}
+	return dsl.HTTPProxyCredentialsActive(script.Config.HTTP) &&
+		strings.TrimSpace(script.Config.HTTP.Proxy.Password) == encryptedRuntimeProxyPasswordPlaceholder
+}
+
+// refineEncryptedProxyPasswordDisposition stops the ProxyPasswordIsEncrypted
+// row from asking to provision a proxy secret the draft does not use. Only the
+// called-out case (an active custom proxy whose password is the encrypted
+// placeholder) keeps the classifier's provision row. A draft that keeps a
+// non-encrypted proxy password as a secret reference (a disclosure
+// placeholder the importer could not import, or a source that already names
+// a secret) gets a mapped row naming that secret:
+// under Custom it is sent, so it must be bound; under System or PAC it is
+// needed only if Proxy mode becomes Custom. Otherwise the row says why no
+// proxy secret is needed: proxying ended disabled, a System or PAC selection
+// dropped the encrypted password, or the source carried only the encoding
+// marker. Every non_applicable row carries an explicit Reason: this runs
+// after the explain pass, and its notes mention Proxy mode, which keyword
+// matching would misread as an unused mode value.
+func refineEncryptedProxyPasswordDisposition(dispositions map[string]map[string]map[string]RuntimeSettingDisposition, rc *RuntimeConfig, script *dsl.Script) {
+	if rc == nil || script == nil || !rc.proxyPasswordMarkerPresent || encryptedProxyPasswordCallout(rc, script) {
+		return
+	}
+	httpConfig := script.Config.HTTP
+	proxyDisabled := !dsl.HTTPProxyCredentialsActive(httpConfig) &&
+		(strings.TrimSpace(httpConfig.ProxyMode) == "" || strings.TrimSpace(httpConfig.ProxyMode) == "none") &&
+		strings.TrimSpace(httpConfig.Proxy.URL) == "" && strings.TrimSpace(httpConfig.Proxy.PACURL) == ""
+	passwordSecret, passwordIsSecret := credential.ParseReference(httpConfig.Proxy.Password)
+	row := RuntimeSettingDisposition{Status: RuntimeSettingDispositionNonApplicable, ParityID: "proxy"}
+	switch {
+	case !rc.ProxyPasswordEncrypted && passwordIsSecret:
+		row.Status = RuntimeSettingDispositionMapped
+		row.Fields = []string{"config.http.proxy.password"}
+		switch {
+		case !dsl.HTTPProxyCredentialsActive(httpConfig):
+			row.Note = fmt.Sprintf(
+				"Credential encoding marker consumed by the importer. The source proxy password is kept as the secret %s, which Proxy mode %s does not send; it is needed only if you switch Proxy mode to Custom.",
+				passwordSecret,
+				dsl.HTTPProxyModeLabel(httpConfig),
+			)
+		case rc.proxyPasswordSourceUnavailable:
+			row.Note = fmt.Sprintf(
+				"Credential encoding marker consumed by the importer. The source proxy password could not be imported; bind the secret %s, or change Proxy mode to No proxy, System or PAC.",
+				passwordSecret,
+			)
+		default:
+			// A source that already names a secret keeps that reference.
+			row.Note = fmt.Sprintf(
+				"Credential encoding marker consumed by the importer. The proxy password uses the secret %s, which Proxy mode Custom sends; bind a project secret to it, or change Proxy mode to No proxy, System or PAC.",
+				passwordSecret,
+			)
+		}
+	case !rc.ProxyPasswordEncrypted:
+		// A false marker can sit beside a plaintext ProxyPassword, so it
+		// must not claim the source has no proxy password.
+		row.Reason = "source_tool_metadata"
+		row.Note = "Credential encoding marker only: the source proxy password is not encrypted, so no protected proxy secret is needed."
+	case proxyDisabled:
+		row.Reason = "disabled_feature"
+		row.Note = "Credential encoding marker only: the source has no proxy password and this draft does not use a proxy."
+		if rc.proxyPasswordEncryptedValue {
+			row.Note = "Encrypted proxy password not imported: this draft does not use a proxy, so no proxy secret is needed. If you switch Proxy mode to Custom, add its password as a project secret."
+		}
+	case strings.TrimSpace(httpConfig.Proxy.Password) == encryptedRuntimeProxyPasswordPlaceholder:
+		row.Status = RuntimeSettingDispositionMapped
+		row.Fields = []string{"config.http.proxy.password"}
+		row.Note = fmt.Sprintf(
+			"Credential encoding marker consumed by the importer. The encrypted proxy password is kept as the secret %s, which Proxy mode %s does not send; it is needed only if you switch Proxy mode to Custom.",
+			enterpriseProxyPasswordSecretName,
+			dsl.HTTPProxyModeLabel(httpConfig),
+		)
+	case rc.proxyPasswordEncryptedValue:
+		// An explicit System selection ([Proxy] Mode=system) drops the
+		// source credentials rather than keeping the reference.
+		row.Reason = "disabled_feature"
+		row.Note = fmt.Sprintf(
+			"Encrypted proxy password not imported: Proxy mode %s does not send proxy credentials, so no proxy secret is needed. If you switch Proxy mode to Custom, add its password as a project secret.",
+			dsl.HTTPProxyModeLabel(httpConfig),
+		)
+	default:
+		row.Reason = "source_tool_metadata"
+		row.Note = "Credential encoding marker only: the source has no proxy password, so no proxy secret is needed."
+	}
+	for _, sections := range dispositions {
+		for section, keys := range sections {
+			// Proxy settings are read from [Proxy] as well as the HTTP sections.
+			if canonical := runtimeConfigCanonicalSection(section); canonical != "http" && !strings.EqualFold(strings.TrimSpace(section), "proxy") {
+				continue
+			}
+			for key := range keys {
+				if strings.EqualFold(key, "ProxyPasswordIsEncrypted") {
+					keys[key] = row
 				}
 			}
 		}

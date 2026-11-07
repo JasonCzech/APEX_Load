@@ -54,6 +54,17 @@ func TestAccRuntimeDiagnosticsProfile(t *testing.T) {
 			}
 		}
 	}
+	// Rows rewritten after the explain pass (ProxyPasswordIsEncrypted) sit
+	// outside the selected sections above: walk every stored row.
+	for file, sections := range rows {
+		for section, keys := range sections {
+			for key, r := range keys {
+				if r.Status == RuntimeSettingDispositionNonApplicable && r.Reason == "" {
+					t.Fatalf("no reason: %s/%s/%s %+v", file, section, key, r)
+				}
+			}
+		}
+	}
 	for _, key := range []string{"HttpErrorsAsWarnings", "FailNonCriticalItem", "ResourcePageTimeoutIsWarning", "EnableChecks", "EnableIPCache", "EnableSnapshotsInReplay", "SaveSnapshotResources"} {
 		if rows["default.cfg"]["WEB"][key].Status != RuntimeSettingDispositionMapped {
 			t.Fatalf("%s: %+v", key, rows["default.cfg"]["WEB"][key])

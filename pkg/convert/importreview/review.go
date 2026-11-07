@@ -26,6 +26,12 @@ const (
 // reconstructed from a persisted draft's execution gates.
 const XMLBodyJSONContentTypeDetail = "The request body is XML, but the Content-Type header declares JSON. Update this request's Content-Type header to the XML media type expected by the service, then re-import and validate."
 
+// EncryptedProxyPasswordDetail describes the advisory encrypted_proxy_password
+// callout (dsl.EncryptedProxyPasswordFindingCode). It does not block: an
+// unbound proxy secret blocks only while Proxy mode is Custom, through the
+// required-secret check.
+const EncryptedProxyPasswordDetail = "The imported proxy password was encrypted and cannot be used. It is needed only while Proxy mode is Custom: bind a project secret to the proxy password, or change Proxy mode to No proxy, System or PAC."
+
 // Finding is one deterministic conversion or readiness decision.
 type Finding struct {
 	Code                    string        `json:"code"`
@@ -79,6 +85,9 @@ func Evaluate(input EvaluationInput) Readiness {
 	for _, finding := range findings {
 		code := firstNonEmpty(finding.Code, "import_finding")
 		switch {
+		case dsl.AdvisoryExecutionBlockerCode(code):
+			// A callout such as encrypted_proxy_password never blocks; the
+			// live required-secret check is its only blocker.
 		case finding.Gate == GateExecution || finding.Severity == diag.Blocker:
 			blockingCodes = append(blockingCodes, code)
 		case finding.Gate == GatePromotion || finding.AcknowledgementRequired:
@@ -206,6 +215,9 @@ func ApplyToAction(action *dsl.Action, findings []Finding) {
 	if action.Metadata == nil {
 		action.Metadata = make(map[string]any)
 	}
+	// A legacy advisory execution_blocker(s) code moves to its own key, so
+	// re-applying findings never re-writes the blocking spelling.
+	dsl.MoveAdvisoryExecutionBlockers(action.Metadata)
 	executionCodes := metadataStringSlice(action.Metadata, "execution_blockers")
 	existingExecution := metadataString(action.Metadata, "execution_blocker")
 	if existingExecution != "" {
@@ -220,9 +232,15 @@ func ApplyToAction(action *dsl.Action, findings []Finding) {
 		// Preserve legacy review provenance before adding typed findings.
 		reviewCodes = append(reviewCodes, "import_review_required")
 	}
+	advisoryCodes := metadataStringSlice(action.Metadata, dsl.AdvisoryCalloutsMetadataKey)
 	for _, finding := range findings {
 		code := firstNonEmpty(finding.Code, "import_finding")
 		switch {
+		case dsl.AdvisoryExecutionBlockerCode(code):
+			// An advisory callout is never written as execution_blocker(s):
+			// a generator or controller built before it became advisory
+			// would block on that spelling.
+			advisoryCodes = append(advisoryCodes, code)
 		case finding.Gate == GateExecution || finding.Severity == diag.Blocker:
 			executionCodes = append(executionCodes, code)
 		case finding.Gate == GatePromotion || finding.AcknowledgementRequired:
@@ -231,9 +249,13 @@ func ApplyToAction(action *dsl.Action, findings []Finding) {
 	}
 	executionCodes = uniqueSorted(executionCodes)
 	reviewCodes = uniqueSorted(reviewCodes)
+	advisoryCodes = uniqueSorted(advisoryCodes)
 	if len(executionCodes) > 0 {
 		action.Metadata["execution_blocker"] = firstNonEmpty(existingExecution, executionCodes[0])
 		action.Metadata["execution_blockers"] = executionCodes
+	}
+	if len(advisoryCodes) > 0 {
+		action.Metadata[dsl.AdvisoryCalloutsMetadataKey] = advisoryCodes
 	}
 	if len(reviewCodes) > 0 {
 		action.Metadata["review_required"] = true
@@ -241,9 +263,17 @@ func ApplyToAction(action *dsl.Action, findings []Finding) {
 		action.Metadata["review_gate"] = firstNonEmpty(existingReviewGate, reviewCodes[0])
 		action.Metadata["review_reasons"] = reviewCodes
 	}
-	if len(executionCodes) > 0 {
-		applyDurableImportReview(action, findings, executionCodes)
+	if len(executionCodes) > 0 || len(advisoryCodes) > 0 {
+		applyDurableImportReview(action, findings, append(append([]string(nil), executionCodes...), advisoryCodes...))
 	}
+}
+
+// durableReviewFinding reports whether a finding's provenance is recorded in
+// import_review: an execution gate, or an advisory callout, whose source and
+// guided repair the review surfaces read from there.
+func durableReviewFinding(finding Finding) bool {
+	return finding.Gate == GateExecution || finding.Severity == diag.Blocker ||
+		dsl.AdvisoryExecutionBlockerCode(firstNonEmpty(finding.Code, "import_finding"))
 }
 
 func applyDurableImportReview(action *dsl.Action, findings []Finding, executionCodes []string) {
@@ -263,7 +293,7 @@ func applyDurableImportReview(action *dsl.Action, findings []Finding, executionC
 	source := metadataString(review, "source")
 	resolution := metadataString(review, "resolution")
 	for _, finding := range findings {
-		if finding.Gate != GateExecution && finding.Severity != diag.Blocker {
+		if !durableReviewFinding(finding) {
 			continue
 		}
 		reason := finding.ReasonCode
@@ -354,7 +384,31 @@ func FindingsFromScript(script *dsl.Script) ([]Finding, error) {
 		if code := metadataString(metadata, "execution_blocker"); code != "" {
 			executionCodes = append(executionCodes, code)
 		}
+		// Advisory callouts live in dsl.AdvisoryCalloutsMetadataKey. Scripts
+		// stored before the callout became advisory carry the same code as
+		// execution_blocker metadata; both spellings read as the callout.
+		for _, code := range metadataStringSlice(metadata, dsl.AdvisoryCalloutsMetadataKey) {
+			if dsl.AdvisoryExecutionBlockerCode(code) {
+				executionCodes = append(executionCodes, code)
+			}
+		}
 		for _, code := range uniqueSorted(executionCodes) {
+			if dsl.AdvisoryExecutionBlockerCode(code) {
+				// It only calls the requirement out, with its guided repairs.
+				findings = append(findings, Finding{
+					Code:       code,
+					Severity:   diag.Warning,
+					Element:    element,
+					Detail:     EncryptedProxyPasswordDetail,
+					Location:   ref.Path,
+					ActionPath: ref.Path,
+					Source:     reviewSource,
+					ReasonCode: firstString(reviewReasons),
+					SourceRef:  firstString(reviewRefs),
+					Resolution: reviewResolution,
+				})
+				continue
+			}
 			detail := "imported behavior has an unresolved execution blocker"
 			if code == "request_body_xml_json_content_type_mismatch" {
 				detail = XMLBodyJSONContentTypeDetail

@@ -82,7 +82,9 @@ func executionBlockerCodes(metadata map[string]any) []string {
 	seen := make(map[string]struct{})
 	add := func(value string) {
 		value = strings.TrimSpace(value)
-		if value != "" {
+		// Advisory callouts (encrypted_proxy_password) never block, including
+		// on scripts stored while they were still written as blockers.
+		if value != "" && !dsl.AdvisoryExecutionBlockerCode(value) {
 			seen[value] = struct{}{}
 		}
 	}

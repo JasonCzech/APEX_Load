@@ -1020,7 +1020,8 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 }
 
 func validateCIRequiredProjectSecrets(script *dsl.Script, resolver engine.SecretResolver) error {
-	names, err := engine.ReferencedSecretNames(script)
+	// Required names only: an inactive proxy credential's secret never blocks.
+	names, err := engine.RequiredSecretNames(script)
 	if err != nil {
 		return fmt.Errorf("inspect controller-managed secrets")
 	}
@@ -1034,7 +1035,7 @@ func validateCIRequiredProjectSecrets(script *dsl.Script, resolver engine.Secret
 		return fmt.Errorf("resolve controller-managed secrets: %w", err)
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("controller-managed secret(s) could not be resolved: %s", strings.Join(missing, ", "))
+		return engine.MissingSecretsError(script, "controller-managed secret(s) could not be resolved: ", missing)
 	}
 	return nil
 }

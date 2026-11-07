@@ -74,6 +74,61 @@ func TestValidateAssignmentSecretReferencesRequiresExactBundle(t *testing.T) {
 	}
 }
 
+func TestValidateAssignmentSecretBundleDemandsOnlyRequiredNames(t *testing.T) {
+	referenced := []string{"API_TOKEN", "ENTERPRISE_PROXY_PASSWORD"}
+	required := []string{"API_TOKEN"}
+	// Staging demands only the required names: an unbound inactive proxy
+	// credential's secret may be absent.
+	if err := validateAssignmentSecretBundle(required, referenced, map[string]string{"API_TOKEN": "value"}); err != nil {
+		t.Fatalf("required-only bundle: %v", err)
+	}
+	// The controller also bundles a bound optional name; it is admitted.
+	if err := validateAssignmentSecretBundle(required, referenced, map[string]string{"API_TOKEN": "value", "ENTERPRISE_PROXY_PASSWORD": "proxy"}); err != nil {
+		t.Fatalf("referenced bundle: %v", err)
+	}
+	if err := validateAssignmentSecretBundle(required, referenced, nil); err == nil || !strings.Contains(err.Error(), "missing referenced logical secret") {
+		t.Fatalf("bundle without a required name: %v", err)
+	}
+	if err := validateAssignmentSecretBundle(required, referenced, map[string]string{"API_TOKEN": "value", "OTHER": "x"}); err == nil || !strings.Contains(err.Error(), "unreferenced logical secret") {
+		t.Fatalf("bundle with an unreferenced name: %v", err)
+	}
+	// A generator without FeatureSecretBundleRequiredOnlyV1 applies the
+	// every-referenced-name rule: it admits the controller's bundle only when
+	// the bound inactive proxy secret rides along, which is why the controller
+	// bundles bound optional names and checks the feature for unbound ones.
+	if err := validateAssignmentSecretReferences(referenced, map[string]string{"API_TOKEN": "value", "ENTERPRISE_PROXY_PASSWORD": "proxy"}); err != nil {
+		t.Fatalf("legacy rule with a complete bundle: %v", err)
+	}
+	if err := validateAssignmentSecretReferences(referenced, map[string]string{"API_TOKEN": "value"}); err == nil || !strings.Contains(err.Error(), "ENTERPRISE_PROXY_PASSWORD") {
+		t.Fatalf("legacy rule with a required-only bundle: %v", err)
+	}
+}
+
+func TestGeneratorAdvertisesSecretBundleRequiredOnlyCapability(t *testing.T) {
+	for _, feature := range compatibleFeatureNames() {
+		if feature == FeatureSecretBundleRequiredOnlyV1 {
+			return
+		}
+	}
+	t.Fatalf("compatible features do not advertise %q", FeatureSecretBundleRequiredOnlyV1)
+}
+
+func TestGeneratorAdmissionAcceptsUnboundSecretBehindInactiveProxy(t *testing.T) {
+	service := newIsolatedService(t, 10, WithExecution())
+	script := []byte(`{"name":"system-proxy","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test","http":{"proxy_mode":"system","proxy":{"password":"{{secret.ENTERPRISE_PROXY_PASSWORD}}"}}},"actions":[{"name":"request","type":"GET","target":"/"}]}`)
+	ack, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
+		TestId:                "inactive-proxy-secret",
+		GroupName:             "group",
+		ScriptId:              "inactive-proxy-script",
+		ScriptContent:         script,
+		VuserCount:            1,
+		TargetDurationSeconds: 1,
+	})
+	if err != nil || !ack.GetAccepted() {
+		t.Fatalf("AssignWork with an unbound secret behind a System proxy = (%#v, %v)", ack, err)
+	}
+}
+
 func TestGeneratorAdmissionRejectsSecretScriptWithoutBundleAndAllowsSecretFreeScript(t *testing.T) {
 	service := newIsolatedService(t, 10, WithExecution())
 	secretScript := []byte(`{"name":"requires-secret","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"request","type":"GET","target":"/?token={{secret.API_TOKEN}}"}]}`)
