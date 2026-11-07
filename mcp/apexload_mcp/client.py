@@ -10,6 +10,8 @@ from urllib.parse import quote, urlencode, urlparse
 import httpx
 
 DEFAULT_API_URL = "http://localhost:8080/api/v1"
+DEFAULT_MAX_TEXT_PREVIEW_CHARS = 65536
+MAX_TEXT_PREVIEW_CEILING_CHARS = 262144
 
 
 JsonMap = dict[str, Any]
@@ -22,6 +24,7 @@ class APEXLoadClientConfig:
     bearer_token: str = ""
     default_project_id: str = ""
     timeout_seconds: float = 30.0
+    max_text_preview_chars: int = DEFAULT_MAX_TEXT_PREVIEW_CHARS
 
     @classmethod
     def from_env(cls) -> "APEXLoadClientConfig":
@@ -30,12 +33,18 @@ class APEXLoadClientConfig:
             timeout_seconds = float(timeout_raw)
         except ValueError:
             timeout_seconds = 30.0
+        max_text_raw = os.environ.get("APEXLOAD_MCP_MAX_TEXT_CHARS", str(DEFAULT_MAX_TEXT_PREVIEW_CHARS)).strip()
+        try:
+            max_text_preview_chars = max(1024, min(int(max_text_raw), MAX_TEXT_PREVIEW_CEILING_CHARS))
+        except ValueError:
+            max_text_preview_chars = DEFAULT_MAX_TEXT_PREVIEW_CHARS
         return cls(
             base_url=os.environ.get("APEXLOAD_URL", DEFAULT_API_URL).strip() or DEFAULT_API_URL,
             api_key=os.environ.get("APEXLOAD_API_KEY", "").strip(),
             bearer_token=os.environ.get("APEXLOAD_BEARER_TOKEN", "").strip(),
             default_project_id=os.environ.get("APEXLOAD_PROJECT_ID", "").strip(),
             timeout_seconds=timeout_seconds,
+            max_text_preview_chars=max_text_preview_chars,
         )
 
 
@@ -183,10 +192,14 @@ class APEXLoadClient:
                 return {"content_type": content_type, "text": response.text}
         text_like = content_type.startswith("text/") or any(token in content_type for token in ("csv", "html", "xml"))
         content_disposition = response.headers.get("content-disposition", "")
+        max_chars = max(1024, min(self.config.max_text_preview_chars, MAX_TEXT_PREVIEW_CEILING_CHARS))
+        text = response.text if text_like else ""
         return {
             "content_type": content_type or "application/octet-stream",
             "byte_length": len(response.content),
-            "text_preview": response.text[:4000] if text_like else "",
+            "total_chars": len(text),
+            "truncated": len(text) > max_chars,
+            "text_preview": text[:max_chars],
             "content_disposition": content_disposition,
         }
 

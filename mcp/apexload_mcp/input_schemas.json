@@ -1,6 +1,163 @@
 {
   "source": "docs/swagger.yaml",
   "tools": {
+    "correlation_diagnose": {
+      "payload": {
+        "properties": {
+          "recorded": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "parent_action_name": {
+                  "type": "string"
+                },
+                "request_body": {
+                  "type": "string"
+                },
+                "request_body_transformed": {
+                  "type": "boolean"
+                },
+                "request_headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "request_index": {
+                  "anyOf": [
+                    {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "request_url": {
+                  "type": "string"
+                },
+                "response_body": {
+                  "type": "string"
+                },
+                "response_headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "response_status": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "response_success": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "step_path": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "replay": {
+            "items": {
+              "properties": {
+                "id": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "parent_action_name": {
+                  "type": "string"
+                },
+                "request_body": {
+                  "type": "string"
+                },
+                "request_body_transformed": {
+                  "type": "boolean"
+                },
+                "request_headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "request_index": {
+                  "anyOf": [
+                    {
+                      "format": "int64",
+                      "type": "integer"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "request_url": {
+                  "type": "string"
+                },
+                "response_body": {
+                  "type": "string"
+                },
+                "response_headers": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "response_status": {
+                  "format": "int64",
+                  "type": "integer"
+                },
+                "response_success": {
+                  "anyOf": [
+                    {
+                      "type": "boolean"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "step_path": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "dsl_actions_list": {
+      "query": {
+        "properties": {
+          "protocol": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
     "list_tests": {
       "query": {
         "properties": {
@@ -557,6 +714,79 @@
         "type": "object"
       }
     },
+    "replay_session_export": {
+      "path_params": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "format": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "replay_session_get": {
+      "path_params": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      }
+    },
+    "replay_session_pause": {
+      "path_params": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      }
+    },
+    "replay_session_resume": {
+      "path_params": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      }
+    },
+    "replay_session_stop": {
+      "path_params": {
+        "properties": {
+          "session_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      }
+    },
     "run_archive_capacity_sweep": {
       "path_params": {
         "properties": {
@@ -572,6 +802,41 @@
       "query": {
         "properties": {
           "format": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "run_archive_exemplars": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "offset": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "population": {
             "type": "string"
           }
         },
@@ -646,6 +911,38 @@
         "type": "object"
       }
     },
+    "run_baseline_candidates": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "offset": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "other_scenarios": {
+            "type": "string"
+          },
+          "q": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
     "run_list": {
       "query": {
         "properties": {
@@ -673,6 +970,67 @@
             "type": "string"
           }
         },
+        "type": "object"
+      }
+    },
+    "run_live_error_evidence": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "query": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "limit": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "signature": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "signature"
+        ],
+        "type": "object"
+      }
+    },
+    "run_live_transaction_detail": {
+      "path_params": {
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "event_id",
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    "run_preparation_get": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
         "type": "object"
       }
     },
@@ -730,6 +1088,82 @@
         "type": "object"
       }
     },
+    "scenario_size_from_goal": {
+      "payload": {
+        "properties": {
+          "baseline_test_id": {
+            "type": "string"
+          },
+          "duration": {
+            "type": "string"
+          },
+          "groups": {
+            "items": {
+              "properties": {
+                "art_basis": {
+                  "type": "string"
+                },
+                "art_ms": {
+                  "anyOf": [
+                    {
+                      "format": "double",
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "group": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "script_id": {
+                  "type": "string"
+                },
+                "target_tps": {
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "max_vusers": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "min_vusers": {
+            "anyOf": [
+              {
+                "format": "int64",
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "start_delay": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
     "script_get": {
       "path_params": {
         "properties": {
@@ -749,6 +1183,287 @@
               "authoring"
             ],
             "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "script_repair_preview": {
+      "path_params": {
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      },
+      "payload": {
+        "properties": {
+          "action_path": {
+            "type": "string"
+          },
+          "finding": {
+            "type": "string"
+          },
+          "operation": {
+            "properties": {
+              "body": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "client_id_secret": {
+                "type": "string"
+              },
+              "extractor": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "convert": {
+                        "type": "string"
+                      },
+                      "default_value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "dfes": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "expression": {
+                        "type": "string"
+                      },
+                      "mode": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "on_miss": {
+                        "type": "string"
+                      },
+                      "save_length": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "save_offset": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "scope": {
+                        "anyOf": [
+                          {
+                            "properties": {
+                              "content_type": {
+                                "type": "string"
+                              },
+                              "header_names": {
+                                "items": {
+                                  "type": "string"
+                                },
+                                "type": "array"
+                              },
+                              "redirects": {
+                                "type": "string"
+                              },
+                              "request_url": {
+                                "type": "string"
+                              },
+                              "resources": {
+                                "type": "string"
+                              }
+                            },
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "iterations": {
+                "format": "int64",
+                "type": "integer"
+              },
+              "parameter": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "auto_allocate": {
+                        "type": "boolean"
+                      },
+                      "block_size": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "charset": {
+                        "type": "string"
+                      },
+                      "column": {
+                        "type": "string"
+                      },
+                      "data_source": {
+                        "type": "string"
+                      },
+                      "end": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "format": {
+                        "type": "string"
+                      },
+                      "format_dialect": {
+                        "type": "string"
+                      },
+                      "length": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "max": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "min": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "offset_seconds": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "on_exhaustion": {
+                        "type": "string"
+                      },
+                      "pad_char": {
+                        "type": "string"
+                      },
+                      "pad_width": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "random_algorithm": {
+                        "type": "string"
+                      },
+                      "same_line_as": {
+                        "type": "string"
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "scope_id": {
+                        "type": "string"
+                      },
+                      "seed": {
+                        "anyOf": [
+                          {
+                            "format": "int64",
+                            "type": "integer"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "selection": {
+                        "type": "string"
+                      },
+                      "start": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "start_row": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "step": {
+                        "format": "int64",
+                        "type": "integer"
+                      },
+                      "timezone": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "update": {
+                        "type": "string"
+                      },
+                      "value_for_each_vuser": {
+                        "type": "boolean"
+                      },
+                      "values": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "producer": {
+                "type": "string"
+              },
+              "response_path": {
+                "type": "string"
+              },
+              "secret_name": {
+                "type": "string"
+              },
+              "tls_max": {
+                "type": "string"
+              },
+              "tls_min": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "variable": {
+                "type": "string"
+              },
+              "vusers": {
+                "format": "int64",
+                "type": "integer"
+              }
+            },
+            "type": "object"
           }
         },
         "type": "object"

@@ -34,6 +34,20 @@ WORKFLOWS = {
     ("GET", "/tests/{id}/archive/llm-latency-decomposition"),
     ("GET", "/tests/{id}/archive/llm-samples"),
     ("POST", "/tests/{id}/archive/genai-spans/lookup"),
+    ("GET", "/dsl/actions"),
+    ("POST", "/correlations/diagnose"),
+    ("POST", "/scripts/{id}/repairs/preview"),
+    ("POST", "/scenarios/size-from-goal"),
+    ("GET", "/replay/sessions/{session_id}"),
+    ("GET", "/replay/sessions/{session_id}/export"),
+    ("POST", "/replay/sessions/{session_id}/pause"),
+    ("POST", "/replay/sessions/{session_id}/resume"),
+    ("POST", "/replay/sessions/{session_id}/stop"),
+    ("GET", "/tests/{id}/preparation"),
+    ("GET", "/tests/{id}/errors/evidence"),
+    ("GET", "/tests/{id}/transactions/live/{event_id}"),
+    ("GET", "/tests/{id}/archive/exemplars"),
+    ("GET", "/tests/{id}/baseline-candidates"),
 }
 
 
