@@ -1099,6 +1099,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // or by the Overview & bulk checkboxes: what Wrap in transaction, Save as
   // block and the row menu act on. Keys are the outline's row keys.
   const [blockSelection, setBlockSelection] = useState<Set<string>>(new Set())
+  // A transaction just made in the outline, which opens to show what it wraps.
+  // It names the script it was made in, so a later edit (or a closed outline) cannot open another group.
+  const [outlineReveal, setOutlineReveal] = useState<{ phase: string; actionIndex: number; script: ScriptDefinition } | null>(null)
   // The outline's row menu (right-click, Shift+F10): where it opened and the rows it acts on.
   const [outlineMenu, setOutlineMenu] = useState<{ point: { x: number; y: number }; keys: string[]; rowKey: string } | null>(null)
   // Naming a transaction: wrapping rows, or renaming one. `returnKey` is the
@@ -5986,6 +5989,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setScript(edit.script)
     followLocationRemap(edit.remap)
     selectLocation(edit.focus)
+    const created = edit.focus
+    if (created && !created.stepPath?.length) setOutlineReveal({ phase: created.phase, actionIndex: created.actionIndex, script: edit.script })
     const rows = resolved.target.selected + resolved.target.between
     setSuccess(`Wrapped ${rows} ${rows === 1 ? 'row' : 'rows'} in transaction ${name}. Changes are not saved yet; Undo restores the steps as they were.`)
     setError('')
@@ -6015,8 +6020,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setScript(edit.script)
     followLocationRemap(edit.remap)
     selectLocation(edit.focus)
-    const subs = edit.subTransactions ? ` Its ${edit.subTransactions} ${edit.subTransactions === 1 ? 'sub-transaction was' : 'sub-transactions were'} removed with it.` : ''
-    setSuccess(`Removed the ${group.kind === 'subtransaction' ? 'sub-transaction' : 'transaction'} ${group.label}; its steps stay.${subs} Undo restores it.`)
+    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+    const deeper = edit.movedUp - edit.promoted
+    const subs = !edit.movedUp ? ''
+      : group.kind === 'subtransaction' ? ` Its ${count(edit.movedUp, 'sub-transaction moves', 'sub-transactions move')} up a level.`
+        : ` Its ${count(edit.promoted, 'sub-transaction is now a transaction of its own', 'sub-transactions are now transactions of their own')}${deeper ? `; ${count(deeper, 'sub-transaction', 'sub-transactions')} under ${edit.promoted === 1 ? 'it' : 'them'} move${deeper === 1 ? 's' : ''} up a level` : ''}.`
+    const groups = edit.sequences.length ? ` ${edit.sequences.length === 1 ? `Its request group ${edit.sequences[0]} now times its` : `Its ${edit.sequences.length} request groups now time their`} own requests.` : ''
+    setSuccess(`Removed the ${group.kind === 'subtransaction' ? 'sub-transaction' : 'transaction'} ${group.label}; its steps stay.${subs}${groups} Undo restores it.`)
     setError('')
   }
 
@@ -8155,7 +8165,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             initialName={current}
             submitLabel="Rename"
             nameInUse={name => transactionNameInUse(fullName(name))}
-            nameConflict={name => nestedNameConflict(script, groupSpan(group), fullName(name), group.name)}
+            nameConflict={name => nestedNameConflict(script, groupSpan(script, group), fullName(name), group.name)}
             onSubmit={name => close(true, name !== current ? applyRenameTransaction(txnNaming.groupKey, name) : null)}
             onCancel={close}
           />
@@ -8893,6 +8903,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     naturalWidthRef={outlineNaturalWidthRef}
                     onToggleRowBreakpoint={toggleOutlineRowBreakpoint}
                     multiSelect={outlineMultiSelect}
+                    revealGroup={outlineReveal?.script === script ? outlineReveal : null}
+                    onRevealed={() => setOutlineReveal(null)}
                   />
                 </nav>
                 </>

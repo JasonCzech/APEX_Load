@@ -233,6 +233,31 @@ describe('ScriptOutlineTree expansion across edits', () => {
     expect(expanded('B')).toBe('true')
   })
 
+  it('opens the group it is asked to reveal and hands the request back', () => {
+    const many = Array.from({ length: 70 }, (_, index) => [marker('start', `T${index}`), step(`s${index}a`), step(`s${index}b`), step(`s${index}c`), marker('end', `T${index}`)]).flat()
+    const tagged = Array.from({ length: 3 }, (_, index) => ({ ...step(`g${index}`), metadata: { source_transaction: 'Grouped' } }))
+    const model = modelOf([...many, ...tagged])
+    const onRevealed = vi.fn()
+    const renderWith = (reveal: { phase: string; actionIndex: number } | null) => act(() => root.render(
+      <ScriptOutlineTree model={model} resetKey="x" query="" expandedContainers={new Set()} onToggleContainer={() => undefined} selection={null}
+        onSelect={() => undefined} hasBreakpoint={() => false} hasIssue={() => false} showMarkers={false} onShowMarkersChange={() => undefined} revealGroup={reveal} onRevealed={onRevealed} />,
+    ))
+    renderWith(null)
+    // A long script's groups start closed.
+    expect(expanded('T0')).toBe('false')
+    renderWith({ phase: 'action', actionIndex: 0 })
+    expect(expanded('T0')).toBe('true')
+    expect(onRevealed).toHaveBeenCalledTimes(1)
+    collapse('T0')
+    renderWith(null)
+    expect(expanded('T0')).toBe('false')
+    // A tagged run (a Grouped wrap) opens from its first step.
+    expect(expanded('Grouped')).toBe('false')
+    renderWith({ phase: 'action', actionIndex: many.length })
+    expect(expanded('Grouped')).toBe('true')
+    expect(onRevealed).toHaveBeenCalledTimes(2)
+  })
+
   it('does not pass a deleted group’s state to the group that moves into its place', () => {
     render(modelOf([...A, ...B]))
     collapse('A')

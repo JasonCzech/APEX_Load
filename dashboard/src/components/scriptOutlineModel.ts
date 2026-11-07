@@ -283,12 +283,14 @@ function buildPhase(rows: ScriptPhaseActionRow[], phase: ScriptActionPhase, show
       container().push(asRow())
       continue
     }
-    // A run of steps tagged with one transaction (no markers) is a group too.
+    // A run of steps tagged with one transaction (no markers) is a group too,
+    // inside a marker transaction as well, unless the tag names a transaction
+    // already open around it (an import tags each step with its own).
     const tag = actionTransactionName(row.action)
     const top = stack[stack.length - 1]
     if (top && !top.byMarkers && top.group.name !== tag) stack.pop()
-    const inMarkerTransaction = stack.some(open => open.byMarkers && open.group.kind === 'transaction')
-    if (tag && !inMarkerTransaction && !(stack.length && !stack[stack.length - 1].byMarkers)) {
+    const taggedByEnclosing = stack.some(open => open.byMarkers && open.group.name.toLowerCase() === tag.toLowerCase())
+    if (tag && !taggedByEnclosing && !(stack.length && !stack[stack.length - 1].byMarkers)) {
       const group: OutlineGroup = { kind: 'transaction', key: nextKey('transaction', tag), name: tag, label: tag, children: [], stepCount: 0 }
       container().push(group)
       stack.push({ group, byMarkers: false })

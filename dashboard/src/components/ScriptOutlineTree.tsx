@@ -4,7 +4,7 @@ import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 
 import { isMacLike } from '../hooks/KeyboardShortcutProvider'
 import { debugSequenceKey, type DebugRailRenderRow, type ScriptPhaseActionRow } from './scriptEditorWorkbench'
-import { carryGroupKeys, fitOutlineName, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
+import { carryGroupKeys, fitOutlineName, outlineNodeRows, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
 import TooltipButton from './ux/TooltipButton'
 import './ux/TooltipButton.css'
 
@@ -144,6 +144,13 @@ interface Props {
   onToggleRowBreakpoint?: (item: DebugRailRenderRow) => void
   /** Author only: selecting several rows, and the row menu. */
   multiSelect?: OutlineMultiSelect
+  /**
+   * Opens the group that starts at this step (a transaction just made: its
+   * start marker, or a tagged run's first step), then calls onRevealed, which
+   * clears the request.
+   */
+  revealGroup?: { phase: string; actionIndex: number } | null
+  onRevealed?: () => void
 }
 
 /**
@@ -167,7 +174,7 @@ function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutl
  * tree. A long outline renders only the rows in view, and names are cut at the
  * end on a word boundary to fit, never inside an identifier.
  */
-export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint, multiSelect: multiSelectProp }: Props) {
+export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint, multiSelect: multiSelectProp, revealGroup, onRevealed }: Props) {
   // Debug keeps one selection and no row menu.
   const multiSelect = debug ? undefined : multiSelectProp
   const multiKeys = multiSelect?.keys
@@ -195,6 +202,28 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
       return { key: previous.key, state: { ...previous.state, flipped: new Set(moved) } }
     })
   }, [model])
+
+  // A transaction just made opens, so what it wraps shows (a long script's
+  // groups start closed).
+  const onRevealedRef = useRef(onRevealed)
+  onRevealedRef.current = onRevealed
+  useEffect(() => {
+    if (!revealGroup) return
+    const rowKey = model.rowKeyByAction.get(debugSequenceKey(revealGroup.phase, revealGroup.actionIndex))
+    const ancestors = rowKey ? model.ancestorsByKey.get(rowKey) || [] : []
+    const innermost = ancestors[ancestors.length - 1]
+    const run = innermost ? model.groupsByKey.get(innermost) : undefined
+    const first = run && !run.start ? outlineNodeRows(run)[0] : undefined
+    const startsRun = Boolean(first) && debugSequenceKey(first!.phase, first!.actionIndex) === rowKey
+    const key = rowKey && model.groupsByKey.has(rowKey) ? rowKey : startsRun ? innermost : undefined
+    if (key) {
+      setExpansion(previous => {
+        const next = toggled(previous.state, key, true)
+        return next === previous.state ? previous : { key: previous.key, state: next }
+      })
+    }
+    onRevealedRef.current?.()
+  }, [model, revealGroup])
 
   // Selecting a step inside a closed group (from Problems, the debugger or the
   // action list) opens the groups above it.

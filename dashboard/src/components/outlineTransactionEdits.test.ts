@@ -170,6 +170,7 @@ describe('spanCrossing', () => {
 })
 
 describe('renameTransaction and removeTransaction', () => {
+  const calls = (actions: ScriptActionDefinition[] | undefined) => (actions || []).map(action => { const params = action.params as Raw | undefined; return params?.function ? `${params.function}(${(params.args as unknown[]).join(', ')})` : action.name })
   const measured = () => scriptOf([
     marker('start', 'Login'),
     marker('start', 'Login||submit', true), step('submit'), marker('end', 'Login||submit', true),
@@ -211,9 +212,13 @@ describe('renameTransaction and removeTransaction', () => {
     expect(renamed.actions.map(action => (action.params as Raw | undefined)?.args)).toEqual([
       ['Sign in'], ['Submit', 'Sign in'], undefined, ['Submit', 'LR_AUTO'], ['Sign in||Other', 'Sign in'], undefined, ['Sign in||Other', 'LR_AUTO'], ['Sign in', 'LR_AUTO'],
     ])
+    // Removing Login keeps both measurements, as transactions of their own.
     const removal = removeTransaction(script, group)
-    expect(names(removal.script.actions)).toEqual(['submit', 'other'])
-    expect(removal.subTransactions).toBe(2)
+    expect(calls(removal.script.actions)).toEqual([
+      'lr_start_transaction(Submit)', 'submit', 'lr_end_transaction(Submit, LR_AUTO)',
+      'lr_start_transaction(Other)', 'other', 'lr_end_transaction(Other, LR_AUTO)',
+    ])
+    expect([removal.movedUp, removal.promoted]).toEqual([2, 2])
   })
 
   it('follows sub-transactions of sub-transactions, and renames a sub-transaction’s own', () => {
@@ -230,9 +235,19 @@ describe('renameTransaction and removeTransaction', () => {
       ['Sign in'], ['Sign in||a', 'Sign in'], ['Sign in||a||b', 'Sign in||a'], ['Deep', 'Sign in||a||b'], undefined,
       ['Deep', 'LR_AUTO'], ['Sign in||a||b', 'LR_AUTO'], ['Sign in||a', 'LR_AUTO'], ['Sign in', 'LR_AUTO'],
     ])
+    // Each moves up a level: a becomes a transaction, a||b its sub-transaction.
     const removal = removeTransaction(script, groupNamed(model, 'Login'))
-    expect(names(removal.script.actions)).toEqual(['x'])
-    expect(removal.subTransactions).toBe(3)
+    expect(calls(removal.script.actions)).toEqual([
+      'lr_start_transaction(a)', 'lr_start_sub_transaction(a||b, a)', 'lr_start_sub_transaction(Deep, a||b)', 'x',
+      'lr_end_sub_transaction(Deep, LR_AUTO)', 'lr_end_sub_transaction(a||b, LR_AUTO)', 'lr_end_transaction(a, LR_AUTO)',
+    ])
+    expect([removal.movedUp, removal.promoted]).toEqual([3, 1])
+    // Removing the sub-transaction a moves its own up under Login.
+    const subRemoval = removeTransaction(script, groupNamed(model, 'Login||a'))
+    expect(calls(subRemoval.script.actions)).toEqual([
+      'lr_start_transaction(Login)', 'lr_start_sub_transaction(Login||b, Login)', 'lr_start_sub_transaction(Deep, Login||b)', 'x',
+      'lr_end_sub_transaction(Deep, LR_AUTO)', 'lr_end_sub_transaction(Login||b, LR_AUTO)', 'lr_end_transaction(Login, LR_AUTO)',
+    ])
   })
 
   it('keeps another transaction’s sub-transaction that shares a name', () => {
@@ -244,8 +259,11 @@ describe('renameTransaction and removeTransaction', () => {
       marker('end', 'Login'),
     ])
     const removal = removeTransaction(script, groupNamed(modelOf(script), 'Login'))
-    expect(names(removal.script.actions)).toEqual(['a', 'Start Inner transaction', 'Start Step', 'b', 'End Step transaction', 'End Inner transaction'])
-    expect(removal.subTransactions).toBe(1)
+    expect(calls(removal.script.actions)).toEqual([
+      'lr_start_transaction(Step)', 'a', 'lr_end_transaction(Step, LR_AUTO)',
+      'lr_start_transaction(Inner)', 'lr_start_sub_transaction(Step, Inner)', 'b', 'lr_end_sub_transaction(Step, LR_AUTO)', 'lr_end_transaction(Inner, LR_AUTO)',
+    ])
+    expect([removal.movedUp, removal.promoted]).toEqual([1, 1])
   })
 
   it('renames a parent named in call_args too', () => {
@@ -261,38 +279,289 @@ describe('renameTransaction and removeTransaction', () => {
     expect(next.actions.map(action => action.metadata?.source_transaction)).toEqual(['U', 'U', undefined])
   })
 
-  it('removes a marker pair with its sub-transactions and keeps the steps', () => {
-    const script = measured()
+  it('removes only the wrapper: its sub-transactions become transactions and its tags go', () => {
+    const tagged = (name: string) => step(name, { metadata: { source_transaction: 'Login', keep: 1 } })
+    const script = scriptOf([
+      marker('start', 'Login'),
+      marker('start', 'Login||submit', true), tagged('submit'), marker('end', 'Login||submit', true),
+      tagged('home'),
+      marker('end', 'Login'),
+      step('after'),
+    ])
     const removal = removeTransaction(script, groupNamed(modelOf(script), 'Login'))
-    expect(names(removal.script.actions)).toEqual(['submit', 'home', 'after'])
-    expect(removal.subTransactions).toBe(1)
+    expect(calls(removal.script.actions)).toEqual(['lr_start_transaction(submit)', 'submit', 'lr_end_transaction(submit, LR_AUTO)', 'home', 'after'])
+    expect(names(removal.script.actions)).toEqual(['Start submit transaction', 'submit', 'End submit transaction', 'home', 'after'])
+    expect(removal.script.actions.map(action => action.metadata)).toEqual([undefined, { keep: 1 }, undefined, { keep: 1 }, undefined])
+    expect([removal.movedUp, removal.promoted]).toEqual([1, 1])
     expect(removal.focus).toEqual({ phase: 'action', actionIndex: 0 })
-    expect(removal.remap({ phase: 'action', actionIndex: 2 })).toEqual({ phase: 'action', actionIndex: 0 })
-    expect(removal.remap({ phase: 'action', actionIndex: 6 })).toEqual({ phase: 'action', actionIndex: 2 })
+    expect(removal.remap({ phase: 'action', actionIndex: 2 })).toEqual({ phase: 'action', actionIndex: 1 })
+    expect(removal.remap({ phase: 'action', actionIndex: 6 })).toEqual({ phase: 'action', actionIndex: 4 })
     expect(removal.remap({ phase: 'action', actionIndex: 0 })).toBeNull()
+    // The outline now shows the measurement as its own transaction, and no Login.
+    const after = modelOf(removal.script)
+    expect([...after.groupsByKey.values()].map(group => `${group.kind}:${group.name}`)).toEqual(['transaction:submit'])
   })
 
-  it('removes the sub-transactions inside blocks and follows the steps there', () => {
+  it('keeps sub-transactions inside blocks, and the block’s steps in place', () => {
     const script = scriptOf([
       marker('start', 'P'),
       loop('l', [step('x'), marker('start', 'P||s', true), step('y'), marker('end', 'P||s', true), step('z')]),
       marker('end', 'P'),
     ])
     const removal = removeTransaction(script, groupNamed(modelOf(script), 'P'))
-    expect(removal.problem).toBe('')
-    expect(removal.subTransactions).toBe(1)
+    expect([removal.movedUp, removal.promoted]).toEqual([1, 1])
     expect(names(removal.script.actions)).toEqual(['l'])
-    expect(names(removal.script.actions[0].control?.steps)).toEqual(['x', 'y', 'z'])
-    expect(removal.remap({ phase: 'action', actionIndex: 1, stepPath: ['loop[4]'] })).toEqual({ phase: 'action', actionIndex: 0, stepPath: ['loop[2]'] })
-    expect(removal.remap({ phase: 'action', actionIndex: 1, stepPath: ['loop[1]'] })).toBeNull()
-    expect(removal.remap({ phase: 'action', actionIndex: 1, stepPath: ['loop[0]'] })).toEqual({ phase: 'action', actionIndex: 0, stepPath: ['loop[0]'] })
+    expect(calls(removal.script.actions[0].control?.steps)).toEqual(['x', 'lr_start_transaction(s)', 'y', 'lr_end_transaction(s, LR_AUTO)', 'z'])
+    expect(removal.remap({ phase: 'action', actionIndex: 1, stepPath: ['loop[4]'] })).toEqual({ phase: 'action', actionIndex: 0, stepPath: ['loop[4]'] })
   })
 
-  it('removes nothing when a block would be left with no step', () => {
-    const script = scriptOf([marker('start', 'P'), loop('l', [marker('start', 'P||s', true), marker('end', 'P||s', true)]), marker('end', 'P')])
-    const removal = removeTransaction(script, groupNamed(modelOf(script), 'P'))
-    expect(removal.problem).toContain('no steps')
+  const tiedStart = (name: string, parent: string): Raw => ({ name: `Start ${name}`, type: 'source_transaction', params: { function: 'lr_start_sub_transaction', args: [name, parent] } })
+  const branchEnds = (end: () => Raw, then: Raw[] = []): Raw => ({ name: 'status', type: 'control_if', control: { condition: 'ok', steps: [end(), ...then], else: [end()] } })
+
+  it('removes a transaction that ends in an if/else, and the if with nothing else in it', () => {
+    const script = scriptOf([marker('start', 'T'), step('req'), branchEnds(() => marker('end', 'T')), step('after')])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(removal.problem).toBe('')
+    expect(names(removal.script.actions)).toEqual(['req', 'after'])
+    expect(removal.remap({ phase: 'action', actionIndex: 2 })).toBeNull()
+    expect(removal.remap({ phase: 'action', actionIndex: 2, stepPath: ['then[0]'] })).toBeNull()
+    expect(removal.remap({ phase: 'action', actionIndex: 3 })).toEqual({ phase: 'action', actionIndex: 1 })
+  })
+
+  it('keeps an if that still has steps, and follows them', () => {
+    const script = scriptOf([marker('start', 'T'), step('req'), branchEnds(() => marker('end', 'T'), [step('x')])])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(names(removal.script.actions)).toEqual(['req', 'status'])
+    expect(names(removal.script.actions[1].control?.steps)).toEqual(['x'])
+    expect(removal.script.actions[1].control?.else).toEqual([])
+    expect(removal.remap({ phase: 'action', actionIndex: 2, stepPath: ['then[1]'] })).toEqual({ phase: 'action', actionIndex: 1, stepPath: ['then[0]'] })
+  })
+
+  it('refuses to leave a switch case with no steps', () => {
+    const script = scriptOf([marker('start', 'T'), step('req'), { name: 'sw', type: 'control_switch', control: { cases: [{ value: '1', steps: [marker('end', 'T')] }], default: [step('d')] } }])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(removal.problem).toContain('switch case')
     expect(removal.script).toBe(script)
+  })
+
+  it('rewrites a sub-transaction’s ends inside a block with its start outside', () => {
+    const script = scriptOf([
+      marker('start', 'T'), tiedStart('T||A', 'T'), step('req'), branchEnds(() => marker('end', 'T||A', true)), marker('end', 'T'),
+    ])
+    const group = groupNamed(modelOf(script), 'T')
+    const removal = removeTransaction(script, group)
+    expect(calls(removal.script.actions)).toEqual(['lr_start_transaction(A)', 'req', 'status'])
+    expect(calls(removal.script.actions[2].control?.steps)).toEqual(['lr_end_transaction(A, LR_AUTO)'])
+    expect(calls(removal.script.actions[2].control?.else)).toEqual(['lr_end_transaction(A, LR_AUTO)'])
+    const renamed = renameTransaction(script, group, 'R')
+    expect(calls(renamed.actions[3].control?.steps)).toEqual(['lr_end_sub_transaction(R||A, LR_AUTO)'])
+  })
+
+  it('ends each sub-transaction as its own start was moved, whatever their names', () => {
+    const script = scriptOf([
+      marker('start', 'T'),
+      tiedStart('Step', 'T'), step('a'), marker('end', 'Step', true),
+      tiedStart('T||a', 'T'), tiedStart('Step', 'T||a'), step('b'), marker('end', 'Step', true), marker('end', 'T||a', true),
+      marker('end', 'T'),
+    ])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(calls(removal.script.actions)).toEqual([
+      'lr_start_transaction(Step)', 'a', 'lr_end_transaction(Step, LR_AUTO)',
+      'lr_start_transaction(a)', 'lr_start_sub_transaction(Step, a)', 'b', 'lr_end_sub_transaction(Step, LR_AUTO)', 'lr_end_transaction(a, LR_AUTO)',
+    ])
+    expect([removal.movedUp, removal.promoted]).toEqual([3, 2])
+  })
+
+  it('treats lr_end_sub_trans as a sub-transaction end', () => {
+    const script = scriptOf([
+      marker('start', 'T'), tiedStart('T||A', 'T'), step('req'),
+      { name: 'End A', type: 'source_transaction', params: { function: 'lr_end_sub_trans', args: ['T||A', 'LR_AUTO'] } },
+      marker('end', 'T'),
+    ])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(calls(removal.script.actions)).toEqual(['lr_start_transaction(A)', 'req', 'lr_end_transaction(A, LR_AUTO)'])
+  })
+
+  it('re-tags a sequence’s requests with the transaction', () => {
+    const sequence = { name: 'seq', type: 'http_sequence', metadata: { source_transaction: 'T' }, params: { requests: [step('r1', { metadata: { source_transaction: 'T' } }), step('r2')] } }
+    const script = scriptOf([marker('start', 'T'), sequence, marker('end', 'T')])
+    const group = groupNamed(modelOf(script), 'T')
+    const requests = (next: ScriptDefinition, index: number) => ((next.actions[index].params as Raw).requests as ScriptActionDefinition[]).map(request => request.metadata?.source_transaction)
+    expect(requests(renameTransaction(script, group, 'U'), 1)).toEqual(['U', undefined])
+    const removal = removeTransaction(script, group)
+    expect(removal.script.actions[0].metadata).toBeUndefined()
+    expect(requests(removal.script, 0)).toEqual([undefined, undefined])
+  })
+
+  it('stops a transaction that ends in an if/else at the next use of its name', () => {
+    const script = scriptOf([
+      marker('start', 'T'), step('a'), branchEnds(() => marker('end', 'T')), step('b'),
+      marker('start', 'T'), step('c'), branchEnds(() => marker('end', 'T')),
+    ])
+    const first = [...modelOf(script).groupsByKey.values()].find(group => group.name === 'T')!
+    const removal = removeTransaction(script, first)
+    expect(calls(removal.script.actions)).toEqual(['a', 'b', 'lr_start_transaction(T)', 'c', 'status'])
+    expect(calls(renameTransaction(script, first, 'U').actions)).toEqual(['lr_start_transaction(U)', 'a', 'status', 'b', 'lr_start_transaction(T)', 'c', 'status'])
+  })
+
+  it('keeps the think time an end marker carries, on the step before it', () => {
+    const think = { type: 'fixed', mean_ms: 5000 }
+    const script = scriptOf([marker('start', 'T'), step('a'), { ...marker('end', 'T'), think_time: think, think_time_after: true }, step('b')])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(names(removal.script.actions)).toEqual(['a', 'b'])
+    expect(removal.script.actions[0]).toMatchObject({ think_time: think, think_time_after: true })
+    // The step before it already thinks: nothing is lost silently.
+    const crowded = scriptOf([marker('start', 'T'), step('a', { think_time: think, think_time_after: true }), { ...marker('end', 'T'), think_time: think, think_time_after: true }])
+    const refused = removeTransaction(crowded, groupNamed(modelOf(crowded), 'T'))
+    expect(refused.problem).toContain('think time')
+    expect(refused.script).toBe(crowded)
+  })
+
+  it('moves think time out of an if it drops', () => {
+    const think = { type: 'fixed', mean_ms: 1000 }
+    const end = () => ({ ...marker('end', 'T'), think_time: think, think_time_after: true })
+    const script = scriptOf([marker('start', 'T'), step('a'), branchEnds(end)])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(names(removal.script.actions)).toEqual(['a'])
+    expect(removal.script.actions[0]).toMatchObject({ think_time: think, think_time_after: true })
+  })
+
+  it('does not match a later sub-transaction end to one an if/else already closed', () => {
+    const script = scriptOf([
+      marker('start', 'T'), tiedStart('Step', 'T'), step('x'), branchEnds(() => marker('end', 'Step', true)),
+      marker('start', 'Other'), tiedStart('Step', 'Other'), step('y'), marker('end', 'Step', true), marker('end', 'Other'),
+      marker('end', 'T'),
+    ])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(calls(removal.script.actions)).toEqual([
+      'lr_start_transaction(Step)', 'x', 'status',
+      'lr_start_transaction(Other)', 'lr_start_sub_transaction(Step, Other)', 'y', 'lr_end_sub_transaction(Step, LR_AUTO)', 'lr_end_transaction(Other, LR_AUTO)',
+    ])
+  })
+
+  it('lets a switch keep an empty default', () => {
+    const script = scriptOf([marker('start', 'T'), step('req'), { name: 'sw', type: 'control_switch', control: { cases: [{ value: '1', steps: [step('one')] }], default: [marker('end', 'T')] } }])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(removal.problem).toBe('')
+    expect(removal.script.actions[1].control?.default).toEqual([])
+  })
+
+  it('renames and removes a paused transaction’s stop and resume with it', () => {
+    const call = (fn: string, args: string[]): Raw => ({ name: fn, type: 'source_transaction', params: { function: fn, args } })
+    const script = scriptOf([marker('start', 'T'), step('a'), call('lr_stop_transaction', ['T']), step('think'), call('lr_resume_transaction', ['T']), step('b'), marker('end', 'T')])
+    const group = groupNamed(modelOf(script), 'T')
+    expect(group.stepCount).toBe(5)
+    expect(calls(renameTransaction(script, group, 'U').actions)).toEqual(['lr_start_transaction(U)', 'a', 'lr_stop_transaction(U)', 'think', 'lr_resume_transaction(U)', 'b', 'lr_end_transaction(U, LR_AUTO)'])
+    expect(calls(removeTransaction(script, group).script.actions)).toEqual(['a', 'think', 'b'])
+  })
+
+  it('re-tags a sequence’s requests in a tagged run too', () => {
+    const sequence = { name: 'seq', type: 'http_sequence', metadata: { source_transaction: 'Run' }, params: { requests: [step('r1', { metadata: { source_transaction: 'Run' } })] } }
+    const script = scriptOf([sequence, step('b', { metadata: { source_transaction: 'Run' } })])
+    const group = groupNamed(modelOf(script), 'Run')
+    const tagOf = (next: ScriptDefinition) => ((next.actions[0].params as Raw).requests as ScriptActionDefinition[])[0].metadata?.source_transaction
+    expect(tagOf(renameTransaction(script, group, 'Walk'))).toBe('Walk')
+    expect(tagOf(removeTransaction(script, group).script)).toBeUndefined()
+  })
+
+  it('moves a start marker’s think time to the step before the transaction', () => {
+    const think = { type: 'fixed', mean_ms: 12000 }
+    const script = scriptOf([step('home'), { ...marker('start', 'T'), think_time: think, think_time_after: true }, step('a'), marker('end', 'T')])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(removal.problem).toBe('')
+    expect(names(removal.script.actions)).toEqual(['home', 'a'])
+    expect(removal.script.actions[0]).toMatchObject({ think_time: think, think_time_after: true })
+    // First in the phase: nowhere to put it.
+    const first = scriptOf([{ ...marker('start', 'T'), think_time: think, think_time_after: true }, step('a'), marker('end', 'T')])
+    expect(removeTransaction(first, groupNamed(modelOf(first), 'T')).problem).toContain('think time')
+  })
+
+  it('refuses to make a wait only one branch made run on every path', () => {
+    const think = { type: 'fixed', mean_ms: 3000 }
+    const script = scriptOf([marker('start', 'T'), step('a'), { name: 'status', type: 'control_if', control: { condition: 'ok', steps: [{ ...marker('end', 'T'), think_time: think, think_time_after: true }], else: [marker('end', 'T')] } }])
+    expect(removeTransaction(script, groupNamed(modelOf(script), 'T')).problem).toContain('think time')
+  })
+
+  it('stops the span before a later block that starts the transaction again', () => {
+    const script = scriptOf([
+      marker('start', 'T'), step('a'), branchEnds(() => marker('end', 'T')), step('b'),
+      { name: 'retry', type: 'control_if', control: { condition: 'again', steps: [marker('start', 'T'), step('c'), marker('end', 'T')] } },
+    ])
+    const first = [...modelOf(script).groupsByKey.values()].find(group => group.name === 'T')!
+    const removal = removeTransaction(script, first)
+    expect(names(removal.script.actions)).toEqual(['a', 'b', 'retry'])
+    expect(calls(removal.script.actions[2].control?.steps)).toEqual(['lr_start_transaction(T)', 'c', 'lr_end_transaction(T, LR_AUTO)'])
+    // The rename check covers the same span: a later transaction's name is free to use.
+    const later = scriptOf([marker('start', 'T'), step('a'), branchEnds(() => marker('end', 'T')), marker('start', 'Later'), step('l'), marker('end', 'Later')])
+    const group = [...modelOf(later).groupsByKey.values()].find(candidate => candidate.name === 'T')!
+    expect(nestedNameConflict(later, groupSpan(later, group), 'Later', 'T')).toBe('')
+  })
+
+  it('ends the span at an if/else that ends it and then retries it', () => {
+    const script = scriptOf([
+      marker('start', 'T'), step('submit'),
+      { name: 'outcome', type: 'control_if', control: { condition: 'fail', steps: [marker('end', 'T'), marker('start', 'T'), step('retry'), marker('end', 'T')], else: [marker('end', 'T')] } },
+      step('after'),
+    ])
+    const group = [...modelOf(script).groupsByKey.values()].find(candidate => candidate.name === 'T')!
+    const removal = removeTransaction(script, group)
+    expect(names(removal.script.actions)).toEqual(['submit', 'outcome', 'after'])
+    expect(names(removal.script.actions[1].control?.steps)).toEqual(['retry'])
+    expect(calls(renameTransaction(script, group, 'U').actions[2].control?.steps)).toEqual([
+      'lr_end_transaction(U, LR_AUTO)', 'lr_start_transaction(U)', 'retry', 'lr_end_transaction(U, LR_AUTO)',
+    ])
+  })
+
+  it('stops the span before a later block that starts it again, when no if/else ended it first', () => {
+    const script = scriptOf([
+      marker('start', 'T'), step('a'),
+      { name: 'only then', type: 'control_if', control: { condition: 'ok', steps: [marker('end', 'T')] } },
+      step('b'),
+      { name: 'retry', type: 'control_loop', control: { count: 2, steps: [marker('start', 'T'), step('c'), marker('end', 'T')] } },
+    ])
+    const group = [...modelOf(script).groupsByKey.values()].find(candidate => candidate.name === 'T')!
+    expect(groupSpan(script, group).hi).toBe(3)
+    const removal = removeTransaction(script, group)
+    expect(names(removal.script.actions)).toEqual(['a', 'b', 'retry'])
+    expect(calls(removal.script.actions[2].control?.steps)).toEqual(['lr_start_transaction(T)', 'c', 'lr_end_transaction(T, LR_AUTO)'])
+  })
+
+  it('does not name a transparent concurrent group as timing its requests', () => {
+    const group = { name: 'Burst', type: 'http_sequence', metadata: { source_transaction: 'T', transparent_request_group: true }, params: { execution_mode: 'concurrent', requests: [step('r1')] } }
+    const script = scriptOf([marker('start', 'T'), group, marker('end', 'T')])
+    expect(removeTransaction(script, groupNamed(modelOf(script), 'T')).sequences).toEqual([])
+  })
+
+  it('renames a pause that spells the transaction in another case', () => {
+    const call = (fn: string, args: string[]): Raw => ({ name: fn, type: 'source_transaction', params: { function: fn, args } })
+    const script = scriptOf([marker('start', 'Login'), call('lr_stop_transaction', ['login']), step('a'), call('lr_resume_transaction', ['LOGIN']), marker('end', 'Login')])
+    expect(calls(renameTransaction(script, groupNamed(modelOf(script), 'Login'), 'Auth').actions)).toEqual([
+      'lr_start_transaction(Auth)', 'lr_stop_transaction(Auth)', 'a', 'lr_resume_transaction(Auth)', 'lr_end_transaction(Auth, LR_AUTO)',
+    ])
+  })
+
+  it('does not count an if with no then list as closing a sub-transaction on every path', () => {
+    const script = scriptOf([
+      marker('start', 'T'), tiedStart('Step', 'T'), step('x'),
+      { name: 'only else', type: 'control_if', control: { condition: 'c', else: [marker('end', 'Step', true)] } },
+      marker('end', 'Step', true), marker('end', 'T'),
+    ])
+    const removal = removeTransaction(script, groupNamed(modelOf(script), 'T'))
+    expect(calls(removal.script.actions)).toEqual(['lr_start_transaction(Step)', 'x', 'only else', 'lr_end_transaction(Step, LR_AUTO)'])
+    expect(calls(removal.script.actions[2].control?.else)).toEqual(['lr_end_transaction(Step, LR_AUTO)'])
+  })
+
+  it('names the request groups that now time their own requests', () => {
+    const sequence = { name: 'Checkout', type: 'http_sequence', metadata: { source_transaction: 'Checkout' }, params: { requests: [step('r1')] } }
+    const script = scriptOf([marker('start', 'Checkout'), sequence, marker('end', 'Checkout')])
+    expect(removeTransaction(script, groupNamed(modelOf(script), 'Checkout')).sequences).toEqual(['Checkout'])
+  })
+
+  it('re-tags the steps of a renamed marker transaction', () => {
+    const script = scriptOf([marker('start', 'T'), step('a', { metadata: { source_transaction: 'T' } }), marker('end', 'T')])
+    const next = renameTransaction(script, groupNamed(modelOf(script), 'T'), 'U')
+    expect(next.actions[1].metadata?.source_transaction).toBe('U')
+    expect([...modelOf(next).groupsByKey.values()].map(group => group.name)).toEqual(['U'])
   })
 
   it('clears a tagged run’s tags', () => {
@@ -338,8 +607,8 @@ describe('nestedNameConflict', () => {
     expect(nestedNameConflict(script, target(script, ['action:5#loop[1]']), 'Deep')).toContain('already open')
     expect(nestedNameConflict(script, target(script, ['action:5#loop[1]']), 'Fresh')).toBe('')
     const outer = groupNamed(model, 'Outer')
-    expect(nestedNameConflict(script, groupSpan(outer), 'Outer', 'Outer')).toBe('')
-    expect(nestedNameConflict(script, groupSpan(outer), 'Deep', 'Outer')).toContain('already open')
+    expect(nestedNameConflict(script, groupSpan(script, outer), 'Outer', 'Outer')).toBe('')
+    expect(nestedNameConflict(script, groupSpan(script, outer), 'Deep', 'Outer')).toContain('already open')
   })
 })
 
