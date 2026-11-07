@@ -11,6 +11,45 @@ export interface BrowserReplayConsoleEntry {
   timestamp?: string
 }
 
+/**
+ * Bounded HTTP transport trace (pkg/protocol HTTPNetworkTrace). The
+ * request-level trace describes the final hop's connection; per-hop traces on
+ * network entries cover earlier hops. List fields are always arrays on the
+ * wire; cookie lists carry names only.
+ */
+export interface HTTPNetworkTrace {
+  dns_resolved_ips?: string[]
+  dns_coalesced?: boolean
+  remote_addr?: string
+  local_addr?: string
+  /** true: pooled socket; false: fresh socket; absent: no connection observed. */
+  connection_reused?: boolean
+  was_idle?: boolean
+  idle_time_ms?: number
+  wait_100_continue_ms?: number
+  got_100_continue?: boolean
+  tls_version?: string
+  tls_cipher_suite?: string
+  tls_negotiated_proto?: string
+  tls_server_name?: string
+  tls_did_resume?: boolean
+  tls_cert_subject?: string
+  tls_cert_issuer?: string
+  tls_cert_expiry?: string
+  http_protocol?: string
+  request_compression?: string
+  content_encoding?: string
+  transfer_encoding?: string[]
+  encoded_body_bytes?: number
+  decoded_body_bytes?: number
+  cookies_sent_count?: number
+  cookie_names_sent?: string[]
+  set_cookies_received_count?: number
+  set_cookie_names_received?: string[]
+  cross_origin_redirect?: boolean
+  stripped_redirect_headers?: string[]
+}
+
 export interface ReplayHARPhase {
   name: 'dns' | 'connect' | 'tls' | 'send' | 'request_wait' | 'response' | string
   start_ms?: number | null
@@ -29,25 +68,8 @@ export interface ReplayHARExchange {
   id?: string
   started_at?: string
   phases?: ReplayHARPhase[] | null
-  redirect_url?: string
   request_body?: ReplayHARBody | null
   response_body?: ReplayHARBody | null
-}
-
-export interface HTTPNetworkTrace {
-  connection_reused?: boolean
-  was_idle?: boolean
-  idle_time_ms?: number
-  wait_100_continue_ms?: number
-  http_protocol?: string
-  tls_version?: string
-  alpn?: string
-  local_addr?: string
-  remote_addr?: string
-  first_byte_at?: string
-  completed_at?: string
-  failure_stage?: string
-  failure_reason?: string
 }
 
 export interface BrowserReplayNetworkEntry {

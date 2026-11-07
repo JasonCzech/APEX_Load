@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import type { BrowserReplayEvent } from '../types/replay'
+import type { BrowserReplayEvent, BrowserReplayNetworkEntry } from '../types/replay'
+import type { BrowserResourceEvidenceV2 } from '../types/browserResourceEvidence'
 import {
   buildDebugTimelineModel,
   formatTimelineDurationMs,
@@ -18,6 +19,34 @@ const baseEvent = (overrides: Partial<BrowserReplayEvent> = {}): BrowserReplayEv
   completed_at: '2026-11-07T12:00:00.100Z',
   duration_ms: 100,
   ...overrides,
+})
+
+const browserEvidence = (overrides: Partial<BrowserResourceEvidenceV2> = {}): BrowserResourceEvidenceV2 => ({
+  version: 4,
+  source_generation: '0123456789abcdef0123456789abcdef',
+  request_id: '0123456789abcdef0123456789abcdef-1',
+  redirect_hop: 0,
+  observed_at: '2026-11-07T12:00:00Z',
+  timing_source: 'playwright',
+  state: 'finished',
+  bytes: {},
+  phases: null,
+  ...overrides,
+})
+
+const browserEntry = (
+  url: string,
+  resourceType: string,
+  statusCode: number,
+  durationMs: number,
+  evidence: Partial<BrowserResourceEvidenceV2>,
+): BrowserReplayNetworkEntry => ({
+  url,
+  method: 'GET',
+  status_code: statusCode,
+  resource_type: resourceType,
+  duration_ms: durationMs,
+  browser_evidence: browserEvidence(evidence),
 })
 
 describe('debugTimelineWaterfallModel', () => {
@@ -128,6 +157,33 @@ describe('debugTimelineWaterfallModel', () => {
 
     const waitBreakdown = row.breakdown.find(b => b.key === 'wait')
     expect(waitBreakdown?.durationMs).toBeCloseTo(16 + 82, 4)
+  })
+
+  it('trusts an explicit fresh-socket trace over the reuse heuristic', () => {
+    const ev = baseEvent({
+      duration_ms: 50,
+      network_entries: [{
+        url: 'https://api.example.test/orders',
+        method: 'GET',
+        status_code: 200,
+        duration_ms: 50,
+        // The dial was started by a concurrent request, so this hop records no dns/connect/tls phases.
+        trace: { connection_reused: false },
+        har: {
+          id: 'fresh-1',
+          started_at: '2026-11-07T12:00:00.000Z',
+          phases: [
+            { name: 'send', start_ms: 0, end_ms: 2 },
+            { name: 'request_wait', start_ms: 2, end_ms: 40 },
+            { name: 'response', start_ms: 40, end_ms: 50 },
+          ],
+        },
+      }],
+    })
+
+    const row = buildDebugTimelineModel([ev], 'waterfall').rows[0]
+    expect(row.connectionReused).toBe(false)
+    expect(row.breakdown.some(b => ['dns', 'connect', 'tls'].includes(b.key) && b.unavailableReason === 'Reused connection')).toBe(false)
   })
 
   it('extracts browser resource evidence phases and availability reasons', () => {
@@ -550,7 +606,6 @@ describe('debugTimelineWaterfallModel', () => {
           har: {
             id: 'xhr-1',
             started_at: '2026-11-07T12:00:00.000Z',
-            redirect_url: 'https://api.example.test/orders/submit',
             phases: [{ name: 'request_wait', start_ms: 0, end_ms: 30 }],
           },
         },
@@ -642,5 +697,166 @@ describe('debugTimelineWaterfallModel', () => {
     const model = buildDebugTimelineModel(events, 'waterfall')
     expect(model.rows[0].startOffsetMs).toBe(0)
     expect(model.rows[1].startOffsetMs).toBeCloseTo(0.4, 3)
+  })
+
+  it('does not treat 304 revalidations as redirects when choosing the primary chain', () => {
+    const ev = baseEvent({
+      action_name: 'Revisit home',
+      action_type: 'browser_navigate',
+      target: 'https://app.example.test/home',
+      status_code: undefined,
+      duration_ms: 60,
+      network_entries: [
+        browserEntry('https://app.example.test/home', 'document', 304, 30, {
+          request_id: 'doc',
+          document_offset_ms: 0,
+          phases: [
+            { name: 'request_wait', start_ms: 0, end_ms: 25 },
+            { name: 'response', start_ms: 25, end_ms: 30 },
+          ],
+        }),
+        browserEntry('https://app.example.test/site.css', 'stylesheet', 200, 20, {
+          request_id: 'css',
+          phases: [
+            { name: 'request_wait', start_ms: 0, end_ms: 15 },
+            { name: 'response', start_ms: 15, end_ms: 20 },
+          ],
+        }),
+        browserEntry('https://app.example.test/app.js', 'script', 200, 10, { request_id: 'js' }),
+      ],
+    })
+    const row = buildDebugTimelineModel([ev]).rows[0]
+    expect(row.statusCode).toBe(304)
+    expect(row.durationMs).toBe(60)
+    expect(row.segments.map(s => [s.key, s.durationMs])).toEqual([
+      ['wait', 25],
+      ['receive', 5],
+    ])
+  })
+
+  it('places concurrent 304 sub-resources at their document offsets instead of a staircase', () => {
+    const ev = baseEvent({
+      action_type: 'browser_navigate',
+      target: 'https://app.example.test/home',
+      duration_ms: 100,
+      network_entries: [
+        browserEntry('https://app.example.test/home', 'document', 200, 40, { request_id: 'doc', document_offset_ms: 0 }),
+        browserEntry('https://app.example.test/a.css', 'stylesheet', 304, 30, { request_id: 'a', document_offset_ms: 45 }),
+        browserEntry('https://app.example.test/b.js', 'script', 304, 30, { request_id: 'b', document_offset_ms: 50 }),
+      ],
+    })
+    const row = buildDebugTimelineModel([ev]).rows[0]
+    expect(row.hops.map(h => h.startOffsetMs)).toEqual([0, 45, 50])
+  })
+
+  it('does not join a redirected sub-resource to the document chain when its earlier hop is missing', () => {
+    const ev = baseEvent({
+      action_type: 'browser_navigate',
+      target: 'https://app.example.test/home',
+      status_code: undefined,
+      duration_ms: 70,
+      network_entries: [
+        browserEntry('https://app.example.test/home', 'document', 200, 40, {
+          request_id: 'doc',
+          phases: [{ name: 'request_wait', start_ms: 0, end_ms: 40 }],
+        }),
+        browserEntry('https://cdn.example.test/logo.png', 'image', 200, 30, {
+          request_id: 'img-2',
+          redirect_hop: 1,
+          redirect_from_request_id: 'img-1',
+          phases: [{ name: 'request_wait', start_ms: 0, end_ms: 30 }],
+        }),
+      ],
+    })
+    const row = buildDebugTimelineModel([ev]).rows[0]
+    expect(row.breakdown.find(b => b.key === 'wait')?.durationMs).toBe(40)
+    expect(row.statusCode).toBe(200)
+  })
+
+  it('still follows browser document redirects linked by redirect_hop and request id', () => {
+    const ev = baseEvent({
+      action_type: 'browser_navigate',
+      target: 'https://app.example.test/login',
+      status_code: undefined,
+      duration_ms: 70,
+      network_entries: [
+        browserEntry('https://app.example.test/login', 'document', 302, 20, {
+          request_id: 'nav-1',
+          phases: [{ name: 'request_wait', start_ms: 0, end_ms: 20 }],
+        }),
+        browserEntry('https://app.example.test/home', 'document', 200, 40, {
+          request_id: 'nav-2',
+          redirect_hop: 1,
+          redirect_from_request_id: 'nav-1',
+          phases: [{ name: 'request_wait', start_ms: 0, end_ms: 40 }],
+        }),
+      ],
+    })
+    const row = buildDebugTimelineModel([ev]).rows[0]
+    expect(row.statusCode).toBe(200)
+    expect(row.breakdown.find(b => b.key === 'wait')?.durationMs).toBe(60)
+  })
+
+  it('anchors untimed concurrent sub-resources to the event start so they cannot stretch the axis', () => {
+    const images = Array.from({ length: 10 }, (_, i) =>
+      browserEntry(`https://app.example.test/img-${i}.png`, 'image', 200, 80, { request_id: `img-${i}` }),
+    )
+    const ev = baseEvent({
+      action_type: 'browser_navigate',
+      target: 'https://app.example.test/gallery',
+      duration_ms: 300,
+      network_entries: [browserEntry('https://app.example.test/gallery', 'document', 200, 100, { request_id: 'doc' }), ...images],
+    })
+    const model = buildDebugTimelineModel([ev])
+    expect(model.sessionSpanMs).toBe(300)
+    expect(new Set(model.rows[0].hops.slice(1).map(h => h.startOffsetMs))).toEqual(new Set([0]))
+  })
+
+  it('places untimed sub-resources by their absolute epoch start when available', () => {
+    const t0 = Date.parse('2026-11-07T12:00:00.000Z')
+    const events = [
+      baseEvent({
+        event_id: 'first',
+        action_type: 'browser_navigate',
+        target: 'https://app.example.test/gallery',
+        duration_ms: 300,
+        network_entries: [
+          browserEntry('https://app.example.test/gallery', 'document', 200, 100, { request_id: 'doc', epoch_start_ms: t0 }),
+          browserEntry('https://app.example.test/a.png', 'image', 200, 80, { request_id: 'a', epoch_start_ms: t0 + 120 }),
+          browserEntry('https://app.example.test/b.png', 'image', 200, 80, { request_id: 'b', epoch_start_ms: t0 + 130 }),
+        ],
+      }),
+      baseEvent({ event_id: 'second', started_at: '2026-11-07T12:00:00.300Z', duration_ms: 50 }),
+    ]
+    const hops = buildDebugTimelineModel(events).rows[0].hops
+    expect(hops.map(h => h.startOffsetMs)).toEqual([0, 120, 130])
+  })
+
+  it('does not split protocol_evidence timings into phases for a followed redirect chain', () => {
+    const ev = baseEvent({
+      method: 'POST',
+      target: 'https://app.example.test/login',
+      duration_ms: 280,
+      protocol_evidence: {
+        timings: { dns_ms: 5, connect_ms: 10, tls_ms: 20, ttfb_ms: 80, duration_ms: 280, redirect_count: 1, redirect_ms: 85 },
+      },
+    })
+    const row = buildDebugTimelineModel([ev]).rows[0]
+    expect(row.timingSource).toBe('duration')
+    expect(row.segments.map(s => [s.key, s.durationMs])).toEqual([['total', 280]])
+    expect(row.breakdown.find(b => b.key === 'receive')).toBeUndefined()
+
+    const hopsOnly = baseEvent({
+      method: 'POST',
+      target: 'https://app.example.test/login',
+      duration_ms: 280,
+      protocol_evidence: { timings: { dns_ms: 5, connect_ms: 10, tls_ms: 20, ttfb_ms: 80, duration_ms: 280 } },
+      network_entries: [
+        { url: 'https://app.example.test/login', method: 'POST', status_code: 302, duration_ms: 85 },
+        { url: 'https://app.example.test/home', method: 'GET', status_code: 200, duration_ms: 195 },
+      ],
+    })
+    const hopsRow = buildDebugTimelineModel([hopsOnly]).rows[0]
+    expect(hopsRow.segments.map(s => s.key)).toEqual(['total'])
   })
 })

@@ -137,7 +137,8 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(timingBreakdown).toContainText('Check order')
   const checkOrderRow = timeline.getByRole('button', { name: /Passed · Check order/ })
   await checkOrderRow.click()
-  expect(await checkOrderRow.locator('.debug-timeline-bar-segment').count()).toBeGreaterThan(0)
+  // A phase-total segment is the no-timing fallback; debug runs retain HAR timings by default.
+  expect(await checkOrderRow.locator('.debug-timeline-bar-segment:not(.phase-total)').count()).toBeGreaterThan(0)
   await expect(page.locator('.debug-selection-status')).toContainText('Inspecting action 2')
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveCount(0)
   const downloadPromise = page.waitForEvent('download')

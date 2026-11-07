@@ -115,7 +115,11 @@ export function DebugTimeline({
   }, [selectedIndex, events])
 
   const activeIndex = localSelectedIndex ?? selectedIndex
-  const activeRow = filteredRows.find(r => r.index === activeIndex) ?? filteredRows[0] ?? null
+  // Only the real selection is highlighted and announced as current; the
+  // inspector previews the first visible row when nothing visible is selected.
+  const selectedRow = filteredRows.find(r => r.index === activeIndex) ?? null
+  const activeRow = selectedRow ?? filteredRows[0] ?? null
+  const selectionHidden = selectedRow === null && activeIndex != null && model.rows.some(r => r.index === activeIndex)
 
   const renderPhaseBar = (t: { trackOffsetPct: number; trackWidthPct: number; segments: typeof model.rows[0]['segments'] }) => (
     <div className="debug-timeline-bar-track" aria-hidden="true">
@@ -172,7 +176,7 @@ export function DebugTimeline({
               </div>
             </div>
             {filteredRows.map(row => {
-              const isSelected = activeRow?.index === row.index
+              const isSelected = selectedRow?.index === row.index
               const stateCls = row.success ? 'passed' : 'failed'
               return (
                 <div key={row.id} className="debug-timeline-row-group">
@@ -187,14 +191,14 @@ export function DebugTimeline({
                         <span className={`debug-timeline-status-dot ${stateCls}`} aria-hidden="true" />
                         <strong>{row.success ? 'Passed' : 'Failed'} · {row.actionName}</strong>
                       </div>
-                      <small>{row.errorMessage || row.target}</small>
+                      <small>{row.location} · {row.errorMessage || row.target}</small>
                       {row.extractedVariables.length > 0 && <small>Variables: {row.extractedVariables.join(', ')}</small>}
                     </div>
                     <div className="debug-timeline-cell-proto">
                       {row.statusCode != null && <span className={`debug-timeline-status-code ${stateCls}`}>{row.statusCode}</span>}
                       <span>{row.protocolLabel}{row.connectionReused ? ' · reused' : ''}</span>
                     </div>
-                    <span className="debug-timeline-cell-duration">{row.location} · {row.durationMs.toFixed(1)} ms</span>
+                    <span className="debug-timeline-cell-duration">{row.durationMs.toFixed(1)} ms</span>
                     {renderPhaseBar(row)}
                   </button>
                   {isSelected && row.hops.length > 1 && (
@@ -223,6 +227,11 @@ export function DebugTimeline({
                     {activeRow.location} · Queued at +{activeRow.startOffsetMs.toFixed(1)} ms · Started at +{activeRow.startedOffsetMs.toFixed(1)} ms · {activeRow.protocolLabel}
                     {activeRow.connectionReused ? ' · Reused connection' : ''}
                   </span>
+                  {!selectedRow && (
+                    <small className="debug-timeline-inspector-preview">
+                      {selectionHidden ? 'Selected execution is hidden by the current filters · ' : ''}Preview · first visible execution
+                    </small>
+                  )}
                 </div>
                 <code>{activeRow.durationMs.toFixed(1)} ms</code>
               </header>

@@ -1,8 +1,6 @@
 package http
 
 import (
-	"time"
-
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -46,25 +44,32 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	return evidence
 }
 
+// buildHTTPProtocolTimings refreshes the shared timings contract over the
+// timings an earlier evidence pass published for the same result. One
+// httptrace spans a whole redirect chain: TTFB is the first hop's first byte
+// while DNS, connect and TLS come from the last hop that dialed. Redirected
+// actions therefore also carry redirect_count and redirect_ms so readers do not
+// split the chain's total into per-phase spans as if it were one exchange.
 func buildHTTPProtocolTimings(existing any, result *protocol.Result) map[string]any {
 	if result == nil {
 		return nil
 	}
 	prev, _ := existing.(map[string]any)
-	timings := make(map[string]any, len(prev)+6)
+	measured := protocol.EvidenceTimings(result)
+	timings := make(map[string]any, len(prev)+len(measured)+2)
 	for key, value := range prev {
 		timings[key] = value
 	}
-	addDuration := func(key string, value time.Duration) {
-		if value > 0 {
-			timings[key] = float64(value.Microseconds()) / 1000
+	for key, value := range measured {
+		timings[key] = value
+	}
+	delete(timings, "redirect_count")
+	delete(timings, "redirect_ms")
+	if telemetry := result.ServerTelemetry; telemetry != nil && telemetry.RedirectCount > 0 {
+		timings["redirect_count"] = telemetry.RedirectCount
+		if telemetry.RedirectMs > 0 {
+			timings["redirect_ms"] = telemetry.RedirectMs
 		}
 	}
-	addDuration("duration_ms", result.Duration)
-	addDuration("worker_duration_ms", result.WorkerDuration)
-	addDuration("dns_ms", result.DNSTime)
-	addDuration("connect_ms", result.ConnectTime)
-	addDuration("tls_ms", result.TLSTime)
-	addDuration("ttfb_ms", result.TTFB)
 	return timings
 }

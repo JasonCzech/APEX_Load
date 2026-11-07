@@ -239,8 +239,18 @@ describe('debugger operator experience', () => {
     expect(timelineHtml).toContain('Request and response')
     expect(timelineHtml).toContain('Waiting (TTFB)')
     expect(timelineHtml).toContain('Content download')
-    expect(timelineHtml).toContain('phase-dns')
-    expect(timelineHtml).toContain('phase-wait')
+    // The legend always renders phase swatches; assert the bar itself was built from the HAR phases.
+    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-dns')
+    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-wait')
+    expect(timelineHtml).not.toContain('debug-timeline-bar-segment phase-total')
+    expect(timelineHtml).toContain('aria-current="true"')
+    expect(timelineHtml).not.toContain('Preview · first visible execution')
+
+    const unselectedHtml = renderToStaticMarkup(<DebugTimeline events={replay.events} selectedIndex={null} onSelect={() => {}} />)
+    expect(unselectedHtml).not.toContain('aria-current')
+    expect(unselectedHtml).not.toContain('debug-timeline-hop-list')
+    expect(unselectedHtml).toContain('Timing breakdown')
+    expect(unselectedHtml).toContain('Preview · first visible execution')
   })
 })
 

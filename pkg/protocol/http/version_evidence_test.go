@@ -1,6 +1,9 @@
 package http
 
 import (
+	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -61,5 +64,64 @@ func TestBuildHTTPProtocolEvidencePopulatesTimings(t *testing.T) {
 	}
 	if customTimings["duration_ms"] != 42.0 {
 		t.Fatalf("expected input timings map not to be mutated, got %#v", customTimings)
+	}
+}
+
+func TestBuildHTTPProtocolTimingsMarksRedirectChains(t *testing.T) {
+	redirected := buildHTTPProtocolEvidence(nil, &protocol.Result{
+		Duration:        280 * time.Millisecond,
+		TTFB:            80 * time.Millisecond,
+		ServerTelemetry: &protocol.ServerTelemetry{RedirectCount: 1, RedirectMs: 85},
+	})
+	timings, _ := redirected["timings"].(map[string]any)
+	if timings["redirect_count"] != 1 || timings["redirect_ms"] != 85.0 {
+		t.Fatalf("expected redirect_count/redirect_ms in timings, got %#v", timings)
+	}
+
+	// A later pass over a result that followed no redirect drops the stale keys.
+	refreshed := buildHTTPProtocolEvidence(nil, &protocol.Result{
+		Duration:         90 * time.Millisecond,
+		ServerTelemetry:  &protocol.ServerTelemetry{},
+		ProtocolEvidence: map[string]any{"timings": timings},
+	})
+	refreshedTimings, _ := refreshed["timings"].(map[string]any)
+	if _, ok := refreshedTimings["redirect_count"]; ok {
+		t.Fatalf("stale redirect_count survived a refresh: %#v", refreshedTimings)
+	}
+	if _, ok := refreshedTimings["redirect_ms"]; ok {
+		t.Fatalf("stale redirect_ms survived a refresh: %#v", refreshedTimings)
+	}
+}
+
+func TestExecuteFollowedRedirectPublishesRedirectTimings(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/login":
+			http.Redirect(w, r, "/home", http.StatusFound)
+		case "/home":
+			_, _ = w.Write([]byte("ok"))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{Name: "login", Method: "POST", Target: "/login"})
+	if err != nil || !result.Success {
+		t.Fatalf("Execute = %v, success=%v, error=%q", err, result != nil && result.Success, result.ErrorMessage)
+	}
+	timings, _ := result.ProtocolEvidence["timings"].(map[string]any)
+	if timings["redirect_count"] != 1 {
+		t.Fatalf("timings[redirect_count] = %#v, want 1 (timings %#v)", timings["redirect_count"], timings)
+	}
+
+	direct, err := h.Execute(context.Background(), &protocol.Action{Name: "home", Method: "GET", Target: "/home"})
+	if err != nil || !direct.Success {
+		t.Fatalf("Execute = %v, success=%v", err, direct != nil && direct.Success)
+	}
+	directTimings, _ := direct.ProtocolEvidence["timings"].(map[string]any)
+	if _, ok := directTimings["redirect_count"]; ok {
+		t.Fatalf("unredirected action published redirect_count: %#v", directTimings)
 	}
 }

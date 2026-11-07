@@ -169,9 +169,20 @@ function formatRulerTickMs(ms: number): string {
   return safe === 0 ? '0 ms' : safe >= 10 && safe < 1000 ? `${Math.round(safe)} ms` : formatTimelineDurationMs(safe)
 }
 
+// 304 Not Modified (cache revalidation) and other 3xx answers are not followed.
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308])
+
 function isRedirectFollowUp(prev: BrowserReplayNetworkEntry, curr: BrowserReplayNetworkEntry): boolean {
-  const s = prev.status_code ?? 0
-  return (s >= 300 && s < 400) || Boolean(prev.har?.redirect_url) || (curr.browser_evidence?.redirect_hop ?? 0) > 0
+  const prevEv = prev.browser_evidence
+  const currEv = curr.browser_evidence
+  if (prevEv && currEv) {
+    // Browser evidence links hops explicitly: curr must continue prev's own
+    // chain, so a redirected sub-resource whose earlier hop was not retained
+    // does not join the document's chain.
+    if ((currEv.redirect_hop ?? 0) !== (prevEv.redirect_hop ?? 0) + 1) return false
+    return !currEv.redirect_from_request_id || !prevEv.request_id || currEv.redirect_from_request_id === prevEv.request_id
+  }
+  return REDIRECT_STATUSES.has(prev.status_code ?? 0)
 }
 
 function selectPrimaryNetworkChain(entries: readonly BrowserReplayNetworkEntry[], event: BrowserReplayEvent): BrowserReplayNetworkEntry[] {
@@ -260,6 +271,7 @@ function inferProtocolLabel(event: BrowserReplayEvent, entry?: BrowserReplayNetw
 
 function inferConnectionReused(event: BrowserReplayEvent, entry: BrowserReplayNetworkEntry | undefined, spans: RawSpan[]): boolean {
   if (spans.some(s => s.key === 'connect' || s.key === 'tls')) return false
+  // true: pooled socket; false: fresh socket; absent: no connection observed.
   if (typeof entry?.trace?.connection_reused === 'boolean') return entry.trace.connection_reused
   if (isEvReused(event.protocol_evidence)) return true
   const phases = entry?.har?.phases
@@ -311,11 +323,15 @@ function buildBreakdownItems(
   })
 }
 
-function extractTimingsFromProtocolEvidence(event: BrowserReplayEvent): { spans: RawSpan[]; hasEvidence: boolean } {
+function extractTimingsFromProtocolEvidence(event: BrowserReplayEvent, redirectedChain: boolean): { spans: RawSpan[]; hasEvidence: boolean } {
   const ev = event.protocol_evidence
   const t = ev?.timings
   const hasMeta = ev?.http_version_source === 'cache' || Boolean(ev?.timing_availability && Object.keys(ev.timing_availability).length)
   if (!t || typeof t !== 'object') return { spans: [], hasEvidence: hasMeta }
+  // One trace spans the whole redirect chain: TTFB is the first hop's first
+  // byte while DNS/connect/TLS come from the last hop that dialed, so the
+  // action total cannot be split into phases. Report the total only.
+  if (redirectedChain || posNum(t.redirect_count) > 0) return { spans: [], hasEvidence: false }
   const dnsMs = posNum(t.dns_ms)
   const connectMs = posNum(t.connect_ms)
   const tlsMs = posNum(t.tls_ms)
@@ -386,13 +402,19 @@ export function buildDebugTimelineModel(
       const hopDurationMs = Math.max(posNum(entry.duration_ms), sumSpans(hopSpans))
       const hopEntryStartMs = parseTimestampMs(entry.har?.started_at)
       const docOffset = entry.browser_evidence?.document_offset_ms
+      const epochStartMs = entry.browser_evidence?.epoch_start_ms
+      // Sequential hops (untyped entries, redirect follow-ups) start after the
+      // previous hop; typed sub-resources load concurrently from the event start.
       const minHopOffsetMs = hopIdx > 0 && (!entry.resource_type || isRedirectFollowUp(entries[hopIdx - 1], entry)) ? hopCursorMs : startOffsetMs
+      const canUseAbsoluteStart = !allSameStart && minStartMs !== null
       const hopStartOffsetMs =
-        !allSameStart && minStartMs !== null && hopEntryStartMs !== null && hopEntryStartMs >= minStartMs
+        canUseAbsoluteStart && hopEntryStartMs !== null && hopEntryStartMs >= minStartMs
           ? Math.max(minHopOffsetMs, hopEntryStartMs - minStartMs)
           : isNum(docOffset) && docOffset >= 0
             ? Math.max(minHopOffsetMs, startOffsetMs + docOffset)
-            : hopCursorMs
+            : canUseAbsoluteStart && isNum(epochStartMs) && epochStartMs >= minStartMs
+              ? Math.max(minHopOffsetMs, epochStartMs - minStartMs)
+              : minHopOffsetMs
       hopCursorMs = Math.max(hopCursorMs, hopStartOffsetMs + hopDurationMs)
       const method = entry.method || ev.method || ev.action_type || 'GET'
       const url = entry.url || ev.target
@@ -432,7 +454,7 @@ export function buildDebugTimelineModel(
     }
 
     if (!rowSpans.length) {
-      const fromEv = extractTimingsFromProtocolEvidence(ev)
+      const fromEv = extractTimingsFromProtocolEvidence(ev, primaryChain.length > 1)
       if (fromEv.hasEvidence) {
         rowSpans = fromEv.spans
         timingSource = 'protocol_evidence'
