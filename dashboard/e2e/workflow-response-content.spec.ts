@@ -384,8 +384,9 @@ test('incomplete recorder response source remains a visible execution blocker th
     expect(reopened.actions[0].metadata?.execution_blocker).toBe('import_review_required')
     expect(reopened.actions[0].extractors || []).toEqual([])
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
-    const readiness = page.locator('details.script-health-summary')
-    await readiness.locator('summary').first().click()
+    const readinessBtn = page.getByRole('button', { name: 'Checks & readiness', exact: true })
+    await readinessBtn.click()
+    const readiness = page.getByRole('region', { name: 'Checks & readiness', exact: true })
     const rechecked = mutation(page, 'POST', `/api/v1/scripts/${id}/validate`)
     await readiness.getByRole('button', { name: 'Recheck', exact: true }).click()
     const validation = await json(await rechecked)
@@ -400,7 +401,7 @@ test('incomplete recorder response source remains a visible execution blocker th
     await expect(failedCheck).toBeVisible()
     await expect(failedCheck.getByRole('button', { name: /^Review imported behavior Actions › 01 - GET partial$/ })).toBeVisible()
     await screenshot(page, info, 'response-content-reopened-blocker.png', failedCheck)
-    await readiness.locator('summary').first().click()
+    await readiness.getByRole('button', { name: 'Done', exact: true }).click()
     // The editor knows the server refuses this start, so Debug opens the
     // blocker in Author instead of starting a run.
     await expect(page.locator('.topbar-debug-action-run')).toHaveCount(0)

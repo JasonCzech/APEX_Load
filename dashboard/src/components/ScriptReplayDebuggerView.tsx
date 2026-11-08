@@ -26,6 +26,8 @@ import { currentRuntimeLookup, currentRuntimeParameter, type RuntimeInspectionMo
 import { DebugParameterInspector } from './DebugParameterInspector'
 import { debugNextAction, debugNextRequestParts, previewTemplate, type PreviewSegment } from './debugNextRequest'
 import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
+import { effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
+import { formatPacingTiming } from './runtimeTiming'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
@@ -71,7 +73,6 @@ import {
 } from './scriptEditorReplayModel'
 import {
   DEBUGGER_LAYOUT_LIMITS,
-  buildDebugRailRenderRows,
   type DebugRailRenderRow,
   formatDebugPhaseLabel,
   formatProtocolEvidenceSummary,
@@ -162,15 +163,14 @@ export interface ResponseActions {
 export interface ScriptReplayDebuggerViewProps {
   /** The debugger's run controls (Step, Continue, Stop…), drawn first in the session bar. */
   sessionControls?: ReactNode
-  /** Session toggles that stay put through a run (Break on failure), drawn beside Debug options. */
-  sessionToggles?: ReactNode
+  /** Checks & readiness popover content, drawn inside the Checks & readiness popover. */
+  readinessPopover?: ReactNode
   runHistory: DebugRunRecord[]
   runRecord: Omit<DebugRunRecord, 'report'> | null
   seedVariables: Record<string, string>
   followExecution: boolean
   onFollowExecution: (enabled: boolean) => void
   onUpdateBreakpoints: (next: ScriptDebugBreakpoint[]) => Promise<void>
-  onRunTo: (target: ScriptDebugBreakpoint) => Promise<void>
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
   activeReplaySessionId: string | null
   addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
@@ -237,8 +237,6 @@ export interface ScriptReplayDebuggerViewProps {
   runtimeVariablesUnavailable?: boolean
   /** The start request is out and no session is admitted yet: nothing runs until the controller answers. */
   replayStartPending?: boolean
-  /** Why a new run cannot start now (blockers to resolve, a save first); Run to selected action says so. */
-  runStartBlockedReason?: string
   replayVariableTimeline: ReplayVariableTimelineEntry[]
   saving: boolean
   /** Which policies an event's request can switch to auto+h3: its own, the script default, or both. */
@@ -252,7 +250,6 @@ export interface ScriptReplayDebuggerViewProps {
   scriptRecordingStatus: ScriptRecordingStatus | null
   scriptRecordingStatusState: RecordingStatusState
   retryScriptRecordingStatus: () => void
-  selectedActionKey?: string
   selectedOutlineParameterName: string | null
   selectOutlineParameter: (parameterName: string) => void
   parameterReferenceCounts: Map<string, number>
@@ -276,8 +273,8 @@ function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fa
 
 export function ScriptReplayDebuggerView({
   sessionControls,
-  sessionToggles,
-  runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints, onRunTo,
+  readinessPopover,
+  runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints,
   actionProblemRows,
   activeReplaySessionId,
   addExtractorDefinition,
@@ -329,7 +326,6 @@ export function ScriptReplayDebuggerView({
   replayVariableInspector,
   runtimeVariablesUnavailable = false,
   replayStartPending = false,
-  runStartBlockedReason,
   currentRuntimeSnapshot, currentRuntimeReason, runtimeInspectionMode, onRuntimeInspectionMode, canInspectRuntimeFrame, onInspectRuntimeFrame,
   replayVariableTimeline,
   saving,
@@ -340,7 +336,6 @@ export function ScriptReplayDebuggerView({
   scriptRecordingStatus,
   scriptRecordingStatusState,
   retryScriptRecordingStatus,
-  selectedActionKey,
   selectedOutlineParameterName,
   selectOutlineParameter,
   parameterReferenceCounts,
@@ -371,6 +366,8 @@ export function ScriptReplayDebuggerView({
     debuggerBottomHeight,
     debuggerBottomTab,
     debuggerRailWidth,
+    debuggerReadinessOpen,
+    debuggerReadinessRef,
     debuggerSettingsOpen,
     debuggerSettingsRef,
     debuggerStatusState,
@@ -394,6 +391,7 @@ export function ScriptReplayDebuggerView({
     selectedReplayEventIndex,
     setDebugDetailCollapsed,
     setDebuggerBottomTab,
+    setDebuggerReadinessOpen,
     setDebuggerSettingsOpen,
     setDebuggerTab,
     setDebugRailFilter,
@@ -504,8 +502,6 @@ export function ScriptReplayDebuggerView({
     debuggerRailRef.current?.querySelector<HTMLElement>('[aria-current="step"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [currentDebugActionKey, currentDebugStepKey, followExecution])
   const goCurrent = () => { const failureIndex = isReplayPaused && browserReplaySession?.current_event?.success === false ? debugEvents.findIndex(e => e.event_id != null && e.event_id === browserReplaySession.current_event?.event_id) : -1; setExpandedReplayEvent(failureIndex >= 0 ? failureIndex : null); onFollowExecution(true); setDebugRailFilter(''); setDebuggerTab('request'); setNarrowPane('editor'); setDebugDetailCollapsed(false) }
-  const selectedItem = useMemo(() => buildDebugRailRenderRows(debugActionRows, effectiveExpandedDebugSequences).find(item => item.key === selectedActionKey), [debugActionRows, effectiveExpandedDebugSequences, selectedActionKey])
-  const selectedRow = controller.selectedDebugRow || selectedItem?.row
 
   return (
           <div
@@ -517,7 +513,39 @@ export function ScriptReplayDebuggerView({
                 The selection tools and disclosures share the row below it. */}
             <div className={`debug-options-toolbar debug-session-bar${replaying ? ' is-running' : ''}`}>
               {sessionControls}
-              <button type="button" className="btn btn-sm btn-secondary" ref={controller.debuggerSettingsBtnRef} aria-expanded={debuggerSettingsOpen} aria-controls="debug-session-options" title={debugOptionsSummary} onClick={() => setDebuggerSettingsOpen(value => !value)}>Debug options ({debugOverrideCount(replayOptions)})</button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                ref={controller.debuggerSettingsBtnRef}
+                aria-expanded={debuggerSettingsOpen}
+                aria-controls="debug-session-options"
+                title={debugOptionsSummary}
+                onClick={() => {
+                  setDebuggerSettingsOpen(value => {
+                    const next = !value
+                    if (next) setDebuggerReadinessOpen(false)
+                    return next
+                  })
+                }}
+              >
+                Debug options ({debugOverrideCount(replayOptions)})
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                ref={controller.debuggerReadinessBtnRef}
+                aria-expanded={debuggerReadinessOpen}
+                aria-controls="debug-checks-readiness"
+                onClick={() => {
+                  setDebuggerReadinessOpen(value => {
+                    const next = !value
+                    if (next) setDebuggerSettingsOpen(false)
+                    return next
+                  })
+                }}
+              >
+                Checks &amp; readiness
+              </button>
               {(replaying || replayReport) ? (
                 <div className={`debugger-live-strip ${debuggerStatusState}`}>
                   <span className="replay-live-badge">{replaying ? (startPending ? 'Starting' : isReplayPaused ? 'Paused' : browserReplaySession?.status === 'stopped' ? 'Stopping' : 'Running') : replayReport?.stopped ? 'Stopped' : replayReport?.success ? 'Passed' : 'Failed'}</span>
@@ -532,8 +560,15 @@ export function ScriptReplayDebuggerView({
                 </div>
               ) : <span className="debug-session-idle">No debug run yet</span>}
               <span className="debug-session-summary">{debugOptionsSummary}</span>
-              {sessionToggles}
               {optionsError && <span role="alert">{optionsError}</span>}
+            </div>
+            <div id="debug-checks-readiness" role="region" aria-label="Checks & readiness" className="debugger-settings-popover debugger-readiness-popover" ref={debuggerReadinessRef} hidden={!debuggerReadinessOpen}>
+              <div className="debugger-settings-head">
+                <strong>Checks &amp; readiness</strong>
+                <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setDebuggerReadinessOpen(false); controller.debuggerReadinessBtnRef.current?.focus() }}>Done</button>
+              </div>
+              <p className="replay-panel-subtitle">Static checks inspect the draft. Runtime prerequisites are verified when debugging starts. Replay evidence belongs to its recorded revision.</p>
+              {readinessPopover}
             </div>
             {debuggerSettingsOpen && (
               <div id="debug-session-options" role="region" aria-label="Session Overrides" className="debugger-settings-popover" ref={debuggerSettingsRef}>
@@ -650,7 +685,6 @@ export function ScriptReplayDebuggerView({
                 <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
                 <button type="button" className="btn btn-sm btn-ghost" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
-                <TooltipButton type="button" className="btn btn-sm btn-secondary" title={!replaying && runStartBlockedReason ? runStartBlockedReason : 'Runs prerequisites; during a paused run, stops at the next matching execution'} disabled={!selectedRow || (replaying ? !isReplayPaused : Boolean(runStartBlockedReason))} onClick={() => { if (selectedRow) void onRunTo({ phase: selectedRow.phase, action_index: selectedRow.actionIndex, ...(selectedReplayEvent?.step_path?.length ? { step_path: selectedReplayEvent.step_path } : selectedReplayEvent?.request_index != null ? { request_index: selectedReplayEvent.request_index } : selectedItem?.kind === 'leaf' ? { step_path: selectedItem.stepPath } : {}) }) }}>Run to selected action</TooltipButton>
               </div>
               <div className="debug-session-disclosures">
               <DebugRunHistory key={scriptId || projectId || 'draft'} runs={runHistory} current={replayReport} currentRecord={runRecord} />
@@ -732,7 +766,7 @@ export function ScriptReplayDebuggerView({
                             className={`debug-outline-parameter${selected ? ' selected' : ''}`}
                             aria-pressed={selected}
                             disabled={!parameter.name}
-                            onClick={() => { if (parameter.name) { selectOutlineParameter(parameter.name); setNarrowPane('inspector') } }}
+                            onClick={() => { if (parameter.name) { selectOutlineParameter(parameter.name); setDebuggerTab('variables'); setNarrowPane('inspector') } }}
                           >
                             <span>{parameter.name || `Parameter ${index + 1}`}</span>
                             <small>{parameter.type || 'list'} · {referenceCount} ref{referenceCount === 1 ? '' : 's'}</small>
@@ -790,7 +824,8 @@ export function ScriptReplayDebuggerView({
                       {!isBrowserScript && (
                         <button type="button" role="tab" aria-selected={debuggerTab === 'request'} className={debuggerTab === 'request' ? 'active' : ''} onClick={() => setDebuggerTab('request')} tabIndex={(debuggerTab === 'request') ? 0 : -1}>Request / Response</button>
                       )}
-                      <button type="button" role="tab" aria-selected={isBrowserScript || debuggerTab === 'variables'} className={isBrowserScript || debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')} tabIndex={(isBrowserScript || debuggerTab === 'variables') ? 0 : -1}>{replaying ? 'Live Variables' : 'Variables'}</button>
+                      <button type="button" role="tab" aria-selected={(isBrowserScript && debuggerTab !== 'run-config') || debuggerTab === 'variables'} className={(isBrowserScript && debuggerTab !== 'run-config') || debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')} tabIndex={((isBrowserScript && debuggerTab !== 'run-config') || debuggerTab === 'variables') ? 0 : -1}>{replaying ? 'Live Variables' : 'Variables'}</button>
+                      <button type="button" role="tab" aria-selected={debuggerTab === 'run-config'} className={debuggerTab === 'run-config' ? 'active' : ''} onClick={() => setDebuggerTab('run-config')} tabIndex={debuggerTab === 'run-config' ? 0 : -1}>Run Configuration</button>
                     </TabList>
                     <PanelToggle
                       className="debugger-pane-close"
@@ -803,9 +838,170 @@ export function ScriptReplayDebuggerView({
                     />
                   </div>
                   <div className={`debugger-center-body ${!isBrowserScript && debuggerTab === 'request' ? 'debugger-request-body' : ''}`}>
-                    {isBrowserScript || debuggerTab === 'variables' ? (
+                    {debuggerTab === 'run-config' ? (
+                      <div className="debugger-run-config-body debug-effective-settings">
+                        <div className="debug-effective-settings-header">
+                          <strong>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</strong>
+                        </div>
+                        <div className="debug-watch-table-scroll">
+                          <table className="debug-effective-settings-table" aria-label="Effective run configuration">
+                            <thead>
+                              <tr>
+                                <th scope="col">Setting</th>
+                                <th scope="col">Effective value</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <tr>
+                                <th scope="row">Source</th>
+                                <td>{runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Protocol</th>
+                                <td>{script.protocol || 'http'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Base URL (relative targets)</th>
+                                <td>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Iterations</th>
+                                <td>{runRecord?.iterations ?? 1}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Action sequence</th>
+                                <td>{(script.config.run_logic?.action_sequence || ['init', 'action', 'teardown']).join(' → ')}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Think time</th>
+                                <td>{(runRecord ? runRecord.options.ignoreThinkTime : replayOptions.ignoreThinkTime) ? `Ignored for debug (${effectiveThinkTimeLabel(script.config)})` : effectiveThinkTimeLabel(script.config)}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Pacing</th>
+                                <td>{formatPacingTiming(script.config.pacing) || 'No pacing delay'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Failure policy</th>
+                                <td>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Break on failure</th>
+                                <td>{(runRecord ? runRecord.options.breakOnFailure : replayOptions.breakOnFailure) ? 'On' : 'Off'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Max retries</th>
+                                <td>{script.config.error_handling?.max_retries ?? 0}{script.config.error_handling?.max_retries ? ` (${script.config.error_handling?.retry_delay_ms ?? 0} ms, ${script.config.error_handling?.retry_backoff || 'fixed'})` : ''}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Log level</th>
+                                <td>{(runRecord?.options.logLevel || replayOptions.logLevel || script.config.log?.level || 'info').toUpperCase()}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Evidence capture</th>
+                                <td>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Network trace</th>
+                                <td>{(runRecord ? runRecord.options.networkTrace : replayOptions.networkTrace) !== false ? 'On' : 'Off'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Redact run evidence</th>
+                                <td>{script.config.log?.redact_run_evidence ? 'On' : 'Off (platform secrets always redacted)'}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Debugger group</th>
+                                <td>{(runRecord?.options.groupName || replayOptions.groupName || '').trim() || `${script.name || 'script'}-debug`}</td>
+                              </tr>
+                              <tr>
+                                <th scope="row">Run identity</th>
+                                <td>{(runRecord?.options.runId || replayOptions.runId || '').trim() || 'debug-<session id>'}</td>
+                              </tr>
+                              {(['http', 'soap', 'java_http'].includes(script.protocol) || script.protocol.startsWith('http/')) && (
+                                <>
+                                  <tr>
+                                    <th scope="row">HTTP version</th>
+                                    <td>{script.config.http?.version || 'auto (HTTP/1.1 + HTTP/2)'}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Timeouts</th>
+                                    <td>{`Request ${script.config.http?.request_timeout_ms ?? 30000} ms · Connect ${script.config.http?.connect_timeout_ms ?? 10000} ms · TLS ${script.config.http?.tls_timeout_ms ?? 10000} ms`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Connections &amp; redirects</th>
+                                    <td>{`Keep-alive ${script.config.http?.keep_alive !== false ? 'on' : 'off'} · Max redirects ${script.config.http?.max_redirects ?? 10} · Max conns/host ${script.config.http?.max_conns_per_host ?? 6}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Cookies &amp; cache</th>
+                                    <td>{`Cookies ${script.config.http?.cookies_enabled !== false ? 'enabled' : 'disabled'}${script.config.http?.clear_cookies_per_iteration ? ' (clear each iteration)' : ''} · Cache ${script.config.http?.cache_enabled ? 'enabled' : 'disabled'}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">TLS</th>
+                                    <td>{`Min ${script.config.http?.tls?.min_version || 'TLS 1.2'}${script.config.http?.tls?.max_version ? ` · Max ${script.config.http.tls.max_version}` : ''}${script.config.http?.tls?.insecure_skip_verify ? ' · Insecure skip verify' : ''}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Proxy</th>
+                                    <td>{`${script.config.http?.proxy_mode || 'direct'}${script.config.http?.proxy?.url ? ` (${script.config.http.proxy.url})` : ''}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">HAR capture</th>
+                                    <td>{`Bodies: ${runRecord?.options.harBodies || replayOptions.harBodies || 'none'} · Redirects: ${(runRecord ? runRecord.options.harRedirects : replayOptions.harRedirects) !== false ? 'on' : 'off'} · Timings: ${(runRecord ? runRecord.options.harTimings : replayOptions.harTimings) !== false ? 'on' : 'off'}`}</td>
+                                  </tr>
+                                </>
+                              )}
+                              {isBrowserScript && (
+                                <>
+                                  <tr>
+                                    <th scope="row">Browser engine</th>
+                                    <td>{`${script.config.browser?.engine || 'chromium'} · ${script.config.browser?.headless !== false ? 'Headless' : 'Headed'}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Viewport / device</th>
+                                    <td>{script.config.browser?.device_profile || `${script.config.browser?.viewport?.width ?? 1280}×${script.config.browser?.viewport?.height ?? 720}`}</td>
+                                  </tr>
+                                  <tr>
+                                    <th scope="row">Screenshots</th>
+                                    <td>{runRecord?.options.capture === 'errors' ? 'on_error' : runRecord?.options.capture === 'script' ? (script.config.browser?.capture_screenshots || 'on_error') : 'per_action'}</td>
+                                  </tr>
+                                </>
+                              )}
+                              <tr>
+                                <th scope="row">Inputs</th>
+                                <td>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</td>
+                              </tr>
+                            </tbody>
+                          </table>
+                        </div>
+                        {(() => {
+                          const inputRows = runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))
+                          if (inputRows.length === 0) return null
+                          return (
+                            <div className="debug-watch-table-scroll">
+                              <table className="debug-effective-settings-table" aria-label="Effective parameter inputs">
+                                <thead>
+                                  <tr>
+                                    <th scope="col">Parameter</th>
+                                    <th scope="col">Source</th>
+                                    <th scope="col">Selection</th>
+                                    <th scope="col">Update</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {inputRows.map(p => (
+                                    <tr key={p.name}>
+                                      <th scope="row">{p.name}</th>
+                                      <td>{p.source}</td>
+                                      <td>{p.selection}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</td>
+                                      <td>{p.update || 'default update'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )
+                        })()}
+                      </div>
+                    ) : (isBrowserScript || debuggerTab === 'variables') ? (
                       <div className="debugger-variables-body">
-                        <details className="debug-effective-settings"><summary>Effective run configuration · {runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</summary><dl><dt>Base URL (relative targets)</dt><dd>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</dd><dt>Evidence capture</dt><dd>{runRecord?.options.capture || replayOptions.capture || 'diagnostic'}</dd><dt>Network trace</dt><dd>{(runRecord ? runRecord.options.networkTrace : replayOptions.networkTrace) !== false ? 'On' : 'Off'}</dd><dt>Iterations</dt><dd>{runRecord?.iterations ?? 1}</dd><dt>Failure policy</dt><dd>{runRecord?.failurePolicy || (debugContinuesAfterFailure(replayOptions, script) ? 'Continue on error' : 'Stop on error')}</dd><dt>Inputs</dt><dd>{runRecord?.inputs?.length ?? (script.parameters?.length || 0)} parameters · {runRecord?.dataSourceCount ?? (script.data_sources?.length || 0)} data sources. Row selection follows Parameters; session variables override matching inputs.</dd></dl><ul>{(runRecord?.inputs || (script.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed }))).map(p => <li key={p.name}>{p.name}: {p.source} · {p.selection} · {p.update || 'default update'}{p.startRow != null ? ` · start row ${p.startRow}` : ''}{p.seed != null ? ` · seed ${p.seed}` : ''}</li>)}</ul></details>
                         {selectedOutlineParameterName && <DebugParameterInspector key={`${selectedOutlineParameterName}:${selectedReplayEventIndex}`} script={script} name={selectedOutlineParameterName} values={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} event={selectedReplayEvent} matchesDraft={replayMatchesCurrentScript} runtimeParameter={runtimeInspectionMode === 'current' ? currentRuntimeParameter(currentRuntimeSnapshot, selectedOutlineParameterName) : undefined} currentMode={runtimeInspectionMode === 'current'} onFindUsages={() => { selectOutlineParameter(selectedOutlineParameterName); setNarrowPane('editor') }} onEdit={onEditParameterDefinition} />}
                         <details><summary>Template namespaces and definitions</summary><ParameterDefinitionGuide script={script} /></details>
                         <DebugVariableWatches events={debugEvents} seed={seedVariables} latest={replayVariableInspector} evidenceUnavailable={runtimeVariablesUnavailable} historyIncomplete={Boolean(replaying || replayReport?.dropped_event_count || replayReport?.truncated_event_evidence_count || browserReplaySession?.dropped_event_count || browserReplaySession?.report?.truncated_event_evidence_count)} selected={selectedReplayEventIndex} onSelect={jumpToEvent} snapshot={currentRuntimeSnapshot} currentReason={currentRuntimeReason} mode={runtimeInspectionMode} onModeChange={onRuntimeInspectionMode} completed={Boolean(replayReport?.completed_at)} finalValuesRecorded={Boolean(replayReport?.completed_at && replayReport?.final_variables)} canInspectFrame={canInspectRuntimeFrame} onInspectFrame={frame => { onInspectRuntimeFrame(frame); setNarrowPane('editor') }} />

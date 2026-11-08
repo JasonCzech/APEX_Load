@@ -1629,16 +1629,16 @@ describe('ScriptEditor', () => {
       topbarWorkspaceButton('Debug')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
-    // The top bar keeps the workspace switcher and Save; the Debug dropdown and
-    // Debug options lead the debugger's session bar above the left rail, and
-    // Break on failure stays on the right (Export session lives on the Summary tab).
+    // The top bar keeps the workspace switcher and Save; the Debug dropdown,
+    // Debug options, and Checks & readiness lead the debugger's session bar
+    // above the left rail (Export session lives on the Summary tab).
     expect(debugActionLabels()).toEqual([])
     const sessionControlLabels = Array.from(container.querySelectorAll<HTMLButtonElement>('.debug-session-controls .topbar-debug-action .topbar-action-label')).map(label => label.textContent?.trim())
     expect(sessionControlLabels).toEqual(['Debug'])
     const sessionBarItems = Array.from(container.querySelector('.debug-session-bar')?.children || [])
       .map(item => item.classList.contains('debug-session-controls') ? 'run controls' : item.querySelector('.topbar-action-label')?.textContent?.trim() || item.textContent?.trim().replace(/ \(\d+\)$/, ''))
-    expect(sessionBarItems.slice(0, 2)).toEqual(['run controls', 'Debug options'])
-    expect(sessionBarItems.slice(-1)).toEqual(['Break on failure: off'])
+    expect(sessionBarItems.slice(0, 3)).toEqual(['run controls', 'Debug options', 'Checks & readiness'])
+    expect(sessionBarItems).not.toContain('Break on failure: off')
     expect(sessionBarItems).not.toContain('Export session')
     await act(async () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -6783,9 +6783,9 @@ describe('ScriptEditor', () => {
     // The default names what a test run of this script does (it opts out of continue-on-error).
     expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
     await act(async () => {
-      Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Variables')?.click()
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Run Configuration')?.click()
     })
-    const failurePolicy = () => Array.from(container.querySelectorAll('.debugger-center .debug-effective-settings dt')).find(term => term.textContent === 'Failure policy')?.nextElementSibling?.textContent
+    const failurePolicy = () => Array.from(container.querySelectorAll('.debugger-center .debug-effective-settings th[scope="row"]')).find(term => term.textContent === 'Failure policy')?.nextElementSibling?.textContent
     expect(failurePolicy()).toBe('Stop on error')
     expect(container.querySelector('.debug-session-disclosures .debug-effective-settings')).toBeNull()
     expect(container.querySelector('.debug-session-disclosures .debug-breakpoint-controls')).toBeNull()
@@ -9425,7 +9425,7 @@ describe('ScriptEditor', () => {
     const closeButton = container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')
     expect(closeButton).not.toBeNull()
     await act(async () => {
-      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -9448,7 +9448,7 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Unsaved Changes')
 
     await act(async () => {
-      closeButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      container.querySelector<HTMLButtonElement>('button[aria-label="Close script editor"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -10008,8 +10008,11 @@ describe('ScriptEditor', () => {
     await returnToDebugger(container)
     expect(findCenterTab(container, 'Browser Replay')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-browser-evidence')).not.toBeNull()
-    expect(container.querySelector('.debugger-center .debug-effective-settings')).not.toBeNull()
     expect(container.querySelector('.debugger-center [aria-label="Variable watches"]')).not.toBeNull()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Run Configuration')?.click()
+    })
+    expect(container.querySelector('.debugger-center .debug-effective-settings')).not.toBeNull()
     expect(container.querySelector('.debug-session-disclosures .debug-effective-settings')).toBeNull()
     expect(container.querySelector('.debugger-rail > .debug-breakpoint-controls')).not.toBeNull()
     expect(container.querySelector('.selected-evidence-header')?.textContent).toContain('Search Results')
@@ -14603,15 +14606,24 @@ describe('ScriptEditor', () => {
       await act(async () => { modeChip('Debug').click() })
       await flushReact()
 
-      // Debug options button is right next to the Debug dropdown button in .debug-session-bar
+      // Debug options and Checks & readiness buttons lead .debug-session-bar next to the Debug dropdown
       const sessionBarChildren = Array.from(container.querySelector('.debug-session-bar')?.children || [])
       expect(sessionBarChildren[0]?.classList.contains('debug-session-controls')).toBe(true)
       const debugOptionsBtn = sessionBarChildren[1] as HTMLButtonElement
+      const readinessBtn = sessionBarChildren[2] as HTMLButtonElement
       expect(debugOptionsBtn?.textContent).toContain('Debug options')
       expect(debugOptionsBtn?.getAttribute('aria-expanded')).toBe('false')
+      expect(readinessBtn?.textContent).toBe('Checks & readiness')
+      expect(readinessBtn?.getAttribute('aria-expanded')).toBe('false')
+      expect(container.querySelector('#debug-checks-readiness')?.hasAttribute('hidden')).toBe(true)
+      await act(async () => { readinessBtn.click() })
+      expect(readinessBtn.getAttribute('aria-expanded')).toBe('true')
+      expect(container.querySelector('#debug-checks-readiness')?.hasAttribute('hidden')).toBe(false)
       await act(async () => { debugOptionsBtn.click() })
       expect(debugOptionsBtn.getAttribute('aria-expanded')).toBe('true')
+      expect(readinessBtn.getAttribute('aria-expanded')).toBe('false')
       expect(container.querySelector('#debug-session-options.debugger-settings-popover')).not.toBeNull()
+      expect(findInputByLabelText(container, 'Break on failure')).not.toBeNull()
       // Start paused is on: the run modes that run through still must not pause.
       const startPausedBox = findInputByLabelText(container, 'Step through (start paused)')!
       await act(async () => { startPausedBox.click() })
@@ -14656,9 +14668,9 @@ describe('ScriptEditor', () => {
       // The run records the count it asked for, shown in the effective configuration.
       await returnToDebugger(container)
       await act(async () => {
-        Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Variables')?.click()
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist button[role="tab"]')).find(button => button.textContent?.trim() === 'Run Configuration')?.click()
       })
-      const effective = (term: string) => Array.from(container.querySelectorAll('.debugger-center .debug-effective-settings dt')).find(dt => dt.textContent === term)?.nextElementSibling?.textContent
+      const effective = (term: string) => Array.from(container.querySelectorAll('.debugger-center .debug-effective-settings th[scope="row"]')).find(th => th.textContent === term)?.nextElementSibling?.textContent
       expect(effective('Iterations')).toBe('3')
       expect(effective('Network trace')).toBe('On')
 
@@ -14684,6 +14696,8 @@ describe('ScriptEditor', () => {
 
       // Run in step mode (starts paused)
       await act(async () => { debugBtn().click() })
+      const menuLabels = Array.from(menu()?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') || []).map(item => item.textContent?.trim())
+      expect(menuLabels).toEqual(['Run a single iteration', 'Run 3 iterations', 'Run to breakpoint', 'Run to selected action', 'Run in step mode'])
       const stepModeBtn = Array.from(menu()?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') || [])
         .find(item => item.textContent?.trim() === 'Run in step mode')!
       await act(async () => { stepModeBtn.click(); await Promise.resolve() })
@@ -14691,6 +14705,20 @@ describe('ScriptEditor', () => {
       expect(apiMock.startScriptDebugSession).toHaveBeenLastCalledWith('script-1', expect.objectContaining({
         start_paused: true,
       }))
+    })
+
+    it('replaces Review changes with Close editor when clean and places Author Problems to the left of Review changes when dirty', async () => {
+      const onClose = vi.fn()
+      await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" onClose={onClose} />)) })
+      await flushReact()
+      const stateButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.script-evidence-states > button'))
+        .map(btn => btn.textContent?.trim() || btn.getAttribute('aria-label'))
+      expect(stateButtons()).toEqual(['Author Problems (0)', 'Close editor'])
+      expect(container.querySelectorAll('.script-evidence-states > button[aria-label="Close script editor"]')).toHaveLength(1)
+      await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Edited Name') })
+      await flushReact()
+      expect(stateButtons()).toEqual(['Author Problems (0)', 'Review changes'])
+      expect(container.querySelectorAll('.script-evidence-states > button[aria-label="Close script editor"]')).toHaveLength(0)
     })
 
     it('operates the Debug run modes menu from the keyboard and keeps Escape inside it', async () => {
@@ -14715,6 +14743,8 @@ describe('ScriptEditor', () => {
       expect(focusedLabel()).toBe('Run a single iteration')
       await press('ArrowDown')
       expect(focusedLabel()).toBe('Run 2 iterations')
+      await press('ArrowDown')
+      expect(focusedLabel()).toBe('Run to selected action')
       await press('ArrowDown')
       expect(focusedLabel()).toBe('Run in step mode')
       await press('ArrowDown')

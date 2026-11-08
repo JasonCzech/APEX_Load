@@ -385,7 +385,8 @@ test('Run To continues after its breakpoint socket precedes the HTTP acknowledge
   })
   try {
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: /^Selected target/ }).click()
-    await page.getByRole('button', { name: 'Run to selected action', exact: true }).click()
+    await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run to selected action', exact: true }).click()
     await expect.poll(() => fetchedAcknowledgement?.id).toBe(initial.id)
     await expect.poll(() => breakpointSocket?.session?.state_revision).toBe(fetchedAcknowledgement!.state_revision)
     // The real published session has reached and changed the page before the

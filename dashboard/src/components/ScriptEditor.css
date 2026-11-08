@@ -6759,6 +6759,9 @@ details.replay-code-block > summary,
   background: var(--dropdown-menu-bg);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
 }
+.debugger-settings-popover[hidden] {
+  display: none !important;
+}
 
 /* Debug run dropdown */
 .debug-run-dropdown {
@@ -8089,6 +8092,64 @@ button.debugger-problem-row:hover {
 .debug-effective-settings[open], .debug-run-history[open], .debug-breakpoint-controls[open] { max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
 .debug-effective-settings dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; }
 .debug-effective-settings dd { margin: 0; overflow-wrap: anywhere; }
+.debugger-run-config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  overflow: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.debug-effective-settings-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debug-effective-settings-header strong {
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.debug-effective-settings-header small {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.debug-effective-settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.debug-effective-settings-table thead th {
+  padding: 8px 10px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+}
+.debug-effective-settings-table tbody th,
+.debug-effective-settings-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.debug-effective-settings-table tbody tr:last-child th,
+.debug-effective-settings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.debug-effective-settings-table tbody th[scope="row"] {
+  width: 34%;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
+}
+.debug-effective-settings-table tbody td {
+  color: var(--text-primary);
+}
 .debug-history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .debug-history-columns > * { min-width: 0; }
 .debug-history-evidence { padding: 8px; }

@@ -220,7 +220,8 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
   }, [initialScript, initiallyDirty, initialRetainedDraft])
   // The one dirty calculation: navigation guards, save, download, validation
   // and the evidence summary all read it.
-  const dirty = Boolean(documentOptions) && (initialSaveRequired || documentOptions!.jsonDirty || documentOptions!.pendingEditCount > 0 || documentOptions!.formattedDocument !== documentOptions!.savedDocumentKey)
+  const hasDocumentChanges = Boolean(documentOptions) && (Boolean(initialRetainedDraft) || documentOptions!.jsonDirty || documentOptions!.pendingEditCount > 0 || documentOptions!.formattedDocument !== documentOptions!.savedDocumentKey)
+  const dirty = Boolean(documentOptions) && (initialSaveRequired || hasDocumentChanges)
   // markSaved records that the editor's document was saved to the library.
   const markSaved = useCallback(() => setInitialSaveRequired(false), [])
 
@@ -434,6 +435,7 @@ export function useScriptAuthoringSession({ initialScript, initiallyDirty: given
     acceptSavedBaseline,
     blockForReconciliation,
     dirty,
+    hasDocumentChanges,
     markSaved,
     close,
     returnToSource,

@@ -156,7 +156,7 @@ test('parameter workspace preserves 4000 rows, references, masked values and run
   await review.getByRole('button', { name: 'Cancel', exact: true }).click()
 
   await page.getByRole('tab', { name: 'Runtime Settings', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Close script editor', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Review changes', exact: true })).toBeVisible()
   const runtime = page.getByRole('region', { name: 'Runtime Settings', exact: true })
   const navigation = runtime.getByRole('navigation', { name: 'Runtime setting categories' })
   await navigation.getByRole('tab', { name: 'Error Handling', exact: true }).click()

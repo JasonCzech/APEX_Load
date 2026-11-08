@@ -33,7 +33,7 @@ import {
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
 
-export type DebuggerTab = 'request' | 'browser' | 'variables'
+export type DebuggerTab = 'request' | 'browser' | 'variables' | 'run-config'
 export type DebuggerBottomTab = 'console' | 'timeline' | 'problems'
 
 export function selectDebugEvents(
@@ -177,6 +177,7 @@ export function useScriptReplayDebuggerController({
   const [debugBreakpoints, setDebugBreakpoints] = useState<ScriptDebugBreakpoint[]>([])
   const [debuggerTab, setDebuggerTab] = useState<DebuggerTab>('request')
   const [debuggerSettingsOpen, setDebuggerSettingsOpen] = useState(false)
+  const [debuggerReadinessOpen, setDebuggerReadinessOpen] = useState(false)
   const [debugDetailCollapsed, setDebugDetailCollapsed] = useState(false)
   const [debuggerBottomTab, setDebuggerBottomTab] = useState<DebuggerBottomTab>('console')
   const [debugRawLevel, setDebugRawLevel] = useState<ScriptDebugLogLevel | 'all'>('all')
@@ -195,6 +196,8 @@ export function useScriptReplayDebuggerController({
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsBtnRef = useRef<HTMLButtonElement | null>(null)
+  const debuggerReadinessRef = useRef<HTMLDivElement | null>(null)
+  const debuggerReadinessBtnRef = useRef<HTMLButtonElement | null>(null)
 
   const debugEvents = useMemo(
     () => selectDebugEvents(browserReplaySession, replayReport),
@@ -315,6 +318,29 @@ export function useScriptReplayDebuggerController({
     }
   }, [debuggerSettingsOpen])
 
+  useEffect(() => {
+    if (!debuggerReadinessOpen) return
+    const onDown = (event: globalThis.MouseEvent) => {
+      const target = event.target as Node
+      if (debuggerReadinessRef.current?.contains(target)) return
+      if (debuggerReadinessBtnRef.current?.contains(target)) return
+      setDebuggerReadinessOpen(false)
+    }
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setDebuggerReadinessOpen(false)
+        debuggerReadinessBtnRef.current?.focus()
+      }
+    }
+    window.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [debuggerReadinessOpen])
+
   const handleDebuggerResizeKeyDown = useCallback((kind: DebuggerResizeKind, event: ReactKeyboardEvent<HTMLDivElement>) => {
     const limits = DEBUGGER_LAYOUT_LIMITS[kind]
     const step = limits.step * (event.shiftKey ? 2 : 1)
@@ -379,6 +405,9 @@ export function useScriptReplayDebuggerController({
     debuggerBottomHeight,
     debuggerBottomTab,
     debuggerRailWidth,
+    debuggerReadinessBtnRef,
+    debuggerReadinessOpen,
+    debuggerReadinessRef,
     debuggerSettingsBtnRef,
     debuggerSettingsOpen,
     debuggerSettingsRef,
@@ -405,6 +434,7 @@ export function useScriptReplayDebuggerController({
     setDebugBreakpoints,
     setDebugDetailCollapsed,
     setDebuggerBottomTab,
+    setDebuggerReadinessOpen,
     setDebuggerSettingsOpen,
     setDebuggerTab,
     setDebugRailFilter,

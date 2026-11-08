@@ -98,10 +98,14 @@ test('a validation that returns after an edit is ignored and the next one binds 
   const scriptName = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(scriptName).toHaveValue(name)
   const states = page.getByLabel('Script evidence states')
+  await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  const ensureReadinessOpen = async () => {
+    const btn = page.getByRole('button', { name: 'Checks & readiness', exact: true })
+    if ((await btn.getAttribute('aria-expanded')) !== 'true') await btn.click()
+  }
   const recheck = async () => {
-    const checks = page.locator('details.script-health-summary')
-    if (!await checks.evaluate(element => (element as HTMLDetailsElement).open)) await checks.locator(':scope > summary').click()
-    await checks.locator('.debug-readiness-card').getByRole('button', { name: 'Recheck', exact: true }).click()
+    await ensureReadinessOpen()
+    await page.locator('#debug-checks-readiness .debug-readiness-card').getByRole('button', { name: 'Recheck', exact: true }).click()
   }
 
   // Hold the first draft validation at the controller boundary.
@@ -123,7 +127,8 @@ test('a validation that returns after an edit is ignored and the next one binds 
   const lateResponse = await late
   expect((await lateResponse.json()).validated_fingerprint).toBe(firstFingerprint)
   // Recheck re-enables once the editor has handled the late response.
-  const readiness = page.locator('details.script-health-summary .debug-readiness-card')
+  await ensureReadinessOpen()
+  const readiness = page.locator('#debug-checks-readiness .debug-readiness-card')
   await expect(readiness.getByRole('button', { name: 'Recheck', exact: true })).toBeEnabled()
   await expect(scriptName).toHaveValue(`${name}_edited_twice`)
   await expect(readiness).not.toContainText('Script validation passed')
