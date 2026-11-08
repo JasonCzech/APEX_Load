@@ -58,7 +58,7 @@ export interface ReplayHARPhase {
 }
 
 export interface ReplayHARBody {
-  size_bytes?: number
+  size_bytes?: number | null
   text?: string
   state: 'retained' | 'size_limit' | 'total_limit' | 'binary' | 'unavailable' | 'redacted' | string
   mime_type?: string
@@ -67,7 +67,7 @@ export interface ReplayHARBody {
 export interface ReplayHARExchange {
   id?: string
   started_at?: string
-  phases?: ReplayHARPhase[]
+  phases?: ReplayHARPhase[] | null
   request_body?: ReplayHARBody | null
   response_body?: ReplayHARBody | null
 }
@@ -75,8 +75,9 @@ export interface ReplayHARExchange {
 export interface BrowserReplayNetworkEntry {
   /** Per-request browser evidence; carries the negotiated protocol when document evidence capture is on. */
   browser_evidence?: import('./browserResourceEvidence').BrowserResourceEvidenceV2 | null
-  har?: ReplayHARExchange
-  trace?: HTTPNetworkTrace
+  har?: ReplayHARExchange | null
+  trace?: HTTPNetworkTrace | null
+  failure_kind?: string
   url?: string
   method?: string
   status_code?: number
@@ -84,8 +85,12 @@ export interface BrowserReplayNetworkEntry {
   duration_ms?: number
   bytes_received?: number
   request_headers?: Record<string, string>
+  request_body?: string
+  request_body_encoding?: string
+  request_body_truncated?: boolean
   response_headers?: Record<string, string>
 }
+
 
 export interface BrowserReplayDomSummary {
   title?: string

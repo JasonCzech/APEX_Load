@@ -1336,7 +1336,7 @@ export function ScriptReplayDebuggerView({
                     </div>
                   ) : debuggerBottomTab === 'timeline' ? (
                     <div className="debugger-timeline">
-                      <DebugTimeline events={debugEvents} onSelect={jumpToEvent} />
+                      <DebugTimeline events={debugEvents} selectedIndex={selectedReplayEventIndex} onSelect={jumpToEvent} />
                       <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>
                   ) : debuggerBottomTab === 'problems' ? (

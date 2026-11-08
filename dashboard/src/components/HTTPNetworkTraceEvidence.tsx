@@ -22,7 +22,7 @@ function socketReuseLabel(trace: HTTPNetworkTrace): 'reused socket' | 'new socke
   return undefined
 }
 
-function formatHopPhases(phases?: ReplayHARPhase[]): string {
+function formatHopPhases(phases?: ReplayHARPhase[] | null): string {
   if (!Array.isArray(phases) || phases.length === 0) return ''
   const parts: string[] = []
   for (const phase of phases) {

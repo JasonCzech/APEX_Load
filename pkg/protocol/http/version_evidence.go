@@ -11,7 +11,7 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	if result == nil {
 		return nil
 	}
-	evidence := make(map[string]any, len(result.ProtocolEvidence)+3)
+	evidence := make(map[string]any, len(result.ProtocolEvidence))
 	for key, value := range result.ProtocolEvidence {
 		evidence[key] = value
 	}
@@ -36,8 +36,41 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	if traceMap := result.NetworkTrace.EvidenceMap(); len(traceMap) > 0 {
 		evidence["network_trace"] = traceMap
 	}
+	if timings := buildHTTPProtocolTimings(evidence["timings"], result); len(timings) > 0 {
+		evidence["timings"] = timings
+	}
 	if len(evidence) == 0 {
 		return nil
 	}
 	return evidence
+}
+
+// buildHTTPProtocolTimings refreshes the shared timings contract over the
+// timings an earlier evidence pass published for the same result. One
+// httptrace spans a whole redirect chain: TTFB is the first hop's first byte
+// while DNS, connect and TLS come from the last hop that dialed. Redirected
+// actions therefore also carry redirect_count and redirect_ms so readers do not
+// split the chain's total into per-phase spans as if it were one exchange.
+func buildHTTPProtocolTimings(existing any, result *protocol.Result) map[string]any {
+	if result == nil {
+		return nil
+	}
+	prev, _ := existing.(map[string]any)
+	measured := protocol.EvidenceTimings(result)
+	timings := make(map[string]any, len(measured))
+	for key, value := range prev {
+		timings[key] = value
+	}
+	for key, value := range measured {
+		timings[key] = value
+	}
+	delete(timings, "redirect_count")
+	delete(timings, "redirect_ms")
+	if telemetry := result.ServerTelemetry; telemetry != nil && telemetry.RedirectCount > 0 {
+		timings["redirect_count"] = telemetry.RedirectCount
+		if telemetry.RedirectMs > 0 {
+			timings["redirect_ms"] = telemetry.RedirectMs
+		}
+	}
+	return timings
 }
