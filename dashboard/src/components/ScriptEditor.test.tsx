@@ -1631,14 +1631,15 @@ describe('ScriptEditor', () => {
     })
     // The top bar keeps the workspace switcher and Save; the Debug dropdown and
     // Debug options lead the debugger's session bar above the left rail, and
-    // Break on failure / Export session stay on the right.
+    // Break on failure stays on the right (Export session lives on the Summary tab).
     expect(debugActionLabels()).toEqual([])
     const sessionControlLabels = Array.from(container.querySelectorAll<HTMLButtonElement>('.debug-session-controls .topbar-debug-action .topbar-action-label')).map(label => label.textContent?.trim())
     expect(sessionControlLabels).toEqual(['Debug'])
     const sessionBarItems = Array.from(container.querySelector('.debug-session-bar')?.children || [])
       .map(item => item.classList.contains('debug-session-controls') ? 'run controls' : item.querySelector('.topbar-action-label')?.textContent?.trim() || item.textContent?.trim().replace(/ \(\d+\)$/, ''))
     expect(sessionBarItems.slice(0, 2)).toEqual(['run controls', 'Debug options'])
-    expect(sessionBarItems.slice(-2)).toEqual(['Break on failure: off', 'Export session'])
+    expect(sessionBarItems.slice(-1)).toEqual(['Break on failure: off'])
+    expect(sessionBarItems).not.toContain('Export session')
     await act(async () => {
       topbarWorkspaceButton('Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
@@ -3777,7 +3778,7 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Source Mapping')
   })
 
-  it('lets the debug request and response pane close to expand the center workbench', async () => {
+  it('lets the debug request and response pane collapse to a slim rail to expand the center workbench', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} />)
     })
@@ -3789,27 +3790,39 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    await act(async () => { findCenterTab(container, 'DSL')?.click() })
-
-    // The merged detail panel (request/response + variables) is open by default.
-    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    // While Action evidence is the active center tab, debug detail is hosted inline in the center workbench.
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-hosted')).toBe(true)
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
 
-    const closeDetails = findButtonByTitle(container, 'Close debug detail panel')
-    expect(closeDetails).toBeDefined()
+    await act(async () => { findCenterTab(container, 'DSL')?.click() })
+
+    // The merged detail panel (request/response + variables) is open by default in the right rail.
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.debugger-center-body')).not.toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-hosted')).toBe(false)
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
+
+    const collapseDetails = findButtonByTitle(container, 'Collapse debug detail panel')
+    expect(collapseDetails).toBeDefined()
     await act(async () => {
-      closeDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      collapseDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.debugger-center')).toBeNull()
+    expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(true)
+    expect(container.querySelector('.debugger-center-body')).toBeNull()
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
     expect(findCenterTab(container, 'DSL')?.getAttribute('aria-selected')).toBe('true')
 
-    const showDetails = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
-    expect(showDetails).toBeDefined()
+    const expandDetails = findButtonByTitle(container, 'Expand debug detail panel')
+    expect(expandDetails).toBeDefined()
     await act(async () => {
-      showDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expandDetails?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(false)
+    expect(container.querySelector('.debugger-center-body')).not.toBeNull()
+    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
   })
 
   it('collapses and restores the right sidebars from Author and Debug modes', async () => {
@@ -3851,20 +3864,23 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.debugger-center')).not.toBeNull()
     expect(Array.from(container.querySelectorAll('.debugger-center-tablist button')).some(button => button.textContent?.trim() === 'Variables')).toBe(true)
 
-    const collapseDebugSidebar = container.querySelector('.debugger-center button[aria-label="Close debug detail panel"]') as HTMLButtonElement | null
+    const collapseDebugSidebar = container.querySelector('.debugger-center button[aria-label="Collapse debug detail panel"]') as HTMLButtonElement | null
     expect(collapseDebugSidebar).not.toBeNull()
     await act(async () => {
       collapseDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.debugger-center')).toBeNull()
+    const collapsedDebugSidebar = container.querySelector('.debugger-center')
+    expect(collapsedDebugSidebar).not.toBeNull()
+    expect(collapsedDebugSidebar?.classList.contains('collapsed')).toBe(true)
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(true)
 
-    const showDebugSidebar = findButtonByTitle(container, 'Show detail panel (request/response + variables)')
-    expect(showDebugSidebar).toBeDefined()
+    const expandDebugSidebar = findButtonByTitle(container, 'Expand debug detail panel')
+    expect(expandDebugSidebar).toBeDefined()
     await act(async () => {
-      showDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      expandDebugSidebar?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.querySelector('.debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(false)
   })
 
   it('opens action details in the Script JSON right sidebar without exposing the minimap', async () => {

@@ -201,6 +201,7 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await expectDebugOutcome(page, 'passed')
     expect(target.stats.autoCalls).toBe(1); expect(target.stats.acceptedAuto).toBe(1)
     expect(target.stats.consumerCalls).toBe(1); expect(target.stats.acceptedConsumers).toBe(1)
+    await page.getByRole('tab', { name: 'Summary', exact: true }).click()
     const download = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Export session', exact: true }).click()
     const path = await (await download).path(); expect(path).toBeTruthy()

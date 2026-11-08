@@ -8,6 +8,7 @@ import { replayEventStepKey } from './actionChecksModel'
 import { scriptDataUsage } from './scriptDataUsageModel'
 import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
+import PanelToggle from './ux/PanelToggle'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord, responseBodyMessage } from './debuggerExperience'
 import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
@@ -168,7 +169,6 @@ export interface ScriptReplayDebuggerViewProps {
   seedVariables: Record<string, string>
   followExecution: boolean
   onFollowExecution: (enabled: boolean) => void
-  onExportSession: () => Promise<void>
   onUpdateBreakpoints: (next: ScriptDebugBreakpoint[]) => Promise<void>
   onRunTo: (target: ScriptDebugBreakpoint) => Promise<void>
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
@@ -277,7 +277,7 @@ function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fa
 export function ScriptReplayDebuggerView({
   sessionControls,
   sessionToggles,
-  runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onExportSession, onUpdateBreakpoints, onRunTo,
+  runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints, onRunTo,
   actionProblemRows,
   activeReplaySessionId,
   addExtractorDefinition,
@@ -533,7 +533,6 @@ export function ScriptReplayDebuggerView({
               ) : <span className="debug-session-idle">No debug run yet</span>}
               <span className="debug-session-summary">{debugOptionsSummary}</span>
               {sessionToggles}
-              <TooltipButton type="button" className="btn btn-sm btn-secondary" disabled={!replayReport} title="Download Debug JSON" onClick={() => void onExportSession()}>Export session</TooltipButton>
               {optionsError && <span role="alert">{optionsError}</span>}
             </div>
             {debuggerSettingsOpen && (
@@ -688,7 +687,7 @@ export function ScriptReplayDebuggerView({
 
               <div className="script-pane-switch" role="group" aria-label="Debug panes">{(['outline', 'editor', 'inspector'] as const).map(pane => <button type="button" key={pane} aria-pressed={narrowPane === pane} onClick={() => { setNarrowPane(pane); if (pane === 'inspector') setDebugDetailCollapsed(false) }}>{pane === 'outline' ? 'Outline' : pane === 'editor' ? 'Editor' : 'Inspector'}</button>)}</div>
               <div data-narrow-pane={narrowPane}
-                className={`debugger-shell ${debugDetailCollapsed || debugDetailHost ? 'debugger-detail-collapsed' : ''} ${isBrowserScript ? 'browser-evidence-workspace' : ''} ${dockCollapsed ? 'debug-dock-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
+                className={`debugger-shell ${debugDetailCollapsed && !debugDetailHost ? 'debugger-detail-collapsed' : ''} ${debugDetailHost ? 'debugger-detail-hosted' : ''} ${isBrowserScript ? 'browser-evidence-workspace' : ''} ${dockCollapsed ? 'debug-dock-collapsed' : ''} ${activeDebuggerResize ? `resizing resizing-${activeDebuggerResize}` : ''}`}
                 style={{
                   '--rail-w': `${debuggerRailWidth}px`,
                   '--vars-w': `${debuggerVarsWidth}px`,
@@ -759,8 +758,20 @@ export function ScriptReplayDebuggerView({
 
                 {debuggerWorkbench}
 
-                {(!debugDetailCollapsed || debugDetailHost) && (<EvidenceDestination host={debugDetailHost}>
-                <section ref={setDebuggerDetailElement} className="debugger-center" aria-label="Debug detail">
+                <EvidenceDestination host={debugDetailHost}>
+                <section id="debug-detail-panel" ref={setDebuggerDetailElement} className={`debugger-center${debugDetailCollapsed && !debugDetailHost ? ' collapsed' : ''}`} aria-label="Debug detail">
+                  {debugDetailCollapsed && !debugDetailHost ? (
+                    <PanelToggle
+                      className="debugger-detail-restore ux-panel-rail"
+                      side="end"
+                      expanded={false}
+                      panelName="debug detail panel"
+                      collapsedLabel="Debug detail"
+                      controls="debug-detail-panel"
+                      onToggle={() => setDebugDetailCollapsed(false)}
+                    />
+                  ) : (
+                    <>
                   <div
                     className={`debugger-resizer debugger-resizer-col debugger-resizer-vars ${activeDebuggerResize === 'vars' ? 'active' : ''}`}
                     onKeyDownCapture={e => handleDebuggerResizeKeyDown('vars', e)}
@@ -781,15 +792,15 @@ export function ScriptReplayDebuggerView({
                       )}
                       <button type="button" role="tab" aria-selected={isBrowserScript || debuggerTab === 'variables'} className={isBrowserScript || debuggerTab === 'variables' ? 'active' : ''} onClick={() => setDebuggerTab('variables')} tabIndex={(isBrowserScript || debuggerTab === 'variables') ? 0 : -1}>{replaying ? 'Live Variables' : 'Variables'}</button>
                     </TabList>
-                    <TooltipButton
-                      type="button"
+                    <PanelToggle
                       className="debugger-pane-close"
-                      title="Close debug detail panel"
-                      aria-label="Close debug detail panel"
-                      onClick={() => { setDebugDetailCollapsed(true); setNarrowPane('editor') }}
-                    >
-                      ×
-                    </TooltipButton>
+                      side="end"
+                      expanded={true}
+                      panelName="debug detail panel"
+                      collapsedLabel="Debug detail"
+                      controls="debug-detail-panel"
+                      onToggle={() => { setDebugDetailCollapsed(true); setNarrowPane('editor') }}
+                    />
                   </div>
                   <div className={`debugger-center-body ${!isBrowserScript && debuggerTab === 'request' ? 'debugger-request-body' : ''}`}>
                     {isBrowserScript || debuggerTab === 'variables' ? (
@@ -1249,8 +1260,10 @@ export function ScriptReplayDebuggerView({
                     )}
                     </>)}
                   </div>
+                    </>
+                  )}
                 </section>
-                </EvidenceDestination>)}
+                </EvidenceDestination>
 
                 <section className="debugger-bottom" aria-label="Debug dock">
                   <div

@@ -8875,7 +8875,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             seedVariables={replaySeedVariables}
             followExecution={followExecution}
             onFollowExecution={changeFollowExecution}
-            onExportSession={handleDownloadBrowserReplayExport}
             onUpdateBreakpoints={pushDebugBreakpoints}
             onRunTo={async target => {
               if (!replaying) { await handleReplay({ startPaused: false, runTo: target }); return }

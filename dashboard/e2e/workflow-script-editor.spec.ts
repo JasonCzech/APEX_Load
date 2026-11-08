@@ -131,6 +131,14 @@ test('operator can widen the editor and debugger right panels by drag and keyboa
   await page.keyboard.press('ArrowRight')
   await expect.poll(async () => Number(await debugHandle.getAttribute('aria-valuenow'))).toBeLessThan(debugWidth)
 
+  await page.getByRole('button', { name: 'Collapse debug detail panel' }).click()
+  await expect(page.getByRole('button', { name: 'Expand debug detail panel' })).toBeFocused()
+  await expect(debugDetail).toBeVisible()
+  await expect.poll(async () => (await debugDetail.boundingBox())?.width ?? 0).toBeLessThanOrEqual(48)
+  await page.getByRole('button', { name: 'Expand debug detail panel' }).click()
+  await expect(page.getByRole('button', { name: 'Collapse debug detail panel' })).toBeFocused()
+  await expect.poll(async () => (await debugDetail.boundingBox())?.width ?? 0).toBeGreaterThan(220)
+
   // At intermediate widths the debugger presents full-width panes rather than
   // stacking overlapping grid tracks. Each pane and the dock remain reachable.
   await page.setViewportSize({ width: 900, height: 1000 })

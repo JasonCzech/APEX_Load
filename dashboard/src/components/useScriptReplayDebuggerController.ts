@@ -253,7 +253,7 @@ export function useScriptReplayDebuggerController({
   // a saved width is constrained by a smaller window. Preserve the saved width
   // until the operator actually resizes it again.
   useEffect(() => {
-    if (!debuggerDetailElement) return
+    if (!debuggerDetailElement || debugDetailCollapsed) return
     const updateSize = () => {
       const width = debuggerDetailElement.getBoundingClientRect().width
       setDebuggerVarsActualWidth(width > 0 ? Math.round(width) : null)
@@ -266,7 +266,7 @@ export function useScriptReplayDebuggerController({
     const shell = debuggerDetailElement.closest('.debugger-shell')
     if (shell) observer?.observe(shell)
     return () => { window.removeEventListener('resize', updateSize); observer?.disconnect() }
-  }, [debuggerDetailElement, debuggerRailWidth])
+  }, [debugDetailCollapsed, debuggerDetailElement, debuggerRailWidth])
 
   useEffect(() => {
     if (!debugRawAutoScroll || !debugRawOutputRef.current) return

@@ -6920,6 +6920,12 @@ details.replay-code-block > summary,
   --debugger-dock-offset: 38px;
 }
 .debugger-shell.debugger-detail-collapsed {
+  grid-template-columns: var(--rail-w, 300px) minmax(0, 1fr) 36px;
+  grid-template-areas:
+    "rail code center"
+    "bottom bottom bottom";
+}
+.debugger-shell.debugger-detail-hosted {
   grid-template-columns: var(--rail-w, 300px) minmax(520px, 1fr);
   grid-template-areas:
     "rail code"
@@ -6932,6 +6938,12 @@ details.replay-code-block > summary,
     "bottom bottom bottom";
 }
 .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+  grid-template-columns: var(--rail-w, 300px) minmax(0, 1fr) 36px;
+  grid-template-areas:
+    "rail code center"
+    "bottom bottom bottom";
+}
+.debugger-shell.debugger-detail-hosted.debugger-variables-collapsed {
   grid-template-columns: var(--rail-w, 300px) minmax(560px, 1fr);
   grid-template-areas:
     "rail code"
@@ -7067,6 +7079,11 @@ details.replay-code-block > summary,
   border-radius: 10px;
   background: var(--bg-primary);
   overflow: hidden;
+}
+.debugger-center.collapsed {
+  padding: 4px 2px;
+  align-items: center;
+  justify-content: flex-start;
 }
 .debugger-center-tabs,
 .debugger-bottom-tabs {
@@ -7590,6 +7607,13 @@ button.debugger-problem-row:hover {
       "bottom bottom bottom";
   }
   .debugger-shell.debugger-detail-collapsed {
+    grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(0, 1fr) 36px;
+    grid-template-rows: minmax(0, 1fr) var(--bottom-h, 220px);
+    grid-template-areas:
+      "rail code center"
+      "bottom bottom bottom";
+  }
+  .debugger-shell.debugger-detail-hosted {
     grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(380px, 1fr);
     grid-template-rows: minmax(0, 1fr) var(--bottom-h, 220px);
     grid-template-areas:
@@ -7604,6 +7628,13 @@ button.debugger-problem-row:hover {
       "bottom bottom";
   }
   .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+    grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(0, 1fr) 36px;
+    grid-template-rows: minmax(520px, 1fr) var(--bottom-h, 220px);
+    grid-template-areas:
+      "rail code center"
+      "bottom bottom bottom";
+  }
+  .debugger-shell.debugger-detail-hosted.debugger-variables-collapsed {
     grid-template-columns: minmax(220px, var(--rail-w, 300px)) minmax(380px, 1fr);
     grid-template-rows: minmax(520px, 1fr) var(--bottom-h, 220px);
     grid-template-areas:
@@ -7653,6 +7684,14 @@ button.debugger-problem-row:hover {
     overflow: auto;
   }
   .debugger-shell.debugger-detail-collapsed {
+    grid-template-rows: minmax(420px, 52vh) 220px auto 260px;
+    grid-template-areas:
+      "code"
+      "rail"
+      "center"
+      "bottom";
+  }
+  .debugger-shell.debugger-detail-hosted {
     grid-template-rows: minmax(420px, 52vh) 220px 260px;
     grid-template-areas:
       "code"
@@ -7668,6 +7707,14 @@ button.debugger-problem-row:hover {
       "bottom";
   }
   .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+    grid-template-rows: minmax(420px, 52vh) 220px auto 260px;
+    grid-template-areas:
+      "code"
+      "rail"
+      "center"
+      "bottom";
+  }
+  .debugger-shell.debugger-detail-hosted.debugger-variables-collapsed {
     grid-template-rows: minmax(420px, 52vh) 220px 260px;
     grid-template-areas:
       "code"
@@ -7716,15 +7763,21 @@ button.debugger-problem-row:hover {
     grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 24%)) minmax(0, 1fr) min(var(--vars-w, 400px), max(220px, calc(100% - max(180px, min(var(--rail-w, 300px), 24%)) - 100px)));
   }
   .debugger-shell.debugger-detail-collapsed,
-  .debugger-shell.debugger-variables-collapsed,
   .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+    grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 24%)) minmax(0, 1fr) 36px;
+  }
+  .debugger-shell.debugger-detail-hosted,
+  .debugger-shell.debugger-variables-collapsed,
+  .debugger-shell.debugger-detail-hosted.debugger-variables-collapsed {
     grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr);
   }
 }
 @media (max-width: 960px) {
   .debugger-shell.debugger-detail-collapsed,
+  .debugger-shell.debugger-detail-hosted,
   .debugger-shell.debugger-variables-collapsed,
-  .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed {
+  .debugger-shell.debugger-detail-collapsed.debugger-variables-collapsed,
+  .debugger-shell.debugger-detail-hosted.debugger-variables-collapsed {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -7781,7 +7834,8 @@ button.debugger-problem-row:hover {
 .selected-evidence-tabs button.active { border-color: var(--accent); background: var(--bg-hover); }
 .selected-evidence-body { padding-top: 12px; min-width: 0; }
 .selected-evidence-screenshot { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; object-position: top left; margin-top: 12px; }
-.debugger-shell.browser-evidence-workspace.debugger-detail-collapsed { grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr); grid-template-areas: 'rail code' 'bottom bottom'; }
+.debugger-shell.browser-evidence-workspace.debugger-detail-collapsed { grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr) 36px; grid-template-areas: 'rail code center' 'bottom bottom bottom'; }
+.debugger-shell.browser-evidence-workspace.debugger-detail-hosted { grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr); grid-template-areas: 'rail code' 'bottom bottom'; }
 .debugger-shell.debug-dock-collapsed { grid-template-rows: minmax(0, 1fr) 42px; min-height: 440px; }
 .debug-dock-collapsed .debugger-bottom > :not(.debugger-bottom-tabs) { display: none; }
 .debugger-bottom-tabs { flex-wrap: wrap; }
@@ -7805,7 +7859,8 @@ button.debugger-problem-row:hover {
    the optional inspector. The action list is never duplicated in Debug. */
 .debugger-code-center .center-tab-panel > .debugger-center { height: 100%; min-height: 0; border: 0; }
 .debugger-code-center .debugger-center > .debugger-resizer-vars,
-.debugger-code-center .debugger-center .debugger-pane-close { display: none; }
+.debugger-code-center .debugger-center .debugger-pane-close,
+.debugger-code-center .debugger-center .ux-panel-toggle { display: none; }
 .utility-optional > summary { padding: 12px; cursor: pointer; font-weight: 600; }
 .action-list-center-name { white-space: normal; overflow-wrap: anywhere; }
 

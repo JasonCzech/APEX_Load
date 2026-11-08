@@ -147,6 +147,7 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   expect(await checkOrderRow.locator('.debug-timeline-bar-segment:not(.phase-total)').count()).toBeGreaterThan(0)
   await expect(page.locator('.debug-selection-status')).toContainText('Inspecting action 2')
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveCount(0)
+  await page.getByRole('tab', { name: 'Summary', exact: true }).click()
   const downloadPromise = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export session', exact: true }).click()
   const download = await downloadPromise
