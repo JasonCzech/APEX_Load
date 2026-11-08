@@ -94,10 +94,14 @@ export function DebugTimeline({
   events,
   selectedIndex,
   onSelect,
+  onInspect,
+  variant = 'dock',
 }: {
   events: BrowserReplayEvent[]
   selectedIndex?: number | null
   onSelect: (index: number) => void
+  onInspect?: (index: number) => void
+  variant?: 'dock' | 'summary'
 }) {
   const [search, setSearch] = useState('')
   const [failures, setFailures] = useState(false)
@@ -138,10 +142,10 @@ export function DebugTimeline({
   )
 
   return (
-    <div className="debug-execution-timeline">
+    <div className={variant === 'summary' ? 'debug-summary-waterfall' : 'debug-execution-timeline'}>
       <div className="debug-session-tools debug-timeline-toolbar">
         <div>
-          <label>Find execution<input value={search} onChange={e => setSearch(e.target.value)} /></label>
+          <label>{variant === 'summary' ? 'Filter waterfall' : 'Find execution'}<input value={search} onChange={e => setSearch(e.target.value)} /></label>
           <label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label>
         </div>
         <div>
@@ -196,7 +200,7 @@ export function DebugTimeline({
                       {row.extractedVariables.length > 0 && <small>Variables: {row.extractedVariables.join(', ')}</small>}
                     </div>
                     <div className="debug-timeline-cell-proto">
-                      {row.statusCode != null && <span className={`debug-timeline-status-code ${stateCls}`}>{row.statusCode}</span>}
+                      {row.statusCode != null && <span className={`debug-timeline-status-code ${stateCls}`}>HTTP {row.statusCode}</span>}
                       <span>{row.protocolLabel}{row.connectionReused ? ' · reused' : ''}</span>
                     </div>
                     <span className="debug-timeline-cell-duration">{row.durationMs.toFixed(1)} ms</span>
@@ -258,7 +262,14 @@ export function DebugTimeline({
               </div>
               <footer>
                 <small>{activeRow.extractedVariables.length > 0 ? `Extracted: ${activeRow.extractedVariables.join(', ')}` : activeRow.errorMessage || `${activeRow.methodOrType} ${activeRow.target}`}</small>
-                <strong>Total: {activeRow.durationMs.toFixed(1)} ms</strong>
+                <div className="debug-timeline-inspector-actions">
+                  <strong>Total: {activeRow.durationMs.toFixed(1)} ms</strong>
+                  {onInspect && (
+                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => onInspect(activeRow.index)}>
+                      Inspect {activeRow.actionName || 'action'}
+                    </button>
+                  )}
+                </div>
               </footer>
             </aside>
           )}

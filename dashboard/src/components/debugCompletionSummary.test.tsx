@@ -94,6 +94,38 @@ describe('debug summary page', () => {
       // not the removed Debug again control.
       expect(container.textContent).toContain('Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.')
       expect(container.textContent).not.toContain('Debug again')
+
+      // Verify Download HAR is placed in .debug-summary-actions right beside Export session
+      const headerActionButtons = [...container.querySelectorAll('.debug-summary-heading .debug-summary-actions button')].map(node => node.textContent)
+      expect(headerActionButtons).toEqual(['Export session', 'Download HAR'])
+
+      // Verify Transactions and Errors and warnings tabs and panels
+      const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
+      expect(tabs).toHaveLength(2)
+      expect(tabs[0].textContent).toBe('Transactions')
+      expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+      expect(tabs[1].textContent).toContain('Errors and warnings')
+      expect(tabs[1].getAttribute('aria-selected')).toBe('false')
+      const transactionsPanel = container.querySelector<HTMLElement>('#debug-summary-panel-transactions')!
+      const issuesPanel = container.querySelector<HTMLElement>('#debug-summary-panel-issues')!
+      expect(transactionsPanel.hidden).toBe(false)
+      expect(issuesPanel.hidden).toBe(true)
+
+      // Verify Execution waterfall is rendered inside the Transactions tabpanel
+      const waterfallSection = transactionsPanel.querySelector('[aria-label="Execution waterfall"]')
+      expect(waterfallSection).not.toBeNull()
+      expect(waterfallSection?.querySelectorAll('.debug-timeline-waterfall-row')).toHaveLength(2)
+
+      // Switch to Errors and warnings tab and back
+      act(() => tabs[1].click())
+      expect(tabs[0].getAttribute('aria-selected')).toBe('false')
+      expect(tabs[1].getAttribute('aria-selected')).toBe('true')
+      expect(transactionsPanel.hidden).toBe(true)
+      expect(issuesPanel.hidden).toBe(false)
+      act(() => tabs[0].click())
+      expect(transactionsPanel.hidden).toBe(false)
+      expect(issuesPanel.hidden).toBe(true)
+
       act(() => button('Export session').click())
       expect(onExportSession).toHaveBeenCalledTimes(1)
       act(() => button('Inspect Checkout').click())
@@ -109,6 +141,25 @@ describe('debug summary page', () => {
       expect(container.textContent).not.toContain('Expected 200, got 500')
       expect(button('Inspect Checkout')).toBeUndefined()
       expect(button('Export session')).toBeDefined()
+
+      // Switching tabs and selecting a waterfall row resets cleanly when snapshot.key changes
+      render(false)
+      const [txTab, errTab] = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
+      act(() => errTab.click())
+      expect(errTab.getAttribute('aria-selected')).toBe('true')
+      act(() => txTab.click())
+      const firstRowBtn = container.querySelectorAll<HTMLButtonElement>('.debug-timeline-waterfall-row')[0]!
+      act(() => firstRowBtn.click())
+      expect(firstRowBtn.getAttribute('aria-current')).toBe('true')
+      act(() => errTab.click())
+      expect(errTab.getAttribute('aria-selected')).toBe('true')
+      const nextRun: DebugCompletionSnapshot = { ...snapshot, key: 'run-2', session: { ...snapshot.session, id: 'run-2' } }
+      act(() => root.render(<Summary snapshot={nextRun} stale={false} unavailable={false} onExportSession={onExportSession} onSelectEvent={onSelectEvent} onDownloadHAR={onDownloadHAR} />))
+      const [nextTxTab, nextErrTab] = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
+      expect(nextTxTab.getAttribute('aria-selected')).toBe('true')
+      expect(nextErrTab.getAttribute('aria-selected')).toBe('false')
+      const nextRows = container.querySelectorAll<HTMLButtonElement>('.debug-timeline-waterfall-row')
+      expect(nextRows[1]?.getAttribute('aria-current')).toBe('true')
     } finally { act(() => root.unmount()); container.remove() }
   })
 })
@@ -119,30 +170,129 @@ describe('debug summary transaction table', () => {
     const { default: Summary } = await import('./DebugCompletionSummary')
     const run = fixture()
     run.transactions = captureDebugTransactionDefinitions({ name: 'Checkout script', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Checkout', type: 'http_sequence', target: '', params: { requests: [{ name: 'Pay', target: '/pay' }] } }] })
-    run.report!.events = [{ ...run.report!.events[1], action_index: 0, request_index: 0, event_index: 0 }]
+    run.report!.events = [{
+      ...run.report!.events[1],
+      action_index: 0,
+      request_index: 0,
+      event_index: 0,
+      protocol_evidence: {
+        timings: {
+          dns_ms: 50,
+          connect_ms: 100,
+          tls_ms: 150,
+          ttfb_ms: 800,
+          duration_ms: 1000,
+        },
+      },
+      network_entries: [
+        {
+          url: 'https://example.test/pay',
+          method: 'POST',
+          status_code: 302,
+          duration_ms: 400,
+          har: { phases: [{ name: 'wait', start_ms: 0, end_ms: 400 }] },
+        },
+        {
+          url: 'https://example.test/pay/confirm',
+          method: 'GET',
+          status_code: 200,
+          duration_ms: 600,
+          har: { phases: [{ name: 'wait', start_ms: 0, end_ms: 600 }] },
+        },
+      ],
+    }]
+    const consoleErrorSpy = vi.spyOn(console, 'error')
     const inspect = vi.fn(), container = document.createElement('div'), root = createRoot(container)
     const render = (unavailable = false) => act(() => root.render(<Summary snapshot={run} stale={false} unavailable={unavailable} onExportSession={vi.fn()} onSelectEvent={inspect} onDownloadHAR={vi.fn()} />))
     try {
       render()
       const table = container.querySelector('table')!
       expect(table.textContent).toContain('Elapsed time (ms)')
+      expect(table.textContent).toContain('Waterfall')
       expect(table.getAttribute('data-table-pagination')).toBe('off')
       expect(table.textContent).not.toContain('Pay')
+      expect(table.querySelectorAll('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toHaveLength(1)
+      expect(table.querySelector('.debug-transaction-waterfall-cell .phase-wait')).not.toBeNull()
       const expand = table.querySelector<HTMLButtonElement>('button[aria-expanded]')!
       expect(expand.getAttribute('aria-expanded')).toBe('false')
       act(() => expand.click())
       expect(table.textContent).toContain('Pay')
+      expect(table.querySelectorAll('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toHaveLength(2)
       expect(table.querySelector('[aria-label="Timing breakdown for Checkout"]')?.textContent).toContain('outside child spans')
       expect(table.textContent).toContain('Action time:')
       expect(expand.getAttribute('aria-expanded')).toBe('true')
       expect(table.querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
       const child = [...table.querySelectorAll('tr')].find(row => row.textContent?.includes('Pay'))!
+      expect(child.querySelectorAll('.debug-transaction-waterfall-cell .phase-wait')).toHaveLength(2)
+      expect(consoleErrorSpy.mock.calls.some(call => String(call[0] ?? '').includes('same key'))).toBe(false)
       act(() => child.querySelector<HTMLButtonElement>('button')!.click())
       expect(inspect).toHaveBeenCalledWith(0)
       act(() => expand.click())
       expect(table.textContent).not.toContain('Pay')
       render(true)
       expect(container.querySelector('[aria-label="Transaction details"]')).toBeNull()
+    } finally {
+      consoleErrorSpy.mockRestore()
+      act(() => root.unmount())
+    }
+  })
+
+  it('aggregates leaf request phases for marker transactions and omits waterfall bars when durationMs is null', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const run = fixture()
+    run.transactions = captureDebugTransactionDefinitions({
+      name: 'Marker script',
+      version: '1.0',
+      protocol: 'http',
+      config: { base_url: '' },
+      actions: [
+        { name: 'Start Checkout', type: 'source_transaction', target: '', params: { function: 'lr_start_transaction', args: ['Checkout'] } },
+        { name: 'Cart', type: 'request', method: 'GET', target: '/cart' },
+        { name: 'End Checkout', type: 'source_transaction', target: '', params: { function: 'lr_end_transaction', args: ['Checkout', 'LR_AUTO'] } },
+        { name: 'Start Open', type: 'source_transaction', target: '', params: { function: 'lr_start_transaction', args: ['Open'] } },
+        { name: 'End Open', type: 'source_transaction', target: '', params: { function: 'lr_end_transaction', args: ['Open', 'LR_AUTO'] } },
+        { name: 'Start Unrun', type: 'source_transaction', target: '', params: { function: 'lr_start_transaction', args: ['Unrun'] } },
+        { name: 'End Unrun', type: 'source_transaction', target: '', params: { function: 'lr_end_transaction', args: ['Unrun', 'LR_AUTO'] } },
+        { name: 'Manual report', type: 'source_transaction', target: '', params: { function: 'lr_set_transaction', args: ['Manual', '1.5', 'LR_PASS'] } },
+      ],
+    })
+    run.report!.events = [
+      { event_id: 'e0', event_index: 0, action_index: 0, phase: 'action', action_name: 'Start Checkout', action_type: 'source_transaction', target: '', success: true, started_at: '2026-10-25T12:00:00.000Z', completed_at: '2026-10-25T12:00:00.000Z', duration_ms: 0 },
+      {
+        event_id: 'e1',
+        event_index: 1,
+        action_index: 1,
+        phase: 'action',
+        action_name: 'Cart',
+        action_type: 'request',
+        target: '/cart',
+        success: true,
+        started_at: '2026-10-25T12:00:00.100Z',
+        completed_at: '2026-10-25T12:00:00.300Z',
+        duration_ms: 200,
+        protocol_evidence: { timings: { dns_ms: 20, connect_ms: 30, tls_ms: 50, ttfb_ms: 150, duration_ms: 200 } },
+      },
+      { event_id: 'e2', event_index: 2, action_index: 2, phase: 'action', action_name: 'End Checkout', action_type: 'source_transaction', target: '', success: true, started_at: '2026-10-25T12:00:01.000Z', completed_at: '2026-10-25T12:00:01.000Z', duration_ms: 0 },
+      { event_id: 'e3', event_index: 3, action_index: 3, phase: 'action', action_name: 'Start Open', action_type: 'source_transaction', target: '', success: true, started_at: '2026-10-25T12:00:01.000Z', completed_at: '2026-10-25T12:00:01.000Z', duration_ms: 0 },
+      { event_id: 'e7', event_index: 4, action_index: 7, phase: 'action', action_name: 'Manual report', action_type: 'source_transaction', target: '', success: true, started_at: '2026-10-25T12:00:01.000Z', completed_at: '2026-10-25T12:00:01.000Z', duration_ms: 0 },
+    ]
+    const container = document.createElement('div'), root = createRoot(container)
+    try {
+      act(() => root.render(<Summary snapshot={run} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()} />))
+      const rows = [...container.querySelectorAll('tbody tr')]
+      expect(rows).toHaveLength(4)
+      // Checkout (marker transaction) aggregates Cart's phases and spans the full 0..1000ms window
+      const checkoutBar = rows[0].querySelector<HTMLElement>('.debug-transaction-waterfall-cell .debug-timeline-bar-fill')
+      expect(checkoutBar).not.toBeNull()
+      expect(checkoutBar?.style.left).toBe('0%')
+      expect(checkoutBar?.style.width).toBe('100%')
+      expect(rows[0].querySelector('.phase-dns')).not.toBeNull()
+      expect(rows[0].querySelector('.phase-wait')).not.toBeNull()
+      // Open (incomplete marker transaction without end), Unrun (Not run), and Manual (lr_set_transaction) have durationMs === null and render '—'
+      expect(rows[1].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
+      expect(rows[2].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
+      expect(rows[3].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
     } finally { act(() => root.unmount()) }
   })
 })
+

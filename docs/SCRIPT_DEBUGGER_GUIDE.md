@@ -61,21 +61,27 @@ The **Run Configuration** tab in the right rail presents **Effective run configu
 ## Completion summary
 
 When a debug run completes, fails, or stops, **Summary** opens in the main debug
-workspace. It shows the run outcome, source revision, elapsed time, retained action
-counts, errors, and warnings. **Inspect** opens a failed action's evidence,
-**Export session** saves the run, and the debugger's tabs return to the evidence
+workspace. It shows the run outcome, source revision, elapsed time, and retained action
+counts, with **Export session** and (when retained traffic is available) **Download HAR**
+at the top of the summary and two tabs below: **Transactions** and **Errors and warnings**.
+**Inspect** opens an action's evidence, and the debugger's tabs return to the evidence
 views. To check the current draft, start a new run from the **Debug** menu.
 Editing the script leaves the completed snapshot intact and marks it as results
 from an earlier draft. Dropped or truncated evidence is identified.
 
+The **Transactions** tab includes the **Transactions** table and the **Execution waterfall**.
 The **Transactions** table lists the transactions defined in the run's script,
-with pass/fail status, phase, start time, end time, and elapsed time. Expand a parent
+with pass/fail status, phase, start time, end time, elapsed time, and a horizontal phase
+**Waterfall** bar. Expand a parent
 to inspect subtransactions, page requests, and repeated executions; **Inspect**
 opens the corresponding debugger evidence. The elapsed-time column consistently
 uses retained start/end timestamps, preserving sub-millisecond precision during
 calculation. Steps also show their recorded action time separately.
 Elapsed time includes debugger pauses, think time, and work between children;
-it is not the engine's transaction response-time metric.
+it is not the engine's transaction response-time metric. Below the table, **Execution waterfall**
+renders the full Chrome DevTools-style horizontal phase waterfall (**Waterfall** and **Duration**
+scales, phase legend, redirect hops, and **Timing breakdown** inspector) across all retained
+events in the run.
 
 A parent's elapsed time need not equal the sum of its children: gaps contribute
 time outside children, while concurrent/overlapping child spans must be counted
@@ -93,7 +99,8 @@ transactions without captured boundaries leave their timing blank. Transactions 
 execution evidence are marked **Not run**, or **Not observed** when evidence was
 dropped. The table retains the original transaction structure after draft edits.
 
-HTTP and browser scripts offer **Download HAR** when the session retains network
+HTTP and browser scripts offer **Download HAR** beside **Export session** in the summary
+header when the session retains network
 requests. This is a redacted HAR 1.2 derived from observed traffic; its detail follows
 the capture options selected before the run. Refused actions
 and cache hits do not become dispatched requests. Failed and stopped runs can

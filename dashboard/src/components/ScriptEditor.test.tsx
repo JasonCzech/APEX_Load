@@ -12537,9 +12537,10 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('HTML')
     expect(container.textContent).toContain('View full size')
     expect(container.textContent).toContain('Expand artifacts')
-    expect(container.textContent).not.toContain('Catalog loaded 11')
-    expect(container.textContent).not.toContain('https://shop.example.com/api/catalog/11')
-    expect(container.textContent).not.toContain('Catalog 59 featured product with additional merchandising detail')
+    const activePanel = container.querySelector('.center-tab-panel.active') ?? container
+    expect(activePanel.textContent).not.toContain('Catalog loaded 11')
+    expect(activePanel.textContent).not.toContain('https://shop.example.com/api/catalog/11')
+    expect(activePanel.textContent).not.toContain('Catalog 59 featured product with additional merchandising detail')
     const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
     expect(highlightedBlocks).toHaveLength(2)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"ready_state": "complete"'))).toBe(true)
@@ -12563,10 +12564,10 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    expect(container.textContent).toContain('Collapse artifacts')
-    expect(container.textContent).toContain('Catalog loaded 11')
-    expect(container.textContent).toContain('https://shop.example.com/api/catalog/11')
-    expect(container.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
+    expect(activePanel.textContent).toContain('Collapse artifacts')
+    expect(activePanel.textContent).toContain('Catalog loaded 11')
+    expect(activePanel.textContent).toContain('https://shop.example.com/api/catalog/11')
+    expect(activePanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
 
     const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
     expect(viewScreenshotButton).toBeTruthy()

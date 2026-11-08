@@ -1,27 +1,96 @@
-.debug-completion-summary { padding: 24px; overflow: auto; height: 100%; box-sizing: border-box; }
+.debug-completion-summary {
+  --phase-queueing: #94a3b8;
+  --phase-dns: #0d9488;
+  --phase-connect: #f59e0b;
+  --phase-tls: #8b5cf6;
+  --phase-send: #3b82f6;
+  --phase-wait: #10b981;
+  --phase-receive: #0ea5e9;
+  --phase-total: #64748b;
+  padding: 24px;
+  overflow: auto;
+  height: 100%;
+  box-sizing: border-box;
+}
 .debug-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .debug-summary-heading h2 { margin: 0; }
 .debug-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
 .debug-summary-facts dt { color: var(--text-secondary); font-size: 12px; }
 .debug-summary-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+
+.debug-summary-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin: 16px 0;
+}
+.debug-summary-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.debug-summary-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--danger-bg);
+  color: var(--danger-text, var(--danger));
+}
+.debug-summary-tabpanel[hidden] {
+  display: none;
+}
+
+.debug-summary-waterfall-section {
+  margin: 24px 0;
+}
+.debug-summary-waterfall-section > h3 {
+  margin: 0 0 8px;
+}
+.debug-summary-waterfall-section .debug-summary-waterfall {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.debug-summary-har-meta {
+  margin: 24px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.debug-summary-har-meta > h3 {
+  margin: 0 0 8px;
+}
+
+.debug-summary-issues-section { margin: 16px 0; }
 .debug-summary-issues { list-style: none; padding: 0; }
 .debug-summary-issues li { padding: 16px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .debug-summary-issues p { white-space: pre-wrap; }
 .debug-summary-issues button { margin-left: 12px; }
 
-.debug-transaction-section { margin: 24px 0; }
+.debug-transaction-section { margin: 16px 0 24px; }
 .debug-transaction-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
-.debug-transaction-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
+.debug-transaction-table { width: 100%; min-width: 980px; border-collapse: collapse; font-size: 13px; table-layout: fixed; }
 .debug-transaction-table th, .debug-transaction-table td { padding: 12px; text-align: start; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
-.debug-transaction-table th:first-child { width: 26%; }
-.debug-transaction-table th:nth-child(2) { width: 8%; }
-.debug-transaction-table th:nth-child(3) { width: 12%; }
-.debug-transaction-table th:nth-child(4), .debug-transaction-table th:nth-child(5) { width: 17%; }
-.debug-transaction-table th:nth-child(6) { width: 10%; }
-.debug-transaction-table th:nth-child(7) { width: 10%; }
+.debug-transaction-table th:first-child { width: 22%; }
+.debug-transaction-table th:nth-child(2) { width: 7%; }
+.debug-transaction-table th:nth-child(3) { width: 10%; }
+.debug-transaction-table th:nth-child(4), .debug-transaction-table th:nth-child(5) { width: 14%; }
+.debug-transaction-table th:nth-child(6) { width: 9%; }
+.debug-transaction-table th:nth-child(7) { width: 16%; }
+.debug-transaction-table th:nth-child(8) { width: 8%; }
 .debug-transaction-table thead { background: var(--bg-secondary); }
 .debug-transaction-table small { display: block; font-weight: 400; color: var(--text-secondary); margin-top: 4px; }
+.debug-transaction-col-waterfall > span { display: block; }
+.debug-transaction-col-waterfall .debug-timeline-ruler { margin-top: 4px; font-weight: 400; }
+.debug-transaction-waterfall-cell { vertical-align: middle; }
 .debug-transaction-name { display: flex; align-items: baseline; gap: 4px; }
 .debug-transaction-name button { flex-shrink: 0; padding: 2px 5px; }
 .debug-transaction-status { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
@@ -30,3 +99,4 @@
 .debug-transaction-status.muted { background: var(--subtle-fill); color: var(--text-secondary); }
 
 .debug-transaction-table td.debug-transaction-breakdown { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary); }
+

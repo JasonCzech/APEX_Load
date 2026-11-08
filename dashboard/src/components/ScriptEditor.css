@@ -8167,7 +8167,7 @@ button.debugger-problem-row:hover {
 .debug-watch-panel .debug-watch-table thead th { overflow-wrap: normal; word-break: normal; }
 .debug-timeline-row { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; gap: 4px; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
 .debug-timeline-row + .debug-timeline-row { margin-top: 6px; }
-.debug-execution-timeline {
+:is(.debug-execution-timeline, .debug-summary-waterfall) {
   --phase-queueing: #94a3b8;
   --phase-dns: #0d9488;
   --phase-connect: #f59e0b;
@@ -8202,7 +8202,7 @@ button.debugger-problem-row:hover {
   border-radius: 6px;
   overflow: clip;
 }
-.debug-execution-timeline .debug-timeline-scale-switch button {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button {
   border: none;
   border-radius: 0;
   min-height: 26px;
@@ -8212,20 +8212,20 @@ button.debugger-problem-row:hover {
   background: var(--bg-secondary);
   color: var(--text-secondary);
 }
-.debug-execution-timeline .debug-timeline-scale-switch button + button {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button + button {
   border-inline-start: 1px solid var(--border);
 }
-.debug-execution-timeline .debug-timeline-scale-switch button:hover:not(:disabled) {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button:hover:not(:disabled) {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
-.debug-execution-timeline .debug-timeline-scale-switch button.active,
-.debug-execution-timeline .debug-timeline-scale-switch button[aria-pressed="true"] {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button.active,
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button[aria-pressed="true"] {
   background: color-mix(in srgb, var(--accent) 22%, var(--bg-secondary));
   color: var(--text-primary);
 }
-.debug-execution-timeline .debug-timeline-scale-switch button:focus-visible,
-.debug-execution-timeline .debug-timeline-waterfall-row:focus-visible {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-scale-switch button:focus-visible,
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-waterfall-row:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
@@ -8321,7 +8321,7 @@ button.debugger-problem-row:hover {
 .debug-timeline-row-group + .debug-timeline-row-group {
   border-top: 1px solid var(--border);
 }
-.debug-execution-timeline .debug-timeline-waterfall-row {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-waterfall-row {
   margin: 0;
   padding: 7px 10px;
   border: none;
@@ -8329,10 +8329,10 @@ button.debugger-problem-row:hover {
   background: transparent;
   transition: background-color 120ms ease;
 }
-.debug-execution-timeline .debug-timeline-waterfall-row:hover {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-waterfall-row:hover {
   background: var(--bg-hover);
 }
-.debug-execution-timeline .debug-timeline-waterfall-row.selected {
+:is(.debug-execution-timeline, .debug-summary-waterfall) .debug-timeline-waterfall-row.selected {
   background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
 }
 .debug-timeline-cell-main {
@@ -8551,6 +8551,11 @@ button.debugger-problem-row:hover {
   font-family: var(--font-mono, monospace);
   color: var(--text-primary);
   white-space: nowrap;
+}
+.debug-timeline-inspector-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 @container debug-timeline (max-width: 860px) {
   .debug-timeline-workspace {
