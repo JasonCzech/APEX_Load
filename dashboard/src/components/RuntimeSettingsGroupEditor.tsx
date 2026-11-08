@@ -1086,7 +1086,7 @@ export default function RuntimeSettingsGroupEditor({
               </label>
               <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(effectiveLog.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
-                <div><strong>Advanced trace</strong><span>Capture full advanced trace detail.</span></div>
+                <div><strong>Advanced trace</strong><span>Capture DNS/connect/TLS/TTFB timings, socket reuse, TLS cipher/ALPN, compression ratios, and cookie counts.</span></div>
               </label>
             </div>
           </>

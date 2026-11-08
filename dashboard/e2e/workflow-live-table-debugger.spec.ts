@@ -38,6 +38,7 @@ test('debugger uses explicit isolated live-table seeds and resets them for every
   for (let attempt = 0; attempt < 2; attempt++) {
     const response = page.waitForResponse(res => res.request().method() === 'POST' && new URL(res.url()).pathname === `/api/v1/scripts/${id}/debug/sessions`)
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     const started = await response
     expect(started.ok(), await started.text()).toBe(true)
     expect(started.request().postDataJSON().live_table_seeds).toEqual(seeds)

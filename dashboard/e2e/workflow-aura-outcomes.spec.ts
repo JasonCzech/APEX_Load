@@ -330,6 +330,7 @@ test('correlation diagnosis retains missing-consumer evidence and independent HT
       await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
       await options.getByRole('button', { name: 'Done', exact: true }).click()
       await page.locator('.topbar-debug-action-run').click()
+      await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
       await expectDebugOutcome(page, failAssertion ? 'failed' : 'passed')
       await page.getByText('Compare with a recording (optional)', { exact: true }).click()
       const panel = page.locator('.correlation-diagnose')

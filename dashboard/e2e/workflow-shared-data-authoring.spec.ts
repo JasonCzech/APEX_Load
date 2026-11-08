@@ -45,6 +45,7 @@ test('a linked lease workflow is inserted, replayed against sandbox rows and bou
   await options.getByRole('button', { name: 'Done', exact: true }).click()
   const started = page.waitForResponse(res => res.request().method() === 'POST' && new URL(res.url()).pathname === `/api/v1/scripts/${scriptId}/debug/sessions`)
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const session = await started
   expect(session.ok(), await session.text()).toBe(true)
   expect(session.request().postDataJSON().live_table_seeds).toEqual([{ alias: 'jobs', profile: 'native_queue', columns: ['id'], rows: [{ values: { id: 'seeded-job' } }] }])

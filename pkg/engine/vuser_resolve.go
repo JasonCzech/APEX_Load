@@ -207,6 +207,50 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 			"tls_ms", result.TLSTime.Milliseconds(),
 			"ttfb_ms", result.TTFB.Milliseconds(),
 		)
+		if tr := result.NetworkTrace; tr != nil {
+			if tr.HTTPProtocol != "" {
+				attrs = append(attrs, "http_proto", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.HTTPProtocol, redactionConfig), 32))
+			}
+			if tr.RemoteAddr != "" {
+				attrs = append(attrs, "remote_addr", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.RemoteAddr, redactionConfig), 128))
+			}
+			if tr.ConnectionReused != nil {
+				attrs = append(attrs, "conn_reused", *tr.ConnectionReused)
+			}
+			if tr.WasIdle && tr.IdleTimeMs > 0 {
+				attrs = append(attrs, "conn_idle_ms", tr.IdleTimeMs)
+			}
+			if tr.TLSVersion != "" {
+				attrs = append(attrs, "tls_version", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.TLSVersion, redactionConfig), 32))
+			}
+			if tr.TLSCipherSuite != "" {
+				attrs = append(attrs, "tls_cipher", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.TLSCipherSuite, redactionConfig), 128))
+			}
+			if tr.TLSNegotiatedProto != "" {
+				attrs = append(attrs, "alpn", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.TLSNegotiatedProto, redactionConfig), 32))
+			}
+			if tr.TLSDidResume {
+				attrs = append(attrs, "tls_resumed", true)
+			}
+			if tr.RequestCompression != "" {
+				attrs = append(attrs, "req_compression", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.RequestCompression, redactionConfig), 32))
+			}
+			if tr.ContentEncoding != "" {
+				attrs = append(attrs, "resp_encoding", cloneBoundedResultString(scrubSensitiveTextWithConfig(tr.ContentEncoding, redactionConfig), 64))
+			}
+			if tr.EncodedBodyBytes > 0 {
+				attrs = append(attrs, "encoded_bytes", tr.EncodedBodyBytes)
+			}
+			if tr.DecodedBodyBytes > 0 {
+				attrs = append(attrs, "decoded_bytes", tr.DecodedBodyBytes)
+			}
+			if tr.CookiesSentCount > 0 {
+				attrs = append(attrs, "cookies_sent", tr.CookiesSentCount)
+			}
+			if tr.SetCookiesReceivedCount > 0 {
+				attrs = append(attrs, "set_cookies", tr.SetCookiesReceivedCount)
+			}
+		}
 	}
 
 	return attrs

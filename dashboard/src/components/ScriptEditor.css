@@ -3507,12 +3507,14 @@
 }
 
 details.replay-code-block > summary,
-.replay-protocol-evidence > summary {
+.replay-protocol-evidence > summary,
+.replay-network-trace > summary {
   cursor: pointer;
   font-weight: 600;
 }
 
-.replay-protocol-evidence {
+.replay-protocol-evidence,
+.replay-network-trace {
   margin-top: 8px;
 }
 
@@ -6610,6 +6612,8 @@ details.replay-code-block > summary,
 }
 .script-ide-debugger.open {
   display: flex;
+  flex-direction: column;
+  position: relative;
 }
 /* Debug mode fills the content frame: the page stops scrolling, every wrapper
    between .main-content and the debugger grows, and the panel bleeds into the
@@ -6740,11 +6744,11 @@ details.replay-code-block > summary,
 /* Settings popover */
 .debugger-settings-popover {
   position: absolute;
-  top: 54px;
-  right: 12px;
-  z-index: 20;
-  width: min(440px, calc(100% - 24px));
-  max-height: 70vh;
+  top: 52px;
+  left: 12px;
+  z-index: 30;
+  width: min(640px, calc(100% - 24px));
+  max-height: min(76vh, calc(100% - 64px));
   overflow: auto;
   display: flex;
   flex-direction: column;
@@ -6754,6 +6758,95 @@ details.replay-code-block > summary,
   border-radius: 12px;
   background: var(--dropdown-menu-bg);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.28);
+}
+
+/* Debug run dropdown */
+.debug-run-dropdown {
+  position: relative;
+  display: inline-flex;
+}
+.debug-run-dropdown-caret {
+  font-size: 10px;
+  line-height: 1;
+  margin-left: 2px;
+  opacity: 0.85;
+}
+.debug-run-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 35;
+  min-width: 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--dropdown-menu-bg);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.28);
+}
+.debug-run-dropdown-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.debug-run-dropdown-item:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.debug-run-dropdown-item:disabled {
+  color: var(--text-muted);
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.debug-run-dropdown-menu > [role="menu"] {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.debug-run-dropdown-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.debug-run-dropdown-iterations {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 6px 10px 2px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.debug-run-dropdown-iterations small {
+  color: var(--text-muted);
+}
+.debug-run-dropdown-iterations small.debug-run-iterations-invalid {
+  color: var(--danger-text);
+}
+.debug-run-iterations-input {
+  width: 56px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  text-align: center;
+}
+.debug-run-iterations-input[aria-invalid="true"] {
+  border-color: var(--danger-text);
 }
 .debugger-settings-head {
   display: flex;
@@ -7081,7 +7174,7 @@ details.replay-code-block > summary,
   --snapshot-text-max-height: 180px;
 }
 .debugger-snapshot-body > .snapshot-code {
-  min-height: 120px;
+  min-height: 60px;
   max-height: max(260px, calc(100vh - var(--debugger-dock-offset, 220px) - 500px));
   overflow: auto;
   overscroll-behavior: contain;
@@ -7644,7 +7737,6 @@ button.debugger-problem-row:hover {
 
 .browser-assertion-evidence { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; padding: 12px; margin: 0; background: var(--bg-secondary); }
 .browser-assertion-evidence dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-.debugger-evidence-hint, .debugger-previous-evidence { margin: 4px 12px; color: var(--text-secondary); font-size: 12px; }
 
 .browser-debugger-status.stopped { background: var(--bg-hover); color: var(--text-secondary); }
 .browser-debugger-main { container-type: inline-size; }
@@ -7689,7 +7781,7 @@ button.debugger-problem-row:hover {
 .selected-evidence-tabs button.active { border-color: var(--accent); background: var(--bg-hover); }
 .selected-evidence-body { padding-top: 12px; min-width: 0; }
 .selected-evidence-screenshot { display: block; width: 100%; height: auto; max-height: 520px; object-fit: contain; object-position: top left; margin-top: 12px; }
-.debugger-shell.browser-evidence-workspace { grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr); grid-template-areas: 'rail code' 'bottom bottom'; }
+.debugger-shell.browser-evidence-workspace.debugger-detail-collapsed { grid-template-columns: minmax(180px, min(var(--rail-w, 300px), 28%)) minmax(0, 1fr); grid-template-areas: 'rail code' 'bottom bottom'; }
 .debugger-shell.debug-dock-collapsed { grid-template-rows: minmax(0, 1fr) 42px; min-height: 440px; }
 .debug-dock-collapsed .debugger-bottom > :not(.debugger-bottom-tabs) { display: none; }
 .debugger-bottom-tabs { flex-wrap: wrap; }
@@ -7900,7 +7992,6 @@ button.debugger-problem-row:hover {
 .debug-parameter-inspector { padding: 12px; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px; overflow-wrap: anywhere; }
 .debug-options-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--border); }
 .debug-options-toolbar span { font-size: 12px; }
-.debugger-settings-popover { position: relative; inset: auto; max-width: none; width: auto; margin: 12px; }
 .debugger-settings-popover fieldset { border: 0; min-width: 0; padding: 0; }
 .script-health-summary { position: relative; }
 .script-health-summary > summary { cursor: pointer; padding: 6px; }
@@ -8649,6 +8740,7 @@ button.debugger-problem-row:hover {
 .debugger-rail > .script-outline-filter { flex: 0 0 auto; width: auto; min-height: 30px; margin: 8px 8px 4px; }
 .debug-outline-breakpoints { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; padding: 0 10px 2px; color: var(--text-secondary); font-size: 11px; }
 .debug-outline-breakpoints .btn { min-height: 22px; padding: 1px 8px; }
+.debugger-rail > .debug-breakpoint-controls { flex: 0 0 auto; max-height: 35%; overflow-y: auto; margin: 0 6px 4px; padding: 2px 6px; }
 .debug-outline-parameters { flex: 0 0 auto; max-height: 35%; overflow-y: auto; padding: 2px 6px 6px; border-top: 1px solid var(--border); }
 .debug-outline-parameters > summary { padding: 6px 6px 4px; color: var(--text-secondary); font-size: 11px; font-weight: 700; cursor: pointer; }
 .debug-outline-parameters > summary small { margin-left: 4px; font-weight: 400; }

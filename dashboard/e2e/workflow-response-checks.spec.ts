@@ -67,6 +67,7 @@ test('a status check, a text check and a saved value are made from a replayed re
 
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Open cart' }).click()
 
@@ -125,6 +126,7 @@ test('a status check, a text check and a saved value are made from a replayed re
     // The next replay sends the saved value where the recorded one was.
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     expect(target.seen.at(-1)).toEqual({ cart: 'c-5571', header: 'c-5571' })
   } finally {

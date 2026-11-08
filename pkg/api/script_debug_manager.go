@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,6 +17,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/recordbridge"
 )
 
@@ -73,6 +76,10 @@ type ScriptDebugLogEntry struct {
 	Phase       string    `json:"phase,omitempty"`
 	ActionIndex int       `json:"action_index,omitempty"`
 	ActionName  string    `json:"action_name,omitempty"`
+	// EventIndex identifies the replay event this line reports. Only the
+	// per-event result line carries it, so clients can attribute log lines to
+	// one event by identity instead of counting lines per action.
+	EventIndex *int `json:"event_index,omitempty"`
 }
 
 type ScriptDebugSession struct {
@@ -453,6 +460,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 			RedactionRules:  req.RedactionRules,
 			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
+			Iterations:      req.Iterations,
 			RunID:           session.RunID,
 			ContinueOnError: &continueOnError,
 			DebugController: scriptDebugController{manager: m, session: session},
@@ -1764,6 +1772,12 @@ func (s *ScriptDebugSession) snapshotBaseLocked() *ScriptDebugSession {
 	}
 	if len(s.Logs) > 0 {
 		clone.Logs = append([]ScriptDebugLogEntry(nil), s.Logs...)
+		for i := range clone.Logs {
+			if clone.Logs[i].EventIndex != nil {
+				eventIndex := *clone.Logs[i].EventIndex
+				clone.Logs[i].EventIndex = &eventIndex
+			}
+		}
 	}
 	if len(s.RawOutput) > 0 {
 		clone.RawOutput = append([]string(nil), s.RawOutput...)
@@ -1851,6 +1865,8 @@ func (s *ScriptDebugSession) appendLogLocked(level string, category string, mess
 		entry.Phase = event.Phase
 		entry.ActionName = event.ActionName
 		entry.ActionIndex = s.CurrentActionIndexForEvent(event)
+		eventIndex := event.EventIndex
+		entry.EventIndex = &eventIndex
 	}
 	line := formatDebugLogLine(entry)
 	if entry.Raw != "" {
@@ -1919,7 +1935,9 @@ func (c scriptDebugController) ObserveCorrelationEvidence(_ context.Context, act
 		return
 	}
 	c.session.mu.Lock()
-	if c.session.workerAbandoned {
+	if c.session.workerAbandoned || action.MainIteration > 1 {
+		// Only the first action iteration is retained (see
+		// appendCorrelationObservationLocked).
 		c.session.mu.Unlock()
 		return
 	}
@@ -1942,6 +1960,12 @@ func (c scriptDebugController) ObserveCorrelationEvidence(_ context.Context, act
 
 func (s *ScriptDebugSession) appendCorrelationObservationLocked(action engine.ReplayDebugAction, event *engine.ReplayActionEvent, retainedAt time.Time) {
 	if s == nil || event == nil || event.CorrelationEvidence == nil {
+		return
+	}
+	if action.MainIteration > 1 {
+		// The first action iteration is the baseline that pairs with the
+		// recording; later iterations of a multi-iteration run repeat the
+		// same top-level action ids and add nothing to bind.
 		return
 	}
 	if s.Status == ScriptDebugStopped {
@@ -2520,6 +2544,17 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 	if profile.CaptureMode == "" {
 		profile.CaptureMode = "diagnostic"
 	}
+	if profile.NetworkTrace == nil {
+		networkTrace := true
+		profile.NetworkTrace = &networkTrace
+	}
+	if profile.HAROptions == nil {
+		// The engine captures with these defaults when no options are chosen;
+		// recording them keeps the HAR availability, export metadata and UI
+		// in step with what was captured.
+		defaults := engine.DefaultDebugReplayHAROptions()
+		profile.HAROptions = &defaults
+	}
 	profile.LogLevel = normalizeDebugLogLevel(req.LogLevel)
 	profile.IgnoreThinkTime = ignoreThinkTime
 	if script != nil {
@@ -2589,6 +2624,18 @@ func debugActionResultMessage(event engine.ReplayActionEvent) string {
 }
 
 func formatDebugEventRaw(event engine.ReplayActionEvent) string {
+	return formatDebugEventRawWithMode(event, false)
+}
+
+func formatDebugEventRawForLogLevel(logLevel string, event engine.ReplayActionEvent) string {
+	weight := debugLogLevelWeight(logLevel)
+	if weight < debugLogLevelWeight("debug") {
+		return ""
+	}
+	return formatDebugEventRawWithMode(event, weight >= debugLogLevelWeight("trace"))
+}
+
+func formatDebugEventRawWithMode(event engine.ReplayActionEvent, includeTrace bool) string {
 	var lines []string
 	requestLine := strings.TrimSpace(strings.Join([]string{event.Method, event.Target}, " "))
 	if requestLine == "" {
@@ -2599,8 +2646,8 @@ func formatDebugEventRaw(event engine.ReplayActionEvent) string {
 	}
 	if len(event.Headers) > 0 {
 		lines = append(lines, "HEADERS")
-		for key, value := range event.Headers {
-			lines = append(lines, fmt.Sprintf("%s: %s", key, value))
+		for _, key := range sortedMapKeys(event.Headers) {
+			lines = append(lines, fmt.Sprintf("%s: %s", key, event.Headers[key]))
 		}
 	}
 	if event.Body != "" {
@@ -2613,10 +2660,76 @@ func formatDebugEventRaw(event engine.ReplayActionEvent) string {
 		}
 		lines = append(lines, response)
 	}
+
+	netTrace := extractEventNetworkTrace(event)
+	if netTrace != nil {
+		var transportParts []string
+		if netTrace.HTTPProtocol != "" {
+			transportParts = append(transportParts, "proto="+netTrace.HTTPProtocol)
+		}
+		if netTrace.RemoteAddr != "" {
+			transportParts = append(transportParts, "remote="+netTrace.RemoteAddr)
+		}
+		if netTrace.LocalAddr != "" {
+			transportParts = append(transportParts, "local="+netTrace.LocalAddr)
+		}
+		if netTrace.ConnectionReused != nil {
+			transportParts = append(transportParts, fmt.Sprintf("conn_reused=%t", *netTrace.ConnectionReused))
+		}
+		if netTrace.WasIdle && netTrace.IdleTimeMs > 0 {
+			transportParts = append(transportParts, fmt.Sprintf("idle_ms=%.1f", netTrace.IdleTimeMs))
+		}
+		if len(netTrace.DNSResolvedIPs) > 0 {
+			transportParts = append(transportParts, fmt.Sprintf("dns_ips=%s", strings.Join(netTrace.DNSResolvedIPs, ",")))
+		}
+		if !includeTrace {
+			if netTrace.TLSVersion != "" {
+				transportParts = append(transportParts, "tls="+netTrace.TLSVersion)
+			}
+			if netTrace.TLSCipherSuite != "" {
+				transportParts = append(transportParts, "cipher="+netTrace.TLSCipherSuite)
+			}
+			if netTrace.TLSNegotiatedProto != "" {
+				transportParts = append(transportParts, "alpn="+netTrace.TLSNegotiatedProto)
+			}
+		}
+		if len(transportParts) > 0 {
+			lines = append(lines, "TRANSPORT", strings.Join(transportParts, " "))
+		}
+	}
+
+	if includeTrace {
+		if timingLine := formatDebugTraceTimings(event, netTrace); timingLine != "" {
+			lines = append(lines, "TIMINGS", timingLine)
+		}
+		if tlsLines := formatDebugTraceTLS(netTrace); len(tlsLines) > 0 {
+			lines = append(lines, "TLS")
+			lines = append(lines, tlsLines...)
+		}
+		if cookieLines := formatDebugTraceCookiesAndCompression(netTrace); len(cookieLines) > 0 {
+			lines = append(lines, "COOKIES & REDIRECTS")
+			lines = append(lines, cookieLines...)
+		}
+		respHeaders := extractEventResponseHeaders(event)
+		if len(respHeaders) > 0 {
+			lines = append(lines, "RESPONSE HEADERS")
+			for _, key := range sortedMapKeys(respHeaders) {
+				lines = append(lines, fmt.Sprintf("%s: %s", key, respHeaders[key]))
+			}
+		}
+		if event.Snapshot != nil && event.Snapshot.ResponseBody != "" {
+			body := event.Snapshot.ResponseBody
+			if len(body) > 4096 {
+				body = boundedtext.TruncateUTF8(body, 4096) + "... [truncated]"
+			}
+			lines = append(lines, "RESPONSE BODY", body)
+		}
+	}
+
 	if len(event.Extractions) > 0 {
 		lines = append(lines, "EXTRACTIONS")
-		for key, value := range event.Extractions {
-			lines = append(lines, fmt.Sprintf("%s=%s", key, value))
+		for _, key := range sortedMapKeys(event.Extractions) {
+			lines = append(lines, fmt.Sprintf("%s=%s", key, event.Extractions[key]))
 		}
 	}
 	if len(event.Console) > 0 {
@@ -2630,15 +2743,198 @@ func formatDebugEventRaw(event engine.ReplayActionEvent) string {
 		for _, entry := range event.Network {
 			lines = append(lines, fmt.Sprintf("%s %d %s", entry.Method, entry.StatusCode, entry.URL))
 		}
+		if includeTrace {
+			if hopLines := formatDebugTraceNetworkHops(event.Network); len(hopLines) > 0 {
+				lines = append(lines, "NETWORK HOPS")
+				lines = append(lines, hopLines...)
+			}
+		}
+	}
+	if includeTrace && event.Snapshot != nil && len(event.Snapshot.Resources) > 0 {
+		lines = append(lines, "RESOURCES")
+		for _, res := range event.Snapshot.Resources {
+			lines = append(lines, fmt.Sprintf("%d %s (cache_hit=%t state=%s)", res.ResponseStatus, res.RequestURL, res.CacheHit, res.ResponseBodyState))
+		}
 	}
 	return strings.Join(lines, "\n")
 }
 
-func formatDebugEventRawForLogLevel(logLevel string, event engine.ReplayActionEvent) string {
-	if debugLogLevelWeight(logLevel) < debugLogLevelWeight("debug") {
-		return ""
+func extractEventNetworkTrace(event engine.ReplayActionEvent) *protocol.HTTPNetworkTrace {
+	if event.ProtocolEvidence != nil {
+		if tr := protocol.HTTPNetworkTraceFromEvidence(event.ProtocolEvidence["network_trace"]); tr != nil {
+			return tr
+		}
 	}
-	return formatDebugEventRaw(event)
+	for i := len(event.Network) - 1; i >= 0; i-- {
+		if event.Network[i].Trace != nil {
+			return event.Network[i].Trace
+		}
+	}
+	return nil
+}
+
+func extractEventResponseHeaders(event engine.ReplayActionEvent) map[string]string {
+	if event.Snapshot != nil && len(event.Snapshot.ResponseHeaders) > 0 {
+		return event.Snapshot.ResponseHeaders
+	}
+	for i := len(event.Network) - 1; i >= 0; i-- {
+		if len(event.Network[i].ResponseHeaders) > 0 {
+			return event.Network[i].ResponseHeaders
+		}
+	}
+	return nil
+}
+
+func formatDebugTraceTimings(event engine.ReplayActionEvent, tr *protocol.HTTPNetworkTrace) string {
+	var parts []string
+	if event.ProtocolEvidence != nil {
+		if rawTimings, ok := event.ProtocolEvidence["timings"].(map[string]any); ok {
+			for _, key := range []string{"dns_ms", "connect_ms", "tls_ms", "ttfb_ms"} {
+				if v, exists := rawTimings[key]; exists {
+					parts = append(parts, fmt.Sprintf("%s=%v", key, v))
+				}
+			}
+		}
+	}
+	if len(parts) == 0 && len(event.Network) > 0 {
+		last := event.Network[len(event.Network)-1]
+		if last.HAR != nil {
+			for _, phase := range last.HAR.Phases {
+				if phase.StartMS != nil && phase.EndMS != nil && *phase.EndMS >= *phase.StartMS {
+					parts = append(parts, fmt.Sprintf("%s_ms=%.1f", phase.Name, *phase.EndMS-*phase.StartMS))
+				}
+			}
+		}
+	}
+	if tr != nil && (tr.Got100Continue || tr.Wait100ContinueMs > 0) {
+		parts = append(parts, fmt.Sprintf("100_continue_ms=%.1f", tr.Wait100ContinueMs))
+	}
+	if event.DurationMs > 0 {
+		parts = append(parts, fmt.Sprintf("total_ms=%.1f", event.DurationMs))
+	}
+	return strings.Join(parts, " ")
+}
+
+func formatDebugTraceTLS(tr *protocol.HTTPNetworkTrace) []string {
+	if tr == nil || (tr.TLSVersion == "" && tr.TLSCipherSuite == "" && tr.TLSCertSubject == "") {
+		return nil
+	}
+	var lines []string
+	var handshake []string
+	if tr.TLSVersion != "" {
+		handshake = append(handshake, "version="+tr.TLSVersion)
+	}
+	if tr.TLSCipherSuite != "" {
+		handshake = append(handshake, "cipher="+tr.TLSCipherSuite)
+	}
+	if tr.TLSNegotiatedProto != "" {
+		handshake = append(handshake, "alpn="+tr.TLSNegotiatedProto)
+	}
+	if tr.TLSServerName != "" {
+		handshake = append(handshake, "sni="+tr.TLSServerName)
+	}
+	handshake = append(handshake, fmt.Sprintf("resumed=%t", tr.TLSDidResume))
+	lines = append(lines, strings.Join(handshake, " "))
+
+	var cert []string
+	if tr.TLSCertSubject != "" {
+		cert = append(cert, "subject="+tr.TLSCertSubject)
+	}
+	if tr.TLSCertIssuer != "" {
+		cert = append(cert, "issuer="+tr.TLSCertIssuer)
+	}
+	if tr.TLSCertExpiry != "" {
+		cert = append(cert, "expires="+tr.TLSCertExpiry)
+	}
+	if len(cert) > 0 {
+		lines = append(lines, strings.Join(cert, " "))
+	}
+	return lines
+}
+
+func formatDebugTraceCookiesAndCompression(tr *protocol.HTTPNetworkTrace) []string {
+	if tr == nil {
+		return nil
+	}
+	var lines []string
+	if tr.CookiesSentCount > 0 || tr.SetCookiesReceivedCount > 0 {
+		cookieLine := fmt.Sprintf("cookies_sent=%d", tr.CookiesSentCount)
+		if len(tr.CookieNamesSent) > 0 {
+			cookieLine += fmt.Sprintf(" (%s)", strings.Join(tr.CookieNamesSent, ","))
+		}
+		cookieLine += fmt.Sprintf(" set_cookies=%d", tr.SetCookiesReceivedCount)
+		if len(tr.SetCookieNamesReceived) > 0 {
+			cookieLine += fmt.Sprintf(" (%s)", strings.Join(tr.SetCookieNamesReceived, ","))
+		}
+		lines = append(lines, cookieLine)
+	}
+	var encodingParts []string
+	if tr.RequestCompression != "" {
+		encodingParts = append(encodingParts, "req_compression="+tr.RequestCompression)
+	}
+	if tr.ContentEncoding != "" {
+		encodingParts = append(encodingParts, "content_encoding="+tr.ContentEncoding)
+	}
+	if len(tr.TransferEncoding) > 0 {
+		encodingParts = append(encodingParts, "transfer_encoding="+strings.Join(tr.TransferEncoding, ","))
+	}
+	if tr.EncodedBodyBytes > 0 || tr.DecodedBodyBytes > 0 {
+		encodingParts = append(encodingParts, fmt.Sprintf("encoded_bytes=%d decoded_bytes=%d", tr.EncodedBodyBytes, tr.DecodedBodyBytes))
+	}
+	if len(encodingParts) > 0 {
+		lines = append(lines, strings.Join(encodingParts, " "))
+	}
+	if tr.CrossOriginRedirect {
+		redirectLine := "cross_origin_redirect=true"
+		if len(tr.StrippedRedirectHeaders) > 0 {
+			redirectLine += fmt.Sprintf(" stripped_headers=%s", strings.Join(tr.StrippedRedirectHeaders, ","))
+		}
+		lines = append(lines, redirectLine)
+	}
+	return lines
+}
+
+func formatDebugTraceNetworkHops(entries []protocol.NetworkEntry) []string {
+	var lines []string
+	for i, entry := range entries {
+		if entry.Trace == nil && (entry.HAR == nil || len(entry.HAR.Phases) == 0) {
+			continue
+		}
+		hop := fmt.Sprintf("[hop %d] %s %d %s (%.1f ms", i+1, entry.Method, entry.StatusCode, entry.URL, entry.DurationMs)
+		if entry.Trace != nil {
+			if entry.Trace.HTTPProtocol != "" {
+				hop += ", proto=" + entry.Trace.HTTPProtocol
+			}
+			if entry.Trace.TLSVersion != "" {
+				hop += ", tls=" + entry.Trace.TLSVersion
+			}
+			if entry.Trace.RemoteAddr != "" {
+				hop += ", remote=" + entry.Trace.RemoteAddr
+			}
+			if entry.Trace.ConnectionReused != nil {
+				hop += fmt.Sprintf(", conn_reused=%t", *entry.Trace.ConnectionReused)
+			}
+		}
+		if entry.HAR != nil {
+			for _, phase := range entry.HAR.Phases {
+				if phase.StartMS != nil && phase.EndMS != nil && *phase.EndMS >= *phase.StartMS {
+					hop += fmt.Sprintf(", %s_ms=%.1f", phase.Name, *phase.EndMS-*phase.StartMS)
+				}
+			}
+		}
+		hop += ")"
+		lines = append(lines, hop)
+	}
+	return lines
+}
+
+func sortedMapKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func formatDebugLogLine(entry ScriptDebugLogEntry) string {

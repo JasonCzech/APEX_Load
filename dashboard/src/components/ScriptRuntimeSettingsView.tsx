@@ -1870,6 +1870,7 @@ export function ScriptRuntimeSettingsView({
                 })} />
               <span>Advanced trace</span>
             </label>
+            <p className="new-test-inline-note">Captures DNS/connect/TLS/TTFB timings, socket reuse, TLS cipher/ALPN, compression ratios, and cookie counts when extended logging is active.</p>
           </div>
         </div>
       </div>

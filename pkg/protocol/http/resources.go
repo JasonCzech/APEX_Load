@@ -420,7 +420,7 @@ func (f *resourceFetcher) fetchResourceWave(
 					defer func() { <-hostSem }()
 
 					resourceCtx := ctx
-					if f.h.captureReplayNetwork && f.h.replayHAR != nil {
+					if f.h.captureReplayNetwork && (f.h.replayHAR != nil || f.h.captureNetworkTrace) {
 						resourceCtx = context.WithValue(ctx, replayResourceHARKey{}, func(entries []protocol.NetworkEntry) {
 							stats.mu.Lock()
 							defer stats.mu.Unlock()
@@ -578,8 +578,8 @@ func (h *HTTP) fetchResource(
 	}
 
 	var harRecorder *replayHARTransport
-	if h.captureReplayNetwork && h.replayHAR != nil {
-		harRecorder = newReplayHARTransport(client.Transport, h.replayHAR)
+	if h.captureReplayNetwork && (h.replayHAR != nil || h.captureNetworkTrace) {
+		harRecorder = newReplayHARTransport(client.Transport, h.replayHAR, h.captureNetworkTrace)
 		client.Transport = harRecorder
 		defer func() {
 			observed := harRecorder.entries()

@@ -75,7 +75,7 @@ func buildAgentFindingDetail(brief *AgentBrief, report *RunArchiveReport, findin
 		case detail.Series != nil && len(detail.Series.Points) > 10:
 			detail.Truncation.Omitted["series_points"] += len(detail.Series.Points) / 2
 			detail.Series.Points = detail.Series.Points[:len(detail.Series.Points)/2]
-		case len(detail.Samples) > 1:
+		case len(detail.Samples) > 0:
 			detail.Samples = detail.Samples[:len(detail.Samples)-1]
 			detail.Truncation.Omitted["samples"]++
 		case len(detail.Related) > 0:
@@ -83,6 +83,7 @@ func buildAgentFindingDetail(brief *AgentBrief, report *RunArchiveReport, findin
 			detail.Related = []string{}
 		default:
 			detail.Truncation.Truncated = true
+			detail.Truncation.HowToGetMore = "the evidence URIs serve the full data"
 			return detail, true
 		}
 	}
@@ -93,8 +94,9 @@ func buildAgentFindingDetail(brief *AgentBrief, report *RunArchiveReport, findin
 	return detail, true
 }
 
-// agentErrorSamples is the error pattern's sample and its captured snapshot
-// body, each as untrusted text.
+// agentErrorSamples is the error pattern's sample, any captured HTTP network
+// trace from its snapshot entries, and its captured snapshot body, each as
+// untrusted text.
 func agentErrorSamples(report *RunArchiveReport, findingID string) []AgentUntrusted {
 	samples := []AgentUntrusted{}
 	for _, pattern := range report.ErrorPatterns {
@@ -105,6 +107,16 @@ func agentErrorSamples(report *RunArchiveReport, findingID string) []AgentUntrus
 			samples = append(samples, *sample)
 		}
 		if pattern.Snapshot != nil {
+			for _, entry := range pattern.Snapshot.NetworkEntries {
+				if entry.Trace != nil {
+					if traceBody, err := json.Marshal(entry.Trace); err == nil {
+						if sample := agentUntrustedText("network_trace", string(traceBody), agentFindingUntrustedRunes); sample != nil {
+							samples = append(samples, *sample)
+						}
+					}
+					break
+				}
+			}
 			if body, err := json.Marshal(pattern.Snapshot); err == nil {
 				if sample := agentUntrustedText("error_snapshot", string(body), agentFindingUntrustedRunes); sample != nil {
 					samples = append(samples, *sample)

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/runcontract"
 )
@@ -444,6 +445,72 @@ func TestAgentFindingDetailBoundsItsSeriesAndSamples(t *testing.T) {
 	}
 	if markdown := renderAgentFindingMarkdown(detail); strings.Count(markdown, "</"+agentUntrustedTag+">") != len(detail.Samples) {
 		t.Fatalf("detail Markdown boundaries:\n%s", markdown)
+	}
+}
+
+func TestAgentFindingDetailExtractsNetworkTraceSample(t *testing.T) {
+	report := agentFixtureReport()
+	report.ErrorPatterns = []RunArchiveErrorPattern{{
+		Signature:  "HTTP 502 POST /checkout",
+		Sample:     "upstream TLS handshake timeout",
+		Count:      45,
+		Actions:    []string{"Checkout"},
+		FirstSeen:  agentFixtureStart.Add(time.Minute),
+		LatestSeen: agentFixtureStart.Add(5 * time.Minute),
+		Snapshot: &protocol.ErrorSnapshot{
+			RequestMethod:  "POST",
+			RequestURL:     "https://shop.example.test/checkout",
+			ResponseStatus: 502,
+			ResponseBody:   strings.Repeat("large-body-", 300),
+			NetworkEntries: []protocol.NetworkEntry{{
+				URL:        "https://shop.example.test/checkout",
+				Method:     "POST",
+				StatusCode: 502,
+				Trace: &protocol.HTTPNetworkTrace{
+					RemoteAddr:         "10.0.1.42:443",
+					TLSVersion:         "TLS 1.3",
+					TLSCipherSuite:     "TLS_AES_128_GCM_SHA256",
+					TLSNegotiatedProto: "h2",
+					ConnectionReused:   ptr(false),
+				},
+			}},
+		},
+	}}
+	brief, err := buildAgentBrief(agentBriefInputs{Report: report}, agentBriefOptions{Detail: agentDetailFull, Unbounded: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := agentFindingByKind(brief, agentKindErrorGroup)
+	if finding == nil {
+		t.Fatal("expected error_group finding")
+	}
+	detail, ok := buildAgentFindingDetail(brief, report, finding.ID)
+	if !ok {
+		t.Fatal("expected finding detail")
+	}
+	var traceSample, snapshotSample *AgentUntrusted
+	for i := range detail.Samples {
+		switch detail.Samples[i].Source {
+		case "network_trace":
+			traceSample = &detail.Samples[i]
+		case "error_snapshot":
+			snapshotSample = &detail.Samples[i]
+		}
+	}
+	if traceSample == nil || !strings.Contains(traceSample.Text, "TLS_AES_128_GCM_SHA256") || !strings.Contains(traceSample.Text, "10.0.1.42:443") {
+		t.Fatalf("expected dedicated network_trace sample, got %+v", detail.Samples)
+	}
+	if snapshotSample == nil || !snapshotSample.Truncated {
+		t.Fatalf("expected truncated error_snapshot alongside network_trace, got %+v", snapshotSample)
+	}
+	// Verify that when a detail exceeds agentFindingDetailBytes even after
+	// dropping series, samples, and related findings, HowToGetMore is populated.
+	oversized := *brief
+	oversized.Findings = append([]AgentFinding(nil), brief.Findings...)
+	oversized.Findings[0].Title = strings.Repeat("oversized-title-", 3000)
+	fallbackDetail, ok := buildAgentFindingDetail(&oversized, report, finding.ID)
+	if !ok || !fallbackDetail.Truncation.Truncated || fallbackDetail.Truncation.HowToGetMore != "the evidence URIs serve the full data" || len(fallbackDetail.Samples) != 0 {
+		t.Fatalf("expected fallback truncation with HowToGetMore and 0 remaining samples, got %+v (samples=%d)", fallbackDetail.Truncation, len(fallbackDetail.Samples))
 	}
 }
 

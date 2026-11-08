@@ -536,6 +536,7 @@ type ConsoleEntry struct {
 
 type NetworkEntry struct {
 	HAR             *ReplayHARExchange       `json:"har,omitempty"`
+	Trace           *HTTPNetworkTrace        `json:"trace,omitempty"`
 	BrowserEvidence *BrowserResourceEvidence `json:"browser_evidence,omitempty"`
 	FailureKind     string                   `json:"failure_kind,omitempty"` // http, transport, timeout, canceled
 
@@ -594,6 +595,7 @@ func CloneNetworkEntries(entries []NetworkEntry) []NetworkEntry {
 		cloned[i].BrowserEvidence = entry.BrowserEvidence.Clone()
 		cloned[i].Aura = entry.Aura.Clone()
 		cloned[i].HAR = entry.HAR.Clone()
+		cloned[i].Trace = entry.Trace.Clone()
 	}
 	return cloned
 }
@@ -908,12 +910,13 @@ type Result struct {
 	DOMSummary             *DOMSummary
 	ClientMetrics          *ClientMetrics
 	ServerTelemetry        *ServerTelemetry
-	HTTPVersionPolicy      string         `json:"-"`
-	HTTPVersionNegotiated  string         `json:"-"`
-	HTTPVersionSource      string         `json:"-"`
-	HTTPAltSvcH3Advertised bool           `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
-	HTTP3FailureCertainty  string         `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
-	HTTPReceipt            map[string]any `json:"-"` // HTTP/3 version receipt fields (routing, connection, timing availability)
+	HTTPVersionPolicy      string            `json:"-"`
+	HTTPVersionNegotiated  string            `json:"-"`
+	HTTPVersionSource      string            `json:"-"`
+	HTTPAltSvcH3Advertised bool              `json:"-"` // wire response advertised final HTTP/3 in Alt-Svc
+	HTTP3FailureCertainty  string            `json:"-"` // not_sent, possibly_sent or rejected_unprocessed for a failed HTTP/3 request
+	HTTPReceipt            map[string]any    `json:"-"` // HTTP/3 version receipt fields (routing, connection, timing availability)
+	NetworkTrace           *HTTPNetworkTrace `json:"-"` // populated when ReplayNetworkTraceConfigKey is enabled
 	ProtocolEvidence       map[string]any
 	// ProtocolEvidenceOmittedCount records losses at the producer projection boundary.
 	ProtocolEvidenceOmittedCount int            `json:"-"`

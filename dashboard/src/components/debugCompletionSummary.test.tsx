@@ -75,19 +75,27 @@ describe('debug completion summary', () => {
 })
 
 describe('debug summary page', () => {
-  it('opens an issue, downloads HAR, and explains unavailable downloads', async () => {
+  it('opens an issue, exports session, downloads HAR, and explains unavailable downloads', async () => {
     const { default: Summary } = await import('./DebugCompletionSummary')
     const snapshot = fixture()
     snapshot.session.har = { eligible: true, available: true, retained_request_count: 2, limitations: 'Retained traffic only; bodies may be unavailable.' }
-    const onSelectEvent = vi.fn(); const onDownloadHAR = vi.fn().mockRejectedValue(new Error('Session expired.'))
+    const onSelectEvent = vi.fn(); const onDownloadHAR = vi.fn().mockRejectedValue(new Error('Session expired.')); const onExportSession = vi.fn()
     const container = document.createElement('div'); document.body.appendChild(container)
     const root = createRoot(container)
-    const render = (unavailable = false) => act(() => root.render(<Summary snapshot={snapshot} stale unavailable={unavailable} onReturn={vi.fn()} onDebugAgain={vi.fn()} onSelectEvent={onSelectEvent} onDownloadHAR={onDownloadHAR} />))
+    const render = (unavailable = false) => act(() => root.render(<Summary snapshot={snapshot} stale unavailable={unavailable} onExportSession={onExportSession} onSelectEvent={onSelectEvent} onDownloadHAR={onDownloadHAR} />))
     const button = (text: string) => [...container.querySelectorAll('button')].find(node => node.textContent === text)!
     try {
       render()
       expect(container.textContent).toContain('earlier draft')
       expect(document.activeElement?.textContent).toBe('Debug summary')
+      expect(button('Return to debugger')).toBeUndefined()
+      expect(button('Debug again')).toBeUndefined()
+      // Without retained transaction definitions it points at the Debug menu,
+      // not the removed Debug again control.
+      expect(container.textContent).toContain('Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.')
+      expect(container.textContent).not.toContain('Debug again')
+      act(() => button('Export session').click())
+      expect(onExportSession).toHaveBeenCalledTimes(1)
       act(() => button('Inspect Checkout').click())
       expect(onSelectEvent).toHaveBeenCalledWith(1)
       await act(async () => button('Download HAR').click())
@@ -100,6 +108,7 @@ describe('debug summary page', () => {
       render(true)
       expect(container.textContent).not.toContain('Expected 200, got 500')
       expect(button('Inspect Checkout')).toBeUndefined()
+      expect(button('Export session')).toBeDefined()
     } finally { act(() => root.unmount()); container.remove() }
   })
 })
@@ -112,7 +121,7 @@ describe('debug summary transaction table', () => {
     run.transactions = captureDebugTransactionDefinitions({ name: 'Checkout script', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Checkout', type: 'http_sequence', target: '', params: { requests: [{ name: 'Pay', target: '/pay' }] } }] })
     run.report!.events = [{ ...run.report!.events[1], action_index: 0, request_index: 0, event_index: 0 }]
     const inspect = vi.fn(), container = document.createElement('div'), root = createRoot(container)
-    const render = (unavailable = false) => act(() => root.render(<Summary snapshot={run} stale={false} unavailable={unavailable} onReturn={vi.fn()} onDebugAgain={vi.fn()} onSelectEvent={inspect} onDownloadHAR={vi.fn()} />))
+    const render = (unavailable = false) => act(() => root.render(<Summary snapshot={run} stale={false} unavailable={unavailable} onExportSession={vi.fn()} onSelectEvent={inspect} onDownloadHAR={vi.fn()} />))
     try {
       render()
       const table = container.querySelector('table')!

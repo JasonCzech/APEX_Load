@@ -18,6 +18,7 @@ import {
   highlightDebugLogRaw,
   tokenizeDebugLogRawLine,
   formatReplayDiagnosisCategory,
+  hasRunToBreakpointTarget,
   hasStructuredReplaySnapshot,
   humanizeStepSegment,
   normalizeDebugPhase,
@@ -177,6 +178,9 @@ describe('script editor replay model', () => {
       ['HTTP/1.1 404 Not Found', ['plain', 'status-warning', 'plain']],
       ['HTTP/2 503 Unavailable', ['plain', 'status-error', 'plain']],
       ['Content-Type: application/json', ['header', 'punctuation', 'plain']],
+      ['TIMINGS', ['header']],
+      ['COOKIES & REDIRECTS', ['header']],
+      ['NETWORK HOPS', ['header']],
       ['{"order_id":42,"ready":true,"state":"created"}', ['punctuation', 'key', 'punctuation', 'number', 'punctuation', 'key', 'punctuation', 'literal', 'punctuation', 'key', 'punctuation', 'string', 'punctuation']],
     ] as const
 
@@ -244,5 +248,15 @@ describe('withSequenceRequestBreakpoints', () => {
 
   it('clears the requests\' own breakpoints and leaves the Run-to target and other actions', () => {
     expect(withSequenceRequestBreakpoints([kept, runTo, elsewhere], 'action', 2, 3, false)).toEqual([runTo, elsewhere])
+  })
+})
+
+describe('hasRunToBreakpointTarget', () => {
+  it('counts only enabled breakpoints the start payload keeps', () => {
+    expect(hasRunToBreakpointTarget([])).toBe(false)
+    expect(hasRunToBreakpointTarget([{ phase: 'action', action_index: 0, disabled: true }])).toBe(false)
+    // A one-shot run-to target left by an interrupted run is dropped from the start payload.
+    expect(hasRunToBreakpointTarget([{ phase: 'action', action_index: 1, once: true }])).toBe(false)
+    expect(hasRunToBreakpointTarget([{ phase: 'action', action_index: 1, once: true }, { phase: 'action', action_index: 0 }])).toBe(true)
   })
 })

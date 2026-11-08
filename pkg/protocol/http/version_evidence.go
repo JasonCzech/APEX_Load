@@ -33,6 +33,9 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	for key, value := range result.HTTPReceipt {
 		evidence[key] = value
 	}
+	if traceMap := result.NetworkTrace.EvidenceMap(); len(traceMap) > 0 {
+		evidence["network_trace"] = traceMap
+	}
 	if timings := buildHTTPProtocolTimings(evidence["timings"], result); len(timings) > 0 {
 		evidence["timings"] = timings
 	}

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { captureScript, compareRuns, eventIdentity, executionLabel, readProfiles, safeProfile, variablesAt } from './debuggerExperience'
@@ -12,7 +13,10 @@ const report = (events: BrowserReplayEvent[]): BrowserReplayReport => ({ group: 
 describe('debugger operator experience', () => {
   it('captures bounded successful HTTP evidence without changing the authored config', () => {
     const script = { name: 'Capture', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test', results: { message_detail: { mode: 'off' } } }, actions: [] } as ScriptDefinition
-    expect(captureScript(script).config.results?.message_detail).toMatchObject({ mode: 'sampled', sample_rate: 1, max_items: 100, max_total_bytes: 4194304 })
+    const captured = captureScript(script)
+    expect(captured.config.results?.message_detail).toMatchObject({ mode: 'sampled', sample_rate: 1, max_items: 100, max_total_bytes: 4194304 })
+    expect(captured.config.log?.extended_options).toContain('advanced_trace')
+    expect(captureScript(script, 'diagnostic', false).config.log?.extended_options).not.toContain('advanced_trace')
     expect(script.config.results?.message_detail?.mode).toBe('off')
     expect(captureScript(script, 'errors').config.results?.message_detail?.mode).toBe('errors')
     expect(captureScript(script, 'script')).toBe(script)
@@ -198,6 +202,22 @@ describe('debugger operator experience', () => {
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} />)
     expect(html).toContain('operation_result')
     expect(html).toContain('retained-result')
+  })
+
+  it('compares the baseline and current iteration count and network trace setting', () => {
+    const replay = report([event({ status_code: 200 })])
+    const record = { options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }
+    const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, ...record }]} current={replay}
+      currentRecord={{ id: 'current', ...record, options: { ...DEFAULT_REPLAY_OPTIONS, networkTrace: false }, iterations: 3 }} />)
+    // Read the rendered text through a DOM parser: the body preview highlights
+    // JSON tokens in nested markup.
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const blocks = [...doc.querySelectorAll('section')]
+      .filter(section => /^(Baseline|Current) configuration$/.test(section.querySelector('h4')?.textContent || ''))
+      .map(section => section.textContent || '')
+    expect(blocks).toHaveLength(2)
+    expect(blocks[0]).toContain('"networkTrace": true'); expect(blocks[0]).toContain('"iterations": 1')
+    expect(blocks[1]).toContain('"networkTrace": false'); expect(blocks[1]).toContain('"iterations": 3')
   })
 
   it('renders protocol-appropriate history and navigable timeline controls', () => {

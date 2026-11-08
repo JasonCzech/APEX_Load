@@ -184,6 +184,7 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 		out = append(out, protocol.NetworkEntry{
 			BrowserEvidence: resource, FailureKind: entry.FailureKind,
 			HAR:                  takeSnapshotHAR(entry.HAR, remaining),
+			Trace:                takeSnapshotNetworkTrace(entry.Trace, remaining),
 			URL:                  takeSnapshotString(entry.URL, remaining, 8<<10),
 			Method:               takeSnapshotString(entry.Method, remaining, 64),
 			StatusCode:           entry.StatusCode,
@@ -196,6 +197,56 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 			RequestBodyTruncated: entry.RequestBodyTruncated,
 			ResponseHeaders:      takeSnapshotStringMap(entry.ResponseHeaders, remaining),
 		})
+	}
+	return out
+}
+
+// snapshotNetworkTraceOverhead charges a retained trace's scalar fields; every
+// retained string and list item is charged on top of it.
+const snapshotNetworkTraceOverhead = 128
+
+func takeSnapshotNetworkTrace(t *protocol.HTTPNetworkTrace, remaining *int) *protocol.HTTPNetworkTrace {
+	if t == nil || remaining == nil || *remaining < snapshotNetworkTraceOverhead {
+		return nil
+	}
+	*remaining -= snapshotNetworkTraceOverhead
+	c := t.Clone()
+	c.RemoteAddr = takeSnapshotString(c.RemoteAddr, remaining, 128)
+	c.LocalAddr = takeSnapshotString(c.LocalAddr, remaining, 128)
+	for _, field := range []*string{
+		&c.TLSVersion, &c.TLSCipherSuite, &c.TLSNegotiatedProto, &c.TLSServerName,
+		&c.TLSCertSubject, &c.TLSCertIssuer, &c.TLSCertExpiry,
+		&c.HTTPProtocol, &c.RequestCompression, &c.ContentEncoding,
+	} {
+		*field = takeSnapshotString(*field, remaining, 256)
+	}
+	c.DNSResolvedIPs = takeSnapshotStringSlice(c.DNSResolvedIPs, remaining, 8, 256)
+	c.TransferEncoding = takeSnapshotStringSlice(c.TransferEncoding, remaining, 16, 256)
+	c.StrippedRedirectHeaders = takeSnapshotStringSlice(c.StrippedRedirectHeaders, remaining, 16, 256)
+	c.CookieNamesSent = takeSnapshotStringSlice(c.CookieNamesSent, remaining, 32, 128)
+	c.SetCookieNamesReceived = takeSnapshotStringSlice(c.SetCookieNamesReceived, remaining, 32, 128)
+	return c
+}
+
+// takeSnapshotStringSlice retains at most maxItems strings, charging each one
+// its bytes plus snapshotMapEntryOverhead, and stops once the budget cannot
+// hold another entry.
+func takeSnapshotStringSlice(values []string, remaining *int, maxItems, itemLimit int) []string {
+	if len(values) == 0 || remaining == nil || maxItems <= 0 {
+		return nil
+	}
+	out := make([]string, 0, min(len(values), maxItems))
+	for _, value := range values {
+		if len(out) >= maxItems || *remaining <= snapshotMapEntryOverhead {
+			break
+		}
+		*remaining -= snapshotMapEntryOverhead
+		if item := takeSnapshotString(value, remaining, itemLimit); item != "" {
+			out = append(out, item)
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

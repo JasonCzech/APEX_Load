@@ -60,7 +60,7 @@ export interface ReplayHARPhase {
 export interface ReplayHARBody {
   size_bytes?: number | null
   text?: string
-  state: string
+  state: 'retained' | 'size_limit' | 'total_limit' | 'binary' | 'unavailable' | 'redacted' | string
   mime_type?: string
 }
 
@@ -107,6 +107,7 @@ export interface ReplayHAROptions {
 }
 export interface ReplayRuntimeProfile {
  har_options?: ReplayHAROptions
+ network_trace?: boolean
   name?: string
   capture_mode?: string
   log_level?: string
@@ -162,6 +163,7 @@ export interface ProtocolEvidence {
   timing_availability?: Record<string, string>
   http_version_source?: 'wire' | 'cache'
   alt_svc_h3_advertised?: boolean
+  network_trace?: HTTPNetworkTrace
   protocol?: string
   operation?: string
   target?: string
@@ -414,6 +416,8 @@ export interface ScriptDebugLogEntry {
   phase?: string
   action_index?: number
   action_name?: string
+  /** Replay event this line reports; set only on the per-event result line. */
+  event_index?: number
 }
 
 export interface ScriptDebugAction {

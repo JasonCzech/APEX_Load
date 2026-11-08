@@ -592,3 +592,130 @@ func acquireAllReplayHARFixtureSlots(t *testing.T, manager *BrowserReplayManager
 	t.Cleanup(release)
 	return release
 }
+
+func TestFormatDebugEventRawForLogLevelTraceVsDebug(t *testing.T) {
+	reused := true
+	trace := &protocol.HTTPNetworkTrace{
+		HTTPProtocol:            "HTTP/2.0",
+		RemoteAddr:              "203.0.113.5:443",
+		LocalAddr:               "10.0.0.2:54321",
+		ConnectionReused:        &reused,
+		WasIdle:                 true,
+		IdleTimeMs:              14.2,
+		DNSResolvedIPs:          []string{"203.0.113.5"},
+		TLSVersion:              "TLS 1.3",
+		TLSCipherSuite:          "TLS_AES_128_GCM_SHA256",
+		TLSNegotiatedProto:      "h2",
+		TLSServerName:           "api.example.com",
+		TLSDidResume:            true,
+		TLSCertSubject:          "CN=api.example.com",
+		TLSCertIssuer:           "CN=Example Root CA",
+		TLSCertExpiry:           "2028-01-01T00:00:00Z",
+		RequestCompression:      "gzip",
+		ContentEncoding:         "gzip",
+		EncodedBodyBytes:        120,
+		DecodedBodyBytes:        480,
+		CookiesSentCount:        1,
+		CookieNamesSent:         []string{"sid"},
+		SetCookiesReceivedCount: 1,
+		SetCookieNamesReceived:  []string{"csrf"},
+		CrossOriginRedirect:     true,
+		StrippedRedirectHeaders: []string{"Authorization"},
+	}
+	event := engine.ReplayActionEvent{
+		ActionName: "Checkout",
+		ActionType: "request",
+		Method:     "POST",
+		Target:     "https://api.example.com/checkout",
+		Headers:    map[string]string{"Content-Type": "application/json"},
+		Body:       `{"cart":1}`,
+		StatusCode: 200,
+		DurationMs: 42.5,
+		ProtocolEvidence: map[string]any{
+			"network_trace": trace.EvidenceMap(),
+			"timings": map[string]any{
+				"dns_ms":     2,
+				"connect_ms": 5,
+				"tls_ms":     8,
+				"ttfb_ms":    25,
+			},
+		},
+		Snapshot: &protocol.ErrorSnapshot{
+			ResponseHeaders: map[string]string{"Content-Type": "application/json", "X-Trace-Id": "abc-123"},
+			ResponseBody:    `{"ok":true}`,
+			Resources: []protocol.ResourceSnapshot{
+				{RequestURL: "https://api.example.com/app.js", ResponseStatus: 200, CacheHit: true, ResponseBodyState: "complete"},
+			},
+		},
+		Network: []protocol.NetworkEntry{
+			{
+				Method:     "POST",
+				StatusCode: 200,
+				URL:        "https://api.example.com/checkout",
+				DurationMs: 42.5,
+				Trace:      trace,
+				HAR: &protocol.ReplayHARExchange{
+					Phases: []protocol.BrowserResourcePhase{
+						{Name: "dns", StartMS: float64Ptr(0), EndMS: float64Ptr(2)},
+						{Name: "connect", StartMS: float64Ptr(2), EndMS: float64Ptr(7)},
+					},
+				},
+			},
+		},
+	}
+
+	if gotInfo := formatDebugEventRawForLogLevel("info", event); gotInfo != "" {
+		t.Fatalf("expected empty raw output for info log level, got %q", gotInfo)
+	}
+
+	gotDebug := formatDebugEventRawForLogLevel("debug", event)
+	for _, want := range []string{"REQUEST POST https://api.example.com/checkout", "HEADERS", "RESPONSE 200", "TRANSPORT", "proto=HTTP/2.0", "remote=203.0.113.5:443", "tls=TLS 1.3", "cipher=TLS_AES_128_GCM_SHA256", "alpn=h2"} {
+		if !strings.Contains(gotDebug, want) {
+			t.Fatalf("debug output missing %q:\n%s", want, gotDebug)
+		}
+	}
+	for _, notWant := range []string{"TIMINGS", "COOKIES & REDIRECTS", "RESPONSE HEADERS", "RESPONSE BODY", "NETWORK HOPS", "RESOURCES"} {
+		if strings.Contains(gotDebug, notWant) {
+			t.Fatalf("debug output should not contain TRACE section %q:\n%s", notWant, gotDebug)
+		}
+	}
+
+	gotTrace := formatDebugEventRawForLogLevel("trace", event)
+	for _, want := range []string{
+		"TIMINGS",
+		// The TLS section header on its own line; a bare "TLS" would also
+		// match tls=TLS 1.3 in the TRANSPORT line.
+		"\nTLS\n",
+		"version=TLS 1.3 cipher=TLS_AES_128_GCM_SHA256 alpn=h2 sni=api.example.com resumed=true",
+		"COOKIES & REDIRECTS",
+		"cookies_sent=1 (sid) set_cookies=1 (csrf)",
+		"cross_origin_redirect=true stripped_headers=Authorization",
+		"RESPONSE HEADERS",
+		"X-Trace-Id: abc-123",
+		"RESPONSE BODY",
+		`{"ok":true}`,
+		"NETWORK HOPS",
+		"[hop 1] POST 200 https://api.example.com/checkout (42.5 ms, proto=HTTP/2.0, tls=TLS 1.3, remote=203.0.113.5:443, conn_reused=true, dns_ms=2.0, connect_ms=5.0)",
+		"RESOURCES",
+		"200 https://api.example.com/app.js",
+	} {
+		if !strings.Contains(gotTrace, want) {
+			t.Fatalf("trace output missing %q:\n%s", want, gotTrace)
+		}
+	}
+
+	event.Snapshot.ResponseBody = strings.Repeat("a", 4095) + "é" + strings.Repeat("z", 20)
+	gotTruncatedTrace := formatDebugEventRawForLogLevel("trace", event)
+	if !strings.Contains(gotTruncatedTrace, strings.Repeat("a", 4095)+"... [truncated]") {
+		t.Fatalf("expected UTF-8 safe response body truncation at 4096-byte boundary, got:\n%s", gotTruncatedTrace)
+	}
+
+	profile := replayRuntimeProfileForDebug(nil, ScriptDebugStartRequest{LogLevel: "trace"}, true)
+	if profile.NetworkTrace == nil || !*profile.NetworkTrace {
+		t.Fatalf("expected replayRuntimeProfileForDebug to default NetworkTrace=true, got %+v", profile.NetworkTrace)
+	}
+}
+
+func float64Ptr(v float64) *float64 {
+	return &v
+}

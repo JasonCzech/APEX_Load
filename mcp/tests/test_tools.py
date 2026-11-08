@@ -428,3 +428,86 @@ async def test_browser_intelligence_tools_call_expected_routes():
     assert "request_id=gen-request-7" in seen[3][2]
     assert "kind=browser_policy" in seen[4][2] and "project_id=p1" in seen[4][2]
     assert "project_id=p1" in seen[6][2]
+
+
+@pytest.mark.asyncio
+async def test_debugger_authoring_sizing_and_live_triage_tools_call_expected_routes():
+    seen: list[tuple[str, str, str]] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append((request.method, request.url.path, request.url.query.decode()))
+        return httpx.Response(200, json={"ok": True})
+
+    client = APEXLoadClient(
+        APEXLoadClientConfig(base_url="http://storm.test/api/v1", default_project_id="p1"),
+        transport=httpx.MockTransport(handler),
+    )
+    assert json.loads(await run_endpoint_tool(tool("script_debug_session_start_draft"), client=client, payload={"script": {}}))["error"]["code"] == "confirmation_required"
+    assert json.loads(await run_endpoint_tool(tool("project_secret_create"), client=client, path_params={"id": "p1"}, payload={"name": "api_token", "value": "secret"}, confirm=True))["error"]["code"] == "reason_required"
+
+    calls = [
+        (tool("script_debug_session_start_draft"), {"payload": {"log_level": "trace", "script": {"name": "Draft"}}, "confirm": True}),
+        (tool("script_debug_session_start_saved"), {"path_params": {"id": "scr-1"}, "payload": {"log_level": "trace"}, "confirm": True}),
+        (tool("replay_session_get"), {"path_params": {"session_id": "dbg-1"}}),
+        (tool("replay_session_export"), {"path_params": {"session_id": "dbg-1"}, "query": {"format": "log"}}),
+        (tool("replay_session_step"), {"path_params": {"session_id": "dbg-1"}, "payload": {"mode": "over"}, "confirm": True}),
+        (tool("replay_session_breakpoints_update"), {"path_params": {"session_id": "dbg-1"}, "payload": {"breakpoints": []}, "confirm": True}),
+        (tool("replay_session_options_update"), {"path_params": {"session_id": "dbg-1"}, "payload": {"break_on_failure": True}, "confirm": True}),
+        (tool("dsl_actions_list"), {}),
+        (tool("dsl_config_defaults"), {}),
+        (tool("correlation_diagnose"), {"payload": {"exchanges": []}}),
+        (tool("script_repair_preview"), {"path_params": {"id": "scr-1"}, "payload": {}}),
+        (tool("script_secret_status"), {"path_params": {"id": "scr-1"}}),
+        (tool("scenario_size_from_goal"), {"payload": {"target_tps": 50, "avg_response_ms": 200}}),
+        (tool("run_preflight"), {"payload": {"scenario_id": "sc-1"}}),
+        (tool("run_live_error_evidence"), {"path_params": {"id": "run-1"}, "query": {"limit": 20}}),
+        (tool("run_live_transaction_detail"), {"path_params": {"id": "run-1", "event_id": "ev-9"}}),
+        (tool("run_group_runtime_settings_update"), {"path_params": {"id": "run-1", "group": "g1"}, "payload": {"extended_log": "advanced_trace"}, "confirm": True}),
+    ]
+    for spec, kwargs in calls:
+        result = json.loads(await run_endpoint_tool(spec, client=client, **kwargs))
+        assert result["ok"] is True
+
+    assert [(method, path) for method, path, _ in seen] == [
+        ("POST", "/api/v1/scripts/debug/sessions"),
+        ("POST", "/api/v1/scripts/scr-1/debug/sessions"),
+        ("GET", "/api/v1/replay/sessions/dbg-1"),
+        ("GET", "/api/v1/replay/sessions/dbg-1/export"),
+        ("POST", "/api/v1/replay/sessions/dbg-1/step"),
+        ("PATCH", "/api/v1/replay/sessions/dbg-1/breakpoints"),
+        ("PATCH", "/api/v1/replay/sessions/dbg-1/options"),
+        ("GET", "/api/v1/dsl/actions"),
+        ("GET", "/api/v1/dsl/config-defaults"),
+        ("POST", "/api/v1/correlations/diagnose"),
+        ("POST", "/api/v1/scripts/scr-1/repairs/preview"),
+        ("GET", "/api/v1/scripts/scr-1/secret-status"),
+        ("POST", "/api/v1/scenarios/size-from-goal"),
+        ("POST", "/api/v1/tests/preflight"),
+        ("GET", "/api/v1/tests/run-1/errors/evidence"),
+        ("GET", "/api/v1/tests/run-1/transactions/live/ev-9"),
+        ("PATCH", "/api/v1/tests/run-1/groups/g1/runtime-settings"),
+    ]
+    assert "format=log" in seen[3][2]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("importer,expected_path,validate_only", [
+    ("postman", "/api/v1/scripts/import/postman", False),
+    ("k6", "/api/v1/scripts/import/k6", False),
+    ("asyncapi", "/api/v1/scripts/import/asyncapi", False),
+    ("postman", "/api/v1/scripts/import/postman/validate", True),
+    ("recorder", "/api/v1/scripts/import/recorder/validate", True),
+])
+async def test_expanded_file_importers_and_validators(tmp_path: Path, importer: str, expected_path: str, validate_only: bool):
+    sample = tmp_path / "collection.json"
+    sample.write_text('{"info":{"name":"demo"}}')
+    seen: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.path)
+        return httpx.Response(200, json={"ok": True})
+
+    client = APEXLoadClient(APEXLoadClientConfig(base_url="http://storm.test/api/v1"), transport=httpx.MockTransport(handler))
+    result = json.loads(await run_file_import_tool(importer, str(sample), validate_only=validate_only, confirm=not validate_only, client=client))
+    assert result["ok"] is True
+    assert seen == [expected_path]

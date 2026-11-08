@@ -93,9 +93,12 @@ func agentSafeText(text string, maxRunes int) string {
 	return text
 }
 
-// stripAgentUnsafeRunes drops control characters (keeping newlines when
-// asked) and the Unicode bidirectional controls that can reorder displayed
-// text.
+// stripAgentUnsafeRunes drops control characters (Cc, keeping newlines when
+// asked) and every format character (Cf: the bidirectional controls that can
+// reorder displayed text, zero-width spaces and joiners, the soft hyphen, the
+// BOM and tag characters), so an invisible character cannot hide the
+// boundary tag's name from agentBoundaryNamePattern. The MCP server's
+// sanitize_untrusted_text applies the same rule.
 func stripAgentUnsafeRunes(text string, keepNewlines bool) string {
 	return strings.Map(func(r rune) rune {
 		switch {
@@ -103,13 +106,27 @@ func stripAgentUnsafeRunes(text string, keepNewlines bool) string {
 			return r
 		case r == '\t':
 			return ' '
-		case unicode.IsControl(r):
-			return -1
-		case r >= '\u202a' && r <= '\u202e', r >= '\u2066' && r <= '\u2069', r == '\u200e', r == '\u200f', r == '\u061c':
+		case unicode.IsControl(r), unicode.Is(unicode.Cf, r), agentInvisibleRune(r):
 			return -1
 		}
 		return r
 	}, strings.ReplaceAll(text, "\r\n", "\n"))
+}
+
+// agentInvisibleRune reports the default-ignorable code points outside Cc/Cf
+// that render as nothing: the combining grapheme joiner, Hangul fillers, Khmer
+// inherent vowels, Mongolian and other variation selectors, the unassigned
+// default-ignorables U+2065 and U+FFF0-U+FFF8, and the
+// tag/variation-selector supplement. The MCP server's INVISIBLE_RANGES drops
+// the same set.
+func agentInvisibleRune(r rune) bool {
+	switch {
+	case r == 0x034F, r == 0x115F, r == 0x1160, r == 0x2065, r == 0x3164, r == 0xFFA0:
+		return true
+	case r >= 0x17B4 && r <= 0x17B5, r >= 0x180B && r <= 0x180F, r >= 0xFE00 && r <= 0xFE0F, r >= 0xFFF0 && r <= 0xFFF8, r >= 0xE0000 && r <= 0xE0FFF:
+		return true
+	}
+	return false
 }
 
 // agentComparator renders an SLA rule comparator: one of the known ones as

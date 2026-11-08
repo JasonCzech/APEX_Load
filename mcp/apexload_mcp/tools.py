@@ -347,6 +347,146 @@ ENDPOINT_TOOLS: tuple[EndpointTool, ...] = (
     EndpointTool("results_import", "POST", "/results/import", f"{WRITE} Import external results.", True, False, True),
     EndpointTool("results_imports", "GET", "/results/imports", f"{READ} List external result imports.", default_project=True),
 
+    # Unified Script Debugger & Replay Session Tools
+    EndpointTool("script_debug_session_start_draft", "POST", "/scripts/debug/sessions", f"{WRITE} Start an interactive script debug session for a draft script (supports breakpoints, step-through, log_level='debug'|'trace', and runtime_profile.network_trace).", True, False, True),
+    EndpointTool("script_debug_session_start_saved", "POST", "/scripts/{id}/debug/sessions", f"{WRITE} Start an interactive script debug session for a saved script (supports breakpoints, step-through, log_level='debug'|'trace', and runtime_profile.network_trace).", True),
+    EndpointTool("script_replay_session_start_draft", "POST", "/scripts/replay/sessions", f"{WRITE} Start an asynchronous replay session for a draft script.", True, False, True),
+    EndpointTool("script_replay_session_start_saved", "POST", "/scripts/{id}/replay/sessions", f"{WRITE} Start an asynchronous replay session for a saved script.", True),
+    EndpointTool("replay_session_get", "GET", "/replay/sessions/{session_id}", f"{READ} Get a replay or debug session's status, step events, snapshots, protocol_evidence.network_trace, and DEBUG/TRACE log entries."),
+    EndpointTool("replay_session_export", "GET", "/replay/sessions/{session_id}/export", f"{READ} Export a replay or debug session artifact; pass query.format='json'|'har'|'log' ('log' exports full DEBUG/TRACE wire and transport logs)."),
+    EndpointTool("replay_session_pause", "POST", "/replay/sessions/{session_id}/pause", f"{WRITE} Pause a running replay or debug session at the next step boundary.", True),
+    EndpointTool("replay_session_resume", "POST", "/replay/sessions/{session_id}/resume", f"{WRITE} Resume a paused replay or debug session.", True),
+    EndpointTool("replay_session_step", "POST", "/replay/sessions/{session_id}/step", f"{WRITE} Advance a paused debug session by one step; optional payload.mode='into'|'over'|'loop_end'.", True),
+    EndpointTool("replay_session_stop", "POST", "/replay/sessions/{session_id}/stop", f"{WRITE} Stop a running or paused replay or debug session.", True),
+    EndpointTool("replay_session_breakpoints_update", "PATCH", "/replay/sessions/{session_id}/breakpoints", f"{WRITE} Replace breakpoints on an active debug session.", True),
+    EndpointTool("replay_session_options_update", "PATCH", "/replay/sessions/{session_id}/options", f"{WRITE} Update debug session options (payload.break_on_failure).", True),
+    EndpointTool("browser_replay_session_har", "GET", "/browser-replay/sessions/{session_id}/har", f"{READ} Download the synthetic HAR 1.2 archive for a browser replay session."),
+    EndpointTool("browser_replay_session_evidence", "GET", "/browser-replay/sessions/{session_id}/evidence", f"{READ} Download retained browser replay evidence for a session."),
+    EndpointTool("script_clone_draft", "POST", "/scripts/{id}/clone-draft", f"{WRITE} Clone a saved script into an editable draft.", True),
+    EndpointTool("script_parameterize_suggest", "POST", "/scripts/{id}/parameterize/suggest", f"{READ} Suggest parameterization candidates for a saved script."),
+
+    # DSL Discovery, Correlation Studio, Script Repairs & Secret Bindings
+    EndpointTool("dsl_actions_list", "GET", "/dsl/actions", f"{READ} List the complete JSON DSL action catalog and per-action schema metadata."),
+    EndpointTool("dsl_config_defaults", "GET", "/dsl/config-defaults", f"{READ} Get default DSL protocol and runtime configuration values."),
+    EndpointTool("dsl_browser_emulation_catalog", "GET", "/dsl/browser-emulation-catalog", f"{READ} Get browser emulation device and network profile catalog."),
+    EndpointTool("dsl_parameter_preview", "POST", "/dsl/parameter-preview", f"{READ} Preview parameter value selection and iteration behavior."),
+    EndpointTool("script_validation_context", "POST", "/scripts/validation-context", f"{READ} Inspect resolved validation context (parameters, data pools, secrets, and runtime settings) for a script.", default_project=True),
+    EndpointTool("protocols_native_support_matrix", "GET", "/protocols/native-support-matrix", f"{READ} Get native protocol execution capability matrix."),
+    EndpointTool("script_authoring_component_create", "POST", "/scripts/authoring/components", f"{WRITE} Create a reusable authoring block component.", True, False, True),
+    EndpointTool("script_authoring_component_delete", "DELETE", "/scripts/authoring/components/{id}", f"{DESTRUCTIVE} Delete a reusable authoring block component.", True, True),
+    EndpointTool("correlation_rules_list", "GET", "/correlations/rules", f"{READ} List built-in correlation extraction rules."),
+    EndpointTool("correlation_diagnose", "POST", "/correlations/diagnose", f"{READ} Diagnose dynamic values across recorded or replayed exchanges and suggest correlation extractors."),
+    EndpointTool("correlation_diff", "POST", "/correlations/diff", f"{READ} Diff two HTTP exchanges or replay traces to identify dynamic correlation tokens."),
+    EndpointTool("selector_diagnose", "POST", "/selectors/diagnose", f"{READ} Diagnose browser element selectors and suggest resilient fallback locators."),
+    EndpointTool("script_repair_preview", "POST", "/scripts/{id}/repairs/preview", f"{READ} Preview deterministic repair changes on a saved script without mutating it."),
+    EndpointTool("script_repair_apply", "POST", "/scripts/{id}/repairs/apply", f"{WRITE} Apply deterministic repairs to a saved script (supports if_match conditional save).", True),
+    EndpointTool("script_secret_status", "GET", "/scripts/{id}/secret-status", f"{READ} Check whether all {{secret.*}} references and detected credentials in a script are bound in the project/application secret store."),
+    EndpointTool("script_secret_bindings_apply", "POST", "/scripts/secret-bindings/apply", f"{WRITE} Bind detected literal credentials in a script to {{secret.*}} references.", True, False, True),
+    EndpointTool("script_secret_references_rebind", "POST", "/scripts/secret-references/rebind", f"{WRITE} Rebind {{secret.*}} references in a script to updated secret names.", True, False, True),
+    EndpointTool("script_import_secrets_migrate", "POST", "/scripts/import/secrets/migrate", f"{WRITE} Migrate protected import source secrets into the project secret store.", True, False, True),
+    EndpointTool("script_import_secrets_discard", "POST", "/scripts/import/secrets/discard", f"{WRITE} Discard a temporary import source-secret session.", True, False, True),
+    EndpointTool("project_secrets_list", "GET", "/projects/{id}/secrets", f"{READ} List project secret metadata (names and status; never raw secret values)."),
+    EndpointTool("project_secret_create", "POST", "/projects/{id}/secrets", f"{DESTRUCTIVE} Create or store a project secret.", True, True),
+    EndpointTool("project_secret_update", "PUT", "/projects/{id}/secrets/{name}", f"{DESTRUCTIVE} Rotate or update a named project secret.", True, True),
+    EndpointTool("project_secret_usage", "GET", "/projects/{id}/secrets/{name}/usage", f"{READ} List scripts and connections referencing a named project secret."),
+    EndpointTool("project_secrets_status", "POST", "/projects/{id}/secrets/status", f"{READ} Check resolution status for a set of project secret names."),
+    EndpointTool("application_secrets_list", "GET", "/applications/{id}/secrets", f"{READ} List application secret metadata (names and status; never raw secret values)."),
+    EndpointTool("application_secret_create", "POST", "/applications/{id}/secrets", f"{DESTRUCTIVE} Create or store an application secret.", True, True),
+    EndpointTool("application_secret_update", "PUT", "/applications/{id}/secrets/{name}", f"{DESTRUCTIVE} Rotate or update a named application secret.", True, True),
+    EndpointTool("application_secret_usage", "GET", "/applications/{id}/secrets/{name}/usage", f"{READ} List scripts referencing a named application secret."),
+    EndpointTool("application_secrets_status", "POST", "/applications/{id}/secrets/status", f"{READ} Check resolution status for a set of application secret names."),
+    EndpointTool("project_recording_profiles_list", "GET", "/projects/{id}/recording-profiles", f"{READ} List project recording profiles (VuGen-style recording filters, header whitelist, and correlation rules)."),
+
+    # Multi-Format Import Pipeline & Support Matrices
+    EndpointTool("script_k6_support_matrix", "GET", "/scripts/import/k6/support-matrix", f"{READ} Get k6 script import/export support matrix."),
+    EndpointTool("script_openapi_support_matrix", "GET", "/scripts/import/openapi/support-matrix", f"{READ} Get OpenAPI import support matrix."),
+    EndpointTool("script_bruno_support_matrix", "GET", "/scripts/import/bruno/support-matrix", f"{READ} Get Bruno collection import support matrix."),
+    EndpointTool("script_postman_support_matrix", "GET", "/scripts/import/postman/support-matrix", f"{READ} Get Postman collection import support matrix."),
+    EndpointTool("script_asyncapi_support_matrix", "GET", "/scripts/import/asyncapi/support-matrix", f"{READ} Get AsyncAPI import support matrix."),
+    EndpointTool("script_raml_support_matrix", "GET", "/scripts/import/raml/support-matrix", f"{READ} Get RAML import support matrix."),
+    EndpointTool("script_cloudtest_support_matrix", "GET", "/scripts/import/cloudtest/support-matrix", f"{READ} Get SOASTA CloudTest import support matrix."),
+    EndpointTool("script_eventhubs_capture_support_matrix", "GET", "/scripts/import/eventhubs-capture/support-matrix", f"{READ} Get Azure Event Hubs capture import support matrix."),
+    EndpointTool("script_broker_config_support_matrix", "GET", "/scripts/import/broker-config/support-matrix", f"{READ} Get messaging broker-config import support matrix."),
+    EndpointTool("script_bruno_inspect", "POST", "/scripts/import/bruno/inspect", f"{WRITE} Inspect a Bruno collection archive and open a protected import session.", True, False, True),
+    EndpointTool("script_bruno_session_source", "GET", "/scripts/import/bruno/sessions/{id}/source", f"{READ} Read disclosure-safe source from a Bruno import session."),
+    EndpointTool("script_bruno_commit", "POST", "/scripts/import/bruno/commit", f"{WRITE} Commit an inspected Bruno import session into saved scripts.", True, False, True),
+    EndpointTool("script_openapi_commit", "POST", "/scripts/import/openapi/commit", f"{WRITE} Commit selected OpenAPI operations into a saved script.", True, False, True),
+    EndpointTool("script_postman_save", "POST", "/scripts/import/postman/save", f"{WRITE} Save an imported Postman collection as a script.", True, False, True),
+    EndpointTool("script_asyncapi_commit", "POST", "/scripts/import/asyncapi/commit", f"{WRITE} Commit an AsyncAPI import draft into a saved script.", True, False, True),
+    EndpointTool("script_asyncapi_commit_batch", "POST", "/scripts/import/asyncapi/commit-batch", f"{WRITE} Commit multiple AsyncAPI operations into scripts in batch.", True, False, True),
+    EndpointTool("script_enterprise_archive_save", "POST", "/scripts/import/enterprise-script-archive/save", f"{WRITE} Save an imported Enterprise Script Archive result.", True, False, True),
+    EndpointTool("script_import_commit_batch", "POST", "/scripts/import/commit-batch", f"{WRITE} Commit a multi-script import batch.", True, False, True),
+    EndpointTool("script_import_repair_preview", "POST", "/scripts/import/repairs/preview", f"{READ} Preview deterministic repairs on an import draft."),
+    EndpointTool("script_import_repair_apply", "POST", "/scripts/import/repairs/apply", f"{WRITE} Apply deterministic repairs to an import draft.", True),
+    EndpointTool("script_import_parameterize_apply", "POST", "/scripts/import/parameterize/apply", f"{WRITE} Apply parameterization rules to an import draft.", True),
+    EndpointTool("script_import_transport_apply", "POST", "/scripts/import/transport/apply", f"{WRITE} Apply transport/TLS settings to an import draft.", True),
+    EndpointTool("script_import_shared_values_apply", "POST", "/scripts/import/shared-values/apply", f"{WRITE} Extract shared values across an import draft into variables or parameters.", True),
+    EndpointTool("script_k6_export", "POST", "/scripts/export/k6", f"{READ} Export a script as a k6 JavaScript workload."),
+
+    # Scenario Sizing, Drafts, Live Tables & Pre-Run Readiness
+    EndpointTool("scenario_size_from_goal", "POST", "/scenarios/size-from-goal", f"{READ} Compute scenario VUser count and pacing from target TPS, response time, and think time (Little's Law)."),
+    EndpointTool("scenario_traffic_profile_sources", "GET", "/scenarios/traffic-profile/sources", f"{READ} List available production traffic-profile sources for scenario shaping.", default_project=True),
+    EndpointTool("scenario_traffic_profile_analyze", "POST", "/scenarios/traffic-profile/analyze", f"{READ} Analyze production time-series traffic to extract peak/diurnal workload shapes.", default_project=True),
+    EndpointTool("scenario_traffic_profile_derive", "POST", "/scenarios/traffic-profile/derive", f"{READ} Derive a scenario load model from analyzed production traffic.", default_project=True),
+    EndpointTool("scenario_csv_driven_analyze", "POST", "/scenarios/csv-driven/analyze", f"{READ} Analyze a CSV schedule for CSV-driven workload modeling."),
+    EndpointTool("scenario_csv_driven_derive", "POST", "/scenarios/csv-driven/derive", f"{READ} Derive a scenario load model from a CSV workload schedule."),
+    EndpointTool("scenario_runtime_apply_to_groups", "POST", "/scenarios/{id}/runtime/apply-to-groups", f"{WRITE} Propagate scenario-level runtime settings (e.g. extended_log='advanced_trace', think_time, pacing) to scenario groups.", True),
+    EndpointTool("project_scenario_drafts_list", "GET", "/projects/{id}/scenario-drafts", f"{READ} List saved scenario drafts in a project."),
+    EndpointTool("project_scenario_draft_create", "POST", "/projects/{id}/scenario-drafts", f"{WRITE} Create a scenario draft in a project.", True),
+    EndpointTool("project_scenario_draft_delete", "DELETE", "/projects/{id}/scenario-drafts/{draftID}", f"{DESTRUCTIVE} Delete a scenario draft.", True, True),
+    EndpointTool("project_live_tables_list", "GET", "/projects/{id}/live-tables", f"{READ} List project-scoped Live Tables (bounded native queues and shared column tables)."),
+    EndpointTool("project_live_table_create", "POST", "/projects/{id}/live-tables", f"{WRITE} Create a project-scoped Live Table.", True),
+    EndpointTool("project_live_table_get", "GET", "/projects/{id}/live-tables/{tableID}", f"{READ} Get a project-scoped Live Table definition and row counts."),
+    EndpointTool("project_live_table_rows", "GET", "/projects/{id}/live-tables/{tableID}/rows", f"{READ} Read rows from a project-scoped Live Table."),
+    EndpointTool("project_live_table_export", "GET", "/projects/{id}/live-tables/{tableID}/export", f"{READ} Export a project-scoped Live Table."),
+    EndpointTool("project_live_table_mutate", "POST", "/projects/{id}/live-tables/{tableID}/mutations", f"{WRITE} Enqueue, update, or clear rows in a project-scoped Live Table.", True),
+    EndpointTool("project_live_table_lifecycle", "POST", "/projects/{id}/live-tables/{tableID}/lifecycle", f"{WRITE} Transition lifecycle state of a project-scoped Live Table.", True),
+    EndpointTool("run_live_tables_list", "GET", "/tests/{id}/live-tables", f"{READ} List run-scoped Live Tables for a test run."),
+    EndpointTool("run_live_table_rows", "GET", "/tests/{id}/live-tables/{tableID}/rows", f"{READ} Read rows from a run-scoped Live Table."),
+    EndpointTool("run_live_table_export", "GET", "/tests/{id}/live-tables/{tableID}/export", f"{READ} Export a run-scoped Live Table."),
+    EndpointTool("run_live_table_finalize", "POST", "/tests/{id}/live-tables/{tableID}/finalize", f"{WRITE} Finalize a run-scoped Live Table.", True),
+    EndpointTool("run_preflight", "POST", "/tests/preflight", f"{READ} Check pre-run launch readiness (generator capacity and placement, browser density, fleet-pool readiness, quotas and launch windows, and external-runner, Java-runner and import-promotion gates) without creating a test; it does not check secret values or SLAs.", default_project=True),
+
+    # Live Run Diagnostics, Mid-Run Adjustments & Archive Deep-Dive
+    EndpointTool("system_execution_readiness", "GET", "/system/execution-readiness", f"{READ} Check controller execution leadership and generator fleet readiness for starting runs."),
+    EndpointTool("run_preparation_get", "GET", "/tests/{id}/preparation", f"{READ} Get pre-start preparation status (bundle staging, secret resolution, generator readiness) for a queued run."),
+    EndpointTool("run_preparation_start", "POST", "/tests/{id}/preparation", f"{WRITE} Trigger pre-start preparation for a queued run.", True),
+    EndpointTool("run_preparation_cancel", "DELETE", "/tests/{id}/preparation", f"{WRITE} Cancel in-flight preparation for a queued run.", True),
+    EndpointTool("run_live_error_evidence", "GET", "/tests/{id}/errors/evidence", f"{READ} Get live error snapshots and protocol_evidence (including network_trace when captured) during or after a run."),
+    EndpointTool("run_live_transaction_detail", "GET", "/tests/{id}/transactions/live/{event_id}", f"{READ} Get detailed live transaction timing, headers, and protocol evidence for a specific event_id."),
+    EndpointTool("run_dependency_evidence", "GET", "/tests/{id}/dependency-evidence", f"{READ} Get downstream dependency latency and error evidence for a run."),
+    EndpointTool("run_messaging_progress", "GET", "/tests/{id}/messaging-progress", f"{READ} Get live Kafka/JMS/EventHubs messaging producer/consumer progress and lag for a run."),
+    EndpointTool("run_goal_targets_update", "PATCH", "/tests/{id}/goal-targets", f"{WRITE} Dynamically adjust goal-oriented TPS or latency targets during a running test.", True),
+    EndpointTool("run_runtime_adjustment_preview", "POST", "/tests/{id}/runtime-adjustments/preview", f"{READ} Preview mid-run runtime setting adjustments before applying."),
+    EndpointTool("run_runtime_adjustment_apply", "PATCH", "/tests/{id}/runtime-adjustments", f"{WRITE} Apply mid-run runtime setting adjustments to an active test.", True),
+    EndpointTool("run_group_runtime_settings_get", "GET", "/tests/{id}/groups/{group}/runtime-settings", f"{READ} Get live effective runtime settings for a specific group in a test."),
+    EndpointTool("run_group_runtime_settings_update", "PATCH", "/tests/{id}/groups/{group}/runtime-settings", f"{WRITE} Update live runtime settings (e.g. enabling extended_log='advanced_trace') for a group in a running test.", True),
+    EndpointTool("run_group_parameters_get", "GET", "/tests/{id}/groups/{group}/parameters", f"{READ} Get runtime parameter bindings for a group in a test."),
+    EndpointTool("run_group_parameters_update", "PUT", "/tests/{id}/groups/{group}/parameters", f"{WRITE} Update runtime parameter bindings for a group in a test.", True),
+    EndpointTool("run_archive_analysis", "GET", "/tests/{id}/archive/analysis", f"{READ} Get detailed statistical archive analysis for a completed run."),
+    EndpointTool("run_archive_exemplars", "GET", "/tests/{id}/archive/exemplars", f"{READ} Get archived latency and error trace exemplars for a completed run."),
+    EndpointTool("run_archive_native_series", "POST", "/tests/{id}/archive/native-series", f"{READ} Query protocol-native archive time-series (HTTP/3, Kafka, JMS, Database, Browser, HostNet)."),
+    EndpointTool("run_archive_business_keys_lookup", "POST", "/tests/{id}/archive/business-keys/lookup", f"{READ} Look up archived transactions and traces by extracted business key."),
+    EndpointTool("run_archive_browser_resources", "GET", "/tests/{id}/archive/browser-resources", f"{READ} Get archived browser resource waterfall and asset timings."),
+    EndpointTool("run_archive_browser_har", "GET", "/tests/{id}/archive/browser/har", f"{READ} Download synthetic HAR 1.2 archive from retained browser run evidence."),
+    EndpointTool("run_archive_verify", "GET", "/tests/{id}/archive/verify", f"{READ} Verify cryptographic integrity and source-coverage receipts of a run archive."),
+    EndpointTool("run_baseline_candidates", "GET", "/tests/{id}/baseline-candidates", f"{READ} List compatible candidate baseline runs for comparing against a test run."),
+    EndpointTool("run_baseline_comparisons_list", "GET", "/tests/{id}/baseline-comparisons", f"{READ} List saved multi-baseline comparison snapshots for a test run."),
+
+    # Workspace Domains, Infrastructure Targets & Library Sync
+    EndpointTool("domain_list", "GET", "/domains", f"{READ} List workspace domains."),
+    EndpointTool("domain_create", "POST", "/domains", f"{DESTRUCTIVE} Create a workspace domain.", True, True),
+    EndpointTool("domain_get", "GET", "/domains/{id}", f"{READ} Get a workspace domain."),
+    EndpointTool("domain_update", "PUT", "/domains/{id}", f"{DESTRUCTIVE} Update a workspace domain.", True, True),
+    EndpointTool("domain_delete", "DELETE", "/domains/{id}", f"{DESTRUCTIVE} Delete a workspace domain.", True, True),
+    EndpointTool("project_analysis_settings_get", "GET", "/projects/{id}/analysis-settings", f"{READ} Get project root-cause and analysis governance settings."),
+    EndpointTool("project_analysis_settings_update", "PUT", "/projects/{id}/analysis-settings", f"{WRITE} Update project root-cause and analysis governance settings.", True),
+    EndpointTool("system_clusters_list", "GET", "/system/clusters", f"{READ} List registered external Kubernetes/AKS generator clusters."),
+    EndpointTool("system_cluster_get", "GET", "/system/clusters/{id}", f"{READ} Get a registered external Kubernetes/AKS cluster connection."),
+    EndpointTool("system_cloud_connections_list", "GET", "/system/cloud-connections", f"{READ} List registered cloud provider connections (Azure/AWS)."),
+    EndpointTool("system_execution_targets_list", "GET", "/system/execution-targets", f"{READ} List async compute execution targets (Kubernetes, ACA, ACI, ECS Fargate)."),
+    EndpointTool("library_catalog_get", "GET", "/library/catalog", f"{READ} List shared library assets (scripts, scenarios, rulesets, components).", default_project=True),
+
     EndpointTool("list_tests", "GET", "/tests", f"{READ} Compatibility alias for run_list.", default_project=True),
     EndpointTool("get_test_details", "GET", "/tests/{id}", f"{READ} Compatibility alias for run_get."),
     EndpointTool("start_test", "POST", "/tests/{id}/start", f"{WRITE} Compatibility alias for run_start.", True),
@@ -366,11 +506,21 @@ FILE_IMPORTERS = {
     "recorder": "/scripts/import/recorder",
     "openapi": "/scripts/import/openapi",
     "wsdl": "/scripts/import/wsdl",
+    "postman": "/scripts/import/postman",
+    "k6": "/scripts/import/k6",
+    "asyncapi": "/scripts/import/asyncapi",
+    "raml": "/scripts/import/raml",
+    "cloudtest": "/scripts/import/cloudtest",
+    "eventhubs_capture": "/scripts/import/eventhubs-capture",
+    "salesforce": "/scripts/import/salesforce",
+    "broker_config": "/scripts/import/broker-config",
 }
 
 VALIDATE_IMPORTERS = {
     "enterprise_script_archive": "/scripts/import/enterprise-script-archive/validate",
     "jmeter": "/scripts/import/jmeter/validate",
+    "postman": "/scripts/import/postman/validate",
+    "recorder": "/scripts/import/recorder/validate",
 }
 
 
@@ -470,7 +620,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         options: dict[str, Any] | None = None,
         confirm: bool = False,
     ) -> str:
-        """Import an Enterprise Script Archive, JMeter, DevWeb, HAR, recorder, OpenAPI, or WSDL file. Mutates APEX Load and requires confirm=true."""
+        """Import an Enterprise Script Archive, JMeter, DevWeb, HAR, recorder, OpenAPI, WSDL, Postman, k6, AsyncAPI, RAML, CloudTest, EventHubs capture, Salesforce, or broker-config file. Mutates APEX Load and requires confirm=true."""
         return await run_file_import_tool(importer, file_path, options=options, confirm=confirm)
 
     async def script_validate_import_file(
@@ -478,7 +628,7 @@ def register_endpoint_tools(mcp: Any) -> None:
         file_path: str,
         options: dict[str, Any] | None = None,
     ) -> str:
-        """Validate an Enterprise Script Archive or JMeter file import without saving a script."""
+        """Validate an Enterprise Script Archive, JMeter, Postman, or recorder file import without saving a script."""
         return await run_file_import_tool(importer, file_path, options=options, validate_only=True)
 
     mcp.tool(name="script_import_file", description=script_import_file.__doc__)(script_import_file)
@@ -513,3 +663,15 @@ def register_resources(mcp: Any) -> None:
     @mcp.resource("apexload://protocol-bundles/support-matrix", name="APEX Load Protocol Bundle Support", mime_type="application/json")
     async def protocol_bundle_support() -> str:
         return json_text(await APEXLoadClient().request("GET", "/protocol-bundles/support-matrix"))
+
+    @mcp.resource("apexload://dsl/actions", name="APEX Load DSL Action Catalog", mime_type="application/json")
+    async def dsl_actions_resource() -> str:
+        return json_text(await APEXLoadClient().request("GET", "/dsl/actions"))
+
+    @mcp.resource("apexload://dsl/config-defaults", name="APEX Load DSL Config Defaults", mime_type="application/json")
+    async def dsl_config_defaults_resource() -> str:
+        return json_text(await APEXLoadClient().request("GET", "/dsl/config-defaults"))
+
+    @mcp.resource("apexload://protocols/native-support-matrix", name="APEX Load Native Protocol Support Matrix", mime_type="application/json")
+    async def native_protocols_support_resource() -> str:
+        return json_text(await APEXLoadClient().request("GET", "/protocols/native-support-matrix"))

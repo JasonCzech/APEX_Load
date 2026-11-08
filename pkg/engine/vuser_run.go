@@ -406,18 +406,9 @@ func (run *vuserRun) prepareIteration() (ready, skipped bool) {
 			run.logger.Error("init after the session renewal failed", "iteration", run.iteration+1)
 			return false, false
 		}
-		newUser := browserEmulationNewUserEachIteration(run.cfg)
-		if newUser || (run.vu.Script.Protocol == "http" && run.cfg.HTTP.ClearCookiesPerIter != nil && *run.cfg.HTTP.ClearCookiesPerIter) {
-			if err := run.vu.clearProtocolCookies(run.iterationBoundaryCtx); err != nil {
-				run.logger.Error("iteration cookie clear failed", "iteration", run.iteration+1, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
-				return false, false
-			}
-		}
-		if newUser && (run.cfg.BrowserEmulation.Cache.ClearCacheForNewUser == nil || *run.cfg.BrowserEmulation.Cache.ClearCacheForNewUser) {
-			if err := run.vu.clearProtocolCache(run.iterationBoundaryCtx); err != nil {
-				run.logger.Error("iteration cache clear failed", "iteration", run.iteration+1, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
-				return false, false
-			}
+		if step, err := run.vu.clearIterationUserState(run.iterationBoundaryCtx, run.cfg); err != nil {
+			run.logger.Error("iteration "+step+" failed", "iteration", run.iteration+1, "err", scrubSensitiveError(err, run.vu.RedactionConfig))
+			return false, false
 		}
 	}
 	if err := run.vu.beginLiveTableIteration(run.iterationBoundaryCtx); err != nil {

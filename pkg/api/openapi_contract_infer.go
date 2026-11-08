@@ -1644,6 +1644,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		visiting[definitionKey] = true
 		schema := openAPISchemaForASTTypeInPackage(definition, typeDefinitions, visiting, depth+1, currentPackage)
 		applyBrowserEvidenceWireNullability(currentPackage, value.Name, &schema)
+		applyScriptDebugRequestDocs(currentPackage, value.Name, &schema)
 		delete(visiting, definitionKey)
 		return schema
 	case *ast.StarExpr:

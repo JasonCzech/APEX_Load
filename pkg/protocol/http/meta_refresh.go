@@ -261,6 +261,7 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		cacheCheckNewerVersions:    h.cacheCheckNewerVersions,
 		captureCorrelationEvidence: h.captureCorrelationEvidence,
 		captureReplayNetwork:       h.captureReplayNetwork,
+		captureNetworkTrace:        h.captureNetworkTrace,
 		unredactedDebugSnapshots:   h.unredactedDebugSnapshots,
 		replayHAR:                  h.replayHAR,
 	}

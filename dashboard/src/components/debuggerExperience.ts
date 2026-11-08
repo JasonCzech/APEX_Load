@@ -17,14 +17,32 @@ export interface DebugRunRecord {
   dataSourceCount?: number
   failurePolicy: string
   inputs?: Array<{ name: string; source: string; selection: string; update?: string; startRow?: number; seed?: number }>
+  /** The iteration count the run requested (1 unless a Run N iterations mode asked for more). */
+  iterations?: number
 }
-export function captureScript(script: ScriptDefinition, capture: DebugCapture = 'diagnostic'): ScriptDefinition {
+export function captureScript(script: ScriptDefinition, capture: DebugCapture = 'diagnostic', networkTrace = true): ScriptDefinition {
   // Other protocols do not implement successful message detail. Leave their
   // native evidence mechanisms intact instead of sending unsupported settings.
   if (capture === 'script' || !['http', 'soap', 'java_http'].includes(script.protocol)) return script
-  return { ...script, config: { ...script.config, results: { ...script.config.results, message_detail: capture === 'errors'
-    ? { ...script.config.results?.message_detail, mode: 'errors' }
-    : { include_resources: script.config.results?.message_detail?.include_resources, mode: 'sampled', sample_rate: 1, max_items: 100, max_item_bytes: 65536, max_total_bytes: 4194304 } } } }
+  const existingOptions = script.config.log?.extended_options || []
+  const extendedOptions = !networkTrace
+    ? existingOptions.filter(opt => opt !== 'advanced_trace')
+    : capture === 'diagnostic' && !existingOptions.includes('advanced_trace')
+      ? [...existingOptions, 'advanced_trace']
+      : existingOptions
+  return {
+    ...script,
+    config: {
+      ...script.config,
+      ...(capture === 'diagnostic' || !networkTrace ? { log: { ...script.config.log, extended_options: extendedOptions } } : {}),
+      results: {
+        ...script.config.results,
+        message_detail: capture === 'errors'
+          ? { ...script.config.results?.message_detail, mode: 'errors' }
+          : { include_resources: script.config.results?.message_detail?.include_resources, mode: 'sampled', sample_rate: 1, max_items: 100, max_item_bytes: 65536, max_total_bytes: 4194304 },
+      },
+    },
+  }
 }
 /**
  * @param starting the start request is still out: the controller has not
@@ -103,7 +121,7 @@ export function safeProfile(name: string, options: ReplayOptionsState): DebugPro
   // Whitelist only execution controls. Never persist variables, URLs, group
   // names, captured evidence or copied credentials in named presets.
   const afterFailure = (['test-run', 'continue', 'stop'] as const).find(value => value === options.afterFailure) || 'test-run'
-  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic', afterFailure,
+  return { name: name.trim().slice(0, 60), options: { ignoreThinkTime: options.ignoreThinkTime, startPaused: options.startPaused, breakOnFailure: options.breakOnFailure, logLevel: options.logLevel, capture: options.capture || 'diagnostic', networkTrace: options.networkTrace !== false, afterFailure,
   harBodies: (['none', 'request', 'response', 'both'] as const).find(value => value === options.harBodies) || 'none',
   harRedirects: options.harRedirects !== false, harTimings: options.harTimings !== false,
   harMaxBodyBytes: [16384, 65536, 262144, 1048576].includes(options.harMaxBodyBytes || 0) ? options.harMaxBodyBytes : 65536,

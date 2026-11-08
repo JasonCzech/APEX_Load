@@ -90,7 +90,7 @@ export default function ScriptBrowserEvidence({ event, running, variables, proje
     {!event ? (
       <>
         <h3>Browser evidence</h3>
-        <p>{running ? 'Waiting for the first action. Select a completed action to inspect its evidence.' : 'Debug one iteration to capture screenshots, assertions, DOM, network, and variables. Configure the target and capture options in Runtime Settings.'}</p>
+        <p>{running ? 'Waiting for the first action. Select a completed action to inspect its evidence.' : 'Choose Debug > Run a single iteration to capture screenshots, assertions, DOM, network, and variables. Configure the target and capture options in Runtime Settings.'}</p>
       </>
     ) : (
       <>

@@ -16,24 +16,27 @@ import (
 // The observer sits above the existing policy transport. It never fetches a
 // target, changes redirect decisions, or consumes a body ahead of execution.
 type replayHARTransport struct {
-	base    http.RoundTripper
-	capture *protocol.ReplayHARCapture
-	mu      sync.Mutex
-	records []*replayHARRecord
+	base         http.RoundTripper
+	capture      *protocol.ReplayHARCapture
+	captureTrace bool
+	mu           sync.Mutex
+	records      []*replayHARRecord
 }
 type replayHARRecord struct {
 	entry        protocol.NetworkEntry
 	response     *http.Response
+	trace        *httpTraceCollector
 	intermediate bool
 	observed     bool
 	mu           sync.Mutex
 }
 
-func newReplayHARTransport(base http.RoundTripper, c *protocol.ReplayHARCapture) *replayHARTransport {
+func newReplayHARTransport(base http.RoundTripper, c *protocol.ReplayHARCapture, captureTrace ...bool) *replayHARTransport {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return &replayHARTransport{base: base, capture: c}
+	withTrace := len(captureTrace) > 0 && captureTrace[0]
+	return &replayHARTransport{base: base, capture: c, captureTrace: withTrace}
 }
 func harHeaders(h http.Header) map[string]string {
 	out := map[string]string{}
@@ -48,23 +51,30 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 		r.mu.Unlock()
 		return r.base.RoundTrip(req)
 	}
-	record := &replayHARRecord{entry: protocol.NetworkEntry{URL: req.URL.String(), Method: req.Method, HAR: protocol.NewReplayHARExchange()}}
+	var hopTrace *httpTraceCollector
+	if r.captureTrace {
+		hopTrace = newHTTPTraceCollector()
+	}
+	record := &replayHARRecord{
+		entry: protocol.NetworkEntry{URL: req.URL.String(), Method: req.Method, HAR: protocol.NewReplayHARExchange()},
+		trace: hopTrace,
+	}
 	r.records = append(r.records, record)
 	r.mu.Unlock()
 	c := r.capture
 	observed := req.Clone(req.Context())
-	if c != nil {
+	if c != nil || r.captureTrace {
 		record.entry.RequestHeaders = harHeaders(req.Header)
-		if c.Options.KeepBody(true) {
-			if req.Body == nil {
-				record.entry.HAR.RequestBody = c.Body(nil, req.Header.Get("Content-Type"), true)
-			} else {
-				observed.Body = &replayHARBodyReader{ReadCloser: req.Body, limit: c.Options.MaxBodyBytes, done: func(data []byte, complete bool) {
-					record.mu.Lock()
-					defer record.mu.Unlock()
-					record.entry.HAR.RequestBody = c.Body(data, req.Header.Get("Content-Type"), complete)
-				}}
-			}
+	}
+	if c != nil && c.Options.KeepBody(true) {
+		if req.Body == nil {
+			record.entry.HAR.RequestBody = c.Body(nil, req.Header.Get("Content-Type"), true)
+		} else {
+			observed.Body = &replayHARBodyReader{ReadCloser: req.Body, limit: c.Options.MaxBodyBytes, done: func(data []byte, complete bool) {
+				record.mu.Lock()
+				defer record.mu.Unlock()
+				record.entry.HAR.RequestBody = c.Body(data, req.Header.Get("Content-Type"), complete)
+			}}
 		}
 	}
 	var phaseMu sync.Mutex
@@ -95,28 +105,93 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 	// A transport-level policy or header rejection is not retained traffic.
 	// Keep connection attempts (including failed dials) even with timings off.
 	var attempted atomic.Bool
+	wantTimings := (c != nil && c.Options.Timings) || (c == nil && r.captureTrace)
 	trace := &httptrace.ClientTrace{GetConn: func(string) { attempted.Store(true) }}
-	if c != nil && c.Options.Timings {
+	if wantTimings || hopTrace != nil {
 		t := trace
-		*t = httptrace.ClientTrace{GetConn: t.GetConn,
-			DNSStart: func(httptrace.DNSStartInfo) { mark("dns") }, DNSDone: func(httptrace.DNSDoneInfo) { end("dns") },
-			ConnectStart: func(string, string) { mark("connect") }, ConnectDone: func(string, string, error) { end("connect") },
-			TLSHandshakeStart: func() { mark("tls") }, TLSHandshakeDone: func(tls.ConnectionState, error) { end("tls") },
-			GotConn: func(httptrace.GotConnInfo) { mark("send") }, WroteRequest: func(httptrace.WroteRequestInfo) { end("send"); mark("request_wait") },
-			GotFirstResponseByte: func() { end("request_wait"); mark("response") },
+		*t = httptrace.ClientTrace{
+			GetConn: t.GetConn,
+			DNSStart: func(httptrace.DNSStartInfo) {
+				if wantTimings {
+					mark("dns")
+				}
+			},
+			DNSDone: func(info httptrace.DNSDoneInfo) {
+				if wantTimings {
+					end("dns")
+				}
+				hopTrace.onDNSDone(info)
+			},
+			ConnectStart: func(string, string) {
+				if wantTimings {
+					mark("connect")
+				}
+			},
+			ConnectDone: func(netw, addr string, err error) {
+				if wantTimings {
+					end("connect")
+				}
+				hopTrace.onConnectDone(netw, addr, err)
+			},
+			TLSHandshakeStart: func() {
+				if wantTimings {
+					mark("tls")
+				}
+			},
+			TLSHandshakeDone: func(cs tls.ConnectionState, err error) {
+				if wantTimings {
+					end("tls")
+				}
+				hopTrace.onTLSHandshakeDone(cs, err)
+			},
+			GotConn: func(info httptrace.GotConnInfo) {
+				if wantTimings {
+					mark("send")
+				}
+				hopTrace.onGotConn(info)
+			},
+			Wait100Continue: func() {
+				hopTrace.onWait100Continue()
+			},
+			Got100Continue: func() {
+				hopTrace.onGot100Continue()
+			},
+			WroteHeaders: func() {
+				hopTrace.onWroteHeaders()
+			},
+			WroteRequest: func(httptrace.WroteRequestInfo) {
+				hopTrace.onWait100ContinueDone()
+				if wantTimings {
+					end("send")
+					mark("request_wait")
+				}
+			},
+			GotFirstResponseByte: func() {
+				hopTrace.onWait100ContinueDone()
+				if wantTimings {
+					end("request_wait")
+					mark("response")
+				}
+			},
 		}
 	}
 	observed = observed.WithContext(httptrace.WithClientTrace(observed.Context(), trace))
 	resp, err := r.base.RoundTrip(observed)
+	if hopTrace != nil {
+		hopTrace.observeExchange(req, resp, "", 0, 0)
+	}
 	record.mu.Lock()
 	if resp != nil {
 		record.entry.StatusCode = resp.StatusCode
-		if c != nil {
+		if c != nil || r.captureTrace {
 			record.entry.ResponseHeaders = harHeaders(resp.Header)
 		}
 	}
 	if err != nil {
 		record.entry.FailureKind = "transport"
+	}
+	if hopTrace != nil {
+		record.entry.Trace = hopTrace.snapshot()
 	}
 	record.mu.Unlock()
 	r.mu.Lock()
@@ -130,11 +205,27 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 		}
 	}
 	r.mu.Unlock()
+	var respReader *replayHARBodyReader
 	finish := func(data []byte, complete bool) {
-		end("response")
+		if wantTimings {
+			end("response")
+		}
+		totalBytes := int64(0)
+		if respReader != nil {
+			totalBytes = respReader.bytesRead()
+		}
+		if hopTrace != nil && totalBytes > 0 {
+			hopTrace.setBodyBytes(totalBytes, 0)
+		}
 		record.mu.Lock()
 		defer record.mu.Unlock()
-		if c != nil && c.Options.Timings {
+		if record.entry.DurationMs == 0 && !start.IsZero() {
+			record.entry.DurationMs = float64(time.Since(start)) / float64(time.Millisecond)
+		}
+		if record.entry.BytesReceived == 0 && totalBytes > 0 {
+			record.entry.BytesReceived = totalBytes
+		}
+		if wantTimings {
 			phaseMu.Lock()
 			record.entry.HAR.Phases = harConnectIncludesTLS(phases)
 			phaseMu.Unlock()
@@ -146,13 +237,17 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 				record.entry.HAR.ResponseBody = c.Body(data, resp.Header.Get("Content-Type"), complete)
 			}
 		}
+		if hopTrace != nil {
+			record.entry.Trace = hopTrace.snapshot()
+		}
 	}
 	if resp != nil && resp.Body != nil {
 		limit := 0
 		if c != nil && c.Options.KeepBody(false) {
 			limit = c.Options.MaxBodyBytes
 		}
-		resp.Body = &replayHARBodyReader{ReadCloser: resp.Body, limit: limit, done: finish}
+		respReader = &replayHARBodyReader{ReadCloser: resp.Body, limit: limit, done: finish}
+		resp.Body = respReader
 	} else {
 		finish(nil, err == nil)
 	}
@@ -166,7 +261,11 @@ func (r *replayHARTransport) entries() []protocol.NetworkEntry {
 		if !record.observed {
 			continue
 		}
-		if record.intermediate && (r.capture == nil || !r.capture.Options.Redirects) {
+		keepRedirects := r.captureTrace
+		if r.capture != nil {
+			keepRedirects = r.capture.Options.Redirects
+		}
+		if record.intermediate && !keepRedirects {
 			continue
 		}
 		record.mu.Lock()
@@ -179,19 +278,29 @@ func (r *replayHARTransport) entries() []protocol.NetworkEntry {
 
 type replayHARBodyReader struct {
 	io.ReadCloser
-	limit    int
-	mu       sync.Mutex
-	closed   bool
-	data     []byte
-	complete bool
-	once     sync.Once
-	done     func([]byte, bool)
+	limit      int
+	mu         sync.Mutex
+	closed     bool
+	data       []byte
+	totalBytes int64
+	complete   bool
+	once       sync.Once
+	done       func([]byte, bool)
+}
+
+func (b *replayHARBodyReader) bytesRead() int64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.totalBytes
 }
 
 func (b *replayHARBodyReader) Read(p []byte) (int, error) {
 	n, err := b.ReadCloser.Read(p)
 	b.mu.Lock()
 	if !b.closed {
+		if n > 0 {
+			b.totalBytes += int64(n)
+		}
 		if b.limit > 0 && len(b.data) <= b.limit {
 			keep := min(n, b.limit+1-len(b.data))
 			b.data = append(b.data, p[:keep]...)
@@ -213,7 +322,9 @@ func (b *replayHARBodyReader) finish() {
 		b.data = nil
 		b.closed = true
 		b.mu.Unlock()
-		b.done(data, complete)
+		if b.done != nil {
+			b.done(data, complete)
+		}
 	})
 }
 func (b *replayHARBodyReader) Close() error { err := b.ReadCloser.Close(); b.finish(); return err }
@@ -221,15 +332,23 @@ func (b *replayHARBodyReader) Close() error { err := b.ReadCloser.Close(); b.fin
 // Execution already decodes the final response under its own bounded reader.
 // Reuse that result instead of decoding or fetching content a second time.
 func (r *replayHARTransport) decodedBody(resp *http.Response, data []byte, complete bool) {
-	if r.capture == nil || !r.capture.Options.KeepBody(false) {
+	if (r.capture == nil || !r.capture.Options.KeepBody(false)) && !r.captureTrace {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	for _, record := range r.records {
 		if record.response == resp {
+			if record.trace != nil {
+				record.trace.setBodyBytes(0, int64(len(data)))
+			}
 			record.mu.Lock()
-			record.entry.HAR.ResponseBody = r.capture.Body(data, resp.Header.Get("Content-Type"), complete)
+			if r.capture != nil && r.capture.Options.KeepBody(false) {
+				record.entry.HAR.ResponseBody = r.capture.Body(data, resp.Header.Get("Content-Type"), complete)
+			}
+			if record.trace != nil {
+				record.entry.Trace = record.trace.snapshot()
+			}
 			record.mu.Unlock()
 			return
 		}

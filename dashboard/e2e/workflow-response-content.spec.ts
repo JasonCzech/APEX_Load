@@ -143,9 +143,10 @@ async function reopenSavedScript(page: Page, workspace: Workspace, id: string) {
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible()
 }
 
-// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response.
+// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response
+// (the network trace beside it is a separate disclosure, details.replay-network-trace).
 async function openProtocolEvidence(page: Page) {
-  const disclosure = page.locator('details.replay-protocol-evidence')
+  const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
   await expect(disclosure).toBeVisible()
   if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
 }
@@ -318,6 +319,7 @@ test('HAR decoded base64 content retains its correlations and real gzip replay e
     await reopenSavedScript(page, workspace, id)
     await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     expect(target.stats).toMatchObject({ formCalls: 1, submitCalls: 1, accepted: 1 })
     expect(target.stats.encodedBytes).toBeGreaterThan(0)
@@ -435,6 +437,7 @@ test('gzip SSE collection extracts sampled events and visibly qualifies the part
     await options.getByRole('combobox', { name: 'Evidence capture', exact: true }).selectOption('diagnostic')
     await options.getByRole('button', { name: 'Done', exact: true }).click()
     await page.locator('.topbar-debug-action-run').click()
+    await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     expect(target.stats).toMatchObject({ streamCalls: 1, streamConsumerCalls: 1, acceptedStreamConsumers: 1, streamEndCalls: 0 })
     await selectReplayAction(page, 'Collect compressed events')

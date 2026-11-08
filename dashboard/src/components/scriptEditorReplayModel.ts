@@ -145,6 +145,15 @@ export function humanizeStepSegment(segment: string): string {
   }
 }
 
+/**
+ * Whether Run to breakpoint has a breakpoint to stop at: an enabled one that
+ * the start payload keeps. A one-shot run-to target left by an interrupted run
+ * is dropped from that payload, so it does not count.
+ */
+export function hasRunToBreakpointTarget(breakpoints: readonly ScriptDebugBreakpoint[]): boolean {
+  return breakpoints.some(bp => !bp.disabled && !bp.once)
+}
+
 export function normalizeStoredBreakpoints(raw: unknown): ScriptDebugBreakpoint[] {
   if (!Array.isArray(raw)) return []
   const breakpoints: ScriptDebugBreakpoint[] = []
@@ -252,6 +261,7 @@ export const DEBUG_LOG_RENDER_CHAR_LIMIT = 64 * 1024
 
 const DEBUG_HTTP_METHOD_PATTERN = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)(\S+)(.*)$/i
 const DEBUG_HTTP_STATUS_PATTERN = /^(HTTP\/\S+\s+)(\d{3})(.*)$/i
+const DEBUG_SECTION_HEADER_PATTERN = /^(REQUEST|HEADERS|BODY|RESPONSE|RESPONSE HEADERS|RESPONSE BODY|TRANSPORT|TIMINGS|TLS|COOKIES & REDIRECTS|EXTRACTIONS|BROWSER CONSOLE|BROWSER NETWORK|NETWORK HOPS|RESOURCES)\s*$/
 const DEBUG_HEADER_PATTERN = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+)(:\s*)(.*)$/
 const DEBUG_LITERAL_PATTERN = /"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?\b|[\u005b\u005d{},:]/g
 
@@ -278,6 +288,10 @@ function tokenizeDebugLiterals(text: string): DebugLogToken[] {
 }
 
 export function tokenizeDebugLogRawLine(line: string): DebugLogToken[] {
+  if (DEBUG_SECTION_HEADER_PATTERN.test(line)) {
+    return [{ kind: 'header', text: line }]
+  }
+
   const request = line.match(DEBUG_HTTP_METHOD_PATTERN)
   if (request) {
     return [

@@ -57,6 +57,17 @@ var sensitiveParamPattern = regexp.MustCompile(`(?i)((?:^|[&?;\s])(?:password|pa
 // (redactSensitiveJSON) handles valid JSON; this generic regex is the fallback
 // for JSON-ish bodies that do not parse strictly. Its field names are classified
 // with credential.SensitiveName instead of maintaining a second vocabulary.
+// unquoteJSONFieldName decodes a field name captured by the JSON field
+// patterns, whose name group sits inside the source's own quotes. Decoding
+// that quoted span from the source, rather than wrapping the captured bytes in
+// new quotes, keeps the result identical without building a quoted string.
+func unquoteJSONFieldName(value string, start, end int) (string, error) {
+	if start < 1 || end >= len(value) || value[start-1] != '"' || value[end] != '"' {
+		return "", strconv.ErrSyntax
+	}
+	return strconv.Unquote(value[start-1 : end+1])
+}
+
 var (
 	jsonFallbackFieldPattern = regexp.MustCompile(`(?is)("((?:\\.|[^"\\])*)"\s*:\s*)("(?:\\.|[^"\\])*"|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|true|false|null)(\s*(?:[,}\]]|$))`)
 	jsonStringFieldStart     = regexp.MustCompile(`(?is)("((?:\\.|[^"\\])*)"\s*:\s*")`)
@@ -1466,7 +1477,7 @@ func redactJSONFallbackFields(value string, sensitiveName func(string) bool) str
 	// source strings twice and allocates a second set of captures per field.
 	spans := make([]redactionSpan, 0, 1)
 	for _, match := range jsonFallbackFieldPattern.FindAllStringSubmatchIndex(value, -1) {
-		name, err := strconv.Unquote(`"` + value[match[4]:match[5]] + `"`)
+		name, err := unquoteJSONFieldName(value, match[4], match[5])
 		if err == nil && sensitiveName(name) {
 			spans = append(spans, redactionSpan{start: match[6], end: match[7]})
 		}
@@ -1488,7 +1499,7 @@ func redactMalformedJSONBareScalars(value string, sensitiveName func(string) boo
 		if len(match) != 6 {
 			continue
 		}
-		name, err := strconv.Unquote(`"` + value[match[4]:match[5]] + `"`)
+		name, err := unquoteJSONFieldName(value, match[4], match[5])
 		if err != nil || !sensitiveName(name) {
 			continue
 		}
@@ -1563,7 +1574,7 @@ func redactMalformedJSONStrings(value string, sensitiveName func(string) bool) s
 		if len(match) != 6 {
 			continue
 		}
-		name, err := strconv.Unquote(`"` + value[match[4]:match[5]] + `"`)
+		name, err := unquoteJSONFieldName(value, match[4], match[5])
 		if err != nil || !sensitiveName(name) {
 			continue
 		}
@@ -1636,7 +1647,7 @@ func redactJSONCompoundFields(value string, sensitiveName func(string) bool) str
 		if len(match) != 6 {
 			continue
 		}
-		name, err := strconv.Unquote(`"` + value[match[4]:match[5]] + `"`)
+		name, err := unquoteJSONFieldName(value, match[4], match[5])
 		if err != nil || !sensitiveName(name) {
 			continue
 		}

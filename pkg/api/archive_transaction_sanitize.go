@@ -233,6 +233,15 @@ func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
 	case map[string]any:
 		out := make(map[string]any, len(typed))
 		for key, item := range typed {
+			if key == "network_trace" {
+				// Its cookie name lists have keys containing "cookie"; the
+				// typed model keeps them lists of value-scrubbed names
+				// instead of a redaction string, and drops unknown keys.
+				if trace := sanitizeArchivedNetworkTrace(item, policy); trace != nil {
+					out[key] = trace
+				}
+				continue
+			}
 			if scrub.SensitiveName(key) {
 				out[key] = scrub.Redacted
 			} else {
@@ -243,6 +252,18 @@ func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
 	default:
 		return sanitizeArchivedTypedEvidence(value, policy)
 	}
+}
+
+func sanitizeArchivedNetworkTrace(value any, policy scrub.Policy) map[string]any {
+	trace := protocol.HTTPNetworkTraceFromEvidence(value)
+	if trace == nil {
+		return nil
+	}
+	evidence := trace.TransformStrings(func(text string) string { return scrub.ValueLabel(text, policy) }).EvidenceMap()
+	if len(evidence) == 0 {
+		return nil
+	}
+	return evidence
 }
 
 // sanitizeArchivedTypedEvidence scrubs evidence a protocol adapter recorded as a
