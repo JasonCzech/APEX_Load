@@ -140,11 +140,25 @@ const mib = (value) => value * 1024 * 1024
 // Move the JS per-asset ceiling to 905 KiB raw / 246 KiB gzip and aggregate
 // JS to 9.5 MiB raw / 2.76 MiB gzip (~2% headroom); CSS and every route and
 // startup guard stay unchanged.
+//
+// 2026-11-07 Debugger waterfall and run modes. PR #329 adds the Debug Timeline
+// waterfall (debugTimelineWaterfallModel.ts: redirect hop chains, phase spans,
+// connection reuse) and PR #330 the Debug run-mode menu and HTTP network trace
+// evidence. Both render inside the Debug workspace, so they belong to the
+// deferred ScriptEditor chunk: #329 alone measures 900.54 KiB raw / 246.16 KiB
+// gzip, #330 alone 899.33 KiB raw / 245.29 KiB gzip, and the two together add
+// about 25 KiB raw / 7.8 KiB gzip to the 11-06 baseline (~912.5 KiB raw /
+// ~249.6 KiB gzip). Aggregate JS (9.34 MiB raw / 2.70 MiB gzip each), Initial
+// shell (204.89 KiB gzip), Scripts route (236.94 KiB gzip) and Test execution
+// route (420.45 KiB gzip) stay within their existing guards. Move the JS
+// per-asset ceiling to 930 KiB raw / 254 KiB gzip (~2% headroom over both
+// PRs, so either may merge first); aggregate JS, CSS and every route and
+// startup guard stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(905),
-    maxAssetGzipBytes: kib(246),
+    maxAssetBytes: kib(930),
+    maxAssetGzipBytes: kib(254),
     maxTotalBytes: mib(9.5),
     maxTotalGzipBytes: mib(2.76),
   }),

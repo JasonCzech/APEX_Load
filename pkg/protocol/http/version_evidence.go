@@ -1,8 +1,6 @@
 package http
 
-import (
-	"github.com/jasonczech/apexload/pkg/protocol"
-)
+import "github.com/jasonczech/apexload/pkg/protocol"
 
 // Native HTTP producers bound their own typed Aura reports and scalar resource
 // and warning observations. Preserve those types and bounds while adding the
@@ -13,7 +11,7 @@ func buildHTTPProtocolEvidence(_ *protocol.Action, result *protocol.Result) map[
 	if result == nil {
 		return nil
 	}
-	evidence := make(map[string]any, len(result.ProtocolEvidence)+4)
+	evidence := make(map[string]any, len(result.ProtocolEvidence))
 	for key, value := range result.ProtocolEvidence {
 		evidence[key] = value
 	}
@@ -56,7 +54,7 @@ func buildHTTPProtocolTimings(existing any, result *protocol.Result) map[string]
 	}
 	prev, _ := existing.(map[string]any)
 	measured := protocol.EvidenceTimings(result)
-	timings := make(map[string]any, len(prev)+len(measured)+2)
+	timings := make(map[string]any, len(measured))
 	for key, value := range prev {
 		timings[key] = value
 	}
