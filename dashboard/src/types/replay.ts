@@ -11,16 +11,86 @@ export interface BrowserReplayConsoleEntry {
   timestamp?: string
 }
 
+/**
+ * Bounded HTTP transport trace (pkg/protocol HTTPNetworkTrace). The
+ * request-level trace describes the final hop's connection; per-hop traces on
+ * network entries cover earlier hops. List fields are always arrays on the
+ * wire; cookie lists carry names only.
+ */
+export interface HTTPNetworkTrace {
+  dns_resolved_ips?: string[]
+  dns_coalesced?: boolean
+  remote_addr?: string
+  local_addr?: string
+  /** true: pooled socket; false: fresh socket; absent: no connection observed. */
+  connection_reused?: boolean
+  was_idle?: boolean
+  idle_time_ms?: number
+  wait_100_continue_ms?: number
+  got_100_continue?: boolean
+  tls_version?: string
+  tls_cipher_suite?: string
+  tls_negotiated_proto?: string
+  tls_server_name?: string
+  tls_did_resume?: boolean
+  tls_cert_subject?: string
+  tls_cert_issuer?: string
+  tls_cert_expiry?: string
+  http_protocol?: string
+  request_compression?: string
+  content_encoding?: string
+  transfer_encoding?: string[]
+  encoded_body_bytes?: number
+  decoded_body_bytes?: number
+  cookies_sent_count?: number
+  cookie_names_sent?: string[]
+  set_cookies_received_count?: number
+  set_cookie_names_received?: string[]
+  cross_origin_redirect?: boolean
+  stripped_redirect_headers?: string[]
+}
+
+export interface ReplayHARPhase {
+  name: 'dns' | 'connect' | 'tls' | 'send' | 'request_wait' | 'response' | string
+  start_ms?: number | null
+  end_ms?: number | null
+  unavailable_reason?: string
+}
+
+export interface ReplayHARBody {
+  size_bytes?: number | null
+  text?: string
+  state: string
+  mime_type?: string
+}
+
+export interface ReplayHARExchange {
+  id?: string
+  started_at?: string
+  phases?: ReplayHARPhase[] | null
+  request_body?: ReplayHARBody | null
+  response_body?: ReplayHARBody | null
+}
+
 export interface BrowserReplayNetworkEntry {
   /** Per-request browser evidence; carries the negotiated protocol when document evidence capture is on. */
   browser_evidence?: import('./browserResourceEvidence').BrowserResourceEvidenceV2 | null
+  har?: ReplayHARExchange | null
+  trace?: HTTPNetworkTrace | null
+  failure_kind?: string
   url?: string
   method?: string
   status_code?: number
   resource_type?: string
   duration_ms?: number
   bytes_received?: number
+  request_headers?: Record<string, string>
+  request_body?: string
+  request_body_encoding?: string
+  request_body_truncated?: boolean
+  response_headers?: Record<string, string>
 }
+
 
 export interface BrowserReplayDomSummary {
   title?: string

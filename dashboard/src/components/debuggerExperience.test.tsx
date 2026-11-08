@@ -201,10 +201,56 @@ describe('debugger operator experience', () => {
   })
 
   it('renders protocol-appropriate history and navigable timeline controls', () => {
-    const replay = report([event({ status_code: 200 })])
+    const replay = report([
+      event({
+        status_code: 200,
+        duration_ms: 48,
+        network_entries: [
+          {
+            url: 'https://example.test/customer',
+            method: 'GET',
+            status_code: 200,
+            duration_ms: 48,
+            har: {
+              id: '1',
+              started_at: '2026-09-13T00:00:00Z',
+              phases: [
+                { name: 'dns', start_ms: 0, end_ms: 4 },
+                { name: 'connect', start_ms: 4, end_ms: 18 },
+                { name: 'tls', start_ms: 10, end_ms: 18 },
+                { name: 'send', start_ms: 18, end_ms: 20 },
+                { name: 'request_wait', start_ms: 20, end_ms: 40 },
+                { name: 'response', start_ms: 40, end_ms: 48 },
+              ],
+            },
+          },
+        ],
+      }),
+    ])
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} currentRecord={{ id: 'current', options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'current-target.test', draft: true, failurePolicy: 'Continue' }} />)
     expect(html).toContain('current-target.test'); expect(html).toContain('Current configuration'); expect(html).toContain('Historical execution'); expect(html).not.toContain('Browser Debugger'); expect(html).not.toContain('No screenshot')
-    expect(renderToStaticMarkup(<DebugTimeline events={replay.events} onSelect={() => {}} />)).toContain('Passed · Get customer')
+    const timelineHtml = renderToStaticMarkup(<DebugTimeline events={replay.events} selectedIndex={0} onSelect={() => {}} />)
+    expect(timelineHtml).toContain('Passed · Get customer')
+    expect(timelineHtml).toContain('Waterfall (session)')
+    expect(timelineHtml).toContain('Stacked (100%)')
+    expect(timelineHtml).toContain('Timing breakdown')
+    expect(timelineHtml).toContain('Started at +0.0 ms')
+    expect(timelineHtml).toContain('Connection preparation')
+    expect(timelineHtml).toContain('Request and response')
+    expect(timelineHtml).toContain('Waiting (TTFB)')
+    expect(timelineHtml).toContain('Content download')
+    // The legend always renders phase swatches; assert the bar itself was built from the HAR phases.
+    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-dns')
+    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-wait')
+    expect(timelineHtml).not.toContain('debug-timeline-bar-segment phase-total')
+    expect(timelineHtml).toContain('aria-current="true"')
+    expect(timelineHtml).not.toContain('Preview · first visible execution')
+
+    const unselectedHtml = renderToStaticMarkup(<DebugTimeline events={replay.events} selectedIndex={null} onSelect={() => {}} />)
+    expect(unselectedHtml).not.toContain('aria-current')
+    expect(unselectedHtml).not.toContain('debug-timeline-hop-list')
+    expect(unselectedHtml).toContain('Timing breakdown')
+    expect(unselectedHtml).toContain('Preview · first visible execution')
   })
 })
 

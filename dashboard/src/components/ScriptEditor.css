@@ -7960,6 +7960,407 @@ button.debugger-problem-row:hover {
 .debug-watch-panel .debug-watch-table thead th { overflow-wrap: normal; word-break: normal; }
 .debug-timeline-row { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; gap: 4px; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
 .debug-timeline-row + .debug-timeline-row { margin-top: 6px; }
+.debug-execution-timeline {
+  --phase-queueing: #94a3b8;
+  --phase-dns: #0d9488;
+  --phase-connect: #f59e0b;
+  --phase-tls: #8b5cf6;
+  --phase-send: #3b82f6;
+  --phase-wait: #10b981;
+  --phase-receive: #0ea5e9;
+  --phase-total: #64748b;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 8px;
+  padding: 8px 10px;
+  min-width: 0;
+  container: debug-timeline / inline-size;
+}
+.debug-timeline-toolbar {
+  justify-content: space-between;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.debug-timeline-toolbar > div {
+  display: flex;
+  align-items: safe center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-inline-size: 0;
+}
+.debug-timeline-scale-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: clip;
+}
+.debug-execution-timeline .debug-timeline-scale-switch button {
+  border: none;
+  border-radius: 0;
+  min-height: 26px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+.debug-execution-timeline .debug-timeline-scale-switch button + button {
+  border-inline-start: 1px solid var(--border);
+}
+.debug-execution-timeline .debug-timeline-scale-switch button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.debug-execution-timeline .debug-timeline-scale-switch button.active,
+.debug-execution-timeline .debug-timeline-scale-switch button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--bg-secondary));
+  color: var(--text-primary);
+}
+.debug-execution-timeline .debug-timeline-scale-switch button:focus-visible,
+.debug-execution-timeline .debug-timeline-waterfall-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+.debug-timeline-legend {
+  display: flex;
+  align-items: safe center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.debug-timeline-legend > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.debug-timeline-swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+.phase-queueing { background-color: var(--phase-queueing); }
+.phase-dns { background-color: var(--phase-dns); }
+.phase-connect { background-color: var(--phase-connect); }
+.phase-tls { background-color: var(--phase-tls); }
+.phase-send { background-color: var(--phase-send); }
+.phase-wait { background-color: var(--phase-wait); }
+.phase-receive { background-color: var(--phase-receive); }
+.phase-total { background-color: var(--phase-total); }
+.debug-timeline-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1.85fr) minmax(260px, 1fr);
+  gap: 10px;
+  align-items: start;
+  min-inline-size: 0;
+}
+.debug-timeline-waterfall-table {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  max-block-size: min(360px, 52vh);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  overflow: auto;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
+}
+.debug-timeline-header,
+.debug-timeline-waterfall-row,
+.debug-timeline-hop-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1.5fr) minmax(96px, 0.75fr) minmax(88px, 0.65fr) minmax(180px, 2.1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+.debug-timeline-header {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary, var(--bg-primary));
+  border-bottom: 1px solid var(--border);
+}
+.debug-timeline-col-time,
+.debug-timeline-cell-duration,
+.debug-timeline-hop-duration {
+  min-inline-size: 0;
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-timeline-ruler {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-mono, monospace);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.debug-timeline-row-group + .debug-timeline-row-group {
+  border-top: 1px solid var(--border);
+}
+.debug-execution-timeline .debug-timeline-waterfall-row {
+  margin: 0;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.debug-execution-timeline .debug-timeline-waterfall-row:hover {
+  background: var(--bg-hover);
+}
+.debug-execution-timeline .debug-timeline-waterfall-row.selected {
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-secondary));
+}
+.debug-timeline-cell-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.debug-timeline-cell-main > div {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+}
+.debug-timeline-cell-main strong {
+  /* A flex item keeps its content width unless min-inline-size is 0, and
+     overflow: clip does not reset it, so the ellipsis would never render. */
+  min-inline-size: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.debug-timeline-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.debug-timeline-status-dot.passed { background-color: var(--success, #10b981); }
+.debug-timeline-status-dot.failed { background-color: var(--danger, #f43f5e); }
+.debug-timeline-cell-main small {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+}
+.debug-timeline-cell-proto {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-inline-size: 0;
+  font-size: 11px;
+}
+.debug-timeline-status-code {
+  font-family: var(--font-mono, monospace);
+  font-weight: 700;
+}
+.debug-timeline-status-code.passed { color: var(--success-text, #10b981); }
+.debug-timeline-status-code.failed { color: var(--danger-text, #f43f5e); }
+.debug-timeline-cell-proto > span:last-child {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+}
+.debug-timeline-bar-track {
+  position: relative;
+  height: 16px;
+  min-inline-size: 0;
+  width: 100%;
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--bg-primary) 65%, transparent);
+  background-image: linear-gradient(to right, color-mix(in srgb, var(--border) 65%, transparent) 1px, transparent 1px);
+  background-size: 25% 100%;
+  overflow: clip;
+}
+.debug-timeline-bar-fill {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  display: flex;
+  align-items: stretch;
+  border-radius: 2px;
+  overflow: clip;
+  min-width: 4px;
+}
+.debug-timeline-bar-segment {
+  display: block;
+  height: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.debug-timeline-hop-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px dashed var(--border);
+  background: color-mix(in srgb, var(--bg-primary) 45%, var(--bg-secondary));
+}
+.debug-timeline-hop-row {
+  padding: 4px 10px 4px 24px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.debug-timeline-hop-row > span:not(.debug-timeline-hop-duration) {
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+}
+.debug-timeline-inspector {
+  position: sticky;
+  inset-block-start: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  min-inline-size: 0;
+}
+.debug-timeline-inspector > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.debug-timeline-inspector > header > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-inline-size: 0;
+}
+.debug-timeline-inspector > header strong {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.debug-timeline-inspector > header span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.debug-timeline-inspector > header .debug-timeline-inspector-preview {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+}
+.debug-timeline-inspector > header code {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--bg-tertiary, var(--bg-primary));
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.debug-timeline-breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.debug-timeline-breakdown-category {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted, var(--text-secondary));
+}
+.debug-timeline-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1.2fr) minmax(70px, 1fr) minmax(78px, auto);
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+}
+.debug-timeline-breakdown-row > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-inline-size: 0;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+}
+.debug-timeline-breakdown-row > div {
+  position: relative;
+  height: 9px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--bg-primary) 70%, transparent);
+  overflow: clip;
+}
+.debug-timeline-breakdown-row > div > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  min-width: 2px;
+}
+.debug-timeline-breakdown-row > span:last-child {
+  text-align: right;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.debug-timeline-inspector > footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.debug-timeline-inspector > footer small {
+  min-inline-size: 0;
+  white-space: nowrap;
+  overflow: clip;
+  text-overflow: ellipsis;
+}
+.debug-timeline-inspector > footer strong {
+  font-family: var(--font-mono, monospace);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+@container debug-timeline (max-width: 860px) {
+  .debug-timeline-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .debug-timeline-inspector {
+    position: static;
+  }
+}
+@container debug-timeline (max-width: 560px) {
+  .debug-timeline-header,
+  .debug-timeline-waterfall-row,
+  .debug-timeline-hop-row {
+    grid-template-columns: minmax(120px, 1.4fr) minmax(76px, 0.7fr) minmax(72px, 0.6fr) minmax(130px, 1.8fr);
+    min-inline-size: 420px;
+  }
+}
 .editor-body.workspace-debug .debugger-body { gap: 5px; overflow: auto; }
 .editor-body.workspace-debug .debugger-shell { flex: 1 1 auto; min-height: 260px; grid-template-rows: minmax(160px, 1fr) minmax(100px, min(var(--bottom-h, 220px), 30vh)); }
 .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed { grid-template-rows: minmax(160px, 1fr) 38px; }

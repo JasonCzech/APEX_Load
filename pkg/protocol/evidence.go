@@ -60,7 +60,7 @@ func BuildProtocolEvidence(action *Action, result *Result) map[string]any {
 	if result.ContentCheckErrorMatches+result.ContentCheckInfoMatches > 0 {
 		evidence["content_check_matches"] = map[string]any{"errors": result.ContentCheckErrorMatches, "information": result.ContentCheckInfoMatches}
 	}
-	if timings := evidenceTimings(result); len(timings) > 0 {
+	if timings := EvidenceTimings(result); len(timings) > 0 {
 		evidence["timings"] = timings
 	}
 	if messages := evidenceMessages(result); len(messages) > 0 {
@@ -155,7 +155,13 @@ func evidenceStatus(result *Result) string {
 	return "unknown"
 }
 
-func evidenceTimings(result *Result) map[string]any {
+// EvidenceTimings is the protocol_evidence.timings contract shared by every
+// producer: measured phase durations in milliseconds, omitted when not
+// observed.
+func EvidenceTimings(result *Result) map[string]any {
+	if result == nil {
+		return nil
+	}
 	timings := make(map[string]any)
 	addDuration := func(key string, value time.Duration) {
 		if value > 0 {
