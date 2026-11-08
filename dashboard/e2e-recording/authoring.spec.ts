@@ -160,6 +160,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await expect(options.getByLabel('Step through (start paused)')).toBeChecked()
   await options.getByRole('button',{name:'Done',exact:true}).click()
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run in step mode',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Get customer'})).toBeVisible()
   await page.getByRole('button',{name:'Step',exact:true}).click()
   // Following execution moves the view on to the next action; the stepped
@@ -180,6 +181,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByRole('button',{name:'Edit this action',exact:true}).click()
   await page.getByLabel('Check 1 status',{exact:true}).fill('200')
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run in step mode',exact:true}).click()
   await expect(page.getByRole('button',{name:'Continue',exact:true})).toBeEnabled()
   await page.getByRole('button',{name:'Continue',exact:true}).click()
   await expectDebugOutcome(page)
@@ -220,6 +222,7 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await options.getByRole('button',{name:'Done',exact:true}).click()
   const pausedBefore=h.target.events.length
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run a single iteration',exact:true}).click()
   await expect.poll(()=>h.target.events.slice(pausedBefore).map(e=>e.query.name)).toEqual(['slow'])
   await page.locator('.topbar-debug-action-pause').click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: After pause'})).toBeVisible()

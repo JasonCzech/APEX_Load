@@ -6690,6 +6690,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setDebugRunMenuOpen(false)
     if (returnFocus) debugRunTriggerRef.current?.focus()
   }
+  // Escape closes the menu from the trigger, a command or the count field,
+  // returns focus to the trigger and goes no further (the Escape shortcut would
+  // otherwise also leave the Debug workspace). Each of those handles it itself:
+  // the dropdown wrapper is not an interactive element.
+  const handleDebugRunMenuEscape = (event: ReactKeyboardEvent<HTMLElement>): boolean => {
+    if (!debugRunMenuOpen || event.key !== 'Escape') return false
+    event.preventDefault()
+    event.stopPropagation()
+    closeDebugRunMenu(true)
+    return true
+  }
   const debugRunMenuItems = () => Array.from(debugRunMenuRef.current?.querySelectorAll<HTMLButtonElement>('#debug-run-menu [role="menuitem"]:not(:disabled)') || [])
   // Which command an opening focuses: ArrowUp on the closed trigger opens on
   // the last one, every other way of opening on the first.
@@ -6877,15 +6888,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               const next = event.relatedTarget
               if (debugRunMenuOpen && next instanceof Node && !event.currentTarget.contains(next)) setDebugRunMenuOpen(false)
             }}
-            // Escape closes it from the trigger, a command or the field, returns
-            // focus to the trigger and goes no further (the Escape shortcut
-            // would otherwise also leave the Debug workspace).
-            onKeyDown={event => {
-              if (!debugRunMenuOpen || event.key !== 'Escape') return
-              event.preventDefault()
-              event.stopPropagation()
-              closeDebugRunMenu(true)
-            }}
           >
             <button
               ref={debugRunTriggerRef}
@@ -6905,6 +6907,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 setDebugRunMenuOpen(open => !open)
               }}
               onKeyDown={event => {
+                if (handleDebugRunMenuEscape(event)) return
                 // ArrowDown on the closed trigger opens the menu on its first
                 // command, ArrowUp on its last.
                 if (!debugRunMenuOpen && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
@@ -6927,7 +6930,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   id="debug-run-menu"
                   role="menu"
                   aria-label="Debug run modes"
+                  tabIndex={-1}
                   onKeyDown={event => {
+                    if (handleDebugRunMenuEscape(event)) return
                     const items = debugRunMenuItems()
                     if (items.length === 0) return
                     const current = items.indexOf(document.activeElement as HTMLButtonElement)
@@ -7019,6 +7024,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     }}
                     onBlur={() => { commitDebugIterationDraft() }}
                     onKeyDown={event => {
+                      if (handleDebugRunMenuEscape(event)) return
                       if (event.key === 'Enter') {
                         event.preventDefault()
                         const iterations = commitDebugIterationDraft()

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { captureScript, compareRuns, eventIdentity, executionLabel, readProfiles, safeProfile, variablesAt } from './debuggerExperience'
@@ -208,7 +209,12 @@ describe('debugger operator experience', () => {
     const record = { options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, ...record }]} current={replay}
       currentRecord={{ id: 'current', ...record, options: { ...DEFAULT_REPLAY_OPTIONS, networkTrace: false }, iterations: 3 }} />)
-    const blocks = [...html.matchAll(/<h4>(Baseline|Current) configuration<\/h4>([\s\S]*?)<\/section>/g)].map(match => match[2].replace(/<[^>]+>/g, '').replace(/&quot;/g, '"'))
+    // Read the rendered text through a DOM parser: the body preview highlights
+    // JSON tokens in nested markup.
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const blocks = [...doc.querySelectorAll('section')]
+      .filter(section => /^(Baseline|Current) configuration$/.test(section.querySelector('h4')?.textContent || ''))
+      .map(section => section.textContent || '')
     expect(blocks).toHaveLength(2)
     expect(blocks[0]).toContain('"networkTrace": true'); expect(blocks[0]).toContain('"iterations": 1')
     expect(blocks[1]).toContain('"networkTrace": false'); expect(blocks[1]).toContain('"iterations": 3')

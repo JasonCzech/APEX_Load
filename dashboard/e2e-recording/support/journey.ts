@@ -140,7 +140,10 @@ export async function expectDebugOutcome(page: Page, success = true) {
 }
 export async function debug(page: Page, info: TestInfo, success = true) {
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
+  // The Debug trigger opens the run-mode menu; one iteration to the end, without
+  // breakpoints, is the run these journeys check.
   await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expectDebugOutcome(page, success)
   const downloading = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Export session', exact: true }).click()
