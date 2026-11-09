@@ -859,9 +859,6 @@
 .imported-metadata-section .source-map-toolbar {
   padding: 12px 12px 0;
 }
-.imported-metadata-section .source-map-filter-summary,
-.imported-metadata-section .lr-mapping-navigation,
-.imported-metadata-section .source-map-selected-details,
 .imported-metadata-section .source-map-incomplete {
   margin-left: 12px;
   margin-right: 12px;

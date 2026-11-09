@@ -972,7 +972,17 @@ export default function SourceMappingReview({
       )}
 
       <div className="source-map-toolbar import-review-toolbar">
-        <label>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost source-map-toggle-mappings"
+          style={{ border: '1px solid var(--border)' }}
+          aria-expanded={!isTableCollapsed}
+          aria-controls="source-mapping-table-region"
+          onClick={() => setIsTableCollapsed(prev => !prev)}
+        >
+          {isTableCollapsed ? `Show mappings (${filteredMappings.length})` : 'Hide mappings'}
+        </button>
+        <label className="source-map-compact-field">
           <span>Captured source file ({files.length})</span>
           <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
             {!selectedFile && <option value="">No unambiguous source file</option>}
@@ -983,27 +993,12 @@ export default function SourceMappingReview({
             ))}
           </select>
         </label>
-        <label>
+        <label className="source-map-compact-field">
           <span>Filter Mappings</span>
           <input value={filter} onChange={event => { setFilter(event.target.value); setIsTableCollapsed(false) }} placeholder="Function, target, status…" />
         </label>
-        <div style={{ alignSelf: 'flex-end', marginLeft: 'auto', display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ border: '1px solid var(--border)' }}
-            aria-expanded={!isTableCollapsed}
-            aria-controls="source-mapping-table-region"
-            onClick={() => setIsTableCollapsed(prev => !prev)}
-          >
-            {isTableCollapsed ? `Show mappings (${filteredMappings.length})` : 'Hide mappings'}
-          </button>
-        </div>
-      </div>
-      <div className="source-map-filter-summary">
-        <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
-        <span>{filteredMappings.length} of {mappings.length} mappings</span>
         {(filter || categoryFilter !== '') && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setFilter(''); setCategoryFilter('') }}>Clear filters</button>}
+        <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
         <button
           type="button"
           className="btn btn-sm btn-secondary source-map-view-options-trigger"
@@ -1036,6 +1031,29 @@ export default function SourceMappingReview({
             </div>
           </SourceMapPopupDialog>
         )}
+        <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">
+          {[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}
+          <button type="button" className="btn btn-sm btn-secondary source-map-status-help" aria-haspopup="dialog" aria-expanded={showStatusHelp} onClick={() => setShowStatusHelp(true)}>About review status</button>
+          {showStatusHelp && <SourceMapPopupDialog title="About review status" className="source-map-status-help-dialog" onClose={() => setShowStatusHelp(false)}><p>{sourceOnly ? 'Conversion coverage describes original import mappings. It does not establish native replay or current draft readiness.' : 'Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.'}</p></SourceMapPopupDialog>}
+        </nav>
+        {!sourceOnly && selectedMapping && !noOriginTarget && (
+          <MappingReviewDetails
+            key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')}
+            mapping={selectedMapping}
+            script={script}
+            state={identity.state}
+            resolution={identity.resolved[selectedMapping.id]}
+            checking={identity.checking}
+            sectionLabel={targetSectionLabel(destinationPath)}
+            wholeConfig={isWholeConfigMapping(selectedMapping)}
+            statusLabelText={formatStatusLabel(selectedMapping.status)}
+            supportModeLabelText={formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}
+            sourceRangeText={formatSourceRange(selectedMapping)}
+            onChange={onChangeReview}
+            dirty={draftDirty}
+          />
+        )}
+        {!sourceOnly && onRepairTarget && selectedMapping && !noOriginTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
       </div>
       {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? formatDateTime(identity.state.capturedAt, { seconds: true }) : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
@@ -1107,20 +1125,16 @@ export default function SourceMappingReview({
       </div>
 
       <div className="source-map-comparison">
-      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<button type="button" className="btn btn-sm btn-secondary source-map-status-help" aria-haspopup="dialog" aria-expanded={showStatusHelp} onClick={() => setShowStatusHelp(true)}>About review status</button>{showStatusHelp && <SourceMapPopupDialog title="About review status" className="source-map-status-help-dialog" onClose={() => setShowStatusHelp(false)}><p>{sourceOnly ? 'Conversion coverage describes original import mappings. It does not establish native replay or current draft readiness.' : 'Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.'}</p></SourceMapPopupDialog>}</nav>
       {unmappedIssueFocus && <p className="source-map-issue-focus" role="status">No direct source mapping was identified for “{unmappedIssueFocus.title}”. {unmappedIssueFocus.filePath ? `Showing ${unmappedIssueFocus.filePath}${unmappedIssueFocus.line ? `:${unmappedIssueFocus.line}` : ''} for inspection.` : 'Select a captured source file to inspect this finding.'}</p>}
-      {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
-        <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
-        <span>{sourceOnly ? 'Original conversion' : 'Conversion'}: {formatStatusLabel(selectedMapping.status)} · {sourceOnly ? 'Original support mode' : 'Runtime support'}: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
-        {sourceOnly
-          ? <span>Original import path: <code>{selectedMapping.target_path || (isWholeConfigMapping(selectedMapping) ? 'script configuration' : 'Unavailable')}</code></span>
-          : isWholeConfigMapping(selectedMapping) && !identity.resolved[selectedMapping.id]?.path
-            ? <span>Destination: script configuration as a whole · <span className="source-map-section-badge">Configuration</span></span>
-            : <span>Destination identity: {identity.checking ? 'Verifying…' : identity.resolved[selectedMapping.id]?.status || 'Unavailable'}{targetSectionLabel(destinationPath) ? <> · <span className="source-map-section-badge">{targetSectionLabel(destinationPath)}</span></> : null}</span>}
-        {selectedMapping.notes && <p>{selectedMapping.notes}</p>}{!sourceOnly && onRepairTarget && selectedMapping.target_path && (!repairPaths || repairPaths.includes(selectedMapping.target_path)) && <button type="button" className="btn btn-primary btn-sm" onClick={() => onRepairTarget(selectedMapping.target_path!)}>Review related import issue</button>}
-        {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
-        {!sourceOnly && <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />}
-      </div>}
+      {sourceOnly && selectedMapping && !noOriginTarget && (
+        <div className="source-map-selected-details">
+          <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
+          <span>Original conversion: {formatStatusLabel(selectedMapping.status)} · Original support mode: {formatSupportModeLabel(selectedMapping.support_mode) || 'Not specified'}</span>
+          <span>Original import path: <code>{selectedMapping.target_path || (isWholeConfigMapping(selectedMapping) ? 'script configuration' : 'Unavailable')}</code></span>
+          {selectedMapping.notes && <p>{selectedMapping.notes}</p>}
+        </div>
+      )}
+      {selectedMapping && !noOriginTarget && !filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
       {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
       <div ref={codePanelsRef} className="source-map-panels">

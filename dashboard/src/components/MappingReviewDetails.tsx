@@ -54,9 +54,32 @@ export function SourceMapPopupDialog({
   )
 }
 
-export function MappingReviewDetails({ mapping, script, state, resolution, onChange, dirty }: {
-  mapping: SourceReviewMapping; script?: ScriptDefinition | null; state?: MappingReviewState; resolution?: ResolvedMapping
-  onChange?: (state: MappingReviewState) => void; dirty?: boolean
+export function MappingReviewDetails({
+  mapping,
+  script,
+  state,
+  resolution,
+  checking,
+  sectionLabel,
+  wholeConfig,
+  statusLabelText,
+  supportModeLabelText,
+  sourceRangeText,
+  onChange,
+  dirty,
+}: {
+  mapping: SourceReviewMapping
+  script?: ScriptDefinition | null
+  state?: MappingReviewState
+  resolution?: ResolvedMapping
+  checking?: boolean
+  sectionLabel?: string | null
+  wholeConfig?: boolean
+  statusLabelText?: string
+  supportModeLabelText?: string
+  sourceRangeText?: string
+  onChange?: (state: MappingReviewState) => void
+  dirty?: boolean
 }) {
   const latest = useRef({ script, state, mapping })
   latest.current = { script, state, mapping }
@@ -119,6 +142,29 @@ export function MappingReviewDetails({ mapping, script, state, resolution, onCha
           className="mapping-review-details-dialog"
           onClose={() => setOpen(false)}
         >
+          <div className="source-map-selected-details">
+            <strong>{mapping.function || sourceRangeText || mapping.source_file}</strong>
+            {statusLabelText && (
+              <span>
+                Conversion: {statusLabelText} · Runtime support: {supportModeLabelText || 'Not specified'}
+              </span>
+            )}
+            {wholeConfig && !resolution?.path ? (
+              <span>
+                Destination: script configuration as a whole · <span className="source-map-section-badge">Configuration</span>
+              </span>
+            ) : (
+              <span>
+                Destination identity: {checking ? 'Verifying…' : resolution?.status || 'Unavailable'}
+                {sectionLabel ? (
+                  <>
+                    {' '}· <span className="source-map-section-badge">{sectionLabel}</span>
+                  </>
+                ) : null}
+              </span>
+            )}
+            {mapping.notes && <p>{mapping.notes}</p>}
+          </div>
           <p>Review annotations are saved with the script. They do not change conversion status, runtime support, or execution approval.</p>
           {decision && <p>{decision.reviewer} · {formatDateTime(decision.reviewedAt, { seconds: true })} · {dirty ? 'Draft has unsaved changes' : 'Saved with script'}{!current && ' · Destination or import revision changed'}</p>}
           {decision?.note && <blockquote>{decision.note}</blockquote>}

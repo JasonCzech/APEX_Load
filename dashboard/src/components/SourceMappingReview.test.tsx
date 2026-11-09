@@ -172,7 +172,19 @@ describe('SourceMappingReview', () => {
     const comparison = workspace.querySelector('.source-map-comparison')!
     expect(comparison.querySelector('[aria-label="Generated DSL"]')).not.toBeNull()
     expect(container.textContent).not.toContain('Edit destination in Author')
+    expect(container.querySelector('.source-map-selected-details')).toBeNull()
+    expect(container.textContent).not.toContain('of 2 mappings')
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
+    const toolbar = container.querySelector('.source-map-toolbar')!
+    const toolbarChildren = Array.from(toolbar.children)
+    expect(toolbarChildren[0]?.textContent).toContain('Show mappings (2)')
+    expect(toolbarChildren[1]?.textContent).toContain('Captured source file (3)')
+    expect(toolbarChildren[2]?.textContent).toContain('Filter Mappings')
+    expect(toolbar.textContent).toContain('Word Wrap: On')
+    expect(toolbar.textContent).toContain('View options & export')
+    expect(toolbar.textContent).toContain('About review status')
+    expect(toolbar.textContent).toContain('Review & mapping details')
 
     const viewOptionsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'View options & export')!
     await act(async () => { viewOptionsBtn.click() })
@@ -247,11 +259,11 @@ describe('SourceMappingReview', () => {
     expect(container.querySelector('[data-mapping-id="group"] .source-map-target-cell')?.textContent).toBe('config.run_logic')
     await act(async () => { planRow.querySelector<HTMLButtonElement>('button')!.click() })
     await flushPromises()
-    const details = container.querySelector('.source-map-selected-details')!.textContent || ''
-    expect(details).toContain('Destination: script configuration as a whole')
-    expect(details).not.toContain('Destination identity: unmapped')
     const reviewDetailsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Review & mapping details'))!
     await act(async () => { reviewDetailsBtn.click() })
+    const details = document.body.querySelector('.source-map-selected-details')!.textContent || ''
+    expect(details).toContain('Destination: script configuration as a whole')
+    expect(details).not.toContain('Destination identity: unmapped')
     expect(container.textContent).toContain('shaped the script configuration as a whole')
     expect(container.textContent).not.toContain('This source construct has no mapped destination')
     const closeDialogBtn = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
@@ -259,7 +271,11 @@ describe('SourceMappingReview', () => {
 
     await act(async () => { container.querySelector<HTMLButtonElement>('[data-mapping-id="group"] button')!.click() })
     await flushPromises()
-    expect(container.querySelector('.source-map-selected-details')?.textContent).toContain('Configuration')
+    const groupReviewBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Review & mapping details'))!
+    await act(async () => { groupReviewBtn.click() })
+    expect(document.body.querySelector('.source-map-selected-details')?.textContent).toContain('Configuration')
+    const closeGroupDialogBtn = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeGroupDialogBtn.click() })
     expect(generatedDslPane(container).textContent).toContain('termination_mode')
   })
 
@@ -1579,7 +1595,11 @@ describe('SourceMappingReview', () => {
     })
     await flushPromises()
 
-    expect(container.querySelector('.source-map-section-badge')?.textContent).toBe('Init')
+    const reviewDetailsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Review & mapping details'))!
+    await act(async () => { reviewDetailsBtn.click() })
+    expect(document.body.querySelector('.source-map-section-badge')?.textContent).toBe('Init')
+    const closeDialogBtn = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeDialogBtn.click() })
 
     const panelButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.source-map-panel-header button'))
     const wholeSourceBtn = () => panelButtons()[1]
