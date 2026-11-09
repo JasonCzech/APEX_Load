@@ -110,6 +110,41 @@ export function formatReplayDiagnosisCategory(category?: string): string {
   return (category || 'diagnosis').replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase())
 }
 
+/** The replay diagnosis category for a value a later request needed and did not get. */
+export const CORRELATION_DIAGNOSIS_CATEGORY = 'correlation'
+
+/** A debug replay is over: its report completed and no session is still live. */
+export function isReplayTerminal(report: BrowserReplayReport | null | undefined, replaying: boolean, session: ScriptDebugSession | null | undefined): boolean {
+  return Boolean(report?.completed_at) &&
+    !replaying &&
+    (!session || ['completed', 'failed', 'stopped'].includes(session.status))
+}
+
+/**
+ * Identifies a recording comparison's inputs: the replay session plus the
+ * editable-action snapshot taken when that replay started. The live draft is
+ * intentionally not part of this key — applying a diagnosis fix edits the
+ * draft, and that must not wipe the presented diagnosis (the panel tracks draft
+ * drift itself through currentEditableActionsKey).
+ */
+export function correlationDiagnosisKey({ scriptId, report, activeReplaySessionId, replayEditableActionsKey }: {
+  scriptId?: string | null
+  report: BrowserReplayReport | null | undefined
+  activeReplaySessionId: string | null | undefined
+  replayEditableActionsKey: string | null
+}): string {
+  return JSON.stringify({
+    scriptId,
+    replaySessionId: report?.replay_session_id || activeReplaySessionId,
+    scriptHash: report?.script_hash,
+    scriptRevision: report?.script_revision,
+    startedAt: report?.started_at,
+    completedAt: report?.completed_at,
+    eventCount: report?.events?.length ?? 0,
+    replayEditableActionsKey,
+  })
+}
+
 export function debugBreakpointKey(phase: string, actionIndex: number, requestIndex?: number): string {
   return requestIndex == null ? `${phase}:${actionIndex}` : `${phase}:${actionIndex}:${requestIndex}`
 }

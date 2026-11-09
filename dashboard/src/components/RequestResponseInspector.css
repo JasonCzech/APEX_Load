@@ -1,0 +1,262 @@
+/* Request/Response inspector: one replayed action's evidence in the debug
+   Request/Response tab. The tab body (.debugger-request-body) scrolls; the
+   header stays in view at its top. Theme colours come from tokens only. */
+.rr-inspector {
+  min-width: 0;
+}
+
+/* The scroll container keeps the sticky header's band out of its view: content
+   scrolled into view (focus, arrow keys, scrollIntoView) lands below the header,
+   and PageDown/Space steps by the visible area under it, so nothing slides under
+   the header unseen. --rr-inspector-header-h is measured by the component and
+   set on this container; the 16px covers its top padding plus a small gap. */
+.debugger-center-body.debugger-request-body:has(> .rr-inspector) {
+  scroll-padding-top: calc(var(--rr-inspector-header-h, 48px) + 16px);
+}
+
+.debugger-detail-head.rr-inspector-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  /* Wraps when the pane is narrow or zoomed, so method + target never collapse. */
+  flex-wrap: wrap;
+  row-gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+  background: var(--bg-primary);
+  /* Covers the scroll container's top padding while content scrolls beneath. */
+  box-shadow: 0 -12px 0 var(--bg-primary);
+}
+
+.rr-inspector-header > * {
+  flex: 0 0 auto;
+}
+
+.rr-inspector-header .rr-inspector-name,
+.rr-inspector-header .rr-inspector-target {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rr-inspector-header .rr-inspector-name {
+  flex: 0 1 auto;
+  max-width: 40%;
+}
+
+/* A real basis: when the row is full the target moves to the next line
+   instead of shrinking to nothing. */
+.rr-inspector-header .rr-inspector-target {
+  flex: 1 1 16ch;
+}
+
+/* In a narrow pane the name may take the rest of the phase's line, but it
+   shrinks there (with its ellipsis) instead of wrapping and leaving the phase
+   label alone on a line of its own. */
+@container debugger-detail (max-width: 580px) {
+  .rr-inspector-header .rr-inspector-name {
+    flex: 1 1 12ch;
+    max-width: 100%;
+  }
+}
+
+.rr-inspector-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.rr-inspector-status.is-success {
+  border-color: var(--success-border, var(--border));
+  background: var(--success-bg, transparent);
+  color: var(--success-text, var(--success));
+}
+
+.rr-inspector-status.is-failure {
+  border-color: var(--danger-border, var(--border));
+  background: var(--danger-bg, transparent);
+  color: var(--danger-text, var(--danger));
+}
+
+.rr-inspector-duration {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-inspector-edit {
+  margin-left: auto;
+}
+
+/* Verdict: the error once, its diagnosis and repairs; a single line on success. */
+.rr-inspector-verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rr-inspector-verdict p {
+  margin: 0;
+}
+
+.rr-inspector-verdict-line {
+  color: var(--success-text, var(--success));
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rr-inspector-verdict-error {
+  padding: 10px 12px;
+  border: 1px solid var(--danger-border, var(--border));
+  border-radius: 8px;
+  background: var(--danger-bg, transparent);
+  color: var(--danger-text, var(--danger));
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+.rr-inspector-diagnosis-chip {
+  align-self: flex-start;
+}
+
+.rr-inspector .link-button.rr-inspector-link {
+  align-self: flex-start;
+}
+
+/* Sub-tabs: the existing underline tabs, with a quiet count badge. */
+.rr-inspector-tabs {
+  border-bottom: 1px solid var(--border);
+}
+
+.rr-inspector-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--subtle-fill-strong, var(--bg-hover));
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.rr-inspector > .rr-inspector-panel {
+  padding: 0;
+  min-width: 0;
+}
+
+/* Inactive views stay mounted; .replay-event-body's display: flex would
+   otherwise override the hidden attribute. */
+.rr-inspector > .rr-inspector-panel[hidden] {
+  display: none;
+}
+
+.rr-inspector-panel h4 {
+  margin: 0 0 6px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.rr-inspector-body-state,
+.rr-inspector-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.rr-inspector-snapshot {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* The payload card (after any SOAP fault) takes the pane height left above the
+   dock; ScriptEditor.css stretches its body and code area from there. */
+.rr-inspector-snapshot > .replay-code-block:last-child {
+  flex: 1 0 auto;
+}
+
+/* One payload per view leaves less chrome above the code than the old stacked
+   layout, so the code box may grow further before it scrolls inside itself. */
+.rr-inspector-snapshot .debugger-snapshot-body > .snapshot-code {
+  max-height: max(260px, calc(100vh - var(--debugger-dock-offset, 220px) - 340px));
+}
+
+/* Request: "Sent on the wire" or "As scripted". */
+.rr-inspector-segmented {
+  display: inline-flex;
+  align-self: flex-start;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rr-inspector-segmented button {
+  padding: 5px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.rr-inspector-segmented button + button {
+  border-left: 1px solid var(--border);
+}
+
+.rr-inspector-segmented button[aria-pressed='true'] {
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.rr-inspector-segmented button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* Scoped to the inspector so these win over ScriptEditor.css's single-class
+   .replay-protocol-evidence / .replay-network-trace margin whatever the
+   stylesheet load order: the view's flex gap spaces the sections. */
+.rr-inspector .rr-inspector-extractor-tester,
+.rr-inspector .rr-inspector-page-artifacts,
+.rr-inspector .rr-inspector-protocol-evidence,
+.rr-inspector .replay-network-trace-inline {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.rr-inspector .replay-network-trace-inline > .replay-network-trace-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+
+.debugger-request-body > .debugger-empty {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Keep the empty state's comparison link a link: the debugger's empty-state
+   button rule (.debugger-center-body > .debugger-empty button) boxes it otherwise. */
+.debugger-center-body.debugger-request-body > .debugger-empty .link-button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--accent-text);
+  text-decoration: underline;
+}

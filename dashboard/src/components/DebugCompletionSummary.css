@@ -46,6 +46,12 @@
 .debug-summary-tabpanel[hidden] {
   display: none;
 }
+.debug-summary-recording-diff {
+  margin: 0 0 24px;
+}
+.debug-summary-recording-diff > h3 {
+  margin: 0 0 8px;
+}
 
 .debug-summary-waterfall-section {
   margin: 24px 0;

@@ -1,4 +1,4 @@
-import { test, expect, expectDebugOutcome, editScenarioFromRow, idOf, json, login, mutation } from './support/workflow'
+import { test, expect, expectDebugOutcome, editScenarioFromRow, idOf, json, login, mutation, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('a linked lease workflow is inserted, replayed against sandbox rows and bound in a scenario without JSON', async ({ page }) => {
@@ -52,7 +52,9 @@ test('a linked lease workflow is inserted, replayed against sandbox rows and bou
   await expectDebugOutcome(page, 'passed')
   const rail = page.getByRole('complementary', { name: 'Actions', exact: true })
   await rail.getByRole('treeitem', { name: 'Lease a row from jobs' }).click()
-  const result = page.locator('.live-table-step-result').first()
+  // A live-table step's result is on the inspector's Correlation tab.
+  const correlation = await openInspectorTab(page, 'Correlation')
+  const result = correlation.locator('.live-table-step-result').first()
   await expect(result).toContainText('saved as leased')
   await expect(result.getByRole('table', { name: 'Row for Lease a row from jobs' })).toContainText('seeded-job')
 

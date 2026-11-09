@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { writeFile } from 'node:fs/promises'
 import type { ScriptDebugRuntimeState } from '../src/types/replay'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { idOf, json, login, mutation, expectEditorSaved, expectDebugOutcome } from './support/workflow'
+import { idOf, json, login, mutation, expectEditorSaved, expectDebugOutcome, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('debugger identifies omitted extraction evidence even when no values survive', async ({ page }) => {
@@ -31,7 +31,9 @@ test('debugger identifies omitted extraction evidence even when no values surviv
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expectDebugOutcome(page, 'passed')
   await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Concurrent request' }).click()
-  const warning = page.getByRole('status').filter({ hasText: 'Some extractions were omitted' })
+  // Extraction evidence is on the inspector's Correlation tab.
+  const correlation = await openInspectorTab(page, 'Correlation')
+  const warning = correlation.getByRole('status').filter({ hasText: 'Some extractions were omitted' })
   await expect(warning).toBeVisible()
   await expect(warning).toContainText('displayed values may be incomplete')
 })

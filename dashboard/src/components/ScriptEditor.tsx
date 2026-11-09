@@ -1,4 +1,5 @@
-import DebugCompletionSummary from './DebugCompletionSummary'
+import DebugCompletionSummary, { DebugSummaryRecordingDiff, type DebugSummaryTabRequest } from './DebugCompletionSummary'
+import RecordingDiffPanel from './RecordingDiffPanel'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
@@ -875,6 +876,22 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
   const [scriptRecordingStatusState, setScriptRecordingStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
   const [scriptRecordingStatusRetryGeneration, setScriptRecordingStatusRetryGeneration] = useState(0)
+  // Request/Response's "Compare with recording" asks the debug Summary for its Recording diff.
+  const [debugSummaryTabRequest, setDebugSummaryTabRequest] = useState<DebugSummaryTabRequest | null>(null)
+  // Where Summary shows the Recording diff as a plain section (no sub-tab to
+  // focus), that section takes focus from the button the switch just hid. A
+  // request counts only in the commit that renders it: children's effects run
+  // first and may consume it, then this component's effect marks it handled.
+  const recordingDiffFocusHandled = useRef(0)
+  const recordingDiffFocusId = debugSummaryTabRequest?.tab === 'recording-diff' ? debugSummaryTabRequest.id : 0
+  const consumeRecordingDiffFocus = useCallback(() => {
+    if (recordingDiffFocusId <= recordingDiffFocusHandled.current) return false
+    recordingDiffFocusHandled.current = recordingDiffFocusId
+    return true
+  }, [recordingDiffFocusId])
+  useEffect(() => {
+    recordingDiffFocusHandled.current = Math.max(recordingDiffFocusHandled.current, recordingDiffFocusId)
+  }, [recordingDiffFocusId])
   const [issueDialog, setIssueDialog] = useState<{ title: string; issues: IssueDetail[] } | null>(null)
   // Object-repository logical names for the per-action object_ref autocomplete.
   const [objectRefSuggestions, setObjectRefSuggestions] = useState<string[]>([])
@@ -7950,9 +7967,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     replaceScriptWithHistory(nextScript)
     setRevalidateAfterEdit(count => count + 1)
   }
+  // The run compared with the script's recording (or an uploaded HAR): the
+  // debug Summary's Recording diff, for non-browser scripts with a run.
+  const recordingDiff = !isBrowserScript && replayReport ? (
+    <RecordingDiffPanel
+      scriptId={scriptId}
+      projectId={projectId}
+      report={replayReport}
+      activeReplaySessionId={activeReplaySessionId}
+      session={browserReplaySession}
+      replaying={replaying}
+      replayEditableActionsKey={replayEditableActionsKey}
+      currentEditableActionsKey={currentEditableActionsKey}
+      recordingStatus={scriptRecordingStatus}
+      recordingStatusState={scriptRecordingStatusState}
+      onRetryRecordingStatus={retryScriptRecordingStatus}
+      actionCount={script.actions.length}
+      api={api}
+      onAddExtractor={addExtractorDefinition}
+    />
+  ) : undefined
+  const openRecordingDiff = () => {
+    setDebugSummaryTabRequest(previous => ({ tab: 'recording-diff', id: (previous?.id ?? 0) + 1 }))
+    openCenterTab('debug-summary')
+  }
   const renderCenterTabPanel = (tabId: CenterWorkbenchTabId) => {
     if (tabId === 'debug-summary') {
-      if (!debugCompletionSnapshot || debugCompletionSnapshot.session.id !== (activeReplaySessionId || replayReport?.replay_session_id || browserReplaySession?.id)) return <p className="debug-completion-summary">Complete a debug run to view its summary.</p>
+      if (!debugCompletionSnapshot || debugCompletionSnapshot.session.id !== (activeReplaySessionId || replayReport?.replay_session_id || browserReplaySession?.id)) {
+        // Without a finished run's summary (a live or paused run, or one whose
+        // summary is unavailable), the Recording diff is still reachable here.
+        if (!recordingDiff) return <p className="debug-completion-summary">Complete a debug run to view its summary.</p>
+        return (
+          <div className="debug-completion-summary">
+            <p>Complete a debug run to view its summary.</p>
+            <DebugSummaryRecordingDiff consumeFocusRequest={consumeRecordingDiffFocus}>{recordingDiff}</DebugSummaryRecordingDiff>
+          </div>
+        )
+      }
       const returnToDebugger = () => {
         openCenterTab(isBrowserScript ? BROWSER_REPLAY_TAB_ID : ACTION_LIST_TAB_ID)
         setDebugDetailCollapsed(false)
@@ -7960,6 +8011,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       return <DebugCompletionSummary key={debugCompletionSnapshot.key}
         snapshot={debugCompletionSnapshot} stale={!replayEvidenceMatchesCurrentDraft}
         unavailable={runtimeVariablesUnavailable}
+        recordingDiff={recordingDiff}
+        tabRequest={debugSummaryTabRequest}
+        consumeRecordingDiffFocus={consumeRecordingDiffFocus}
         onExportSession={handleDownloadBrowserReplayExport}
         onSelectEvent={index => { returnToDebugger(); setDebuggerTab('request'); setExpandedReplayEvent(index) }}
         onDownloadHAR={async () => {
@@ -8980,10 +9034,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             onCloseEditor={onClose ? handleCloseEditor : undefined}
             onOpenHistory={() => setShowHistory(true)}
             actionProblemRows={actionProblemRows}
-            activeReplaySessionId={activeReplaySessionId}
             addExtractorDefinition={addExtractorDefinition}
             responseActions={responseActions}
-            api={api}
             applyReplaySuggestedLocator={applyReplaySuggestedLocator}
             breakpointSummary={breakpointSummary}
             browserReplaySession={browserReplaySession}
@@ -9014,6 +9066,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             onSwitchToHTTP3Upgrade={switchReplayEventToHTTP3Upgrade}
             onActivateDebug={() => activateWorkspaceTab('debug')}
             onOpenRequestResponse={() => { if (!isBrowserScript) openCenterTab(ACTION_LIST_TAB_ID) }}
+            onCompareWithRecording={recordingDiff ? openRecordingDiff : undefined}
             onSelectProblemAction={row => {
               activateWorkspaceTab('author')
               openCenterTab(ACTION_LIST_TAB_ID)
@@ -9070,9 +9123,6 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             script={script}
             scriptId={scriptId}
             scriptLevelIssues={scriptLevelIssues}
-            scriptRecordingStatus={scriptRecordingStatus}
-            scriptRecordingStatusState={scriptRecordingStatusState}
-            retryScriptRecordingStatus={retryScriptRecordingStatus}
             selectedOutlineParameterName={selectedOutlineParameterName}
             onEditParameterDefinition={name => { activateWorkspaceTab('author'); const index = (script.parameters || []).findIndex(parameter => parameter.name === name); if (index >= 0) selectParameterData(index); openEditorSection('parameter-data') }}
             selectOutlineParameter={selectOutlineParameter}

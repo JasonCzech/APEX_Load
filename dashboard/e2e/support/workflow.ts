@@ -172,6 +172,58 @@ export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed
   }
 }
 
+/** The debugger Request/Response inspector's sub-tabs, by visible label. */
+export type InspectorTabName = 'Response' | 'Request' | 'Correlation' | 'Timing & transport' | 'Network' | 'Raw'
+
+// A sub-tab's accessible name may end in a count badge ("Correlation 3"); its
+// tabpanel is labelled by the tab, so it carries the same name.
+function inspectorTabNamePattern(name: InspectorTabName): RegExp {
+  return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: \\d+)?$`)
+}
+
+/** One sub-tab of the selected action's Request/Response inspector. */
+export function inspectorTab(page: Page, name: InspectorTabName): Locator {
+  return page.getByRole('tablist', { name: 'Request and response views', exact: true }).getByRole('tab', { name: inspectorTabNamePattern(name) })
+}
+
+/**
+ * The visible panel of the named sub-tab. Every available panel stays mounted
+ * and the inactive ones are hidden, so a page-level CSS locator also matches
+ * content in hidden panels: scope to this panel, and assert toBeHidden() rather
+ * than toHaveCount(0) for another view's content.
+ */
+export function inspectorPanel(page: Page, name: InspectorTabName): Locator {
+  return page.locator('.rr-inspector').getByRole('tabpanel', { name: inspectorTabNamePattern(name) })
+}
+
+/** Selects an inspector sub-tab (the choice persists across selected actions) and returns its panel. */
+export async function openInspectorTab(page: Page, name: InspectorTabName): Promise<Locator> {
+  const tab = inspectorTab(page, name)
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-selected', 'true')
+  return inspectorPanel(page, name)
+}
+
+/** The selected action's verdict: the failure (once, as an alert) or "Passed · HTTP n", plus any diagnosis. */
+export function inspectorVerdict(page: Page): Locator {
+  return page.locator('.rr-inspector').getByRole('region', { name: 'Verdict', exact: true })
+}
+
+/** Opens the debug Summary's Recording diff sub-tab (the comparison moved there from Request/Response). */
+export async function openRecordingDiff(page: Page): Promise<Locator> {
+  await page.getByRole('region', { name: 'Debugger center workbench', exact: true }).getByRole('tab', { name: 'Summary', exact: true }).click()
+  const summaryTab = page.getByRole('tablist', { name: 'Debug summary sections', exact: true }).getByRole('tab', { name: 'Recording diff', exact: true })
+  const diff = page.getByRole('region', { name: 'Recording diff', exact: true })
+  // Without a matching run summary (or with its evidence unavailable) the diff is a plain section, not a sub-tab.
+  await expect(summaryTab.or(diff).first()).toBeVisible()
+  if (await summaryTab.isVisible()) {
+    await summaryTab.click()
+    await expect(summaryTab).toHaveAttribute('aria-selected', 'true')
+  }
+  await expect(diff).toBeVisible()
+  return diff
+}
+
 export function mutation(page: Page, method: string, path: string) {
   return page.waitForResponse(r => r.request().method() === method && new URL(r.url()).pathname === path)
 }
