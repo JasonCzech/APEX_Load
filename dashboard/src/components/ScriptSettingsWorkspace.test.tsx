@@ -34,12 +34,41 @@ describe('settings workspace review regressions', () => {
     act(() => (container.querySelector('[type="checkbox"]') as HTMLInputElement).click())
     expect(onChange).toHaveBeenLastCalledWith(7)
   })
-  it('shows definition provenance in Debug without displaying inline credential values', () => {
-    act(() => root.render(<ParameterDefinitionGuide script={{ ...script, parameters: [{ name: 'password', type: 'list', values: ['never-display'], update: 'once' }] }} />))
+  it('shows definition provenance in Debug without displaying inline credential values and supports sorting and filtering without an accordion', () => {
+    act(() => root.render(<ParameterDefinitionGuide script={{
+      ...script,
+      parameters: [
+        { name: 'password', type: 'list', values: ['never-display'], update: 'once' },
+        { name: 'account_id', type: 'file', data_source: 'accounts', column: 'id', update: 'each_iteration', selection: 'unique', block_size: 10 },
+        { name: 'nonce', type: 'random_string', update: 'each_occurrence' },
+      ],
+    }} />))
+    expect(container.querySelector('details')).toBeNull()
     expect(container.textContent).toContain('Once per virtual user')
     expect(container.textContent).toContain('Inline values')
     expect(container.textContent).not.toContain('never-display')
     expect(container.textContent).toContain('may reflect an earlier draft')
+
+    const table = container.querySelector('table.debug-parameter-sources-table')!
+    const names = () => Array.from(table.querySelectorAll('tbody tr th[scope="row"]')).map(el => el.textContent)
+    expect(names()).toEqual(['password', 'account_id', 'nonce'])
+
+    // Sort by Parameter ascending and descending
+    act(() => button('Parameter↕').click())
+    expect(names()).toEqual(['account_id', 'nonce', 'password'])
+    act(() => button('Parameter↑').click())
+    expect(names()).toEqual(['password', 'nonce', 'account_id'])
+
+    // Filter by Refresh select and search query
+    const selects = container.querySelectorAll<HTMLSelectElement>('.debug-parameter-sources-toolbar select')
+    change(selects[0]!, 'once')
+    expect(names()).toEqual(['password'])
+    change(selects[0]!, 'all')
+    change(selects[1]!, 'data_source')
+    expect(names()).toEqual(['account_id'])
+    change(selects[1]!, 'all')
+    change(container.querySelector<HTMLInputElement>('input[type="search"]')!, 'nonce')
+    expect(names()).toEqual(['nonce'])
   })
   it('only commits parameter renames explicitly and lets Escape discard a draft', () => {
     const rename = vi.fn()

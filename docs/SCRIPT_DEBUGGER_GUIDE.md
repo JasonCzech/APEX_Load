@@ -44,7 +44,7 @@ The transport shows Run, Pause or Continue according to the session state. **Fol
 
 **Problems** separates runtime failures from validation/editor issues. Steps whose execution blockers refuse a run lead the list under **Blocking replay (N)**, each with **Select in Author** (opens the step on its repair) and **Delete blocked action** (removes the step from the draft; a step inside a sequence or block goes on its own, and a block it empties goes with it). Select a runtime failure to open that exact action and iteration. **Timeline** groups completed executions and supports action search, failure filtering, duration, and evidence navigation. Session lifecycle messages remain available in a disclosure. **Engine logs** includes a **Raw text** view; filtered-out logs are distinguished from uncaptured logs.
 
-**Variables** defaults to **Current paused state**. It displays actual VUser bindings, parameter runtime receipts, original source-row numbers, and active execution frames only while the engine holds the reported boundary. Repeated inspection does not consume a parameter reference, allocate a row, advance random selection, or evaluate a template. Empty arrays clear previous bindings; empty values, redacted values, omitted values, and bounded detail are distinguished.
+**Variables** includes two subtabs: **Current values** (showing variables and parameters in the watch table) and **Parameter sources & refresh cadence** (a sortable, filterable table of parameter definitions, value sources, refresh cadence, and row allocation). **Current values** defaults to **Current paused state**. It displays actual VUser bindings, parameter runtime receipts, original source-row numbers, and active execution frames only while the engine holds the reported boundary. Repeated inspection does not consume a parameter reference, allocate a row, advance random selection, or evaluate a template. Empty arrays clear previous bindings; empty values, redacted values, omitted values, and bounded detail are distinguished.
 
 A pause request while an action is executing remains unavailable until the engine reaches a held boundary. Continue, Step, Stop, terminal completion, lost session ownership, and cancellation revoke current values. Completed-run values remain historical. Choose **Retained history** or **Selected execution (after)** explicitly to use searchable, pinned watches and the existing variable timeline; reconstructed seed/extraction history cannot fill missing current values.
 
@@ -63,7 +63,7 @@ The **Run Configuration** tab in the right rail presents **Effective run configu
 When a debug run completes, fails, or stops, **Summary** opens in the main debug
 workspace. It shows the run outcome, source revision, elapsed time, and retained action
 counts, with **Export session** and (when retained traffic is available) **Download HAR**
-at the top of the summary and two tabs below: **Transactions** and **Errors and warnings**.
+at the top of the summary and two tabs below: **Transactions** and a sortable, filterable **Errors and warnings** table.
 **Inspect** opens an action's evidence, and the debugger's tabs return to the evidence
 views. To check the current draft, start a new run from the **Debug** menu.
 Editing the script leaves the completed snapshot intact and marks it as results

@@ -379,7 +379,8 @@ test('HAR capture guide, 2-HAR Salesforce Correlation Studio, draft exclusion, a
   await expect(auraEditor).toContainText('findCustomer')
 
   // Verify zero authoring problems and enabled Debug gate
-  await expect(page.getByRole('button', { name: 'Author Problems (0)', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Author Problems \(/ })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'View 0 script issue details', exact: true })).toBeVisible()
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   await expect(page.locator('.topbar-debug-action-run')).toBeEnabled()
 

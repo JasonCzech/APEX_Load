@@ -143,4 +143,24 @@ describe('SnapshotTextPreview', () => {
 
     expect(container.textContent).toContain('X-Debug-13')
   })
+
+  it('color-codes headers, console logs, network logs, and HTML snippets', async () => {
+    await act(async () => {
+      root.render(<SnapshotTextPreview text={'Content-Type: application/json\nGET 200 https://example.com/api (12 ms)\n[error] Uncaught TypeError (app.js)'} />)
+    })
+
+    expect(container.querySelector('.debug-log-token.token-header')?.textContent).toBe('Content-Type')
+    expect(container.querySelector('.debug-log-token.token-method')?.textContent).toBe('GET')
+    expect(container.querySelector('.debug-log-token.token-status-success')?.textContent).toBe('200')
+    expect(container.querySelector('.debug-log-token.token-target')?.textContent).toBe('https://example.com/api')
+    expect(container.querySelector('.debug-log-token.token-status-error')?.textContent).toBe('[error]')
+
+    await act(async () => {
+      root.render(<SnapshotTextPreview text={'<div class="hero">Hello</div>'} />)
+    })
+
+    expect(container.querySelector('.snapshot-code-token-tag')?.textContent).toContain('div')
+    expect(container.querySelector('.snapshot-code-token-attr-name')?.textContent).toBe('class')
+    expect(container.querySelector('.snapshot-code-token-attr-value')?.textContent).toBe('"hero"')
+  })
 })

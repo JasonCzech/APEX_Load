@@ -15,8 +15,7 @@ test('archive, restore, dependency admission and retained deleted history', asyn
   const scriptId = await seedScript(request, workspace, name)
   const scenarioId = await seedScenario(request, workspace, scriptId, `${name} scenario`)
   await page.goto(`/#/scripts?mode=edit&scriptId=${scriptId}&${scopeQuery(workspace)}`); await page.reload()
-  // History lives in the editor's More menu and opens loaded.
-  await page.getByRole('button', { name: 'More actions for script editor', exact: true }).click()
+  // History lives on the right side of the editor toolbar and opens loaded.
   await page.getByRole('button', { name: 'History', exact: true }).click()
   const historyDialog = page.getByRole('dialog', { name: `History · ${name}` })
   const history = historyDialog.getByRole('region', { name: 'Object history' })

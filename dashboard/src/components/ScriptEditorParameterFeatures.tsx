@@ -1,6 +1,8 @@
 import { ParameterValuePreview } from './ParameterValuePreview'
 import ParameterRenameInput from './ParameterRenameInput'
 import { parameterUsages } from './parameterIntegrity'
+import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
+import { parameterUsageActionName } from './scriptSidebarModel'
 import { ParameterDatasetWorkspace } from './ParameterDatasetWorkspace'
 import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
@@ -14,8 +16,10 @@ import type {
 } from '../types/scripts'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import {
+  EMPTY_DATA_SOURCE,
   EMPTY_PARAMETER,
   countUniqueColumnValues,
+  ensureUniqueParameterName,
   inferDelimiter,
   parseInlineData,
   sanitizeVarName,
@@ -121,9 +125,19 @@ function getSelectedParameterHeaderDetails(
   }
 }
 
+export interface CreateParameterRequest {
+  parameter: ParameterConfig
+  importedDataSource?: DataSourceConfig | null
+}
+
 export interface ParameterDataDialogProps {
   onAddDataset?: () => void
-  onInspectUsage?: (path: string) => void
+  onCreateParameter?: (request: CreateParameterRequest) => void
+  onScanAutoParameters?: () => void
+  onDeepScan?: () => void
+  deepScanning?: boolean
+  canDeepScan?: boolean
+  onInspectUsage?: (path: string, parameterName?: string, line?: number) => void
   /** Show every use of the named parameter in DSL. */
   onShowUsesInSource?: (name: string) => void
   /** Further workspace tools (scans, imported parameter files), after Add Parameter. */
@@ -173,6 +187,11 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
   onAddDataColumn,
   onAddDataRow,
   onAddParameter,
+  onCreateParameter,
+  onScanAutoParameters,
+  onDeepScan,
+  deepScanning,
+  canDeepScan,
   onApplyDedupeHeaders,
   onApplyFillHeaders,
   onApplyNormalizeRows,
@@ -201,7 +220,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
   script,
   variant = 'modal',
 } = props
-  const [newParameterType, setNewParameterType] = useState('list')
+  const [showAddParameterDialog, setShowAddParameterDialog] = useState(false)
   const [workspaceView, setWorkspaceView] = useState<'parameters' | 'datasets'>('parameters')
   const [parameterSearch, setParameterSearch] = useState('')
   const dialogRef = useRef<HTMLDivElement | null>(null)
@@ -253,6 +272,11 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
     onSelectParameter(0)
   }, [onSelectParameter, script.parameters, selectedParameterIdx])
 
+  const openAddParameterModal = () => {
+    setWorkspaceView('parameters')
+    setShowAddParameterDialog(true)
+  }
+
   const dialog = (
       <div
         ref={dialogRef}
@@ -267,8 +291,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             <button type="button" className="btn btn-sm btn-secondary" aria-pressed={workspaceView === 'parameters'} onClick={() => setWorkspaceView('parameters')}>Parameters</button>
             <button type="button" className="btn btn-sm btn-secondary" aria-pressed={workspaceView === 'datasets'} onClick={() => setWorkspaceView('datasets')}>Datasets</button>
             <button type="button" className="btn btn-sm btn-secondary" disabled={!props.canUndoStructure} onClick={props.onUndoStructure}>Undo structural edit</button>
-            <label>New parameter type<select aria-label="New parameter type" value={newParameterType} onChange={event => setNewParameterType(event.target.value)}>{PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <button type="button" className="btn btn-sm btn-primary" onClick={() => { setWorkspaceView('parameters'); onAddParameter(newParameterType) }}>+ Add Parameter</button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={openAddParameterModal}>+ Add Parameter</button>
             {props.toolbarActions}
           </div>
         </div>
@@ -295,10 +318,9 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             </h3>
             <p className="editor-dialog-subtitle">{headerDetails.details.join(' · ')}</p>
           </div>
-          {(onClose || (props.onShowUsesInSource && selectedParameter?.name)) && (
+          {onClose && (
             <div className="parameter-dialog-actions">
-              {props.onShowUsesInSource && selectedParameter?.name && <button type="button" className="btn btn-sm btn-secondary" onClick={() => props.onShowUsesInSource?.(selectedParameter.name)}>Show uses in DSL</button>}
-              {onClose && <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>}
+              <button className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
             </div>
           )}
         </div>
@@ -316,7 +338,7 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
             onInspectUsage={props.onInspectUsage}
             dataEditorMode={dataEditorMode}
             dataSourceHistory={dataSourceHistory}
-            onAddParameter={onAddParameter}
+            onAddParameter={openAddParameterModal}
             onAddDataColumn={onAddDataColumn}
             onAddDataRow={onAddDataRow}
             onApplyDedupeHeaders={onApplyDedupeHeaders}
@@ -346,6 +368,24 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
           />
         </div>
         </div></div>}
+        {showAddParameterDialog && (
+          <AddParameterDialog
+            canDeepScan={canDeepScan}
+            deepScanning={deepScanning}
+            onClose={() => setShowAddParameterDialog(false)}
+            onCreateParameter={request => {
+              if (onCreateParameter) {
+                onCreateParameter(request)
+              } else {
+                onAddParameter(request.parameter.type)
+              }
+              setShowAddParameterDialog(false)
+            }}
+            onDeepScan={onDeepScan}
+            onScanAutoParameters={onScanAutoParameters}
+            script={script}
+          />
+        )}
       </div>
   )
 
@@ -360,8 +400,437 @@ export function ParameterDataDialog(props: ParameterDataDialogProps) {
   )
 }
 
+interface AddParameterDialogProps {
+  canDeepScan?: boolean
+  deepScanning?: boolean
+  onClose: () => void
+  onCreateParameter: (request: CreateParameterRequest) => void
+  onDeepScan?: () => void
+  onScanAutoParameters?: () => void
+  script: ScriptData
+}
+
+function AddParameterDialog({
+  canDeepScan,
+  deepScanning,
+  onClose,
+  onCreateParameter,
+  onDeepScan,
+  onScanAutoParameters,
+  script,
+}: AddParameterDialogProps) {
+  const dialogRef = useEditorDialogRef(onClose)
+  const existingParameters = useMemo(() => script.parameters || [], [script.parameters])
+  const defaultParameterName = useMemo(
+    () => ensureUniqueParameterName(`param_${existingParameters.length + 1}`, existingParameters),
+    [existingParameters],
+  )
+  const [draft, setDraft] = useState<ParameterConfig>(() =>
+    applyParameterTypeDefaults({ ...EMPTY_PARAMETER, name: defaultParameterName, type: 'list' }, 'list'),
+  )
+  const [importedFileName, setImportedFileName] = useState('')
+  const [importedSource, setImportedSource] = useState<DataSourceConfig | null>(null)
+  const [fileError, setFileError] = useState('')
+
+  const parameterType = draft.type || 'list'
+  const isDataBacked = parameterType === 'file' || parameterType === 'list'
+  const isGenerated = ['random_number', 'counter', 'current_iteration', 'vuser_id', 'random_string', 'uuid'].includes(parameterType)
+  const isTime = parameterType === 'date_time' || parameterType === 'timestamp' || parameterType === 'time'
+  const selectedTypeOption = PARAMETER_CHOICE_DEFINITIONS.type.options.find(option => option.value === parameterType)
+
+  const existingSources = useMemo(() => script.data_sources || [], [script.data_sources])
+  const activeDataSource = useMemo(() => {
+    if (importedSource) return importedSource
+    if (!draft.data_source) return null
+    const index = findDataSourceIndexByName(existingSources, draft.data_source)
+    return index !== null ? existingSources[index] || null : null
+  }, [draft.data_source, existingSources, importedSource])
+
+  const parsedSource = useMemo(
+    () => (activeDataSource ? parseInlineData(activeDataSource) : null),
+    [activeDataSource],
+  )
+  const sourceSummary = useMemo(
+    () => (activeDataSource ? summarizeInlineData(activeDataSource) : null),
+    [activeDataSource],
+  )
+
+  const updateDraftField = (field: keyof ParameterConfig, value: unknown) => {
+    setDraft(prev => ({ ...prev, [field]: value }))
+  }
+
+  const handleTypeChange = (nextType: string) => {
+    setDraft(prev => {
+      const next = applyParameterTypeDefaults({ ...prev, type: nextType }, nextType)
+      if (nextType !== 'file' && nextType !== 'list' && importedSource) {
+        return { ...next, data_source: undefined, column: undefined }
+      }
+      return next
+    })
+  }
+
+  const handleFileChange = async (file: File | null) => {
+    if (!file) return
+    if (file.size > 8 * 1024 * 1024) {
+      setFileError('Inline dataset imports are limited to 8 MB.')
+      return
+    }
+    try {
+      const text = await file.text()
+      const rawBaseName = file.name.replace(/\.[^.]+$/, '') || 'dataset'
+      const baseSourceName = sanitizeVarName(rawBaseName)
+      let uniqueSourceName = baseSourceName
+      let suffix = 2
+      while (existingSources.some(source => source.name.toLowerCase() === uniqueSourceName.toLowerCase())) {
+        uniqueSourceName = `${baseSourceName}_${suffix}`
+        suffix += 1
+      }
+      const ext = file.name.toLowerCase().endsWith('.dat') ? 'dat' : 'csv'
+      const nextSource: DataSourceConfig = {
+        ...EMPTY_DATA_SOURCE,
+        name: uniqueSourceName,
+        type: ext,
+        delimiter: 'auto',
+        first_row_header: true,
+        inline_data: text,
+      }
+      const parsed = parseInlineData(nextSource)
+      const firstColumn = parsed.columns[0] || ''
+      setImportedFileName(file.name)
+      setImportedSource(nextSource)
+      setFileError('')
+      setDraft(prev => {
+        const nextType = prev.type === 'file' || prev.type === 'list' ? prev.type : 'file'
+        return {
+          ...applyParameterTypeDefaults({ ...prev, type: nextType }, nextType),
+          type: nextType,
+          data_source: uniqueSourceName,
+          column: firstColumn,
+        }
+      })
+    } catch {
+      setFileError('Failed to read parameter data file.')
+    }
+  }
+
+  const handleClearImportedFile = () => {
+    setImportedFileName('')
+    setImportedSource(null)
+    setFileError('')
+    setDraft(prev => ({
+      ...prev,
+      data_source: '',
+      column: '',
+    }))
+  }
+
+  const handleImportedHeaderToggle = (firstRowHeader: boolean) => {
+    if (!importedSource) return
+    const nextSource: DataSourceConfig = {
+      ...importedSource,
+      first_row_header: firstRowHeader,
+    }
+    const parsed = parseInlineData(nextSource)
+    setImportedSource(nextSource)
+    setDraft(prev => ({
+      ...prev,
+      column: parsed.columns.includes(prev.column || '') ? prev.column : (parsed.columns[0] || ''),
+    }))
+  }
+
+  const resolvedName = ensureUniqueParameterName(draft.name?.trim() || defaultParameterName, existingParameters)
+
+  const handleSubmit = () => {
+    onCreateParameter({
+      parameter: {
+        ...draft,
+        name: resolvedName,
+        type: parameterType,
+      },
+      importedDataSource: isDataBacked ? importedSource : null,
+    })
+  }
+
+  return (
+    <DialogLayer>
+      <div className="editor-dialog-backdrop parameter-choice-backdrop" {...dialogBackdropProps(onClose)}>
+        <div
+          ref={dialogRef}
+          className="editor-dialog parameter-choice-dialog add-parameter-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="add-parameter-dialog-title"
+        >
+          <div className="editor-dialog-header">
+            <div>
+              <h3 id="add-parameter-dialog-title" className="panel-title">Add parameter</h3>
+              <p className="editor-dialog-subtitle">
+                Configure parameter type, runtime behavior, data file mapping, or scan the script for parameter candidates.
+              </p>
+            </div>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Close</button>
+          </div>
+          <div className="editor-dialog-body add-parameter-dialog-body">
+            <section className="parameter-info-group add-parameter-section">
+              <div className="add-parameter-section-header">
+                <h4 className="parameter-info-group-title">Identity &amp; type</h4>
+                <span className="cell-mono">{`{{param.${resolvedName}}}`}</span>
+              </div>
+              <div className="parameter-settings-grid">
+                <label>
+                  <span>Parameter Name</span>
+                  <input
+                    aria-label="Parameter Name"
+                    value={draft.name}
+                    onChange={event => updateDraftField('name', sanitizeVarName(event.target.value))}
+                    placeholder={defaultParameterName}
+                  />
+                </label>
+                <label>
+                  <span>New parameter type</span>
+                  <select
+                    aria-label="New parameter type"
+                    value={parameterType}
+                    onChange={event => handleTypeChange(event.target.value)}
+                  >
+                    {PARAMETER_CHOICE_DEFINITIONS.type.options.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {selectedTypeOption && (
+                <p className="parameter-info-help">{selectedTypeOption.description}</p>
+              )}
+            </section>
+
+            <section className="parameter-info-group add-parameter-section">
+              <h4 className="parameter-info-group-title">Behavior</h4>
+              <div className="parameter-settings-grid">
+                <label>
+                  <span>Update Cadence</span>
+                  <select
+                    aria-label="Update Cadence"
+                    value={getParameterChoiceValue(draft, 'update')}
+                    onChange={event => updateDraftField('update', event.target.value)}
+                  >
+                    {PARAMETER_CHOICE_DEFINITIONS.update.options.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                {isDataBacked && (
+                  <>
+                    <label>
+                      <span>Iteration Strategy</span>
+                      <select
+                        aria-label="Iteration Strategy"
+                        value={getParameterChoiceValue(draft, 'selection')}
+                        onChange={event => updateDraftField('selection', event.target.value)}
+                      >
+                        {PARAMETER_CHOICE_DEFINITIONS.selection.options.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>On Exhaustion</span>
+                      <select
+                        aria-label="On Exhaustion"
+                        value={getParameterChoiceValue(draft, 'on_exhaustion')}
+                        onChange={event => updateDraftField('on_exhaustion', event.target.value)}
+                      >
+                        {PARAMETER_CHOICE_DEFINITIONS.on_exhaustion.options.map(option => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                )}
+              </div>
+            </section>
+
+            {(isDataBacked || parameterType === 'host') && (
+              <section className="parameter-info-group add-parameter-section">
+                <h4 className="parameter-info-group-title">Data Mapping</h4>
+                {isDataBacked && (
+                  <>
+                    <div className="add-parameter-import-box">
+                      <label className="add-parameter-file-label">
+                        <span>Import Data File</span>
+                        <input
+                          type="file"
+                          aria-label="Import Data File"
+                          accept=".csv,.dat,.txt,text/csv,text/plain"
+                          onChange={event => {
+                            const file = event.target.files?.[0] || null
+                            void handleFileChange(file)
+                            event.target.value = ''
+                          }}
+                        />
+                      </label>
+                      {fileError && <p className="add-parameter-file-error" role="alert">{fileError}</p>}
+                      {importedSource && (
+                        <div className="add-parameter-import-summary">
+                          <div>
+                            <strong>{importedFileName || `${importedSource.name}.${importedSource.type}`}</strong>
+                            <small>
+                              Dataset <span className="cell-mono">{importedSource.name}</span>
+                              {sourceSummary ? ` · ${sourceSummary.rows} row${sourceSummary.rows === 1 ? '' : 's'} · ${sourceSummary.columns} column${sourceSummary.columns === 1 ? '' : 's'}` : ''}
+                            </small>
+                          </div>
+                          <div className="add-parameter-import-controls">
+                            <label className="checkbox-label compact">
+                              <input
+                                type="checkbox"
+                                checked={importedSource.first_row_header !== false}
+                                onChange={event => handleImportedHeaderToggle(event.target.checked)}
+                              />
+                              <span>First row is header</span>
+                            </label>
+                            <button type="button" className="btn btn-sm btn-ghost" onClick={handleClearImportedFile}>
+                              Clear file
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="parameter-settings-grid">
+                      {!importedSource && (
+                        <label>
+                          <span>Data Source</span>
+                          {existingSources.length > 0 ? (
+                            <select
+                              aria-label="Data Source"
+                              value={draft.data_source || ''}
+                              onChange={event => {
+                                const nextSourceName = event.target.value
+                                const sourceIdx = findDataSourceIndexByName(existingSources, nextSourceName)
+                                const source = sourceIdx !== null ? existingSources[sourceIdx] : null
+                                const firstCol = source ? (parseInlineData(source).columns[0] || '') : ''
+                                setDraft(prev => ({
+                                  ...prev,
+                                  data_source: nextSourceName,
+                                  column: firstCol || prev.column,
+                                }))
+                              }}
+                            >
+                              <option value="">— Inline or select dataset —</option>
+                              {existingSources.map(source => (
+                                <option key={source.name} value={source.name}>{source.name}</option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              aria-label="Data Source"
+                              value={draft.data_source || ''}
+                              onChange={event => updateDraftField('data_source', event.target.value)}
+                              placeholder="dataset_1"
+                            />
+                          )}
+                        </label>
+                      )}
+                      <label>
+                        <span>Column</span>
+                        {parsedSource && parsedSource.columns.length > 0 ? (
+                          <select
+                            aria-label="Column"
+                            value={draft.column || ''}
+                            onChange={event => updateDraftField('column', event.target.value)}
+                          >
+                            <option value="">— Select column —</option>
+                            {parsedSource.columns.map(col => (
+                              <option key={col} value={col}>{col}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            aria-label="Column"
+                            value={draft.column || ''}
+                            onChange={event => updateDraftField('column', event.target.value)}
+                            placeholder="column name"
+                          />
+                        )}
+                      </label>
+                    </div>
+                  </>
+                )}
+                {(parameterType === 'list' || parameterType === 'host') && !importedSource && (
+                  <div className="parameter-settings-grid">
+                    <label className="parameter-settings-wide">
+                      <span>{parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}</span>
+                      <textarea
+                        aria-label={parameterType === 'host' ? 'Host Overrides' : 'Inline Values'}
+                        value={(draft.values || []).join('\n')}
+                        onChange={event => updateDraftField('values', parseParameterListInput(event.target.value))}
+                        placeholder={parameterType === 'host' ? 'host-a\nhost-b' : 'value1\nvalue2'}
+                      />
+                    </label>
+                  </div>
+                )}
+              </section>
+            )}
+
+            {(isGenerated || isTime) && (
+              <section className="parameter-info-group add-parameter-section">
+                <h4 className="parameter-info-group-title">Type Options</h4>
+                <ParameterTypeFields parameter={draft} onUpdate={updateDraftField} />
+              </section>
+            )}
+
+            {(onScanAutoParameters || (canDeepScan && onDeepScan)) && (
+              <section className="parameter-info-group add-parameter-section add-parameter-scan-section">
+                <div className="add-parameter-scan-copy">
+                  <h4 className="parameter-info-group-title">Automated discovery</h4>
+                  <p className="parameter-info-help">
+                    Scan the script to automatically detect hardcoded values and externalize them into parameters.
+                  </p>
+                </div>
+                <div className="add-parameter-scan-actions">
+                  {onScanAutoParameters && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      onClick={() => {
+                        onClose()
+                        onScanAutoParameters()
+                      }}
+                      title="Quick scan for hardcoded values to externalize"
+                    >
+                      Auto Params
+                    </button>
+                  )}
+                  {canDeepScan && onDeepScan && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-secondary"
+                      disabled={deepScanning}
+                      onClick={() => {
+                        onClose()
+                        onDeepScan()
+                      }}
+                      title="Server scan of the saved script; also flags secrets"
+                    >
+                      {deepScanning ? 'Scanning…' : 'Deep Scan'}
+                    </button>
+                  )}
+                </div>
+              </section>
+            )}
+          </div>
+          <div className="editor-dialog-footer add-parameter-dialog-footer">
+            <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-sm btn-primary" onClick={handleSubmit}>Create Parameter</button>
+          </div>
+        </div>
+      </div>
+    </DialogLayer>
+  )
+}
+
 interface ParameterDataDetailProps {
-  onInspectUsage?: (path: string) => void
+  onInspectUsage?: (path: string, parameterName?: string, line?: number) => void
   dataEditorMode: Record<number, 'grid' | 'raw'>
   dataSourceHistory: Record<number, DataSourceHistory>
   onAddDataColumn: (idx: number) => void
@@ -540,7 +1009,85 @@ function ParameterDataDetail({
           <button type="button" role="tab" aria-selected={activeTab === 'usage'} tabIndex={activeTab === 'usage' ? 0 : -1} onClick={() => setDetailTab('usage')}>Usage</button>
         </TabList>
       )}
-      {activeTab === 'usage' && <section role="tabpanel" aria-label="Parameter usage"><h4>Usage of <code>{`{{param.${parameterName}}}`}</code></h4><p>Renaming updates these executable references together.</p><ul>{parameterUsages(script, parameterName).map((usage, index) => <li key={index}>{onInspectUsage ? <button type="button" className="btn btn-sm btn-ghost" onClick={() => onInspectUsage(usage.path)}><code>{usage.path}</code></button> : <code>{usage.path}</code>}</li>)}</ul>{!parameterUsages(script, parameterName).length && <p>This parameter is not referenced by the script yet.</p>}</section>}
+      {activeTab === 'usage' && (() => {
+        const dslRanges = buildDslDocument({ script }).ranges
+        const usages = parameterUsages(script, parameterName).map(usage => ({
+          ...usage,
+          actionName: parameterUsageActionName(script, usage.path),
+          line: lineRangeForTargetPath(dslRanges, `script.${usage.path}`)?.startLine,
+        }))
+        return (
+          <section role="tabpanel" aria-label="Parameter usage">
+            <h4>Usage of <code>{`{{param.${parameterName}}}`}</code></h4>
+            {usages.length > 0 ? (
+              <div className="parameter-usage-table-wrap">
+                <table className="parameter-usage-table" data-table-pagination="off">
+                  <thead>
+                    <tr>
+                      <th scope="col">Action</th>
+                      <th scope="col">Reference</th>
+                      <th scope="col">Line</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usages.map((usage, index) => {
+                      const inspect = onInspectUsage
+                        ? () => onInspectUsage(usage.path, parameterName, usage.line)
+                        : undefined
+                      return (
+                        <tr key={`${usage.path}:${index}`}>
+                          <th scope="row">
+                            {inspect ? (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost parameter-usage-cell-btn"
+                                aria-label={`Open ${parameterName} usage in ${usage.path}${usage.line ? ` at line ${usage.line}` : ''}`}
+                                onClick={inspect}
+                              >
+                                {usage.actionName}
+                              </button>
+                            ) : (
+                              usage.actionName
+                            )}
+                          </th>
+                          <td>
+                            {inspect ? (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost parameter-usage-cell-btn"
+                                onClick={inspect}
+                              >
+                                <code>{usage.path}</code>
+                              </button>
+                            ) : (
+                              <code>{usage.path}</code>
+                            )}
+                          </td>
+                          <td>
+                            {inspect ? (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-ghost parameter-usage-cell-btn"
+                                onClick={inspect}
+                              >
+                                {usage.line ? `Line ${usage.line}` : '—'}
+                              </button>
+                            ) : (
+                              usage.line ? `Line ${usage.line}` : '—'
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p>This parameter is not referenced by the script yet.</p>
+            )}
+          </section>
+        )
+      })()}
       <section className="parameter-detail-info" aria-label="Parameter settings" role="tabpanel" hidden={activeTab !== 'info'}>
         <ParameterValuePreview key={selectedParameterIdx} script={script} name={parameterName} />
         <ParameterInfoPanel
@@ -1096,7 +1643,7 @@ interface SelectedParameterDetailsProps {
   referenceLines: number[]
   usages?: { path: string; label?: string; line: number }[]
   dataInfo: { fileName: string; rows: number | null; unique: number | null } | null
-  onJumpToLine: (line: number) => void
+  onJumpToLine: (line: number, path?: string) => void
   onEditInDataTab: () => void
 }
 
@@ -1113,7 +1660,7 @@ export function SelectedParameterDetails({ parameter, referenceLines, usages, da
     <button type="button" className="btn btn-sm btn-primary" onClick={onEditInDataTab}>Edit in Parameters →</button>
     <h4>Usages ({referenceLines.length})</h4>
     {!referenceLines.length && <p>No references in the current source.</p>}
-    {(usages?.length ? usages : referenceLines.map(line => ({ line, path: 'Full script', label: 'Full script' }))).map(({ line, path, label }, index) => <button key={`${path}:${index}`} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line)} aria-label={`Open ${parameter.name} usage in ${path} at line ${line}`}>{label || path} · line {line}</button>)}
+    {(usages?.length ? usages : referenceLines.map(line => ({ line, path: 'Full script', label: 'Full script' }))).map(({ line, path, label }, index) => <button key={`${path}:${index}`} type="button" className="selected-parameter-ref" onClick={() => onJumpToLine(line, path)} aria-label={`Open ${parameter.name} usage in ${path} at line ${line}`}>{label || path} · line {line}</button>)}
   </section>
 }
 

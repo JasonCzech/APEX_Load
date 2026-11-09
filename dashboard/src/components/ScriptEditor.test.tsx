@@ -382,7 +382,7 @@ async function flushReact() {
 // summary itself is covered by its component tests and the browser workflow.
 async function returnToDebugger(root: ParentNode) {
   if (!root.querySelector('.center-tab-panel.active .debug-completion-summary')) return
-  const tab = findCenterTab(root, 'Action evidence') || findCenterTab(root, 'Browser Replay')
+  const tab = findCenterTab(root, 'Request/Response') || findCenterTab(root, 'Browser Replay')
   if (tab) await act(async () => { tab.click() })
 }
 
@@ -396,9 +396,23 @@ function TopbarContributionHarness() {
     <div data-testid="topbar-contribution">
       {contribution?.titleNode}
       {contribution?.meta?.filter(item => !item.hidden).map(item => (
-        <span className="topbar-meta-chip" data-tone={item.tone} key={item.id}>
-          {item.label}
-        </span>
+        item.onClick ? (
+          <button
+            type="button"
+            className="topbar-meta-chip issue-pill-button"
+            data-tone={item.tone}
+            key={item.id}
+            title={item.title}
+            aria-label={item.ariaLabel}
+            onClick={item.onClick}
+          >
+            {item.label}
+          </button>
+        ) : (
+          <span className="topbar-meta-chip" data-tone={item.tone} key={item.id}>
+            {item.label}
+          </span>
+        )
       ))}
       {contribution?.controls}
       {contribution?.secondaryActions?.filter(action => !action.hidden).map(action => (
@@ -1006,7 +1020,7 @@ describe('ScriptEditor', () => {
       await runFrames()
       expect(document.activeElement).toBe(configure)
       // So does its Author Problems row.
-      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+      await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!.click() })
       const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Configure project secret: LOGIN_TOKEN'))
       expect(row).toBeTruthy()
       await act(async () => { configure!.blur(); row!.click() })
@@ -1548,18 +1562,18 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('Missing secret: LOGIN_TOKEN')
   })
 
-  it('opens the script history from the More menu instead of taking page space', async () => {
+  it('opens the script history from the History button on the right side of the Author status row', async () => {
     const creator = { id: 'c', project_id: 'project-1', resource_type: 'script' as const, resource_id: 'script-1', resource_name: 'Checkout Flow', actor_type: 'user', actor_subject: 'user:alice', actor_display_name: 'Alice', action: 'create', status: 'success', created_at: '2026-10-01T00:00:00Z' }
     await act(async () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" activity={{ creator }} />)
     })
     await flushReact()
     expect(container.querySelector('section[aria-label="Object history"]')).toBeNull()
-    const more = container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')
-    expect(more).toBeTruthy()
-    await act(async () => { more!.click() })
-    const history = findButtonByText(container, 'History')
-    expect(history).toBeTruthy()
+    expect(container.querySelector('button[aria-label="More actions for script editor"]')).toBeNull()
+    expect(findButtonByText(container, 'Reset layout')).toBeUndefined()
+    const history = container.querySelector<HTMLButtonElement>('.script-evidence-states button.script-editor-more')
+    expect(history?.textContent?.trim()).toBe('History')
+    expect(history?.disabled).toBe(false)
     await act(async () => { history!.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const dialog = document.body.querySelector<HTMLElement>('[role="dialog"]')
     expect(dialog?.textContent).toContain('History · Checkout Flow')
@@ -1568,13 +1582,15 @@ describe('ScriptEditor', () => {
     expect(document.body.querySelector('[role="dialog"]')).toBeNull()
   })
 
-  it('offers no history for a script that is not saved yet', async () => {
+  it('disables the History button for a script that is not saved yet', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
     })
-    await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')!.click() })
-    expect(findButtonByText(container, 'History')).toBeUndefined()
-    expect(findButtonByText(container, 'Reset layout')).toBeTruthy()
+    expect(container.querySelector('button[aria-label="More actions for script editor"]')).toBeNull()
+    expect(findButtonByText(container, 'Reset layout')).toBeUndefined()
+    const history = container.querySelector<HTMLButtonElement>('.script-evidence-states button.script-editor-more')
+    expect(history?.textContent?.trim()).toBe('History')
+    expect(history?.disabled).toBe(true)
   })
 
   it('opens in Debug when asked to, as after Debug on an import', async () => {
@@ -2278,8 +2294,8 @@ describe('ScriptEditor', () => {
     expect(sourceMapHeaderRule).toContain('padding: 9px 10px;')
     expect(sourceMapHeaderRule).toContain('border-bottom: 1px solid var(--border);')
     expect(sourceMapPanelsRule).toContain('flex: 0 0 auto;')
-    expect(sourceMapPanelsRule).toContain('height: max(420px, var(--source-map-panels-room, 420px));')
-    expect(sourceMapPanelsRule).toContain('min-height: 360px;')
+    expect(sourceMapPanelsRule).toContain('height: max(200px, var(--source-map-panels-room, 320px));')
+    expect(sourceMapPanelsRule).toContain('min-height: 200px;')
     expect(sourceMapPanelsRule).toContain('max-height: none;')
   })
 
@@ -2873,7 +2889,7 @@ describe('ScriptEditor', () => {
     expect(actionToggle?.getAttribute('aria-expanded')).toBe('false')
     expect(container.querySelector('.action-list')).toBeNull()
 
-    // The Parameters tab lists the parameters; the selected one shows its uses in DSL.
+    // The Parameters tab lists the parameters; its Usage tab shows a table with Action name, Reference, and Line, and clicking an item jumps to the exact DSL element and highlights the parameter.
     await act(async () => {
       findCenterTab(container, 'Parameters')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2885,14 +2901,37 @@ describe('ScriptEditor', () => {
     })
     const findUses = Array.from(workspace?.querySelectorAll<HTMLButtonElement>('button') || [])
       .find(button => button.textContent === 'Show uses in DSL')
-    expect(findUses).toBeDefined()
+    expect(findUses).toBeUndefined()
+
+    const usageTab = Array.from(workspace?.querySelectorAll<HTMLButtonElement>('[role="tab"]') || [])
+      .find(tab => tab.textContent === 'Usage')
+    expect(usageTab).toBeDefined()
     await act(async () => {
-      findUses?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      usageTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const usagePanel = workspace?.querySelector('[role="tabpanel"][aria-label="Parameter usage"]')
+    expect(usagePanel).not.toBeNull()
+    expect(usagePanel?.textContent).not.toContain('Renaming updates these executable references together.')
+    const usageTable = usagePanel?.querySelector('table.parameter-usage-table')
+    expect(usageTable).not.toBeNull()
+    expect(usageTable?.textContent).toContain('Action')
+    expect(usageTable?.textContent).toContain('Reference')
+    expect(usageTable?.textContent).toContain('Line')
+    expect(usageTable?.textContent).toContain('Login')
+    expect(usageTable?.textContent).toContain('actions[0].body')
+
+    codeMirrorDispatchMock.mockClear()
+    const usageRowBtn = usageTable?.querySelector<HTMLButtonElement>('tbody tr button')
+    expect(usageRowBtn).not.toBeNull()
+    await act(async () => {
+      usageRowBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     expect(findCenterTab(container, 'DSL')?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.script-code-title')?.textContent).toContain('Parameter: session_id (2 occurrences)')
-    // Selecting a parameter opens the Parameter companion page showing its details + references.
+    expect(container.querySelector('.script-code-title')?.textContent).toContain('actions[0].body')
+    expect(codeMirrorDispatchMock).toHaveBeenCalled()
+    // Selecting a parameter usage also updates the Parameter companion page showing its details + references.
     expect(container.querySelector('.editor-utility-sidebar .side-pane-header')?.textContent).toContain('Parameter')
     const paramDetails = container.querySelector('.selected-parameter-details')
     expect(paramDetails).not.toBeNull()
@@ -3448,7 +3487,7 @@ describe('ScriptEditor', () => {
 
     const debugCenter = container.querySelector('.debugger-code-center')
     expect(debugCenter).not.toBeNull()
-    expect(findCenterTab(container, 'Action evidence')?.getAttribute('aria-selected')).toBe('true')
+    expect(findCenterTab(container, 'Request/Response')?.getAttribute('aria-selected')).toBe('true')
     expect(findCenterTab(debugCenter || container, 'Source Mapping')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Metadata JSON')).toBeUndefined()
     expect(findCenterTab(debugCenter || container, 'Conversion Mapping')).toBeUndefined()
@@ -3778,10 +3817,17 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-outline-nav')?.textContent).not.toContain('Source Mapping')
   })
 
-  it('lets the debug request and response pane collapse to a slim rail to expand the center workbench', async () => {
+  it('lets the debug right rail stay open by default across center tabs and collapse to a slim rail', async () => {
+    const onClose = vi.fn()
     await act(async () => {
-      root.render(<ScriptEditor initialScript={initialScript} />)
+      root.render(<ScriptEditor initialScript={initialScript} scriptId="script-1" onClose={onClose} />)
     })
+
+    // Author mode places Close editor and History on the right without a More menu or Author Problems button.
+    expect(container.querySelector('.script-evidence-states button[aria-label="More actions for script editor"]')).toBeNull()
+    expect(container.querySelector('.script-evidence-states button[aria-label="Close script editor"]')).not.toBeNull()
+    expect(container.querySelector('.script-evidence-states button.script-editor-more')?.textContent?.trim()).toBe('History')
+    expect(Array.from(container.querySelectorAll('button')).some(button => /^Author Problems \(/.test(button.textContent || ''))).toBe(false)
 
     const debugTab = findOpenDebuggerButton(container)
     expect(debugTab).toBeDefined()
@@ -3790,17 +3836,38 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    // While Action evidence is the active center tab, debug detail is hosted inline in the center workbench.
-    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-hosted')).toBe(true)
+    // Debug mode removes the .script-evidence-states row and places Close editor and History in .debug-session-bar alongside Debug options.
+    expect(container.querySelector('.script-evidence-states')).toBeNull()
+    const closeBtn = container.querySelector<HTMLButtonElement>('.debug-session-bar button[aria-label="Close script editor"]')
+    expect(closeBtn?.textContent?.trim()).toBe('Close editor')
+    const historyBtn = container.querySelector<HTMLButtonElement>('.debug-session-bar button.script-editor-more')
+    expect(historyBtn?.textContent?.trim()).toBe('History')
+    expect(historyBtn?.disabled).toBe(false)
+
+    // While Request/Response is the active center tab, the right rail is also present and open by default.
+    expect(findCenterTab(container, 'Request/Response')?.getAttribute('aria-selected')).toBe('true')
+    expect(container.querySelector('#center-tab-panel-action-list .debugger-request-body')).not.toBeNull()
+    expect(container.querySelector('#center-tab-panel-action-list .debugger-center-tablist')).toBeNull()
+    expect(container.querySelector('.debugger-shell > .debugger-center')).not.toBeNull()
+    expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(false)
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
+
+    // Right rail tabs contain only Variables and Run Configuration (no Request / Response).
+    const rightRailTabs = Array.from(container.querySelectorAll('.debugger-center-tablist [role="tab"]')).map(tab => tab.textContent?.trim())
+    expect(rightRailTabs).toEqual(['Variables', 'Run Configuration'])
+
+    // Run Configuration tab displays all values without pagination.
+    const runConfigTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-center-tablist [role="tab"]')).find(tab => tab.textContent?.trim() === 'Run Configuration')
+    await act(async () => { runConfigTab?.click() })
+    const runConfigBody = container.querySelector('.debugger-run-config-body')
+    expect(runConfigBody?.getAttribute('data-table-pagination')).toBe('off')
+    expect(runConfigBody?.querySelector('table.debug-effective-settings-table')?.getAttribute('data-table-pagination')).toBe('off')
 
     await act(async () => { findCenterTab(container, 'DSL')?.click() })
 
-    // The merged detail panel (request/response + variables) is open by default in the right rail.
     expect(container.querySelector('.debugger-center')).not.toBeNull()
     expect(container.querySelector('.debugger-center')?.classList.contains('collapsed')).toBe(false)
     expect(container.querySelector('.debugger-center-body')).not.toBeNull()
-    expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-hosted')).toBe(false)
     expect(container.querySelector('.debugger-shell')?.classList.contains('debugger-detail-collapsed')).toBe(false)
 
     const collapseDetails = findButtonByTitle(container, 'Collapse debug detail panel')
@@ -4570,6 +4637,11 @@ describe('ScriptEditor', () => {
       root.render(<ScriptEditor initialScript={scriptWithoutParameters} initialFocusedSection="parameter-data" />)
     })
 
+    const workspaceActions = container.querySelector('.parameter-workspace-actions')
+    expect(workspaceActions?.querySelector('select[aria-label="New parameter type"]')).toBeNull()
+    expect(Array.from(workspaceActions?.querySelectorAll('button') || []).some(btn => btn.textContent?.trim() === 'Auto Params')).toBe(false)
+    expect(Array.from(workspaceActions?.querySelectorAll('button') || []).some(btn => btn.textContent?.trim() === 'Deep Scan')).toBe(false)
+
     const addButton = Array.from(container.querySelectorAll('button')).find(button =>
       button.textContent?.trim() === '+ Add Parameter',
     )
@@ -4582,8 +4654,78 @@ describe('ScriptEditor', () => {
       addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
+    const dialog = document.body.querySelector('.add-parameter-dialog') as HTMLElement | null
+    expect(dialog).not.toBeNull()
+    const createButton = Array.from(dialog?.querySelectorAll('button') || []).find(button =>
+      button.textContent?.trim() === 'Create Parameter',
+    )
+    expect(createButton).toBeTruthy()
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(document.body.querySelector('.add-parameter-dialog')).toBeNull()
     expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('param_1')
     expect((container.querySelector('input[value="param_1"]') as HTMLInputElement | null)?.value).toBe('param_1')
+  })
+
+  it('imports a data file and creates a mapped parameter from the Add Parameter popup dialog', async () => {
+    const scriptWithoutParameters: ScriptDefinition = {
+      ...initialScript,
+      data_sources: [],
+      parameters: [],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={scriptWithoutParameters} initialFocusedSection="parameter-data" />)
+    })
+
+    const addButton = Array.from(container.querySelectorAll('.parameter-workspace-actions button')).find(button =>
+      button.textContent?.trim() === '+ Add Parameter',
+    )
+    expect(addButton).toBeTruthy()
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dialog = document.body.querySelector('.add-parameter-dialog') as HTMLElement | null
+    expect(dialog).not.toBeNull()
+
+    const nameInput = dialog?.querySelector('input[aria-label="Parameter Name"]') as HTMLInputElement | null
+    expect(nameInput).not.toBeNull()
+    await act(async () => {
+      changeInputValue(nameInput!, 'customer_email')
+    })
+
+    const fileInput = dialog?.querySelector('input[aria-label="Import Data File"]') as HTMLInputElement | null
+    expect(fileInput).not.toBeNull()
+    const csvFile = {
+      name: 'customers.csv',
+      size: 42,
+      text: async () => 'email,region\nalice@example.com,us-east\nbob@example.com,eu-west\n',
+    } as unknown as File
+    Object.defineProperty(fileInput!, 'files', { value: [csvFile], configurable: true })
+    await act(async () => {
+      fileInput!.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(dialog?.textContent).toContain('customers.csv')
+    expect(dialog?.textContent).toContain('2 rows · 2 columns')
+    const columnSelect = dialog?.querySelector('select[aria-label="Column"]') as HTMLSelectElement | null
+    expect(columnSelect?.value).toBe('email')
+
+    const createButton = Array.from(dialog?.querySelectorAll('button') || []).find(button =>
+      button.textContent?.trim() === 'Create Parameter',
+    )
+    await act(async () => {
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(document.body.querySelector('.add-parameter-dialog')).toBeNull()
+    expect(container.querySelector('.parameter-sidebar-item.selected')?.textContent).toContain('customer_email')
+    expect(container.textContent).toContain('{{param.customer_email}}')
+    expect(container.textContent).toContain('customers.csv')
   })
 
   it('runs auto parameterization from the Parameters tab into the script JSON source tab', async () => {
@@ -4598,10 +4740,23 @@ describe('ScriptEditor', () => {
 
     const parameterWorkspace = container.querySelector('[aria-label="Parameters"]')
     const activePanel = container.querySelector('.center-tab-panel.active') as HTMLDivElement | null
-    const autoButton = Array.from(parameterWorkspace?.querySelectorAll('.parameter-workspace-actions button') || []).find(button =>
-      button.textContent?.trim() === 'Auto Params',
+    const addButton = Array.from(parameterWorkspace?.querySelectorAll('.parameter-workspace-actions button') || []).find(button =>
+      button.textContent?.trim() === '+ Add Parameter',
     )
     expect(activePanel?.textContent).not.toContain('Auto Parameterization')
+    expect(addButton).toBeTruthy()
+    if (!addButton) {
+      return
+    }
+
+    await act(async () => {
+      addButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const dialog = document.body.querySelector('.add-parameter-dialog') as HTMLElement | null
+    const autoButton = Array.from(dialog?.querySelectorAll('button') || []).find(button =>
+      button.textContent?.trim() === 'Auto Params',
+    )
     expect(autoButton).toBeTruthy()
     if (!autoButton) {
       return
@@ -4689,7 +4844,15 @@ describe('ScriptEditor', () => {
     await act(async () => {
       findCenterTab(container, 'Parameters')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    const autoButton = Array.from(container.querySelectorAll('.parameter-workspace-actions button')).find(button =>
+    const addButton = Array.from(container.querySelectorAll('.parameter-workspace-actions button')).find(button =>
+      button.textContent?.trim() === '+ Add Parameter',
+    )
+    expect(addButton).toBeTruthy()
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const dialog = document.body.querySelector('.add-parameter-dialog') as HTMLElement | null
+    const autoButton = Array.from(dialog?.querySelectorAll('button') || []).find(button =>
       button.textContent?.trim() === 'Auto Params',
     )
     expect(autoButton).toBeTruthy()
@@ -5453,17 +5616,16 @@ describe('ScriptEditor', () => {
       )
     })
     await flushReact()
-    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
-    expect(problems.textContent).toBe('Author Problems (1)')
+    expect(Array.from(container.querySelectorAll('button')).some(button => /^Author Problems \(/.test(button.textContent || ''))).toBe(false)
     // A warning alone does not turn the top bar's issue chip red.
-    const issueChip = Array.from(container.querySelectorAll<HTMLElement>('.topbar-meta-chip')).find(chip => chip.textContent?.trim() === '1 issue')
+    const issueChip = Array.from(container.querySelectorAll<HTMLButtonElement>('.topbar-meta-chip')).find(chip => chip.textContent?.trim() === '1 issue')!
     expect(issueChip?.dataset.tone).toBe('warning')
     // The Insights rail (Source's companion) counts and lists the same problem.
     await act(async () => { findCenterTab(container, 'DSL')?.click() })
     const rail = container.querySelector('.utility-problem-summary')?.closest('.utility-card')
     expect(rail?.querySelector('.utility-problem-summary')?.textContent).toContain('1 warning')
     expect(rail?.querySelector('.utility-list')?.textContent).toContain('Missing value: c_storeid')
-    await act(async () => { problems.click() })
+    await act(async () => { issueChip.click() })
     const missing = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Missing value: c_storeid'))
     expect(missing).toBeTruthy()
     expect(missing!.textContent).toContain('replay sends the placeholder text')
@@ -5480,7 +5642,7 @@ describe('ScriptEditor', () => {
     ] }
     await act(async () => { root.render(<ScriptEditor initialScript={orderScript} projectId="project-1" />) })
     await flushReact()
-    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!
     await act(async () => { problems.click() })
     const titles = Array.from(document.querySelectorAll('[role="dialog"] .issue-details-copy strong')).map(title => title.textContent)
     expect(titles.indexOf('Choose supported TLS settings')).toBe(0)
@@ -5495,7 +5657,7 @@ describe('ScriptEditor', () => {
       { ...initialScript.actions[0], name: 'Create cart', target: '/cart', extractors: [{ name: 'cart_id', source: 'body', type: 'json_path', expression: '$.cart_id' }] },
       { ...initialScript.actions[0], name: 'Region', target: '/region/{{var.region}}', extractors: [] },
     ] }
-    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!
     const openProblems = async () => {
       await act(async () => { authorProblems().click() })
       return Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).map(button => button.textContent || '')
@@ -5535,7 +5697,7 @@ describe('ScriptEditor', () => {
       { ...initialScript.actions[0], name: 'Create order', method: 'POST', target: '/orders' },
     ] }
     await act(async () => { root.render(<ScriptEditor initialScript={focusScript} projectId="project-1" />) })
-    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!
     await act(async () => { problems.click() })
     const repair = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Action target is required'))!
     expect(repair).toBeDefined()
@@ -5562,7 +5724,7 @@ describe('ScriptEditor', () => {
       { ...initialScript.actions[0], name: 'Create order', method: 'POST', target: '/orders' },
     ] }
     await act(async () => { root.render(<ScriptEditor initialScript={focusScript} projectId="project-1" />) })
-    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!
+    const problems = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!
     await act(async () => { problems.click() })
     const repair = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('Action target is required'))!
     const frames = new Map<number, FrameRequestCallback>()
@@ -6674,7 +6836,7 @@ describe('ScriptEditor', () => {
       script: expect.objectContaining({ project_id: 'project-1' }),
     }))
     expect(container.querySelector('.debugger-center')).not.toBeNull()
-    expect(container.querySelector('.debugger-center')?.textContent).toContain('Get Products')
+    expect(container.querySelector('.debugger-request-body')?.textContent).toContain('Get Products')
 
     const stepButton = findButtonByTitle(container, 'Step to next action') as HTMLButtonElement | undefined
     expect(stepButton).toBeTruthy()
@@ -7805,6 +7967,41 @@ describe('ScriptEditor', () => {
     expect(container.textContent).not.toContain('network connection closed')
   })
 
+  it('allows dismissing a debug panel warning message via its close button', async () => {
+    const shakeoutWarning = 'Debugger replay validates one deterministic VUser path; randomized or VUser-partitioned parameter data still requires a scenario shakeout before load execution.'
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({
+      ...debugSessionResponse({
+        group: 'Checkout Flow-debug',
+        protocol: 'http',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [],
+      }),
+      warnings: [shakeoutWarning],
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    const warningToast = container.querySelector('.editor-feedback-strip .editor-toast.warning')
+    expect(warningToast?.textContent).toContain(shakeoutWarning)
+
+    const closeButton = warningToast?.querySelector('button[aria-label="Close message"]') as HTMLButtonElement | null
+    expect(closeButton).not.toBeNull()
+    await act(async () => {
+      closeButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(container.querySelector('.editor-feedback-strip .editor-toast.warning')).toBeNull()
+  })
+
   it('resizes debugger panels with accessible splitters without the shell header controls', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
@@ -7869,8 +8066,12 @@ describe('ScriptEditor', () => {
 
     await act(async () => {
       panelResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+      bottomResizer.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
     })
     expect(Number(panelResizer.getAttribute('aria-valuenow'))).toBeGreaterThan(600)
+    const expectedBottomMax = Math.round(window.innerHeight * 0.5)
+    expect(bottomResizer.getAttribute('aria-valuemax')).toBe(String(expectedBottomMax))
+    expect(bottomResizer.getAttribute('aria-valuenow')).toBe(String(expectedBottomMax))
   })
 
   it('surfaces script load failures when fetching by id', async () => {
@@ -12329,16 +12530,9 @@ describe('ScriptEditor', () => {
 
     await returnToDebugger(container)
 
-    // Switch center workbench to Source so Debug detail renders in the right side rail.
-    const sourceTab = Array.from(container.querySelectorAll('[role="tab"]')).find(tab => tab.textContent?.trim() === 'Source')
-    if (sourceTab) {
-      await act(async () => {
-        sourceTab.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-    }
-
-    const debugDetail = container.querySelector('.debugger-shell > .debugger-center') ?? container.querySelector('.debugger-center')
+    const debugDetail = container.querySelector('.debugger-request-body')
     expect(debugDetail).not.toBeNull()
+    expect(debugDetail?.querySelectorAll('.debug-log-token').length).toBeGreaterThan(0)
 
     const codeBoxes = Array.from(debugDetail?.querySelectorAll('pre.snapshot-code') ?? [])
     expect(codeBoxes.some(box => box.textContent?.includes('resolved-val-23'))).toBe(true)
@@ -12536,12 +12730,13 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Network')
     expect(container.textContent).toContain('HTML')
     expect(container.textContent).toContain('View full size')
-    expect(container.textContent).toContain('Expand artifacts')
+    expect(container.textContent).not.toContain('Expand artifacts')
+    expect(container.textContent).not.toContain('Collapse artifacts')
     const activePanel = container.querySelector('.center-tab-panel.active') ?? container
-    expect(activePanel.textContent).not.toContain('Catalog loaded 11')
-    expect(activePanel.textContent).not.toContain('https://shop.example.com/api/catalog/11')
-    expect(activePanel.textContent).not.toContain('Catalog 59 featured product with additional merchandising detail')
-    const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
+    expect(activePanel.textContent).toContain('Catalog loaded 11')
+    expect(activePanel.textContent).toContain('https://shop.example.com/api/catalog/11')
+    expect(activePanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
+    const highlightedBlocks = Array.from(container.querySelectorAll('.debugger-request-body .snapshot-code'))
     expect(highlightedBlocks).toHaveLength(2)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"ready_state": "complete"'))).toBe(true)
     expect(highlightedBlocks.some(block => block.textContent?.includes('"page_url": "https://shop.example.com/catalog"'))).toBe(true)
@@ -12550,24 +12745,9 @@ describe('ScriptEditor', () => {
     const htmlLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'HTML')
     expect(consoleLabel?.parentElement?.textContent).toContain('Copy')
     expect(networkLabel?.parentElement?.textContent).toContain('Copy')
+    expect(networkLabel?.parentElement?.classList.contains('replay-browser-network')).toBe(true)
     expect(htmlLabel?.parentElement?.textContent).toContain('Copy')
     expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
-
-    const expandArtifactsButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Expand artifacts'))
-    expect(expandArtifactsButton).toBeTruthy()
-    if (!expandArtifactsButton) {
-      return
-    }
-
-    await act(async () => {
-      expandArtifactsButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(activePanel.textContent).toContain('Collapse artifacts')
-    expect(activePanel.textContent).toContain('Catalog loaded 11')
-    expect(activePanel.textContent).toContain('https://shop.example.com/api/catalog/11')
-    expect(activePanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
 
     const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
     expect(viewScreenshotButton).toBeTruthy()
@@ -13044,7 +13224,7 @@ describe('ScriptEditor', () => {
       },
     })
     const issueChip = () => Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .topbar-meta-chip')).find(chip => /\d+ issues?$/.test(chip.textContent || ''))?.textContent
-    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.textContent
+    const authorProblems = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!.textContent
     const selectionPath = () => container.querySelector('.inspector-selection-path small')?.textContent
     const notice = () => container.querySelector('.editor-toast.blocked[role="status"]')
 
@@ -13062,11 +13242,6 @@ describe('ScriptEditor', () => {
       await act(async () => { topbarDebug().click() })
       await flushReact()
       expect(selectionPath()).toContain('init[2]')
-      // The More menu offers the same walk.
-      await act(async () => { container.querySelector<HTMLButtonElement>('button[aria-label="More actions for script editor"]')!.click() })
-      await act(async () => { findButtonByText(container, 'Resolve blockers (2)')!.click() })
-      await flushReact()
-      expect(selectionPath()).toContain('init[0]')
       expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
     })
 
@@ -13092,7 +13267,7 @@ describe('ScriptEditor', () => {
       const blockerRow = (source: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
         .find(button => button.textContent?.includes('Choose supported TLS settings') && button.textContent.includes(source))
       try {
-        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!.click() })
         // The second gate, so the walk Resolve starts from is not what lands here.
         const row = blockerRow('web_set_sockets_option_2')
         expect(row).toBeTruthy()
@@ -13136,7 +13311,7 @@ describe('ScriptEditor', () => {
       ] }
       await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={script} projectId="project-1" />)) })
       await flushReact()
-      expect(authorProblems()).toBe('Author Problems (2)')
+      expect(authorProblems()).toBe('2 issues')
       expect(topbarDebug().textContent).toBe('Debug')
       expect(topbarDebug().disabled).toBe(false)
       await act(async () => { topbarDebug().click(); await Promise.resolve() })
@@ -13158,7 +13333,7 @@ describe('ScriptEditor', () => {
       expect(container.querySelector('.replay-live-badge')?.textContent).not.toBe('Running')
       expect(notice()?.textContent).toContain('Debug did not start: 2 problems block replay — Choose supported TLS settings (Init › web_set_sockets_option_0); Choose supported TLS settings (Init › web_set_sockets_option_2).')
       expect(topbarDebug().textContent).toBe('Resolve 2 blockers')
-      await act(async () => { findButtonByText(container, `Author Problems (${authorProblems()?.match(/\d+/)?.[0]})`)!.click() })
+      await act(async () => { findButtonByText(container, authorProblems() || '')!.click() })
       const dialogText = document.querySelector('[role="dialog"]')?.textContent || ''
       expect(dialogText).not.toContain('script replay is blocked')
       expect(dialogText.match(/Choose supported TLS settings/g)).toHaveLength(2)
@@ -13605,7 +13780,7 @@ describe('ScriptEditor', () => {
         await act(async () => { container.querySelector<HTMLElement>('[role="treeitem"][data-tooltip="Home"]')!.click() })
         await flushReact()
         expect(panel()).toBeNull()
-        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^Author Problems \(/.test(button.textContent || ''))!.click() })
+        await act(async () => { Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => /^\d+ issues?$/.test(button.textContent || ''))!.click() })
         const row = Array.from(document.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')).find(button => button.textContent?.includes('sid'))
         expect(row).toBeTruthy()
         await act(async () => { row!.click() })
@@ -14200,7 +14375,7 @@ describe('ScriptEditor', () => {
       // Other blockers may remain to repair, so a page hosting the editor keeps it open.
       expect(onSave).toHaveBeenCalledWith(stored, { keepAuthoringOpen: true })
       expect(apiMock.updateScript).not.toHaveBeenCalled()
-      await act(async () => { findButtonByText(container, `Author Problems (${before - 2})`)!.click() })
+      await act(async () => { findButtonByText(container, `${before - 2} issue${before - 2 === 1 ? '' : 's'}`)!.click() })
       expect(document.querySelector('[role="dialog"]')?.textContent || '').not.toContain('Current operation')
       // The next start runs against the repaired revision.
       // Close the Problems dialog first: while it is open it holds focus, which
@@ -14708,18 +14883,25 @@ describe('ScriptEditor', () => {
       }))
     })
 
-    it('replaces Review changes with Close editor when clean and places Author Problems to the left of Review changes when dirty', async () => {
+    it('places Close editor and History on the right side in both Author mode and Debug mode', async () => {
       const onClose = vi.fn()
       await act(async () => { root.render(withTopbar(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" onClose={onClose} />)) })
       await flushReact()
       const stateButtons = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.script-evidence-states > button'))
         .map(btn => btn.textContent?.trim() || btn.getAttribute('aria-label'))
-      expect(stateButtons()).toEqual(['Author Problems (0)', 'Close editor'])
+      expect(stateButtons()).toEqual(['Close editor', 'History'])
       expect(container.querySelectorAll('.script-evidence-states > button[aria-label="Close script editor"]')).toHaveLength(1)
+      expect(container.querySelector('.script-evidence-states > button.script-editor-more')?.textContent?.trim()).toBe('History')
+      expect(container.querySelector('button[aria-label="More actions for script editor"]')).toBeNull()
       await act(async () => { changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="topbar-contribution"] input[aria-label="Script name"]')!, 'Edited Name') })
       await flushReact()
-      expect(stateButtons()).toEqual(['Author Problems (0)', 'Review changes'])
-      expect(container.querySelectorAll('.script-evidence-states > button[aria-label="Close script editor"]')).toHaveLength(0)
+      expect(stateButtons()).toEqual(['Review changes', 'Close editor', 'History'])
+      expect(container.querySelectorAll('.script-evidence-states > button[aria-label="Close script editor"]')).toHaveLength(1)
+      await act(async () => { modeChip('Debug').click() })
+      await flushReact()
+      expect(container.querySelector('.script-evidence-states')).toBeNull()
+      expect(container.querySelectorAll('.debug-session-bar > button[aria-label="Close script editor"]')).toHaveLength(1)
+      expect(container.querySelector('.debug-session-bar > button.script-editor-more')?.textContent?.trim()).toBe('History')
     })
 
     it('operates the Debug run modes menu from the keyboard and keeps Escape inside it', async () => {

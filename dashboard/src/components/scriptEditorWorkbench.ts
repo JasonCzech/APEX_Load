@@ -90,7 +90,8 @@ export const DEBUGGER_LAYOUT_LIMITS: Record<DebuggerResizeKind, { max: number; m
   rail: { min: 180, max: 560, step: 24 },
   // The effective maximum is the available workbench width, not a fixed pixel cap.
   vars: { min: 220, max: Number.POSITIVE_INFINITY, step: 24 },
-  bottom: { min: 140, max: 640, step: 24 },
+  // The effective maximum is 50% of the window height, not a fixed pixel cap.
+  bottom: { min: 140, max: Number.POSITIVE_INFINITY, step: 24 },
 }
 
 export function isCenterWorkbenchTabId(value: unknown): value is CenterWorkbenchTabId {

@@ -1,6 +1,6 @@
 import TooltipButton from './ux/TooltipButton'
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
-import { MappingReviewDetails } from './MappingReviewDetails'
+import { MappingReviewDetails, SourceMapPopupDialog } from './MappingReviewDetails'
 import { useMappingReviewState } from './useMappingReviewState'
 import { scriptHasSourceOnlyReview, sourceReviewIsSourceOnly } from './sourceReviewDomain'
 import { decisionMatches, type MappingReviewState } from './sourceMappingReviewState'
@@ -286,7 +286,7 @@ const COVERAGE_TOOLTIPS: Record<string, string> = {
 }
 
 export default function SourceMappingReview({
-  baselineScript, onChangeReview, draftDirty, onEditTarget, onRepairTarget, repairPaths,
+  baselineScript, onChangeReview, draftDirty, onRepairTarget, repairPaths,
   focusRequestId = 0,
   focusedMappingId = '',
   focusedSourceFile = '',
@@ -360,6 +360,8 @@ export default function SourceMappingReview({
   const [storedNoOriginTarget, setNoOriginTarget] = useState('')
   const noOriginTarget = sourceOnly ? '' : storedNoOriginTarget
   const [showNoOrigin, setShowNoOrigin] = useState(false)
+  const [showViewOptions, setShowViewOptions] = useState(false)
+  const [showStatusHelp, setShowStatusHelp] = useState(false)
   const keyboardSelection = useRef(false)
   const openingScript = useRef(script)
   const identity = useMappingReviewState(script, baselineScript || openingScript.current, sourceReview)
@@ -451,7 +453,7 @@ export default function SourceMappingReview({
       cancelAnimationFrame(frame)
       panels.style.removeProperty('--source-map-panels-room')
     }
-  }, [files.length, mappings.length, sourceOnly])
+  }, [files.length, mappings.length, sourceOnly, isTableCollapsed])
   const rowRefs = useRef<Record<string, HTMLTableRowElement | null>>({})
   const lastTableScrollFocusRequestRef = useRef<number | null>(null)
   // A focus request (an issue's source, or a mapping or file the caller names)
@@ -1002,22 +1004,38 @@ export default function SourceMappingReview({
         <CodeLineWrapToggle wrapLines={wrapLines} onChange={setWrapLines} />
         <span>{filteredMappings.length} of {mappings.length} mappings</span>
         {(filter || categoryFilter !== '') && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setFilter(''); setCategoryFilter('') }}>Clear filters</button>}
-      <details className="source-map-view-options"><summary>View options & export</summary>
-      <div className="source-map-review-controls import-review-toolbar">
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost"
-            style={{ border: '1px solid var(--border)' }}
-            onClick={() => { void exportCsv() }}
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary source-map-view-options-trigger"
+          aria-haspopup="dialog"
+          aria-expanded={showViewOptions}
+          onClick={() => setShowViewOptions(true)}
+        >
+          View options &amp; export
+        </button>
+        {showViewOptions && (
+          <SourceMapPopupDialog
+            title="View options & export"
+            className="source-map-view-options"
+            onClose={() => setShowViewOptions(false)}
           >
-            Export filtered mappings
-          </button>
-
-        <label>{sourceOnly ? 'Source scope' : 'Comparison scope'}<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setLastSelectionOrigin(null); setSourceRevealRequestId(value => value + 1); setDestinationRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
-        {!sourceOnly && <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setDestinationRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>}
-        <details><summary>Keyboard shortcuts</summary><p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p></details>
-      </div>
-      </details>
+            <div className="source-map-review-controls import-review-toolbar">
+              <label>{sourceOnly ? 'Source scope' : 'Comparison scope'}<select value={contextOnly ? 'context' : 'full'} onChange={event => { setContextOnly(event.target.value === 'context'); setLastSelectionOrigin(null); setSourceRevealRequestId(value => value + 1); setDestinationRevealRequestId(value => value + 1) }}><option value="context">Mapped context</option><option value="full">Full document</option></select></label>
+              {!sourceOnly && <label>Destination version<select value={destinationView} onChange={event => { setDestinationView(event.target.value as typeof destinationView); setNoOriginTarget(''); setDestinationRevealRequestId(value => value + 1) }}><option value="current">Current draft</option><option value="baseline" disabled={!identity.state?.snapshot}>Review baseline</option></select></label>}
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => { void exportCsv() }}
+              >
+                Export filtered mappings
+              </button>
+              <div className="source-map-shortcuts-note">
+                <strong>Keyboard shortcuts</strong>
+                <p>In the mapping list, use ↑/↓ and Home/End to select. Use [ and ] to move between unacknowledged review items while focus is in this workspace.</p>
+              </div>
+            </div>
+          </SourceMapPopupDialog>
+        )}
       </div>
       {!sourceOnly && destinationView === 'baseline' && <p>Review baseline captured {identity.state?.capturedAt ? formatDateTime(identity.state.capturedAt, { seconds: true }) : 'when this script was opened'}. This is a review reference, not a verified original import snapshot.</p>}
       {identity.error && <p role="alert">{identity.error}</p>}
@@ -1089,7 +1107,7 @@ export default function SourceMappingReview({
       </div>
 
       <div className="source-map-comparison">
-      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<details className="source-map-status-help"><summary>About review status</summary><p>{sourceOnly ? 'Conversion coverage describes original import mappings. It does not establish native replay or current draft readiness.' : 'Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.'}</p></details></nav>
+      <nav className="lr-mapping-navigation" aria-label="Review mapping navigation">{[-1, 1].map(direction => <button key={direction} type="button" className="btn btn-secondary btn-sm" disabled={!mappings.some(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status))} onClick={() => { const reviewItems = mappings.filter(m => ['review', 'review_only', 'unsupported', 'blocked', 'external_required'].includes(m.status)); const index = reviewItems.findIndex(m => m.id === selectedMappingId); selectMapping(reviewItems[index < 0 ? direction < 0 ? reviewItems.length - 1 : 0 : (index + direction + reviewItems.length) % reviewItems.length]) }}>{direction < 0 ? 'Previous review mapping' : 'Next review mapping'}</button>)}<button type="button" className="btn btn-sm btn-secondary source-map-status-help" aria-haspopup="dialog" aria-expanded={showStatusHelp} onClick={() => setShowStatusHelp(true)}>About review status</button>{showStatusHelp && <SourceMapPopupDialog title="About review status" className="source-map-status-help-dialog" onClose={() => setShowStatusHelp(false)}><p>{sourceOnly ? 'Conversion coverage describes original import mappings. It does not establish native replay or current draft readiness.' : 'Conversion coverage describes source mappings, not import issues or execution readiness. Not reviewed means no acknowledgement has been recorded. Review acknowledgement does not resolve blockers.'}</p></SourceMapPopupDialog>}</nav>
       {unmappedIssueFocus && <p className="source-map-issue-focus" role="status">No direct source mapping was identified for “{unmappedIssueFocus.title}”. {unmappedIssueFocus.filePath ? `Showing ${unmappedIssueFocus.filePath}${unmappedIssueFocus.line ? `:${unmappedIssueFocus.line}` : ''} for inspection.` : 'Select a captured source file to inspect this finding.'}</p>}
       {selectedMapping && !noOriginTarget && <div className="source-map-selected-details">
         <strong>{selectedMapping.function || formatSourceRange(selectedMapping)}</strong>
@@ -1103,7 +1121,6 @@ export default function SourceMappingReview({
         {!filteredMappings.some(mapping => mapping.id === selectedMapping.id) && <p role="status">The selected mapping is outside the current filters. Clear filters to reveal it in the list.</p>}
         {!sourceOnly && <MappingReviewDetails key={selectedMapping.id + (identity.state?.decisions[selectedMapping.id]?.reviewedAt || '') + (identity.resolved[selectedMapping.id]?.path || '')} mapping={selectedMapping} script={script} state={identity.state} resolution={identity.resolved[selectedMapping.id]} onChange={onChangeReview} dirty={draftDirty} />}
       </div>}
-      {!sourceOnly && onEditTarget && destinationPath && destinationView === 'current' && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditTarget(destinationPath)}>Edit destination in Author</button>}
       {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
       <div ref={codePanelsRef} className="source-map-panels">

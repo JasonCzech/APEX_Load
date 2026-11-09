@@ -72,17 +72,18 @@
   justify-content: flex-end;
   flex-wrap: wrap;
 }
-.editor-toast {
-  padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500;
-  animation: slideIn 0.2s ease;
-}
+.editor-toast { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 14px; border-radius: 6px; font-size: 13px; font-weight: 500; animation: slideIn 0.2s ease; }
+.editor-toast-body { display: flex; flex: 1 1 auto; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .editor-toast.error { background: rgba(var(--danger-rgb), 0.12); color: var(--danger-text); border: 1px solid rgba(var(--danger-rgb), 0.2); }
 .editor-toast.success { background: rgba(var(--success-rgb), 0.12); color: var(--success-text); border: 1px solid rgba(var(--success-rgb), 0.2); }
-.editor-toast.warning { background: rgba(var(--warning-rgb), 0.12); color: var(--warning-text); border: 1px solid rgba(var(--warning-rgb), 0.24); }
-.editor-toast.warning > div + div { margin-top: 4px; }
+.editor-toast.warning { display: grid; gap: 6px; background: rgba(var(--warning-rgb), 0.12); color: var(--warning-text); border: 1px solid rgba(var(--warning-rgb), 0.24); }
+.editor-toast-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.editor-toast-close { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; min-inline-size: 24px; min-block-size: 24px; padding: 0; margin-left: auto; border: 1px solid transparent; border-radius: 4px; background: transparent; color: inherit; opacity: 0.78; cursor: pointer; }
+.editor-toast-close:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+.editor-toast-close:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; opacity: 1; }
 /* A refused debug start: readiness to resolve, not an error. */
 .editor-toast.blocked { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(var(--warning-rgb), 0.12); color: var(--warning-text); border: 1px solid rgba(var(--warning-rgb), 0.28); }
-.editor-toast.blocked .btn { margin-left: auto; }
+.editor-toast.blocked .editor-toast-body .btn { margin-left: auto; }
 /* "Resolve N blockers" opens what refuses replay, so it reads as a warning to act on. */
 .topbar-action-button.topbar-debug-action-blocker:not(:disabled),
 .debugger-icon-btn.danger:not(:disabled) {
@@ -858,14 +859,21 @@
 .imported-metadata-section .source-map-toolbar {
   padding: 12px 12px 0;
 }
+.imported-metadata-section .source-map-filter-summary,
+.imported-metadata-section .lr-mapping-navigation,
+.imported-metadata-section .source-map-selected-details,
+.imported-metadata-section .source-map-incomplete {
+  margin-left: 12px;
+  margin-right: 12px;
+}
 .imported-metadata-section .source-map-table-wrap {
   margin: 0 12px;
 }
 .imported-metadata-section .source-map-panels {
   flex: 0 0 auto;
   box-sizing: border-box;
-  height: max(420px, var(--source-map-panels-room, 420px));
-  min-height: 360px;
+  height: max(200px, var(--source-map-panels-room, 320px));
+  min-height: 200px;
   max-height: none;
   padding: 0 12px 12px;
 }
@@ -3942,8 +3950,12 @@ details.replay-code-block > summary,
   background: var(--bg-secondary);
 }
 
+.replay-browser-network,
 .replay-browser-html {
   grid-column: 1 / -1;
+}
+
+.replay-browser-html {
   --snapshot-text-max-height: 300px;
 }
 
@@ -6908,7 +6920,7 @@ details.replay-code-block > summary,
 .debugger-failure-pin { flex-shrink: 0; }
 
 .debugger-shell {
-  --debugger-dock-offset: min(var(--bottom-h, 220px), 30vh);
+  --debugger-dock-offset: min(var(--bottom-h, 220px), 50vh);
   flex: 1 1 auto;
   min-height: 0;
   display: grid;
@@ -7289,6 +7301,112 @@ details.replay-code-block > summary,
   gap: 12px;
 }
 
+.debugger-variables-subtabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 2px;
+  flex-shrink: 0;
+}
+
+.debugger-variables-subtabs [role="tab"] {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.debugger-variables-subtabs [role="tab"].active,
+.debugger-variables-subtabs [role="tab"][aria-selected="true"] {
+  color: var(--text-primary);
+  border-bottom-color: var(--accent-primary, var(--primary));
+}
+
+.debug-parameter-sources-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.debug-parameter-sources-note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.debug-parameter-sources-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.debug-parameter-sources-toolbar label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.debug-parameter-sources-toolbar input,
+.debug-parameter-sources-toolbar select {
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
+}
+
+.debug-parameter-sources-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.debug-parameter-sources-table th,
+.debug-parameter-sources-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.debug-parameter-sources-table thead th {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 1;
+  background: var(--bg-secondary);
+}
+
+.debug-parameter-sources-table .debug-table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.debug-parameter-sources-table .debug-table-sort-icon {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 /* Bottom panel */
 .debugger-bottom {
   position: relative;
@@ -7377,19 +7495,6 @@ details.replay-code-block > summary,
 .debug-log-location { color: var(--accent-text); }
 .debug-log-message { color: var(--code-text); }
 .debug-log-raw { color: var(--code-text); }
-.debug-log-token.token-method { color: var(--info-text); font-weight: 800; }
-.debug-log-token.token-target { color: var(--success-text); }
-.debug-log-token.token-status-success { color: var(--success-text); font-weight: 800; }
-.debug-log-token.token-status-warning { color: var(--warning-text); font-weight: 800; }
-.debug-log-token.token-status-error { color: var(--danger-text); font-weight: 800; }
-.debug-log-token.token-header,
-.debug-log-token.token-key { color: var(--info-text); }
-.debug-log-token.token-string { color: var(--success-text); }
-.debug-log-token.token-number { color: var(--warning-text); }
-.debug-log-token.token-literal { color: var(--accent-text); }
-.debug-log-token.token-punctuation { color: var(--text-muted); }
-.debug-log-unhighlighted { color: var(--code-text); }
-.debug-log-omission { color: var(--text-muted); font-style: italic; }
 .debug-log-line.jumpable { cursor: pointer; }
 .debug-log-line.jumpable:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 .debug-log-line:disabled { cursor: default; }
@@ -7860,6 +7965,8 @@ button.debugger-problem-row:hover {
 }
 /* HTTP evidence occupies the document pane; Source can still be compared with
    the optional inspector. The action list is never duplicated in Debug. */
+.debugger-code-center .center-tab-panel:has(> .debugger-request-body) { overflow: hidden; }
+.debugger-code-center .center-tab-panel > .debugger-request-body { height: 100%; min-height: 0; }
 .debugger-code-center .center-tab-panel > .debugger-center { height: 100%; min-height: 0; border: 0; }
 .debugger-code-center .debugger-center > .debugger-resizer-vars,
 .debugger-code-center .debugger-center .debugger-pane-close,
@@ -8088,68 +8195,17 @@ button.debugger-problem-row:hover {
 .debug-selection-status { flex-shrink: 0; font-size: 12px; padding: 4px 8px; }
 .debug-selection-status > small { flex-basis: 100%; }
 .debug-effective-settings, .debug-run-history, .debug-breakpoint-controls { flex-shrink: 0; font-size: 12px; padding: 3px 8px; }
-.debug-effective-settings summary, .debug-run-history summary, .debug-breakpoint-controls summary { cursor: pointer; padding: 5px 0; }
-.debug-effective-settings[open], .debug-run-history[open], .debug-breakpoint-controls[open] { max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
-.debug-effective-settings dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; }
-.debug-effective-settings dd { margin: 0; overflow-wrap: anywhere; }
-.debugger-run-config-body {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 12px;
-  overflow: auto;
-  min-height: 0;
-  flex: 1 1 auto;
-}
-.debug-effective-settings-header {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.debug-effective-settings-header strong {
-  font-size: 13px;
-  color: var(--text-primary);
-}
-.debug-effective-settings-header small {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-.debug-effective-settings-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  text-align: left;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-}
-.debug-effective-settings-table thead th {
-  padding: 8px 10px;
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-weight: 600;
-  border-bottom: 1px solid var(--border);
-}
-.debug-effective-settings-table tbody th,
-.debug-effective-settings-table tbody td {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-  overflow-wrap: anywhere;
-}
-.debug-effective-settings-table tbody tr:last-child th,
-.debug-effective-settings-table tbody tr:last-child td {
-  border-bottom: none;
-}
-.debug-effective-settings-table tbody th[scope="row"] {
-  width: 34%;
-  font-weight: 600;
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-secondary) 55%, transparent);
-}
-.debug-effective-settings-table tbody td {
-  color: var(--text-primary);
-}
+.debug-run-history summary, .debug-breakpoint-controls summary { cursor: pointer; padding: 5px 0; }
+.debug-run-history[open], .debug-breakpoint-controls[open] { max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+.debugger-run-config-body { display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: auto; min-height: 0; flex: 1 1 auto; }
+.debug-effective-settings-header { display: flex; flex-direction: column; gap: 2px; }
+.debug-effective-settings-header strong { font-size: 13px; color: var(--text-primary); }
+.debug-effective-settings-header small { font-size: 12px; color: var(--text-secondary); }
+.debug-effective-settings-table { width: 100%; border-collapse: collapse; font-size: 12px; text-align: left; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.debug-effective-settings-table thead th { padding: 8px 10px; background: var(--bg-secondary); color: var(--text-secondary); font-weight: 600; border-bottom: 1px solid var(--border); }
+.debug-effective-settings-table tbody th, .debug-effective-settings-table tbody td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; overflow-wrap: anywhere; color: var(--text-primary); }
+.debug-effective-settings-table tbody tr:last-child th, .debug-effective-settings-table tbody tr:last-child td { border-bottom: none; }
+.debug-effective-settings-table tbody th[scope="row"] { width: 34%; font-weight: 600; background: color-mix(in srgb, var(--bg-secondary) 55%, transparent); }
 .debug-history-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .debug-history-columns > * { min-width: 0; }
 .debug-history-evidence { padding: 8px; }
@@ -8165,6 +8221,16 @@ button.debugger-problem-row:hover {
 .debug-watch-table .debug-watch-column-name { width: 25%; }
 .debug-watch-table .debug-watch-column-value { width: 35%; }
 .debug-watch-panel .debug-watch-table thead th { overflow-wrap: normal; word-break: normal; }
+.debug-watch-type-filter { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.debug-watch-type-filter-label { font-size: 11px; color: var(--text-secondary); margin-right: 2px; }
+.debug-watch-panel .debug-watch-type-chip { padding: 3px 8px; min-height: 26px; font-size: 11px; border-radius: 999px; }
+.debug-watch-panel .debug-watch-type-chip.active, .debug-watch-panel .debug-watch-type-chip[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 18%, var(--bg-secondary)); border-color: var(--accent); color: var(--text-primary); font-weight: 600; }
+.parameter-usage-table-wrap { max-width: 100%; overflow-x: auto; margin-top: 8px; }
+.parameter-usage-table { width: 100%; border-collapse: collapse; text-align: left; }
+.parameter-usage-table th, .parameter-usage-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.parameter-usage-table thead th { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+.parameter-usage-table tbody tr:hover { background: var(--bg-hover); }
+.parameter-usage-cell-btn { width: 100%; justify-content: flex-start; text-align: left; padding: 4px 6px; }
 .debug-timeline-row { display: flex; flex-direction: column; align-items: flex-start; width: 100%; text-align: left; gap: 4px; padding: 10px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; overflow-wrap: anywhere; }
 .debug-timeline-row + .debug-timeline-row { margin-top: 6px; }
 :is(.debug-execution-timeline, .debug-summary-waterfall) {
@@ -8574,7 +8640,7 @@ button.debugger-problem-row:hover {
   }
 }
 .editor-body.workspace-debug .debugger-body { gap: 5px; overflow: auto; }
-.editor-body.workspace-debug .debugger-shell { flex: 1 1 auto; min-height: 260px; grid-template-rows: minmax(160px, 1fr) minmax(100px, min(var(--bottom-h, 220px), 30vh)); }
+.editor-body.workspace-debug .debugger-shell { flex: 1 1 auto; min-height: 260px; grid-template-rows: minmax(220px, 1fr) minmax(100px, min(var(--bottom-h, 220px), 50vh)); }
 .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed { grid-template-rows: minmax(160px, 1fr) 38px; }
 .editor-body.workspace-debug .debugger-live-strip { padding: 5px 10px; }
 .editor-body.workspace-debug .debugger-center-body { min-height: 0; overflow: auto; }
@@ -8582,7 +8648,7 @@ button.debugger-problem-row:hover {
 @container (max-width: 1100px) {
   .editor-body.workspace-debug .debugger-shell, .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed { min-height: 460px; height: auto; overflow: hidden; }
   .editor-body.workspace-debug .debugger-shell > .debugger-rail, .editor-body.workspace-debug .debugger-shell > .debugger-code-center, .editor-body.workspace-debug .debugger-shell > .debugger-center { height: auto; min-height: 320px; flex: 1 1 auto; }
-  .editor-body.workspace-debug .debugger-shell > .debugger-bottom { height: min(var(--bottom-h, 220px), 30vh); }
+  .editor-body.workspace-debug .debugger-shell > .debugger-bottom { height: min(var(--bottom-h, 220px), 50vh); }
   .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed > .debugger-bottom { height: 38px; }
   .debug-history-columns { grid-template-columns: minmax(0, 1fr); }
   .debug-selection-status > small { display: none; }
@@ -8678,7 +8744,7 @@ button.debugger-problem-row:hover {
 /* Current receipts need a full card inside the inspector's nested scrollport. */
 @container (max-width: 1100px) {
   .editor-body.workspace-debug .debugger-shell[data-narrow-pane="inspector"]:has(.debug-runtime-state-evidence) {
-    min-height: calc(602px + max(100px, min(var(--bottom-h, 220px), 30vh)));
+    min-height: calc(602px + max(100px, min(var(--bottom-h, 220px), 50vh)));
   }
   .editor-body.workspace-debug .debugger-shell.debug-dock-collapsed[data-narrow-pane="inspector"]:has(.debug-runtime-state-evidence) {
     min-height: 640px;
@@ -8803,7 +8869,7 @@ button.debugger-problem-row:hover {
 .debug-session-bar .debugger-live-strip-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .debug-session-bar .debugger-live-strip small { white-space: nowrap; }
 .debug-session-idle { color: var(--text-secondary); font-size: 12px; }
-.debug-session-summary { color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
+.debug-session-summary { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-secondary); font-size: 12px; white-space: nowrap; }
 .debug-session-controls { display: flex; align-items: center; gap: 6px; }
 .debug-session-controls .topbar-action-button.topbar-debug-action { min-height: 30px; padding: 4px 10px; box-shadow: none; }
 .debug-session-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; flex-shrink: 0; }
@@ -8862,7 +8928,8 @@ button.debugger-problem-row:hover {
 .debug-outline-breakpoints { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 6px; min-height: 24px; padding: 0 10px 2px; color: var(--text-secondary); font-size: 11px; }
 .debug-outline-breakpoints .btn { min-height: 22px; padding: 1px 8px; }
 .debugger-rail > .debug-breakpoint-controls { flex: 0 0 auto; max-height: 35%; overflow-y: auto; margin: 0 6px 4px; padding: 2px 6px; }
-.debug-outline-parameters { flex: 0 0 auto; max-height: 35%; overflow-y: auto; padding: 2px 6px 6px; border-top: 1px solid var(--border); }
+.debugger-rail > .script-action-navigator.script-outline-tree { min-height: 64px; padding-bottom: 4px; }
+.debug-outline-parameters { flex: 0 1 auto; min-height: 32px; max-height: 35%; overflow-y: auto; padding: 2px 6px 6px; border-top: 1px solid var(--border); }
 .debug-outline-parameters > summary { padding: 6px 6px 4px; color: var(--text-secondary); font-size: 11px; font-weight: 700; cursor: pointer; }
 .debug-outline-parameters > summary small { margin-left: 4px; font-weight: 400; }
 .debug-outline-parameter { display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%; height: 28px; padding: 0 6px 0 22px; border: 0; border-radius: 6px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
@@ -8963,3 +9030,11 @@ span.script-outline-gutter { cursor: inherit; }
 .txn-name-timing { display: inline-flex; gap: 4px; }
 .txn-name-summary { margin: 0; color: var(--text-secondary); font-size: 12px; line-height: 1.4; }
 .txn-name-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* Add Parameter modal dialog */
+.editor-dialog.add-parameter-dialog { width: min(680px, calc((100vw - 32px) * var(--dashboard-zoom-inverse, 1))); max-height: min(86vh, 820px); display: flex; flex-direction: column; }
+.add-parameter-dialog-body { display: grid; gap: 14px; overflow-y: auto; padding: 14px 16px; }
+.add-parameter-section { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary, var(--bg-card)); }
+.add-parameter-section-header, .add-parameter-import-summary, .add-parameter-scan-section { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.add-parameter-import-box { display: grid; gap: 8px; padding: 10px 12px; border: 1px dashed var(--border); border-radius: 6px; background: var(--bg-primary); font-size: 12px; }
+.add-parameter-dialog-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--border); }

@@ -162,6 +162,101 @@ describe('debug summary page', () => {
       expect(nextRows[1]?.getAttribute('aria-current')).toBe('true')
     } finally { act(() => root.unmount()); container.remove() }
   })
+
+  it('sorts and filters the errors and warnings table', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const snapshot = fixture()
+    snapshot.report!.error = ''
+    snapshot.session.error = ''
+    snapshot.report!.events = [
+      { event_id: 'one', event_index: 0, action_index: 0, phase: 'init', action_name: 'Beta init', action_type: 'request', target: '/init', success: false, error_message: 'Zebra init failure', status_code: 401, started_at: '2026-10-25T12:00:00Z', completed_at: '2026-10-25T12:00:01Z', duration_ms: 1000 },
+      { event_id: 'two', event_index: 1, action_index: 1, phase: 'action', action_name: 'Alpha checkout', action_type: 'request', target: '/checkout', success: false, error_message: 'Alpha checkout failure', status_code: 503, started_at: '2026-10-25T12:00:01Z', completed_at: '2026-10-25T12:00:02Z', duration_ms: 1000 },
+    ]
+    snapshot.session.logs = [
+      { id: 'warn-1', timestamp: snapshot.report!.completed_at, level: 'warn', category: 'capture', message: 'Medium warning on teardown', action_name: 'Gamma cleanup', phase: 'teardown' },
+    ]
+    const onSelectEvent = vi.fn()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const setControlValue = (el: HTMLInputElement | HTMLSelectElement, val: string) => {
+      const proto = el instanceof HTMLSelectElement ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set
+      setter?.call(el, val)
+      el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }))
+      el.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+    try {
+      act(() => root.render(<Summary snapshot={snapshot} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={onSelectEvent} onDownloadHAR={vi.fn()} />))
+      const region = container.querySelector('[role="region"][aria-label="Errors and warnings table"]')!
+      expect(region).not.toBeNull()
+      expect(region.getAttribute('tabindex')).toBe('0')
+      const table = region.querySelector('table.debug-summary-issues-table')!
+      expect(table.getAttribute('data-table-pagination')).toBe('off')
+      const rowActions = () => [...table.querySelectorAll('tbody tr.debug-summary-issue-row th[scope="row"]')].map(cell => cell.textContent)
+      expect(rowActions()).toEqual(['Beta init', 'Alpha checkout', 'Gamma cleanup'])
+
+      const sortBy = (label: string) => {
+        const btn = [...table.querySelectorAll<HTMLButtonElement>('thead button.debug-table-sort-btn')].find(b => b.textContent?.includes(label))!
+        act(() => btn.click())
+        return btn.closest('th')!
+      }
+
+      // Sort by Action ascending, then descending
+      const actionTh = sortBy('Action')
+      expect(actionTh.getAttribute('aria-sort')).toBe('ascending')
+      expect(rowActions()).toEqual(['Alpha checkout', 'Beta init', 'Gamma cleanup'])
+      sortBy('Action')
+      expect(actionTh.getAttribute('aria-sort')).toBe('descending')
+      expect(rowActions()).toEqual(['Gamma cleanup', 'Beta init', 'Alpha checkout'])
+
+      // Sort by Status ascending, then descending
+      const statusTh = sortBy('Status')
+      expect(statusTh.getAttribute('aria-sort')).toBe('ascending')
+      expect(actionTh.getAttribute('aria-sort')).toBe('none')
+      expect(rowActions()).toEqual(['Gamma cleanup', 'Beta init', 'Alpha checkout'])
+      sortBy('Status')
+      expect(statusTh.getAttribute('aria-sort')).toBe('descending')
+      expect(rowActions()).toEqual(['Alpha checkout', 'Beta init', 'Gamma cleanup'])
+
+      // Sort by Severity ascending, then descending
+      const severityTh = sortBy('Severity')
+      expect(severityTh.getAttribute('aria-sort')).toBe('ascending')
+      expect(rowActions()[2]).toBe('Gamma cleanup')
+      sortBy('Severity')
+      expect(severityTh.getAttribute('aria-sort')).toBe('descending')
+      expect(rowActions()[0]).toBe('Gamma cleanup')
+
+      // Sort by Phase and Message
+      expect(sortBy('Phase').getAttribute('aria-sort')).toBe('ascending')
+      expect(rowActions()).toEqual(['Alpha checkout', 'Beta init', 'Gamma cleanup'])
+      expect(sortBy('Message').getAttribute('aria-sort')).toBe('ascending')
+      expect(rowActions()).toEqual(['Alpha checkout', 'Gamma cleanup', 'Beta init'])
+
+      // Filter by Severity
+      const selects = container.querySelectorAll<HTMLSelectElement>('.debug-summary-issues-toolbar select')
+      const severitySelect = selects[0]!
+      const phaseSelect = selects[1]!
+      act(() => setControlValue(severitySelect, 'warning'))
+      expect(rowActions()).toEqual(['Gamma cleanup'])
+      act(() => setControlValue(severitySelect, 'error'))
+      expect(rowActions()).toEqual(['Alpha checkout', 'Beta init'])
+      act(() => setControlValue(severitySelect, 'all'))
+      expect(rowActions()).toHaveLength(3)
+
+      // Filter by Phase
+      act(() => setControlValue(phaseSelect, 'init'))
+      expect(rowActions()).toEqual(['Beta init'])
+      act(() => setControlValue(phaseSelect, 'all'))
+
+      // Filter by search text
+      const searchInput = container.querySelector<HTMLInputElement>('.debug-summary-issues-toolbar input[type="search"]')!
+      act(() => setControlValue(searchInput, '503'))
+      expect(rowActions()).toEqual(['Alpha checkout'])
+      act(() => setControlValue(searchInput, 'no-match-xyz'))
+      expect(rowActions()).toEqual([])
+      expect(table.textContent).toContain('No errors or warnings match the current filters.')
+    } finally { act(() => root.unmount()); container.remove() }
+  })
 })
 
 
@@ -279,7 +374,7 @@ describe('debug summary transaction table', () => {
     const container = document.createElement('div'), root = createRoot(container)
     try {
       act(() => root.render(<Summary snapshot={run} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()} />))
-      const rows = [...container.querySelectorAll('tbody tr')]
+      const rows = [...container.querySelectorAll('#debug-summary-panel-transactions tbody tr')]
       expect(rows).toHaveLength(4)
       // Checkout (marker transaction) aggregates Cart's phases and spans the full 0..1000ms window
       const checkoutBar = rows[0].querySelector<HTMLElement>('.debug-transaction-waterfall-cell .debug-timeline-bar-fill')

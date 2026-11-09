@@ -166,12 +166,36 @@ describe('SourceMappingReview', () => {
   let root: Root
 
   it('keeps the selected comparison available while navigating and filtering mappings', async () => {
-    await act(async () => { root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />) })
+    await act(async () => { root.render(<SourceMappingReview sourceReview={sourceReview} script={script} onEditTarget={vi.fn()} />) })
     await flushPromises()
     const workspace = container.querySelector('.source-map-workspace')!
     const comparison = workspace.querySelector('.source-map-comparison')!
     expect(comparison.querySelector('[aria-label="Generated DSL"]')).not.toBeNull()
-    expect(container.querySelector<HTMLDetailsElement>('.source-map-view-options')?.open).toBe(false)
+    expect(container.textContent).not.toContain('Edit destination in Author')
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
+    const viewOptionsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'View options & export')!
+    await act(async () => { viewOptionsBtn.click() })
+    expect(document.body.querySelector('[role="dialog"] h3')?.textContent).toBe('View options & export')
+    const closeViewOptions = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeViewOptions.click() })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
+    const statusHelpBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'About review status')!
+    await act(async () => { statusHelpBtn.click() })
+    expect(document.body.querySelector('[role="dialog"] h3')?.textContent).toBe('About review status')
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Conversion coverage describes source mappings')
+    const closeStatusHelp = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeStatusHelp.click() })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
+    const reviewDetailsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Review & mapping details'))!
+    await act(async () => { reviewDetailsBtn.click() })
+    expect(document.body.querySelector('[role="dialog"] h3')?.textContent).toBe('Review & mapping details')
+    const closeReviewDetails = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeReviewDetails.click() })
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+
     const show = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Show mappings'))!
     await act(async () => { show.click() })
     expect(workspace.classList.contains('with-navigator')).toBe(true)
@@ -226,8 +250,12 @@ describe('SourceMappingReview', () => {
     const details = container.querySelector('.source-map-selected-details')!.textContent || ''
     expect(details).toContain('Destination: script configuration as a whole')
     expect(details).not.toContain('Destination identity: unmapped')
+    const reviewDetailsBtn = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Review & mapping details'))!
+    await act(async () => { reviewDetailsBtn.click() })
     expect(container.textContent).toContain('shaped the script configuration as a whole')
     expect(container.textContent).not.toContain('This source construct has no mapped destination')
+    const closeDialogBtn = document.body.querySelector<HTMLButtonElement>('[role="dialog"] .source-map-modal-header button')!
+    await act(async () => { closeDialogBtn.click() })
 
     await act(async () => { container.querySelector<HTMLButtonElement>('[data-mapping-id="group"] button')!.click() })
     await flushPromises()
@@ -1093,7 +1121,13 @@ describe('SourceMappingReview', () => {
     })
     await flushPromises()
 
-    const exportButton = Array.from(container.querySelectorAll('button')).find(
+    const viewOptionsBtn = Array.from(container.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'View options & export',
+    )
+    await act(async () => {
+      viewOptionsBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const exportButton = Array.from(document.body.querySelectorAll('button')).find(
       button => button.textContent?.trim() === 'Export filtered mappings',
     )
     await act(async () => {
@@ -1489,7 +1523,9 @@ describe('SourceMappingReview', () => {
     await act(async () => { select.value = 'vuser_end.c'; select.dispatchEvent(new Event('change', { bubbles: true })) })
     await flushPromises()
     expect(container.querySelector('[aria-label="vuser_end.c source"]')?.textContent).toContain('Logout')
-    const exportButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Export filtered mappings')!
+    const viewOptionsBtn = [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === 'View options & export')!
+    await act(async () => { viewOptionsBtn.click() })
+    const exportButton = [...document.body.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Export filtered mappings')!
     await act(async () => { exportButton.click() })
     expect(downloadTextFileMock.mock.calls[0][0]).toContain('Original Import Path')
     expect(downloadTextFileMock.mock.calls[0][0]).not.toContain('Current Target Path')

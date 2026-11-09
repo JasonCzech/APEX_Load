@@ -36,3 +36,21 @@ export function parameterUsageLabel(script: ScriptDefinition, path: string): str
   const actions = script[match[1] as 'init' | 'actions' | 'teardown']
   return `${actions?.[Number(match[2])]?.name || `${match[1]} ${Number(match[2]) + 1}`} · ${match[3].replace(/^\./, '') || 'action'}`
 }
+
+export function parameterUsageActionName(script: ScriptDefinition, path: string): string {
+  const match = /^(init|actions|teardown)\[(\d+)\](.*)$/.exec(path)
+  if (match) {
+    const phase = match[1] as 'init' | 'actions' | 'teardown'
+    const index = Number(match[2])
+    const actions = script[phase]
+    return actions?.[index]?.name?.trim() || `${phase === 'actions' ? 'Action' : phase} ${index + 1}`
+  }
+  const paramMatch = /^parameters\[(\d+)\]/.exec(path)
+  if (paramMatch) {
+    const index = Number(paramMatch[1])
+    const paramName = script.parameters?.[index]?.name?.trim()
+    return paramName ? `Parameter ${paramName}` : `Parameter ${index + 1}`
+  }
+  if (path.startsWith('config.')) return 'Configuration'
+  return 'Script'
+}

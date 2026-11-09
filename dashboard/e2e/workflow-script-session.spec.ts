@@ -97,7 +97,6 @@ test('a validation that returns after an edit is ignored and the next one binds 
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
   const scriptName = page.getByRole('textbox', { name: 'Script name', exact: true })
   await expect(scriptName).toHaveValue(name)
-  const states = page.getByLabel('Script evidence states')
   await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: 'Debug', exact: true }).click()
   const ensureReadinessOpen = async () => {
     const btn = page.getByRole('button', { name: 'Checks & readiness', exact: true })
@@ -132,8 +131,8 @@ test('a validation that returns after an edit is ignored and the next one binds 
   await expect(readiness.getByRole('button', { name: 'Recheck', exact: true })).toBeEnabled()
   await expect(scriptName).toHaveValue(`${name}_edited_twice`)
   await expect(readiness).not.toContainText('Script validation passed')
-  await expect(states).toContainText('Validation evidence: not yet')
-  await expect(states).not.toContainText('Validation evidence: passed')
+  await expect(readiness).toContainText('Validation evidence: not checked')
+  await expect(readiness).not.toContainText('Validation evidence: passed')
 
   const current = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/v1/scripts/validate')
   await recheck()
@@ -142,8 +141,8 @@ test('a validation that returns after an edit is ignored and the next one binds 
   expect(sent.script.name).toBe(`${name}_edited_twice`)
   expect(sent.fingerprint).not.toBe(firstFingerprint)
   expect((await currentResponse.json()).validated_fingerprint).toBe(sent.fingerprint)
-  await expect(states).toContainText('Validation evidence: passed')
+  await expect(readiness).toContainText('Validation evidence: passed')
 
   await scriptName.fill(`${name}_edited_three_times`)
-  await expect(states).not.toContainText('Validation evidence: passed')
+  await expect(readiness).not.toContainText('Validation evidence: passed')
 })

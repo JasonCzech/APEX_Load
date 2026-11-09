@@ -88,7 +88,6 @@ import {
 import ScriptBrowserEvidence from './ScriptBrowserEvidence'
 import IssueDetailsDialog, { type IssueDetail } from './IssueDetailsDialog'
 import ObjectHistoryDialog from './ObjectHistoryDialog'
-import RowActions from './ux/RowActions'
 import type { ObjectActivitySummary } from '../types/objectActivity'
 import {
   addCorrelationExtractorIfMissing,
@@ -299,6 +298,7 @@ import {
   ParameterSidebar,
   ParameterizeDialog,
   SelectedParameterDetails,
+  type CreateParameterRequest,
   type JsonParameterOccurrenceReviewState,
 } from './ScriptEditorParameterFeatures'
 import {
@@ -1481,6 +1481,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     onClose: closeSaveBlockDialog,
   })
   const [deepScanning, setDeepScanning] = useState(false)
+  const [dismissedWarningIndexes, setDismissedWarningIndexes] = useState<number[]>([])
+  useEffect(() => {
+    setDismissedWarningIndexes([])
+  }, [warnings])
+  const visibleWarnings = useMemo(
+    () => warnings.map((warning, index) => ({ warning, index })).filter(({ index }) => !dismissedWarningIndexes.includes(index)),
+    [dismissedWarningIndexes, warnings],
+  )
   // Author outline rail width. null = fit content (CSS fit-content default) until
   // the user drags it, after which a fixed px is remembered.
   const authorRailRef = useRef<HTMLDivElement | null>(null)
@@ -3641,7 +3649,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
   const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
-  const showDebugSummary = useCallback(() => { workspaceTabRef.current = 'debug'; setWorkspaceTab('debug'); setDebugDetailCollapsed(true); openCenterTab('debug-summary') }, [openCenterTab, setDebugDetailCollapsed])
+  const showDebugSummary = useCallback(() => { workspaceTabRef.current = 'debug'; setWorkspaceTab('debug'); openCenterTab('debug-summary') }, [openCenterTab])
   const debugCompletionSnapshot = useDebugCompletionSummary({
     session: browserReplaySession, report: replayReport, running: replaying,
     scriptName: currentRunRef.current?.scriptName || script.name,
@@ -4612,16 +4620,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setDebugDetailCollapsed(false)
     }
   }, [hasReplayVariableInspectorData, setDebugDetailCollapsed])
+  const [inspectedUsageFocus, setInspectedUsageFocus] = useState<{ path: string; focusKey: string } | null>(null)
   const scriptDslDocument = useMemo(() => buildDslDocument({ script }), [script])
   const selectedDebugCodeRow = workspaceTab === 'debug'
     ? (selectedReplayEvent ? selectedDebugRow : (debugActionRows[0] ?? null))
     : null
+  const activeInspectedUsagePath = workspaceTab !== 'debug'
+    && Boolean(selectedOutlineParameterName)
+    && inspectedUsageFocus
+    && inspectedUsageFocus.focusKey === (authorCodeFocus?.key || '')
+    ? inspectedUsageFocus.path
+    : ''
   const scriptCodeActivePath = workspaceTab === 'debug' && runtimeFrameSourcePath && replayEditableActionsKey === currentEditableActionsKey
     ? runtimeFrameSourcePath
     : workspaceTab === 'debug' && selectedReplayEvent
     ? codePathForDebugRow(selectedDebugCodeRow)
     : activeAutoParameterPath
       ? activeAutoParameterPath
+      : activeInspectedUsagePath
+        ? activeInspectedUsagePath
       : authorCodeFocus
       ? codePathForAuthorFocus(authorCodeFocus)
       : activeAction !== null
@@ -5056,6 +5073,52 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     replaceScriptWithHistory({ ...script, parameters: [...parameters, applyParameterTypeDefaults({ ...EMPTY_PARAMETER, name, type }, type)] })
     setSelectedParameterIdx(parameters.length)
     setOpenDataEditor(null)
+  }
+
+  const createParameterFromDialog = ({ parameter, importedDataSource }: CreateParameterRequest) => {
+    const parameters = script.parameters || []
+    const requestedName = parameter.name?.trim() || `param_${parameters.length + 1}`
+    const name = ensureUniqueParameterName(requestedName, parameters)
+    const type = parameter.type || 'list'
+    let nextSources = script.data_sources || []
+    let nextDataSourceName = parameter.data_source
+    let nextDataEditorIdx: number | null = null
+
+    if (importedDataSource) {
+      const baseSourceName = sanitizeVarName(importedDataSource.name || 'dataset')
+      let uniqueSourceName = baseSourceName
+      let suffix = 2
+      while (nextSources.some(source => source.name.toLowerCase() === uniqueSourceName.toLowerCase())) {
+        uniqueSourceName = `${baseSourceName}_${suffix}`
+        suffix += 1
+      }
+      const createdSource: DataSourceConfig = {
+        ...EMPTY_DATA_SOURCE,
+        ...importedDataSource,
+        name: uniqueSourceName,
+      }
+      nextDataEditorIdx = nextSources.length
+      nextSources = [...nextSources, createdSource]
+      nextDataSourceName = uniqueSourceName
+    } else if (nextDataSourceName) {
+      nextDataEditorIdx = findDataSourceIndexByName(nextSources, nextDataSourceName)
+    }
+
+    const createdParameter: ParameterConfig = {
+      ...applyParameterTypeDefaults({ ...EMPTY_PARAMETER, ...parameter, name, type }, type),
+      ...parameter,
+      name,
+      type,
+      data_source: nextDataSourceName,
+    }
+
+    replaceScriptWithHistory({
+      ...script,
+      data_sources: nextSources,
+      parameters: [...parameters, createdParameter],
+    })
+    setSelectedParameterIdx(parameters.length)
+    setOpenDataEditor(nextDataEditorIdx)
   }
 
   const addParameterDataset = () => {
@@ -6665,11 +6728,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         label: `${problemCount} issue${problemCount === 1 ? '' : 's'}`,
         // Red only when something blocks; warnings alone (placeholders) do not.
         tone: problemErrorCount > 0 ? 'danger' : problemCount > 0 ? 'warning' : 'success',
-        hidden: problemCount === 0 && !validationEvidence,
-        onClick: problemCount > 0
-          ? () => setIssueDialog({ title: 'Script issues', issues: editorIssueDetailsRef.current })
-          : undefined,
-        ariaLabel: problemCount > 0 ? `View ${problemCount} script issue ${problemCount === 1 ? 'detail' : 'details'}` : undefined,
+        onClick: () => setShowAuthorProblems(true),
+        ariaLabel: `View ${problemCount} script issue ${problemCount === 1 ? 'detail' : 'details'}`,
       },
     ],
     controls: (
@@ -6687,7 +6747,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     secondaryActions: [
       { id: 'save-script', label: saving ? 'Saving…' : 'Save', title: saveScriptTitle, ariaLabel: 'Save script', disabled: saveScriptDisabled, tone: 'primary', onClick: () => { void topbarActionHandlersRef.current.handleSave() } },
     ],
-  }), [currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, saving, saveScriptDisabled, saveScriptTitle, scriptId, validationEvidence, workspaceTab])
+  }), [currentDraftScript.name, debugWorkspaceStatusLabel, duplicateScriptName, duplicateScriptNameNotice, script.name, problemCount, problemErrorCount, saving, saveScriptDisabled, saveScriptTitle, scriptId, workspaceTab])
   useTopbarContribution(scriptTopbarContribution)
   const [debugIterationCount, setDebugIterationCount] = useState(2)
   // The field's text while it is edited: it may be empty or out of range
@@ -8028,7 +8088,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   )
   const renderCenterWorkbench = (className: string, ariaLabel: string, mode: WorkbenchMode) => {
     const workbenchTabs = mode === 'debug'
-      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Action evidence', title: 'Action evidence' } : tab)
+      ? visibleCenterTabs.filter(tab => !DEBUG_HIDDEN_CENTER_TABS.has(tab.id) && (!isBrowserScript || tab.id !== ACTION_LIST_TAB_ID)).map(tab => tab.id === ACTION_LIST_TAB_ID ? { ...tab, label: 'Request/Response', title: 'Request/Response' } : tab)
       : visibleCenterTabs.filter(tab => tab.id !== BROWSER_REPLAY_TAB_ID && tab.id !== 'debug-summary')
     const fallbackTabs = centerTabDescriptors.filter(tab => mode !== 'debug' || !DEBUG_HIDDEN_CENTER_TABS.has(tab.id))
     return (
@@ -8305,7 +8365,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                 referenceLines={selectedParameterReferenceLines}
                 usages={jsonDirty ? undefined : parameterUsages(script, selectedOutlineParameter.name).map(usage => ({ path: usage.path, label: parameterUsageLabel(script, usage.path), line: lineRangeForTargetPath(scriptDslDocument.ranges, `script.${usage.path}`)?.startLine || 0 })).filter(usage => usage.line > 0)}
                 dataInfo={selectedParameterDataInfo}
-                onJumpToLine={line => { setNarrowAuthorPane('editor'); setShowFullScriptJson(true); openCenterTab(SCRIPT_JSON_TAB_ID); requestJsonLineJump(line) }}
+                onJumpToLine={(line, path) => {
+                  if (path && path !== 'Full script') {
+                    setInspectedUsageFocus({ path: `script.${path}`, focusKey: authorCodeFocus?.key || '' })
+                  }
+                  setNarrowAuthorPane('editor')
+                  setShowFullScriptJson(true)
+                  openCenterTab(SCRIPT_JSON_TAB_ID)
+                  requestJsonLineJump(line)
+                }}
                 onEditInDataTab={() => {
                   if (selectedOutlineParameterIndex >= 0) selectParameterData(selectedOutlineParameterIndex)
                   openEditorSection('parameter-data')
@@ -8518,31 +8586,42 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       {showSavedDiff && <IssueDetailsDialog title="Changes since last save" issues={(() => { const diff = changedDocumentLines(baselineJsonRef.current, jsonDirty ? jsonText : formattedScriptJson); return diff.removed || diff.added ? [{ id: 'saved-diff', severity: 'info', title: `Changed region starting at line ${diff.line}`, description: `BEFORE\n${diff.removed || '(empty)'}\n\nAFTER\n${diff.added || '(empty)'}` }] : [] })()} onClose={() => setShowSavedDiff(false)} />}
       {showAuthorProblems && <IssueDetailsDialog title="Author Problems" issues={editorIssueDetails} onClose={() => setShowAuthorProblems(false)} />}
       {datasetChange && <DatasetChangeReview change={datasetChange} affected={(script.parameters || []).filter(parameter => parameter.data_source?.trim().toLowerCase() === datasetChange.before.name.trim().toLowerCase()).map(parameter => parameter.name)} error={datasetChangeError} onApply={applyDatasetChange} onCancel={() => setDatasetChange(null)} />}
-      {/* One row of editor furniture, so the work below gets the height:
-          the status reads as one line, History and layout reset live in More. */}
-      <div className="script-evidence-states" aria-label="Script evidence states">
-        {workspaceTab === 'author' && <>
+      {/* One row of editor furniture in Author mode, matching the right-aligned
+          Close editor and History controls on the Debug tab. */}
+      {workspaceTab === 'author' ? (
+        <div className="script-evidence-states" aria-label="Script evidence states">
           <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={undoEditorChange} disabled={jsonDirty || editorHistory.past.length === 0} title="Undo document change" aria-label="Undo document change"><EditorRailActionIcon kind="undo" /></TooltipButton>
           <TooltipButton type="button" className="btn-icon editor-outline-action-button" onClick={redoEditorChange} disabled={jsonDirty || editorHistory.future.length === 0} title="Redo document change" aria-label="Redo document change"><EditorRailActionIcon kind="redo" /></TooltipButton>
-        </>}
-        <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowAuthorProblems(true)}>Author Problems ({problemCount})</button>
-        {hasDocumentChanges ? (
-          <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowSavedDiff(true)}>Review changes</button>
-        ) : onClose ? (
-          <button type="button" className="btn btn-sm btn-secondary" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>
-        ) : null}
-        <ul className="script-status-chips" aria-label="Script status">
-          {scriptStatusChips.map(chip => <li key={chip.key} className={`script-status-chip ${chip.tone}`} title={chip.detail}>
-            <span className="script-status-mark" aria-hidden="true" />{chip.word}<span className="sr-only">: {chip.detail}</span>
-          </li>)}
-        </ul>
-        <RowActions className="script-editor-more" label="script editor">
-          {replayGate.kind === 'blocked' && <button type="button" className="btn btn-sm btn-ghost" onClick={goToReplayBlocker}>Resolve blockers ({replayGate.blockers.length})</button>}
-          {scriptId && <button type="button" className="btn btn-sm btn-ghost" onClick={() => setShowHistory(true)}>History</button>}
-          <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setAuthorRailWidth(220); setAuthorUtilityWidth(null); setAuthorOutlineCollapsed(false); setAuthorRightSidebarCollapsed(false); replayDebuggerController.resetLayout() }}>Reset layout</button>
-          {onClose && hasDocumentChanges && <button type="button" className="btn btn-sm btn-ghost" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>}
-        </RowActions>
-      </div>
+          {hasDocumentChanges && (
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => setShowSavedDiff(true)}>Review changes</button>
+          )}
+          <ul className="script-status-chips" aria-label="Script status">
+            {scriptStatusChips.map(chip => <li key={chip.key} className={`script-status-chip ${chip.tone}`} title={chip.detail}>
+              <span className="script-status-mark" aria-hidden="true" />{chip.word}<span className="sr-only">: {chip.detail}</span>
+            </li>)}
+          </ul>
+          {onClose && (
+            <button type="button" className="btn btn-sm btn-secondary" aria-label="Close script editor" onClick={handleCloseEditor}>Close editor</button>
+          )}
+          <button
+            type="button"
+            className="btn btn-sm btn-secondary script-editor-more"
+            disabled={!scriptId}
+            title={scriptId ? 'View script history' : 'Save the script to view its history'}
+            onClick={() => setShowHistory(true)}
+          >
+            History
+          </button>
+        </div>
+      ) : (
+        <div className="script-evidence-states-proxy" aria-label="Script evidence states" hidden>
+          <ul className="script-status-chips" aria-label="Script status">
+            {scriptStatusChips.map(chip => <li key={chip.key} className={`script-status-chip ${chip.tone}`} title={chip.detail}>
+              <span className="script-status-mark" aria-hidden="true" />{chip.word}<span className="sr-only">: {chip.detail}</span>
+            </li>)}
+          </ul>
+        </div>
+      )}
       {showHistory && scriptId && <ObjectHistoryDialog title={`History · ${currentDraftScript.name || 'Script'}`} projectId={projectId} resourceType="script" resourceId={scriptId} activity={activity} onClose={() => setShowHistory(false)} />}
       {/* Tabs swap the center only: the outline and context panes stay for
           every tab, so the frame never reflows. */}
@@ -8732,6 +8811,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         <div className="editor-header script-editor-local-action-proxy" hidden>
           <div className="editor-title-row">
             <div className="editor-actions">
+              <button
+                type="button"
+                className="topbar-meta-chip issue-pill-button"
+                aria-label={`View ${problemCount} script issue ${problemCount === 1 ? 'detail' : 'details'}`}
+                onClick={() => setShowAuthorProblems(true)}
+              >
+                {problemCount} issue{problemCount === 1 ? '' : 's'}
+              </button>
               <TooltipButton className="btn btn-primary" onClick={handleSave} disabled={saveScriptDisabled} title={saveScriptTitle}>
                 {saving ? 'Saving…' : 'Save Script'}
               </TooltipButton>
@@ -8840,34 +8927,48 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           {renderReadyToRunCard({ showChecklist: true })}
         </div>
       )}
-      {(error || warnings.length > 0 || success || replayStartNotice) && (
+      {(error || visibleWarnings.length > 0 || success || replayStartNotice) && (
         <div className="editor-feedback-strip">
           {replayStartNotice && <div className="editor-toast blocked" role="status">
-            {replayStartNotice.text}
-            {replayStartNotice.kind === 'blocked' && <button type="button" className="btn btn-sm btn-secondary" onClick={goToReplayBlocker}>Resolve</button>}
-            {replayStartNotice.kind === 'save-first' && <button type="button" className="btn btn-sm btn-secondary" disabled={saving || Boolean(replaySaveUnavailableReason)} title={replaySaveUnavailableReason} onClick={() => { void saveAndReplay() }}>Save and debug</button>}
+            <div className="editor-toast-body">
+              <span>{replayStartNotice.text}</span>
+              {replayStartNotice.kind === 'blocked' && <button type="button" className="btn btn-sm btn-secondary" onClick={goToReplayBlocker}>Resolve</button>}
+              {replayStartNotice.kind === 'save-first' && <button type="button" className="btn btn-sm btn-secondary" disabled={saving || Boolean(replaySaveUnavailableReason)} title={replaySaveUnavailableReason} onClick={() => { void saveAndReplay() }}>Save and debug</button>}
+            </div>
           </div>}
           {error && <div className="editor-toast error" role="alert">
-            {error}
-            {createNeedsNewIntent && !scriptId && (
-              <button type="button" className="btn btn-sm btn-secondary" disabled={saving} onClick={() => {
-                // An explicit new intent: forget the old key, then create.
-                forgetAuthoringCreateIntent(createIntentRef.current.intent)
-                createIntentRef.current.intent = null
-                createIntentRef.current.fresh = true
-                setRefusedIntent(null)
-                void handleSave()
-              }}>Save as new</button>
-            )}
+            <div className="editor-toast-body">
+              <span>{error}</span>
+              {createNeedsNewIntent && !scriptId && (
+                <button type="button" className="btn btn-sm btn-secondary" disabled={saving} onClick={() => {
+                  // An explicit new intent: forget the old key, then create.
+                  forgetAuthoringCreateIntent(createIntentRef.current.intent)
+                  createIntentRef.current.intent = null
+                  createIntentRef.current.fresh = true
+                  setRefusedIntent(null)
+                  void handleSave()
+                }}>Save as new</button>
+              )}
+            </div>
+            <button type="button" className="editor-toast-close" aria-label="Close message" title="Close message" onClick={() => setError('')}><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
           </div>}
-          {warnings.length > 0 && (
+          {visibleWarnings.length > 0 && (
             <div className="editor-toast warning" role="status">
-              {warnings.map((warning, index) => (
-                <div key={`${warning}-${index}`}>{warning}</div>
+              {visibleWarnings.map(({ warning, index }) => (
+                <div key={`${warning}-${index}`} className="editor-toast-line">
+                  <span>{warning}</span>
+                  <button
+                    type="button"
+                    className="editor-toast-close"
+                    aria-label="Close message"
+                    title="Close message"
+                    onClick={() => setDismissedWarningIndexes(prev => prev.includes(index) ? prev : [...prev, index])}
+                  ><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button>
+                </div>
               ))}
             </div>
           )}
-          {success && <div className="editor-toast success" role="status">{success}</div>}
+          {success && <div className="editor-toast success" role="status"><span className="editor-toast-body">{success}</span><button type="button" className="editor-toast-close" aria-label="Close message" title="Close message" onClick={() => setSuccess('')}><svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" focusable="false"><path d="M2.5 2.5l7 7m0-7l-7 7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg></button></div>}
         </div>
       )}
 
@@ -8876,6 +8977,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           <ScriptReplayDebuggerView
             sessionControls={hasTopbarContributionProvider ? debugSessionControls : undefined}
             readinessPopover={renderReadyToRunCard({ showChecklist: true })}
+            onCloseEditor={onClose ? handleCloseEditor : undefined}
+            onOpenHistory={() => setShowHistory(true)}
             actionProblemRows={actionProblemRows}
             activeReplaySessionId={activeReplaySessionId}
             addExtractorDefinition={addExtractorDefinition}
@@ -8910,6 +9013,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             http3UpgradeScopes={http3UpgradeScopes}
             onSwitchToHTTP3Upgrade={switchReplayEventToHTTP3Upgrade}
             onActivateDebug={() => activateWorkspaceTab('debug')}
+            onOpenRequestResponse={() => { if (!isBrowserScript) openCenterTab(ACTION_LIST_TAB_ID) }}
             onSelectProblemAction={row => {
               activateWorkspaceTab('author')
               openCenterTab(ACTION_LIST_TAB_ID)
@@ -9367,19 +9471,35 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   onOpenTable={projectId ? (section, resourceId) => setSharedAssetsDialog({ section, resourceId }) : undefined} />}
                 <ParameterDataDialog
               onAddDataset={addParameterDataset}
+              onCreateParameter={createParameterFromDialog}
+              onScanAutoParameters={scanForAutoParameters}
+              onDeepScan={() => { void runServerParameterization() }}
+              deepScanning={deepScanning}
+              canDeepScan={isEditingExisting}
               onShowUsesInSource={selectOutlineParameter}
               toolbarActions={<>
-                <button type="button" className="btn btn-sm btn-ghost" onClick={scanForAutoParameters} title="Quick scan for hardcoded values to externalize">Auto Params</button>
-                {isEditingExisting && <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void runServerParameterization() }} disabled={deepScanning} title="Server scan of the saved script; also flags secrets">{deepScanning ? 'Scanning…' : 'Deep Scan'}</button>}
                 {importedParameterFileMappings.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={() => importReviewController.setShowImportedParameterMappingsDialog(true)} title="How the source tool's parameter files mapped into data sources">Imported parameter files ({importedParameterFileMappings.length})</button>}
               </>}
-              onInspectUsage={path => {
+              onInspectUsage={(path, parameterName, line) => {
                 const match = /^(init|actions|teardown)\[(\d+)\]/.exec(path)
+                let focusKey = authorCodeFocus?.key || ''
                 if (match) {
                   const phase = match[1] === 'actions' ? 'action' : match[1] as 'init' | 'teardown'
-                  const key = `${phase}:${match[2]}`
-                  setAuthorCodeFocus({ phase, actionIndex: Number(match[2]), key })
+                  focusKey = `${phase}:${match[2]}`
+                  setAuthorCodeFocus({ phase, actionIndex: Number(match[2]), key: focusKey })
                 }
+                const resolvedParameterName = parameterName || (selectedParameterIdx !== null ? script.parameters?.[selectedParameterIdx]?.name : null) || null
+                if (resolvedParameterName) {
+                  setSelectedOutlineParameterName(resolvedParameterName)
+                  setParameterPaneShowAuto(false)
+                  setScriptJsonSidebarTab('auto-params')
+                  setAuthorRightSidebarCollapsed(false)
+                }
+                setInspectedUsageFocus({ path: `script.${path}`, focusKey })
+                setNarrowAuthorPane('editor')
+                setShowFullScriptJson(true)
+                const targetLine = line || lineRangeForTargetPath(scriptDslDocument.ranges, `script.${path}`)?.startLine
+                if (targetLine) requestJsonLineJump(targetLine)
                 openCenterTab(SCRIPT_JSON_TAB_ID)
                 setSuccess(`Parameter reference: ${path}`)
               }}

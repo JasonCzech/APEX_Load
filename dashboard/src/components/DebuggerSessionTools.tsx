@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint, ReplayRuntimeSnapshot } from '../types/replay'
+import type { ScriptDefinition, ScriptParameterDefinition } from '../types/scripts'
 import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
@@ -9,16 +10,105 @@ import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
-import { formatReplayHeaders } from './scriptEditorUtils'
+import { formatReplayHeaders, inferDelimiter } from './scriptEditorUtils'
 import type { RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugRuntimeStateEvidence } from './DebugRuntimeStateEvidence'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { ReplayExtractions } from './ReplayExtractions'
+import { placeSteps, stepOutputs } from './referenceScopeModel'
+import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 import {
   buildDebugTimelineModel,
   DEBUG_TIMELINE_LEGEND_PHASES,
   type DebugTimelineScaleMode,
 } from './debugTimelineWaterfallModel'
+
+function collectScriptAuthoredVariables(script?: ScriptDefinition): Map<string, string> {
+  const result = new Map<string, string>()
+  if (!script) return result
+  for (const { action } of placeSteps(script)) {
+    const label = action.name ? `Authored in ${action.name}` : 'Authored in script'
+    for (const output of stepOutputs(action)) {
+      const key = output.expression.startsWith('var.') ? output.expression.slice(4) : output.expression
+      if (key && !result.has(key)) result.set(key, label)
+    }
+    const forEach = (action.control as { for_each?: { var?: string } } | undefined)?.for_each
+    if (forEach?.var && !result.has(forEach.var)) result.set(forEach.var, label)
+  }
+  return result
+}
+
+function parseFirstDataSourceValue(script: ScriptDefinition, parameter: ScriptParameterDefinition): string | undefined {
+  const source = script.data_sources?.find(item => item.name === parameter.data_source)
+  if (!source?.inline_data || !['csv', 'dat'].includes(source.type) || source.encoding === 'base64' || source.inline_data.length > 1024 * 1024) return undefined
+  const delimiter = inferDelimiter(source)
+  const rows: string[][] = []
+  let row: string[] = []
+  let cell = ''
+  let quoted = false
+  let started = false
+  for (let i = 0; i < source.inline_data.length; i++) {
+    const ch = source.inline_data[i]
+    if (ch === '"') {
+      started = true
+      if (quoted && source.inline_data[i + 1] === '"') { cell += '"'; i++ } else quoted = !quoted
+    } else if (ch === delimiter && !quoted) {
+      row.push(cell); cell = ''
+    } else if ((ch === '\n' || ch === '\r') && !quoted) {
+      if (ch === '\r' && source.inline_data[i + 1] === '\n') i++
+      if (started || cell || row.length) { row.push(cell); rows.push(row) }
+      row = []; cell = ''; started = false
+      if (rows.length >= 4) break
+    } else {
+      cell += ch
+    }
+  }
+  if (started || cell || row.length) rows.push([...row, cell])
+  if (!rows.length) return undefined
+  const first = rows[0]
+  const columns = (source.first_row_header ? first || source.columns || [] : source.columns?.length ? source.columns : first?.map((_, idx) => `col_${idx + 1}`) || []).map(col => col.trim())
+  const colIndex = parameter.column ? columns.indexOf(parameter.column.trim()) : 0
+  if (colIndex < 0) return undefined
+  const dataRows = rows.slice(source.first_row_header ? 1 : 0)
+  const targetRow = dataRows[Math.max(0, (parameter.start_row ?? 1) - 1)] ?? dataRows[0]
+  const raw = targetRow?.[colIndex]
+  if (raw === undefined) return undefined
+  return /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(raw) ? '[REDACTED]' : raw.trim()
+}
+
+function collectScriptParameters(script?: ScriptDefinition): Map<string, { configuredValue: string | undefined; provenance: string; type: string }> {
+  const result = new Map<string, { configuredValue: string | undefined; provenance: string; type: string }>()
+  if (!script?.parameters?.length) return result
+  for (const parameter of script.parameters) {
+    const rawName = parameter.name?.trim()
+    if (!rawName) continue
+    const key = `param.${rawName}`
+    const paramType = (parameter.type || 'list').trim() || 'list'
+    const protectedParam = isSensitiveCredentialPreviewName(rawName) || isSensitiveCredentialPreviewName(parameter.column || '') || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(JSON.stringify(parameter))
+    const provenance = parameter.values?.length
+      ? 'Inline values'
+      : parameter.data_source
+        ? `Data source (${parameter.data_source}${parameter.column ? `.${parameter.column}` : ''})`
+        : `${paramType} generator`
+    let configuredValue: string | undefined
+    if (protectedParam) {
+      configuredValue = '[REDACTED]'
+    } else if (parameter.values?.length) {
+      const idx = Math.max(0, (parameter.start_row ?? 1) - 1)
+      configuredValue = parameter.values[idx] ?? parameter.values[0]
+    } else if (parameter.type === 'file' && parameter.data_source) {
+      configuredValue = parseFirstDataSourceValue(script, parameter)
+    } else if (parameter.type === 'counter') {
+      configuredValue = String(parameter.start ?? 1)
+    } else if (parameter.type === 'current_iteration' || parameter.type === 'vuser_id') {
+      configuredValue = '1'
+    } else if (parameter.type) {
+      configuredValue = `Generated (${parameter.type})`
+    }
+    result.set(key, { configuredValue, provenance, type: paramType })
+  }
+  return result
+}
 
 export function DebugProfiles({ options, onChange, disabled }: { options: ReplayOptionsState; onChange: (options: ReplayOptionsState) => void; disabled: boolean }) {
   const [profiles, setProfiles] = useState(() => { try { return readProfiles(localStorage.getItem('apexload.debug.profiles.v1')) } catch { return [] } })
@@ -32,16 +122,19 @@ export function DebugProfiles({ options, onChange, disabled }: { options: Replay
   </div>
 }
 
-export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, historyIncomplete = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, finalValuesRecorded = false, canInspectFrame, onInspectFrame }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; historyIncomplete?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; finalValuesRecorded?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void }) {
+export function DebugVariableWatches({ events, seed, latest, selected, onSelect, evidenceUnavailable = false, historyIncomplete = false, snapshot = null, currentReason = 'Current state unavailable. Pause at an engine boundary to inspect values.', mode, onModeChange, completed = false, finalValuesRecorded = false, canInspectFrame, onInspectFrame, script, replaying = false }: { events: BrowserReplayEvent[]; seed: Record<string, string>; latest: Record<string, string> | null; selected: number | null; onSelect: (index: number) => void; evidenceUnavailable?: boolean; historyIncomplete?: boolean; snapshot?: ReplayRuntimeSnapshot | null; currentReason?: string; mode?: RuntimeInspectionMode; onModeChange?: (mode: RuntimeInspectionMode) => void; completed?: boolean; finalValuesRecorded?: boolean; canInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => boolean; onInspectFrame?: (frame: ReplayRuntimeSnapshot['frames'][number]) => void; script?: ScriptDefinition; replaying?: boolean }) {
   const [localMode, setLocalMode] = useState<RuntimeInspectionMode>('current')
   const [explicitCurrent, setExplicitCurrent] = useState(false)
   const requested = mode || localMode
+  const authoredVariables = useMemo(() => collectScriptAuthoredVariables(script), [script])
+  const scriptParameters = useMemo(() => collectScriptParameters(script), [script])
+  const hasScriptDefinitions = scriptParameters.size > 0 || authoredVariables.size > 0
   // Once the session has ended "Current paused state" can only say it is
   // unavailable, so show the recorded values by default until the engineer
   // asks for the current state.
   // The choice is published to the shared mode, so every debugger panel shows the same point in time.
   // Final values are only supplied once a recorded scope is chosen, so the caller says they exist.
-  const hasRecordedValues = events.length > 0 || finalValuesRecorded || Object.keys(latest || {}).length > 0
+  const hasRecordedValues = events.length > 0 || finalValuesRecorded || Object.keys(latest || {}).length > 0 || (completed && hasScriptDefinitions)
   const fallbackScope: RuntimeInspectionMode | null = requested === 'selected' && selected == null ? 'retained' : requested === 'current' && completed && !snapshot && !explicitCurrent && hasRecordedValues ? selected != null ? 'selected' : 'retained' : null
   const scope: RuntimeInspectionMode = fallbackScope || requested
   useEffect(() => {
@@ -52,6 +145,7 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
   const changeMode = (value: RuntimeInspectionMode) => { setExplicitCurrent(value === 'current'); setLocalMode(value); onModeChange?.(value) }
   const [search, setSearch] = useState('')
   const [changedOnly, setChangedOnly] = useState(false)
+  const [selectedTypes, setSelectedTypes] = useState<string[]>([])
   const [pinned, setPinned] = useState<string[]>([])
   const index = scope === 'selected' ? selected ?? -1 : events.length - 1
   const reconstructed = useMemo(() => evidenceUnavailable || scope === 'current' ? {} : variablesAt(events, seed, index), [scope, events, seed, index, evidenceUnavailable])
@@ -69,23 +163,64 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
     }
     return positions
   }, [events, index, seed])
+  const showPreRunTable = Boolean(script) && !replaying && !completed && !snapshot && !explicitCurrent && events.length === 0
+  const showWatchTable = scope !== 'current' || showPreRunTable
   const valueForName = (source: Record<string, string>, name: string) => Object.prototype.hasOwnProperty.call(source, name) ? source[name] : undefined
-  const changedAtExecution = (name: string) => !historyIncomplete && valueForName(values, name) === valueForName(reconstructed, name) && valueForName(before, name) !== valueForName(reconstructed, name)
-  const names = [...new Set([...Object.keys(values), ...pinned])].filter(name => `${name} ${valueForName(values, name) ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || changedAtExecution(name))).sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
-  if (evidenceUnavailable) return <section aria-label="Variable watches" className="debug-watch-panel"><p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p></section>
-  return <section aria-label="Variable watches" className="debug-watch-panel">
-    <div className="debug-session-tools"><label>Values at<select value={scope} onChange={e => changeMode(e.target.value as RuntimeInspectionMode)}><option value="current">Current paused state</option><option value="retained">Retained history</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label>{scope !== 'current' && <><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label></>}</div>
-    {scope === 'current' ? snapshot ? <DebugRuntimeStateEvidence snapshot={snapshot} canInspectFrame={canInspectFrame} onInspectFrame={onInspectFrame} /> : <p role="status">{currentReason}</p> : <>
-    <p role="status">Retained history · {scope === 'selected' && selected != null && events[selected] ? `After ${eventLocation(events[selected])}` : completed ? 'Final historical values' : 'Reconstructed from session inputs and retained extractions'} · This is historical evidence, not current engine state. Values omitted from retained evidence cannot be reconstructed.</p>
-    {historyIncomplete && <p role="status">Execution evidence may be incomplete; variable origins and changes are unavailable.{incompleteValuesUnverified ? ' Reconstructed values are unverified and may be stale.' : ''}</p>}
+  const displayValueForName = (name: string) => {
+    const runtimeVal = valueForName(values, name) ?? ((!finalValuesRecorded || showPreRunTable) ? valueForName(seed, name) : undefined)
+    if (runtimeVal !== undefined) return runtimeVal
+    return scriptParameters.get(name)?.configuredValue
+  }
+  const variableTypeForName = (name: string) => {
+    const paramInfo = scriptParameters.get(name)
+    if (paramInfo) return paramInfo.type
+    if (name.startsWith('param.')) return 'param'
+    return name.includes('.') ? name.split('.')[0] : 'var'
+  }
+  const changedAtExecution = (name: string) => !historyIncomplete && scope !== 'current' && valueForName(values, name) !== undefined && valueForName(values, name) === valueForName(reconstructed, name) && valueForName(before, name) !== valueForName(reconstructed, name)
+  const candidateNames = [
+    ...Object.keys(values),
+    ...(script ? Object.keys(seed) : []),
+    ...authoredVariables.keys(),
+    ...scriptParameters.keys(),
+    ...pinned,
+  ]
+  const allCandidateNames = [...new Set(candidateNames)]
+  const availableTypes = (() => {
+    const ordered: string[] = ['var']
+    for (const info of scriptParameters.values()) {
+      if (!ordered.includes(info.type)) ordered.push(info.type)
+    }
+    for (const name of allCandidateNames) {
+      const paramInfo = scriptParameters.get(name)
+      const type = paramInfo ? paramInfo.type : name.startsWith('param.') ? 'param' : name.includes('.') ? name.split('.')[0] : 'var'
+      if (!ordered.includes(type)) ordered.push(type)
+    }
+    if (ordered.length < 2) ordered.push('param')
+    return ordered
+  })()
+  const activeSelectedTypes = selectedTypes.filter(type => availableTypes.includes(type))
+  const names = allCandidateNames
+    .filter(name => (activeSelectedTypes.length === 0 || activeSelectedTypes.includes(variableTypeForName(name))) && `${name} ${variableTypeForName(name)} ${displayValueForName(name) ?? ''} ${scriptParameters.get(name)?.provenance ?? ''} ${authoredVariables.get(name) ?? ''}`.toLowerCase().includes(search.toLowerCase()) && (!changedOnly || changedAtExecution(name)))
+    .sort((a, b) => Number(pinned.includes(b)) - Number(pinned.includes(a)) || a.localeCompare(b))
+  if (evidenceUnavailable) return <section aria-label="Variable watches" className="debug-watch-panel" data-table-pagination="off"><p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p></section>
+  return <section aria-label="Variable watches" className="debug-watch-panel" data-table-pagination="off">
+    <div className="debug-session-tools"><label>Values at<select value={scope} onChange={e => changeMode(e.target.value as RuntimeInspectionMode)}><option value="current">Current paused state</option><option value="retained">Retained history</option><option value="selected" disabled={selected == null}>Selected execution (after)</option></select></label>{showWatchTable && <><label>Search variables<input value={search} onChange={e => setSearch(e.target.value)} /></label><div className="debug-watch-type-filter" role="group" aria-label="Filter by parameter or variable type"><span className="debug-watch-type-filter-label">Type</span><button type="button" className={`debug-watch-type-chip${activeSelectedTypes.length === 0 ? ' active' : ''}`} aria-pressed={activeSelectedTypes.length === 0} onClick={() => setSelectedTypes([])}>All types</button>{availableTypes.map(type => { const isSelected = activeSelectedTypes.includes(type); return <button key={type} type="button" className={`debug-watch-type-chip${isSelected ? ' active' : ''}`} aria-pressed={isSelected} onClick={() => setSelectedTypes(prev => { const base = prev.filter(item => availableTypes.includes(item)); return base.includes(type) ? base.filter(item => item !== type) : [...base, type] })}>{type}</button> })}</div>{scope !== 'current' && <label><input type="checkbox" checked={changedOnly} onChange={e => setChangedOnly(e.target.checked)} />Changed at this execution</label>}</>}</div>
+    {scope === 'current' && snapshot ? <DebugRuntimeStateEvidence snapshot={snapshot} canInspectFrame={canInspectFrame} onInspectFrame={onInspectFrame} /> : null}
+    {scope === 'current' && !snapshot ? <p role="status">{currentReason}</p> : null}
+    {showWatchTable && <>
+    {scope !== 'current' && <p role="status">Retained history · {scope === 'selected' && selected != null && events[selected] ? `After ${eventLocation(events[selected])}` : completed ? 'Final historical values' : 'Reconstructed from session inputs and retained extractions'} · This is historical evidence, not current engine state. Values omitted from retained evidence cannot be reconstructed.</p>}
+    {scope !== 'current' && historyIncomplete && <p role="status">Execution evidence may be incomplete; variable origins and changes are unavailable.{incompleteValuesUnverified ? ' Reconstructed values are unverified and may be stale.' : ''}</p>}
     <div className="debug-watch-table-scroll" role="region" aria-label="Variable values and provenance" tabIndex={0}>
-    <table className="debug-watch-table"><caption className="sr-only">Variable values and provenance</caption><colgroup><col className="debug-watch-column-action" /><col className="debug-watch-column-name" /><col className="debug-watch-column-value" /><col className="debug-watch-column-changed" /></colgroup><thead><tr><th>Watch</th><th>Name / namespace</th><th>Value</th><th>Last changed</th></tr></thead><tbody>{names.map(name => {
+    <table className="debug-watch-table" data-table-pagination="off"><caption className="sr-only">Variable values and provenance</caption><colgroup><col className="debug-watch-column-action" /><col className="debug-watch-column-name" /><col className="debug-watch-column-value" /><col className="debug-watch-column-changed" /></colgroup><thead><tr><th scope="col">Watch</th><th scope="col">Name / namespace</th><th scope="col">Value</th><th scope="col">Last changed</th></tr></thead><tbody>{names.map(name => {
       const changed = lastChanged.get(name) ?? -1
-      const value = valueForName(values, name)
-      const originKnown = !historyIncomplete && valueForName(reconstructed, name) !== undefined && reconstructed[name] === value
-      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{changedAtExecution(name) && <small>Changed</small>}</td><td>{originKnown && changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : originKnown && valueForName(seed, name) === value ? 'Session input' : 'Unknown / not retained'}</td></tr>
+      const runtimeVal = valueForName(values, name) ?? ((!finalValuesRecorded || showPreRunTable) ? valueForName(seed, name) : undefined)
+      const paramInfo = scriptParameters.get(name)
+      const value = runtimeVal !== undefined ? runtimeVal : paramInfo?.configuredValue
+      const originKnown = !historyIncomplete && scope !== 'current' && valueForName(reconstructed, name) !== undefined && reconstructed[name] === runtimeVal
+      return <tr key={name}><td><button type="button" aria-label={`Pin ${name}`} aria-pressed={pinned.includes(name)} onClick={() => setPinned(p => p.includes(name) ? p.filter(n => n !== name) : [...p, name])}>{pinned.includes(name) ? 'Pinned' : 'Pin'}</button></td><th scope="row">{name}<small>{paramInfo ? `param · ${paramInfo.type}` : name.includes('.') ? name.split('.')[0] : 'var'}</small></th><td><code>{value === '' ? '(empty)' : value ?? 'Not available'}</code>{changedAtExecution(name) && <small>Changed</small>}</td><td>{originKnown && changed >= 0 ? <button type="button" onClick={() => onSelect(changed)}>{events[changed].action_name} · {eventLocation(events[changed])}</button> : (originKnown || showPreRunTable) && valueForName(seed, name) !== undefined && valueForName(seed, name) === value ? 'Session input' : paramInfo ? paramInfo.provenance : authoredVariables.has(name) && runtimeVal === undefined ? authoredVariables.get(name)! : 'Unknown / not retained'}</td></tr>
     })}</tbody></table></div>{!names.length && <p>No variables match this view.</p>}
-    <details><summary>Values as JSON</summary><SnapshotBodyPreview body={JSON.stringify(values, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></details>
+    {scope !== 'current' && <details><summary>Values as JSON</summary><SnapshotBodyPreview body={JSON.stringify(values, null, 2)} headers={{ 'Content-Type': 'application/json' }} /></details>}
     </>}
   </section>
 }

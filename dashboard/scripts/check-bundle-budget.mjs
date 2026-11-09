@@ -154,11 +154,25 @@ const mib = (value) => value * 1024 * 1024
 // per-asset ceiling to 930 KiB raw / 254 KiB gzip (~2% headroom over both
 // PRs, so either may merge first); aggregate JS, CSS and every route and
 // startup guard stay unchanged.
+// 2026-11-08 Debug summary waterfall, sortable/filterable issue and parameter
+// tables, Request/Response highlighting, and Add Parameter modal dialog. Main's
+// Debug Summary waterfall and tabs (b517bdbbc), collapsible right rail with Run
+// Configuration table (247292bf9), Request/Response log/code highlighting,
+// sortable/filterable Errors and warnings table, Variables subtabs (Current
+// values + sortable/filterable Parameter sources & refresh cadence), and the
+// Add Parameter popup dialog all belong to the deferred ScriptEditor chunk,
+// which now measures 936.62 KiB raw / 255.10 KiB gzip, with aggregate CSS at
+// 1066 KiB raw / 193.05 KiB gzip. Aggregate JS (9.39 MiB raw / 2.72 MiB gzip),
+// Initial shell (204.87 KiB gzip), Scripts route (236.95 KiB gzip) and Test
+// execution route (421.71 KiB gzip) stay within their existing guards. Move
+// the JS per-asset ceiling to 950 KiB raw / 260 KiB gzip and aggregate CSS
+// inventory to 1080 KiB raw / 196 KiB gzip (~1.5-2% headroom); aggregate JS,
+// per-asset CSS and every route and startup guard stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(930),
-    maxAssetGzipBytes: kib(254),
+    maxAssetBytes: kib(950),
+    maxAssetGzipBytes: kib(260),
     maxTotalBytes: mib(9.5),
     maxTotalGzipBytes: mib(2.76),
   }),
@@ -166,8 +180,8 @@ export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(236),
     maxAssetGzipBytes: kib(38),
-    maxTotalBytes: kib(1065),
-    maxTotalGzipBytes: kib(194),
+    maxTotalBytes: kib(1080),
+    maxTotalGzipBytes: kib(196),
   }),
 })
 

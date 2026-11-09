@@ -192,7 +192,7 @@ test('the script editor meets automated WCAG AA checks in Author and Debug, dark
    if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await page.reload()
    // The editor reopens in the last mode used, so pick each one explicitly.
    await page.getByRole('group', { name: 'Script workspace' }).getByRole('button', { name: mode, exact: true }).click()
-   await expect(page.getByRole('tab', { name: mode === 'Author' ? 'Action editor' : 'Action evidence', exact: true })).toBeVisible()
+   await expect(page.getByRole('tab', { name: mode === 'Author' ? 'Action editor' : 'Request/Response', exact: true })).toBeVisible()
    await page.addStyleTag({ content: '* {animation:none!important;transition:none!important}' })
    const violations = await page.evaluate(async () => {
     const scanner = (window as unknown as { axe: typeof import('axe-core') }).axe

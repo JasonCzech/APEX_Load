@@ -148,9 +148,16 @@ export async function json(response: APIResponse | Response): Promise<Record<str
 export function idOf(payload: Record<string, unknown>, key?: string): string {
   return responseID(payload, 'resource', key)
 }
-/** The script editor's save state, as its status row shows it. */
+/** The script editor's save state, as its status row or Save button shows it. */
 export async function expectEditorSaved(page: Page) {
-  await expect(page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: /^Saved/ })).toBeVisible()
+  const statusSaved = page.getByRole('list', { name: 'Script status' }).getByRole('listitem').filter({ hasText: /^Saved/ })
+  if (await page.getByRole('list', { name: 'Script status' }).count() > 0) {
+    await expect(statusSaved).toBeVisible()
+    return
+  }
+  const saveButton = page.getByRole('button', { name: 'Save script', exact: true })
+  await expect(saveButton).toBeDisabled()
+  await expect(saveButton).toHaveAttribute('data-tooltip', 'No unsaved changes to save')
 }
 
 /** The last debug run's outcome: Debug's session bar owns it, Author's status row repeats it. */
@@ -160,7 +167,7 @@ export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed
   await expect(badge.or(chip).first()).toBeVisible()
   // Completion opens the summary; callers of this helper continue inspecting evidence.
   if (await page.getByRole('region', { name: 'Debug run summary', exact: true }).isVisible()) {
-    const evidenceTab = page.getByRole('region', { name: 'Debugger center workbench', exact: true }).getByRole('tab', { name: /^(Action evidence|Browser Replay)$/ }).first()
+    const evidenceTab = page.getByRole('region', { name: 'Debugger center workbench', exact: true }).getByRole('tab', { name: /^(Request\/Response|Browser Replay)$/ }).first()
     if (await evidenceTab.isVisible()) await evidenceTab.click()
   }
 }

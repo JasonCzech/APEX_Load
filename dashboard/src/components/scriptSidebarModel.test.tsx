@@ -3,7 +3,7 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, expect, it, vi } from 'vitest'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
-import { parameterUsageLabel, debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError } from './scriptSidebarModel'
+import { parameterUsageLabel, parameterUsageActionName, debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError } from './scriptSidebarModel'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptDefinition } from '../types/scripts'
@@ -22,6 +22,10 @@ describe('sidebar navigation and session context', () => {
   it('names nested usages by action without losing the field path', () => {
     expect(parameterUsageLabel({ actions: [{ name: 'Order' }] } as ScriptDefinition, 'actions[0].control.steps[2].body')).toBe('Order · control.steps[2].body')
     expect(parameterUsageLabel({ actions: [] } as unknown as ScriptDefinition, 'config.base_url')).toBe('config.base_url')
+    expect(parameterUsageActionName({ actions: [{ name: 'Order' }] } as ScriptDefinition, 'actions[0].control.steps[2].body')).toBe('Order')
+    expect(parameterUsageActionName({ actions: [{}] } as ScriptDefinition, 'actions[0].target')).toBe('Action 1')
+    expect(parameterUsageActionName({ parameters: [{ name: 'customer', type: 'list' }, { name: 'paired', type: 'list' }] } as ScriptDefinition, 'parameters[1].same_line_as')).toBe('Parameter paired')
+    expect(parameterUsageActionName({ actions: [] } as unknown as ScriptDefinition, 'config.base_url')).toBe('Configuration')
   })
   it('counts semantic overrides without treating whitespace as a change', () => {
     expect(debugOverrideCount({ ...DEFAULT_REPLAY_OPTIONS, variablesText: '{  }' })).toBe(0)

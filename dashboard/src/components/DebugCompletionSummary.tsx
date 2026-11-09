@@ -1,10 +1,173 @@
-import { useRef, useEffect, useState, useMemo } from 'react'
-import { debugSummaryModel, type DebugCompletionSnapshot } from './debugCompletionModel'
+import { useId, useMemo, useRef, useEffect, useState } from 'react'
+import { debugSummaryModel, type DebugCompletionSnapshot, type DebugSummaryIssue } from './debugCompletionModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
 import DebugTransactionTable from './DebugTransactionTable'
 import { DebugTimeline } from './DebuggerSessionTools'
 import TabList from './ux/TabList'
+
+type IssueSortField = 'severity' | 'action' | 'phase' | 'status' | 'message'
+type IssueSortDirection = 'asc' | 'desc'
+type IssueSeverityFilter = 'all' | 'error' | 'warning'
+type IssuePhaseFilter = 'all' | 'init' | 'action' | 'teardown' | 'session'
+
+function compareIssues(a: DebugSummaryIssue, b: DebugSummaryIssue, field: IssueSortField, direction: IssueSortDirection): number {
+  let cmp = 0
+  switch (field) {
+    case 'severity': {
+      const rankA = a.severity === 'error' ? 0 : 1
+      const rankB = b.severity === 'error' ? 0 : 1
+      cmp = rankA - rankB
+      break
+    }
+    case 'action':
+      cmp = (a.actionName || '').localeCompare(b.actionName || '', undefined, { numeric: true, sensitivity: 'base' })
+      break
+    case 'phase':
+      cmp = (a.phase || '').localeCompare(b.phase || '', undefined, { numeric: true, sensitivity: 'base' })
+      break
+    case 'status':
+      cmp = (a.statusCode ?? -1) - (b.statusCode ?? -1)
+      break
+    case 'message':
+      cmp = a.message.localeCompare(b.message, undefined, { numeric: true, sensitivity: 'base' })
+      break
+  }
+  return direction === 'asc' ? cmp : -cmp
+}
+
+function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSummaryIssue[]; onSelectEvent: (index: number) => void }) {
+  const filterId = useId()
+  const severityId = useId()
+  const phaseId = useId()
+  const [search, setSearch] = useState('')
+  const [severityFilter, setSeverityFilter] = useState<IssueSeverityFilter>('all')
+  const [phaseFilter, setPhaseFilter] = useState<IssuePhaseFilter>('all')
+  const [sortField, setSortField] = useState<IssueSortField | null>(null)
+  const [sortDirection, setSortDirection] = useState<IssueSortDirection>('asc')
+
+  const errorCount = useMemo(() => issues.filter(issue => issue.severity === 'error').length, [issues])
+  const warningCount = useMemo(() => issues.filter(issue => issue.severity === 'warning').length, [issues])
+
+  const filteredIssues = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    const matching = issues.filter(issue => {
+      if (severityFilter !== 'all' && issue.severity !== severityFilter) return false
+      if (phaseFilter !== 'all') {
+        const issuePhase = issue.phase || 'session'
+        if (issuePhase !== phaseFilter) return false
+      }
+      if (!query) return true
+      const severityLabel = issue.severity === 'error' ? 'error' : 'warning'
+      const statusLabel = issue.statusCode ? `http ${issue.statusCode}` : ''
+      const haystack = `${severityLabel} ${issue.actionName || 'session'} ${issue.phase || ''} ${statusLabel} ${issue.message}`.toLowerCase()
+      return haystack.includes(query)
+    })
+    if (!sortField) return matching
+    return [...matching].sort((a, b) => compareIssues(a, b, sortField, sortDirection))
+  }, [issues, phaseFilter, search, severityFilter, sortDirection, sortField])
+
+  const toggleSort = (field: IssueSortField) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortDirection('asc')
+    }
+  }
+
+  const ariaSortFor = (field: IssueSortField): 'ascending' | 'descending' | 'none' => {
+    if (sortField !== field) return 'none'
+    return sortDirection === 'asc' ? 'ascending' : 'descending'
+  }
+
+  const sortIndicator = (field: IssueSortField) => {
+    if (sortField !== field) return '↕'
+    return sortDirection === 'asc' ? '↑' : '↓'
+  }
+
+  return (
+    <div className="debug-summary-issues-section">
+      <div className="debug-summary-issues-toolbar">
+        <div className="debug-summary-issues-field">
+          <label htmlFor={filterId}>Filter issues</label>
+          <input
+            id={filterId}
+            type="search"
+            autoComplete="off"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Filter by message, action, phase, or status"
+          />
+        </div>
+        <div className="debug-summary-issues-field">
+          <label htmlFor={severityId}>Severity</label>
+          <select id={severityId} value={severityFilter} onChange={e => setSeverityFilter(e.target.value as IssueSeverityFilter)}>
+            <option value="all">All ({issues.length})</option>
+            <option value="error">Error ({errorCount})</option>
+            <option value="warning">Warning ({warningCount})</option>
+          </select>
+        </div>
+        <div className="debug-summary-issues-field">
+          <label htmlFor={phaseId}>Phase</label>
+          <select id={phaseId} value={phaseFilter} onChange={e => setPhaseFilter(e.target.value as IssuePhaseFilter)}>
+            <option value="all">All phases</option>
+            <option value="init">Init</option>
+            <option value="action">Action</option>
+            <option value="teardown">Teardown</option>
+            <option value="session">Session</option>
+          </select>
+        </div>
+      </div>
+      <div className="debug-transaction-table-wrap debug-summary-issues-table-wrap" tabIndex={0} role="region" aria-label="Errors and warnings table">
+        <table className="debug-transaction-table debug-summary-issues-table" data-table-pagination="off">
+          <caption className="sr-only">Errors and warnings from the completed debug run</caption>
+          <thead>
+            <tr>
+              {([['severity', 'Severity'], ['action', 'Action'], ['phase', 'Phase'], ['status', 'Status'], ['message', 'Message']] as const).map(([field, label]) => (
+                <th key={field} scope="col" aria-sort={ariaSortFor(field)}>
+                  <button type="button" className="debug-table-sort-btn" onClick={() => toggleSort(field)}>
+                    <span>{label}</span>
+                    <span className="debug-table-sort-icon" aria-hidden="true">{sortIndicator(field)}</span>
+                  </button>
+                </th>
+              ))}
+              <th scope="col">Evidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredIssues.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="debug-summary-issues-empty">No errors or warnings match the current filters.</td>
+              </tr>
+            ) : (
+              filteredIssues.map(issue => (
+                <tr key={issue.key} className="debug-summary-issue-row">
+                  <td>
+                    <span className={`debug-transaction-status ${issue.severity === 'error' ? 'failed' : 'warning'}`}>
+                      {issue.severity === 'error' ? 'Error' : 'Warning'}
+                    </span>
+                  </td>
+                  <th scope="row">{issue.actionName || 'Session'}</th>
+                  <td>{issue.phase || '—'}</td>
+                  <td>{issue.statusCode ? `HTTP ${issue.statusCode}` : '—'}</td>
+                  <td className="debug-summary-issue-message">{issue.message}</td>
+                  <td>
+                    {issue.eventIndex != null ? (
+                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectEvent(issue.eventIndex!)}>
+                        Inspect {issue.actionName || 'action'}
+                      </button>
+                    ) : '—'}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
 
 export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
@@ -145,11 +308,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
       >
         <section aria-label="Errors and warnings" className="debug-summary-issues-section">
           <h3>Errors and warnings</h3>
-          {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : <ul className="debug-summary-issues">{model.issues.map(issue => <li key={issue.key}>
-            <strong>{issue.severity === 'error' ? 'Error' : 'Warning'}{issue.actionName ? ` · ${issue.actionName}` : ''}</strong>
-            <p>{issue.message}</p><small>{[issue.phase, issue.statusCode ? `HTTP ${issue.statusCode}` : ''].filter(Boolean).join(' · ')}</small>
-            {issue.eventIndex != null && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectEvent(issue.eventIndex!)}>Inspect {issue.actionName || 'action'}</button>}
-          </li>)}</ul>}
+          {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : <DebugSummaryIssuesTable key={`issues-${snapshot.key}`} issues={model.issues} onSelectEvent={onSelectEvent} />}
         </section>
       </div>
     </>}

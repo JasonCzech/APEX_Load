@@ -126,7 +126,7 @@ export function ScriptCodePane({
     [candidateMatchRanges],
   )
   const parameterStatus = activeParameterName
-    ? `Parameter: ${activeParameterName} (${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'})`
+    ? `Parameter: ${activeParameterName} (${parameterMatchRanges.length} occurrence${parameterMatchRanges.length === 1 ? '' : 's'})${activePath ? ` · ${activePath}` : ''}`
     : ''
   const candidateStatus = activeCandidateName
     ? `Auto parameter: ${activeCandidateName} (${candidateMatchRanges.length} highlighted)`
@@ -195,13 +195,13 @@ export function ScriptCodePane({
       || parameterNavigationRef.current.editorReadyVersion !== editorReadyVersion
     )
     parameterNavigationRef.current = { name: activeParameterName || undefined, editorReadyVersion }
-    if (shouldNavigate && firstMatch && firstMatch.to <= view.state.doc.length) {
+    if (shouldNavigate && !jumpToLineRequest && firstMatch && firstMatch.to <= view.state.doc.length) {
       effects.push(EditorView.scrollIntoView(firstMatch.from, { y: 'center' }))
       view.dispatch({ selection: EditorSelection.range(firstMatch.from, firstMatch.to), effects })
       return
     }
     view.dispatch({ effects })
-  }, [activeParameterName, editorReadyVersion, parameterMatchKey, parameterMatchRanges, value])
+  }, [activeParameterName, editorReadyVersion, jumpToLineRequest, parameterMatchKey, parameterMatchRanges, value])
 
   useEffect(() => {
     const view = viewRef.current
@@ -232,11 +232,22 @@ export function ScriptCodePane({
     if (!view || !jumpToLineRequest) return
     const lineNo = Math.max(1, Math.min(view.state.doc.lines, jumpToLineRequest.line))
     const line = view.state.doc.line(lineNo)
+    const matchOnLine = parameterMatchRanges.find(range => range.from >= line.from && range.to <= line.to)
+    const lineText = value.slice(line.from, line.to)
+    const quotedToken = activeParameterName ? `"${activeParameterName}"` : ''
+    const quotedOffset = quotedToken ? lineText.lastIndexOf(quotedToken) : -1
+    const fallbackRange = quotedOffset >= 0
+      ? { from: line.from + quotedOffset + 1, to: line.from + quotedOffset + 1 + (activeParameterName?.length || 0) }
+      : null
+    const targetRange = matchOnLine ?? fallbackRange
+    const selection = targetRange && targetRange.to <= view.state.doc.length
+      ? EditorSelection.range(targetRange.from, targetRange.to)
+      : EditorSelection.cursor(line.from)
     view.dispatch({
-      selection: EditorSelection.cursor(line.from),
-      effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+      selection,
+      effects: EditorView.scrollIntoView(targetRange ? targetRange.from : line.from, { y: 'center' }),
     })
-  }, [editorReadyVersion, jumpToLineRequest, value])
+  }, [activeParameterName, editorReadyVersion, jumpToLineRequest, parameterMatchKey, parameterMatchRanges, value])
 
   const handleOpenSearch = useCallback(() => {
     const view = viewRef.current

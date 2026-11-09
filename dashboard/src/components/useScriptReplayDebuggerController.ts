@@ -133,6 +133,11 @@ function debuggerVarsMaximum(target: HTMLElement): number {
   return Math.max(DEBUGGER_LAYOUT_LIMITS.vars.min, Math.round(shellWidth - railWidth - 100))
 }
 
+function debuggerBottomMaximum(): number {
+  const viewportHeight = typeof window === 'undefined' ? 800 : window.innerHeight
+  return Math.max(DEBUGGER_LAYOUT_LIMITS.bottom.min, Math.round(viewportHeight * 0.5))
+}
+
 function currentDebugAncestorKeys(action?: ScriptDebugAction): Set<string> {
   const keys = new Set<string>()
   if (!action) return keys
@@ -192,6 +197,7 @@ export function useScriptReplayDebuggerController({
   const [debuggerVarsActualWidth, setDebuggerVarsActualWidth] = useState<number | null>(null)
   const [debuggerVarsMaximumWidth, setDebuggerVarsMaximumWidth] = useState(() => Math.max(DEBUGGER_LAYOUT_LIMITS.vars.min, window.innerWidth - 100))
   const [debuggerBottomHeight, setDebuggerBottomHeight] = useState(() => loadPaneSize('bottom'))
+  const [debuggerBottomMaximumHeight, setDebuggerBottomMaximumHeight] = useState(() => debuggerBottomMaximum())
   const [activeDebuggerResize, setActiveDebuggerResize] = useState<DebuggerResizeKind | null>(null)
   const debugRawOutputRef = useRef<HTMLDivElement | null>(null)
   const debuggerSettingsRef = useRef<HTMLDivElement | null>(null)
@@ -251,6 +257,13 @@ export function useScriptReplayDebuggerController({
       window.localStorage.setItem('debuggerBottomHeight', debuggerBottomHeight.toString())
     } catch { /* storage may be unavailable */ }
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
+
+  useEffect(() => {
+    const updateBottomMax = () => setDebuggerBottomMaximumHeight(debuggerBottomMaximum())
+    updateBottomMax()
+    window.addEventListener('resize', updateBottomMax)
+    return () => window.removeEventListener('resize', updateBottomMax)
+  }, [])
 
   // Keep the splitter's accessible value in sync with the rendered track when
   // a saved width is constrained by a smaller window. Preserve the saved width
@@ -344,7 +357,8 @@ export function useScriptReplayDebuggerController({
   const handleDebuggerResizeKeyDown = useCallback((kind: DebuggerResizeKind, event: ReactKeyboardEvent<HTMLDivElement>) => {
     const limits = DEBUGGER_LAYOUT_LIMITS[kind]
     const step = limits.step * (event.shiftKey ? 2 : 1)
-    const currentValue = kind === 'rail' ? debuggerRailWidth : kind === 'vars' ? (event.currentTarget.parentElement?.getBoundingClientRect().width || debuggerVarsWidth) : debuggerBottomHeight
+    const maxBottom = debuggerBottomMaximum()
+    const currentValue = kind === 'rail' ? debuggerRailWidth : kind === 'vars' ? (event.currentTarget.parentElement?.getBoundingClientRect().width || debuggerVarsWidth) : Math.min(maxBottom, debuggerBottomHeight)
     let nextValue: number | null = null
     if (kind === 'bottom') {
       if (event.key === 'ArrowUp') nextValue = currentValue + step
@@ -357,12 +371,12 @@ export function useScriptReplayDebuggerController({
       else if (event.key === 'ArrowRight') nextValue = currentValue - step
     }
     if (event.key === 'Home') nextValue = limits.min
-    if (event.key === 'End') nextValue = kind === 'vars' ? debuggerVarsMaximum(event.currentTarget) : limits.max
+    if (event.key === 'End') nextValue = kind === 'vars' ? debuggerVarsMaximum(event.currentTarget) : kind === 'bottom' ? maxBottom : limits.max
     if (nextValue === null) return
     event.preventDefault()
     if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', nextValue))
     else if (kind === 'vars') setDebuggerVarsWidth(Math.min(debuggerVarsMaximum(event.currentTarget), clampDebuggerPaneSize('vars', nextValue)))
-    else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', nextValue))
+    else setDebuggerBottomHeight(Math.min(maxBottom, clampDebuggerPaneSize('bottom', nextValue)))
   }, [debuggerBottomHeight, debuggerRailWidth, debuggerVarsWidth])
 
   const startDebuggerDrag = useCallback((kind: DebuggerResizeKind, event: ReactPointerEvent<HTMLElement>) => {
@@ -370,14 +384,15 @@ export function useScriptReplayDebuggerController({
     const startY = event.clientY
     const startRail = debuggerRailWidth
     const startVars = kind === 'vars' ? (event.currentTarget.parentElement?.getBoundingClientRect().width || debuggerVarsWidth) : debuggerVarsWidth
-    const startBottom = debuggerBottomHeight
+    const maxBottom = kind === 'bottom' ? debuggerBottomMaximum() : 0
+    const startBottom = kind === 'bottom' ? Math.min(maxBottom, debuggerBottomHeight) : debuggerBottomHeight
     const maxVars = kind === 'vars' ? debuggerVarsMaximum(event.currentTarget) : 0
     const started = startPointerDrag(event, {
       cursor: kind === 'bottom' ? 'row-resize' : 'col-resize',
       onMove: moveEvent => {
         if (kind === 'rail') setDebuggerRailWidth(clampDebuggerPaneSize('rail', startRail + (moveEvent.clientX - startX)))
         else if (kind === 'vars') setDebuggerVarsWidth(Math.min(maxVars, clampDebuggerPaneSize('vars', startVars - (moveEvent.clientX - startX))))
-        else setDebuggerBottomHeight(clampDebuggerPaneSize('bottom', startBottom - (moveEvent.clientY - startY)))
+        else setDebuggerBottomHeight(Math.min(maxBottom, clampDebuggerPaneSize('bottom', startBottom - (moveEvent.clientY - startY))))
       },
       onEnd: () => setActiveDebuggerResize(null),
     })
@@ -403,6 +418,7 @@ export function useScriptReplayDebuggerController({
     debugEvents,
     debugFilteredLogs,
     debuggerBottomHeight,
+    debuggerBottomMaximumHeight,
     debuggerBottomTab,
     debuggerRailWidth,
     debuggerReadinessBtnRef,

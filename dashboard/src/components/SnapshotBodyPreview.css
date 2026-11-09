@@ -72,6 +72,60 @@
   color: var(--code-text);
 }
 
+.debug-log-token.token-method {
+  color: var(--info-text);
+  font-weight: 800;
+}
+
+.debug-log-token.token-target {
+  color: var(--success-text);
+}
+
+.debug-log-token.token-status-success {
+  color: var(--success-text);
+  font-weight: 800;
+}
+
+.debug-log-token.token-status-warning {
+  color: var(--warning-text);
+  font-weight: 800;
+}
+
+.debug-log-token.token-status-error {
+  color: var(--danger-text);
+  font-weight: 800;
+}
+
+.debug-log-token.token-header,
+.debug-log-token.token-key {
+  color: var(--info-text);
+}
+
+.debug-log-token.token-string {
+  color: var(--success-text);
+}
+
+.debug-log-token.token-number {
+  color: var(--warning-text);
+}
+
+.debug-log-token.token-literal {
+  color: var(--accent-text);
+}
+
+.debug-log-token.token-punctuation {
+  color: var(--text-muted);
+}
+
+.debug-log-unhighlighted {
+  color: var(--code-text);
+}
+
+.debug-log-omission {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .snapshot-full-dialog-backdrop {
   position: fixed;
   inset: 0;

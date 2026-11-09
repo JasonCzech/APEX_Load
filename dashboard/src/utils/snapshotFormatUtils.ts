@@ -5,7 +5,7 @@ function isJSONContentType(value?: string): boolean {
 function isXMLContentType(value?: string): boolean {
   if (!value) return false
   const lower = value.toLowerCase()
-  return lower.includes('xml') || lower.includes('soap')
+  return lower.includes('xml') || lower.includes('soap') || lower.includes('html')
 }
 
 export type CapturedBodyFormat = 'json' | 'xml' | 'plain'
@@ -226,4 +226,196 @@ export function formatSnapshotResponseSection(snapshot?: SnapshotCopySection, fa
     'Body',
     formatCapturedBody(snapshot?.response_body, snapshot?.response_headers, 'No response body captured'),
   ].join('\n')
+}
+
+export type DebugLogTokenKind =
+  | 'plain'
+  | 'method'
+  | 'target'
+  | 'status-success'
+  | 'status-warning'
+  | 'status-error'
+  | 'header'
+  | 'key'
+  | 'string'
+  | 'number'
+  | 'literal'
+  | 'punctuation'
+
+export interface DebugLogToken {
+  kind: DebugLogTokenKind
+  text: string
+}
+
+export interface DebugLogHighlightResult {
+  omittedCharCount: number
+  plainRemainder: string
+  tokens: DebugLogToken[]
+}
+
+export const DEBUG_LOG_HIGHLIGHT_CHAR_LIMIT = 12_000
+export const DEBUG_LOG_HIGHLIGHT_TOKEN_LIMIT = 600
+export const DEBUG_LOG_RENDER_CHAR_LIMIT = 64 * 1024
+
+const DEBUG_HTTP_METHOD_STATUS_PATTERN = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)([1-5]\d{2})(\s+)(\S+)(.*)$/i
+const DEBUG_HTTP_METHOD_PATTERN = /^(CONNECT|DELETE|GET|HEAD|OPTIONS|PATCH|POST|PUT|TRACE)(\s+)(\S+)(.*)$/i
+const DEBUG_HTTP_STATUS_PATTERN = /^(HTTP\/\S+\s+)(\d{3})(.*)$/i
+const DEBUG_STANDALONE_STATUS_PATTERN = /^([1-5]\d{2})(\s+.*)?$/
+const DEBUG_CONSOLE_LEVEL_PATTERN = /^(\[(?:error|warn|warning|info|debug|trace|log)\])(\s+)(.*)$/i
+const DEBUG_SECTION_HEADER_PATTERN = /^(REQUEST|HEADERS|BODY|RESPONSE|RESPONSE HEADERS|RESPONSE BODY|TRANSPORT|TIMINGS|TLS|COOKIES & REDIRECTS|EXTRACTIONS|BROWSER CONSOLE|BROWSER NETWORK|NETWORK HOPS|RESOURCES)\s*$/
+const DEBUG_HEADER_PATTERN = /^([!#$%&'*+\-.^_`|~0-9A-Za-z]+)(:\s*)(.*)$/
+const DEBUG_LITERAL_PATTERN = /"(?:\\.|[^"\\])*"|\b(?:true|false|null)\b|-?\b\d+(?:\.\d+)?\b|[\u005b\u005d{},]|:(?!\/\/)/g
+
+function statusCodeTokenKind(status: number): DebugLogTokenKind {
+  if (status >= 500) return 'status-error'
+  if (status >= 400) return 'status-warning'
+  return 'status-success'
+}
+
+function tokenizeDebugLiterals(text: string): DebugLogToken[] {
+  const tokens: DebugLogToken[] = []
+  let cursor = 0
+  for (const match of text.matchAll(DEBUG_LITERAL_PATTERN)) {
+    const index = match.index ?? 0
+    if (index > cursor) tokens.push({ kind: 'plain', text: text.slice(cursor, index) })
+    const value = match[0]
+    let kind: DebugLogTokenKind = 'punctuation'
+    if (value.startsWith('"')) {
+      kind = /^\s*:/.test(text.slice(index + value.length)) ? 'key' : 'string'
+    } else if (/^-?\d/.test(value)) {
+      kind = 'number'
+    } else if (/^(?:true|false|null)$/.test(value)) {
+      kind = 'literal'
+    }
+    tokens.push({ kind, text: value })
+    cursor = index + value.length
+  }
+  if (cursor < text.length) tokens.push({ kind: 'plain', text: text.slice(cursor) })
+  return tokens.length > 0 ? tokens : [{ kind: 'plain', text }]
+}
+
+export function tokenizeDebugLogRawLine(line: string): DebugLogToken[] {
+  if (DEBUG_SECTION_HEADER_PATTERN.test(line)) {
+    return [{ kind: 'header', text: line }]
+  }
+
+  const networkEntry = line.match(DEBUG_HTTP_METHOD_STATUS_PATTERN)
+  if (networkEntry) {
+    return [
+      { kind: 'method', text: networkEntry[1] },
+      { kind: 'plain', text: networkEntry[2] },
+      { kind: statusCodeTokenKind(Number(networkEntry[3])), text: networkEntry[3] },
+      { kind: 'plain', text: networkEntry[4] },
+      { kind: 'target', text: networkEntry[5] },
+      ...tokenizeDebugLiterals(networkEntry[6]),
+    ]
+  }
+
+  const request = line.match(DEBUG_HTTP_METHOD_PATTERN)
+  if (request) {
+    return [
+      { kind: 'method', text: request[1] },
+      { kind: 'plain', text: request[2] },
+      { kind: 'target', text: request[3] },
+      ...tokenizeDebugLiterals(request[4]),
+    ]
+  }
+
+  const response = line.match(DEBUG_HTTP_STATUS_PATTERN)
+  if (response) {
+    return [
+      { kind: 'plain', text: response[1] },
+      { kind: statusCodeTokenKind(Number(response[2])), text: response[2] },
+      { kind: 'plain', text: response[3] },
+    ]
+  }
+
+  const standaloneStatus = line.match(DEBUG_STANDALONE_STATUS_PATTERN)
+  if (standaloneStatus) {
+    const tokens: DebugLogToken[] = [
+      { kind: statusCodeTokenKind(Number(standaloneStatus[1])), text: standaloneStatus[1] },
+    ]
+    if (standaloneStatus[2]) {
+      tokens.push({ kind: 'plain', text: standaloneStatus[2] })
+    }
+    return tokens
+  }
+
+  const consoleEntry = line.match(DEBUG_CONSOLE_LEVEL_PATTERN)
+  if (consoleEntry) {
+    const levelLower = consoleEntry[1].slice(1, -1).toLowerCase()
+    const levelKind: DebugLogTokenKind = levelLower === 'error'
+      ? 'status-error'
+      : levelLower === 'warn' || levelLower === 'warning'
+        ? 'status-warning'
+        : levelLower === 'debug' || levelLower === 'trace'
+          ? 'literal'
+          : 'method'
+    return [
+      { kind: levelKind, text: consoleEntry[1] },
+      { kind: 'plain', text: consoleEntry[2] },
+      ...tokenizeDebugLiterals(consoleEntry[3]),
+    ]
+  }
+
+  const header = line.match(DEBUG_HEADER_PATTERN)
+  if (header) {
+    return [
+      { kind: 'header', text: header[1] },
+      { kind: 'punctuation', text: header[2] },
+      ...tokenizeDebugLiterals(header[3]),
+    ]
+  }
+
+  return tokenizeDebugLiterals(line)
+}
+
+export function highlightDebugLogRaw(
+  raw: string,
+  limits: {
+    highlightChars?: number
+    highlightTokens?: number
+    renderChars?: number
+  } = {},
+): DebugLogHighlightResult {
+  const renderChars = Math.max(0, limits.renderChars ?? DEBUG_LOG_RENDER_CHAR_LIMIT)
+  const highlightChars = Math.min(renderChars, Math.max(0, limits.highlightChars ?? DEBUG_LOG_HIGHLIGHT_CHAR_LIMIT))
+  const highlightTokens = Math.max(0, limits.highlightTokens ?? DEBUG_LOG_HIGHLIGHT_TOKEN_LIMIT)
+  const visible = raw.slice(0, renderChars)
+  const highlightSource = visible.slice(0, highlightChars)
+  const lines = highlightSource.split('\n')
+  const tokens: DebugLogToken[] = []
+  let consumed = 0
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const lineTokens = tokenizeDebugLogRawLine(lines[lineIndex])
+    for (const token of lineTokens) {
+      if (tokens.length >= highlightTokens) {
+        return {
+          tokens,
+          plainRemainder: visible.slice(consumed),
+          omittedCharCount: Math.max(0, raw.length - visible.length),
+        }
+      }
+      tokens.push(token)
+      consumed += token.text.length
+    }
+    if (lineIndex < lines.length - 1) {
+      if (tokens.length >= highlightTokens) {
+        return {
+          tokens,
+          plainRemainder: visible.slice(consumed),
+          omittedCharCount: Math.max(0, raw.length - visible.length),
+        }
+      }
+      tokens.push({ kind: 'plain', text: '\n' })
+      consumed += 1
+    }
+  }
+
+  return {
+    tokens,
+    plainRemainder: visible.slice(consumed),
+    omittedCharCount: Math.max(0, raw.length - visible.length),
+  }
 }

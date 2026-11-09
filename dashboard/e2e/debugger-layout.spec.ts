@@ -18,7 +18,7 @@ test('keeps the debug outline and its parameters inside the rail when the bottom
   const bottomSeparator = page.getByRole('separator', { name: 'Resize bottom panel' })
   await bottomSeparator.focus()
   await bottomSeparator.press('End')
-  await expect(bottomSeparator).toHaveAttribute('aria-valuenow', '640')
+  await expect(bottomSeparator).toHaveAttribute('aria-valuenow', '450')
 
   const rail = page.getByRole('complementary', { name: 'Actions', exact: true })
   const tree = rail.getByRole('tree', { name: 'Script steps' })
