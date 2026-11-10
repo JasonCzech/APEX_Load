@@ -175,10 +175,14 @@ export async function expectDebugOutcome(page: Page, outcome: 'passed' | 'failed
 /** The debugger Request/Response inspector's sub-tabs, by visible label. */
 export type InspectorTabName = 'Response' | 'Request' | 'Correlation' | 'Timing & transport' | 'Network' | 'Raw'
 
-// A sub-tab's accessible name may end in a count badge ("Correlation 3"); its
-// tabpanel is labelled by the tab, so it carries the same name.
+// A sub-tab's accessible name may end in a badge: a count ("Correlation 3"),
+// a count with failures ("Network 12 · 1 failed") or failures alone
+// ("Correlation 1 failed · 2 unset", "Request 2 unresolved"). Its tabpanel is
+// labelled by the tab, so it carries the same name.
+const INSPECTOR_TAB_BADGE_PATTERN = '(?: \\d+(?: [a-z]+)?(?: · \\d+ [a-z]+)*)?'
+
 function inspectorTabNamePattern(name: InspectorTabName): RegExp {
-  return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?: \\d+)?$`)
+  return new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}${INSPECTOR_TAB_BADGE_PATTERN}$`)
 }
 
 /** One sub-tab of the selected action's Request/Response inspector. */

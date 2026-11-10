@@ -1,0 +1,254 @@
+.rr-network {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rr-network-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.rr-network-toolbar .rr-inspector-segmented {
+  flex-wrap: wrap;
+}
+
+.rr-network-filter-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+}
+
+.rr-network-summary {
+  margin-left: auto;
+}
+
+.rr-network-table-wrap {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+
+.rr-network-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12.5px;
+}
+
+.rr-network-caption {
+  caption-side: top;
+  padding: 6px 12px;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Child selectors only: the selected request's detail nests a header table
+   that must keep its own cell styles. */
+.rr-network-table > thead > tr > th {
+  padding: 7px 12px;
+  background: var(--subtle-fill-strong, var(--bg-hover));
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Widths live on the <col>s (table-layout: fixed reads them); Request takes the rest. */
+.rr-network-table > colgroup > col.rr-network-col-type,
+.rr-network-table > colgroup > col.rr-network-col-status,
+.rr-network-table > colgroup > col.rr-network-col-time,
+.rr-network-table > colgroup > col.rr-network-col-body {
+  width: 92px;
+}
+
+.rr-network-table > colgroup > col.rr-network-col-hop {
+  width: 48px;
+}
+
+.rr-network-table > tbody > tr > td,
+.rr-network-table > tbody > tr > th {
+  padding: 0 12px;
+  height: 32px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rr-network-table > tbody > tr:last-child > td,
+.rr-network-table > tbody > tr:last-child > th {
+  border-bottom: 0;
+}
+
+/* The selected request's detail, a full-width row right under it. */
+.rr-network-table > tbody > tr.rr-network-detail-row > td {
+  height: auto;
+  padding: 0;
+  white-space: normal;
+  overflow: visible;
+}
+
+.rr-network-table > tbody > tr.rr-network-detail-row > td > .rr-network-detail {
+  border: 0;
+  border-radius: 0;
+  border-left: 3px solid var(--accent);
+}
+
+.rr-network-table > tbody > tr.is-selected {
+  background: var(--accent-soft);
+}
+
+.rr-network-table > tbody > tr:not(.is-selected):not(.rr-network-detail-row):hover {
+  background: var(--bg-hover);
+}
+
+.rr-network-table > tbody > tr > .rr-network-col-hop {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-network-table > tbody > tr > th.rr-network-request {
+  padding: 0;
+}
+
+.rr-network-row-button {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.rr-network-row-button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.rr-network-method {
+  font-weight: 600;
+}
+
+.rr-network-path {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+}
+
+.rr-network-role {
+  color: var(--text-secondary);
+}
+
+.rr-network-status.is-failed {
+  color: var(--danger-text, var(--danger));
+  font-weight: 600;
+}
+
+.rr-network-unknown {
+  color: var(--text-secondary);
+}
+
+.rr-network-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 0;
+}
+
+.rr-network-detail-title {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.rr-network-detail-facts,
+.rr-network-detail-note {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.rr-network-phases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 0;
+  font-size: 12.5px;
+}
+
+.rr-network-phases div {
+  display: flex;
+  gap: 6px;
+}
+
+.rr-network-phases dt {
+  color: var(--text-secondary);
+}
+
+.rr-network-phases dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A narrow debugger pane: Request keeps most of the width. Type (the filters
+   still name it) and Hop (the order still shows it) collapse to no width; the
+   rest shrink. They are not display: none, so every row keeps the same column
+   count, the detail row's span stays exact, and screen readers still read them. */
+@container debugger-detail (max-width: 580px) {
+  .rr-network-table > colgroup > col.rr-network-col-type,
+  .rr-network-table > colgroup > col.rr-network-col-hop {
+    width: 0;
+  }
+
+  .rr-network-table > thead > tr > .rr-network-col-type,
+  .rr-network-table > thead > tr > .rr-network-col-hop,
+  .rr-network-table > tbody > tr > .rr-network-col-type,
+  .rr-network-table > tbody > tr > .rr-network-col-hop {
+    padding: 0;
+    border-left: 0;
+    border-right: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    max-width: 0;
+  }
+
+  .rr-network-table > colgroup > col.rr-network-col-status,
+  .rr-network-table > colgroup > col.rr-network-col-time,
+  .rr-network-table > colgroup > col.rr-network-col-body {
+    width: 64px;
+  }
+
+  .rr-network-table > thead > tr > th:not(.rr-network-col-type):not(.rr-network-col-hop),
+  .rr-network-table > tbody > tr:not(.rr-network-detail-row) > td:not(.rr-network-col-type):not(.rr-network-col-hop) {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .rr-network-row-button {
+    padding: 0 6px;
+  }
+}

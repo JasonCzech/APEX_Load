@@ -7616,9 +7616,9 @@ describe('ScriptEditor', () => {
       const firstRow = debugOutlineRow(container, 'First evidence')!
       await act(async () => firstRow.click())
       expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(false)
-      // Captured resources live in the inspector's Network view.
+      // Captured resources are rows of the inspector's Network table.
       const firstNetwork = await openInspectorTab(container, 'Network')
-      expect(firstNetwork.querySelector('[aria-label="Captured resources"]')?.textContent).toContain('/first-resource')
+      expect(firstNetwork.querySelector('[aria-label="Network requests"] table')?.textContent).toContain('/first-resource')
     }
     await act(async () => {
       resolveGet({ session: { ...unavailableRuntimeMetadata('debug-session-1', 'failed', '3'), id: 'debug-session-1',
@@ -7637,7 +7637,7 @@ describe('ScriptEditor', () => {
     if (!privacy) expect(networkTab).toBeDefined()
     const networkPanel = networkTab ? await openInspectorTab(container, 'Network') : null
     // With privacy on, nothing anywhere may show the resources; otherwise they are in the Network view.
-    const resources = (privacy ? container : networkPanel!).querySelector('[aria-label="Captured resources"]')
+    const resources = (privacy ? container : networkPanel!).querySelector('[aria-label="Network requests"]')
     if (privacy) {
       expect(resources).toBeNull()
       expect(container.textContent).not.toContain('/failed-resource')
@@ -12714,7 +12714,10 @@ describe('ScriptEditor', () => {
     expect(responsePanel.textContent).toContain('Code: env:Sender')
     expect(responsePanel.textContent).toContain('Reason: Request validation failed')
     expect(responsePanel.textContent).toContain('Response')
-    expect(responsePanel.textContent).toContain('Open full text')
+    // Response headers: the key header first, the other twelve one toggle away.
+    const responseHeaders = responsePanel.querySelector('table[aria-label="Response headers"]')
+    expect(Array.from(responseHeaders?.querySelectorAll('tbody th') ?? []).map(cell => cell.textContent)).toEqual(['Content-Type'])
+    expect(Array.from(responsePanel.querySelectorAll('button')).some(button => button.textContent === 'Show all 13')).toBe(true)
     expect(responsePanel.textContent).toContain('env:Body')
     expect(responsePanel.textContent).toContain('env:Fault')
     const responseBlocks = responsePanel.querySelectorAll('.snapshot-code').length
@@ -12779,18 +12782,19 @@ describe('ScriptEditor', () => {
     expect(wireBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
     await showRequestView(container, 'As scripted')
     const scriptedPanel = container.querySelector<HTMLElement>('.debugger-request-body [role="tabpanel"]:not([hidden])')!
-    const resolvedHeadersLabel = Array.from(scriptedPanel.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
-    expect(resolvedHeadersLabel?.parentElement?.textContent).toContain('Copy')
+    const scriptedHeaders = scriptedPanel.querySelector('table[aria-label="Request headers as scripted"]')
+    const scriptedContentType = Array.from(scriptedHeaders?.querySelectorAll('tbody tr') ?? []).find(row => row.querySelector('th')?.textContent === 'Content-Type')
+    expect(scriptedContentType?.textContent).toContain('application/soap+xml')
+    expect(scriptedContentType?.querySelector('button')?.textContent).toBe('Copy')
     const scriptedBlocks = Array.from(scriptedPanel.querySelectorAll('.snapshot-code'))
     expect(scriptedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
 
-    // Correlation: the action's extractions.
+    // Correlation: the action's extractions, one table row each.
     const correlationPanel = await openInspectorTab(container, 'Correlation')
-    expect(correlationPanel.textContent).toContain('Extractions')
-    const correlationBlocks = Array.from(correlationPanel.querySelectorAll('.snapshot-code'))
-    expect(correlationBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
-    expect(correlationPanel.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
-    expect(responseBlocks + wireBlocks.length + scriptedBlocks.length + correlationBlocks.length).toBeGreaterThanOrEqual(4)
+    const extraction = Array.from(correlationPanel.querySelectorAll('.rr-correlation-table tbody tr')).find(row => row.querySelector('th')?.textContent === 'confirmationId')
+    expect(extraction?.children[0]?.textContent).toBe('Extracts')
+    expect(extraction?.textContent).toContain('CONF-42')
+    expect(responseBlocks + wireBlocks.length + scriptedBlocks.length).toBeGreaterThanOrEqual(3)
   })
 
   it('renders full multi-line resolved body and request/response snapshots inside scrollable code boxes while retaining Open full body', async () => {
@@ -12871,27 +12875,32 @@ describe('ScriptEditor', () => {
     // Each view shows one part of the exchange: collect the code boxes of the
     // Response view, the wire request, and the request as scripted.
     const codeBoxes: Element[] = []
-    const textBoxes: Element[] = []
+    const headerTables: Element[] = []
     const openFullBodyButtons: Element[] = []
     let highlightedTokens = 0
-    const collect = (panel: Element) => {
+    const collect = async (panel: Element) => {
       codeBoxes.push(...panel.querySelectorAll('pre.snapshot-code'))
-      textBoxes.push(...panel.querySelectorAll('pre.snapshot-text-preview'))
+      // Headers are tables with the key headers first: Show all lists the rest.
+      for (const toggle of Array.from(panel.querySelectorAll<HTMLButtonElement>('.inspector-table-toggle'))) {
+        if (toggle.getAttribute('aria-expanded') === 'false') await act(async () => toggle.click())
+      }
+      headerTables.push(...panel.querySelectorAll('table.inspector-table'))
       openFullBodyButtons.push(...Array.from(panel.querySelectorAll('button')).filter(button => button.textContent?.includes('Open full body')))
       highlightedTokens += panel.querySelectorAll('.debug-log-token').length
     }
-    collect(await openInspectorTab(container, 'Response'))
-    collect(await openInspectorTab(container, 'Request'))
+    await collect(await openInspectorTab(container, 'Response'))
+    await collect(await openInspectorTab(container, 'Request'))
     await showRequestView(container, 'As scripted')
-    collect(container.querySelector('.debugger-request-body [role="tabpanel"]:not([hidden])')!)
+    await collect(container.querySelector('.debugger-request-body [role="tabpanel"]:not([hidden])')!)
     expect(highlightedTokens).toBeGreaterThan(0)
 
     expect(codeBoxes.some(box => box.textContent?.includes('resolved-val-23'))).toBe(true)
     expect(codeBoxes.some(box => box.textContent?.includes('req-val-23'))).toBe(true)
     expect(codeBoxes.some(box => box.textContent?.includes('res-val-23'))).toBe(true)
 
-    expect(textBoxes.length).toBeGreaterThanOrEqual(3)
-    expect(textBoxes.every(box => box.textContent?.includes('X-Custom-15: hdr-15'))).toBe(true)
+    expect(headerTables.length).toBeGreaterThanOrEqual(3)
+    expect(headerTables.every(table => Array.from(table.querySelectorAll('tbody tr'))
+      .some(row => row.querySelector('th')?.textContent === 'X-Custom-15' && row.textContent?.includes('hdr-15')))).toBe(true)
 
     expect(openFullBodyButtons.length).toBeGreaterThanOrEqual(3)
   })
@@ -13079,13 +13088,16 @@ describe('ScriptEditor', () => {
     expect(networkPanel.querySelector('[aria-label="Page artifacts"] h4')?.textContent).toBe('Page artifacts')
     expect(networkPanel.textContent).toContain('DOM Summary')
     expect(networkPanel.textContent).toContain('Console')
-    expect(networkPanel.textContent).toContain('Network entries')
+    const networkTable = networkPanel.querySelector('[aria-label="Network requests"] table')
+    expect(networkTable?.querySelector('caption')?.textContent).toBe('12 requests')
     expect(networkPanel.textContent).toContain('HTML')
     expect(networkPanel.textContent).toContain('View full size')
     expect(networkPanel.textContent).not.toContain('Expand artifacts')
     expect(networkPanel.textContent).not.toContain('Collapse artifacts')
     expect(networkPanel.textContent).toContain('Catalog loaded 11')
-    expect(networkPanel.textContent).toContain('https://shop.example.com/api/catalog/11')
+    // Same host as the action: the row shows the path, its tooltip the whole URL.
+    expect(networkTable?.textContent).toContain('/api/catalog/11')
+    expect(networkTable?.querySelector('button[title="https://shop.example.com/api/catalog/11"]')).not.toBeNull()
     expect(networkPanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
     const artifactBlocks = Array.from(networkPanel.querySelectorAll('.snapshot-code'))
     expect(artifactBlocks).toHaveLength(1)
@@ -13093,8 +13105,6 @@ describe('ScriptEditor', () => {
     expect(networkPanel.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
     const label = (text: string) => Array.from(networkPanel.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === text)
     expect(label('Console')?.parentElement?.textContent).toContain('Copy')
-    expect(label('Network entries')?.parentElement?.textContent).toContain('Copy')
-    expect(label('Network entries')?.parentElement?.classList.contains('replay-browser-network')).toBe(true)
     expect(label('HTML')?.parentElement?.textContent).toContain('Copy')
     // Raw: the snapshot without request/response fields, as highlighted JSON.
     const rawPanel = await openInspectorTab(container, 'Raw')

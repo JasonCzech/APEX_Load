@@ -240,6 +240,20 @@
   font-weight: 700;
 }
 
+/* Why the Request view's tables have no Comes from column (said once). */
+.rr-inspector-sources-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+/* A failure badge ("1 failed", "2 unresolved"): the words carry it, the danger tint echoes it. */
+.rr-inspector-tab-badge.is-failing {
+  background: var(--danger-bg, var(--subtle-fill-strong, var(--bg-hover)));
+  color: var(--danger-text, var(--danger));
+  white-space: nowrap;
+}
+
 .rr-inspector > .rr-inspector-panel {
   padding: 0;
   min-width: 0;

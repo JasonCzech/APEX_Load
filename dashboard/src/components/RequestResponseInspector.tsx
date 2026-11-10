@@ -1,12 +1,10 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptDefinition, ScriptExtractorDefinition } from '../types/scripts'
 import LiveTableStepResult from './LiveTableStepResult'
-import { ReplayExtractions } from './ReplayExtractions'
 import ResponseSelection from './ResponseSelection'
 import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
 import { replayEventStepKey } from './actionChecksModel'
-import ResourceSnapshotList from './ResourceSnapshotList'
 import { responseBodyMessage } from './debuggerExperience'
 import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
@@ -20,6 +18,11 @@ import RepairSuggestionList from './RepairSuggestionList'
 import SnapshotBodyPreview, { DebugLogHighlightedText } from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { AuraRequestBodyTabs, AuraResponsePreview } from './AuraEnvelopeEditor'
+import InspectorHeaderTable, { InspectorFormFieldTable } from './InspectorHeaderTable'
+import InspectorCorrelationTable from './InspectorCorrelationTable'
+import { correlationTableForEvent } from './inspectorCorrelationModel'
+import InspectorNetworkTable from './InspectorNetworkTable'
+import { requestBodyIsForm, sourcesUnavailableNote, type InspectorSourceContext } from './inspectorHeadersModel'
 import { isAuraEndpointTarget } from './auraEnvelopeModel'
 import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import {
@@ -28,12 +31,7 @@ import {
   hasStructuredReplaySnapshot,
 } from './scriptEditorReplayModel'
 import { formatProtocolEvidenceSummary } from './scriptEditorWorkbench'
-import {
-  formatConsoleEntries,
-  formatNetworkEntries,
-  formatReplayHeaders,
-  formatReplayTime,
-} from './scriptEditorUtils'
+import { formatConsoleEntries, formatReplayTime } from './scriptEditorUtils'
 import {
   formatSnapshotRequestSection,
   formatSnapshotResponseSection,
@@ -60,10 +58,9 @@ import {
   formatFindResult,
   formatMillisecondsAsSecondsLabel,
   formatTimingMs,
-  hasReplayExtractions,
   htmlPageInsight,
   inspectorStatusLabel,
-  inspectorTabCount,
+  inspectorTabBadge,
   inspectorTimingBar,
   inspectorTimingBarLabel,
   isFollowerFailure,
@@ -250,6 +247,34 @@ export default function RequestResponseInspector({
         : rootRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
     if (target && document.activeElement !== target) target.focus()
   }, [index])
+  // Where each request header and form field comes from: the authored step and
+  // the script's HTTP defaults, only while the replay matches the script (a
+  // reordered action's headers are not taken for this one's).
+  const requestSources = useMemo(() => {
+    const stepKey = replayEventStepKey(event)
+    const action = replayMatchesCurrentScript && stepKey ? resolveAuthorJsonScopeByKey(script, stepKey)?.action : undefined
+    const wire: InspectorSourceContext = {
+      view: 'wire',
+      authored: action ? { action, http: script.config?.http } : null,
+      unresolvedVariables: unresolvedVariables(event),
+    }
+    const scripted: InspectorSourceContext = { ...wire, view: 'scripted' }
+    // Decided once for both views: a form in either is masked in both, never
+    // shown raw (the resolved headers hold only the step's own, not a script
+    // default Content-Type).
+    const form = requestBodyIsForm({
+      wireHeaders: event.snapshot?.request_headers,
+      scriptedHeaders: event.headers,
+      authored: wire.authored,
+    })
+    return { wire, scripted, form }
+  }, [event, script, replayMatchesCurrentScript])
+  // The Correlation tab's badge counts the table's own rows.
+  const correlationModel = useMemo(
+    () => correlationTableForEvent(event, variableDiff, replayMatchesCurrentScript ? script : null, runtimeVariablesUnavailable),
+    [event, variableDiff, script, replayMatchesCurrentScript, runtimeVariablesUnavailable],
+  )
+
   const curlCommand = structuredSnapshot ? buildCurlCommand(structuredSnapshot) : null
   // A snapshot cut by retention still copies, labelled incomplete (the button
   // and its tooltip name each gap) rather than passing for the wire request.
@@ -454,7 +479,14 @@ export default function RequestResponseInspector({
                 || Boolean(structuredSnapshot.response_body && /^\s*(?:while\s*\(\s*1\s*\)|for\s*\(\s*;\s*;\s*\))/.test(structuredSnapshot.response_body))
               const response = <>
                 <pre><DebugLogHighlightedText text={String(structuredSnapshot.response_status || event.status_code || 'n/a')} /></pre>
-                <SnapshotTextPreview text={formatReplayHeaders(structuredSnapshot.response_headers)} />
+                <InspectorHeaderTable
+                  direction="response"
+                  headers={structuredSnapshot.response_headers}
+                  label="Response headers"
+                  copyKeyPrefix={`${index}:response-headers`}
+                  copiedKey={copiedSection}
+                  onCopy={onCopySection}
+                />
                 {showAuraResponse && <AuraResponsePreview body={structuredSnapshot.response_body} />}
                 <div className="debugger-snapshot-body">
                   <SnapshotBodyPreview
@@ -489,6 +521,18 @@ export default function RequestResponseInspector({
   const renderRequest = () => {
     const hasScripted = Boolean(event.body || (event.headers && Object.keys(event.headers).length > 0))
     const view: RequestView = structuredSnapshot && hasScripted ? (preferredRequestView ?? 'wire') : structuredSnapshot ? 'wire' : 'scripted'
+    const wireForm = structuredSnapshot !== null && requestSources.form && Boolean(structuredSnapshot.request_body)
+    const scriptedForm = requestSources.form && Boolean(event.body)
+    // The copies on screen that keep masked fields: Copy full request lives in
+    // the wire view only; Copy as cURL is in the header for both.
+    const curlCopy = curlCommand ? ['Copy as cURL'] : []
+    // Said once for the view (not by each table): why no Comes from column.
+    const viewHasSourcedRows = view === 'wire'
+      ? Boolean(structuredSnapshot && (Object.keys(structuredSnapshot.request_headers || {}).length > 0 || wireForm))
+      : Boolean(Object.keys(event.headers || {}).length > 0 || scriptedForm)
+    const sourcesNote = !requestSources.wire.authored && viewHasSourcedRows
+      ? <p className="rr-inspector-sources-note">{sourcesUnavailableNote(replayMatchesCurrentScript)}</p>
+      : null
     return <>
       {structuredSnapshot && hasScripted && (
         <div className="rr-inspector-segmented" role="group" aria-label="Request view">
@@ -496,6 +540,7 @@ export default function RequestResponseInspector({
           <button type="button" aria-pressed={view === 'scripted'} onClick={() => setPreferredRequestView('scripted')}>As scripted</button>
         </div>
       )}
+      {sourcesNote}
       {view === 'wire' && structuredSnapshot ? (
         <div className="debugger-http-snapshot rr-inspector-snapshot">
           <div className="replay-code-block">
@@ -512,28 +557,67 @@ export default function RequestResponseInspector({
             <pre><DebugLogHighlightedText text={`${structuredSnapshot.request_method || 'n/a'} ${structuredSnapshot.request_url || ''}`.trim()} /></pre>
             {structuredSnapshot.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}
             {structuredSnapshot.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}
-            <SnapshotTextPreview text={formatReplayHeaders(structuredSnapshot.request_headers)} />
-            {/* The resolved body has its own Aura tabs; the wire body gets them only without it. */}
-            <AuraRequestBodyTabs body={event.body ? undefined : structuredSnapshot.request_body}>
-              <div className="debugger-snapshot-body">
-                <SnapshotBodyPreview
-                  body={structuredSnapshot.request_body}
-                  headers={structuredSnapshot.request_headers}
-                  emptyMessage="No request body captured"
-                />
-              </div>
-            </AuraRequestBodyTabs>
+            <InspectorHeaderTable
+              direction="request"
+              headers={structuredSnapshot.request_headers}
+              sources={requestSources.wire}
+              label="Request headers sent on the wire"
+              copyKeyPrefix={`${index}:request-headers`}
+              copiedKey={copiedSection}
+              onCopy={onCopySection}
+            />
+            {/* A form body is a field table (passwords masked) instead of the
+                raw preview, which would show what the table masks. */}
+            {wireForm ? (
+              <InspectorFormFieldTable
+                body={structuredSnapshot.request_body}
+                form
+                unmaskedCopies={['Copy full request', ...curlCopy]}
+                sources={requestSources.wire}
+                label="Form fields sent on the wire"
+                copyKeyPrefix={`${index}:request-form`}
+                copiedKey={copiedSection}
+                onCopy={onCopySection}
+              />
+            ) : (
+              /* The resolved body has its own Aura tabs; the wire body gets them only without it. */
+              <AuraRequestBodyTabs body={event.body ? undefined : structuredSnapshot.request_body}>
+                <div className="debugger-snapshot-body">
+                  <SnapshotBodyPreview
+                    body={structuredSnapshot.request_body}
+                    headers={structuredSnapshot.request_headers}
+                    emptyMessage="No request body captured"
+                  />
+                </div>
+              </AuraRequestBodyTabs>
+            )}
           </div>
         </div>
       ) : (
         <>
-          <div className="replay-code-block">
-            <span className="replay-detail-label">Resolved Headers</span>
-            <SnapshotTextPreview text={formatReplayHeaders(event.headers)} />
-          </div>
-          {event.body && (
+          <InspectorHeaderTable
+            direction="request"
+            headers={event.headers}
+            sources={requestSources.scripted}
+            label="Request headers as scripted"
+            copyKeyPrefix={`${index}:scripted-headers`}
+            copiedKey={copiedSection}
+            onCopy={onCopySection}
+          />
+          {scriptedForm ? (
+            <InspectorFormFieldTable
+              body={event.body}
+              form
+              unmaskedCopies={curlCopy}
+              sources={requestSources.scripted}
+              label="Form fields as scripted"
+              copyKeyPrefix={`${index}:scripted-form`}
+              copiedKey={copiedSection}
+              onCopy={onCopySection}
+            />
+          ) : event.body ? (
             <div className="replay-code-block">
-              <span className="replay-detail-label">Resolved Body</span>
+              <span className="replay-detail-label">Body</span>
               <AuraRequestBodyTabs body={event.body}>
                 <SnapshotBodyPreview
                   body={event.body}
@@ -541,17 +625,14 @@ export default function RequestResponseInspector({
                 />
               </AuraRequestBodyTabs>
             </div>
-          )}
+          ) : null}
         </>
       )}
     </>
   }
 
   const renderCorrelation = () => {
-    const changedVariables = Object.entries(variableDiff)
     const liveTable = event.action_type === 'live_table'
-    const unset = unresolvedVariables(event)
-    const empty = !liveTable && !hasReplayExtractions(event) && changedVariables.length === 0 && !testable && unset.length === 0
     const testerHeadingId = `${baseId}-extractor-tester`
     const stepKey = replayEventStepKey(event)
     // A failing extractor that reads what the tester cannot show (the URL,
@@ -565,29 +646,19 @@ export default function RequestResponseInspector({
       {liveTable && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && stepKey
         ? resolveAuthorJsonScopeByKey(script, stepKey)?.action
         : undefined} />}
-      {unset.length > 0 && (
-        <p className="rr-inspector-unset">
-          <span className="replay-detail-label">Not set in this run:</span> {unset.join(', ')}
-        </p>
-      )}
-      <ReplayExtractions event={event} />
-      {changedVariables.length > 0 && (
-        <div className="replay-code-block">
-          <span className="replay-detail-label">Variable Changes</span>
-          <div className="replay-variable-diff-list">
-            {changedVariables.map(([name, diff]) => (
-              <div key={`${index}-${name}`} className="replay-variable-diff-item">
-                <div className="replay-variable-diff-name">{name}</div>
-                <div className="replay-variable-diff-values">
-                  <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
-                  <span className="replay-variable-diff-arrow">{'→'}</span>
-                  <span className="replay-variable-diff-after">{diff.next}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Extractions, unapplied extractions, reads and variable changes in one
+          table; it says so itself when there is nothing (not beside the
+          live-table result or the tester, which have their own content). */}
+      <InspectorCorrelationTable
+        event={event}
+        variableDiff={variableDiff}
+        script={replayMatchesCurrentScript ? script : null}
+        runtimeVariablesUnavailable={runtimeVariablesUnavailable}
+        showEmptyState={!liveTable && !testable}
+        copyKeyPrefix={`${index}:correlation`}
+        copiedKey={copiedSection}
+        onCopy={onCopySection}
+      />
       {testable && (
         <section className="rr-inspector-extractor-tester" aria-labelledby={testerHeadingId}>
           <h4 id={testerHeadingId}>{!seed ? 'Test an extractor against this response'
@@ -624,7 +695,6 @@ export default function RequestResponseInspector({
           />
         </section>
       )}
-      {empty && <p className="rr-inspector-empty">No extractions or variable changes were recorded for this action.</p>}
     </>
   }
 
@@ -698,7 +768,6 @@ export default function RequestResponseInspector({
   }
 
   const renderNetwork = () => {
-    const networkEntries = replayNetworkEntries(event)
     const domSummary = event.dom_summary || snapshot?.dom_summary
     const consoleEntries = event.console_entries || snapshot?.console_entries
     const html = event.html || snapshot?.html
@@ -709,13 +778,15 @@ export default function RequestResponseInspector({
     } : null
     const hasPageArtifacts = Boolean(domSummary || consoleEntries?.length || screenshot || html)
     return <>
-      <ResourceSnapshotList snapshot={snapshot} />
-      {networkEntries?.length ? (
-        <div className="replay-code-block replay-browser-network">
-          <span className="replay-detail-label">Network entries</span>
-          <SnapshotTextPreview text={formatNetworkEntries(networkEntries)} />
-        </div>
-      ) : null}
+      {/* Hop phases are runtime evidence: withheld with it, as Timing does. */}
+      <InspectorNetworkTable
+        event={event}
+        phasesUnavailable={runtimeVariablesUnavailable}
+        requestSources={requestSources.wire}
+        copyKeyPrefix={`${index}:network`}
+        copiedKey={copiedSection}
+        onCopy={onCopySection}
+      />
       {hasPageArtifacts && (
         <section className="rr-inspector-page-artifacts" aria-label="Page artifacts">
           <h4>Page artifacts</h4>
@@ -858,7 +929,7 @@ export default function RequestResponseInspector({
       <TabList className="rr-inspector-tabs ux-underline-tabs" aria-label="Request and response views" onKeyDown={handleTabKey}>
         {tabs.map(item => {
           const selected = item.id === activeTab
-          const count = inspectorTabCount(event, item.id, variableDiff)
+          const badge = inspectorTabBadge(event, item.id, correlationModel.rows)
           return (
             <button
               key={item.id}
@@ -874,7 +945,7 @@ export default function RequestResponseInspector({
               onBlur={() => { focusedTab.current = null }}
             >
               <span>{item.label}</span>
-              {count > 0 && <>{' '}<span className="rr-inspector-tab-badge">{count}</span></>}
+              {badge && <>{' '}<span className={`rr-inspector-tab-badge${badge.failing ? ' is-failing' : ''}`}>{badge.text}</span></>}
             </button>
           )
         })}

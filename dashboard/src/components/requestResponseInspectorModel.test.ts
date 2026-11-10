@@ -18,10 +18,12 @@ import {
   formatFindResult,
   formatTimingMs,
   htmlPageInsight,
+  inspectorTabBadge,
   inspectorTimingBar,
   inspectorTimingBarLabel,
   isFollowerFailure,
   isNavigableFailure,
+  replayNetworkEntries,
   unresolvedVariables,
 } from './requestResponseInspectorModel'
 
@@ -447,5 +449,59 @@ describe('find in body', () => {
     expect(formatFindResult(1, false)).toBe('1 match')
     expect(formatFindResult(3, false)).toBe('3 matches')
     expect(formatFindResult(3, true)).toBe('3 matches (partial body)')
+  })
+})
+
+describe('network tab', () => {
+  it("counts the Network table's rows: a resource and the entry for the same fetch count once", () => {
+    const merged = event({
+      network_entries: [{ method: 'GET', url: '/a.css', status_code: 200 }],
+      snapshot: { resources: [{ request_url: '/a.css', response_status: 200, response_body_state: 'captured' }, { request_url: '/b.js', response_status: 404, response_body_state: 'not_captured' }] },
+    } as Partial<BrowserReplayEvent>)
+    // The 404 is a failed row: the badge says so in words, in the failure style.
+    expect(inspectorTabBadge(merged, 'network')).toEqual({ text: '2 · 1 failed', failing: true })
+    // A same-URL pair whose statuses disagree stays two rows rather than merging wrongly.
+    const disagree = event({
+      network_entries: [{ method: 'GET', url: '/a.css', status_code: 304 }],
+      snapshot: { resources: [{ request_url: '/a.css', response_status: 200, response_body_state: 'captured' }] },
+    } as Partial<BrowserReplayEvent>)
+    expect(inspectorTabBadge(disagree, 'network')).toEqual({ text: '2', failing: false })
+    expect(inspectorTabBadge(event(), 'network')).toBeNull()
+  })
+
+  it('counts the Correlation table rows, or names failed and unset ones', () => {
+    const row = (direction: 'Extracts' | 'Reads' | 'Sets', tone: 'ok' | 'bad' | 'warn' | 'neutral') => ({ direction, tone })
+    expect(inspectorTabBadge(event(), 'correlation', [row('Extracts', 'ok'), row('Reads', 'neutral'), row('Sets', 'neutral')])).toEqual({ text: '3', failing: false })
+    expect(inspectorTabBadge(event(), 'correlation', [row('Extracts', 'bad'), row('Reads', 'neutral')])).toEqual({ text: '1 failed', failing: true })
+    expect(inspectorTabBadge(event(), 'correlation', [row('Reads', 'bad'), row('Reads', 'bad')])).toEqual({ text: '2 unset', failing: true })
+    expect(inspectorTabBadge(event(), 'correlation', [row('Extracts', 'bad'), row('Reads', 'bad')])).toEqual({ text: '1 failed · 1 unset', failing: true })
+    expect(inspectorTabBadge(event(), 'correlation', [])).toBeNull()
+  })
+
+  it('names the unresolved references the request sent', () => {
+    const failed = event({ success: false, diagnosis: { category: 'correlation', severity: 'error', cause: 'x', unresolved_variables: ['a', 'b'] } })
+    expect(inspectorTabBadge(failed, 'request')).toEqual({ text: '2 unresolved', failing: true })
+    expect(inspectorTabBadge(event(), 'request')).toBeNull()
+    expect(inspectorTabBadge(failed, 'response')).toBeNull()
+  })
+
+  it("reads the event's own network entries before its snapshot's (re-exported for existing callers)", () => {
+    const own = [{ method: 'GET', url: '/own' }]
+    const snap = [{ method: 'GET', url: '/snap' }]
+    expect(replayNetworkEntries(event({ network_entries: own, snapshot: { network_entries: snap } } as Partial<BrowserReplayEvent>))).toBe(own)
+    expect(replayNetworkEntries(event({ snapshot: { network_entries: snap } } as Partial<BrowserReplayEvent>))).toBe(snap)
+  })
+
+  it("offers Network for any other request, and not for the event's own request alone", () => {
+    const own = { method: 'POST', url: 'https://api.example.test/checkout' }
+    const withSnapshot = (entries: unknown[], extra: Record<string, unknown> = {}) => event({
+      network_entries: entries, snapshot: { request_method: 'POST', request_url: 'https://api.example.test/checkout', ...extra },
+    } as Partial<BrowserReplayEvent>)
+    expect(availableInspectorTabs(withSnapshot([own])).has('network')).toBe(false)
+    // The relative target names the same request.
+    expect(availableInspectorTabs(event({ network_entries: [{ method: 'POST', url: '/checkout' }] } as Partial<BrowserReplayEvent>)).has('network')).toBe(false)
+    expect(availableInspectorTabs(withSnapshot([own, { method: 'GET', url: '/app.js' }])).has('network')).toBe(true)
+    expect(availableInspectorTabs(withSnapshot([{ method: 'GET', url: 'https://api.example.test/checkout' }])).has('network')).toBe(true)
+    expect(availableInspectorTabs(withSnapshot([], { omitted_resources: 3 })).has('network')).toBe(true)
   })
 })
