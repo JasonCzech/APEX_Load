@@ -749,7 +749,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "time_anatomy"}}
 <h2>{{sectionTitle "time_anatomy"}}</h2>
 {{with .TimeAnatomyView}}
-<p class="section-copy">Where each business transaction's time goes: its slowest request rows split by phase at {{.StatisticLabel}}, and what its slow tail (the instances above its P95) spends extra time on against its median.{{with .CoverageNote}} {{.}}{{end}}</p>
+<p class="section-copy">Where each business transaction's time goes: its slowest request rows split by phase at {{.StatisticLabel}}, and what its slow tail (the instances above its P95) spends extra time on against its median.{{with .CoverageNote}} {{.}}{{end}} {{.BarNote}}</p>
 {{if .Partial}}<p class="muted">Partial anatomy: the bounded join left some rows out ({{.PartialReasons}}).</p>{{end}}
 {{$view := .}}
 {{range .Entries}}

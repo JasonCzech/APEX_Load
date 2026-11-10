@@ -5,19 +5,25 @@ import (
 	"bytes"
 	"fmt"
 	stdhtml "html"
+	"math"
 	"strings"
 	"testing"
 )
 
 // timeAnatomyExportReport is the consistency-matrix run with a time anatomy:
 // Checkout states its tail attribution, Login is too thin to, and seven
-// more transactions overflow the printed few.
+// more transactions overflow the printed few. A row's P95 total is below
+// the sum of its phases' P95s, as percentiles are, and the overflow
+// transactions' names share their first 48 runes, so their chart titles
+// collide.
+const browsePrefix = "Browse the whole catalogue page by page, slowly, item "
+
 func timeAnatomyExportReport() *RunArchiveReport {
 	report := consistencyMatrixReport()
 	p95 := func(v float64) RunArchivePhaseStat { return RunArchivePhaseStat{Samples: 400, P95Ms: v, AvgMs: v / 2} }
 	row := func(action string, connect, server, download float64) RunArchiveAnatomyRequest {
 		return RunArchiveAnatomyRequest{Key: "1|" + action + "#1", ActionName: action, Occurrence: 1, Samples: 400, Phases: RunArchiveAnatomyPhaseStats{
-			Connect: p95(connect), Server: p95(server), Download: p95(download), Total: p95(connect + server + download)}}
+			Connect: p95(connect), Server: p95(server), Download: p95(download), Total: p95(math.Round(0.95 * (connect + server + download)))}}
 	}
 	checkout := RunArchiveTransactionAnatomy{Name: "Checkout|Pay", Instances: 400, Duration: p95(980),
 		Requests: []RunArchiveAnatomyRequest{row("GET /cart", 12, 210, 30), row("POST /pay", 40, 610, 12)},
@@ -32,7 +38,7 @@ func timeAnatomyExportReport() *RunArchiveReport {
 		for j := 0; j < reportTimeAnatomyRows+2; j++ {
 			rows = append(rows, row(fmt.Sprintf("GET /item/%d", j), 1, float64(10+j), 1))
 		}
-		anatomy.Transactions = append(anatomy.Transactions, RunArchiveTransactionAnatomy{Name: fmt.Sprintf("Browse %d", i), Instances: 50, Duration: p95(float64(100 + i)), Requests: rows,
+		anatomy.Transactions = append(anatomy.Transactions, RunArchiveTransactionAnatomy{Name: fmt.Sprintf("%s%d", browsePrefix, i), Instances: 50, Duration: p95(float64(100 + i)), Requests: rows,
 			Tail: &RunArchiveTailAttribution{Status: "no_tail", Instances: 50}})
 	}
 	report.TimeAnatomy = anatomy
@@ -52,7 +58,7 @@ func TestTimeAnatomyExportView(t *testing.T) {
 		t.Fatalf("%+v / %+v", first, second)
 	}
 	pay := first.Rows[1]
-	if len(first.Rows) != 2 || pay.Label != "POST /pay" || pay.TotalMs != 662 || pay.Phases[1] != 40 || pay.Phases[3] != 610 || len(first.Chart.Stacks) != 2 ||
+	if len(first.Rows) != 2 || pay.Label != "POST /pay" || pay.TotalMs != 629 || first.Chart.Stacks[1].Total != 629 || pay.Phases[1] != 40 || pay.Phases[3] != 610 || len(first.Chart.Stacks) != 2 ||
 		first.Chart.ID != reportTimeAnatomyChartPrefix+"1" || strings.Contains(first.Chart.Title, "|") {
 		t.Fatalf("%+v", first)
 	}
@@ -76,14 +82,20 @@ func TestTimeAnatomyExportFormats(t *testing.T) {
 	}
 	page := stdhtml.UnescapeString(string(html))
 	if !strings.Contains(page, `data-report-section="time_anatomy"`) || !strings.Contains(page, `aria-label="Checkout/Pay: request phases at P95 (ms)"`) ||
-		!strings.Contains(page, "P95 tail is +420 ms vs median") || !strings.Contains(page, "3 more transactions are in the JSON report") {
+		!strings.Contains(page, "P95 tail is +420 ms vs median") || !strings.Contains(page, "3 more transactions are in the JSON report") ||
+		!strings.Contains(page, `data-chart-id="time-anatomy-1"`) || !strings.Contains(page, "Each bar stacks the phases' own P95 values") {
 		t.Fatal("HTML is missing the time anatomy section")
+	}
+	// The bar is labelled with the request's own P95, not the sum of its
+	// phases' P95s (662 ms).
+	if !strings.Contains(page, ">629 ms</text>") || strings.Contains(page, ">662 ms</text>") {
+		t.Fatal("the bar label is not the request's P95")
 	}
 
 	profile, _ := lookupRunArchiveReportProfile("engineer")
 	lines := buildRunArchiveReportPDFLines(report, profile, nil, manifest)
 	text := strings.Join(lines, "\n")
-	if !strings.Contains(text, reportDocumentChartMarker+reportTimeAnatomyChartPrefix+"1") || !strings.Contains(text, "|POST /pay|0|40|0|610|12|0|662|") ||
+	if !strings.Contains(text, reportDocumentChartMarker+reportTimeAnatomyChartPrefix+"1") || !strings.Contains(text, "|POST /pay|0|40|0|610|12|0|629|") ||
 		!strings.Contains(text, "Checkout/Pay: 400 instances, P95 980 ms") {
 		t.Fatal(text)
 	}
@@ -128,6 +140,25 @@ func TestTimeAnatomyExportFormats(t *testing.T) {
 	}
 	if images != len(charts) {
 		t.Fatalf("%d chart images for %d charts", images, len(charts))
+	}
+	// Every anatomy chart is placed, each once, even where the truncated
+	// titles of two transactions collide.
+	titles := map[string]int{}
+	for index, chart := range charts {
+		if !strings.HasPrefix(chart.ID, reportTimeAnatomyChartPrefix) {
+			continue
+		}
+		titles[chart.Title]++
+		if embed := fmt.Sprintf(`r:embed="rId%d"`, index+1+3); strings.Count(document, embed) != 1 {
+			t.Fatalf("%s (%s) placed %d times", chart.ID, embed, strings.Count(document, embed))
+		}
+	}
+	collided := false
+	for _, n := range titles {
+		collided = collided || n > 1
+	}
+	if !collided {
+		t.Fatal("fixture: no two anatomy chart titles collide")
 	}
 
 	var csv bytes.Buffer

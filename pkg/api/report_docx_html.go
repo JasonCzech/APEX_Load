@@ -52,6 +52,8 @@ type docxParaProps struct {
 }
 
 type docxConverter struct {
+	// charts and chartIndex are keyed by an SVG's data-chart-id (the chart
+	// ID, unique) and, for charts without one, by its title.
 	charts     map[string]reportDocumentChart
 	chartIndex map[string]int
 	bookmarks  int
@@ -69,6 +71,11 @@ func convertReportHTMLToDOCXBody(source []byte, charts []reportDocumentChart) ([
 	for i, chart := range charts {
 		c.charts[chart.Title] = chart
 		c.chartIndex[chart.Title] = i
+	}
+	// IDs are unique where titles may not be; an ID key wins.
+	for i, chart := range charts {
+		c.charts[docxChartIDKey(chart.ID)] = chart
+		c.chartIndex[docxChartIDKey(chart.ID)] = i
 	}
 	var out bytes.Buffer
 	if body := findNode(doc, func(n *html.Node) bool { return isTag(n, "body") }); body != nil {
@@ -886,12 +893,18 @@ func (c *docxConverter) table(out *bytes.Buffer, n *html.Node) {
 
 // ---- charts ----------------------------------------------------------------
 
+// docxChartIDKey keys a chart by its ID apart from any title.
+func docxChartIDKey(id string) string { return "\x00id:" + id }
+
 func (c *docxConverter) chartsBlock(out *bytes.Buffer, n *html.Node) {
 	for _, svg := range elementChildren(n) {
 		if !isTag(svg, "svg") {
 			continue
 		}
 		label := attr(svg, "aria-label")
+		if id := attr(svg, "data-chart-id"); id != "" {
+			label = docxChartIDKey(id)
+		}
 		chart, ok := c.charts[label]
 		if !ok {
 			continue

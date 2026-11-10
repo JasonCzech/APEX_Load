@@ -105,6 +105,11 @@ func (r reportTimeAnatomyRow) Cells() []string {
 // Phases are the drawn phases, for a table header and legend.
 func (v *reportTimeAnatomyView) Phases() []reportAnatomyPhase { return reportAnatomyPhases }
 
+// BarNote explains the stacked bars.
+func (v *reportTimeAnatomyView) BarNote() string {
+	return fmt.Sprintf(reportTimeAnatomyBarNote, v.StatisticLabel(), v.StatisticLabel())
+}
+
 // StatisticLabel is the statistic as a column heading.
 func (v *reportTimeAnatomyView) StatisticLabel() string {
 	return strings.ToUpper(v.Statistic[:1]) + v.Statistic[1:]
@@ -190,7 +195,7 @@ func buildReportTimeAnatomyView(report *RunArchiveReport, statistic string) *rep
 				out.Phases = append(out.Phases, reportAnatomyStat(phase.stat(row.Phases), statistic))
 			}
 			entry.Rows = append(entry.Rows, out)
-			entry.Chart.Stacks = append(entry.Chart.Stacks, reportChartStack{Label: label, Segments: out.Phases})
+			entry.Chart.Stacks = append(entry.Chart.Stacks, reportChartStack{Label: label, Segments: out.Phases, Total: out.TotalMs})
 		}
 		entry.Chart.Height = reportStackedChartHeight(len(entry.Chart.Stacks))
 		view.Entries = append(view.Entries, entry)
@@ -231,7 +236,7 @@ func timeAnatomyPDF(d *runArchiveHTMLReportData, lines *[]string) {
 		*lines = append(*lines, "No business-transaction time anatomy was captured for this run.", "")
 		return
 	}
-	*lines = append(*lines, "Where each business transaction's time goes: its slowest request rows split by phase at "+view.StatisticLabel()+", and what its slow tail spends extra time on.")
+	*lines = append(*lines, "Where each business transaction's time goes: its slowest request rows split by phase at "+view.StatisticLabel()+", and what its slow tail spends extra time on.", fmt.Sprintf(reportTimeAnatomyBarNote, view.StatisticLabel(), view.StatisticLabel()))
 	if view.CoverageNote != "" {
 		*lines = append(*lines, view.CoverageNote)
 	}
@@ -301,7 +306,22 @@ func timeAnatomyCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error
 type reportChartStack struct {
 	Label    string
 	Segments []float64
+	// Total labels the bar: the request's own statistic, which for a
+	// percentile is not the sum of the segments.
+	Total float64
 }
+
+// stackLabel is the value a bar is labelled with: its own total when it has
+// one, else the sum of its segments.
+func stackLabel(stack reportChartStack, sum float64) float64 {
+	if stack.Total > 0 {
+		return stack.Total
+	}
+	return sum
+}
+
+// reportTimeAnatomyBarNote says what the bars stack and what labels them.
+const reportTimeAnatomyBarNote = "Each bar stacks the phases' own %s values; percentiles do not add, so a bar's length can differ from the request's %s, which labels the bar and is the table's Total."
 
 func reportStackedChartHeight(bars int) int { return max(120, 76+bars*30) }
 
@@ -334,8 +354,8 @@ func svgStackedBarChart(spec reportDocumentChartSpec) template.HTML {
 	barMax := float64(reportChartWidth - barLeft - 70)
 	maxValue := reportStackMax(spec.Stacks)
 	var b strings.Builder
-	fmt.Fprintf(&b, `<svg viewBox="0 0 %d %d" role="img" aria-label="%s" preserveAspectRatio="xMidYMid meet" style="width:100%%;height:auto;background:%s;border:1px solid %s;border-radius:14px">`,
-		reportChartWidth, height, svgAttr(spec.Title), reportChartSurface, reportChartGrid)
+	fmt.Fprintf(&b, `<svg viewBox="0 0 %d %d" role="img" data-chart-id="%s" aria-label="%s" preserveAspectRatio="xMidYMid meet" style="width:100%%;height:auto;background:%s;border:1px solid %s;border-radius:14px">`,
+		reportChartWidth, height, svgAttr(spec.ID), svgAttr(spec.Title), reportChartSurface, reportChartGrid)
 	fmt.Fprintf(&b, `<text x="%d" y="24" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="15" font-weight="600">%s</text>`, reportChartPadL, reportChartInk, svgText(spec.Title))
 	x := reportChartPadL
 	for _, phase := range reportAnatomyPhases {
@@ -355,7 +375,7 @@ func svgStackedBarChart(spec reportDocumentChartSpec) template.HTML {
 			left += w
 			total += value
 		}
-		fmt.Fprintf(&b, `<text x="%.1f" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">%s %s</text>`, left+6, y+16, reportChartMuted, svgText(formatChartValue(math.Round(total))), svgText(spec.Unit))
+		fmt.Fprintf(&b, `<text x="%.1f" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">%s %s</text>`, left+6, y+16, reportChartMuted, svgText(formatChartValue(math.Round(stackLabel(stack, total)))), svgText(spec.Unit))
 	}
 	b.WriteString(`</svg>`)
 	return template.HTML(b.String())
@@ -385,6 +405,6 @@ func drawReportStackedBarChart(img *image.RGBA, spec reportDocumentChartSpec, re
 			at += width
 			total += value
 		}
-		chartText(img, regular, at+9, y+21, chartMuted, formatChartValue(math.Round(total))+" ms", false)
+		chartText(img, regular, at+9, y+21, chartMuted, formatChartValue(math.Round(stackLabel(stack, total)))+" ms", false)
 	}
 }
