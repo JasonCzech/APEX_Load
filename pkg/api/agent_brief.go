@@ -838,9 +838,10 @@ func applyAgentBudget(brief *AgentBrief, budget agentDetailBudget) {
 		return lo
 	}
 	rows := len(metrics)
-	if cut := agentTrimPhaseAttribution(brief.PhaseAttribution, func() bool { return fits(most, rows) }); cut > 0 {
-		omitted["phase_attribution"] += cut
-	}
+	// Phase rows give way first. Each cut is counted before the next fit is
+	// measured, so the brief is weighed with its own omitted count and
+	// how-to-get-more sentence.
+	agentTrimPhaseAttribution(brief.PhaseAttribution, func() bool { return fits(most, rows) }, func() { omitted["phase_attribution"]++ })
 	floor := min(budget.FindingsFloor, most)
 	switch {
 	case fits(floor, rows):

@@ -123,3 +123,42 @@ func TestAgentBriefPhaseAttributionStaysWithinTheBudget(t *testing.T) {
 		t.Fatalf("%d", len(full.PhaseAttribution.Transactions))
 	}
 }
+
+// Near the cap, the phase trim must measure the brief with its own
+// omitted count and how-to-get-more sentence: a finding is never dropped
+// while a phase row remains.
+func TestAgentBriefPhaseTrimNeverCostsAFinding(t *testing.T) {
+	// A full brief lists every phase row until bytes run out, so its first
+	// trim adds the phase_attribution count and its sentence; 40-60
+	// breaching transactions walk the brief across its cap.
+	budget := agentDetailBudgets[agentDetailFull]
+	trimmed := 0
+	for actions := 40; actions <= 60; actions++ {
+		report := agentFixtureReport()
+		report.TimeAnatomy = agentFixtureAnatomy(8)
+		for i := 0; i < actions; i++ {
+			name := fmt.Sprintf("Txn %03d %s", i, strings.Repeat("n", 40))
+			report.ByAction[name] = RunArchiveActionStats{Transactions: 1000, ErrorPct: 0.1, P50Ms: 200, P95Ms: 900 + float64(i), P99Ms: 1200}
+		}
+		brief := buildAgentFixtureBrief(t, agentFixture{name: "near-cap", report: report}, agentDetailFull)
+		listed, cut := len(brief.PhaseAttribution.Transactions), brief.Truncation.Omitted["phase_attribution"]
+		if brief.Truncation.Omitted["findings"] > 0 && listed > 0 {
+			t.Fatalf("%d breaches: %d findings dropped while %d phase rows remain", actions, brief.Truncation.Omitted["findings"], listed)
+		}
+		if listed+cut != 8 {
+			t.Fatalf("%d breaches: %d listed + %d omitted", actions, listed, cut)
+		}
+		if cut > 0 && !strings.Contains(brief.Truncation.HowToGetMore, "time_anatomy") {
+			t.Fatalf("%d breaches: %q", actions, brief.Truncation.HowToGetMore)
+		}
+		if jsonSize, markdownSize := agentBriefSizes(brief); jsonSize > budget.JSONBytes || markdownSize > budget.MarkdownBytes {
+			t.Fatalf("%d breaches: %d / %d bytes", actions, jsonSize, markdownSize)
+		}
+		if cut > 0 && cut < 8 {
+			trimmed++
+		}
+	}
+	if trimmed == 0 {
+		t.Fatal("fixture: no brief was partly trimmed")
+	}
+}

@@ -97,18 +97,17 @@ func agentCapRunes(name string, n int) string {
 
 // agentTrimPhaseAttribution drops a brief's phase rows from the smallest
 // tail delta up while fits says the brief is over its caps: they are
-// supplementary, so they give way before any finding or metric row. It
-// returns how many it dropped.
-func agentTrimPhaseAttribution(phase *AgentPhaseAttribution, fits func() bool) int {
+// supplementary, so they give way before any finding or metric row.
+// counted records each cut before fits is asked again, so every fit is
+// measured with the truncation the cut adds.
+func agentTrimPhaseAttribution(phase *AgentPhaseAttribution, fits func() bool, counted func()) {
 	if phase == nil {
-		return 0
+		return
 	}
-	cut := 0
 	for len(phase.Transactions) > 0 && !fits() {
 		phase.Transactions = phase.Transactions[:len(phase.Transactions)-1]
-		cut++
+		counted()
 	}
-	return cut
 }
 
 // agentSignedMs renders a brief's rounded milliseconds with a sign.
