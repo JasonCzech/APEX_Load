@@ -2,7 +2,10 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { captureScript, compareRuns, eventIdentity, executionLabel, readProfiles, safeProfile, variablesAt } from './debuggerExperience'
-import { DebugRunHistory, DebugVariableWatches, DebugTimeline } from './DebuggerSessionTools'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { DebugRunHistory, DebugVariableWatches } from './DebuggerSessionTools'
+import { DebugWaterfallPanel } from './DebugWaterfallPanel'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
@@ -249,28 +252,38 @@ describe('debugger operator experience', () => {
     ])
     const html = renderToStaticMarkup(<DebugRunHistory runs={[{ id: 'run1', report: replay, options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'localhost', draft: true, failurePolicy: 'Stop on error' }]} current={replay} currentRecord={{ id: 'current', options: DEFAULT_REPLAY_OPTIONS, breakpoints: [], target: 'current-target.test', draft: true, failurePolicy: 'Continue' }} />)
     expect(html).toContain('current-target.test'); expect(html).toContain('Current configuration'); expect(html).toContain('Historical execution'); expect(html).not.toContain('Browser Debugger'); expect(html).not.toContain('No screenshot')
-    const timelineHtml = renderToStaticMarkup(<DebugTimeline events={replay.events} selectedIndex={0} onSelect={() => {}} />)
-    expect(timelineHtml).toContain('Passed · Get customer')
-    expect(timelineHtml).toContain('Waterfall (session)')
-    expect(timelineHtml).toContain('Stacked (100%)')
-    expect(timelineHtml).toContain('Timing breakdown')
-    expect(timelineHtml).toContain('Started at +0.0 ms')
-    expect(timelineHtml).toContain('Connection preparation')
-    expect(timelineHtml).toContain('Request and response')
-    expect(timelineHtml).toContain('Waiting (TTFB)')
-    expect(timelineHtml).toContain('Content download')
-    // The legend always renders phase swatches; assert the bar itself was built from the HAR phases.
-    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-dns')
-    expect(timelineHtml).toContain('debug-timeline-bar-segment phase-wait')
-    expect(timelineHtml).not.toContain('debug-timeline-bar-segment phase-total')
-    expect(timelineHtml).toContain('aria-current="true"')
-    expect(timelineHtml).not.toContain('Preview · first visible execution')
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      act(() => root.render(<DebugWaterfallPanel events={replay.events} selectedEventIndex={0} />))
+      const text = container.textContent || ''
+      expect(text).toContain('Get customer')
+      expect(text).toContain('Waterfall (session)')
+      expect(text).toContain('Stacked (100%)')
+      expect(text).toContain('Measured')
+      const drawer = container.querySelector('[aria-label="Selected row details"]')!
+      expect(drawer.querySelector('[aria-label="Timing breakdown"]')).not.toBeNull()
+      expect(drawer.textContent).toContain('Started at +0.0 ms')
+      expect(drawer.textContent).toContain('Connection preparation')
+      expect(drawer.textContent).toContain('Request and response')
+      expect(drawer.textContent).toContain('Waiting (TTFB)')
+      expect(drawer.textContent).toContain('Content download')
+      // The bar is built from the HAR phases, not the execution total.
+      expect(container.querySelector('.wf-seg.phase-dns')).not.toBeNull()
+      expect(container.querySelector('.wf-seg.phase-wait')).not.toBeNull()
+      expect(container.querySelector('.wf-seg.phase-total')).toBeNull()
+      expect(container.querySelector('.wf-row.selected .wf-name-label')?.textContent).toBe('Get customer')
 
-    const unselectedHtml = renderToStaticMarkup(<DebugTimeline events={replay.events} selectedIndex={null} onSelect={() => {}} />)
-    expect(unselectedHtml).not.toContain('aria-current')
-    expect(unselectedHtml).not.toContain('debug-timeline-hop-list')
-    expect(unselectedHtml).toContain('Timing breakdown')
-    expect(unselectedHtml).toContain('Preview · first visible execution')
+      act(() => root.render(<DebugWaterfallPanel key="unselected" events={replay.events} selectedEventIndex={null} />))
+      expect(container.querySelector('.wf-row.selected')).toBeNull()
+      expect(container.querySelector('.wf-kind-hop')).toBeNull()
+      expect(container.textContent).toContain('Select a row to see its timing')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
   })
 })
 

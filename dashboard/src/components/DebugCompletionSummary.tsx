@@ -2,8 +2,9 @@ import { useId, useMemo, useRef, useEffect, useState } from 'react'
 import { debugSummaryModel, type DebugCompletionSnapshot, type DebugSummaryIssue } from './debugCompletionModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
-import DebugTransactionTable from './DebugTransactionTable'
-import { DebugTimeline } from './DebuggerSessionTools'
+import { debugTransactionRows } from './debugTransactionModel'
+import { DebugWaterfallPanel } from './DebugWaterfallPanel'
+import type { BrowserReplayEvent } from '../types/replay'
 import TabList from './ux/TabList'
 
 type IssueSortField = 'severity' | 'action' | 'phase' | 'status' | 'message'
@@ -169,9 +170,12 @@ function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSumma
   )
 }
 
-export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession }: {
+export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
   onSelectEvent: (index: number) => void
+  /** Jump the script editor to the action that produced an execution. */
+  onRevealInScript?: (event: BrowserReplayEvent) => void
+  canRevealInScript?: (event: BrowserReplayEvent) => boolean
   onDownloadHAR: () => Promise<void>
   onExportSession: () => Promise<void> | void
 }) {
@@ -180,19 +184,19 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState('')
   const [activeTabByRun, setActiveTabByRun] = useState<{ key: string; tab: 'transactions' | 'issues' } | null>(null)
-  const [selectedTimelineByRun, setSelectedTimelineByRun] = useState<{ key: string; index: number } | null>(null)
-
   const timelineEvents = useMemo(() => model.events.map((entry) => entry.event), [model.events])
-  const defaultTimelineIndex = useMemo(() => {
-    const firstFailed = model.events.findIndex((entry) => entry.event.success === false)
-    return firstFailed >= 0 ? firstFailed : 0
+  const timelineIndices = useMemo(() => model.events.map((entry) => entry.index), [model.events])
+  const transactionRows = useMemo(() => debugTransactionRows(snapshot), [snapshot])
+  // The summary's events skip containers; iteration detection needs them all.
+  const allEvents = useMemo(() => snapshot.report?.events || snapshot.session.events || [], [snapshot])
+  // Open on the first failure so the summary answers "what broke" first.
+  const defaultSelectedIndex = useMemo(() => {
+    const firstFailed = model.events.find((entry) => entry.event.success === false)
+    return (firstFailed ?? model.events[0])?.index ?? null
   }, [model.events])
 
   const activeTab = activeTabByRun?.key === snapshot.key ? activeTabByRun.tab : 'transactions'
   const setActiveTab = (tab: 'transactions' | 'issues') => setActiveTabByRun({ key: snapshot.key, tab })
-  const selectedTimelineIndex =
-    selectedTimelineByRun?.key === snapshot.key ? selectedTimelineByRun.index : defaultTimelineIndex
-  const setSelectedTimelineIndex = (index: number) => setSelectedTimelineByRun({ key: snapshot.key, index })
 
   useEffect(() => {
     heading.current?.focus()
@@ -273,22 +277,31 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
         className="debug-summary-tabpanel"
         hidden={activeTab !== 'transactions'}
       >
-        <DebugTransactionTable key={snapshot.key} snapshot={snapshot} onSelectEvent={onSelectEvent} />
-        {timelineEvents.length > 0 && (
+        {timelineEvents.length > 0 || transactionRows.length > 0 ? (
           <section aria-label="Execution waterfall" className="debug-summary-waterfall-section">
             <h3>Execution waterfall</h3>
-            <DebugTimeline
+            <p className="debug-summary-waterfall-note">
+              Iterations, transactions, pages and requests in one tree. Parent bars show their children’s real spans; hatched gaps are think time or other time outside child requests.
+              {!snapshot.transactions && ' Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.'}
+              {snapshot.transactions && transactionRows.length === 0 && ' No transactions were defined in this run’s script.'}
+            </p>
+            <DebugWaterfallPanel
               key={snapshot.key}
               variant="summary"
+              ariaLabel="Transactions and executions"
               events={timelineEvents}
-              selectedIndex={selectedTimelineIndex}
-              onSelect={setSelectedTimelineIndex}
-              onInspect={(idx) => {
-                const target = model.events[idx]
-                onSelectEvent(target ? target.index : idx)
-              }}
+              eventIndices={timelineIndices}
+              transactions={transactionRows}
+              allEvents={allEvents}
+              evidenceDropped={Boolean(snapshot.session.dropped_event_count || snapshot.report?.dropped_event_count)}
+              selectedEventIndex={defaultSelectedIndex}
+              onInspectEvent={onSelectEvent}
+              onRevealInScript={onRevealInScript}
+              canRevealInScript={canRevealInScript}
             />
           </section>
+        ) : (
+          <p>{snapshot.transactions ? 'No executions were retained for this run.' : 'Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.'}</p>
         )}
         {har?.eligible && (
           <section aria-label="HAR download" className="debug-summary-har-meta">

@@ -11,7 +11,9 @@ import TooltipButton from './ux/TooltipButton'
 import PanelToggle from './ux/PanelToggle'
 import ResourceSnapshotList from './ResourceSnapshotList'
 import { executionLabel, eventLocation, type DebugRunRecord, responseBodyMessage } from './debuggerExperience'
-import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
+import { DebugProfiles, DebugVariableWatches, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
+import { DebugWaterfallPanel } from './DebugWaterfallPanel'
+import { replayFrameForEvent } from './waterfall/replaySourceFrame'
 import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
@@ -1542,7 +1544,14 @@ export function ScriptReplayDebuggerView({
                     </div>
                   ) : debuggerBottomTab === 'timeline' ? (
                     <div className="debugger-timeline">
-                      <DebugTimeline events={debugEvents} selectedIndex={selectedReplayEventIndex} onSelect={jumpToEvent} />
+                      <DebugWaterfallPanel
+                        events={debugEvents}
+                        selectedEventIndex={selectedReplayEventIndex}
+                        onSelectEvent={jumpToEvent}
+                        onInspectEvent={jumpToEvent}
+                        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
+                        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } }}
+                      />
                       <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>
                   ) : debuggerBottomTab === 'problems' ? (
