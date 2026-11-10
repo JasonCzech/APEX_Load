@@ -15,9 +15,15 @@
 .debug-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .debug-summary-heading h2 { margin: 0; }
 .debug-summary-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin: 24px 0; }
-.debug-summary-facts dt { color: var(--text-secondary); font-size: 12px; }
-.debug-summary-facts dd { margin: 4px 0 0; overflow-wrap: anywhere; }
+.debug-summary-facts { display: flex; flex-wrap: nowrap; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 24px 0; }
+.debug-summary-facts > div { flex: 1 1 0; min-inline-size: 0; }
+.debug-summary-facts > div:nth-child(n+6) { flex: 0 0 auto; }
+.debug-summary-facts dt { color: var(--text-secondary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.debug-summary-facts dd { margin: 4px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 768px) {
+  .debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px 16px; }
+  .debug-summary-facts dd { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+}
 /* Failures that follow the first one: one line under the counts. */
 .debug-summary-following { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: -8px 0 16px; padding: 10px 12px; border: 1px solid var(--accent-border, var(--border)); border-radius: 8px; background: var(--accent-soft); color: var(--text-primary); }
 .debug-summary-tabs {
@@ -65,15 +71,6 @@
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--bg-secondary);
-}
-
-.debug-summary-har-meta {
-  margin: 24px 0 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-.debug-summary-har-meta > h3 {
-  margin: 0 0 8px;
 }
 
 .debug-transaction-section { margin: 16px 0 24px; }
