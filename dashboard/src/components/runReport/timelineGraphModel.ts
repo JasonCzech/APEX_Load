@@ -149,8 +149,9 @@ export const TIMELINE_GRAPHS: TimelineGraph[] = [
       { key: 'txDnsMs', name: 'DNS' },
       { key: 'txConnectMs', name: 'Connect' },
       { key: 'txTlsMs', name: 'TLS' },
-      { key: 'txTtfbMs', name: 'TTFB' },
-      { key: 'txWaitMs', name: 'Wait' },
+      { key: 'txServerMs', name: 'Server' },
+      { key: 'txDownloadMs', name: 'Download' },
+      { key: 'txNoResponseMs', name: 'No TTFB (unsplit)' },
     ],
   },
   {

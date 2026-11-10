@@ -609,6 +609,9 @@ func forEachArchiveRecordContext[T any](ctx context.Context, record *storage.Run
 
 	scanner := newArchiveJSONLScanner(file)
 	budget := newArchiveScanBudget(ctx, maxArchiveQueryRecords, maxArchiveQueryBytes)
+	// The line ordinal derives a legacy row's event_id exactly as the paged
+	// loader does, so an id a report hands out resolves through paging.
+	ordinal := int64(0)
 	for scanner.Scan() {
 		if err := budget.Observe(scanner.Bytes()); err != nil {
 			return err
@@ -617,7 +620,8 @@ func forEachArchiveRecordContext[T any](ctx context.Context, record *storage.Run
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			return err
 		}
-		sanitizeArchiveDecodedRecord(&item)
+		sanitizeArchiveDecodedRecordAt(&item, ordinal)
+		ordinal++
 		if err := fn(&item); err != nil {
 			return err
 		}

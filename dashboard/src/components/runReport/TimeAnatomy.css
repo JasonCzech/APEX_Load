@@ -1,0 +1,198 @@
+/*
+ * Report time anatomy (Where the time goes) and its drill-down drawer.
+ * Phase colours are scoped .rr-phase-* tokens until the shared waterfall
+ * (and its --phase-* tokens) is on main. The five timed phases take five of
+ * each theme's --chart-* series colours, which are tuned per theme for CVD and
+ * normal-vision separation and 3:1 on the card (themeChartPalette.test.ts).
+ * --chart-4 (red in every theme) is left out so no phase reads as an error.
+ * The untimed remainder stays a neutral, hatched slate.
+ */
+.run-report-time-anatomy,
+.run-report-anatomy-drawer {
+  --rr-phase-dns: var(--chart-6, #ed499a);
+  --rr-phase-connect: var(--chart-3, #c8800d);
+  --rr-phase-tls: var(--chart-1, #895af4);
+  --rr-phase-wait: var(--chart-5, #3a81f5);
+  --rr-phase-receive: var(--chart-2, #17ac78);
+  --rr-phase-total: #94a3b8;
+  --rr-anatomy-up: var(--danger, #ef4444);
+  --rr-anatomy-down: var(--success, #10b981);
+  --rr-anatomy-track: var(--subtle-fill, rgba(255, 255, 255, 0.035));
+  --rr-anatomy-rule: var(--border, rgba(255, 255, 255, 0.08));
+}
+
+:root[data-theme='light'] .run-report-time-anatomy,
+:root[data-theme='light'] .run-report-anatomy-drawer,
+:root[data-theme='solarized-light'] .run-report-time-anatomy,
+:root[data-theme='solarized-light'] .run-report-anatomy-drawer {
+  --rr-phase-total: #475569;
+  --rr-anatomy-track: rgba(15, 23, 42, 0.05);
+}
+
+.rr-phase-dns { background-color: var(--rr-phase-dns); }
+.rr-phase-connect { background-color: var(--rr-phase-connect); }
+.rr-phase-tls { background-color: var(--rr-phase-tls); }
+.rr-phase-wait { background-color: var(--rr-phase-wait); }
+.rr-phase-receive { background-color: var(--rr-phase-receive); }
+.rr-phase-total {
+  background-color: var(--rr-phase-total);
+  background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 255, 255, 0.18) 4px 6px);
+}
+
+/* Panel layout */
+.run-report-time-anatomy { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.run-report-time-anatomy h3 { margin: 0; font-size: 15px; }
+.run-report-time-anatomy h4, .run-report-anatomy-drawer h4 { margin: 0 0 6px; font-size: 14px; }
+.rr-anatomy-header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; }
+.rr-anatomy-header h2 { margin: 0; }
+.rr-anatomy-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.rr-anatomy-picker select { max-width: min(100%, 360px); }
+.rr-anatomy-duration { margin: 0; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.rr-anatomy-note, .rr-anatomy-honesty { margin: 0; color: var(--text-secondary); font-size: 13px; }
+.rr-anatomy-callout {
+  margin: 0;
+  padding: 8px 12px;
+  border-inline-start: 3px solid var(--warning, #f59e0b);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--warning, #f59e0b) 8%, transparent);
+}
+
+/* Tail card */
+.rr-anatomy-tail { display: flex; flex-direction: column; gap: 10px; }
+.rr-anatomy-headline { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.45; }
+.rr-anatomy-tail-toolbar, .rr-anatomy-breakdown-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.rr-anatomy-diverging { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.rr-anatomy-diverging-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.9fr) minmax(120px, 2fr) minmax(90px, auto);
+  align-items: center;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+.rr-anatomy-diverging-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rr-anatomy-diverging-track { position: relative; height: 14px; border-radius: 3px; background: var(--rr-anatomy-track); }
+.rr-anatomy-diverging-zero { position: absolute; inset-block: -2px; left: 50%; width: 1px; background: var(--text-secondary); }
+.rr-anatomy-diverging-bar { position: absolute; inset-block: 2px; border-radius: 2px; background: var(--rr-anatomy-up); }
+.rr-anatomy-negative .rr-anatomy-diverging-bar { background: var(--rr-anatomy-down); }
+.rr-anatomy-zero .rr-anatomy-diverging-bar { display: none; }
+.rr-anatomy-diverging-value { text-align: end; white-space: nowrap; }
+.rr-anatomy-contributors ul, .rr-anatomy-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding: 0; list-style: none; }
+.rr-anatomy-contributors small { color: var(--text-secondary); }
+/* Request names are often one long URL token: let them wrap inside the panel. */
+.rr-anatomy-contributors li { max-width: 100%; min-width: 0; }
+.rr-anatomy-contributor,
+.rr-anatomy-chip {
+  max-width: 100%;
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: start;
+}
+.rr-anatomy-badges { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; }
+.rr-anatomy-badge {
+  padding: 2px 8px;
+  border: 1px solid var(--rr-anatomy-rule);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.rr-anatomy-chip-failed { border-color: color-mix(in srgb, var(--danger, #ef4444) 55%, transparent); }
+.rr-anatomy-composition { margin: 0; font-variant-numeric: tabular-nums; }
+.rr-anatomy-breakdown { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+
+/* Statistic radiogroup */
+.rr-anatomy-stat { display: inline-flex; border: 1px solid var(--rr-anatomy-rule); border-radius: 6px; overflow: hidden; }
+.rr-anatomy-stat button {
+  min-width: 44px;
+  padding: 4px 10px;
+  border: 0;
+  border-inline-end: 1px solid var(--rr-anatomy-rule);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+.rr-anatomy-stat button:last-child { border-inline-end: 0; }
+.rr-anatomy-stat button.active { background: var(--accent-soft); color: var(--accent-text, var(--text-primary)); font-weight: 600; }
+.rr-anatomy-stat button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Phase bars (fallback renderer) */
+.rr-phase-bars { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.rr-phase-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--text-secondary); }
+.rr-phase-legend li { display: inline-flex; align-items: center; gap: 4px; }
+.rr-phase-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
+.rr-phase-legend li[title] { cursor: help; }
+.rr-phase-swatch.rr-phase-gap { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rr-phase-total) 60%, transparent); }
+.rr-phase-definitions { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.rr-phase-rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.rr-phase-row-button {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.1fr) minmax(120px, 2.4fr) 76px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+}
+button.rr-phase-row-button { cursor: pointer; }
+button.rr-phase-row-button:hover { background: var(--bg-hover); }
+button.rr-phase-row-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rr-phase-row.selected .rr-phase-row-button { background: var(--accent-soft); }
+.rr-phase-name { display: flex; flex-direction: column; min-width: 0; }
+.rr-phase-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rr-phase-detail { overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
+.rr-phase-track { position: relative; height: 14px; border-radius: 3px; background: var(--rr-anatomy-track); }
+.rr-phase-seg { position: absolute; inset-block: 2px; border-radius: 1px; }
+.rr-phase-parent { background: color-mix(in srgb, var(--rr-phase-total) 30%, transparent); border: 1px solid color-mix(in srgb, var(--rr-phase-total) 55%, transparent); }
+.rr-phase-gap { background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--rr-phase-total) 45%, transparent) 4px 6px); }
+.rr-phase-duration { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rr-phase-row-muted { opacity: 0.7; }
+.rr-phase-row-failed .rr-phase-label { color: var(--danger-text, var(--danger)); }
+
+/* Selected-row pane, coverage and audit */
+.rr-anatomy-row-pane { padding: 10px 12px; border: 1px solid var(--rr-anatomy-rule); border-radius: 8px; background: var(--bg-card); }
+.rr-anatomy-table-scroll { overflow-x: auto; }
+.rr-anatomy-facts { display: grid; grid-template-columns: fit-content(45%) minmax(0, 1fr); gap: 4px 12px; margin: 0 0 8px; }
+.rr-anatomy-facts dt { color: var(--text-secondary); overflow-wrap: anywhere; }
+.rr-anatomy-facts dd { margin: 0; overflow-wrap: anywhere; }
+.rr-anatomy-coverage { margin: 0; padding-inline-start: 18px; color: var(--text-secondary); font-size: 13px; }
+.rr-anatomy-summary-line { margin: 0 0 12px; line-height: 1.55; }
+
+/* Drawer */
+.rr-anatomy-drawer-overlay { justify-content: flex-end; align-items: stretch; }
+.run-report-anatomy-drawer {
+  display: flex;
+  flex-direction: column;
+  width: min(760px, 100vw);
+  max-width: 100vw;
+  max-height: 100vh;
+  margin: 0;
+  border-radius: 0;
+  overflow: hidden;
+}
+.rr-anatomy-drawer-body { display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 16px; overflow: auto; }
+.rr-anatomy-loading { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.rr-anatomy-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--rr-anatomy-rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: rr-anatomy-spin 0.8s linear infinite;
+}
+@keyframes rr-anatomy-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .rr-anatomy-spinner { animation: none; } }
+
+@media (max-width: 640px) {
+  .rr-phase-row-button { grid-template-columns: minmax(0, 1fr) 64px; }
+  .rr-phase-track { grid-column: 1 / -1; grid-row: 2; }
+  .rr-anatomy-diverging-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .rr-anatomy-diverging-track { grid-column: 1 / -1; grid-row: 2; }
+  .rr-anatomy-facts { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .rr-anatomy-facts dd { margin-bottom: 6px; }
+}

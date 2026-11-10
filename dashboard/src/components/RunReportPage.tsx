@@ -60,6 +60,8 @@ import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
 import JourneyRiskPanel from './runReport/JourneyRiskPanel'
 import BrowserIntelligenceView from './runReport/BrowserIntelligenceView'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
+import TransactionTimeAnatomy from './runReport/TransactionTimeAnatomy'
+import TimeAnatomyHeadline from './runReport/TimeAnatomyHeadline'
 import {
   alignBaselineTimeline,
   buildBaselineOverviewDiff,
@@ -528,6 +530,19 @@ export default function RunReportPage({
     if (heading && heading.tagName !== 'SUMMARY' && !heading.hasAttribute('tabindex')) heading.tabIndex = -1
     heading?.focus()
   }, [area, initialFocus, initialRootCause?.analysis, focusAnalysis, focusReport, testId])
+  // The Summary's time-anatomy line opens Performance and focuses the panel
+  // once that area renders it.
+  const [pendingFocus, setPendingFocus] = useState('')
+  useEffect(() => {
+    if (!pendingFocus) return
+    const target = document.querySelector<HTMLElement>(pendingFocus)
+    if (!target) return
+    setPendingFocus('')
+    target.scrollIntoView?.({ block: 'start' })
+    const heading = target.querySelector<HTMLElement>('h2') || target
+    if (!heading.hasAttribute('tabindex')) heading.tabIndex = -1
+    heading.focus()
+  }, [area, pendingFocus, focusReport])
   // A Browser link to a run without a Browser area falls back to Summary once
   // the report that decides it has loaded (or cannot).
   const browserDecided = Boolean(archiveModel.archiveReport || archiveModel.archiveError || (test && !test.archive))
@@ -721,6 +736,7 @@ export default function RunReportPage({
           {/* Values wait for the report: "—" would read as a measured gap. */}
           {report && <RunReportGroupBreakdown key={population} report={report} population={population} kpis={kpis} />}
           <section className="run-report-panel run-report-next-steps"><h2>Findings and next steps</h2>
+            <TimeAnatomyHeadline anatomy={report?.time_anatomy} onOpen={name => { setArea('Performance'); setPopulationChoice('transaction'); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name); setPendingFocus('[data-report-focus="time-anatomy"]') }} />
             {/* Each finding is a line with its one action, styled alike. */}
             {report?.error_patterns?.length ? <p>{report.error_patterns.length === 1 ? 'One error pattern was' : `${report.error_patterns.length.toLocaleString()} error patterns were`} captured across all populations. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Diagnostics')}>Investigate errors</button></p> : <p>{report ? 'No recurring error patterns were captured across all populations.' : 'Findings will appear when the report loads.'}</p>}
             {report?.completeness && report.completeness.score_pct < 100 && <p>Evidence coverage is {formatFixed(report.completeness.score_pct, 0)}%. <button type="button" className="btn btn-secondary btn-sm" onClick={() => setArea('Evidence')}>Review evidence gaps</button></p>}
@@ -752,6 +768,7 @@ export default function RunReportPage({
           ) : (
             <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
+          {report?.time_anatomy && <TransactionTimeAnatomy testId={testId} anatomy={report.time_anatomy} selectedName={archiveModel.selectedArchiveAction} lens={activeLens} onSelectName={name => { setPopulationChoice('transaction'); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />}
           <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
           <JourneyRiskPanel testId={testId} />
           {test.project_id && <RunReportProjectPanels key={`${testId}-${test.project_id}`} testId={testId} projectId={test.project_id} history={timelineHistory} properties={Object.keys(report?.by_property || {}).sort()} canManage={canManageTests} />}

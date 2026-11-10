@@ -196,6 +196,26 @@ type VUser struct {
 	browserSessionRenewal bool
 	recordedSignIn        *recordedSignInPlan
 	resultSequence        uint64
+	// asyncDispatchEpoch counts the dispatches (applyAsyncResults or
+	// runAsyncCallbacks entered with no dispatch running). An authored
+	// transaction opened during one keeps its epoch, so the callback's own
+	// requests roll into it but into no transaction that was already open.
+	asyncDispatchEpoch uint64
+	// asyncDispatchEpochs issues dispatch epochs. A parallel branch shares its
+	// parent's counter, so an epoch names one dispatch across the VUser's
+	// branches (the report pairs a dispatch request's
+	// protocol_evidence.async_dispatch_epoch with a transaction row's).
+	asyncDispatchEpochs *atomic.Uint64
+	// recordingTransactionEpoch is the dispatch epoch an authored
+	// transaction being recorded opened in (0: outside a dispatch); it
+	// overrides the current dispatch's epoch while recordingTransactionEpochSet.
+	recordingTransactionEpoch    uint64
+	recordingTransactionEpochSet bool
+	// asyncDispatchBranch marks a parallel-branch VUser whose block started
+	// from an async callback: everything it records is dispatch work. It is
+	// separate from inAsyncDispatch, which also gates the branch's own async
+	// dispatch.
+	asyncDispatchBranch bool
 	// async holds the running background HTTP conversations (http_async.go);
 	// onAsyncResult lets replay report each conversation response.
 	async                  *asyncConversations

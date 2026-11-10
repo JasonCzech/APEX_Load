@@ -641,6 +641,14 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		h3AttemptLimit = *action.MaxRedirects
 	}
 	h3AttemptLimit = max(h3AttemptLimit, 0) + 2
+	// DNS, connect and TLS describe the same leg as TTFB, so server time =
+	// TTFB - setup is that leg's server time. TTFB is the first response byte
+	// of the first leg, measured from the action's start, so only setup that
+	// happens before it counts: a redirect leg that dials a new connection
+	// (http to https, an SSO host) comes after the first byte, and its setup
+	// and server time fall in the time after TTFB, with the rest of the
+	// chain. Overwriting the setup with a later leg's would subtract it from
+	// the first leg's TTFB.
 	var traceDNSTime, traceConnectTime, traceTLSTime, traceTTFB time.Duration
 	// wroteHeaders records whether any hop's headers reached a connection, so a
 	// request that failed before sending does not claim its trace was sent.
@@ -667,7 +675,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		},
 		DNSDone: func(info httptrace.DNSDoneInfo) {
 			traceMu.Lock()
-			traceDNSTime = time.Since(dnsStart)
+			if traceTTFB == 0 {
+				traceDNSTime = time.Since(dnsStart)
+			}
 			traceMu.Unlock()
 			netTrace.onDNSDone(info)
 		},
@@ -679,14 +689,18 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		},
 		ConnectDone: func(netw, addr string, err error) {
 			traceMu.Lock()
-			traceConnectTime = time.Since(connStart)
+			if traceTTFB == 0 {
+				traceConnectTime = time.Since(connStart)
+			}
 			traceMu.Unlock()
 			netTrace.onConnectDone(netw, addr, err)
 		},
 		TLSHandshakeStart: func() { traceMu.Lock(); tlsStart = time.Now(); traceMu.Unlock() },
 		TLSHandshakeDone: func(cs tls.ConnectionState, err error) {
 			traceMu.Lock()
-			traceTLSTime = time.Since(tlsStart)
+			if traceTTFB == 0 {
+				traceTLSTime = time.Since(tlsStart)
+			}
 			traceMu.Unlock()
 			netTrace.onTLSHandshakeDone(cs, err)
 		},

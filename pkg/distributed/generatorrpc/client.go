@@ -411,6 +411,9 @@ type MetricAggregate struct {
 	DurationDigest   *engine.TDigestSnapshot
 	DurationSketch   *engine.DurationSketchSnapshot
 	Exemplars        []engine.TraceExemplar
+	// PhaseObserved counts samples that spent time in DNS, connect and TLS;
+	// nil when unknown (a generator that predates it).
+	PhaseObserved *engine.PhaseObservations
 	// PercentileQuality is set where a controller merges aggregates, when
 	// their percentiles could not come from a merged sketch. It is never
 	// sent.
@@ -2358,6 +2361,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		JavaHTTP:         javaHTTPSummaryForCount(javaHTTPSummaryFromProto(value.GetJavaHttp()), value.GetCount()),
 		Messaging:        messagingSummaryFromJSON(value.GetMessagingSummaryJson(), value.GetMessagingVersion()),
 		MessagingVersion: value.GetMessagingVersion(),
+		PhaseObserved:    phaseObservationsFromProto(value.GetPhaseObserved(), value.GetCount()),
 		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
 	}
 }
@@ -2430,6 +2434,53 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		MessagingSummaryJson: messagingSummaryJSON(value.Messaging),
 		MessagingVersion:     value.MessagingVersion,
 		Exemplars:            traceExemplarsToProto(value.Exemplars),
+		PhaseObserved:        phaseObservationsToProto(value.PhaseObserved),
+	}
+}
+
+func phaseObservationsToProto(value *engine.PhaseObservations) *pb.PhaseObservations {
+	if value == nil {
+		return nil
+	}
+	return &pb.PhaseObservations{
+		Version:           engine.PhaseObservationVersion,
+		Dns:               value.DNS,
+		Connect:           value.Connect,
+		Tls:               value.TLS,
+		NoTtfb:            value.NoTTFB,
+		NoTtfbSetupMs:     value.NoTTFBSetupMs,
+		NoTtfbRemainderMs: value.NoTTFBRemainderMs,
+	}
+}
+
+// phaseObservationsFromProto keeps a peer's counts within its sample count.
+// An unknown version is treated as unknown observations.
+func phaseObservationsFromProto(value *pb.PhaseObservations, count int64) *engine.PhaseObservations {
+	if value == nil || value.GetVersion() != engine.PhaseObservationVersion {
+		return nil
+	}
+	clamp := func(observed int64) int64 {
+		if observed < 0 {
+			return 0
+		}
+		if observed > count {
+			return count
+		}
+		return observed
+	}
+	nonNegative := func(ms float64) float64 {
+		if ms > 0 && !math.IsInf(ms, 1) {
+			return ms
+		}
+		return 0
+	}
+	return &engine.PhaseObservations{
+		DNS:               clamp(value.GetDns()),
+		Connect:           clamp(value.GetConnect()),
+		TLS:               clamp(value.GetTls()),
+		NoTTFB:            clamp(value.GetNoTtfb()),
+		NoTTFBSetupMs:     nonNegative(value.GetNoTtfbSetupMs()),
+		NoTTFBRemainderMs: nonNegative(value.GetNoTtfbRemainderMs()),
 	}
 }
 

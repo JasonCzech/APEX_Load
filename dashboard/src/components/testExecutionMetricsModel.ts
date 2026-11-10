@@ -29,6 +29,23 @@ function roundedOptional(value: number | undefined, precision = 10) {
   return typeof value === 'number' ? Math.round(value * precision) / precision : undefined
 }
 
+/**
+ * Server time is TTFB minus connection setup. The engine measures TTFB from the
+ * start of the request (pkg/protocol/http/http.go GotFirstResponseByte), so raw
+ * TTFB already contains DNS, connect and TLS; stacking it on top of them
+ * double-counts the setup phases.
+ *
+ * The controller sends `avg_server_ms` when it knows which samples got no first
+ * byte (their setup is not part of any TTFB), and that exact figure wins. A
+ * point from an older generator lacks it, so the averages are subtracted.
+ */
+export function serverPhaseMs(metric: Pick<LiveMetrics, 'avg_ttfb_ms' | 'avg_dns_ms' | 'avg_connect_ms' | 'avg_tls_ms' | 'avg_server_ms'>) {
+  if (typeof metric.avg_server_ms === 'number') return Math.max(0, metric.avg_server_ms)
+  if (typeof metric.avg_ttfb_ms !== 'number') return undefined
+  const setup = (metric.avg_dns_ms ?? 0) + (metric.avg_connect_ms ?? 0) + (metric.avg_tls_ms ?? 0)
+  return Math.max(0, metric.avg_ttfb_ms - setup)
+}
+
 function roundedHistoryValues(values: Partial<MetricsHistoryPoint>) {
   return Object.entries(values).reduce((acc, [key, value]) => {
     if (typeof value === 'number') {
@@ -67,7 +84,14 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     txConnectMs: roundedOptional(metric.avg_connect_ms),
     txTlsMs: roundedOptional(metric.avg_tls_ms),
     txTtfbMs: roundedOptional(metric.avg_ttfb_ms),
-    txWaitMs: roundedOptional(metric.avg_wait_ms),
+    txServerMs: roundedOptional(serverPhaseMs(metric)),
+    // avg_wait_ms is the download tail (duration - TTFB), not server wait; with
+    // known observations it counts only samples that got a first byte.
+    txDownloadMs: roundedOptional(metric.avg_wait_ms),
+    // Time after setup of samples that never got a first byte (timeouts,
+    // connection failures, protocols without TTFB), so the stack still adds
+    // up to avg_response_ms. Absent from an older generator.
+    txNoResponseMs: roundedOptional(metric.avg_no_response_ms),
     // Error taxonomy counts (0 is meaningful for a class, so use rounded()).
     errTimeout: rounded(metric.error_breakdown?.timeout),
     errConnection: rounded(metric.error_breakdown?.connection),

@@ -15,6 +15,7 @@ import {
   mergeMetricsHistory,
   recentGroupJourneyRates,
   recentMetricAverages,
+  serverPhaseMs,
   summarizeExecutionChartData,
 } from './testExecutionMetricsModel'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
@@ -22,6 +23,74 @@ import { groupTransactionTpsSeriesKey, transactionChartSeriesKey, transactionCha
 import type { MetricsHistoryPoint, LiveMetrics } from '../types'
 
 describe('testExecutionMetricsModel', () => {
+  it('stacks network phases that add up to the average duration instead of double-counting TTFB', () => {
+    // TTFB is measured from request start, so it already contains DNS + connect + TLS.
+    const metric = {
+      timestamp: '2026-11-09T12:00:00Z',
+      avg_response_ms: 400,
+      avg_dns_ms: 20,
+      avg_connect_ms: 30,
+      avg_tls_ms: 50,
+      avg_ttfb_ms: 300,
+      avg_wait_ms: 100,
+    } as unknown as LiveMetrics
+    const point = mapExecutionMetricToHistoryPoint(metric)
+    expect(point.txServerMs).toBe(200)
+    expect(point.txDownloadMs).toBe(100)
+    const stacked = (point.txDnsMs ?? 0) + (point.txConnectMs ?? 0) + (point.txTlsMs ?? 0) + (point.txServerMs ?? 0) + (point.txDownloadMs ?? 0)
+    expect(stacked).toBeCloseTo(metric.avg_response_ms, 1)
+  })
+
+  it('stacks mixed timeout and first-byte samples to the average duration with a no-first-byte segment', () => {
+    // Four samples, as the controller averages them (every average divides by 4):
+    //   new TLS connection: dns 5, connect 10, tls 20, ttfb 135, dur 185
+    //   reused connection:  ttfb 60, dur 80
+    //   connect then timeout before a first byte: connect 30, dur 30000
+    //   a protocol without TTFB: dur 5000
+    const metric = {
+      timestamp: '2026-11-09T12:00:00Z',
+      avg_response_ms: 35265 / 4,
+      avg_dns_ms: 5 / 4,
+      avg_connect_ms: 40 / 4,
+      avg_tls_ms: 20 / 4,
+      avg_ttfb_ms: 195 / 4,
+      avg_wait_ms: 70 / 4, // download over the two first-byte samples only
+      avg_server_ms: 160 / 4,
+      avg_no_response_ms: 34970 / 4,
+      phase_observed: { dns: 1, connect: 2, tls: 1, no_ttfb: 2, no_ttfb_setup_ms: 30, no_ttfb_remainder_ms: 34970 },
+    } as unknown as LiveMetrics
+    const point = mapExecutionMetricToHistoryPoint(metric)
+    expect(point.txServerMs).toBe(40)
+    expect(point.txDownloadMs).toBe(17.5)
+    expect(point.txNoResponseMs).toBe(8742.5)
+    const stacked = (point.txDnsMs ?? 0) + (point.txConnectMs ?? 0) + (point.txTlsMs ?? 0)
+      + (point.txServerMs ?? 0) + (point.txDownloadMs ?? 0) + (point.txNoResponseMs ?? 0)
+    expect(stacked).toBeCloseTo(metric.avg_response_ms, 0)
+  })
+
+  it('falls back to TTFB minus setup for a point from an older generator', () => {
+    const metric = {
+      timestamp: '2026-11-09T12:00:00Z',
+      avg_response_ms: 400,
+      avg_dns_ms: 20,
+      avg_connect_ms: 30,
+      avg_tls_ms: 50,
+      avg_ttfb_ms: 300,
+      avg_wait_ms: 100,
+    } as unknown as LiveMetrics
+    const point = mapExecutionMetricToHistoryPoint(metric)
+    expect(point.txServerMs).toBe(200)
+    expect(point.txDownloadMs).toBe(100)
+    expect(point.txNoResponseMs).toBeUndefined()
+    // An exact server figure from the controller wins over the subtraction.
+    expect(serverPhaseMs({ ...metric, avg_server_ms: 210 })).toBe(210)
+  })
+
+  it('leaves server phase empty without TTFB and never negative', () => {
+    expect(serverPhaseMs({ avg_dns_ms: 10 })).toBeUndefined()
+    expect(serverPhaseMs({ avg_ttfb_ms: 5, avg_dns_ms: 3, avg_connect_ms: 3, avg_tls_ms: 3 })).toBe(0)
+  })
+
   it('carries the last positive response time through intervals without samples', () => {
     const transactionAvgKey = transactionChartSeriesKey('Checkout', 'avgMs')
     const point = (time: string, values: Partial<MetricsHistoryPoint>): MetricsHistoryPoint => ({

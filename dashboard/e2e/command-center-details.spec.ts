@@ -559,8 +559,11 @@ test('live network phase graphs connect sparse samples without extending into em
       ...(index === 3 ? {} : { avg_dns_ms: 20 }),
       avg_connect_ms: 30,
       avg_tls_ms: 40,
-      avg_ttfb_ms: 50,
+      // TTFB is measured from request start, so it includes the 90 ms of
+      // setup above; the Server segment is TTFB minus setup (60 ms).
+      avg_ttfb_ms: 150,
       avg_wait_ms: 60,
+      avg_no_response_ms: 10,
     } : {}),
   }))
   await page.route(url => url.pathname === `/api/v1/tests/${run.testId}`, async route => {
@@ -585,7 +588,7 @@ test('live network phase graphs connect sparse samples without extending into em
   await graphOptions.getByRole('checkbox', { name: 'Show table rows beneath graphs', exact: true }).check()
   const chart = cockpit.locator('[data-chart-id="tx_network_phases"]')
   const phaseCurves = chart.locator('.recharts-area-curve')
-  await expect(phaseCurves).toHaveCount(5)
+  await expect(phaseCurves).toHaveCount(6)
   const expectConnectedPaths = async (selector: string, count: number) => {
     await expect.poll(() => chart.evaluate((element, { selector, count }) => {
       const grid = element.querySelector<SVGGraphicsElement>('.recharts-cartesian-grid')
@@ -603,11 +606,11 @@ test('live network phase graphs connect sparse samples without extending into em
       })
     }, { selector, count }), { message: 'Measured samples form one continuous path with unmeasured edges left empty' }).toBe(true)
   }
-  await expectConnectedPaths('.recharts-area-curve', 5)
-  await expectConnectedPaths('.recharts-area-area', 5)
+  await expectConnectedPaths('.recharts-area-curve', 6)
+  await expectConnectedPaths('.recharts-area-area', 6)
   // Each phase is constant where observed. Missing DNS must neither dip its
   // own stroke to zero nor lower the cumulative baseline of the other phases.
-  await expect.poll(() => phaseCurves.evaluateAll(paths => paths.length === 5
+  await expect.poll(() => phaseCurves.evaluateAll(paths => paths.length === 6
     && paths.every(path => (path as SVGPathElement).getBBox().height <= 1)),
   { message: 'All phase strokes stay level across the missing DNS observation' }).toBe(true)
   // Drawing across a missing interval must not add zero-valued measurements.

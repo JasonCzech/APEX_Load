@@ -46,6 +46,7 @@ import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { ScheduleClockChange } from '../../types/executionPlans'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
 import type { ExemplarPage, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
+import type { ArchiveTransactionWaterfall, ArchiveTransactionWaterfallParams } from '../../types/timeAnatomy'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -747,6 +748,15 @@ export function useTestApi() {
     [],
   )
 
+  // One archived transaction (or request) rebuilt with its child requests.
+  // The ordinal hints from a time-anatomy representative let the controller
+  // skip straight to the row; it falls back to a scan when they are stale.
+  const getTestArchiveTransactionWaterfall = useCallback(
+    (id: string, eventId: string, params: ArchiveTransactionWaterfallParams = {}, options?: ApiCallOptions) =>
+      request<ArchiveTransactionWaterfall>(`/tests/${encodeURIComponent(id)}/archive/transactions/${encodeURIComponent(eventId)}/waterfall${buildQuery({ ordinal: params.ordinal, first_ordinal: params.first_ordinal, max_requests: params.max_requests })}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestReportAnnotations = useCallback(
     (id: string, profile: string, options?: ApiCallOptions) =>
       request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, withCallOptions(undefined, options)),
@@ -961,6 +971,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getTestArchiveTransactionWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,
       listTestNotes,
@@ -1064,6 +1075,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getTestArchiveTransactionWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,
       listTestNotes,

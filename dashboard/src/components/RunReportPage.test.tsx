@@ -8,6 +8,7 @@ import type { RunArchiveReport, TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { rcaTestReportView, rcaTestResponse, rcaTestSummary } from './rca/rcaTestFixture'
+import timeAnatomyFixture from './runReport/__fixtures__/timeAnatomyReport.json'
 
 vi.mock('../hooks/apiClient', async (importOriginal) => ({
   ...await importOriginal<typeof import('../hooks/apiClient')>(),
@@ -33,6 +34,7 @@ const mocks = vi.hoisted(() => ({
     getRootCauseAnalysis: vi.fn(),
     requestRootCauseAnalysis: vi.fn(),
     getTestArchiveExemplars: vi.fn(),
+    getTestArchiveTransactionWaterfall: vi.fn(),
     getRootCauseCritiques: vi.fn(),
     getTestArchiveJourneys: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'no_journey_policy', journeys: [], notes: [] }),
   },
@@ -239,6 +241,7 @@ describe('RunReportPage', () => {
     mocks.polling.error = ''
     mocks.archiveModel.archiveReport = null
     mocks.archiveModel.archiveError = ''
+    mocks.archiveModel.selectedArchiveGroup = ''
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
@@ -275,6 +278,77 @@ describe('RunReportPage', () => {
     expect(population().value).toBe('transaction')
     expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith('Checkout')
     expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
+  })
+
+  it('shows the time anatomy after the SLA scoreboard only when the report has one', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const base = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, sla_rows: { Checkout: { name: 'Checkout', volume: 5, result_kind: 'na' } } }
+    mocks.archiveModel.archiveReport = base as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('[data-report-focus="time-anatomy"]')).toBeNull()
+    mocks.archiveModel.archiveReport = { ...base, ...timeAnatomyFixture } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const panel = container.querySelector('[data-report-focus="time-anatomy"]')
+    const scoreboard = container.querySelector('[data-testid="scoreboard"]')
+    const actionSummary = container.querySelector('[data-report-focus="action-summary"]')
+    expect(panel).toBeTruthy()
+    expect(scoreboard).toBeTruthy()
+    expect(actionSummary).toBeTruthy()
+    if (!panel || !scoreboard || !actionSummary) return
+    expect(scoreboard.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(panel.compareDocumentPosition(actionSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(panel.querySelector('h2')?.textContent).toBe('Where the time goes')
+  })
+
+  it('opens the time anatomy from the Summary headline and selects its transaction', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, by_action: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, ...timeAnatomyFixture } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('.rr-anatomy-summary-line')?.textContent).toContain('Checkout: P95 tail is +440 ms vs median')
+    const open = buttonByText(container, 'Open time anatomy')
+    expect(open).toBeTruthy()
+    if (!open) return
+    await act(async () => open.click())
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'performance' }))
+    expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
+    expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith('Checkout')
+    // The route answers with Performance: the panel's heading takes the focus.
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const population = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Metric population'))
+    expect(population?.value).toBe('transaction')
+    expect(document.activeElement?.textContent).toBe('Where the time goes')
+  })
+
+  it('clears the SLA group filter when a transaction is picked in the time anatomy', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, ...timeAnatomyFixture } as unknown as RunArchiveReport
+    mocks.archiveModel.selectedArchiveGroup = 'EU'
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const picker = container.querySelector<HTMLSelectElement>('[data-report-focus="time-anatomy"] select')
+    expect(picker).toBeTruthy()
+    if (!picker) return
+    const other = Array.from(picker.options).map(option => option.value).find(value => value !== picker.value)
+    expect(other).toBeTruthy()
+    if (!other) return
+    mocks.archiveModel.onSelectedArchiveGroupChange.mockClear()
+    mocks.archiveModel.onSelectedArchiveActionChange.mockClear()
+    await act(async () => {
+      picker.value = other
+      picker.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(mocks.archiveModel.onSelectedArchiveGroupChange).toHaveBeenCalledWith('')
+    expect(mocks.archiveModel.onSelectedArchiveActionChange).toHaveBeenCalledWith(other)
+    expect(mocks.archiveModel.onSelectedArchiveGroupChange.mock.invocationCallOrder[0]).toBeLessThan(mocks.archiveModel.onSelectedArchiveActionChange.mock.invocationCallOrder[0])
+  })
+
+  it('leaves the Summary without a time-anatomy line when no tail is explained', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const anatomy = timeAnatomyFixture.time_anatomy
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, by_action: {}, metric_populations: { action: { transactions: 10 } },
+      time_anatomy: { ...anatomy, transactions: anatomy.transactions.map(entry => ({ ...entry, tail: { ...entry.tail, status: 'no_tail', headline: undefined } })) } } as unknown as RunArchiveReport
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="summary" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    expect(container.querySelector('.rr-anatomy-summary-line')).toBeNull()
+    expect(buttonByText(container, 'Open time anatomy')).toBeUndefined()
   })
 
   it('opens and focuses the archive section a legacy test-tab link points at', async () => {
@@ -423,6 +497,7 @@ describe('RunReportPage', () => {
   it('offers recovery instead of pending findings after the archive request fails', async () => {
     mocks.polling.test = buildTest('COMPLETE', true)
     mocks.archiveModel.archiveError = 'Archive temporarily unavailable'
+    mocks.archiveModel.selectedArchiveGroup = ''
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).toContain('Report could not be loaded')
     expect(container.textContent).not.toContain('Findings will appear')
@@ -538,6 +613,7 @@ describe('RunReportPage', () => {
     mocks.polling.test = { ...buildTest('COMPLETE'), started_at: '2026-05-12T20:00:00Z', ended_at: '2026-05-12T20:05:00Z' }
     mocks.archiveModel.archiveReport = null
     mocks.archiveModel.archiveError = ''
+    mocks.archiveModel.selectedArchiveGroup = ''
     await act(async () => root.render(<RunReportPage testId="run-1" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
     expect(container.textContent).toContain('Lifecycle elapsed 5m')
     // Without the archive report the fact is unknown: omitted, not "Not recorded".

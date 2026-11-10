@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -365,6 +366,30 @@ func (vu *VUser) executeAsyncRequest(ctx context.Context, conversation *asyncCon
 	return result
 }
 
+// beginAsyncDispatch marks the virtual user as dispatching conversation
+// results and returns the previous mark for the caller to restore. Entering
+// with no dispatch running starts a new dispatch epoch (asyncDispatchEpoch).
+// A branch started from a callback is already inside its parent's dispatch,
+// so it keeps that dispatch's epoch: everything it records is that
+// dispatch's work.
+func (vu *VUser) beginAsyncDispatch() bool {
+	outer := vu.inAsyncDispatch
+	if !outer && !vu.asyncDispatchBranch {
+		vu.asyncDispatchEpoch = vu.asyncDispatchEpochCounter().Add(1)
+	}
+	vu.inAsyncDispatch = true
+	return outer
+}
+
+// asyncDispatchEpochCounter returns the VUser's epoch counter, creating it
+// on first use; parallel branches are given their parent's.
+func (vu *VUser) asyncDispatchEpochCounter() *atomic.Uint64 {
+	if vu.asyncDispatchEpochs == nil {
+		vu.asyncDispatchEpochs = &atomic.Uint64{}
+	}
+	return vu.asyncDispatchEpochs
+}
+
 // dispatchAsyncResults applies every queued conversation item on the virtual
 // user's goroutine.
 func (vu *VUser) dispatchAsyncResults(ctx context.Context) error {
@@ -446,8 +471,7 @@ func (vu *VUser) awaitBackgroundRequestSlot(ctx context.Context) error {
 // extractions and runs the conversation's callback branches, then resolves
 // the request again with the current variables.
 func (vu *VUser) applyAsyncResults(ctx context.Context, conversation *asyncConversation) error {
-	outer := vu.inAsyncDispatch
-	vu.inAsyncDispatch = true
+	outer := vu.beginAsyncDispatch()
 	defer func() { vu.inAsyncDispatch = outer }()
 	items, dropped := conversation.take()
 	cfg := &vu.Script.Config
@@ -526,8 +550,7 @@ func (vu *VUser) runAsyncCallbacks(ctx context.Context, conversation *asyncConve
 	if len(steps) == 0 {
 		return true
 	}
-	outer := vu.inAsyncDispatch
-	vu.inAsyncDispatch = true
+	outer := vu.beginAsyncDispatch()
 	defer func() { vu.inAsyncDispatch = outer }()
 	cfg := &vu.Script.Config
 	vu.ensureVariables()

@@ -1143,22 +1143,34 @@ type LiveMetrics struct {
 	// request counts are incomplete (a generator in its fleet does not count
 	// them, or a controller took it over from history without them) carries
 	// none, run-to-date or window, so it is read in transactions.
-	Requests                   int64                                 `json:"requests,omitempty"`
-	RequestErrors              int64                                 `json:"request_errors,omitempty"`
-	RequestRate                float64                               `json:"request_rate,omitempty"`
-	RunTotalRequests           *int64                                `json:"run_total_requests,omitempty"`
-	RunRequestErrors           *int64                                `json:"run_request_errors,omitempty"`
-	RunRequestErrorPct         *float64                              `json:"run_request_error_pct,omitempty"`
-	P50Ms                      float64                               `json:"p50_ms"`
-	P90Ms                      float64                               `json:"p90_ms"`
-	P95Ms                      float64                               `json:"p95_ms"`
-	P99Ms                      float64                               `json:"p99_ms"`
-	PercentileQuality          string                                `json:"percentile_quality,omitempty"`
-	AvgDNSMs                   float64                               `json:"avg_dns_ms,omitempty"`
-	AvgConnectMs               float64                               `json:"avg_connect_ms,omitempty"`
-	AvgTLSMs                   float64                               `json:"avg_tls_ms,omitempty"`
-	AvgTTFBMs                  float64                               `json:"avg_ttfb_ms,omitempty"`
-	AvgWaitMs                  float64                               `json:"avg_wait_ms,omitempty"`
+	Requests           int64    `json:"requests,omitempty"`
+	RequestErrors      int64    `json:"request_errors,omitempty"`
+	RequestRate        float64  `json:"request_rate,omitempty"`
+	RunTotalRequests   *int64   `json:"run_total_requests,omitempty"`
+	RunRequestErrors   *int64   `json:"run_request_errors,omitempty"`
+	RunRequestErrorPct *float64 `json:"run_request_error_pct,omitempty"`
+	P50Ms              float64  `json:"p50_ms"`
+	P90Ms              float64  `json:"p90_ms"`
+	P95Ms              float64  `json:"p95_ms"`
+	P99Ms              float64  `json:"p99_ms"`
+	PercentileQuality  string   `json:"percentile_quality,omitempty"`
+	AvgDNSMs           float64  `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs       float64  `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs           float64  `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs          float64  `json:"avg_ttfb_ms,omitempty"`
+	// AvgWaitMs is the download tail, duration - TTFB. When PhaseObserved is
+	// known it counts only samples that got a first byte (a timeout's time is
+	// AvgNoResponseMs instead); from an older generator it is avg duration -
+	// avg TTFB.
+	AvgWaitMs     float64                   `json:"avg_wait_ms,omitempty"`
+	PhaseObserved *engine.PhaseObservations `json:"phase_observed,omitempty"` // nil when a generator predates it
+	// AvgServerMs is TTFB minus connection setup over the samples that got a
+	// first byte, and AvgNoResponseMs the time after setup of the samples that
+	// got none (both divided by every sample). With them avg DNS + connect +
+	// TLS + server + wait + no-response equals AvgResponseMs. Both are absent
+	// when PhaseObserved is unknown.
+	AvgServerMs                *float64                              `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs            *float64                              `json:"avg_no_response_ms,omitempty"`
 	ErrorBreakdown             map[string]int64                      `json:"error_breakdown,omitempty"`
 	Transactions               map[string]*TxMetrics                 `json:"transactions,omitempty"`
 	TransactionResponseTimeSLA []TransactionResponseTimeSLAResult    `json:"transaction_response_time_sla,omitempty"`
@@ -1622,6 +1634,14 @@ type TxMetrics struct {
 	// than one group ran it.
 	Groups  []string                          `json:"groups,omitempty"`
 	ByGroup map[string]*TransactionGroupShare `json:"by_group,omitempty"`
+
+	// PhaseObserved counts samples that spent time in DNS, connect and TLS;
+	// nil when a contributing generator predates it.
+	PhaseObserved *engine.PhaseObservations `json:"phase_observed,omitempty"`
+	// AvgServerMs and AvgNoResponseMs split the time after setup as on
+	// LiveMetrics; absent when PhaseObserved is unknown.
+	AvgServerMs     *float64 `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs *float64 `json:"avg_no_response_ms,omitempty"`
 }
 
 // TransactionGroupShare is one group's part of a transaction more than one

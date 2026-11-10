@@ -101,6 +101,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 	propertyQuantiles := make(map[string]*archiveQuantileAccumulator)
 	regionQuantiles := make(map[string]*archiveQuantileAccumulator)
 	networkPhases := newRunArchiveNetworkPhaseAccumulator()
+	timeAnatomy := newArchiveTimeAnatomyAccumulator()
 	auraActions := newArchiveAuraActionAccumulator()
 	browserVersionSkews := newArchiveBrowserVersionSkewAccumulator()
 	authoredPages := newArchiveAuthoredPageAccumulator()
@@ -342,6 +343,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			}
 		}
 		networkPhases.merge(tx)
+		timeAnatomy.merge(&tx, population, int64(transactionIndex))
 		if err := web2Migration.merge(tx); err != nil {
 			return err
 		}
@@ -664,6 +666,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		stats.PeakTPS = archiveActionPeakTPSFromBuckets(summaries, actionSummaryBuckets["transaction\x00"+name])
 		report.ByTransaction[name] = stats
 	}
+	report.TimeAnatomy = timeAnatomy.finalize(namedTransactions, timeAnatomySLAStatus(manifest))
 	report.MetricPopulations = make(map[string]ArchiveMetricPopulation)
 	for name, acc := range populations {
 		metrics := acc.finish(window)

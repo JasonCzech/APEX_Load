@@ -395,6 +395,7 @@ type metricAccumulator struct {
 	connectSumMs     float64
 	tlsSumMs         float64
 	ttfbSumMs        float64
+	phaseObserved    engine.PhaseObservations
 	bytesSent        int64
 	bytesReceived    int64
 	digest           *engine.TDigest
@@ -655,6 +656,7 @@ func (a *metricAccumulator) add(tx TransactionMetric) {
 	a.connectSumMs += tx.ConnectMs
 	a.tlsSumMs += tx.TLSMs
 	a.ttfbSumMs += tx.TTFBMs
+	a.phaseObserved.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
 	a.bytesSent += tx.BytesSent
 	a.bytesReceived += tx.BytesReceived
 	a.digest.Add(tx.DurationMs * float64(time.Millisecond))
@@ -683,6 +685,7 @@ func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 		AvgConnectMs:     a.connectSumMs / count,
 		AvgTLSMs:         a.tlsSumMs / count,
 		AvgTTFBMs:        a.ttfbSumMs / count,
+		PhaseObserved:    a.phaseObserved.Clone(),
 		BytesSent:        a.bytesSent,
 		BytesReceived:    a.bytesReceived,
 		TPS:              float64(successes) / windowSec,
@@ -3672,6 +3675,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 			AvgConnectMs:     metrics.AvgConnectMs,
 			AvgTLSMs:         metrics.AvgTLSMs,
 			AvgTTFBMs:        metrics.AvgTTFBMs,
+			PhaseObserved:    metrics.PhaseObserved.Clone(),
 			BytesSent:        metrics.BytesSent,
 			BytesReceived:    metrics.BytesRecv,
 			ByteEvidence:     metrics.ByteEvidence,
@@ -3949,6 +3953,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out := MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
+	var phaseObserved engine.PhaseObservationMerge
 	var measuredBytesSent, measuredBytesReceived int64
 	hasByteEvidence := false
 	for _, value := range values {
@@ -3981,6 +3986,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		weightedConnectMs += value.AvgConnectMs * count
 		weightedTLSMs += value.AvgTLSMs * count
 		weightedTTFBMs += value.AvgTTFBMs * count
+		phaseObserved.Add(value.PhaseObserved, value.Count)
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		if hasByteEvidence {
@@ -4021,6 +4027,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out.AvgConnectMs = weightedConnectMs / divisor
 	out.AvgTLSMs = weightedTLSMs / divisor
 	out.AvgTTFBMs = weightedTTFBMs / divisor
+	out.PhaseObserved = phaseObserved.Result()
 	// Sketches merge exactly and are preferred; t-digests serve older peers.
 	if durations.Kind() != "" && durations.Count() == out.Count {
 		out.DurationDigest, out.DurationSketch = durations.Snapshots()

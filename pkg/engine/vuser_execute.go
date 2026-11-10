@@ -110,7 +110,23 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
 	}
+	if vu.asyncDispatchActive() {
+		// Async-dispatch work (callback steps, and parallel branches started
+		// from a callback) is marked so the report's time anatomy keeps it out
+		// of the script's transactions, as it never joins one that was open
+		// when the dispatch began (sourceTransactionTakes).
+		if result.ProtocolEvidence == nil {
+			result.ProtocolEvidence = map[string]any{}
+		}
+		result.ProtocolEvidence["async_dispatch"] = true
+		// The epoch names the dispatch, so the report lets only a
+		// transaction opened in the same dispatch claim this row.
+		if vu.asyncDispatchEpoch > 0 {
+			result.ProtocolEvidence[asyncDispatchEpochEvidence] = int64(vu.asyncDispatchEpoch)
+		}
+	}
 	vu.noteSourceTransactionLLM(result)
+	vu.noteSourceTransactionPhases(result)
 	convErr := vu.appendLLMConversationTurn(result)
 	extractionErr := vu.mergeExtractions(result)
 	if extractionErr == nil && convErr != nil {
@@ -183,10 +199,20 @@ func (vu *VUser) metricResultWithDeclaredIdentity(result *protocol.Result, trans
 	return &copy
 }
 
+// clearUnredactableResultEvidence omits a result's public evidence when no
+// complete redaction matcher exists. The structural markers the phase rollup
+// and the report's claim rule read survive the wipe, as fixed enum / bool /
+// epoch values that no adapter or authored text can shape: the cache-hit
+// marker (resultResolvedLocally), so a cache hit is not counted unsplit and
+// does not discard its transaction's TTFB, and the async markers
+// (resultOutsideSourceTransactions, async_dispatch_epoch), so the archived row
+// is claimed exactly as the engine already rolled it up. The conversation id
+// is withheld; only its presence is kept, which is all either reader uses.
 func clearUnredactableResultEvidence(result *protocol.Result) {
 	if result == nil {
 		return
 	}
+	// omitConcurrentPublicEvidence keeps the structural markers itself.
 	omitConcurrentPublicEvidence(result)
 	result.Success = false
 	result.ActionName = "Action evidence unavailable"
@@ -194,6 +220,29 @@ func clearUnredactableResultEvidence(result *protocol.Result) {
 	result.CorrelationEvidence = nil
 	result.ExtractionsIncomplete = true
 	result.Extractions = nil
+}
+
+// unredactableStructuralEvidence returns the non-sensitive structural
+// protocol_evidence markers clearUnredactableResultEvidence carries over.
+func unredactableStructuralEvidence(result *protocol.Result) map[string]any {
+	kept := map[string]any{}
+	evidence := result.ProtocolEvidence
+	if source, ok := evidence["response_content_source"].(string); ok && strings.EqualFold(strings.TrimSpace(source), "cache") {
+		kept["response_content_source"] = "cache"
+	}
+	if dispatch, ok := evidence["async_dispatch"].(bool); ok && dispatch {
+		kept["async_dispatch"] = true
+	}
+	if epoch, ok := evidence[asyncDispatchEpochEvidence].(int64); ok && epoch > 0 {
+		kept[asyncDispatchEpochEvidence] = epoch
+	}
+	if _, ok := evidence["async_conversation"]; ok {
+		kept["async_conversation"] = true
+	}
+	if background, ok := evidence["background_request"].(bool); ok && background {
+		kept["background_request"] = true
+	}
+	return kept
 }
 
 func shouldRetainResultResponseBody(result *protocol.Result, logCfg dsl.LogConfig) bool {
@@ -284,17 +333,30 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		if tx.StartTime.IsZero() {
 			tx.StartTime = time.Now().Add(-duration)
 		}
-		tx.Region = source.Region
+		// A source synthesized for a transaction (a failure, a phase or LLM
+		// rollup) never went through recordResult, so it may carry no region
+		// or network profile; keep the VUser's rather than blanking them.
+		if source.Region != "" {
+			tx.Region = source.Region
+		}
 		tx.CorrelationID = source.CorrelationID
 		tx.TraceContext = source.TraceContext
 		tx.TraceLinks, tx.TraceLinksTruncated = source.TraceLinks, source.TraceLinksTruncated
-		tx.NetworkProfile = source.NetworkProfile
+		if source.NetworkProfile != "" {
+			tx.NetworkProfile = source.NetworkProfile
+		}
 		tx.DependencyType = source.DependencyType
 		tx.DependencyTarget = source.DependencyTarget
-		tx.DNSTime = source.DNSTime
-		tx.ConnectTime = source.ConnectTime
-		tx.TLSTime = source.TLSTime
-		tx.TTFB = source.TTFB
+		// A source's phases are bounded to the transaction's duration: an
+		// aggregate of overlapping requests (a concurrent http_sequence) sums
+		// serial phase time that can exceed the group's wall time. The rule is
+		// the authored rollups' (sourceTransactionPhaseRollup.boundedTo):
+		// scale, never clamp in phase order. A single request already fits.
+		// An aggregate whose children include one that took time without a
+		// first byte (a timeout, a TTFB-less protocol step) reports no TTFB,
+		// as an authored rollup does (sequenceUnsplitChildren).
+		phases := sourceTransactionPhaseRollup{dns: source.DNSTime, connect: source.ConnectTime, tls: source.TLSTime, ttfb: source.TTFB, unsplit: sequenceUnsplitChildren(source)}
+		tx.DNSTime, tx.ConnectTime, tx.TLSTime, tx.TTFB = phases.boundedTo(duration)
 		tx.BytesSent = source.BytesSent
 		tx.BytesReceived = source.BytesReceived
 		tx.StatusCode = source.StatusCode
@@ -323,8 +385,14 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	if tx.AuthoredStep == nil {
 		tx.AuthoredStep = vu.currentBrowserAuthoredStep()
 	}
+	if tx.NetworkProfile == "" && vu.Script != nil {
+		tx.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
+	}
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
+	}
+	if epoch := vu.transactionDispatchEpoch(); epoch > 0 {
+		tx.ProtocolEvidence = map[string]any{asyncDispatchEpochEvidence: int64(epoch)}
 	}
 	if start := vu.transactionSpanStart; !start.IsZero() {
 		tx.StartTime = start
@@ -1504,6 +1572,9 @@ func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) 
 	target.ConnectTime += source.ConnectTime
 	target.TLSTime += source.TLSTime
 	target.TTFB += source.TTFB
+	if sample, ok := sourceTransactionPhaseSample(source); ok && sample.unsplit > 0 {
+		noteSequenceUnsplitChild(target)
+	}
 	target.BytesSent += source.BytesSent
 	target.BytesReceived += source.BytesReceived
 	target.StatusCode = source.StatusCode
@@ -1540,6 +1611,33 @@ func copySequenceSourceResult(target *protocol.Result, source *protocol.Result) 
 	if source.ErrorMessage != "" {
 		target.ErrorMessage = source.ErrorMessage
 	}
+}
+
+// sequenceUnsplitChildrenEvidence counts, on an http_sequence aggregate, the
+// children that took time without a first byte (sourceTransactionPhaseSample's
+// unsplit rule). recordTransaction reads it to bound the aggregate's phases;
+// the transaction row it records does not carry it.
+const sequenceUnsplitChildrenEvidence = "sequence_unsplit_children"
+
+// noteSequenceUnsplitChild counts one unsplit child on an aggregate.
+func noteSequenceUnsplitChild(target *protocol.Result) {
+	if target == nil {
+		return
+	}
+	if target.ProtocolEvidence == nil {
+		target.ProtocolEvidence = map[string]any{}
+	}
+	count, _ := target.ProtocolEvidence[sequenceUnsplitChildrenEvidence].(int64)
+	target.ProtocolEvidence[sequenceUnsplitChildrenEvidence] = count + 1
+}
+
+// sequenceUnsplitChildren returns an aggregate's unsplit child count.
+func sequenceUnsplitChildren(source *protocol.Result) int64 {
+	if source == nil || source.ProtocolEvidence == nil {
+		return 0
+	}
+	count, _ := source.ProtocolEvidence[sequenceUnsplitChildrenEvidence].(int64)
+	return max(0, count)
 }
 
 func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[string]any) {

@@ -600,6 +600,10 @@ func (a *rawMetricAccumulator) add(tx generatorrpc.TransactionMetric) {
 	a.metric.AvgConnectMs += tx.ConnectMs
 	a.metric.AvgTLSMs += tx.TLSMs
 	a.metric.AvgTTFBMs += tx.TTFBMs
+	if a.metric.PhaseObserved == nil {
+		a.metric.PhaseObserved = &engine.PhaseObservations{}
+	}
+	a.metric.PhaseObserved.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
 	a.metric.BytesSent += tx.BytesSent
 	a.metric.BytesReceived += tx.BytesReceived
 	a.durations = append(a.durations, tx.DurationMs)
@@ -835,6 +839,7 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 	groupAggregates := make(map[string]*GroupLiveMetrics)
 	transactionAttempts := int64(0)
 	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
+	var phaseObserved engine.PhaseObservations
 	errorBreakdown := make(map[string]int64)
 	for _, tx := range batch.Transactions {
 		transactionAttempts++
@@ -851,8 +856,12 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		totalConnectMs += tx.ConnectMs
 		totalTLSMs += tx.TLSMs
 		totalTTFBMs += tx.TTFBMs
-		if wait := tx.DurationMs - tx.TTFBMs; wait > 0 {
-			totalWaitMs += wait
+		phaseObserved.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
+		// Download only exists for a sample that got a first byte.
+		if tx.TTFBMs > 0 {
+			if wait := tx.DurationMs - tx.TTFBMs; wait > 0 {
+				totalWaitMs += wait
+			}
 		}
 		durationsByName[tx.Name] = append(durationsByName[tx.Name], tx.DurationMs)
 		if tx.Snapshot != nil {
@@ -916,6 +925,8 @@ func buildLiveMetricsFromDistributedBatch(test *ManagedTest, batch generatorrpc.
 		live.AvgTLSMs = totalTLSMs / attempts
 		live.AvgTTFBMs = totalTTFBMs / attempts
 		live.AvgWaitMs = totalWaitMs / attempts
+		live.PhaseObserved = &phaseObserved
+		applyLivePhaseSplit(live, transactionAttempts)
 	}
 	live.ErrorBreakdown = copyErrorClassCounts(errorBreakdown)
 	// TPS is a true per-second rate summed across generators (see
@@ -1064,7 +1075,12 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	live.AvgConnectMs = fleet.AvgConnectMs
 	live.AvgTLSMs = fleet.AvgTLSMs
 	live.AvgTTFBMs = fleet.AvgTTFBMs
-	if wait := fleet.AvgMs - fleet.AvgTTFBMs; wait > 0 {
+	live.PhaseObserved = fleet.PhaseObserved.Clone()
+	if download, ok := applyLivePhaseSplit(live, fleet.Count); ok {
+		// Download over the samples that got a first byte.
+		live.AvgWaitMs = download
+	} else if wait := fleet.AvgMs - fleet.AvgTTFBMs; wait > 0 {
+		// An older generator: no way to tell a timeout from a download.
 		live.AvgWaitMs = wait
 	}
 
@@ -1242,7 +1258,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 	if strings.TrimSpace(aggregate.Name) == "" || aggregate.Count == 0 {
 		return nil
 	}
-	return &TxMetrics{
+	metrics := &TxMetrics{
 		DurationDigest:     engine.CloneTDigestSnapshot(aggregate.DurationDigest),
 		DurationSketch:     engine.CloneDurationSketchSnapshot(aggregate.DurationSketch),
 		PercentileQuality:  aggregate.PercentileQuality,
@@ -1256,6 +1272,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		AvgConnectMs:       aggregate.AvgConnectMs,
 		AvgTLSMs:           aggregate.AvgTLSMs,
 		AvgTTFBMs:          aggregate.AvgTTFBMs,
+		PhaseObserved:      aggregate.PhaseObserved.Clone(),
 		Count:              aggregate.Count,
 		Errors:             aggregate.Errors,
 		BytesSent:          aggregate.BytesSent,
@@ -1269,6 +1286,8 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		P99Ms:              aggregate.P99Ms,
 		Exemplars:          append([]engine.TraceExemplar(nil), aggregate.Exemplars...),
 	}
+	applyTxPhaseSplit(metrics)
+	return metrics
 }
 
 func browserLiveMetricsFromGenerator(metrics generatorrpc.BrowserMetrics) *BrowserLiveMetrics {
@@ -1336,6 +1355,10 @@ func mergeDistributedTransactionMetrics(metrics *TxMetrics, tx generatorrpc.Tran
 	metrics.AvgConnectMs += tx.ConnectMs
 	metrics.AvgTLSMs += tx.TLSMs
 	metrics.AvgTTFBMs += tx.TTFBMs
+	if metrics.PhaseObserved == nil {
+		metrics.PhaseObserved = &engine.PhaseObservations{}
+	}
+	metrics.PhaseObserved.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
 	metrics.AvgMs += tx.DurationMs
 }
 
@@ -1660,6 +1683,7 @@ func finalizeDistributedTxMetrics(metrics *TxMetrics, sortedDurations []float64)
 	metrics.AvgTLSMs /= float64(metrics.Count)
 	metrics.AvgTTFBMs /= float64(metrics.Count)
 	metrics.AvgMs /= float64(metrics.Count)
+	applyTxPhaseSplit(metrics)
 	finalizeAPIServerTelemetrySummary(metrics.ServerTelemetry)
 	metrics.P50Ms, metrics.P90Ms, metrics.P95Ms, metrics.P99Ms = percentilesFromSorted(sortedDurations)
 }
@@ -1723,6 +1747,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		copy.JavaHTTP = copy.JavaHTTP.RetainedForPopulation(copy.Count)
 		copy.Messaging = copy.Messaging.Clone()
 		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
+		copy.PhaseObserved = copy.PhaseObserved.Clone()
 		if copy.PercentileQuality == "" && copy.DurationSketch == nil && copy.DurationDigest != nil {
 			// A generator that predates the sketch took its percentiles from
 			// its t-digest.
@@ -1733,6 +1758,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out := generatorrpc.MetricAggregate{}
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
+	var phaseObserved engine.PhaseObservationMerge
 	var measuredBytesSent, measuredBytesReceived int64
 	hasByteEvidence := false
 	for _, value := range values {
@@ -1765,6 +1791,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		connectSum += value.AvgConnectMs * count
 		tlsSum += value.AvgTLSMs * count
 		ttfbSum += value.AvgTTFBMs * count
+		phaseObserved.Add(value.PhaseObserved, value.Count)
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		if hasByteEvidence {
@@ -1806,6 +1833,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgConnectMs = connectSum / divisor
 	out.AvgTLSMs = tlsSum / divisor
 	out.AvgTTFBMs = ttfbSum / divisor
+	out.PhaseObserved = phaseObserved.Result()
 	// Sketches merge exactly and are preferred; t-digests serve older
 	// generators.
 	if kind := durations.Kind(); kind != "" && durations.Count() == out.Count {

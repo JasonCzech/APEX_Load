@@ -290,6 +290,12 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 		return
 	}
 	originalError := result.ErrorMessage
+	// Non-sensitive structural markers survive the wipe: the phase rollup
+	// needs them to tell a cache hit from a no-first-byte response, and the
+	// report needs the async markers to keep callback work out of
+	// transactions that did not open it.
+	structural := unredactableStructuralEvidence(result)
+	cacheHit := strings.EqualFold(strings.TrimSpace(result.HTTPVersionSource), "cache")
 	result.ScreenshotOmitted = false
 	// A result carrying byte evidence keeps it and its protocol, so its byte
 	// counts stay measurements of their population (NA-C). Only adapters
@@ -314,6 +320,12 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 	result.ClientMetrics, result.ServerTelemetry, result.Snapshot = nil, nil, nil
 	result.PropertyDimensions, result.CSVExportIDs, result.WarningCodes = nil, nil, nil
 	result.ProtocolEvidence = map[string]any{"concurrent_group_evidence_bounded": true, "concurrent_group_evidence_details_complete": false}
+	for key, value := range structural {
+		result.ProtocolEvidence[key] = value
+	}
+	if cacheHit {
+		result.HTTPVersionSource = "cache"
+	}
 }
 
 // Final outputs are bounded to 64 KiB; observed retry values have a separate

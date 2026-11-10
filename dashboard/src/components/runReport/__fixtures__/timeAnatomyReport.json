@@ -1,0 +1,825 @@
+{
+  "time_anatomy": {
+    "schema": "apexload.time_anatomy.v1",
+    "phase_model": "sequential_clipped_v1",
+    "join_rule": "vuser_lifetime_containment_v1",
+    "transactions": [
+      {
+        "name": "Checkout",
+        "instances": 1000,
+        "joined_instances": 1000,
+        "failed_instances": 3,
+        "interrupted_instances": 0,
+        "sla_status": "failed",
+        "duration": {
+          "samples": 1000,
+          "avg_ms": 131,
+          "p50_ms": 110,
+          "p90_ms": 125,
+          "p95_ms": 130,
+          "p99_ms": 560,
+          "max_ms": 600,
+          "percentile_quality": ""
+        },
+        "decomposition": {
+          "instances": 1000,
+          "avg_duration_ms": 131,
+          "phases": {
+            "dns_ms": 1,
+            "connect_ms": 4,
+            "tls_ms": 2,
+            "server_ms": 80,
+            "download_ms": 20,
+            "unsplit_ms": 0
+          },
+          "non_request_ms": 24,
+          "overlap_ms": 0,
+          "avg_requests_per_instance": 3
+        },
+        "requests": [
+          {
+            "key": "1|GET /cart#1",
+            "action_name": "GET /cart",
+            "source_step_index": 1,
+            "occurrence": 1,
+            "dependency_type": "http",
+            "samples": 1000,
+            "failed": 0,
+            "presence_pct": 100,
+            "offset_ms": {
+              "samples": 1000,
+              "avg_ms": 0,
+              "p50_ms": 0,
+              "p90_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0
+            },
+            "phases": {
+              "dns": {
+                "samples": 1000,
+                "avg_ms": 0.5,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 5,
+                "p99_ms": 5,
+                "max_ms": 6,
+                "observed_pct": 9,
+                "avg_when_observed_ms": 5.5
+              },
+              "connect": {
+                "samples": 1000,
+                "avg_ms": 2,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 20,
+                "p99_ms": 22,
+                "max_ms": 25,
+                "observed_pct": 10,
+                "avg_when_observed_ms": 20
+              },
+              "tls": {
+                "samples": 1000,
+                "avg_ms": 1,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 10,
+                "p99_ms": 11,
+                "max_ms": 12,
+                "observed_pct": 10,
+                "avg_when_observed_ms": 10
+              },
+              "server": {
+                "samples": 1000,
+                "avg_ms": 10,
+                "p50_ms": 9,
+                "p90_ms": 12,
+                "p95_ms": 14,
+                "p99_ms": 18,
+                "max_ms": 22,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 10
+              },
+              "download": {
+                "samples": 1000,
+                "avg_ms": 5,
+                "p50_ms": 5,
+                "p90_ms": 6,
+                "p95_ms": 7,
+                "p99_ms": 8,
+                "max_ms": 9,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 5
+              },
+              "unsplit": {
+                "samples": 1000,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0
+              },
+              "total": {
+                "samples": 1000,
+                "avg_ms": 18.5,
+                "p50_ms": 15,
+                "p90_ms": 30,
+                "p95_ms": 48,
+                "p99_ms": 52,
+                "max_ms": 60
+              }
+            },
+            "connections": {
+              "new": 100,
+              "reused": 900,
+              "unknown": 0,
+              "inconsistent": 0,
+              "reuse_pct": 90
+            }
+          },
+          {
+            "key": "2|POST /cart#1",
+            "action_name": "POST /cart",
+            "source_step_index": 2,
+            "occurrence": 1,
+            "dependency_type": "http",
+            "samples": 1000,
+            "failed": 3,
+            "presence_pct": 100,
+            "offset_ms": {
+              "samples": 1000,
+              "avg_ms": 12,
+              "p50_ms": 12,
+              "p90_ms": 14,
+              "p95_ms": 15,
+              "p99_ms": 18,
+              "max_ms": 20
+            },
+            "phases": {
+              "dns": {
+                "samples": 1000,
+                "avg_ms": 0.5,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 5,
+                "p99_ms": 5,
+                "max_ms": 6,
+                "observed_pct": 9,
+                "avg_when_observed_ms": 5.5
+              },
+              "connect": {
+                "samples": 1000,
+                "avg_ms": 2,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 20,
+                "p99_ms": 40,
+                "max_ms": 44,
+                "observed_pct": 10,
+                "avg_when_observed_ms": 20
+              },
+              "tls": {
+                "samples": 1000,
+                "avg_ms": 1,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 10,
+                "p99_ms": 11,
+                "max_ms": 12,
+                "observed_pct": 10,
+                "avg_when_observed_ms": 10
+              },
+              "server": {
+                "samples": 1000,
+                "avg_ms": 60,
+                "p50_ms": 40,
+                "p90_ms": 55,
+                "p95_ms": 60,
+                "p99_ms": 460,
+                "max_ms": 480,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 60
+              },
+              "download": {
+                "samples": 1000,
+                "avg_ms": 10,
+                "p50_ms": 10,
+                "p90_ms": 11,
+                "p95_ms": 12,
+                "p99_ms": 14,
+                "max_ms": 15,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 10
+              },
+              "unsplit": {
+                "samples": 1000,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0
+              },
+              "total": {
+                "samples": 1000,
+                "avg_ms": 73.5,
+                "p50_ms": 52,
+                "p90_ms": 70,
+                "p95_ms": 80,
+                "p99_ms": 515,
+                "max_ms": 540
+              }
+            },
+            "connections": {
+              "new": 90,
+              "reused": 900,
+              "unknown": 10,
+              "inconsistent": 0,
+              "reuse_pct": 90.9
+            }
+          },
+          {
+            "key": "3|GET /poll#9",
+            "action_name": "GET /poll",
+            "source_step_index": 3,
+            "occurrence": 9,
+            "occurrence_folded": true,
+            "dependency_type": "http",
+            "samples": 600,
+            "failed": 0,
+            "presence_pct": 60,
+            "offset_ms": {
+              "samples": 600,
+              "avg_ms": 92,
+              "p50_ms": 90,
+              "p90_ms": 100,
+              "p95_ms": 104,
+              "p99_ms": 110,
+              "max_ms": 120,
+              "percentile_quality": "approximate"
+            },
+            "phases": {
+              "dns": {
+                "samples": 600,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "connect": {
+                "samples": 600,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "tls": {
+                "samples": 600,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "server": {
+                "samples": 600,
+                "avg_ms": 16.7,
+                "p50_ms": 16,
+                "p90_ms": 18,
+                "p95_ms": 19,
+                "p99_ms": 21,
+                "max_ms": 25,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 16.7,
+                "percentile_quality": "approximate"
+              },
+              "download": {
+                "samples": 600,
+                "avg_ms": 8.3,
+                "p50_ms": 8,
+                "p90_ms": 9,
+                "p95_ms": 10,
+                "p99_ms": 11,
+                "max_ms": 12,
+                "observed_pct": 100,
+                "avg_when_observed_ms": 8.3,
+                "percentile_quality": "approximate"
+              },
+              "unsplit": {
+                "samples": 600,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0
+              },
+              "total": {
+                "samples": 600,
+                "avg_ms": 25,
+                "p50_ms": 24,
+                "p90_ms": 27,
+                "p95_ms": 29,
+                "p99_ms": 32,
+                "max_ms": 37,
+                "percentile_quality": "approximate"
+              }
+            },
+            "connections": {
+              "new": 0,
+              "reused": 600,
+              "unknown": 0,
+              "inconsistent": 1,
+              "reuse_pct": 100
+            }
+          }
+        ],
+        "other_requests": {
+          "key": "other",
+          "action_name": "Other requests",
+          "occurrence": 1,
+          "samples": 12,
+          "failed": 0,
+          "presence_pct": 1.2,
+          "offset_ms": {
+            "samples": 12,
+            "avg_ms": 0,
+            "p50_ms": 0,
+            "p90_ms": 0,
+            "p95_ms": 0,
+            "p99_ms": 0,
+            "max_ms": 0
+          },
+          "phases": {
+            "dns": {
+              "samples": 12,
+              "avg_ms": 0,
+              "p50_ms": 0,
+              "p90_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0,
+              "observed_pct": 0
+            },
+            "connect": {
+              "samples": 12,
+              "avg_ms": 0,
+              "p50_ms": 0,
+              "p90_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0,
+              "observed_pct": 0
+            },
+            "tls": {
+              "samples": 12,
+              "avg_ms": 0,
+              "p50_ms": 0,
+              "p90_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0,
+              "observed_pct": 0
+            },
+            "server": {
+              "samples": 12,
+              "avg_ms": 4,
+              "p50_ms": 4,
+              "p90_ms": 5,
+              "p95_ms": 5,
+              "p99_ms": 5,
+              "max_ms": 5,
+              "observed_pct": 100,
+              "avg_when_observed_ms": 4
+            },
+            "download": {
+              "samples": 12,
+              "avg_ms": 1,
+              "p50_ms": 1,
+              "p90_ms": 1,
+              "p95_ms": 1,
+              "p99_ms": 1,
+              "max_ms": 1,
+              "observed_pct": 100,
+              "avg_when_observed_ms": 1
+            },
+            "unsplit": {
+              "samples": 12,
+              "avg_ms": 0,
+              "p50_ms": 0,
+              "p90_ms": 0,
+              "p95_ms": 0,
+              "p99_ms": 0,
+              "max_ms": 0
+            },
+            "total": {
+              "samples": 12,
+              "avg_ms": 5,
+              "p50_ms": 5,
+              "p90_ms": 6,
+              "p95_ms": 6,
+              "p99_ms": 6,
+              "max_ms": 6
+            }
+          },
+          "connections": {
+            "new": 0,
+            "reused": 0,
+            "unknown": 12,
+            "inconsistent": 0
+          }
+        },
+        "requests_truncated": true,
+        "tail": {
+          "status": "ok",
+          "threshold_p50_ms": 110,
+          "threshold_p95_ms": 130,
+          "band_estimate": "exact",
+          "instances": 1000,
+          "sampled_instances": 1000,
+          "tail": {
+            "count": 50,
+            "joined": 50,
+            "failed": 0,
+            "avg_duration_ms": 540,
+            "phases": {
+              "dns_ms": 1,
+              "connect_ms": 44,
+              "tls_ms": 2,
+              "server_ms": 460,
+              "download_ms": 20,
+              "unsplit_ms": 0
+            },
+            "non_request_ms": 13,
+            "overlap_ms": 0
+          },
+          "median": {
+            "count": 500,
+            "joined": 500,
+            "failed": 0,
+            "avg_duration_ms": 100,
+            "phases": {
+              "dns_ms": 1,
+              "connect_ms": 4,
+              "tls_ms": 2,
+              "server_ms": 60,
+              "download_ms": 20,
+              "unsplit_ms": 0
+            },
+            "non_request_ms": 13,
+            "overlap_ms": 0
+          },
+          "delta": {
+            "total_ms": 440,
+            "components": [
+              {
+                "component": "server",
+                "delta_ms": 400,
+                "share_pct": 90.9
+              },
+              {
+                "component": "connect",
+                "delta_ms": 40,
+                "share_pct": 9.1
+              }
+            ]
+          },
+          "requests": [
+            {
+              "key": "2|POST /cart#1",
+              "action_name": "POST /cart",
+              "delta_ms": 430,
+              "dominant_phase": "server",
+              "dominant_ms": 400
+            },
+            {
+              "key": "1|GET /cart#1",
+              "action_name": "GET /cart",
+              "delta_ms": 10,
+              "dominant_phase": "setup",
+              "dominant_ms": 10
+            }
+          ],
+          "headline": "P95 tail is +440 ms vs median: server +400 ms, connect +40 ms (samples above P95 130 ms average 540 ms; samples at or below P50 average 100 ms); most of it in POST /cart (+430 ms)"
+        },
+        "representatives": [
+          {
+            "reason": "p50",
+            "target_ms": 110,
+            "event_id": "tx_00000000000000000000000000000050",
+            "ordinal": 2011,
+            "first_ordinal": 2008,
+            "timestamp": "2026-11-01T09:58:00.000Z",
+            "duration_ms": 110,
+            "success": true,
+            "status_code": 200,
+            "group": "g1",
+            "vuser_id": 3,
+            "vuser_lifetime": "7349851234567890001",
+            "iteration": 8,
+            "children": 3
+          },
+          {
+            "reason": "p95",
+            "target_ms": 130,
+            "event_id": "tx_0123456789abcdef0123456789abcdef",
+            "ordinal": 4021,
+            "first_ordinal": 4018,
+            "timestamp": "2026-11-01T10:00:00.000Z",
+            "duration_ms": 130,
+            "success": true,
+            "status_code": 200,
+            "group": "g1",
+            "vuser_id": 7,
+            "vuser_lifetime": "7349851234567890123",
+            "iteration": 12,
+            "children": 3
+          },
+          {
+            "reason": "slowest",
+            "event_id": "tx_ffffffffffffffffffffffffffffff01",
+            "ordinal": 5120,
+            "first_ordinal": 5116,
+            "timestamp": "2026-11-01T10:01:30.000Z",
+            "duration_ms": 600,
+            "elapsed_ms": 605,
+            "success": true,
+            "status_code": 200,
+            "group": "g2",
+            "vuser_id": 11,
+            "vuser_lifetime": "7349851234567890456",
+            "iteration": 15,
+            "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+            "children": 3
+          },
+          {
+            "reason": "failed",
+            "event_id": "tx_eeeeeeeeeeeeeeeeeeeeeeeeeeeeee02",
+            "ordinal": 6200,
+            "first_ordinal": 6198,
+            "timestamp": "2026-11-01T10:02:10.000Z",
+            "duration_ms": 95,
+            "success": false,
+            "status_code": 503,
+            "error_class": "http_5xx",
+            "group": "g2",
+            "vuser_id": 12,
+            "vuser_lifetime": "7349851234567890789",
+            "iteration": 18,
+            "children": 2
+          }
+        ]
+      },
+      {
+        "name": "Login",
+        "instances": 30,
+        "joined_instances": 30,
+        "failed_instances": 0,
+        "interrupted_instances": 1,
+        "sla_status": "passed",
+        "duration": {
+          "samples": 30,
+          "avg_ms": 45,
+          "p50_ms": 42,
+          "p90_ms": 55,
+          "p95_ms": 60,
+          "p99_ms": 66,
+          "max_ms": 70
+        },
+        "decomposition": {
+          "instances": 29,
+          "avg_duration_ms": 45,
+          "phases": {
+            "dns_ms": 0,
+            "connect_ms": 0,
+            "tls_ms": 0,
+            "server_ms": 0,
+            "download_ms": 0,
+            "unsplit_ms": 40
+          },
+          "non_request_ms": 5,
+          "overlap_ms": 0,
+          "avg_requests_per_instance": 1
+        },
+        "requests": [
+          {
+            "key": "1|login_rpc#1",
+            "action_name": "login_rpc",
+            "source_step_index": 1,
+            "occurrence": 1,
+            "dependency_type": "grpc",
+            "samples": 30,
+            "failed": 0,
+            "presence_pct": 100,
+            "offset_ms": {
+              "samples": 30,
+              "avg_ms": 2,
+              "p50_ms": 2,
+              "p90_ms": 3,
+              "p95_ms": 3,
+              "p99_ms": 3,
+              "max_ms": 3
+            },
+            "phases": {
+              "dns": {
+                "samples": 30,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "connect": {
+                "samples": 30,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "tls": {
+                "samples": 30,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "server": {
+                "samples": 30,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "download": {
+                "samples": 30,
+                "avg_ms": 0,
+                "p50_ms": 0,
+                "p90_ms": 0,
+                "p95_ms": 0,
+                "p99_ms": 0,
+                "max_ms": 0,
+                "observed_pct": 0
+              },
+              "unsplit": {
+                "samples": 30,
+                "avg_ms": 40,
+                "p50_ms": 38,
+                "p90_ms": 50,
+                "p95_ms": 55,
+                "p99_ms": 60,
+                "max_ms": 61
+              },
+              "total": {
+                "samples": 30,
+                "avg_ms": 40,
+                "p50_ms": 38,
+                "p90_ms": 50,
+                "p95_ms": 55,
+                "p99_ms": 60,
+                "max_ms": 61
+              }
+            },
+            "connections": {
+              "new": 0,
+              "reused": 0,
+              "unknown": 30,
+              "inconsistent": 0
+            }
+          }
+        ],
+        "tail": {
+          "status": "insufficient_samples",
+          "threshold_p50_ms": 42,
+          "threshold_p95_ms": 60,
+          "threshold_quality": "approximate",
+          "band_estimate": "sampled",
+          "instances": 29,
+          "sampled_instances": 20,
+          "tail": {
+            "count": 2,
+            "joined": 2,
+            "failed": 0,
+            "avg_duration_ms": 66,
+            "phases": {
+              "dns_ms": 0,
+              "connect_ms": 0,
+              "tls_ms": 0,
+              "server_ms": 0,
+              "download_ms": 0,
+              "unsplit_ms": 60
+            },
+            "non_request_ms": 6,
+            "overlap_ms": 0
+          },
+          "median": {
+            "count": 15,
+            "joined": 15,
+            "failed": 0,
+            "avg_duration_ms": 38,
+            "phases": {
+              "dns_ms": 0,
+              "connect_ms": 0,
+              "tls_ms": 0,
+              "server_ms": 0,
+              "download_ms": 0,
+              "unsplit_ms": 34
+            },
+            "non_request_ms": 4,
+            "overlap_ms": 0
+          },
+          "delta": {
+            "total_ms": 28,
+            "components": [
+              {
+                "component": "unsplit",
+                "delta_ms": 26,
+                "share_pct": 92.9
+              },
+              {
+                "component": "non_request",
+                "delta_ms": 2,
+                "share_pct": 7.1
+              },
+              {
+                "component": "overlap",
+                "delta_ms": 0,
+                "share_pct": 0
+              }
+            ]
+          }
+        },
+        "representatives": [
+          {
+            "reason": "p50",
+            "target_ms": 42,
+            "event_id": "tx_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa03",
+            "ordinal": 120,
+            "first_ordinal": 119,
+            "timestamp": "2026-11-01T09:50:00.000Z",
+            "duration_ms": 42,
+            "success": true,
+            "group": "g1",
+            "vuser_id": 2,
+            "vuser_lifetime": "7349851234567890002",
+            "iteration": 1,
+            "children": 1,
+            "sampled": true
+          }
+        ]
+      }
+    ],
+    "coverage": {
+      "transaction_rows": 1032,
+      "joined_transaction_rows": 1030,
+      "transaction_rows_without_requests": 1,
+      "unjoinable_transaction_rows": 1,
+      "interrupted_transaction_rows": 1,
+      "request_rows": 3640,
+      "requests_in_transactions": 3630,
+      "requests_outside_transactions": 8,
+      "requests_claimed_across_iteration": 2,
+      "late_request_rows": 2,
+      "requests_ending_after_transaction": 3,
+      "clamped_request_samples": 5,
+      "retried_request_samples": 4,
+      "legacy_identity_rows": 6,
+      "unknown_population_rows": 7
+    },
+    "truncation": {
+      "truncated": true,
+      "reasons": [
+        "instance_sample",
+        "occurrence_fold",
+        "pending_key_cap",
+        "report_transaction_cap",
+        "request_row_cap",
+        "transaction_cap"
+      ],
+      "transactions_tracked": 4,
+      "transactions_omitted": 1,
+      "transactions_not_emitted": 2,
+      "request_rows_omitted": 12,
+      "pending_requests_dropped": 4
+    }
+  }
+}

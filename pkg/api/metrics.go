@@ -43,6 +43,34 @@ func groupActiveVUsers(gm *engine.GroupMetrics, configured int) int {
 	return configured
 }
 
+// applyLivePhaseSplit sets AvgServerMs and AvgNoResponseMs from the phase
+// averages over count samples, or clears them when the observations are
+// unknown. It reports the matching download tail (duration - TTFB over the
+// samples that got a first byte) for callers that derive AvgWaitMs.
+func applyLivePhaseSplit(live *LiveMetrics, count int64) (downloadMs float64, ok bool) {
+	if live == nil {
+		return 0, false
+	}
+	live.AvgServerMs, live.AvgNoResponseMs, downloadMs, ok = phaseSplitFields(live.PhaseObserved, count, live.AvgResponseMs, live.AvgDNSMs, live.AvgConnectMs, live.AvgTLSMs, live.AvgTTFBMs)
+	return downloadMs, ok
+}
+
+// applyTxPhaseSplit is applyLivePhaseSplit for one transaction's metrics.
+func applyTxPhaseSplit(metrics *TxMetrics) {
+	if metrics == nil {
+		return
+	}
+	metrics.AvgServerMs, metrics.AvgNoResponseMs, _, _ = phaseSplitFields(metrics.PhaseObserved, metrics.Count, metrics.AvgMs, metrics.AvgDNSMs, metrics.AvgConnectMs, metrics.AvgTLSMs, metrics.AvgTTFBMs)
+}
+
+func phaseSplitFields(observed *engine.PhaseObservations, count int64, avgMs, dnsMs, connectMs, tlsMs, ttfbMs float64) (serverMs, noResponseMs *float64, downloadMs float64, ok bool) {
+	server, download, noResponse, ok := observed.ResponseSplit(count, avgMs, dnsMs, connectMs, tlsMs, ttfbMs)
+	if !ok {
+		return nil, nil, 0, false
+	}
+	return &server, &noResponse, download, true
+}
+
 func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[string]int) *LiveMetrics {
 	live := &LiveMetrics{
 		BrowserDocuments:           browserDocumentsForLive(snap.BrowserDocuments, snap.Browser != nil),
@@ -69,6 +97,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		AvgTLSMs:                   snap.AvgTLSMs,
 		AvgTTFBMs:                  snap.AvgTTFBMs,
 		AvgWaitMs:                  snap.AvgWaitMs,
+		PhaseObserved:              snap.PhaseObserved.Clone(),
 		ErrorBreakdown:             copyErrorClassCounts(snap.ErrorsByClass),
 		Transactions:               make(map[string]*TxMetrics),
 		DependencyHealth:           make(map[string]*TxMetrics),
@@ -82,6 +111,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		HTTPVersions:               buildRunArchiveHTTPVersionMix(snap.HTTPVersions, nil),
 		SampleWindowSeconds:        snap.Window.Seconds(),
 	}
+	applyLivePhaseSplit(live, snap.Transactions+snap.Errors)
 	if snap.Browser != nil {
 		live.Browser = &BrowserLiveMetrics{
 			Samples:              snap.Browser.Samples,
@@ -343,7 +373,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 	if window > 0 {
 		tps = float64(successes) / window.Seconds()
 	}
-	return &TxMetrics{
+	metrics := &TxMetrics{
 		DurationDigest:   engine.CloneTDigestSnapshot(am.DurationDigest),
 		DurationSketch:   engine.CloneDurationSketchSnapshot(am.DurationSketch),
 		Name:             name,
@@ -358,6 +388,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 		AvgConnectMs:     am.AvgConnectMs,
 		AvgTLSMs:         am.AvgTLSMs,
 		AvgTTFBMs:        am.AvgTTFBMs,
+		PhaseObserved:    am.PhaseObserved.Clone(),
 		CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
 		CorrelationCount: am.CorrelationCount,
 		Exemplars:        append([]engine.TraceExemplar(nil), am.Exemplars...),
@@ -373,6 +404,8 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 		P95Ms:            float64(am.P95.Microseconds()) / 1000.0,
 		P99Ms:            float64(am.P99.Microseconds()) / 1000.0,
 	}
+	applyTxPhaseSplit(metrics)
+	return metrics
 }
 
 func buildLiveMetricsForBroadcast(snap engine.MetricsSnapshot, groupVUsers map[string]int, now time.Time) *LiveMetrics {
