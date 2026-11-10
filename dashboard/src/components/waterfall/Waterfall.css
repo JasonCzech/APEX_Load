@@ -152,6 +152,7 @@ button.wf-sink:hover { background: var(--bg-hover); }
 .wf-redirect { color: var(--text-secondary); }
 .wf-code { display: none; flex-shrink: 0; font-size: 10px; font-variant-numeric: tabular-nums; color: var(--text-secondary); }
 .wf-code.failed { color: var(--danger-text, var(--danger)); font-weight: 600; }
+.wf-code-label { white-space: nowrap; }
 
 .wf-cell-timeline { position: relative; padding: 0; overflow: hidden; touch-action: pan-y; }
 .wf-header .wf-cell-timeline { overflow: visible; }

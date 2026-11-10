@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useEffect, useState, type ReactNode } from 'react'
+import { Suspense, lazy, useId, useMemo, useRef, useEffect, useState, type ReactNode } from 'react'
 import { debugSummaryModel, type DebugCompletionSnapshot, type DebugSummaryIssue } from './debugCompletionModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
@@ -6,7 +6,10 @@ import { debugTransactionRows } from './debugTransactionModel'
 import { DebugWaterfallPanel } from './DebugWaterfallPanel'
 import type { BrowserReplayEvent } from '../types/replay'
 import TabList from './ux/TabList'
-import DebugLoadComparisonPanel, { type DebugLoadComparisonSource } from './DebugLoadComparisonPanel'
+import type { DebugLoadComparisonSource } from './DebugLoadComparisonPanel'
+import LazyLoadBoundary from './LazyLoadBoundary'
+// The Debug vs load panel (and its model) loads on first use, off ScriptEditor's chunk.
+const DebugLoadComparisonPanel = lazy(() => import('./DebugLoadComparisonPanel'))
 
 export type DebugSummaryTab = 'transactions' | 'issues' | 'recording-diff' | 'load-comparison'
 /** Asks the Summary to show one of its sub-tabs; a new id asks again. */
@@ -426,7 +429,11 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           className="debug-summary-tabpanel"
           hidden={activeTab !== 'load-comparison'}
         >
-          <DebugLoadComparisonPanel snapshot={snapshot} source={loadComparison} active={activeTab === 'load-comparison'} stale={stale} />
+          <LazyLoadBoundary title="Debug vs load could not be loaded.">
+            <Suspense fallback={<p role="status">Loading Debug vs load…</p>}>
+              <DebugLoadComparisonPanel snapshot={snapshot} source={loadComparison} active={activeTab === 'load-comparison'} stale={stale} />
+            </Suspense>
+          </LazyLoadBoundary>
         </div>
       )}
     </>}

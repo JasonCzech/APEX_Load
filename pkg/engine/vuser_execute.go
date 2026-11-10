@@ -126,7 +126,6 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 		}
 	}
 	vu.noteSourceTransactionLLM(result)
-	vu.noteSourceTransactionPhases(result)
 	convErr := vu.appendLLMConversationTurn(result)
 	extractionErr := vu.mergeExtractions(result)
 	if extractionErr == nil && convErr != nil {
@@ -142,6 +141,11 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 			result.ErrorMessage += "; extraction retention failed: " + err.Error()
 		}
 	}
+	// Phases and the trace exemplar are noted once Success is final: a
+	// retention failure above fails this request, and the exemplar's failed
+	// flag must see that, as a parallel branch's sink (which records after
+	// recordResult) already does.
+	vu.noteSourceTransactionPhases(result)
 	if vu.runtimeCredentialRedactionError() != nil {
 		clearUnredactableResultEvidence(result)
 	}

@@ -43,6 +43,24 @@ export interface WaterfallProps<T> {
   /** Sort to start with. */
   initialSortMode?: WaterfallSortMode
   className?: string
+  /** Legend and tooltip names per phase, over the shared vocabulary. */
+  phaseLabels?: Partial<Record<WaterfallPhaseKey, string>>
+  /** Legend name of the ghost bar. */
+  baselineLabel?: string
+  /** Header of the name column. */
+  nameColumnLabel?: string
+  /** False for rows that are not one execution (independent aggregates): no critical path. */
+  criticalPath?: boolean
+  /** Phases the legend lists (default: every toggleable phase); pass the ones these rows can draw. */
+  legendPhases?: readonly WaterfallPhaseKey[]
+  /** False when rows have no idle gaps (independent aggregates): no "Think / idle" chip. */
+  showIdleLegend?: boolean
+  /** False when rows share no timeline (independent aggregates from 0): the tooltip names no start offset. */
+  showStartOffset?: boolean
+  /** Labels of the timeline scale toggle, over the defaults (aggregate rows are not one session). */
+  scaleLabels?: Partial<Record<WaterfallScaleMode, string>>
+  /** Sort options offered, in order (default: all; 'change' only with deltas). */
+  sortModes?: readonly WaterfallSortMode[]
 }
 
 const SORT_LABELS: Record<WaterfallSortMode, string> = {
@@ -51,6 +69,13 @@ const SORT_LABELS: Record<WaterfallSortMode, string> = {
   dominant: 'Dominant phase',
   change: 'Largest change',
 }
+
+const SCALE_LABELS: Record<WaterfallScaleMode, string> = {
+  waterfall: 'Waterfall (session)',
+  stacked: 'Stacked (100%)',
+}
+
+const ALL_SORT_MODES = Object.keys(SORT_LABELS) as WaterfallSortMode[]
 
 const EMPTY_SET: ReadonlySet<string> = new Set()
 // Stacked mode has no time axis, so the overview cannot zoom it.
@@ -75,12 +100,21 @@ export function Waterfall<T>({
   drawer,
   emptyMessage = 'No executions captured yet.',
   className,
+  phaseLabels,
+  baselineLabel = 'Baseline',
+  nameColumnLabel = 'Iteration / transaction / request',
+  criticalPath: criticalPathEnabled = true,
+  legendPhases,
+  showIdleLegend = true,
+  showStartOffset = true,
+  scaleLabels,
+  sortModes = ALL_SORT_MODES,
 }: WaterfallProps<T>) {
   const baseId = useId().replace(/:/g, '')
   const tooltipId = `${baseId}-tooltip`
   const total = Math.max(spanMs, 1)
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map())
-  const [sortMode, setSortMode] = useState<WaterfallSortMode>(initialSortMode ?? 'chronological')
+  const [sortMode, setSortMode] = useState<WaterfallSortMode>(initialSortMode ?? (sortModes.includes('chronological') ? 'chronological' : sortModes[0] ?? 'chronological'))
   const [scaleMode, setScaleMode] = useState<WaterfallScaleMode>('waterfall')
   const [hidden, setHidden] = useState<Set<WaterfallPhaseKey>>(() => new Set())
   const [showCritical, setShowCritical] = useState(true)
@@ -129,7 +163,7 @@ export function Waterfall<T>({
     })
     return excluded
   }, [roots, criticalPath])
-  const critical = showCritical && criticalIsSelective ? criticalPath : EMPTY_SET
+  const critical = criticalPathEnabled && showCritical && criticalIsSelective ? criticalPath : EMPTY_SET
   const computedSinks = useMemo(() => (sinksOverride ? null : topTimeSinks(roots, total)), [roots, total, sinksOverride])
   const sinks = sinksOverride ?? computedSinks ?? []
   // Comparison-only controls appear only when some row carries a change.
@@ -587,11 +621,15 @@ export function Waterfall<T>({
   const tipState: WaterfallTooltipState | null = keyboardTip && activeRow && kbAnchor ? { nodeId: activeRow.node.id, x: kbAnchor.x, y: kbAnchor.y } : tip
   const tipNode = tipState ? nodeById.get(tipState.nodeId) ?? null : null
 
+  const legendPhaseList = useMemo(
+    () => (legendPhases ? WATERFALL_TOGGLE_PHASES.filter(p => legendPhases.includes(p.key)) : WATERFALL_TOGGLE_PHASES),
+    [legendPhases],
+  )
   const togglePhase = (key: WaterfallPhaseKey, solo: boolean) => {
     setHidden(prev => {
       if (solo) {
-        const othersHidden = WATERFALL_TOGGLE_PHASES.every(p => p.key === key || prev.has(p.key))
-        return othersHidden && !prev.has(key) ? new Set() : new Set(WATERFALL_TOGGLE_PHASES.filter(p => p.key !== key).map(p => p.key))
+        const othersHidden = legendPhaseList.every(p => p.key === key || prev.has(p.key))
+        return othersHidden && !prev.has(key) ? new Set() : new Set(legendPhaseList.filter(p => p.key !== key).map(p => p.key))
       }
       const next = new Set(prev)
       if (next.has(key)) next.delete(key)
@@ -635,15 +673,15 @@ export function Waterfall<T>({
           <label className="wf-inline-label">
             Sort
             <select value={sortMode} onChange={e => setSortMode(e.target.value as WaterfallSortMode)}>
-              {(Object.keys(SORT_LABELS) as WaterfallSortMode[]).filter(m => m !== 'change' || hasDelta).map(m => <option key={m} value={m}>{SORT_LABELS[m]}</option>)}
+              {sortModes.filter(m => m !== 'change' || hasDelta).map(m => <option key={m} value={m}>{SORT_LABELS[m]}</option>)}
             </select>
           </label>
           <div className="wf-segmented" role="group" aria-label="Timeline scale">
-            {([['waterfall', 'Waterfall (session)'], ['stacked', 'Stacked (100%)']] as const).map(([mode, label]) => (
-              <button key={mode} type="button" className={scaleMode === mode ? 'active' : ''} aria-pressed={scaleMode === mode} onClick={() => setScaleMode(mode)}>{label}</button>
+            {(['waterfall', 'stacked'] as const).map(mode => (
+              <button key={mode} type="button" className={scaleMode === mode ? 'active' : ''} aria-pressed={scaleMode === mode} onClick={() => setScaleMode(mode)}>{scaleLabels?.[mode] ?? SCALE_LABELS[mode]}</button>
             ))}
           </div>
-          <button
+          {criticalPathEnabled && <button
             type="button"
             className={`wf-chip-toggle${showCritical ? ' active' : ''}`}
             aria-pressed={showCritical}
@@ -651,8 +689,8 @@ export function Waterfall<T>({
             onClick={() => setShowCritical(v => !v)}
           >
             Critical path
-          </button>
-          {!criticalIsSelective && hasRows && <span id={`${baseId}-critical-note`} className="wf-toolbar-note">All work is sequential, so every request is on the critical path.</span>}
+          </button>}
+          {criticalPathEnabled && !criticalIsSelective && hasRows && <span id={`${baseId}-critical-note`} className="wf-toolbar-note">All work is sequential, so every request is on the critical path.</span>}
         </div>
         <div className="wf-toolbar-group" role="group" aria-label="Zoom">
           <button type="button" className="wf-icon-btn" aria-label="Zoom out" disabled={scaleMode === 'stacked' || !zoomed} onClick={() => setViewport(zoomViewport(viewport, 1.25, 0.5, total))}>−</button>
@@ -662,7 +700,7 @@ export function Waterfall<T>({
         </div>
       </div>
       <ul className="wf-legend" aria-label="Traffic phases (toggle to dim; Shift-click to show only one)">
-        {WATERFALL_TOGGLE_PHASES.map(p => (
+        {legendPhaseList.map(p => (
           <li key={p.key}>
             <button
               type="button"
@@ -671,12 +709,12 @@ export function Waterfall<T>({
               onClick={e => togglePhase(p.key, e.shiftKey || e.altKey)}
             >
               <i className={`wf-swatch phase-${p.key}`} aria-hidden="true" />
-              {p.shortLabel}
+              {phaseLabels?.[p.key] ?? p.shortLabel}
             </button>
           </li>
         ))}
-        <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-gap" aria-hidden="true" />Think / idle</span></li>
-        {hasDelta && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-ghost" aria-hidden="true" />Baseline</span></li>}
+        {showIdleLegend && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-gap" aria-hidden="true" />Think / idle</span></li>}
+        {hasDelta && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-ghost" aria-hidden="true" />{baselineLabel}</span></li>}
         {hidden.size > 0 && <li><button type="button" className="wf-legend-chip" onClick={() => setHidden(new Set())}>Show all</button></li>}
       </ul>
       {sinks.length > 0 && (
@@ -744,7 +782,7 @@ export function Waterfall<T>({
               }}
             >
               <div role="row" aria-rowindex={1} className="wf-row wf-header">
-                <div role="columnheader" className="wf-cell wf-cell-name">Iteration / transaction / request</div>
+                <div role="columnheader" className="wf-cell wf-cell-name">{nameColumnLabel}</div>
                 <div role="columnheader" className="wf-cell wf-cell-status">Status</div>
                 <div role="columnheader" className="wf-cell wf-cell-duration">Duration</div>
                 <div role="columnheader" className="wf-cell wf-cell-timeline">
@@ -772,7 +810,7 @@ export function Waterfall<T>({
         </div>
       )}
       {/* Portaled: .wf-root's container query makes it the containing block for position: fixed. */}
-      {tipState && tipNode && typeof document !== 'undefined' && createPortal(<WaterfallTooltip id={tooltipId} node={tipNode} state={tipState} critical={critical.has(tipNode.id)} />, document.body)}
+      {tipState && tipNode && typeof document !== 'undefined' && createPortal(<WaterfallTooltip id={tooltipId} node={tipNode} state={tipState} critical={critical.has(tipNode.id)} phaseLabels={phaseLabels} showStart={showStartOffset} />, document.body)}
     </div>
   )
 }

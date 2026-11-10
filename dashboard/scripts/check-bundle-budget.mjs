@@ -183,10 +183,39 @@ const mib = (value) => value * 1024 * 1024
 // aggregate JS to 9.75 MiB raw / 2.83 MiB gzip and aggregate CSS to 1125 KiB
 // raw / 204 KiB gzip (~2% headroom); per-asset and every route and startup
 // guard stay unchanged.
+//
+// 2026-11-10 Live dashboard Phase 3 (L1 live waterfall, L3 trace exemplars,
+// L4 connection health). The waterfall panel (with the shared Waterfall and
+// vendor-virtual), the exemplar drawer and the connection health panel load
+// lazily, and the route now forbids those chunks statically. What stays on
+// the route is the per-window retention every live run keeps (exemplar ring
+// and first-stable-minute sums in the metrics stream), the phase vector model
+// and the chart click-through: the Test execution route measures 425.74 KiB
+// gzip against 421.61 KiB at the 11-08 baseline. Move the route guard to
+// 430 KiB gzip (~1% headroom).
+// The new lazy chunks are new code, not duplication: the shared Waterfall
+// (34.5 KiB raw / 11.7 KiB gzip) now sits in its own chunk that ScriptEditor
+// imports, and ScriptEditor shrank by about the same (-34.9 KiB raw / -11.5
+// KiB gzip); livePhaseModel and the waterfall phase table are each emitted
+// once. LiveWaterfallPanel, LiveExemplarDrawer, TestExecutionConnectionHealth,
+// livePhaseModel and the route's retention code add about 40 KiB raw /
+// 15.5 KiB gzip, taking aggregate JS from 9.51 MiB raw / 2.75 MiB gzip
+// (2,883,977 B at PR #336) to 9.55 MiB raw / 2.77 MiB gzip (10,011,739 B /
+// 2,899,866 B). Move aggregate JS to 9.75 MiB raw / 2.82 MiB gzip (~2%
+// headroom). Phase 3 is stacked on the R4-R6 entry above, whose aggregate
+// JS (2.83 MiB gzip) and CSS (1125 KiB / 204 KiB gzip) ceilings already hold
+// it (Phase 3 adds LiveWaterfallPanel.css, ~1.6 KiB gzip). The per-asset,
+// Initial shell and Scripts route guards are not changed here.
+// 2026-11-10 After merging main (#337), R4-R6 moved the Debug vs load and run
+// comparison panels into lazy chunks to keep ScriptEditor inside 950 KiB raw /
+// 260 KiB gzip. Phase 3's shared Waterfall changes (legend, scale and tooltip
+// fixes the live waterfall needs) then leave ScriptEditor at 950.02 KiB raw /
+// 259.22 KiB gzip. Move the per-asset raw ceiling to 955 KiB (~0.5% headroom);
+// the gzip ceiling, which tracks transfer size, is unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(950),
+    maxAssetBytes: kib(955),
     maxAssetGzipBytes: kib(260),
     maxTotalBytes: mib(9.75),
     maxTotalGzipBytes: mib(2.83),
@@ -221,8 +250,8 @@ export const DEFAULT_ROUTE_BUDGETS = Object.freeze([
     label: 'Test execution route',
     entryKey: 'src/components/TestExecution.tsx',
     forbiddenEntryKeys: ['index.html'],
-    maxGzipBytes: kib(425),
-    forbiddenAssets: [/codemirror/i, /vendor-three/i, /LoadImpact3DHeatmap/i],
+    maxGzipBytes: kib(430),
+    forbiddenAssets: [/codemirror/i, /vendor-three/i, /LoadImpact3DHeatmap/i, /assets\/Waterfall-/, /vendor-virtual/i, /LiveWaterfallPanel/i, /LiveExemplarDrawer/i, /TestExecutionConnectionHealth/i],
   }),
 ])
 
