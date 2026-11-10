@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import type { Socket } from 'node:net'
 import type { Locator, Page } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome } from './support/workflow'
+import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 // A TLS target that answers over HTTP/2 and advertises HTTP/3 (Alt-Svc). The
@@ -148,9 +148,11 @@ test('HTTP/3 authoring: QUIC settings, field validation, capability note and the
     await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
     await expectDebugOutcome(page, 'passed')
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Home' }).click()
-    const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
-    if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
-    const offer = page.getByRole('group', { name: 'Switch to auto+h3' })
+    // Protocol evidence, with the HTTP/3 switch, is on the inspector's Timing & transport tab.
+    const timing = await openInspectorTab(page, 'Timing & transport')
+    const protocolEvidence = timing.getByRole('region', { name: 'Protocol evidence', exact: true })
+    await expect(protocolEvidence.getByRole('heading', { name: /^Protocol evidence/ })).toBeVisible()
+    const offer = protocolEvidence.getByRole('group', { name: 'Switch to auto+h3' })
     await expect(offer).toContainText('The origin advertises HTTP/3; this request used HTTP/2. Switch to auto+h3?')
     const validated = page.waitForRequest(candidate => candidate.method() === 'POST' && /\/api\/v1\/scripts\/(validate|[^/]+\/validate)/.test(candidate.url()))
     await offer.getByRole('button', { name: 'Switch this request to auto+h3', exact: true }).click()

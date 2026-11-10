@@ -9,15 +9,16 @@ import { join } from 'node:path'
 import type { Socket } from 'node:net'
 import type { Page, TestInfo } from '@playwright/test'
 import type { ScriptActionDefinition, ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome } from './support/workflow'
+import { test, expect, idOf, json, login, expectEditorSaved, expectDebugOutcome, inspectorPanel, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
-// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response
-// (the network trace beside it is a separate disclosure, details.replay-network-trace).
+// Protocol provenance sits on the inspector's "Timing & transport" tab under its own
+// heading (the network trace below it is rendered inline as section.replay-network-trace).
 async function openProtocolEvidence(page: Page) {
-  const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
-  await expect(disclosure).toBeVisible()
-  if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
+  const timing = await openInspectorTab(page, 'Timing & transport')
+  const section = timing.getByRole('region', { name: 'Protocol evidence', exact: true })
+  await expect(section.getByRole('heading', { name: /^Protocol evidence/ })).toBeVisible()
+  return section
 }
 
 // Two real TLS targets distinguish exact selection from automatic negotiation.
@@ -222,10 +223,12 @@ test('mixed HTTP versions retain request policy, share sessions and expose measu
     await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Auto on H1 only' }).click()
     await openProtocolEvidence(page)
     await expect(actual).toHaveText('HTTP/1.1')
-    // Debug turns network trace on by default: the transport trace is its own disclosure.
-    const trace = page.locator('details.replay-network-trace')
+    // Debug turns network trace on by default: the transport trace is its own section on the same tab, shown expanded.
+    const timing = inspectorPanel(page, 'Timing & transport')
+    const trace = timing.getByRole('region', { name: 'Network and transport trace', exact: true })
     await expect(trace).toHaveCount(1)
-    await expect(trace.locator(':scope > summary')).toContainText('Network & transport trace')
+    await expect(trace.getByRole('heading', { level: 4 })).toContainText('Network & transport trace')
+    await expect(timing.locator('details.replay-network-trace')).toHaveCount(0)
     await expect(evidence.locator('dt').filter({ hasText: 'Replay policy' }).locator('xpath=following-sibling::dd[1]')).toContainText('Auto')
     await expect(evidence.locator('dt').filter({ hasText: 'Version evidence source' }).locator('xpath=following-sibling::dd[1]')).toHaveText('Wire response')
     await actual.scrollIntoViewIfNeeded()

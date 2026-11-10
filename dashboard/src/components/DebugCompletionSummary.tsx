@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useEffect, useState } from 'react'
+import { useId, useMemo, useRef, useEffect, useState, type ReactNode } from 'react'
 import { debugSummaryModel, type DebugCompletionSnapshot, type DebugSummaryIssue } from './debugCompletionModel'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 import './DebugCompletionSummary.css'
@@ -6,6 +6,10 @@ import { debugTransactionRows } from './debugTransactionModel'
 import { DebugWaterfallPanel } from './DebugWaterfallPanel'
 import type { BrowserReplayEvent } from '../types/replay'
 import TabList from './ux/TabList'
+
+export type DebugSummaryTab = 'transactions' | 'issues' | 'recording-diff'
+/** Asks the Summary to show one of its sub-tabs; a new id asks again. */
+export interface DebugSummaryTabRequest { tab: DebugSummaryTab; id: number }
 
 type IssueSortField = 'severity' | 'action' | 'phase' | 'status' | 'message'
 type IssueSortDirection = 'asc' | 'desc'
@@ -170,7 +174,26 @@ function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSumma
   )
 }
 
-export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript }: {
+/** The Recording diff without a run summary: shown while a run is live or when its summary is unavailable. */
+export function DebugSummaryRecordingDiff({ children, consumeFocusRequest }: {
+  children: ReactNode
+  /**
+   * Answers "Compare with recording" where the diff is not a sub-tab: returns
+   * true once for a pending request, and the section's heading then takes focus.
+   */
+  consumeFocusRequest?: () => boolean
+}) {
+  const heading = useRef<HTMLHeadingElement>(null)
+  useEffect(() => {
+    if (consumeFocusRequest?.()) heading.current?.focus()
+  })
+  return <section aria-label="Recording diff" className="debug-summary-recording-diff">
+    <h3 ref={heading} tabIndex={consumeFocusRequest ? -1 : undefined}>Recording diff</h3>
+    {children}
+  </section>
+}
+
+export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript, recordingDiff, tabRequest, consumeRecordingDiffFocus }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
   onSelectEvent: (index: number) => void
   /** Jump the script editor to the action that produced an execution. */
@@ -178,12 +201,26 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
   canRevealInScript?: (event: BrowserReplayEvent) => boolean
   onDownloadHAR: () => Promise<void>
   onExportSession: () => Promise<void> | void
+  /** The run compared with a recording (non-browser scripts), shown as the Recording diff sub-tab. */
+  recordingDiff?: ReactNode
+  /** Opens a sub-tab from elsewhere (Request/Response's "Compare with recording"). */
+  tabRequest?: DebugSummaryTabRequest | null
+  /** Focuses the plain Recording diff (no sub-tabs while evidence is unavailable) after such a request. */
+  consumeRecordingDiffFocus?: () => boolean
 }) {
   const model = useMemo(() => debugSummaryModel(snapshot), [snapshot])
   const heading = useRef<HTMLHeadingElement>(null)
   const [downloading, setDownloading] = useState(false)
   const [downloadError, setDownloadError] = useState('')
-  const [activeTabByRun, setActiveTabByRun] = useState<{ key: string; tab: 'transactions' | 'issues' } | null>(null)
+  const [activeTabByRun, setActiveTabByRun] = useState<{ key: string; tab: DebugSummaryTab } | null>(null)
+  // A request seen at mount is already answered: only a newer one switches tabs.
+  const [mountTabRequestId] = useState(() => tabRequest?.id ?? null)
+  const [handledTabRequest, setHandledTabRequest] = useState<DebugSummaryTabRequest | null>(() => tabRequest ?? null)
+  const recordingDiffTab = useRef<HTMLButtonElement>(null)
+  if (tabRequest && tabRequest.id !== handledTabRequest?.id) {
+    setHandledTabRequest(tabRequest)
+    setActiveTabByRun({ key: snapshot.key, tab: tabRequest.tab })
+  }
   const timelineEvents = useMemo(() => model.events.map((entry) => entry.event), [model.events])
   const timelineIndices = useMemo(() => model.events.map((entry) => entry.index), [model.events])
   const transactionRows = useMemo(() => debugTransactionRows(snapshot), [snapshot])
@@ -195,17 +232,24 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
     return (firstFailed ?? model.events[0])?.index ?? null
   }, [model.events])
 
-  const activeTab = activeTabByRun?.key === snapshot.key ? activeTabByRun.tab : 'transactions'
-  const setActiveTab = (tab: 'transactions' | 'issues') => setActiveTabByRun({ key: snapshot.key, tab })
+  const requestedTab = activeTabByRun?.key === snapshot.key ? activeTabByRun.tab : 'transactions'
+  const activeTab = requestedTab === 'recording-diff' && !recordingDiff ? 'transactions' : requestedTab
+  const setActiveTab = (tab: DebugSummaryTab) => setActiveTabByRun({ key: snapshot.key, tab })
 
+  const summaryRef = useRef<HTMLElement>(null)
   useEffect(() => {
-    heading.current?.focus()
+    // The plain Recording diff may have just taken focus on request: keep it there.
+    if (!summaryRef.current?.contains(document.activeElement)) heading.current?.focus()
     setDownloadError('')
   }, [snapshot.key])
+  useEffect(() => {
+    if (!handledTabRequest || handledTabRequest.id === mountTabRequestId || handledTabRequest.tab !== 'recording-diff') return
+    recordingDiffTab.current?.focus()
+  }, [handledTabRequest, mountTabRequestId])
 
   const hidden = unavailable || model.unavailable
   const har = snapshot.session.har
-  return <section className="debug-completion-summary" aria-label="Debug run summary">
+  return <section className="debug-completion-summary" aria-label="Debug run summary" ref={summaryRef}>
     <header className="debug-summary-heading">
       <div><h2 ref={heading} tabIndex={-1}>Debug summary</h2><p role="status">{model.outcome}{model.incomplete || hidden ? ' · Incomplete evidence' : ''}</p></div>
       <div className="debug-summary-actions">
@@ -231,6 +275,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
     {!hidden && downloadError && <p role="alert" className="error-message">{downloadError}</p>}
     {stale && <p className="warning-message">These results describe an earlier draft. Start a new run from the Debug menu to check your current changes.</p>}
     {hidden && <p className="warning-message">Runtime evidence unavailable. Run details and downloads cannot be shown.</p>}
+    {hidden && recordingDiff && <DebugSummaryRecordingDiff consumeFocusRequest={consumeRecordingDiffFocus}>{recordingDiff}</DebugSummaryRecordingDiff>}
     {!hidden && <>
       <dl className="debug-summary-facts">
         <div><dt>Script</dt><dd>{snapshot.scriptName}</dd></div>
@@ -269,6 +314,21 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           <span>Errors and warnings</span>
           {model.issues.length > 0 && <span className="debug-summary-tab-badge">{model.issues.length}</span>}
         </button>
+        {recordingDiff && (
+          <button
+            ref={recordingDiffTab}
+            type="button"
+            role="tab"
+            id="debug-summary-tab-recording-diff"
+            aria-selected={activeTab === 'recording-diff'}
+            aria-controls="debug-summary-panel-recording-diff"
+            tabIndex={activeTab === 'recording-diff' ? 0 : -1}
+            className={`debug-summary-tab ux-underline-tab ${activeTab === 'recording-diff' ? 'active' : ''}`}
+            onClick={() => setActiveTab('recording-diff')}
+          >
+            <span>Recording diff</span>
+          </button>
+        )}
       </TabList>
       <div
         id="debug-summary-panel-transactions"
@@ -324,6 +384,17 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : <DebugSummaryIssuesTable key={`issues-${snapshot.key}`} issues={model.issues} onSelectEvent={onSelectEvent} />}
         </section>
       </div>
+      {recordingDiff && (
+        <div
+          id="debug-summary-panel-recording-diff"
+          role="tabpanel"
+          aria-labelledby="debug-summary-tab-recording-diff"
+          className="debug-summary-tabpanel"
+          hidden={activeTab !== 'recording-diff'}
+        >
+          <DebugSummaryRecordingDiff>{recordingDiff}</DebugSummaryRecordingDiff>
+        </div>
+      )}
     </>}
   </section>
 }

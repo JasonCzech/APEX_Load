@@ -1,5 +1,6 @@
 import type { BrowserReplayEvent } from '../types/replay'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
+import { hasReplayExtractions } from './requestResponseInspectorModel'
 
 export function ReplayExtractions({ event }: { event: BrowserReplayEvent }) {
   if (event.action_type === 'live_table') return null
@@ -12,7 +13,7 @@ export function ReplayExtractions({ event }: { event: BrowserReplayEvent }) {
   const hasUnappliedValues = event.unapplied_extractions && Object.keys(event.unapplied_extractions).length > 0
   const children = event.streamed_children || []
   const omittedChildren = event.streamed_children_omitted_count || 0
-  if (!omitted && !hasValues && !hasUnappliedValues && !hasUnappliedCount && !children.length && !omittedChildren && !event.credential_classification_error) return null
+  if (!hasReplayExtractions(event)) return null
   return <div className="replay-code-block">
     {event.credential_classification_error && <p role="status">Credential classification: {event.credential_classification_error}</p>}
     {(omitted || hasValues) && <>
