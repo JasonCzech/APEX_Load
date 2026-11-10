@@ -35,6 +35,7 @@ const mocks = vi.hoisted(() => ({
     requestRootCauseAnalysis: vi.fn(),
     getTestArchiveExemplars: vi.fn(),
     getTestArchiveTransactionWaterfall: vi.fn(),
+    getTestArchiveIterationWaterfall: vi.fn(),
     getRootCauseCritiques: vi.fn(),
     getTestArchiveJourneys: vi.fn().mockResolvedValue({ availability: 'unavailable', reason: 'no_journey_policy', journeys: [], notes: [] }),
   },
@@ -150,6 +151,13 @@ vi.mock('./runReport/RunReportKpiScorecard', () => ({ default: () => <section da
 vi.mock('./runReport/SynchronizedTimeline', () => ({ default: () => <section data-testid="timeline" /> }))
 vi.mock('./runReport/TransactionSlaScoreboard', () => ({ default: ({ onSelectAction }: { onSelectAction: (name: string) => void }) => <section data-testid="scoreboard"><button onClick={() => onSelectAction('Checkout')}>Inspect Checkout SLA</button></section> }))
 vi.mock('./runReport/RunReportDiagnostics', () => ({ default: () => <section data-testid="diagnostics" /> }))
+vi.mock('./runReport/BusinessKeyLookup', () => ({
+  default: ({ onReplayIteration, onResultsReset }: { onReplayIteration?: (target: Record<string, unknown>) => void; onResultsReset?: () => void }) => <section data-testid="business-key-lookup">
+    <input aria-label="Business key values" defaultValue="" />
+    <button type="button" onClick={() => onReplayIteration?.({ group: 'g1', vuser_id: 4, vuser_lifetime: '99', iteration: 3, ordinal: 12, source: 'Business key' })}>Replay iteration</button>
+    <button type="button" onClick={() => onResultsReset?.()}>Clear</button>
+  </section>,
+}))
 vi.mock('./runReport/RunReportCompareBar', () => ({
   default: ({ onPinBaseline, options = [] }: { onPinBaseline: () => Promise<boolean>; options?: TestSummary[] }) => (
     <section data-testid="compare">{options.map(run => <span key={run.id}>{run.name}</span>)}
@@ -317,6 +325,74 @@ describe('RunReportPage', () => {
     const population = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Metric population'))
     expect(population?.value).toBe('transaction')
     expect(document.activeElement?.textContent).toBe('Where the time goes')
+  })
+
+  it('shows the iteration replay after the time anatomy and opens a representative\'s iteration there', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    const iterations = {
+      schema: 'apexload.iteration_index.v1', iterations_total: 3, identities: 1, identity_quality: { lifetime: 3, legacy: 0, none_rows: 0 },
+      span: { samples: 3, p50_ms: 100, p95_ms: 200, max_ms: 200 }, truncated: false,
+      representatives: [{ reason: 'slowest', identity_quality: 'lifetime', group: 'g1', vuser_id: 3, vuser_lifetime: '11', iteration: 2, first_ordinal: 5, last_ordinal: 9, span_ms: 200, transaction_rows: 1, request_rows: 1, failed_rows: 0 }],
+    }
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, metric_populations: { action: { transactions: 10 }, transaction: { transactions: 5 } }, ...timeAnatomyFixture, iterations } as unknown as RunArchiveReport
+    mocks.api.getTestArchiveIterationWaterfall.mockReturnValue(new Promise(() => {}))
+    mocks.api.getTestArchiveTransactionWaterfall.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="performance" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const anatomy = container.querySelector('[data-report-focus="time-anatomy"]')
+    const replay = container.querySelector('[data-report-focus="iteration-replay"]')
+    const actionSummary = container.querySelector('[data-report-focus="action-summary"]')
+    expect(replay?.querySelector('h2')?.textContent).toBe('Iteration replay')
+    if (!anatomy || !replay || !actionSummary) throw new Error('panels missing')
+    expect(anatomy.compareDocumentPosition(replay) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(replay.compareDocumentPosition(actionSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    // The anatomy's P95 representative opens its own iteration.
+    await act(async () => buttonByText(anatomy as HTMLElement, 'P95')?.click())
+    await act(async () => buttonByText(document.body, 'Open iteration')?.click())
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(mocks.api.getTestArchiveIterationWaterfall).toHaveBeenLastCalledWith('run-1', expect.objectContaining({ group: 'g1', vuser_id: 7, vuser_lifetime: '7349851234567890123', iteration: 12 }), expect.anything())
+    expect(onNavigateReport).toHaveBeenLastCalledWith(expect.objectContaining({ section: 'performance' }))
+    expect(document.activeElement?.textContent).toBe('Iteration replay')
+  })
+
+  it('replays a business-key match under the lookup, keeping the lookup and its values', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, iterations: { schema: 'apexload.iteration_index.v1', iterations_total: 1, identities: 1, identity_quality: { lifetime: 1, legacy: 0, none_rows: 0 }, span: { samples: 1, p50_ms: 1, p95_ms: 1, max_ms: 1 }, truncated: false, representatives: [] } } as unknown as RunArchiveReport
+    mocks.api.getTestArchiveIterationWaterfall.mockReturnValue(new Promise(() => {}))
+    await act(async () => root.render(<RunReportPage testId="run-1" initialSection="diagnostics" onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />))
+    const lookup = container.querySelector('[data-testid="business-key-lookup"]')
+    const input = lookup?.querySelector('input')
+    if (!lookup || !input) throw new Error('lookup missing')
+    input.value = 'ORD-1'
+    onNavigateReport.mockClear()
+    await act(async () => buttonByText(lookup as HTMLElement, 'Replay iteration')?.click())
+    // Still on Diagnostics, the same lookup element with its typed value.
+    expect(onNavigateReport).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="business-key-lookup"]')).toBe(lookup)
+    expect(input.value).toBe('ORD-1')
+    const replay = container.querySelector('[data-report-focus="iteration-replay"]')
+    expect(replay).toBeTruthy()
+    expect(lookup.compareDocumentPosition(replay!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(mocks.api.getTestArchiveIterationWaterfall).toHaveBeenLastCalledWith('run-1', expect.objectContaining({ vuser_lifetime: '99', iteration: 3, ordinal: 12 }), expect.anything())
+    expect(document.activeElement?.textContent).toBe('Iteration replay')
+    // Clearing or replacing the lookup's results closes the replay of its old match.
+    await act(async () => buttonByText(lookup as HTMLElement, 'Clear')?.click())
+    expect(container.querySelector('[data-report-focus="iteration-replay"]')).toBeNull()
+  })
+
+  it('closes a business-key replay when leaving Diagnostics drops the lookup and its matches', async () => {
+    mocks.polling.test = buildTest('COMPLETE')
+    mocks.archiveModel.archiveReport = { manifest: {}, overview: {}, iterations: { schema: 'apexload.iteration_index.v1', iterations_total: 1, identities: 1, identity_quality: { lifetime: 1, legacy: 0, none_rows: 0 }, span: { samples: 1, p50_ms: 1, p95_ms: 1, max_ms: 1 }, truncated: false, representatives: [] } } as unknown as RunArchiveReport
+    mocks.api.getTestArchiveIterationWaterfall.mockReturnValue(new Promise(() => {}))
+    const page = (section: 'diagnostics' | 'performance') => <RunReportPage testId="run-1" initialSection={section} onOpenCommandCenter={onOpenCommandCenter} onNavigateReport={onNavigateReport} />
+    await act(async () => root.render(page('diagnostics')))
+    const lookup = container.querySelector('[data-testid="business-key-lookup"]')
+    await act(async () => buttonByText(lookup as HTMLElement, 'Replay iteration')?.click())
+    expect(container.querySelector('[data-report-focus="iteration-replay"]')).toBeTruthy()
+    await act(async () => root.render(page('performance')))
+    await act(async () => root.render(page('diagnostics')))
+    expect(container.querySelector('[data-testid="business-key-lookup"]')).toBeTruthy()
+    expect(container.querySelector('[data-report-focus="iteration-replay"]')).toBeNull()
   })
 
   it('clears the SLA group filter when a transaction is picked in the time anatomy', async () => {

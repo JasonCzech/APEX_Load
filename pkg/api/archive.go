@@ -660,6 +660,7 @@ type RunArchiveReport struct {
 	ReportProfiles                    []RunArchiveReportProfile                      `json:"report_profiles,omitempty"`
 	NetworkPhases                     RunArchiveNetworkPhaseSummary                  `json:"network_phases,omitempty"`
 	TimeAnatomy                       *RunArchiveTimeAnatomy                         `json:"time_anatomy,omitempty"`
+	Iterations                        *RunArchiveIterationIndex                      `json:"iterations,omitempty"`
 	HostNetwork                       []RunArchiveHostNetworkEvidence                `json:"host_network,omitempty"`
 	HTTP3Preflight                    *RunArchiveHTTP3Preflight                      `json:"http3_preflight,omitempty"`
 	ArtifactInventory                 []RunArchiveArtifact                           `json:"artifact_inventory,omitempty"`

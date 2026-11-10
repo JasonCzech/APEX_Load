@@ -11,17 +11,20 @@ type archiveReadCaches struct {
 	manifests         *boundedArchiveCache[RunArchiveManifest]
 	sanitizedPlans    *boundedArchiveCache[sanitizedRunArchivePlan]
 	waterfalls        *boundedArchiveCache[archiveWaterfallResult]
-	catalogReadSlots  chan struct{}
+	// iterationWaterfalls holds rebuilt iteration replays.
+	iterationWaterfalls *boundedArchiveCache[ArchiveIterationWaterfall]
+	catalogReadSlots    chan struct{}
 }
 
 func newArchiveReadCaches() *archiveReadCaches {
 	return &archiveReadCaches{
-		catalogIdentities: newBoundedArchiveCache[archiveCatalogIdentity](128),
-		reports:           newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport]),
-		manifests:         newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest]),
-		sanitizedPlans:    newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, sanitizedArchivePlanWeight),
-		waterfalls:        newArchiveWaterfallCache(),
-		catalogReadSlots:  make(chan struct{}, 2),
+		catalogIdentities:   newBoundedArchiveCache[archiveCatalogIdentity](128),
+		reports:             newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport]),
+		manifests:           newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest]),
+		sanitizedPlans:      newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, sanitizedArchivePlanWeight),
+		waterfalls:          newArchiveWaterfallCache(),
+		iterationWaterfalls: newArchiveIterationWaterfallCache(),
+		catalogReadSlots:    make(chan struct{}, 2),
 	}
 }
 

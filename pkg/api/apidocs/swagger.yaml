@@ -14594,6 +14594,119 @@ paths:
                           type: string
                           format: date-time
                       nullable: true
+                    iterations:
+                      type: object
+                      properties:
+                        identities:
+                          type: integer
+                          format: int64
+                        identities_evicted:
+                          type: integer
+                          format: int64
+                        identity_quality:
+                          type: object
+                          properties:
+                            legacy:
+                              type: integer
+                              format: int64
+                            lifetime:
+                              type: integer
+                              format: int64
+                            none_rows:
+                              type: integer
+                              format: int64
+                        iterations_total:
+                          type: integer
+                          format: int64
+                        late_rows:
+                          type: integer
+                          format: int64
+                        partial_iterations:
+                          type: integer
+                          format: int64
+                        reasons:
+                          type: array
+                          items:
+                            type: string
+                        representatives:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              failed_rows:
+                                type: integer
+                                format: int64
+                              first_ordinal:
+                                type: integer
+                                format: int64
+                              group:
+                                type: string
+                              identity_quality:
+                                type: string
+                              interrupted:
+                                type: boolean
+                              iteration:
+                                type: integer
+                                format: int64
+                              last_ordinal:
+                                type: integer
+                                format: int64
+                              reason:
+                                type: string
+                              request_rows:
+                                type: integer
+                                format: int64
+                              sampled:
+                                type: boolean
+                              span_ms:
+                                type: number
+                                format: double
+                              split:
+                                type: boolean
+                              started_at:
+                                type: string
+                                format: date-time
+                              target_ms:
+                                type: number
+                                format: double
+                                nullable: true
+                              transaction_rows:
+                                type: integer
+                                format: int64
+                              vuser_id:
+                                type: integer
+                                format: int64
+                              vuser_lifetime:
+                                type: string
+                                format: int64
+                        rows_outside_iterations:
+                          type: integer
+                          format: int64
+                        schema:
+                          type: string
+                        span:
+                          type: object
+                          properties:
+                            max_ms:
+                              type: number
+                              format: double
+                            p50_ms:
+                              type: number
+                              format: double
+                            p95_ms:
+                              type: number
+                              format: double
+                            percentile_quality:
+                              type: string
+                            samples:
+                              type: integer
+                              format: int64
+                        truncated:
+                          type: boolean
+                        untimed_iterations:
+                          type: integer
+                          format: int64
+                      nullable: true
                     llm:
                       type: object
                       properties:
@@ -274232,6 +274345,115 @@ paths:
       tags:
         - Scripts
       x-handler: handleScriptLibraryAssignment
+  /api/v1/scripts/{id}/load-runs:
+    get:
+      summary: List Script Load Runs
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleListScriptLoadRuns
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  count:
+                    type: integer
+                    format: int64
+                  limit:
+                    type: integer
+                    format: int64
+                  runs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        archive_available:
+                          type: boolean
+                        completed_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        groups:
+                          type: array
+                          items:
+                            type: string
+                        name:
+                          type: string
+                        script_shakeout:
+                          type: boolean
+                        started_at:
+                          type: string
+                          format: date-time
+                          nullable: true
+                        status:
+                          type: string
+                        test_id:
+                          type: string
+                        vusers:
+                          type: integer
+                          format: int64
+                      required:
+                        - archive_available
+                        - groups
+                        - name
+                        - status
+                        - test_id
+                  script_id:
+                    type: string
+                required:
+                  - count
+                  - limit
+                  - runs
+                  - script_id
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Insufficient permissions for this operation.
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: integer
+            format: int64
+      tags:
+        - Scripts
+      x-handler: handleListScriptLoadRuns
   /api/v1/scripts/{id}/move:
     patch:
       summary: Move Script
@@ -460950,6 +461172,292 @@ paths:
       tags:
         - Tests
       x-handler: handleGenAISpanLookup
+  /api/v1/tests/{id}/archive/iterations/waterfall:
+    get:
+      summary: Get Run Archive Iteration Waterfall
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      operationId: handleGetRunArchiveIterationWaterfall
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  first_ordinal:
+                    type: integer
+                    format: int64
+                  gaps_ms:
+                    type: number
+                    format: double
+                    nullable: true
+                  group:
+                    type: string
+                  identity_quality:
+                    type: string
+                  iteration:
+                    type: integer
+                    format: int64
+                  last_ordinal:
+                    type: integer
+                    format: int64
+                  partial:
+                    type: boolean
+                  partial_reasons:
+                    type: array
+                    items:
+                      type: string
+                  rows:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        action_name:
+                          type: string
+                        clamped:
+                          type: boolean
+                        connection:
+                          type: string
+                        dependency_target:
+                          type: string
+                        dependency_type:
+                          type: string
+                        duration_ms:
+                          type: number
+                          format: double
+                        elapsed_ms:
+                          type: number
+                          format: double
+                        error_class:
+                          type: string
+                        error_message:
+                          type: string
+                        event_id:
+                          type: string
+                        http_version:
+                          type: string
+                        interrupted:
+                          type: boolean
+                        iteration:
+                          type: integer
+                          format: int64
+                        offset_ms:
+                          type: number
+                          format: double
+                        ordinal:
+                          type: integer
+                          format: int64
+                        phases:
+                          type: object
+                          properties:
+                            connect_ms:
+                              type: number
+                              format: double
+                            dns_ms:
+                              type: number
+                              format: double
+                            download_ms:
+                              type: number
+                              format: double
+                            server_ms:
+                              type: number
+                              format: double
+                            tls_ms:
+                              type: number
+                              format: double
+                            unsplit_ms:
+                              type: number
+                              format: double
+                          required:
+                            - connect_ms
+                            - dns_ms
+                            - download_ms
+                            - server_ms
+                            - tls_ms
+                            - unsplit_ms
+                        population:
+                          type: string
+                        retried:
+                          type: boolean
+                        source_step_index:
+                          type: integer
+                          format: int64
+                        source_transaction:
+                          type: string
+                        status_code:
+                          type: integer
+                          format: int64
+                        success:
+                          type: boolean
+                        timestamp:
+                          type: string
+                          format: date-time
+                        trace_id:
+                          type: string
+                        vuser_id:
+                          type: integer
+                          format: int64
+                        vuser_lifetime:
+                          type: string
+                          format: int64
+                      required:
+                        - action_name
+                        - duration_ms
+                        - event_id
+                        - offset_ms
+                        - ordinal
+                        - phases
+                        - population
+                        - success
+                        - timestamp
+                  rows_total:
+                    type: integer
+                    format: int64
+                  schema:
+                    type: string
+                  span_ms:
+                    type: number
+                    format: double
+                  started_at:
+                    type: string
+                    format: date-time
+                  think_ms_approximate:
+                    type: boolean
+                  think_ms_inside_transactions:
+                    type: number
+                    format: double
+                  truncated:
+                    type: boolean
+                  vuser_id:
+                    type: integer
+                    format: int64
+                  vuser_lifetime:
+                    type: string
+                    format: int64
+                required:
+                  - first_ordinal
+                  - identity_quality
+                  - iteration
+                  - last_ordinal
+                  - rows
+                  - rows_total
+                  - schema
+                  - span_ms
+                  - think_ms_inside_transactions
+                nullable: true
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Insufficient permissions for this operation.
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: first_ordinal
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: group
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: iteration
+          in: query
+          description: Handler-defined query parameter.
+          required: true
+          schema:
+            type: string
+        - name: last_ordinal
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: max_rows
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: ordinal
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: vuser_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: vuser_lifetime
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleGetRunArchiveIterationWaterfall
   /api/v1/tests/{id}/archive/journeys:
     get:
       summary: Get Run Archive Journeys
@@ -463494,7 +464002,7 @@ paths:
                             instance_id:
                               type: string
                             revision:
-                              type: integer
+                              type: string
                               format: int64
                             state:
                               type: string
@@ -466686,7 +467194,7 @@ paths:
                             instance_id:
                               type: string
                             revision:
-                              type: integer
+                              type: string
                               format: int64
                             state:
                               type: string
@@ -486387,6 +486895,146 @@ paths:
                       - verified
                       - verified_at
                     nullable: true
+                  iterations:
+                    type: object
+                    properties:
+                      identities:
+                        type: integer
+                        format: int64
+                      identities_evicted:
+                        type: integer
+                        format: int64
+                      identity_quality:
+                        type: object
+                        properties:
+                          legacy:
+                            type: integer
+                            format: int64
+                          lifetime:
+                            type: integer
+                            format: int64
+                          none_rows:
+                            type: integer
+                            format: int64
+                        required:
+                          - legacy
+                          - lifetime
+                          - none_rows
+                      iterations_total:
+                        type: integer
+                        format: int64
+                      late_rows:
+                        type: integer
+                        format: int64
+                      partial_iterations:
+                        type: integer
+                        format: int64
+                      reasons:
+                        type: array
+                        items:
+                          type: string
+                      representatives:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            failed_rows:
+                              type: integer
+                              format: int64
+                            first_ordinal:
+                              type: integer
+                              format: int64
+                            group:
+                              type: string
+                            identity_quality:
+                              type: string
+                            interrupted:
+                              type: boolean
+                            iteration:
+                              type: integer
+                              format: int64
+                            last_ordinal:
+                              type: integer
+                              format: int64
+                            reason:
+                              type: string
+                            request_rows:
+                              type: integer
+                              format: int64
+                            sampled:
+                              type: boolean
+                            span_ms:
+                              type: number
+                              format: double
+                            split:
+                              type: boolean
+                            started_at:
+                              type: string
+                              format: date-time
+                            target_ms:
+                              type: number
+                              format: double
+                              nullable: true
+                            transaction_rows:
+                              type: integer
+                              format: int64
+                            vuser_id:
+                              type: integer
+                              format: int64
+                            vuser_lifetime:
+                              type: string
+                              format: int64
+                          required:
+                            - failed_rows
+                            - first_ordinal
+                            - identity_quality
+                            - iteration
+                            - last_ordinal
+                            - reason
+                            - request_rows
+                            - span_ms
+                            - transaction_rows
+                      rows_outside_iterations:
+                        type: integer
+                        format: int64
+                      schema:
+                        type: string
+                      span:
+                        type: object
+                        properties:
+                          max_ms:
+                            type: number
+                            format: double
+                          p50_ms:
+                            type: number
+                            format: double
+                          p95_ms:
+                            type: number
+                            format: double
+                          percentile_quality:
+                            type: string
+                          samples:
+                            type: integer
+                            format: int64
+                        required:
+                          - max_ms
+                          - p50_ms
+                          - p95_ms
+                          - samples
+                      truncated:
+                        type: boolean
+                      untimed_iterations:
+                        type: integer
+                        format: int64
+                    required:
+                      - identities
+                      - identity_quality
+                      - iterations_total
+                      - representatives
+                      - schema
+                      - span
+                      - truncated
+                    nullable: true
                   llm:
                     type: object
                     properties:
@@ -489252,7 +489900,7 @@ paths:
                                 instance_id:
                                   type: string
                                 revision:
-                                  type: integer
+                                  type: string
                                   format: int64
                                 state:
                                   type: string
@@ -490947,7 +491595,7 @@ paths:
                                 instance_id:
                                   type: string
                                 revision:
-                                  type: integer
+                                  type: string
                                   format: int64
                                 state:
                                   type: string
@@ -504104,7 +504752,7 @@ paths:
                           type: integer
                           format: int64
                         vuser_lifetime:
-                          type: integer
+                          type: string
                           format: int64
                       required:
                         - action_name
@@ -504208,7 +504856,7 @@ paths:
                         type: integer
                         format: int64
                       vuser_lifetime:
-                        type: integer
+                        type: string
                         format: int64
                     required:
                       - action_name

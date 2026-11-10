@@ -453,7 +453,7 @@ func TestArchiveAPIRoutesUseModularCatalogs(t *testing.T) {
 			}
 		}
 	}
-	if got, want := len(modular), 42; got != want {
+	if got, want := len(modular), 43; got != want {
 		t.Fatalf("modular archive route count = %d, want %d", got, want)
 	}
 
@@ -502,6 +502,7 @@ func TestArchiveRouteCatalogPreservesAccessContracts(t *testing.T) {
 		"/api/v1/tests/{id}/archive/browser-diagnostics",
 		"/api/v1/tests/{id}/archive/transactions",
 		"/api/v1/tests/{id}/archive/transactions/{event_id}/waterfall",
+		"/api/v1/tests/{id}/archive/iterations/waterfall",
 		"/api/v1/tests/{id}/archive/resources",
 		"/api/v1/tests/{id}/archive/summaries",
 		"/api/v1/tests/{id}/archive/exemplars",

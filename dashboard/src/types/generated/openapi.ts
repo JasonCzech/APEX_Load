@@ -5248,6 +5248,49 @@ export interface operations {
               "verified"?: boolean;
               "verified_at"?: string;
             }) | null;
+            "iterations"?: ({
+              "identities"?: number;
+              "identities_evicted"?: number;
+              "identity_quality"?: {
+                "legacy"?: number;
+                "lifetime"?: number;
+                "none_rows"?: number;
+              };
+              "iterations_total"?: number;
+              "late_rows"?: number;
+              "partial_iterations"?: number;
+              "reasons"?: Array<string>;
+              "representatives"?: Array<{
+                "failed_rows"?: number;
+                "first_ordinal"?: number;
+                "group"?: string;
+                "identity_quality"?: string;
+                "interrupted"?: boolean;
+                "iteration"?: number;
+                "last_ordinal"?: number;
+                "reason"?: string;
+                "request_rows"?: number;
+                "sampled"?: boolean;
+                "span_ms"?: number;
+                "split"?: boolean;
+                "started_at"?: string;
+                "target_ms"?: (number) | null;
+                "transaction_rows"?: number;
+                "vuser_id"?: number;
+                "vuser_lifetime"?: string;
+              }>;
+              "rows_outside_iterations"?: number;
+              "schema"?: string;
+              "span"?: {
+                "max_ms"?: number;
+                "p50_ms"?: number;
+                "p95_ms"?: number;
+                "percentile_quality"?: string;
+                "samples"?: number;
+              };
+              "truncated"?: boolean;
+              "untimed_iterations"?: number;
+            }) | null;
             "llm"?: ({
               "by_action"?: Record<string, ({
                 "cache_hit_rate_pct"?: number;
@@ -89283,6 +89326,127 @@ export interface operations {
       };
     };
   };
+  "handleGetRunArchiveIterationWaterfall": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query": {
+        "first_ordinal"?: string;
+        "group"?: string;
+        "iteration": string;
+        "last_ordinal"?: string;
+        "max_rows"?: string;
+        "ordinal"?: string;
+        "vuser_id"?: string;
+        "vuser_lifetime"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "first_ordinal": number;
+            "gaps_ms"?: (number) | null;
+            "group"?: string;
+            "identity_quality": string;
+            "iteration": number;
+            "last_ordinal": number;
+            "partial"?: boolean;
+            "partial_reasons"?: Array<string>;
+            "rows": Array<{
+              "action_name": string;
+              "clamped"?: boolean;
+              "connection"?: string;
+              "dependency_target"?: string;
+              "dependency_type"?: string;
+              "duration_ms": number;
+              "elapsed_ms"?: number;
+              "error_class"?: string;
+              "error_message"?: string;
+              "event_id": string;
+              "http_version"?: string;
+              "interrupted"?: boolean;
+              "iteration"?: number;
+              "offset_ms": number;
+              "ordinal": number;
+              "phases": {
+                "connect_ms": number;
+                "dns_ms": number;
+                "download_ms": number;
+                "server_ms": number;
+                "tls_ms": number;
+                "unsplit_ms": number;
+              };
+              "population": string;
+              "retried"?: boolean;
+              "source_step_index"?: number;
+              "source_transaction"?: string;
+              "status_code"?: number;
+              "success": boolean;
+              "timestamp": string;
+              "trace_id"?: string;
+              "vuser_id"?: number;
+              "vuser_lifetime"?: string;
+            }>;
+            "rows_total": number;
+            "schema": string;
+            "span_ms": number;
+            "started_at"?: string;
+            "think_ms_approximate"?: boolean;
+            "think_ms_inside_transactions": number;
+            "truncated"?: boolean;
+            "vuser_id"?: number;
+            "vuser_lifetime"?: string;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetRunArchiveJourneys": {
     parameters: {
       "path": {
@@ -90140,7 +90304,7 @@ export interface operations {
                 "attachment_id": string;
                 "group": string;
                 "instance_id": string;
-                "revision": number;
+                "revision": string;
                 "state": string;
                 "table_id": string;
               }>;
@@ -91195,7 +91359,7 @@ export interface operations {
                 "attachment_id": string;
                 "group": string;
                 "instance_id": string;
-                "revision": number;
+                "revision": string;
                 "state": string;
                 "table_id": string;
               }>;
@@ -96854,6 +97018,49 @@ export interface operations {
               "verified": boolean;
               "verified_at": string;
             }) | null;
+            "iterations"?: ({
+              "identities": number;
+              "identities_evicted"?: number;
+              "identity_quality": {
+                "legacy": number;
+                "lifetime": number;
+                "none_rows": number;
+              };
+              "iterations_total": number;
+              "late_rows"?: number;
+              "partial_iterations"?: number;
+              "reasons"?: Array<string>;
+              "representatives": Array<{
+                "failed_rows": number;
+                "first_ordinal": number;
+                "group"?: string;
+                "identity_quality": string;
+                "interrupted"?: boolean;
+                "iteration": number;
+                "last_ordinal": number;
+                "reason": string;
+                "request_rows": number;
+                "sampled"?: boolean;
+                "span_ms": number;
+                "split"?: boolean;
+                "started_at"?: string;
+                "target_ms"?: (number) | null;
+                "transaction_rows": number;
+                "vuser_id"?: number;
+                "vuser_lifetime"?: string;
+              }>;
+              "rows_outside_iterations"?: number;
+              "schema": string;
+              "span": {
+                "max_ms": number;
+                "p50_ms": number;
+                "p95_ms": number;
+                "percentile_quality"?: string;
+                "samples": number;
+              };
+              "truncated": boolean;
+              "untimed_iterations"?: number;
+            }) | null;
             "llm"?: ({
               "by_action"?: Record<string, ({
                 "cache_hit_rate_pct"?: number;
@@ -97757,7 +97964,7 @@ export interface operations {
                   "attachment_id": string;
                   "group": string;
                   "instance_id": string;
-                  "revision": number;
+                  "revision": string;
                   "state": string;
                   "table_id": string;
                 }>;
@@ -98290,7 +98497,7 @@ export interface operations {
                   "attachment_id": string;
                   "group": string;
                   "instance_id": string;
-                  "revision": number;
+                  "revision": string;
                   "state": string;
                   "table_id": string;
                 }>;
@@ -100509,7 +100716,7 @@ export interface operations {
               "timestamp": string;
               "trace_id"?: string;
               "vuser_id"?: number;
-              "vuser_lifetime"?: number;
+              "vuser_lifetime"?: string;
             }>;
             "requests_total": number;
             "root": {
@@ -100545,7 +100752,7 @@ export interface operations {
               "timestamp": string;
               "trace_id"?: string;
               "vuser_id"?: number;
-              "vuser_lifetime"?: number;
+              "vuser_lifetime"?: string;
             };
             "schema": string;
             "truncated"?: boolean;
@@ -124551,6 +124758,62 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListScriptLoadRuns": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "limit"?: number;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "count": number;
+            "limit": number;
+            "runs": Array<{
+              "archive_available": boolean;
+              "completed_at"?: (string) | null;
+              "groups": Array<string>;
+              "name": string;
+              "script_shakeout"?: boolean;
+              "started_at"?: (string) | null;
+              "status": string;
+              "test_id": string;
+              "vusers"?: number;
+            }>;
+            "script_id": string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -227838,6 +228101,9 @@ export interface paths {
   "/api/v1/scripts/{id}/library-assignment": {
     "put": operations["handleScriptLibraryAssignment"];
   };
+  "/api/v1/scripts/{id}/load-runs": {
+    "get": operations["handleListScriptLoadRuns"];
+  };
   "/api/v1/scripts/{id}/move": {
     "patch": operations["handleMoveScript"];
   };
@@ -228106,6 +228372,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/genai-spans/lookup": {
     "post": operations["handleGenAISpanLookup"];
+  };
+  "/api/v1/tests/{id}/archive/iterations/waterfall": {
+    "get": operations["handleGetRunArchiveIterationWaterfall"];
   };
   "/api/v1/tests/{id}/archive/journeys": {
     "get": operations["handleGetRunArchiveJourneys"];

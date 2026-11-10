@@ -1229,6 +1229,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/scenarios/load-models/templates", cors(log(auth(http.HandlerFunc(s.handleLoadModelTemplates)))))
 	s.registerAPIRouteCatalog(scenarioSchedulingAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(baselineComparisonAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(scriptLoadRunsAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(runMonitoringAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(prometheusAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(dynatraceNativeAPIRouteCatalog, standardRouteMiddleware)

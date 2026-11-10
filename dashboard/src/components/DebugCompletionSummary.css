@@ -120,3 +120,29 @@
 
 .debug-transaction-table td.debug-transaction-breakdown { font-size: 12px; color: var(--text-secondary); background: var(--bg-secondary); }
 
+
+.debug-load-comparison { margin: 0 0 24px; }
+.debug-load-comparison > h3 { margin: 0 0 8px; }
+.debug-load-intro, .debug-load-run-groups, .debug-load-counts { color: var(--text-secondary); font-size: 13px; }
+.debug-load-caveats { margin: 8px 0 16px; padding-inline-start: 20px; font-size: 13px; color: var(--text-secondary); }
+.debug-load-caveats li + li { margin-top: 4px; }
+.debug-load-headline { font-weight: 600; margin: 16px 0 4px; }
+/* Nine columns of its own: the transaction table's eight widths do not fit
+   (the last column collapsed and values spilled into their neighbours). */
+.debug-load-table { min-width: 1100px; }
+.debug-load-table th:first-child { width: 15%; }
+.debug-load-table th:nth-child(2) { width: 15%; }
+.debug-load-table th:nth-child(3), .debug-load-table th:nth-child(4), .debug-load-table th:nth-child(5),
+.debug-load-table th:nth-child(6), .debug-load-table th:nth-child(7) { width: 10%; }
+.debug-load-table th:nth-child(8) { width: 9%; }
+.debug-load-table th:nth-child(9) { width: 11%; }
+/* Phase, server and network cells hold numbers: break only between them.
+   The request and "Compared with" cells keep overflow-wrap: anywhere, so a
+   long LoadRunner-style name breaks inside its fixed-width cell. */
+.debug-load-table td:nth-child(n+3) { overflow-wrap: normal; }
+/* Debug and load values stack with the factor; each number stays whole. */
+.debug-load-values { display: block; }
+.debug-load-value { white-space: nowrap; }
+.debug-load-factor-new { color: var(--warning-text, var(--warning)); }
+.debug-load-factor-na { color: var(--text-secondary); font-weight: 400; }
+.debug-load-row-not_comparable td, .debug-load-row-unmatched td { color: var(--text-secondary); }

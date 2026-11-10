@@ -319,6 +319,7 @@ import {
   transitionScriptProtocol,
 } from './scriptEditorRuntimeSettingsModel'
 import { useScriptRuntimeSettingsController } from './useScriptRuntimeSettingsController'
+import { fetchAmplificationLoadReport } from './debugLoadAmplificationModel'
 import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
@@ -8050,6 +8051,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         snapshot={debugCompletionSnapshot} stale={!replayEvidenceMatchesCurrentDraft}
         unavailable={runtimeVariablesUnavailable}
         recordingDiff={recordingDiff}
+        loadComparison={scriptId ? {
+          listLoadRuns: () => api.listScriptLoadRuns(scriptId),
+          getLoadReport: testId => fetchAmplificationLoadReport(api.getTestArchiveReport, testId),
+        } : undefined}
         tabRequest={debugSummaryTabRequest}
         consumeRecordingDiffFocus={consumeRecordingDiffFocus}
         onExportSession={handleDownloadBrowserReplayExport}

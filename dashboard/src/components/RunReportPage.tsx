@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { isReportLens, type ReportLens } from '../appRouting'
 import { useApi } from '../hooks/useApi'
 import type { ReportAnnotations, RunArchiveErrorPattern, RunArchiveReport, TestSummary } from '../types'
+import type { IterationReplayTarget } from '../types/iterationReplay'
 import { getErrorMessage } from '../utils/errorUtils'
 import { formatFixed } from '../utils/numberFormat'
 import { isCompletedTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
@@ -61,6 +62,7 @@ import JourneyRiskPanel from './runReport/JourneyRiskPanel'
 import BrowserIntelligenceView from './runReport/BrowserIntelligenceView'
 import TransactionResponseTimeSLATable from './TransactionResponseTimeSLATable'
 import TransactionTimeAnatomy from './runReport/TransactionTimeAnatomy'
+import IterationReplay from './runReport/IterationReplay'
 import TimeAnatomyHeadline from './runReport/TimeAnatomyHeadline'
 import {
   alignBaselineTimeline,
@@ -533,6 +535,17 @@ export default function RunReportPage({
   // The Summary's time-anatomy line opens Performance and focuses the panel
   // once that area renders it.
   const [pendingFocus, setPendingFocus] = useState('')
+  // R4: the iteration the replay panel shows; the time-anatomy drawer and
+  // business-key matches open one there.
+  const [iterationTarget, setIterationTarget] = useState<IterationReplayTarget | null>(null)
+  // A business-key match replays inline under the lookup: switching area
+  // would unmount the lookup and lose its values and matches, which are kept
+  // nowhere else on purpose.
+  const [lookupIterationTarget, setLookupIterationTarget] = useState<IterationReplayTarget | null>(null)
+  useEffect(() => { setIterationTarget(null); setLookupIterationTarget(null) }, [testId])
+  // Leaving Diagnostics unmounts the lookup and drops its matches: the replay
+  // opened from one goes with them.
+  useEffect(() => { if (area !== 'Diagnostics') setLookupIterationTarget(null) }, [area])
   useEffect(() => {
     if (!pendingFocus) return
     const target = document.querySelector<HTMLElement>(pendingFocus)
@@ -564,6 +577,8 @@ export default function RunReportPage({
   }
 
   const report = archiveModel.archiveReport
+  // The baseline comparison's time anatomy diff reuses the reports already loaded here.
+  const anatomySeeds = [report, baselineReport]
   const comparison = report && baselineReport ? reportComparisonQualification(report, baselineReport, test, baselineTest, population) : null
   // Error patterns name the root-cause hypotheses they overlap.
   const errorPatternHypotheses = rcaAssessment ? (pattern: RunArchiveErrorPattern) => rcaPatternHypotheses(rcaAssessment, pattern).map(h => ({ id: h.id, rank: h.rank, title: rcaSignatureLabel(h.signature) })) : undefined
@@ -578,6 +593,17 @@ export default function RunReportPage({
     // current section visible if the user cancels an unsaved-assessment prompt.
     onNavigateReport({ lens: activeLens, compare: compareId || undefined, comparisonId: initialComparisonId, section: reportSectionForArea(next) })
   }
+  const openIteration = (target: IterationReplayTarget) => {
+    setIterationTarget(target)
+    setArea('Performance')
+    setPendingFocus('[data-report-focus="iteration-replay"]')
+  }
+  const openLookupIteration = (target: IterationReplayTarget) => {
+    setLookupIterationTarget(target)
+    setPendingFocus('[data-report-focus="iteration-replay"]')
+  }
+  // A replay opened from a match goes with that lookup's results.
+  const closeLookupIteration = () => setLookupIterationTarget(null)
   // Root-cause state lives in the route, so a shared link reopens the same
   // analysis, hypothesis and window.
   const navigateRootCause = (next: RootCauseRouteState & { focus?: ReportFocus }) => {
@@ -729,7 +755,7 @@ export default function RunReportPage({
           <button type="button" className="btn btn-secondary" onClick={archiveModel.retryArchiveReport} disabled={archiveModel.archiveLoading}>Retry report</button>
           <button type="button" className="btn btn-ghost" onClick={() => setArea('Execution')}>View execution details</button>
         </section>}
-        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} lens={activeLens} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} onAnalyzeRootCause={analyzeAgainstBaseline} />}</div>}
+        {hasArchive && <div hidden={area !== 'Comparison'}>{(area === 'Comparison' || initialComparisonId) && <BaselineComparisonWorkspace key={`${test.id}/${initialCompare || ''}`} test={test} initialBaseline={initialCompare} comparisonId={initialComparisonId} canEditPolicy={canPublishConfluence} lens={activeLens} reportSeeds={anatomySeeds} onSnapshot={id => onNavigateReport({ section: 'comparison', comparisonId: id, lens: activeLens })} onAnalyzeRootCause={analyzeAgainstBaseline} />}</div>}
         {area === 'Summary' && hasArchive && !archiveModel.archiveError && <>
           {report && <RunOutcomeSummary report={report} showPopulations={false} rootCauseSummary={liveRootCause} onRootCause={openRootCause} />}
           <ReleaseReadinessSummary report={report} findings={annotations?.findings} />
@@ -768,7 +794,8 @@ export default function RunReportPage({
           ) : (
             <TransactionSlaScoreboard rows={slaRows} selectedAction={population === slaPopulation && slaRows.some(row => row.name === archiveModel.selectedArchiveAction) ? archiveModel.selectedArchiveAction : ''} drilldownTransactions={population === slaPopulation ? archiveModel.archiveTransactions : []} loadingTransactions={archiveModel.archiveTransactionsLoading} onSelectAction={name => { setPopulationChoice(slaPopulation); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />
           )}
-          {report?.time_anatomy && <TransactionTimeAnatomy testId={testId} anatomy={report.time_anatomy} selectedName={archiveModel.selectedArchiveAction} lens={activeLens} onSelectName={name => { setPopulationChoice('transaction'); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} />}
+          {report?.time_anatomy && <TransactionTimeAnatomy testId={testId} anatomy={report.time_anatomy} selectedName={archiveModel.selectedArchiveAction} lens={activeLens} onSelectName={name => { setPopulationChoice('transaction'); archiveModel.onSelectedArchiveGroupChange(''); archiveModel.onSelectedArchiveActionChange(name) }} onOpenIteration={openIteration} />}
+          {report && <IterationReplay testId={testId} index={report.iterations} target={iterationTarget} onTargetChange={setIterationTarget} />}
           <div data-report-focus="action-summary">{renderEvidence('action-summary')}</div>
           <JourneyRiskPanel testId={testId} />
           {test.project_id && <RunReportProjectPanels key={`${testId}-${test.project_id}`} testId={testId} projectId={test.project_id} history={timelineHistory} properties={Object.keys(report?.by_property || {}).sort()} canManage={canManageTests} />}
@@ -779,7 +806,8 @@ export default function RunReportPage({
             canAnalyze={canPublishConfluence} baselineTestId={effectiveCompareId || undefined} baselineName={baselineTest?.name} route={initialRootCause || {}} onRouteChange={navigateRootCause}
             liveSummary={liveRootCause} onCopyLink={/^https?:$/.test(window.location.protocol) ? () => void copyReportLink() : undefined}
             settingsHref={canManageProject ? settingsHref('analysis') : undefined} monitorEvidenceHref={monitorEvidenceHref} monitorSourcesHref={monitorSourcesHref} hypothesisActions={hypothesisActions} />
-          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} settingsHref={canManageProject ? settingsHref('analysis') : undefined} />
+          <BusinessKeyLookup testId={testId} projectId={test.project_id || 'default'} canLookup={canPublishConfluence} canApprove={canManageProject} settingsHref={canManageProject ? settingsHref('analysis') : undefined} onReplayIteration={openLookupIteration} onResultsReset={closeLookupIteration} />
+          {lookupIterationTarget && report && <IterationReplay testId={testId} index={report.iterations} target={lookupIterationTarget} onTargetChange={setLookupIterationTarget} />}
           <RunReportDiagnostics report={report} loading={archiveModel.archiveAnalysisLoading} error={archiveModel.archiveAnalysisError} />
           {renderEvidence('report-error-patterns')}
           <div data-report-focus="transaction-drilldown">{renderEvidence('transactions')}</div>

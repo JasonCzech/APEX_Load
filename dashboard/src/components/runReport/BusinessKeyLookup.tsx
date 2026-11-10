@@ -3,9 +3,11 @@ import { useCallback, useEffect, useState } from 'react'
 import { request } from '../../hooks/apiClient'
 import type { MonitorSource } from '../../types/runMonitoring'
 import type { BusinessKeyLookupResponse, BusinessKeyMapping, BusinessKeyMappingDefinition } from '../../types/businessKeys'
+import type { IterationReplayTarget } from '../../types/iterationReplay'
 import type { ProjectAnalysisSettingsResponse } from '../../types/rca'
 import { getErrorMessage } from '../../utils/errorUtils'
 import { parseBusinessKeyValues } from './businessKeyModel'
+import { targetFromBusinessKeyMatch } from './iterationReplayModel'
 import { formatMs } from './runReportModel'
 import './BusinessKeyLookup.css'
 
@@ -20,6 +22,13 @@ interface Props {
   // settingsHref opens the project's analysis settings, where business keys
   // are turned on, for those who may change them.
   settingsHref?: string
+  /** Opens a match's VUser iteration in the iteration replay. */
+  onReplayIteration?: (target: IterationReplayTarget) => void
+  /**
+   * The results were cleared or replaced: a replay opened from an earlier
+   * match no longer belongs to what the lookup shows.
+   */
+  onResultsReset?: () => void
 }
 
 const mappingsPath = (projectId: string) => `/analysis/business-key-mappings?project_id=${encodeURIComponent(projectId)}`
@@ -101,7 +110,7 @@ function ApprovedMappings({ projectId, mappings, onChanged }: { projectId: strin
 // business-key values the operator types in. The values stay in this
 // component: they are sent once with the lookup and never stored, put in the
 // URL or kept in the browser.
-export default function BusinessKeyLookup({ testId, projectId, canLookup, canApprove, settingsHref }: Props) {
+export default function BusinessKeyLookup({ testId, projectId, canLookup, canApprove, settingsHref, onReplayIteration, onResultsReset }: Props) {
   const [mappings, setMappings] = useState<BusinessKeyMappingDefinition[] | null>(null)
   const [enabled, setEnabled] = useState(true)
   const [loadError, setLoadError] = useState('')
@@ -166,12 +175,13 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
       const response = await request<BusinessKeyLookupResponse>(`/tests/${encodeURIComponent(testId)}/archive/business-keys/lookup`, { method: 'POST', body: JSON.stringify({ mapping_id: mappingId, values }) })
       setSent(values)
       setResult(response)
+      onResultsReset?.()
     } catch (err) {
       setError(getErrorMessage(err, 'Unable to look up the business keys'))
     } finally {
       setLooking(false)
     }
-  }, [mappingId, testId, values])
+  }, [mappingId, onResultsReset, testId, values])
 
   // Someone who could use it learns the capability exists; others see nothing.
   if (!enabled) return canLookup
@@ -201,7 +211,7 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
           {tooLong && <p className="run-report-error" role="alert">Each value can be at most {MAX_VALUE_BYTES} bytes.</p>}
           <div className="run-report-toolbar-actions">
             <button type="submit" className="btn btn-sm btn-secondary" disabled={looking || !mappingId || values.length === 0 || tooMany || tooLong}>{looking ? 'Looking up…' : 'Look up'}</button>
-            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setText(''); setSent([]); setResult(null) }}>Clear</button>
+            <button type="button" className="btn btn-sm btn-ghost" onClick={() => { setText(''); setSent([]); setResult(null); onResultsReset?.() }}>Clear</button>
           </div>
         </form>
       )}
@@ -214,11 +224,17 @@ export default function BusinessKeyLookup({ testId, projectId, canLookup, canApp
             <h3><code>{sent[r.index] ?? `Value ${r.index + 1}`}</code></h3>
             <p><strong>{r.requests.total}</strong> archived {r.requests.total === 1 ? 'request' : 'requests'} · {LOG_STATUS[r.logs.status] || r.logs.status}{r.logs.total > 0 ? ` (${r.logs.total})` : ''}{r.logs.detail ? `: ${r.logs.detail}` : ''}</p>
             {r.requests.matches.length > 0 && <table className="business-key-table">
-              <thead><tr><th scope="col">Time</th><th scope="col">Request</th><th scope="col">Duration</th><th scope="col">Result</th><th scope="col">Trace</th></tr></thead>
-              <tbody>{r.requests.matches.map((m, i) => <tr key={i}>
-                <td>{formatTime(m.timestamp)}</td><td>{m.group ? `${m.group} · ` : ''}{m.name}</td><td>{formatMs(m.duration_ms)}</td>
-                <td>{m.success ? 'Success' : `Failed${m.status_code ? ` (${m.status_code})` : ''}`}</td><td>{m.trace_id ? <code>{m.trace_id}</code> : 'None'}</td>
-              </tr>)}</tbody>
+              <thead><tr><th scope="col">Time</th><th scope="col">Request</th><th scope="col">Duration</th><th scope="col">Result</th><th scope="col">Trace</th>{onReplayIteration && <th scope="col">Iteration</th>}</tr></thead>
+              <tbody>{r.requests.matches.map((m, i) => {
+                const target = onReplayIteration ? targetFromBusinessKeyMatch(m) : null
+                return <tr key={i}>
+                  <td>{formatTime(m.timestamp)}</td><td>{m.group ? `${m.group} · ` : ''}{m.name}</td><td>{formatMs(m.duration_ms)}</td>
+                  <td>{m.success ? 'Success' : `Failed${m.status_code ? ` (${m.status_code})` : ''}`}</td><td>{m.trace_id ? <code>{m.trace_id}</code> : 'None'}</td>
+                  {onReplayIteration && <td>{target
+                    ? <button type="button" className="btn btn-sm btn-ghost" aria-label={`Replay iteration ${target.iteration} of VUser ${target.vuser_id ?? 0} for ${m.name}`} onClick={() => onReplayIteration(target)}>Replay iteration</button>
+                    : 'Not recorded'}</td>}
+                </tr>
+              })}</tbody>
             </table>}
             {r.requests.total > r.requests.matches.length && <p className="run-report-muted">Showing the first {r.requests.matches.length}.</p>}
             {r.logs.entries.length > 0 && <table className="business-key-table">

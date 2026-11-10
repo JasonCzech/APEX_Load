@@ -79,6 +79,7 @@ export type ScriptRepairPreviewResponse = ScriptRepairResponse & { script: Scrip
 
 import { type ApplyImportTransportRequest, type ApplyImportTransportResponse, type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type ApplySharedValuesRequest, type ApplySharedValuesResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CloudTestImportResult, type CloudTestSupportMatrixResponse, type CommitAsyncAPIImportBatchRequest, type CommitAsyncAPIImportBatchResponse, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitGenericImportBatchRequest, type CommitGenericImportBatchResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JavaCompileDiagnostic, type JavaCompileRequest, type JavaCompileResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveEnterpriseArchiveImportRequest, type SaveEnterpriseArchiveImportResponse, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
+import type { ScriptLoadRunsResponse } from '../../types/scriptLoadRuns'
 import { ApiError, REQUEST_ID_HEADER, apiFetch, request, requestWithResponse } from '../apiClient'
 import { type ApiCallOptions, withCallOptions } from './requestOptions'
 import { keyedAuthoringCreate } from './keyedAuthoringCreate'
@@ -714,6 +715,13 @@ export function useScriptApi() {
 
   const getScriptRecordingStatus = useCallback(
     (id: string) => request<ScriptRecordingStatus>(`/scripts/${id}/recording/status`),
+    [],
+  )
+
+  /** Recent finished load runs of the script, newest first (debug vs load). */
+  const listScriptLoadRuns = useCallback(
+    (id: string, options?: ApiCallOptions & { limit?: number }) =>
+      request<ScriptLoadRunsResponse>(`/scripts/${encodeURIComponent(id)}/load-runs${options?.limit ? `?limit=${options.limit}` : ''}`, withCallOptions(undefined, options)),
     [],
   )
 
@@ -1871,6 +1879,7 @@ export function useScriptApi() {
       deleteAuthoringSession,
       previewAuthoringCorrelation,
       getScriptRecordingStatus,
+      listScriptLoadRuns,
       diagnoseScriptReplay,
       diagnoseCorrelations,
       replayScript,
@@ -2002,6 +2011,7 @@ export function useScriptApi() {
       deleteAuthoringSession,
       previewAuthoringCorrelation,
       getScriptRecordingStatus,
+      listScriptLoadRuns,
       diagnoseScriptReplay,
       diagnoseCorrelations,
       replayScript,

@@ -473,6 +473,15 @@ func cachedArchiveTransactionWaterfall(ctx context.Context, cache *boundedArchiv
 // share of the load slots, a load slot, then the archive lease, then the
 // build with the full request cap.
 func loadArchiveTransactionWaterfall(ctx context.Context, record *storage.RunArchiveRecord, eventID string, hints archiveWaterfallHints) (*archiveWaterfallResult, error) {
+	return runArchiveWaterfallLoad(ctx, record, func(ctx context.Context) (*archiveWaterfallResult, error) {
+		return buildArchiveTransactionWaterfall(ctx, record, eventID, hints, archiveWaterfallDefaultMaxRequests)
+	})
+}
+
+// runArchiveWaterfallLoad runs one bounded drill-down build (a transaction or
+// an iteration): under the materialization timeout, it takes the test's
+// share of the load slots, a load slot, then the archive lease.
+func runArchiveWaterfallLoad[T any](ctx context.Context, record *storage.RunArchiveRecord, build func(context.Context) (*T, error)) (*T, error) {
 	ctx, cancel := context.WithTimeout(ctx, configuredArchiveMaterializationTimeout())
 	defer cancel()
 	releaseTest, err := archiveWaterfallTestShares.acquire(ctx, archiveWaterfallTestShareKey(record), archiveWaterfallTestSlots)
@@ -494,7 +503,7 @@ func loadArchiveTransactionWaterfall(ctx context.Context, record *storage.RunArc
 	if archiveWaterfallLoadHook != nil {
 		archiveWaterfallLoadHook(ctx)
 	}
-	return buildArchiveTransactionWaterfall(ctx, record, eventID, hints, archiveWaterfallDefaultMaxRequests)
+	return build(ctx)
 }
 
 // archiveWaterfallTestShareKey is the key one run's loads share.
@@ -638,6 +647,17 @@ func decodeArchiveWaterfallLine(line []byte, ordinal int64) (TransactionEvent, e
 // not decoded either. Every line read counts against the query budget. fn
 // returns true to stop the scan.
 func scanArchiveWaterfallLines(ctx context.Context, record *storage.RunArchiveRecord, from, to int64, prefilter func([]byte) bool, fn func(ordinal int64, tx *TransactionEvent) bool) error {
+	var linePrefilter func(int64, []byte) bool
+	if prefilter != nil {
+		linePrefilter = func(_ int64, line []byte) bool { return prefilter(line) }
+	}
+	return scanArchiveWaterfallLinesBudget(ctx, record, newArchiveScanBudget(ctx, archiveWaterfallScanRecords, archiveWaterfallScanBytes), from, to, linePrefilter, fn)
+}
+
+// scanArchiveWaterfallLinesBudget is scanArchiveWaterfallLines against a
+// caller's budget, so several passes of one request share it, and with a
+// prefilter that also sees the line's ordinal.
+func scanArchiveWaterfallLinesBudget(ctx context.Context, record *storage.RunArchiveRecord, budget *archiveScanBudget, from, to int64, prefilter func(ordinal int64, line []byte) bool, fn func(ordinal int64, tx *TransactionEvent) bool) error {
 	manifest, err := loadRunArchiveManifestFromRecord(record)
 	if err != nil {
 		return err
@@ -648,7 +668,6 @@ func scanArchiveWaterfallLines(ctx context.Context, record *storage.RunArchiveRe
 	}
 	defer file.Close()
 	scanner := newArchiveJSONLScanner(file)
-	budget := newArchiveScanBudget(ctx, archiveWaterfallScanRecords, archiveWaterfallScanBytes)
 	for ordinal := int64(0); scanner.Scan(); ordinal++ {
 		if to >= 0 && ordinal > to {
 			return nil
@@ -657,7 +676,7 @@ func scanArchiveWaterfallLines(ctx context.Context, record *storage.RunArchiveRe
 		if err := budget.Observe(line); err != nil {
 			return err
 		}
-		if ordinal < from || (prefilter != nil && !prefilter(line)) {
+		if ordinal < from || (prefilter != nil && !prefilter(ordinal, line)) {
 			continue
 		}
 		tx, err := decodeArchiveWaterfallLine(line, ordinal)

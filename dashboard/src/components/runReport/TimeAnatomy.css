@@ -101,12 +101,14 @@
 .rr-anatomy-breakdown { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 
 /* Statistic radiogroup */
-.rr-anatomy-stat { display: inline-flex; border: 1px solid var(--rr-anatomy-rule); border-radius: 6px; overflow: hidden; }
+/* StatisticRadios is exported (the baseline comparison drawer reuses it
+   outside the anatomy scopes), so its rule falls back to the theme border. */
+.rr-anatomy-stat { display: inline-flex; border: 1px solid var(--rr-anatomy-rule, var(--border)); border-radius: 6px; overflow: hidden; }
 .rr-anatomy-stat button {
   min-width: 44px;
   padding: 4px 10px;
   border: 0;
-  border-inline-end: 1px solid var(--rr-anatomy-rule);
+  border-inline-end: 1px solid var(--rr-anatomy-rule, var(--border));
   background: transparent;
   color: var(--text-primary);
   font: inherit;

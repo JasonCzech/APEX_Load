@@ -3,9 +3,11 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import DialogLayer from '../ux/DialogLayer'
 import { useApi } from '../../hooks/useApi'
 import { useModalDialog } from '../../hooks/useModalDialog'
+import type { IterationReplayTarget } from '../../types/iterationReplay'
 import type { ArchiveTransactionWaterfall, ArchiveWaterfallRow, RunArchiveRepresentativeSample } from '../../types/timeAnatomy'
 import { formatDateTime } from '../../utils/dateTime'
 import ReportPhaseBars from './ReportPhaseBars'
+import { targetFromRepresentative } from './iterationReplayModel'
 import {
   ANATOMY_PHASE_DEFINITIONS,
   ANATOMY_PHASE_LABELS,
@@ -32,6 +34,8 @@ interface Props {
   transactionName: string
   sample: RunArchiveRepresentativeSample
   onClose: () => void
+  /** Opens the iteration this instance ran in (R4 iteration replay). */
+  onOpenIteration?: (target: IterationReplayTarget) => void
 }
 
 type LoadState =
@@ -46,7 +50,7 @@ const PHASE_ROWS: readonly [keyof ArchiveWaterfallRow['phases'], string, string?
 ]
 
 /** R3: one representative instance rebuilt from the archive, with its own requests. */
-export default function RepresentativeTransactionDrawer({ testId, transactionName, sample, onClose }: Props) {
+export default function RepresentativeTransactionDrawer({ testId, transactionName, sample, onClose, onOpenIteration }: Props) {
   const api = useApi()
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const closeRef = useRef<HTMLButtonElement | null>(null)
@@ -70,6 +74,7 @@ export default function RepresentativeTransactionDrawer({ testId, transactionNam
   const roots = useMemo(() => (state.kind === 'ready' ? waterfallRootsFromDrilldown(state.data) : []), [state])
   const selectedRow = useMemo(() => flattenNodes(roots).find(({ node }) => node.id === selectedId)?.node.payload, [roots, selectedId])
   const label = REPRESENTATIVE_LABELS[sample.reason] ?? sample.reason
+  const iterationTarget = onOpenIteration ? targetFromRepresentative(sample, transactionName) : null
 
   return (
     <DialogLayer><div className="modal-overlay rr-anatomy-drawer-overlay" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) onClose() }}>
@@ -81,7 +86,10 @@ export default function RepresentativeTransactionDrawer({ testId, transactionNam
               {[sample.group, sample.vuser_id ? `VUser ${sample.vuser_id}` : '', sample.iteration ? `iteration ${sample.iteration}` : '', formatDateTime(sample.timestamp)].filter(Boolean).join(' · ')}
             </p>
           </div>
-          <button ref={closeRef} type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          <div className="run-report-toolbar-actions">
+            {iterationTarget && onOpenIteration && <button type="button" className="btn btn-secondary btn-sm" onClick={() => { onClose(); onOpenIteration(iterationTarget) }}>Open iteration</button>}
+            <button ref={closeRef} type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+          </div>
         </div>
         <div className="rr-anatomy-drawer-body">
           {state.kind === 'loading' && <p role="status" className="rr-anatomy-loading"><span className="rr-anatomy-spinner" aria-hidden="true" />Rebuilding transaction...</p>}

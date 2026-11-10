@@ -30,6 +30,13 @@ export interface BusinessKeyRequest {
   status_code?: number
   trace_id?: string
   matched_by: 'digest' | 'value'
+  event_id?: string
+  /** The row's line index in the archive. */
+  ordinal?: number
+  vuser_id?: number
+  /** 63-bit nonce: a decimal string. */
+  vuser_lifetime?: string
+  iteration?: number
 }
 
 export interface BusinessKeyLogEntry {
