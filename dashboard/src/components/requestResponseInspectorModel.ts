@@ -1,7 +1,16 @@
 import type { BrowserReplayEvent, BrowserReplayNetworkEntry, BrowserReplaySnapshot, ReplayHARPhase } from '../types/replay'
 import type { ScriptExtractorDefinition } from '../types/scripts'
 import { hasStructuredReplaySnapshot } from './scriptEditorReplayModel'
+import {
+  headerValue,
+  inspectorNetworkCounts,
+  isOwnRequestEntry,
+  isPageDocumentEntry,
+  pathAndQuery as requestPathAndQuery,
+  replayNetworkEntries,
+} from './inspectorNetworkModel'
 import type { ResponseSelectionValue } from './ResponseSelection'
+import type { CorrelationRow } from './inspectorCorrelationModel'
 
 /** What text selected in a replayed response can become, by the event's step. */
 export interface ResponseActions {
@@ -50,9 +59,9 @@ export function canTestExtractor(event: BrowserReplayEvent): boolean {
   return Boolean(event.snapshot?.response_body || event.snapshot?.response_headers)
 }
 
-export function replayNetworkEntries(event: BrowserReplayEvent) {
-  return event.network_entries || event.snapshot?.network_entries
-}
+// The network helpers live with the Network table's model, which this module
+// uses for the tab badge; re-exported for existing callers.
+export { replayNetworkEntries }
 
 function resourceCount(event: BrowserReplayEvent): number {
   return event.snapshot?.resources?.length ?? 0
@@ -66,36 +75,6 @@ function hasPageArtifacts(event: BrowserReplayEvent): boolean {
     || event.html || snapshot?.html
     || event.screenshot_base64 || snapshot?.screenshot_base64,
   )
-}
-
-/** Path and query of a URL, so an absolute URL matches the same request written relative. */
-function requestPathAndQuery(url: string): string {
-  const trimmed = url.trim()
-  try {
-    const parsed = new URL(trimmed, 'http://relative.invalid')
-    return `${parsed.pathname}${parsed.search}`
-  } catch {
-    return trimmed
-  }
-}
-
-function sameRequestURL(a: string, b: string): boolean {
-  if (a.trim() === b.trim()) return true
-  const absolute = (url: string) => /^[a-z][a-z\d+.-]*:\/\//i.test(url.trim())
-  // Two absolute URLs must match whole (another host is another request).
-  if (absolute(a) && absolute(b)) return false
-  return requestPathAndQuery(a) === requestPathAndQuery(b)
-}
-
-/** The entry is the event's own request (same method and URL), so it repeats what Request already shows. */
-function isOwnRequestEntry(event: BrowserReplayEvent, entry: BrowserReplayNetworkEntry): boolean {
-  const method = (event.snapshot?.request_method || event.method || '').toUpperCase()
-  const entryMethod = (entry.method || 'GET').toUpperCase()
-  if (!method || method !== entryMethod) return false
-  // The wire URL when captured (it carries the host), else the scripted target.
-  const requestURL = event.snapshot?.request_url || event.target || ''
-  const entryURL = entry.url || ''
-  return Boolean(entryURL && requestURL) && sameRequestURL(requestURL, entryURL)
 }
 
 /**
@@ -132,11 +111,44 @@ export function effectiveInspectorTab(event: BrowserReplayEvent, selected: Reque
   return availableInspectorTabs(event).has(selected) ? selected : 'response'
 }
 
-/** Count badges, only where they are cheap and meaningful; 0 shows none. */
-export function inspectorTabCount(event: BrowserReplayEvent, tab: RequestResponseInspectorTab, variableDiff: ReplayVariableDiff): number {
-  if (tab === 'correlation') return Object.keys(event.extractions || {}).length + Object.keys(variableDiff).length
-  if (tab === 'network') return replayNetworkEntries(event)?.length || resourceCount(event)
-  return 0
+export interface InspectorTabBadge {
+  text: string
+  /** A failure badge (drawn in the danger tone; the text says so in words). */
+  failing: boolean
+}
+
+const countOf = (count: number, noun: string) => `${count} ${noun}`
+
+/**
+ * A tab's badge, or null for none. Correlation counts the Correlation table's
+ * rows, or says how many failed (an extractor) or are unset (a read never
+ * set); Network counts the Network table's rows (a captured resource and the
+ * network entry for the same fetch count once) and how many failed; Request
+ * says how many {{var.…}} references were sent unresolved.
+ */
+export function inspectorTabBadge(
+  event: BrowserReplayEvent,
+  tab: RequestResponseInspectorTab,
+  correlationRows: ReadonlyArray<Pick<CorrelationRow, 'direction' | 'tone'>> = [],
+): InspectorTabBadge | null {
+  if (tab === 'correlation') {
+    const failed = correlationRows.filter(row => row.tone === 'bad' && row.direction !== 'Reads').length
+    const unset = correlationRows.filter(row => row.tone === 'bad' && row.direction === 'Reads').length
+    if (failed || unset) {
+      return { text: [failed ? countOf(failed, 'failed') : '', unset ? countOf(unset, 'unset') : ''].filter(Boolean).join(' · '), failing: true }
+    }
+    return correlationRows.length ? { text: String(correlationRows.length), failing: false } : null
+  }
+  if (tab === 'network') {
+    const { total, failed } = inspectorNetworkCounts(event)
+    if (!total) return null
+    return failed ? { text: `${total} · ${countOf(failed, 'failed')}`, failing: true } : { text: String(total), failing: false }
+  }
+  if (tab === 'request') {
+    const unresolved = unresolvedVariables(event).length
+    return unresolved ? { text: countOf(unresolved, 'unresolved'), failing: true } : null
+  }
+  return null
 }
 
 /**
@@ -483,11 +495,7 @@ function hopPhaseDurations(phases: PhaseLike[]): { durations: Record<HopPhaseGro
  * or ended on).
  */
 function isMainRequestEntry(event: BrowserReplayEvent, entry: BrowserReplayNetworkEntry): boolean {
-  if (isOwnRequestEntry(event, entry)) return true
-  const entryURL = entry.url || ''
-  if ((entry.resource_type || '').toLowerCase() !== 'document' || !entryURL) return false
-  const pageURLs = [event.snapshot?.request_url, event.target, event.page_url, event.snapshot?.page_url]
-  return pageURLs.some(url => typeof url === 'string' && url.trim() !== '' && sameRequestURL(url, entryURL))
+  return isOwnRequestEntry(event, entry) || isPageDocumentEntry(event, entry)
 }
 
 /**
@@ -544,12 +552,6 @@ function decodeBasicEntities(text: string): string {
     }
     return NAMED_ENTITIES[lower] ?? whole
   })
-}
-
-function headerValue(headers: Record<string, string> | undefined, name: string): string {
-  const wanted = name.toLowerCase()
-  for (const [key, value] of Object.entries(headers || {})) if (key.toLowerCase() === wanted) return String(value ?? '')
-  return ''
 }
 
 const HTML_TITLE_MAX = 120

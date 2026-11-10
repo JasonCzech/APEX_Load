@@ -345,7 +345,8 @@ test('request and response code fills the debug pane and follows dock resizing',
   // Long payloads scroll inline inside bounded code boxes in the Request/Response center panel while keeping Open full body.
   await actions.getByRole('treeitem', { name: /^Long payload/ }).click()
   await page.setViewportSize({ width: 1400, height: 900 })
-  const resolvedBodyCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-detail-label').filter({ hasText: /^Resolved Body$/ }) })
+  // As scripted, a body that is not a form keeps its preview under a plain Body label.
+  const resolvedBodyCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-detail-label').filter({ hasText: /^Body$/ }) })
   const cardWidth = (card: Locator) => card.evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
   const expectScrollableCode = async (codeBox: Locator) => {
     await codeBox.scrollIntoViewIfNeeded()
@@ -481,10 +482,20 @@ test('failures-only debugger capture preserves fetched resource evidence', async
     // Captured resources live on the inspector's Network tab, which carries a count badge.
     await expect(inspectorTab(page, 'Network')).toHaveAccessibleName(/^Network \d+$/)
     const network = await openInspectorTab(page, 'Network')
-    const resources = network.getByRole('region', { name: 'Captured resources', exact: true })
-    await expect(resources).toContainText('/capture-resource')
-    await resources.locator('summary').click()
-    await expect(resources).toContainText('diagnostic evidence')
+    // One Network table lists the resource; its row expands the kept body in a row right under it.
+    const resources = network.getByRole('region', { name: 'Network requests', exact: true })
+    const resourceRow = resources.getByRole('table').getByRole('button', { name: /\/capture-resource/ })
+    await expect(resourceRow).toBeVisible()
+    await expect(resourceRow).toHaveAttribute('aria-expanded', 'false')
+    await resourceRow.click()
+    await expect(resourceRow).toHaveAttribute('aria-expanded', 'true')
+    // The expanded detail is the row's aria-controls target, named by the request itself.
+    const detailId = await resourceRow.getAttribute('aria-controls')
+    expect(detailId).toBeTruthy()
+    const selectedRequest = resources.getByRole('table').locator(`[id="${detailId}"]`)
+    await expect(selectedRequest).toHaveRole('region')
+    await expect(selectedRequest).toHaveAccessibleName(/\/capture-resource/)
+    await expect(selectedRequest).toContainText('diagnostic evidence')
     await testInfo.attach('terminal-get-recovery-counts', { body: JSON.stringify({ suppressedTerminalMessages, recoveredEvents: terminal.report.events.length, capturedResources: terminal.report.events[0].snapshot.resources.length }), contentType: 'application/json' })
     await page.screenshot({ path: testInfo.outputPath('failure-resource-evidence.png'), fullPage: true })
   } finally {

@@ -1,0 +1,236 @@
+/* Correlation tab: what a replayed action extracts, reads and changes. */
+.rr-correlation {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.rr-correlation-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.rr-correlation-notes li,
+.rr-correlation-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  overflow-wrap: break-word;
+}
+
+/* No scroll box: the fixed layout fits the pane (narrower columns below), so
+   Result never sits off-screen behind a scroll keyboard users cannot reach. */
+.rr-correlation-frame {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.rr-correlation-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 13px;
+}
+
+.rr-correlation-table th,
+.rr-correlation-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+  min-width: 0;
+}
+
+.rr-correlation-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.rr-correlation-table thead th {
+  background: var(--subtle-fill-strong, var(--bg-hover));
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.rr-correlation-table thead .rr-correlation-col-direction { width: 84px; }
+.rr-correlation-table thead .rr-correlation-col-variable { width: 22%; }
+.rr-correlation-table thead .rr-correlation-col-where { width: 20%; }
+.rr-correlation-table thead .rr-correlation-col-result { width: 170px; }
+.rr-correlation-table thead .rr-correlation-col-copy { width: 44px; }
+
+.rr-correlation-copy {
+  text-align: right;
+}
+
+/* An icon button: its accessible name (and tooltip) says Copy or Copied, so a
+   narrow column never clips the word. */
+.rr-correlation-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  padding: 0;
+}
+
+/* Shown only in a narrow pane, where it stands in for the Direction column. */
+.rr-correlation-table .rr-correlation-direction-inline {
+  display: none;
+}
+
+/* A narrow debugger pane: the Direction column goes (the variable cell shows
+   it as a small label instead, so one of the two is ever displayed), cells
+   tighten, and a long result wraps as a rounded label rather than a pill. */
+@container debugger-detail (max-width: 640px) {
+  .rr-correlation-table {
+    font-size: 12px;
+  }
+
+  .rr-correlation-table th,
+  .rr-correlation-table td {
+    padding: 6px 6px;
+  }
+
+  .rr-correlation-table .rr-correlation-col-direction,
+  .rr-correlation-table .rr-correlation-direction {
+    display: none;
+  }
+
+  .rr-correlation-table .rr-correlation-direction-inline {
+    display: block;
+    color: var(--text-secondary);
+    font-family: var(--font-sans, inherit);
+    font-size: 11px;
+    font-weight: 400;
+  }
+
+  .rr-correlation-table thead .rr-correlation-col-variable { width: 28%; }
+  .rr-correlation-table thead .rr-correlation-col-where { width: 20%; }
+  .rr-correlation-table thead .rr-correlation-col-result { width: 92px; }
+  .rr-correlation-table thead .rr-correlation-col-copy { width: 40px; }
+
+  .rr-correlation-badge {
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: normal;
+  }
+
+  .rr-correlation-later {
+    font-size: 11px;
+  }
+}
+
+.rr-correlation-direction {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rr-correlation-table th.rr-correlation-variable {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.rr-correlation-where,
+.rr-correlation-value {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.rr-correlation-one-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.rr-correlation-change {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rr-correlation-change > .rr-correlation-one-line {
+  flex: 0 1 auto;
+}
+
+.rr-correlation-arrow {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+.rr-correlation-quiet {
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-style: italic;
+}
+
+.rr-correlation-row-bad {
+  background: var(--danger-bg, transparent);
+}
+
+.rr-correlation-result {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.rr-correlation-badge {
+  display: inline-block;
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.rr-correlation-badge-ok {
+  border-color: var(--success-border, var(--border));
+  background: var(--success-bg, transparent);
+  color: var(--success-text, var(--success));
+}
+
+.rr-correlation-badge-bad {
+  border-color: var(--danger-border, var(--border));
+  background: var(--danger-bg, transparent);
+  color: var(--danger-text, var(--danger));
+}
+
+.rr-correlation-badge-warn {
+  border-color: var(--warning-border, var(--border));
+  background: var(--warning-bg, transparent);
+  color: var(--warning-text, var(--warning));
+}
+
+.rr-correlation-later {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rr-correlation-children ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.rr-correlation-child-error {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: break-word;
+}

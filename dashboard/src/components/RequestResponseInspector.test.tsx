@@ -73,6 +73,14 @@ const panel = () => container.querySelector<HTMLElement>('[role="tabpanel"]:not(
 const panels = () => Array.from(container.querySelectorAll<HTMLElement>('[role="tabpanel"]'))
 const button = (text: string, scope: ParentNode = container) => Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find(node => node.textContent === text)
 const occurrences = (text: string) => (container.textContent ?? '').split(text).length - 1
+/** A header or form-field table by its accessible name, in the shown view. */
+const namedTable = (label: string, scope: ParentNode = panel()) => scope.querySelector<HTMLTableElement>(`table[aria-label="${label}"]`)
+/** Each body row's cells as text. */
+/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
+const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const rowCells = (table: Element | null) => Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => Array.from(row.children).map(cellText))
+/** The cells of the first body row whose header cell (or, without one, first cell) is name. */
+const rowNamed = (table: Element | null, name: string) => rowCells(table).find(cells => cells.includes(name))
 const press = (target: HTMLElement, key: string) => act(() => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })) })
 const typeInto = (input: HTMLInputElement, value: string) => act(() => {
   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
@@ -247,18 +255,18 @@ describe('RequestResponseInspector', () => {
     expect(wire.getAttribute('aria-pressed')).toBe('true')
     expect(scripted.getAttribute('aria-pressed')).toBe('false')
     expect(panel().textContent).toContain('POST https://api.example.test/checkout')
-    expect(panel().textContent).toContain('X-Wire: sent')
+    expect(rowNamed(namedTable('Request headers sent on the wire'), 'X-Wire')?.slice(0, 2)).toEqual(['X-Wire', 'sent'])
     expect(panel().textContent).toContain('wire-body')
-    expect(panel().textContent).not.toContain('Resolved Headers')
+    expect(namedTable('Request headers as scripted')).toBeNull()
     act(() => button('Copy full request', panel())!.click())
     expect(onCopySection).toHaveBeenCalledWith('0:request', expect.stringContaining('wire-body'))
 
     act(() => scripted.click())
     expect(wire.getAttribute('aria-pressed')).toBe('false')
     expect(scripted.getAttribute('aria-pressed')).toBe('true')
-    expect(panel().textContent).toContain('Resolved Headers')
-    expect(panel().textContent).toContain('X-Scripted: resolved')
-    expect(panel().textContent).toContain('Resolved Body')
+    expect(rowNamed(namedTable('Request headers as scripted'), 'X-Scripted')?.slice(0, 2)).toEqual(['X-Scripted', 'resolved'])
+    expect(namedTable('Request headers sent on the wire')).toBeNull()
+    expect(Array.from(panel().querySelectorAll('.replay-detail-label')).map(node => node.textContent)).toContain('Body')
     expect(panel().textContent).toContain('scripted-body')
     expect(panel().textContent).not.toContain('wire-body')
     expect(button('Copy full request')).toBeUndefined()
@@ -279,7 +287,7 @@ describe('RequestResponseInspector', () => {
     expect(selectedTab()?.textContent).toBe('Request')
     expect(requestView('Sent on the wire').getAttribute('aria-pressed')).toBe('true')
     expect(panel().textContent).toContain('second-wire-body')
-    expect(panel().textContent).not.toContain('Resolved Headers')
+    expect(namedTable('Request headers as scripted')).toBeNull()
 
     // A new run of the same action starts on the wire too.
     act(() => requestView('As scripted').click())
@@ -291,18 +299,19 @@ describe('RequestResponseInspector', () => {
   it('shows the only request view there is, without the toggle', () => {
     render(<Harness event={event({ headers: { 'X-Scripted': 'resolved' }, body: 'scripted-body' })} initialTab="request" />)
     expect(container.querySelector('[role="group"][aria-label="Request view"]')).toBeNull()
-    expect(panel().textContent).toContain('Resolved Headers')
+    expect(rowNamed(namedTable('Request headers as scripted'), 'X-Scripted')).toBeDefined()
     expect(panel().textContent).toContain('scripted-body')
 
     render(<Harness event={event({ snapshot: wireSnapshot })} initialTab="request" />)
     expect(container.querySelector('[role="group"][aria-label="Request view"]')).toBeNull()
     expect(panel().textContent).toContain('wire-body')
-    expect(panel().textContent).not.toContain('Resolved Headers')
+    expect(namedTable('Request headers sent on the wire')).not.toBeNull()
+    expect(namedTable('Request headers as scripted')).toBeNull()
 
-    // With nothing captured, the resolved headers block still renders.
+    // With nothing captured, the scripted view says there are no headers.
     render(<Harness event={event()} initialTab="request" />)
     expect(container.querySelector('[role="group"][aria-label="Request view"]')).toBeNull()
-    expect(panel().textContent).toContain('Resolved Headers')
+    expect(panel().textContent).toContain('No request headers captured.')
   })
 
   it('hides Network and Raw when the event has nothing for them', () => {
@@ -318,7 +327,7 @@ describe('RequestResponseInspector', () => {
     expect(tabNames()).toEqual(['Response', 'Request', 'Correlation', 'Timing & transport', 'Network 2', 'Raw'])
     expect(tab('Network')?.querySelector('.rr-inspector-tab-badge')?.textContent).toBe('2')
     act(() => tab('Network')!.click())
-    expect(panel().querySelector('[aria-label="Captured resources"]')?.textContent).toContain('/a.css')
+    expect(panel().querySelector('[aria-label="Network requests"] table')?.textContent).toContain('/a.css')
     act(() => tab('Raw')!.click())
     expect(panel().textContent).toContain('2 protocol evidence items were omitted or shortened by retention limits.')
     expect(panel().querySelector('.replay-code-block .replay-detail-label')?.textContent).toMatch(/^Protocol Evidence/)
@@ -328,7 +337,7 @@ describe('RequestResponseInspector', () => {
     render(<Harness event={event({ network_entries: [{ method: 'GET', url: '/api/one', status_code: 200 }], console_entries: [{ level: 'info', text: 'ready' }] } as Partial<BrowserReplayEvent>)} />)
     expect(tab('Network')?.textContent).toBe('Network 1')
     act(() => tab('Network')!.click())
-    expect(panel().textContent).toContain('Network entries')
+    expect(panel().querySelector('[aria-label="Network requests"] table')?.textContent).toContain('/api/one')
     expect(panel().querySelector('[aria-label="Page artifacts"] h4')?.textContent).toBe('Page artifacts')
     expect(panel().textContent).toContain('ready')
   })
@@ -380,7 +389,7 @@ describe('RequestResponseInspector', () => {
 
     render(<Harness event={withNetwork} index={0} onTabChange={onTabChange} />)
     expect(selectedTab()?.firstElementChild?.textContent).toBe('Network')
-    expect(panel().querySelector('[aria-label="Captured resources"]')).not.toBeNull()
+    expect(panel().querySelector('[aria-label="Network requests"]')).not.toBeNull()
 
     act(() => tab('Correlation')!.click())
     render(<Harness event={withoutNetwork} index={1} onTabChange={onTabChange} />)
@@ -443,8 +452,9 @@ describe('RequestResponseInspector', () => {
     expect(tester).not.toBeNull()
     expect(tester!.closest('details')).toBeNull()
     expect(section.querySelector('[aria-label="Extractor expression"]')).not.toBeNull()
-    expect(panel().textContent).toContain('Variable Changes')
-    expect(panel().textContent).toContain('old→new')
+    const correlation = panel().querySelector('.rr-correlation-table')
+    expect(rowNamed(correlation, 'token')?.slice(0, 2)).toEqual(['Extracts', 'token'])
+    expect(rowNamed(correlation, 'session')).toEqual(['Sets', 'session', 'Unknown', 'old→changed tonew', 'ChangedNot used by later steps', ''])
     expect(panel().textContent).not.toContain('No extractions or variable changes were recorded for this action.')
   })
 
@@ -948,7 +958,13 @@ describe('RequestResponseInspector follow-on failures and navigation', () => {
   it('lists the values never set in this run in Correlation', () => {
     render(<Harness event={event({ success: false, status_code: 500, error_message: 'boom', diagnosis: { category: 'runtime', severity: 'error', cause: 'boom', unresolved_variables: ['c_interactionid', 'c_token'] } })} />)
     expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
-    expect(panel().querySelector('.rr-inspector-unset')?.textContent).toBe('Not set in this run: c_interactionid, c_token')
+    const correlation = panel().querySelector('.rr-correlation-table')
+    for (const name of ['c_interactionid', 'c_token']) {
+      const cells = rowNamed(correlation, name)
+      expect(cells?.[0]).toBe('Reads')
+      expect(cells?.[3]).toBe(`Left as {{var.${name}}}`)
+      expect(cells?.[4]).toContain('Never set this run')
+    }
     expect(panel().textContent).not.toContain('No extractions or variable changes were recorded for this action.')
   })
 
@@ -993,6 +1009,242 @@ describe('RequestResponseInspector follow-on failures and navigation', () => {
     expect(selectedTab()?.textContent).toBe('Request')
     expect(document.activeElement).toBe(outside)
     outside.remove()
+  })
+})
+
+describe('RequestResponseInspector tables', () => {
+  it('lists key response headers first, cuts long values to one line and shows all on request', () => {
+    const csp = `default-src 'self' ${'https://cdn.example.test '.repeat(80)}`.trim()
+    const onCopySection = vi.fn(async () => {})
+    render(<Harness
+      event={event({ snapshot: { ...wireSnapshot, response_headers: { 'Content-Type': 'text/html', 'Content-Security-Policy': csp, 'X-Request-Id': 'r-1' } } })}
+      onCopySection={onCopySection}
+    />)
+    const headers = namedTable('Response headers')!
+    expect(headers.querySelector('caption, [scope="col"]')).not.toBeNull()
+    expect(Array.from(headers.querySelectorAll('thead th')).map(cell => cell.textContent)).toEqual(['Header', 'Value', 'Copy'])
+    // Only the key header until Show all; the toggle says how many there are.
+    expect(rowCells(headers).map(cells => cells[0])).toEqual(['Content-Type'])
+    const toggle = button('Show all 3', panel())!
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    act(() => toggle.click())
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.textContent).toBe('Show key headers')
+    expect(rowCells(namedTable('Response headers')).map(cells => cells[0])).toEqual(['Content-Type', 'Content-Security-Policy', 'X-Request-Id'])
+    // The long value keeps its whole text in the tooltip and behind Copy.
+    const cspCell = Array.from(namedTable('Response headers')!.querySelectorAll('tbody tr'))
+      .find(row => row.querySelector('th')?.textContent === 'Content-Security-Policy')!
+    expect(cspCell.querySelector('.inspector-table-value')?.getAttribute('title')).toBe(csp)
+    act(() => cspCell.querySelector<HTMLButtonElement>('button')!.click())
+    expect(onCopySection).toHaveBeenCalledWith('0:response-headers:1', csp)
+  })
+
+  it('says where a scripted header comes from: a variable, or Unknown once the replay no longer matches the script', () => {
+    const tokenScript: ScriptDefinition = {
+      ...script,
+      actions: [{ name: 'Checkout', type: 'POST', target: '/checkout', headers: { 'X-Token': '{{var.token}}', 'X-Fixed': 'yes' } }],
+    }
+    const scripted = event({ headers: { 'X-Token': 'abc123', 'X-Fixed': 'yes' } })
+    render(<Harness event={scripted} script={tokenScript} initialTab="request" />)
+    const headers = namedTable('Request headers as scripted')!
+    expect(Array.from(headers.querySelectorAll('thead th')).map(cell => cell.textContent)).toContain('Comes from')
+    expect(rowNamed(headers, 'X-Token')?.slice(0, 3)).toEqual(['X-Token', 'abc123', 'Variable token'])
+    expect(rowNamed(headers, 'X-Fixed')?.slice(0, 3)).toEqual(['X-Fixed', 'yes', 'Literal'])
+
+    // Once the replay no longer matches the script: no Comes from column, one quiet note.
+    render(<Harness event={scripted} script={tokenScript} replayMatchesCurrentScript={false} initialTab="request" />)
+    const stale = namedTable('Request headers as scripted')!
+    expect(Array.from(stale.querySelectorAll('thead th')).map(cell => cell.textContent)).toEqual(['Header', 'Value', 'Copy'])
+    expect(rowNamed(stale, 'X-Token')?.slice(0, 2)).toEqual(['X-Token', 'abc123'])
+    expect(panel().textContent).toContain('Sources are unavailable because the script changed since this run.')
+    expect(panel().textContent).not.toContain('Unknown')
+    // Said once for the view, not by each table.
+    expect(panel().querySelectorAll('.rr-inspector-sources-note')).toHaveLength(1)
+    expect(panel().querySelectorAll('.inspector-table-note')).toHaveLength(0)
+
+    // The replay matches the script but its step does not resolve: a different reason.
+    render(<Harness event={event({ action_index: 7, headers: { 'X-Token': 'abc123' } })} script={tokenScript} initialTab="request" />)
+    expect(panel().querySelector('.rr-inspector-sources-note')?.textContent).toBe('Sources are unknown for this step.')
+  })
+
+  it('masks a password in a form body and never shows the raw body beside the table', () => {
+    const onCopySection = vi.fn(async () => {})
+    const form = event({
+      method: 'POST',
+      snapshot: {
+        ...wireSnapshot,
+        request_headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        request_body: 'un=alice%40example.test&pw=hunter2&remember=on',
+      },
+    })
+    render(<Harness event={form} initialTab="request" onCopySection={onCopySection} />)
+    const fields = namedTable('Form fields sent on the wire')!
+    expect(rowNamed(fields, 'un')?.slice(0, 2)).toEqual(['un', 'alice@example.test'])
+    const pwRow = Array.from(fields.querySelectorAll('tbody tr')).find(row => row.querySelector('th')?.textContent === 'pw')!
+    expect(pwRow.querySelector('.inspector-table-value [aria-hidden="true"]')?.textContent).toBe('••••••••')
+    expect(pwRow.querySelector('.inspector-table-value .sr-only')?.textContent).toBe('Masked')
+    // The note does not imply protection: the full-request copies keep the field.
+    expect(panel().textContent).toContain('1 field is hidden here. Copy full request and Copy as cURL include it.')
+    expect(panel().textContent).not.toContain('hunter2')
+    expect(panel().innerHTML).not.toContain('hunter2')
+    // A masked field offers no Copy at all.
+    expect(pwRow.querySelector('button')).toBeNull()
+    expect(onCopySection).not.toHaveBeenCalled()
+  })
+
+  it('masks As scripted too when only a script default header makes the body a form', () => {
+    // The resolved step headers never carry a default_headers Content-Type.
+    const defaultForm: ScriptDefinition = { ...script, config: { ...script.config, http: { default_headers: { 'Content-Type': 'application/x-www-form-urlencoded' } } } }
+    const form = event({
+      method: 'POST',
+      headers: { 'X-Step': '1' },
+      body: 'un=jane&pw=hunter2',
+      snapshot: { ...wireSnapshot, request_headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, request_body: 'un=jane&pw=hunter2' },
+    })
+    render(<Harness event={form} script={defaultForm} initialTab="request" />)
+    act(() => button('As scripted', panel())!.click())
+    const fields = namedTable('Form fields as scripted')!
+    expect(rowNamed(fields, 'un')?.slice(0, 2)).toEqual(['un', 'jane'])
+    expect(panel().innerHTML).not.toContain('hunter2')
+    // Even with neither the wire nor the step headers naming the form.
+    render(<Harness event={event({ headers: { 'X-Step': '1' }, body: 'un=jane&pw=hunter2' })} script={defaultForm} initialTab="request" />)
+    expect(namedTable('Form fields as scripted')).not.toBeNull()
+    expect(panel().innerHTML).not.toContain('hunter2')
+  })
+
+  it('names in the masked-field note only the copies the view offers', () => {
+    const form = event({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'un=jane&pw=hunter2',
+      snapshot: { ...wireSnapshot, request_headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, request_body: 'un=jane&pw=hunter2' },
+    })
+    render(<Harness event={form} initialTab="request" />)
+    expect(button('Copy as cURL')).toBeDefined()
+    expect(panel().textContent).toContain('1 field is hidden here. Copy full request and Copy as cURL include it.')
+    // As scripted has no Copy full request: only the header's Copy as cURL is named.
+    act(() => button('As scripted', panel())!.click())
+    expect(button('Copy full request', panel())).toBeUndefined()
+    expect(panel().textContent).toContain('1 field is hidden here. Copy as cURL includes it.')
+    // Without a captured request there is no copy to name.
+    render(<Harness event={event({ headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'pw=hunter2' })} initialTab="request" />)
+    expect(panel().querySelector('.inspector-table-note')?.textContent).toBe('1 field is hidden here.')
+  })
+
+  it('keeps a JSON body whose step overrides a form script default', () => {
+    const defaultForm: ScriptDefinition = {
+      ...script,
+      config: { ...script.config, http: { default_headers: { 'Content-Type': 'application/x-www-form-urlencoded' } } },
+      actions: [{ name: 'Checkout', type: 'POST', target: '/checkout', headers: { 'Content-Type': 'application/json' } }],
+    }
+    const json = event({ method: 'POST', headers: { 'X-Step': '1' }, body: '{"user":"jane","token":"abc"}' })
+    render(<Harness event={json} script={defaultForm} initialTab="request" />)
+    expect(namedTable('Form fields as scripted')).toBeNull()
+    expect(panel().textContent).toContain('"user"')
+  })
+
+  it('masks As scripted when only the wire headers name the form', () => {
+    const form = event({
+      method: 'POST',
+      headers: { 'X-Step': '1' },
+      body: 'un=jane&pw=hunter2',
+      snapshot: { ...wireSnapshot, request_headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, request_body: 'un=jane&pw=hunter2' },
+    })
+    render(<Harness event={form} replayMatchesCurrentScript={false} initialTab="request" />)
+    act(() => button('As scripted', panel())!.click())
+    expect(namedTable('Form fields as scripted')).not.toBeNull()
+    expect(panel().innerHTML).not.toContain('hunter2')
+  })
+
+  it('names failures on the tab badges in words, in the failure style', () => {
+    render(<Harness
+      event={event({
+        success: false, status_code: 500, error_message: 'extractor "token" found no match',
+        diagnosis: { category: 'correlation', severity: 'error', cause: 'x', unresolved_variables: ['csrf', 'sid'] },
+      })}
+      initialTab="response"
+    />)
+    expect(tab('Request')?.textContent).toBe('Request 2 unresolved')
+    expect(tab('Request')?.querySelector('.rr-inspector-tab-badge')?.classList.contains('is-failing')).toBe(true)
+    // One failed extractor and two reads never set.
+    expect(tab('Correlation')?.textContent).toBe('Correlation 1 failed · 2 unset')
+    expect(tab('Response')?.querySelector('.rr-inspector-tab-badge')).toBeNull()
+  })
+
+  it('lists an applied extraction with its extractor and later uses, and an unresolved read', () => {
+    const correlationScript: ScriptDefinition = {
+      ...script,
+      actions: [
+        { name: 'Checkout', type: 'POST', target: '/checkout', body: '{"order":"{{var.c_order}}"}', extractors: [{ name: 'token', source: 'body', type: 'regex', expression: '"token":"([^"]+)"' }] },
+        { name: 'Pay', type: 'POST', target: '/pay', headers: { 'X-Token': '{{var.token}}' } },
+      ],
+    }
+    render(<Harness
+      event={event({
+        success: false, status_code: 500, error_message: 'boom',
+        diagnosis: { category: 'runtime', severity: 'error', cause: 'boom', unresolved_variables: ['c_order'] },
+        extractions: { token: 'abc' },
+      })}
+      script={correlationScript}
+      initialTab="correlation"
+    />)
+    const correlation = panel().querySelector('.rr-correlation-table')!
+    expect(correlation.querySelector('caption')?.textContent).toBe('Values this action extracts, reads and changes')
+    const extracted = rowNamed(correlation, 'token')!
+    expect(extracted.slice(0, 4)).toEqual(['Extracts', 'token', 'body · regex', 'abc'])
+    expect(extracted[4]).toContain('Extracted')
+    expect(extracted[4]).toContain('Used by 1 later step')
+    const unset = rowNamed(correlation, 'c_order')!
+    expect(unset.slice(0, 4)).toEqual(['Reads', 'c_order', 'Body', 'Left as {{var.c_order}}'])
+    expect(unset[4]).toContain('Never set this run')
+  })
+
+  it('merges a captured resource with its network entry, filters failed requests and opens a row', () => {
+    render(<Harness
+      event={event({
+        network_entries: [{ method: 'GET', url: '/a.css', status_code: 200, duration_ms: 12, resource_type: 'stylesheet' }],
+        snapshot: {
+          ...wireSnapshot,
+          resources: [
+            { request_url: '/a.css', response_status: 200, response_body_state: 'captured', response_body: 'body{}', response_headers: { 'Content-Type': 'text/css' } },
+            { request_url: '/b.js', response_status: 404, response_body_state: 'not_captured', response_headers: { 'Content-Type': 'application/javascript' } },
+          ],
+        },
+      } as Partial<BrowserReplayEvent>)}
+      initialTab="network"
+    />)
+    // Two requests, not three: the stylesheet's entry and resource are one row; the 404 is named as failed.
+    expect(tab('Network')?.textContent).toBe('Network 2 · 1 failed')
+    expect(tab('Network')?.querySelector('.rr-inspector-tab-badge')?.classList.contains('is-failing')).toBe(true)
+    const section = panel().querySelector('[aria-label="Network requests"]')!
+    const table = () => section.querySelector('table')!
+    expect(table().querySelector('caption')?.textContent).toBe('2 requests')
+    expect(rowCells(table()).map(cells => cells.slice(0, 6))).toEqual([
+      ['1', 'GET /a.css', 'style', '200', '12 ms', 'Kept'],
+      ['—', 'GET /b.js', 'script', '404', 'Unknown', 'Not kept'],
+    ])
+    expect(section.textContent).toContain('1 body kept · 1 not kept')
+
+    const filters = section.querySelector('[role="group"][aria-label="Network filter"]')!
+    const failedFilter = Array.from(filters.querySelectorAll('button')).find(node => node.textContent?.startsWith('Failed'))!
+    expect(failedFilter.getAttribute('aria-pressed')).toBe('false')
+    act(() => failedFilter.click())
+    expect(failedFilter.getAttribute('aria-pressed')).toBe('true')
+    expect(table().querySelector('caption')?.textContent).toBe('1 of 2 requests shown')
+    expect(rowCells(table()).map(cells => cells[1])).toEqual(['GET /b.js'])
+
+    act(() => Array.from(filters.querySelectorAll('button')).find(node => node.textContent?.startsWith('All'))!.click())
+    const rowButton = table().querySelector<HTMLButtonElement>('tbody tr button')!
+    expect(rowButton.getAttribute('aria-expanded')).toBe('false')
+    act(() => rowButton.click())
+    expect(rowButton.getAttribute('aria-expanded')).toBe('true')
+    const detail = section.querySelector<HTMLElement>(`[id="${rowButton.getAttribute('aria-controls')}"]`)!
+    expect(detail.getAttribute('aria-labelledby')).toBe(rowButton.id)
+    // The detail opens right under its row, inside the table.
+    expect(detail.closest('tr')?.previousElementSibling).toBe(rowButton.closest('tr'))
+    expect(detail.textContent).toContain('/a.css')
+    expect(detail.textContent).toContain('Response body · Kept')
+    expect(detail.textContent).toContain('body{}')
   })
 })
 

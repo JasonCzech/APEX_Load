@@ -1,0 +1,130 @@
+/* Header and form-field tables in the Request/Response inspector. Values stay
+   on one line (a 2 KB Content-Security-Policy would otherwise fill the pane);
+   the tooltip and Copy carry the whole value. Theme colours come from tokens. */
+.inspector-table-block {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.inspector-table-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--subtle-fill-strong, var(--bg-hover));
+}
+
+.inspector-table-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inspector-table-count,
+.inspector-table-note {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.inspector-table-toggle {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.inspector-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.inspector-table th,
+.inspector-table td {
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.inspector-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.inspector-table thead th {
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-weight: 600;
+}
+
+/* Column widths: name, value (the rest), comes from, copy. */
+.inspector-table thead th:first-child { width: 30%; }
+.inspector-table.has-source thead th:nth-child(3) { width: 22%; }
+.inspector-table thead th:last-child { width: 6.5em; }
+
+.inspector-table-name,
+.inspector-table-value,
+.inspector-table-source {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-table-name {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.inspector-table-value {
+  color: var(--text-primary);
+}
+
+.inspector-table-value.is-masked {
+  color: var(--text-secondary);
+  letter-spacing: 0.08em;
+}
+
+/* The label always carries the meaning; colour only echoes it. */
+.inspector-table-source {
+  color: var(--text-secondary);
+  font-family: var(--font-sans, inherit);
+}
+
+.inspector-table-source.is-unset {
+  color: var(--danger-text, var(--danger));
+  font-weight: 600;
+}
+
+.inspector-table-source.is-variable,
+.inspector-table-source.is-parameter,
+.inspector-table-source.is-environment {
+  color: var(--accent-text, var(--accent));
+}
+
+.inspector-table-source.is-jar,
+.inspector-table-source.is-script-jar,
+.inspector-table-source.is-runtime,
+.inspector-table-source.is-added {
+  color: var(--success-text, var(--success));
+}
+
+.inspector-table-action {
+  text-align: right;
+}
+
+.inspector-table-masked-note {
+  color: var(--text-secondary);
+  font-family: var(--font-sans, inherit);
+  font-size: 12px;
+}
+
+.inspector-table-empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
