@@ -2752,6 +2752,7 @@ function GrafanaWallView({
   errorPatterns,
   selectedError,
   onErrorSelect,
+  runStatus,
 }: GrafanaWallViewProps) {
   const [activeGraphGroupTab, setActiveGraphGroupTab] = useCommandViewState<GraphGroupTabId>('graphTab', 'test_results')
   const [underLoadDisplayMode, setUnderLoadDisplayMode] = useCommandViewState<UnderLoadDisplayMode>('underLoadMode', 'graphs')
@@ -2796,6 +2797,7 @@ function GrafanaWallView({
           onActiveGraphGroupTabChange={setActiveGraphGroupTab}
           underLoadDisplayMode={underLoadDisplayMode}
           externalControlsTarget={graphOptionsTarget}
+          runFinished={isHistoricalRunStatus(runStatus)}
         />
         <div className="command-grafana-side">
           <CommandViewSwitchPanel variant={variant} onVariantChange={onVariantChange} />
@@ -4140,6 +4142,8 @@ interface CommandRuntimeGraphsProps {
   onActiveGraphGroupTabChange?: (tab: GraphGroupTabId) => void
   underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
+  /** The run has ended: the live waterfall says so instead of "no transactions completed". */
+  runFinished?: boolean
 }
 
 function CommandRuntimeGraphs({
@@ -4177,6 +4181,7 @@ function CommandRuntimeGraphs({
   onActiveGraphGroupTabChange,
   underLoadDisplayMode,
   externalControlsTarget = null,
+  runFinished = false,
 }: CommandRuntimeGraphsProps) {
   const groupNames = groups.map(group => group.name)
   const groupColors = groups.map(group => group.color)
@@ -4240,6 +4245,7 @@ function CommandRuntimeGraphs({
         onActiveGraphGroupTabChange={onActiveGraphGroupTabChange}
         underLoadDisplayMode={underLoadDisplayMode}
         externalControlsTarget={externalControlsTarget}
+        runFinished={runFinished}
       />
     </div>
   )

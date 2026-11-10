@@ -1057,9 +1057,13 @@ func TestLiveBrowserIntelligenceRound2Fixes(t *testing.T) {
 	srv.runner.cacheRunSnapshot(newerFinalSnap)
 
 	srv.runner.stopAndJoinLiveBrowserIntelligence(adoptedManaged, endedAt)
-	waitForCondition(t, 2*time.Second, func() bool {
+	// cacheRunSnapshot persists asynchronously, and the seeded pre-failover snapshot above already
+	// carries ProvisionalBrowserIntelligence. Wait for stop's own publication (terminal status from
+	// the adopted run), not merely any intelligence payload, so a slow writer cannot let the seed
+	// satisfy the wait. The truncation assertions below stay independent of this condition.
+	waitForCondition(t, 5*time.Second, func() bool {
 		snap, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)
-		return err == nil && snap != nil && snap.ProvisionalBrowserIntelligence != nil
+		return err == nil && snap != nil && snap.Status == "COMPLETE" && snap.ProvisionalBrowserIntelligence != nil
 	}, "stopAndJoinLiveBrowserIntelligence snapshot in liveStore")
 
 	cachedAfterStop, err := liveStore.GetRunSnapshot(context.Background(), failoverTestID)

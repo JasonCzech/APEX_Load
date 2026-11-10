@@ -30,6 +30,9 @@ type parallelBranchResult struct {
 	// phases sums the branch's request phases for the parent's open
 	// authored transactions (a branch VUser has none of its own).
 	phases sourceTransactionPhaseRollup
+	// traces are the branch's slowest and first failed requests that sent a
+	// trace context.
+	traces sourceTransactionTraceExemplars
 }
 
 type parallelResultSink struct {
@@ -45,6 +48,7 @@ type parallelResultSink struct {
 	// authored transactions.
 	phasesMu sync.Mutex
 	phases   sourceTransactionPhaseRollup
+	traces   sourceTransactionTraceExemplars
 }
 
 func (s *parallelResultSink) RecordResult(result *protocol.Result) error {
@@ -69,6 +73,11 @@ func (s *parallelResultSink) notePhases(result *protocol.Result) {
 	if dispatch, _ := result.ProtocolEvidence["async_dispatch"].(bool); dispatch && !s.dispatchBranch {
 		return
 	}
+	if exemplar, ok := sourceTransactionTraceExemplarOf(result); ok {
+		s.phasesMu.Lock()
+		s.traces.offer(exemplar)
+		s.phasesMu.Unlock()
+	}
 	sample, ok := sourceTransactionPhaseSample(result)
 	if !ok {
 		return
@@ -82,6 +91,12 @@ func (s *parallelResultSink) phaseTotals() sourceTransactionPhaseRollup {
 	s.phasesMu.Lock()
 	defer s.phasesMu.Unlock()
 	return s.phases
+}
+
+func (s *parallelResultSink) traceExemplars() sourceTransactionTraceExemplars {
+	s.phasesMu.Lock()
+	defer s.phasesMu.Unlock()
+	return s.traces
 }
 
 func (s *parallelResultSink) RecordTransaction(result *protocol.Result) error {
@@ -198,6 +213,7 @@ func (vu *VUser) runParallelBranchesTimed(ctx context.Context, control *dsl.Cont
 	// callback's own requests (sourceTransactionTakes).
 	for _, result := range results {
 		vu.addSourceTransactionPhases(result.phases, vu.asyncDispatchActive())
+		vu.offerSourceTransactionTraces(result.traces, vu.asyncDispatchActive())
 	}
 	for _, result := range results {
 		if result.publicationRedactionFailed {
@@ -286,7 +302,7 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		// Everything the branch records is this dispatch's work.
 		branchVU.asyncDispatchEpoch = vu.asyncDispatchEpoch
 	}
-	defer func() { result.phases = sink.phaseTotals() }()
+	defer func() { result.phases, result.traces = sink.phaseTotals(), sink.traceExemplars() }()
 	if vu.liveTables != nil {
 		branchVU.liveTableLane = vu.liveTables.branchLane(vu.liveTableLane, index)
 		defer func() {

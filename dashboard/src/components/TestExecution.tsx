@@ -56,6 +56,7 @@ import { buildExecutionPhaseModel } from './testExecutionPhaseModel'
 import { buildExecutionStatusModel, describeGoalController } from './testExecutionStatusModel'
 import DashboardWorkspace, {
   type DashboardWorkspaceCard,
+  type DashboardWorkspaceDefaultCardInsertion,
   type DashboardWorkspaceProfile,
   type DashboardWorkspaceTabChangeSource,
 } from './DashboardWorkspace'
@@ -75,6 +76,8 @@ import LoadingState from './ux/LoadingState'
 // archive or a report is being composed, so the live route loads them on use.
 const TestExecutionArchive = lazy(() => import('./TestExecutionArchive'))
 const ReportComposer = lazy(() => import('./ReportComposer'))
+// Connection health is one optional workspace panel: it loads when shown.
+const TestExecutionConnectionHealth = lazy(() => import('./TestExecutionConnectionHealth'))
 
 const GROUP_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)',
@@ -87,14 +90,17 @@ const EXECUTION_WORKSPACE_DEFAULT_PROFILE: DashboardWorkspaceProfile = {
   activeTabId: 'overview',
   tabs: [
     { id: 'overview', label: 'Run state', cardIds: ['run-state'] },
-    { id: 'diagnostics', label: 'Diagnostics', cardIds: ['runtime-graphs', 'status-panels'] },
+    { id: 'diagnostics', label: 'Diagnostics', cardIds: ['runtime-graphs', 'connection-health', 'status-panels'] },
     { id: 'configuration', label: 'Configuration', cardIds: ['test-manifest'] },
     { id: 'infrastructure', label: 'Infrastructure', cardIds: ['infrastructure'] },
   ],
   unassignedCardIds: [],
 }
 
-const EXECUTION_WORKSPACE_CARD_INSERTIONS: never[] = []
+// Saved profiles from before a card existed get it once, in its default place.
+const EXECUTION_WORKSPACE_CARD_INSERTIONS: DashboardWorkspaceDefaultCardInsertion[] = [
+  { key: 'apexload.execution.workspaceInsert.connectionHealth.v1', profileId: 'default', tabId: 'diagnostics', cardId: 'connection-health', afterCardId: 'runtime-graphs' },
+]
 
 function formatRunStartTime(startedAt?: string) {
   if (!startedAt) return 'Not started'
@@ -206,7 +212,7 @@ export default function TestExecution({
     snapshotLoading,
     snapshotError,
   } = useExecutionScenarioPreviewModel(test, manifest, manifestLoading, manifestError)
-  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, test?.status)
+  const { localMetricsHistory, latestMetrics, liveRetention } = useExecutionMetricsStream(testId, test?.status)
   // Outside a project provider (embedded views, tests) nothing has opted in.
   const projectContext = useContext(ProjectContext)
   const clientRenderEvidence = Boolean(projectContext?.projects.find(project => project.id === test?.project_id)?.settings?.telemetry?.client_render_evidence)
@@ -397,6 +403,8 @@ export default function TestExecution({
   const executionPhase = test ? buildExecutionPhaseModel(test, hasArchive) : null
   const executionStatus = test ? buildExecutionStatusModel(test) : null
   const isRunning = executionPhase?.isRunning ?? false
+  // An ended run gets no further live window, so nothing still pending on the stream (the first stable minute) can form.
+  const runFinished = test?.status === 'COMPLETE' || test?.status === 'FAILED' || test?.status === 'ABORTED'
   const isPaused = executionPhase?.isPaused ?? false
   const isStopping = executionPhase?.isStopping ?? false
   const showLiveControls = executionPhase?.showLiveControls ?? false
@@ -784,6 +792,8 @@ export default function TestExecution({
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
+          runFinished={runFinished}
+          liveRetention={liveRetention}
         />
       ),
     },
@@ -992,7 +1002,22 @@ export default function TestExecution({
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}
+          runFinished={runFinished}
+          liveRetention={liveRetention}
         />
+      ),
+    },
+    {
+      id: 'connection-health',
+      title: 'Connection health',
+      category: 'Investigation',
+      description: 'Latest-window connection reuse, new connections, TLS and DNS cost, and port pressure.',
+      render: () => (
+        <LazyLoadBoundary title="Connection health could not be loaded.">
+          <Suspense fallback={<LoadingState what="connection health" />}>
+            <TestExecutionConnectionHealth metrics={latestMetrics ?? test?.live_metrics} runFinished={runFinished} />
+          </Suspense>
+        </LazyLoadBoundary>
       ),
     },
     {

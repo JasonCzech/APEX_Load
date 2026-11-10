@@ -586723,6 +586723,112 @@ paths:
       tags:
         - Tests
       x-handler: handleLiveTableRows
+  /api/v1/tests/{id}/live/trace-links:
+    post:
+      summary: Live Trace Links
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      operationId: handleLiveTraceLinks
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                from:
+                  type: string
+                to:
+                  type: string
+                trace_ids:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  configured:
+                    type: boolean
+                  links_unavailable:
+                    type: boolean
+                  traces:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        links:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              provider:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                              - connection_id
+                              - provider
+                              - url
+                        trace_id:
+                          type: string
+                      required:
+                        - links
+                        - trace_id
+                required:
+                  - configured
+                  - traces
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Authentication required or invalid.
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: Insufficient permissions for this operation.
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Tests
+      x-handler: handleLiveTraceLinks
   /api/v1/tests/{id}/manifest:
     get:
       summary: Get Test Manifest

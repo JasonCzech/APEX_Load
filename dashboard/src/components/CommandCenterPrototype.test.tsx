@@ -22,6 +22,7 @@ import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } fr
 import { ApiContext } from '../hooks/apiContext'
 import type { ApiServices } from '../hooks/ApiProvider'
 import { rcaTestResponse } from './rca/rcaTestFixture'
+import { LIVE_WATERFALL_FINISHED_EMPTY_TEXT } from './liveWaterfallModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1230,6 +1231,34 @@ describe('CommandCenterPrototype', () => {
       const url = new URL(requestUrl(input), 'http://localhost')
       return url.pathname.endsWith('/archive/summaries') && url.searchParams.get('sample_limit') === '5000'
     })).toBe(true)
+  })
+
+  it('tells an ended run\'s Graph Wall live waterfall that the run ended, not that no transaction completed', async () => {
+    // The lazy chunk resolves inside the render's act().
+    await import('./LiveWaterfallPanel')
+    const ended: TestSummary = {
+      id: 'ended-waterfall', name: 'Ended waterfall run', status: 'COMPLETE', total_vusers: 2, duration: '1m',
+      created_at: '2026-06-08T13:00:00Z', ended_at: '2026-06-08T13:01:00Z',
+      groups: [{ name: 'smoke', protocol: 'http', script_id: 'script-1', script_name: 'Login script', vusers: 2 }],
+      // The controller compacts an ended run's live tail: no per-transaction breakdown.
+      live_metrics: { timestamp: '2026-06-08T13:01:00Z', active_vusers: 0, tps: 0, avg_response_ms: 10, error_pct: 0, total_transactions: 4000, total_errors: 0, p50_ms: 8, p90_ms: 12, p95_ms: 16, p99_ms: 20 },
+    }
+    const endedHistory = [0, 1000, 2000].map(offset => ({ time: '', timestampMs: Date.parse('2026-06-08T13:00:57Z') + offset, vusers: 2, tps: 60, avgMs: 10, errorPct: 0, p50: 8, p90: 12, p99: 20 }) as MetricsHistoryPoint)
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId={ended.id} initialTest={ended} history={endedHistory} />)
+    })
+    await flush()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+    const infrastructure = Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(b => b.textContent?.includes('Infrastructure'))
+    expect(infrastructure, Array.from(container.querySelectorAll('button')).map(b => `${b.getAttribute('role')}:${b.textContent}`).join(' / ')).toBeDefined()
+    await click(infrastructure!)
+    await flush()
+    const card = container.querySelector('[data-chart-id="tx_live_waterfall"]')
+    expect(card, Array.from(container.querySelectorAll('[data-chart-id]')).map(c => c.getAttribute('data-chart-id')).join(',')).not.toBeNull()
+    expect(card?.textContent).toContain(LIVE_WATERFALL_FINISHED_EMPTY_TEXT)
+    expect(card?.textContent).not.toContain('No transactions completed in the latest window.')
   })
 
   it('keeps hidden groups\' transactions off the graphs when the archive ignores the group filter', async () => {
