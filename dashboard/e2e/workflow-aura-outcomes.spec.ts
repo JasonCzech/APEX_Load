@@ -1,7 +1,7 @@
 import { canonicalImportDraft } from './support/importResponse'
 import { createServer } from 'node:http'
 import type { Locator, Page } from '@playwright/test'
-import { test, expect, login, mutation, json, idOf, expectDebugOutcome } from './support/workflow'
+import { test, expect, login, mutation, json, idOf, expectDebugOutcome, openRecordingDiff } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 // Capture the actual viewport, not the full height of a clipped nested pane.
@@ -332,8 +332,9 @@ test('correlation diagnosis retains missing-consumer evidence and independent HT
       await page.locator('.topbar-debug-action-run').click()
       await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
       await expectDebugOutcome(page, failAssertion ? 'failed' : 'passed')
-      await page.getByText('Compare with a recording (optional)', { exact: true }).click()
-      const panel = page.locator('.correlation-diagnose')
+      // The recording comparison lives on the debug Summary's Recording diff sub-tab.
+      const recordingDiff = await openRecordingDiff(page)
+      const panel = recordingDiff.locator('.correlation-diagnose')
       await expect(panel.getByRole('button', { name: 'Diagnose from recording (HAR)…', exact: true })).toBeEnabled()
       return panel
     }
