@@ -1527,7 +1527,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           <div className="results-compare-card">
             <div className="results-compare-header">
               <div>
-                <h3 className="section-title">Run Comparison</h3>
+                <h3 className="section-title">Run comparison</h3>
                 <p className="page-subtitle">Compare 2-{MAX_COMPARISON_RUNS} archived runs. Select the baseline below; the oldest selected run is the initial reference.</p>
               </div>
               {comparisonCards.length >= 2 && comparisonCards.every(item => item.report) && (
@@ -1861,7 +1861,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
           )}
           {visibleSelectedIds.length === 0 && <p className="setting-desc">Select 2-{MAX_COMPARISON_RUNS} archived local results to compare.</p>}<BulkActions count={visibleSelectedIds.length} className="results-table-selection-toolbar"><strong>{selectionState}</strong>
               <button className="btn btn-secondary" onClick={runSelectedComparison} disabled={!canCompareSelected}>
-                Run Comparison
+                Run comparison
               </button>
               <button className="btn btn-ghost" onClick={() => setSelectedIds(new Set())} disabled={visibleSelectedIds.length === 0}>
                 Clear

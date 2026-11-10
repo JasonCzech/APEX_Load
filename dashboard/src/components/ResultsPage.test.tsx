@@ -546,7 +546,7 @@ describe('ResultsPage', () => {
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
     expect(container.querySelector('.results-compare-card')).toBeNull()
     expect(container.textContent).toContain('Ready to compare 2 archived runs')
-    const runComparisonButton = buttonByText(container, 'Run Comparison')
+    const runComparisonButton = buttonByText(container, 'Run comparison')
     expect(runComparisonButton?.disabled).toBe(false)
 
     await act(async () => {
@@ -665,7 +665,7 @@ describe('ResultsPage', () => {
     })
 
     await act(async () => {
-      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      buttonByText(container, 'Run comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -790,7 +790,7 @@ describe('ResultsPage', () => {
 
     expect(container.textContent).toContain('3 selected')
     expect(container.textContent).toContain('Ready to compare 3 archived runs')
-    const runComparisonButton = buttonByText(container, 'Run Comparison')
+    const runComparisonButton = buttonByText(container, 'Run comparison')
     expect(runComparisonButton?.disabled).toBe(false)
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
     expect(apiMock.getTestArchiveSummaries).not.toHaveBeenCalled()
@@ -926,7 +926,7 @@ describe('ResultsPage', () => {
     })
 
     await act(async () => {
-      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      buttonByText(container, 'Run comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -993,7 +993,7 @@ describe('ResultsPage', () => {
 
     expect(container.textContent).toContain('11 selected')
     expect(container.textContent).toContain('11 archived runs selected; choose 10 or fewer to compare')
-    expect(buttonByText(container, 'Run Comparison')?.disabled).toBe(true)
+    expect(buttonByText(container, 'Run comparison')?.disabled).toBe(true)
     expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
   })
 
@@ -1030,7 +1030,7 @@ describe('ResultsPage', () => {
     await act(async () => {
       expect(apiMock.getTestArchiveReport).not.toHaveBeenCalled()
       expect(container.querySelector('.results-compare-card')).toBeNull()
-      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      buttonByText(container, 'Run comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -1047,7 +1047,7 @@ describe('ResultsPage', () => {
     expect(deviceToggle).toBeDefined()
     expect(exportButton).toBeDefined()
 
-    expect(container.textContent).toContain('Run Comparison')
+    expect(container.textContent).toContain('Run comparison')
     expect(container.textContent).toContain('Browser Device Comparison (LCP / INP)')
     expect(container.textContent).toContain('Avg LCP')
     expect(container.textContent).toContain('Browser Runtime')
@@ -1169,7 +1169,7 @@ describe('ResultsPage', () => {
       await Promise.resolve()
     })
     await act(async () => {
-      buttonByText(container, 'Run Comparison')!.click()
+      buttonByText(container, 'Run comparison')!.click()
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -1238,7 +1238,7 @@ describe('ResultsPage', () => {
     })
 
     await act(async () => {
-      buttonByText(container, 'Run Comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      buttonByText(container, 'Run comparison')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
       await Promise.resolve()
     })
@@ -1381,7 +1381,7 @@ describe('ResultsPage', () => {
     expect(container.textContent).not.toContain('Visible Sources')
     expect(container.querySelector('.results-selection-bar')).toBeNull()
     expect(container.querySelector('.results-table-selection-toolbar')).toBeNull()
-    expect(buttonByText(container, 'Run Comparison')).toBeUndefined()
+    expect(buttonByText(container, 'Run comparison')).toBeUndefined()
     expect(container.textContent).toContain('Select 2-10 archived local results to compare')
     expect(container.textContent).toContain('Push')
     expect(container.querySelector('.library-source-table thead th:last-child')?.classList.contains('results-actions-column')).toBe(true)

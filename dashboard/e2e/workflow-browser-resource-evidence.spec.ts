@@ -230,7 +230,7 @@ test('browser results comparison cards preserve exact mixed cohorts and malforme
   await page.goto(`/#/results?${scopeQuery(workspace)}`)
   await page.reload()
   for (const run of runs) await page.getByRole('checkbox', { name: `Select ${run.name}`, exact: true }).check()
-  await page.getByRole('button', { name: 'Run Comparison', exact: true }).click()
+  await page.getByRole('button', { name: 'Run comparison', exact: true }).click()
   const panel = (name: string) => page.locator('.results-compare-panel').filter({ has: page.getByRole('heading', { name, exact: true }) })
   const mixedPanel = panel(runs[0].name)
   const directPanel = panel(runs[1].name)
