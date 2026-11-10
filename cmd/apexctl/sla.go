@@ -121,6 +121,7 @@ func convertDSLTransactionSLARules(rules []dsl.TransactionSLARule) []runcontract
 			Threshold:  rule.Threshold,
 			Severity:   rule.Severity,
 			Iterations: rule.Iterations,
+			Phase:      rule.Phase,
 		}
 	}
 	return converted

@@ -793,6 +793,7 @@ func buildThresholdAlerts(test *ManagedTest, live *LiveMetrics, thresholds Thres
 	}); alert != nil {
 		alerts = append(alerts, alert)
 	}
+	alerts = append(alerts, buildPhaseLatencyThresholdAlerts(test, live, thresholds.PhaseLatency)...)
 	return alerts
 }
 
@@ -844,9 +845,17 @@ func shouldStopForErrorThreshold(live *LiveMetrics, thresholds ThresholdSettings
 // this evaluation will actually take. buildThresholdAlerts marks error-rate
 // breaches as stop candidates, but final-drain, terminal, paused, and otherwise
 // non-running evaluations must not claim a stop was requested.
-func applyThresholdAlertStopActions(alerts []map[string]any, stopForError, stopForP99 bool) {
+func applyThresholdAlertStopActions(alerts []map[string]any, stopForError, stopForP99 bool, stopForPhaseMetric ...string) {
 	for _, alert := range alerts {
 		metric, _ := alert["metric"].(string)
+		if _, phase := alert["phase"].(string); phase {
+			if len(stopForPhaseMetric) > 0 && stopForPhaseMetric[0] != "" && metric == stopForPhaseMetric[0] {
+				alert["action"] = "stop_requested"
+			} else {
+				delete(alert, "action")
+			}
+			continue
+		}
 		switch metric {
 		case "error_pct":
 			if stopForError {

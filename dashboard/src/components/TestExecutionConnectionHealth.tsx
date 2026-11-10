@@ -1,6 +1,6 @@
 import type { LiveMetrics } from '../types'
 import { formatWaterfallMs } from './waterfall/phases'
-import { SETUP_UNMEASURED_HINT, SETUP_UNMEASURED_TEXT, reuseBasisText, reuseValueText } from './livePhaseModel'
+import { PHASE_PERCENTILES_NOT_REPORTED_TEXT, SETUP_UNMEASURED_HINT, SETUP_UNMEASURED_TEXT, phasePercentileMs, reuseBasisText, reuseValueText } from './livePhaseModel'
 import { EPHEMERAL_PORT_WARNING_PCT, connectionHealth, type PortPressure } from './connectionHealthModel'
 import './LiveWaterfallPanel.css'
 
@@ -29,6 +29,7 @@ const NOT_KEPT_SOCKETS = 'Not kept in run history: TCP socket diagnostics are li
 const RESTORED_PHASES_HINT = 'Restored from stored history (after a controller restart or failover); phases were not kept for this window'
 // The socket table was read, but no port share came with it: never shown as a measured 0.
 const NOT_REPORTED_PORT_SHARE = 'No generator sent a port share: its local port range could not be read, or no ephemeral port was in use'
+const RESTORED_PERCENTILES_HINT = 'Restored from stored history, which keeps no per-phase percentiles; the average is in the tile beside'
 
 /** L4: latest-window connection reuse, setup cost and port pressure. */
 export default function TestExecutionConnectionHealth({ metrics, runFinished = false }: Props) {
@@ -44,6 +45,19 @@ export default function TestExecutionConnectionHealth({ metrics, runFinished = f
   const unobservedHint = unmeasured ? SETUP_UNMEASURED_HINT : samples > 0 ? (health.fromHistory ? RESTORED_PHASES_HINT : 'A generator predates phase observations') : 'No transaction samples this window'
   const noSockets = health.fromHistory ? NOT_KEPT_SOCKETS : NOT_REPORTED_SOCKETS
   const unobservedValue = unmeasured ? SETUP_UNMEASURED_TEXT : undefined
+  const percentiles = health.phasePercentiles
+  // Per-phase P95 over the samples with the phase; unknown (an older load
+  // generator) falls back to the average tile beside it, never to 0.
+  const p95Tile = (phase: 'tls' | 'dns', what: string) => {
+    if (!observed) return { value: unobservedValue, hint: unobservedHint }
+    if (!percentiles) return { value: undefined, hint: health.fromHistory ? RESTORED_PERCENTILES_HINT : `${PHASE_PERCENTILES_NOT_REPORTED_TEXT}; the average is in the tile beside` }
+    const row = percentiles[phase]
+    const ms = phasePercentileMs(percentiles, phase, 'p95')
+    if (ms === undefined || !row) return { value: 'None', hint: `No transaction sample had ${what} this window` }
+    return { value: formatWaterfallMs(ms), hint: `95% of the ${row.samples.toLocaleString()} transaction samples with ${what} spent at most this long in it; one with several counts their total` }
+  }
+  const tlsP95 = p95Tile('tls', 'a handshake')
+  const dnsP95 = p95Tile('dns', 'a lookup')
   const portPct = health.ephemeralPortPct
   const portWarning = portPct !== undefined && portPct.value >= EPHEMERAL_PORT_WARNING_PCT
   return (
@@ -64,11 +78,13 @@ export default function TestExecutionConnectionHealth({ metrics, runFinished = f
           value={observed ? (stats.avgHandshakeMs === undefined ? 'None' : formatWaterfallMs(stats.avgHandshakeMs)) : unobservedValue}
           hint={observed ? `Average over the ${(stats.tlsSamples ?? 0).toLocaleString()} transaction samples with any handshake this window; one with several handshakes counts their total, so this is not the cost of one handshake` : unobservedHint}
         />
+        <Tile label="TLS P95 per transaction with a handshake" value={tlsP95.value} hint={tlsP95.hint} />
         <Tile
           label="DNS time per transaction with a lookup"
           value={observed ? (stats.avgDnsLookupMs === undefined ? 'None' : formatWaterfallMs(stats.avgDnsLookupMs)) : unobservedValue}
           hint={observed ? `Average over the ${(stats.dnsSamples ?? 0).toLocaleString()} transaction samples with any lookup this window; one with several lookups counts their total` : unobservedHint}
         />
+        <Tile label="DNS P95 per transaction with a lookup" value={dnsP95.value} hint={dnsP95.hint} />
         <Tile
           label="TCP TIME_WAIT"
           value={health.timeWait ? Math.round(health.timeWait.value).toLocaleString() : undefined}
@@ -84,7 +100,7 @@ export default function TestExecutionConnectionHealth({ metrics, runFinished = f
       {health.fromHistory && (
         <p className="connection-health-note" role="note">This window was restored from stored history (after a controller restart or failover), which keeps rate, counts and averages but no socket diagnostics{health.observed ? '' : ' and, for this window, no phases'}.{runFinished ? '' : ' The next live window replaces it.'}</p>
       )}
-      <p className="connection-health-note">{runFinished ? 'The run has ended: these are averages over the transaction samples of its last window.' : 'Averages over the latest window\u2019s transaction samples.'} DNS and TLS P95 need per-phase percentiles on the live wire, which it does not carry yet.</p>
+      <p className="connection-health-note">{runFinished ? 'The run has ended: these are averages over the transaction samples of its last window.' : 'Averages over the latest window\u2019s transaction samples.'} The P95 tiles are percentiles over the samples that spent time in that phase{percentiles ? '' : '; this window has none, so only the averages are shown'}.</p>
     </section>
   )
 }

@@ -132,7 +132,7 @@ func statusCmd() {
 			fmt.Printf("  - %s\n", d)
 		}
 		for _, result := range report.TransactionRuleResults {
-			fmt.Printf("  - %s / %s: %s\n", result.Rule.Transaction, result.Rule.Metric, result.Status)
+			fmt.Printf("  - %s / %s: %s\n", result.Rule.Transaction, ruleMetricLabel(result.Rule.Phase, result.Rule.Metric), result.Status)
 		}
 	}
 
@@ -244,7 +244,7 @@ func waitCmd() {
 				fmt.Printf("    - %s\n", d)
 			}
 			for _, rule := range sla.TransactionRuleResults {
-				fmt.Printf("    - %s / %s: %s\n", rule.Rule.Transaction, rule.Rule.Metric, rule.Status)
+				fmt.Printf("    - %s / %s: %s\n", rule.Rule.Transaction, ruleMetricLabel(rule.Rule.Phase, rule.Rule.Metric), rule.Status)
 			}
 		}
 		if runErr != nil {
@@ -303,4 +303,13 @@ Exit Codes (apexctl status, apexctl wait):
 		exitCodeTestFailure,
 		exitCodeUsageOrConfiguration,
 		exitCodeControllerOrTransport))
+}
+
+// ruleMetricLabel names a transaction SLA rule's metric with its network
+// phase, if any (e.g. "connect p95_duration_ms").
+func ruleMetricLabel(phase, metric string) string {
+	if phase == "" {
+		return metric
+	}
+	return phase + " " + metric
 }

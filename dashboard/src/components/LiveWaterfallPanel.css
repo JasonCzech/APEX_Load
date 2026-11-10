@@ -8,6 +8,7 @@
 .live-waterfall-definitions { margin-top: 6px; font-size: 11px; }
 .live-waterfall-definitions dd { font-family: inherit; }
 .live-waterfall-copy { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.live-waterfall-statistic { display: inline-flex; flex-wrap: wrap; gap: 4px; }
 .live-waterfall-phase-table td { font-variant-numeric: tabular-nums; }
 
 /* Live exemplar drawer (L3). */

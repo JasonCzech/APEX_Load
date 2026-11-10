@@ -2902,6 +2902,31 @@ export interface PhaseObservations {
   no_ttfb_remainder_ms?: number
 }
 
+/** One network phase's percentiles (ms) over the samples that spent time in it. */
+export interface PhasePercentiles {
+  samples: number
+  p50_ms: number
+  p90_ms: number
+  p95_ms: number
+  p99_ms: number
+}
+
+/**
+ * Per-phase percentiles (pkg/engine/phase_sketches.go). DNS, connect and TLS
+ * cover the samples where that phase took time; server (TTFB − setup) and
+ * download the samples that got a first byte. A phase is absent when no
+ * sample spent time in it; the whole set is absent when unknown (a
+ * generator that predates per-phase sketches).
+ */
+export interface PhasePercentileSet {
+  version: number
+  dns?: PhasePercentiles
+  connect?: PhasePercentiles
+  tls?: PhasePercentiles
+  server?: PhasePercentiles
+  download?: PhasePercentiles
+}
+
 export interface LiveMetrics {
   llm?: LiveLLMMetrics
   java_http?: import('./types/javaHttp').JavaHTTPActions
@@ -2982,6 +3007,8 @@ export interface LiveMetrics {
    * server + wait + no-response = avg_response_ms. Absent when unknown.
    */
   avg_no_response_ms?: number
+  /** Fleet per-phase percentiles; absent when unknown (never zero). */
+  phase_percentiles?: PhasePercentileSet
   error_breakdown?: Record<string, number>
   transactions?: Record<string, TxMetrics>
 	transaction_response_time_sla?: TransactionResponseTimeSLAResult[]
@@ -3364,6 +3391,8 @@ export interface TxMetrics {
   phase_observed?: PhaseObservations
   avg_server_ms?: number
   avg_no_response_ms?: number
+  /** Per-phase percentiles; absent when unknown (never zero). */
+  phase_percentiles?: PhasePercentileSet
   correlation_ids?: string[]
   correlation_count?: number
   count: number

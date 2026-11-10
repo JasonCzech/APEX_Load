@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -86,6 +87,16 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 			}
 			if archiveEventPopulation(event) != population || event.ActionName != rule.Transaction || (rule.Group != "" && rule.Group != event.Group) || (rule.Protocol != "" && rule.Protocol != protocols[event.Group]) || !transactionSLAJudgesIteration(rule, event) {
 				continue
+			}
+			// A phase rule judges each sample's time in that phase, over the
+			// samples that spent time in it; the rest are not its population.
+			durationMs := event.DurationMs
+			if rule.Phase != "" {
+				phaseMs, observed := archiveEventPhaseMs(event, rule.Phase)
+				if !observed {
+					continue
+				}
+				durationMs = phaseMs
 			}
 			a := stats[i]
 			if a == nil {
@@ -167,18 +178,18 @@ func applyTransactionSLARules(root string, manifest *RunArchiveManifest) error {
 				a.bytesSent += event.BytesSent
 				a.bytesReceived += event.BytesReceived
 			}
-			if !finiteComparison(event.DurationMs) || event.DurationMs < 0 {
+			if !finiteComparison(durationMs) || durationMs < 0 {
 				a.invalidDuration = true
 				continue
 			}
-			if !finiteComparison(a.durationTotal + event.DurationMs) {
+			if !finiteComparison(a.durationTotal + durationMs) {
 				a.invalidDuration = true
 				continue
 			}
-			a.durationTotal += event.DurationMs
-			a.durationMin = math.Min(a.durationMin, event.DurationMs)
-			a.durationMax = math.Max(a.durationMax, event.DurationMs)
-			a.durations.Add(event.DurationMs)
+			a.durationTotal += durationMs
+			a.durationMin = math.Min(a.durationMin, durationMs)
+			a.durationMax = math.Max(a.durationMax, durationMs)
+			a.durations.Add(durationMs)
 		}
 	}
 
@@ -281,7 +292,7 @@ func evaluateTransactionSLARule(rule TransactionSLARule, stats *transactionSLAAc
 	}
 	observed, ok := transactionSLAMetricValue(rule.Metric, stats, runSeconds)
 	if !ok {
-		result.Message = fmt.Sprintf("transaction %q%s has insufficient archive evidence for %s", rule.Transaction, transactionSLAScope(rule), rule.Metric)
+		result.Message = fmt.Sprintf("transaction %q%s has insufficient archive evidence for %s", rule.Transaction, transactionSLAScope(rule), transactionSLAMetricLabel(rule))
 		return result
 	}
 	result.Observed = &observed
@@ -458,7 +469,16 @@ func compareTransactionSLA(observed float64, comparator string, threshold float6
 }
 
 func formatTransactionSLAResult(rule TransactionSLARule, observed float64, outcome string) string {
-	return fmt.Sprintf("transaction %q%s %s %s: observed %.6g, expected %s %.6g (%s)", rule.Transaction, transactionSLAScope(rule), rule.Metric, outcome, observed, rule.Comparator, rule.Threshold, transactionSLASeverity(rule))
+	return fmt.Sprintf("transaction %q%s %s %s: observed %.6g, expected %s %.6g (%s)", rule.Transaction, transactionSLAScope(rule), transactionSLAMetricLabel(rule), outcome, observed, rule.Comparator, rule.Threshold, transactionSLASeverity(rule))
+}
+
+// transactionSLAMetricLabel names the rule's metric, with its network phase
+// for a phase rule (e.g. "connect p95_duration_ms").
+func transactionSLAMetricLabel(rule TransactionSLARule) string {
+	if rule.Phase == "" {
+		return rule.Metric
+	}
+	return rule.Phase + " " + rule.Metric
 }
 
 // archiveCollectionIncomplete says the archive lacks evidence a source or
@@ -500,4 +520,32 @@ func transactionSLAScope(rule TransactionSLARule) string {
 		population = "transaction"
 	}
 	return fmt.Sprintf(" [population=%s, protocol=%q, group=%q]", population, rule.Protocol, rule.Group)
+}
+
+// archiveEventPhaseMs is one archived sample's time in a network phase, by
+// the live phase rules (engine.PhaseSketches): DNS, connect and TLS when the
+// phase took measurable time, server (TTFB minus setup, at least 0) and
+// download (duration minus TTFB, at least 0) when a first byte arrived.
+// observed is false when the sample spent no time in the phase.
+func archiveEventPhaseMs(event TransactionEvent, phase string) (ms float64, observed bool) {
+	positive := func(v float64) bool { return v > 0 && !math.IsInf(v, 1) }
+	switch phase {
+	case engine.PhaseDNS:
+		return event.DNSMs, positive(event.DNSMs)
+	case engine.PhaseConnect:
+		return event.ConnectMs, positive(event.ConnectMs)
+	case engine.PhaseTLS:
+		return event.TLSMs, positive(event.TLSMs)
+	}
+	if !positive(event.TTFBMs) {
+		return 0, false
+	}
+	switch phase {
+	case engine.PhaseServer:
+		setup := math.Max(0, event.DNSMs) + math.Max(0, event.ConnectMs) + math.Max(0, event.TLSMs)
+		return math.Max(0, event.TTFBMs-setup), true
+	case engine.PhaseDownload:
+		return math.Max(0, event.DurationMs-event.TTFBMs), true
+	}
+	return 0, false
 }

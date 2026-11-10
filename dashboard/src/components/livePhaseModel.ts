@@ -4,7 +4,7 @@
  * (pkg/engine/phase_observations.go), so the observed counts turn them into
  * "when it happened" figures.
  */
-import type { PhaseObservations, TxMetrics } from '../types'
+import type { PhaseObservations, PhasePercentiles, PhasePercentileSet, TxMetrics } from '../types'
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 const pos = (v: unknown) => Math.max(0, num(v) ?? 0)
@@ -225,4 +225,55 @@ export function reuseBasisText(stats: PhaseObservationStats): string {
     default:
       return `of ${n} transaction samples opened no new connection; ${REUSE_TRANSACTION_UNIT_TEXT}`
   }
+}
+
+/** The statistic the live waterfall's bars show. */
+export type LivePhaseStatistic = 'avg' | 'p50' | 'p95' | 'p99'
+export type LivePhasePercentile = Exclude<LivePhaseStatistic, 'avg'>
+
+export const LIVE_PHASE_STATISTIC_LABELS: Record<LivePhaseStatistic, string> = { avg: 'Average', p50: 'P50', p95: 'P95', p99: 'P99' }
+
+/** The phases with a percentile on the wire, in waterfall order. */
+export const PERCENTILE_PHASES = ['dns', 'connect', 'tls', 'server', 'download'] as const
+export type PercentilePhase = (typeof PERCENTILE_PHASES)[number]
+
+export const PERCENTILE_PHASE_LABELS: Record<PercentilePhase, string> = {
+  dns: 'DNS', connect: 'Connect', tls: 'TLS', server: 'Server (TTFB − setup)', download: 'Download',
+}
+
+/** Shown where per-phase percentiles would be but a generator sent none. */
+export const PHASE_PERCENTILES_NOT_REPORTED_TEXT = 'Per-phase percentiles not reported this window: a contributing load generator predates them, or the window had too many transactions and actions to keep them all'
+
+/** Whether the record carries per-phase percentiles (absent means unknown, never zero). */
+export function phasePercentilesReported(value: { phase_percentiles?: PhasePercentileSet } | undefined): boolean {
+  return Boolean(value?.phase_percentiles && typeof value.phase_percentiles === 'object')
+}
+
+/**
+ * One phase's percentile in ms, or undefined when the set is unknown or no
+ * sample spent time in the phase.
+ */
+export function phasePercentileMs(set: PhasePercentileSet | undefined, phase: PercentilePhase, statistic: LivePhasePercentile): number | undefined {
+  const row: PhasePercentiles | undefined = set?.[phase]
+  if (!row || !(pos(row.samples) > 0)) return undefined
+  const value = statistic === 'p50' ? row.p50_ms : statistic === 'p95' ? row.p95_ms : row.p99_ms
+  return num(value)
+}
+
+/**
+ * The bars for a percentile statistic: each phase's own percentile over the
+ * samples that spent time in it, laid end to end. Percentiles do not add, so
+ * the sum is not the transaction's percentile, and there is no no-TTFB part.
+ * undefined when the record carries no per-phase percentiles.
+ */
+export function txPhasePercentileVector(tx: Pick<TxMetrics, 'phase_percentiles'>, statistic: LivePhasePercentile): LivePhaseVector | undefined {
+  const set = tx.phase_percentiles
+  if (!set) return undefined
+  const value = (phase: PercentilePhase) => Math.max(0, phasePercentileMs(set, phase, statistic) ?? 0)
+  const dns = value('dns')
+  const connect = value('connect')
+  const tls = value('tls')
+  const server = value('server')
+  const download = value('download')
+  return { dns, connect, tls, server, download, noResponse: 0, avgMs: dns + connect + tls + server + download, serverSource: set.server ? 'split' : 'none' }
 }

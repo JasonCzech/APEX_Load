@@ -70,7 +70,7 @@ describe('LiveWaterfallPanel', () => {
     expect(sorts).not.toContain('Chronological')
     expect(sorts).toContain('Slowest first')
     expect(drawer.textContent).toContain('25.0 ms')
-    expect(drawer.textContent).toContain('per-phase percentiles are not on the live wire')
+    expect(drawer.textContent).toContain('Per-phase percentiles not reported')
   })
 
   it('ghosts the first stable minute when it is complete', async () => {

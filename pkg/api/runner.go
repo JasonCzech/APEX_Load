@@ -860,12 +860,15 @@ type ManagedTest struct {
 	thresholdAlertNotifiedAt map[string]time.Time
 	// p99BreachConsecutive counts consecutive metrics evaluations with P99
 	// above thresholds.max_p99_latency_ms for the opt-in sustained auto-stop.
-	p99BreachConsecutive       int
-	earlyStopBreachStartedAt   *time.Time
-	errorPatterns              map[string]*LiveErrorPattern
-	liveErrorEvidence          map[string][]LiveErrorEvidence
-	vuserScaleRamps            map[string]*vuserScaleRamp
-	openWorkloadSheddingWarned bool
+	p99BreachConsecutive int
+	// phaseLatencyBreachConsecutive counts each stop-enabled phase latency
+	// rule's consecutive breaching evaluations, keyed by its alert metric.
+	phaseLatencyBreachConsecutive map[string]int
+	earlyStopBreachStartedAt      *time.Time
+	errorPatterns                 map[string]*LiveErrorPattern
+	liveErrorEvidence             map[string][]LiveErrorEvidence
+	vuserScaleRamps               map[string]*vuserScaleRamp
+	openWorkloadSheddingWarned    bool
 	// runTotals keeps the run-to-date counters (from published samples for a
 	// local run, from accepted generator windows for a distributed one) so
 	// dashboards can show a run's error rate instead of the last second's.
@@ -1169,8 +1172,14 @@ type LiveMetrics struct {
 	// got none (both divided by every sample). With them avg DNS + connect +
 	// TLS + server + wait + no-response equals AvgResponseMs. Both are absent
 	// when PhaseObserved is unknown.
-	AvgServerMs                *float64                              `json:"avg_server_ms,omitempty"`
-	AvgNoResponseMs            *float64                              `json:"avg_no_response_ms,omitempty"`
+	AvgServerMs     *float64 `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs *float64 `json:"avg_no_response_ms,omitempty"`
+	// PhasePercentiles are each network phase's P50/P90/P95/P99 over the
+	// business transactions that spent time in it (DNS, connect and TLS when
+	// the phase took time; server and download when a first byte arrived).
+	// Absent when unknown: a contributing generator predates per-phase
+	// sketches, or the window's sketch budget left them out.
+	PhasePercentiles           *engine.PhasePercentileSet            `json:"phase_percentiles,omitempty"`
 	ErrorBreakdown             map[string]int64                      `json:"error_breakdown,omitempty"`
 	Transactions               map[string]*TxMetrics                 `json:"transactions,omitempty"`
 	TransactionResponseTimeSLA []TransactionResponseTimeSLAResult    `json:"transaction_response_time_sla,omitempty"`
@@ -1642,6 +1651,9 @@ type TxMetrics struct {
 	// LiveMetrics; absent when PhaseObserved is unknown.
 	AvgServerMs     *float64 `json:"avg_server_ms,omitempty"`
 	AvgNoResponseMs *float64 `json:"avg_no_response_ms,omitempty"`
+	// PhasePercentiles are per-phase percentiles as on LiveMetrics; absent
+	// when unknown.
+	PhasePercentiles *engine.PhasePercentileSet `json:"phase_percentiles,omitempty"`
 }
 
 // TransactionGroupShare is one group's part of a transaction more than one

@@ -519,9 +519,13 @@ type ThresholdSettings struct {
 	// nil or 0 disables the auto-stop and keeps the P99 threshold alert-only.
 	// Paused/baseline windows report non-breaching samples and naturally reset
 	// the streak.
-	P99LatencyStopConsecutiveSamples *int     `json:"p99_latency_stop_consecutive_samples,omitempty"`
-	MaxAvgServerProcessingMs         *float64 `json:"max_avg_server_processing_ms,omitempty"`
-	MaxAvgTransferMs                 *float64 `json:"max_avg_transfer_ms,omitempty"`
+	P99LatencyStopConsecutiveSamples *int `json:"p99_latency_stop_consecutive_samples,omitempty"`
+	// PhaseLatency are phase-aware latency thresholds (for example connect
+	// P95 above 500 ms), alert-only unless a rule sets its stop sample count.
+	// Unknown phase data never breaches one.
+	PhaseLatency             []PhaseLatencyThreshold `json:"phase_latency,omitempty"`
+	MaxAvgServerProcessingMs *float64                `json:"max_avg_server_processing_ms,omitempty"`
+	MaxAvgTransferMs         *float64                `json:"max_avg_transfer_ms,omitempty"`
 	// The five telemetry budgets are tri-state: omitted/nil means "default
 	// budget" (backfilled by normalizeThresholdSettings), an explicit 0 disables
 	// that budget's diagnostics, and a positive value is a custom budget.
@@ -835,6 +839,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		v := *in.Thresholds.FleetSaturatedAvailableSlots
 		out.Thresholds.FleetSaturatedAvailableSlots = &v
 	}
+	out.Thresholds.PhaseLatency = clonePhaseLatencyThresholds(in.Thresholds.PhaseLatency)
 	out.Notifications = cloneNotificationsSettings(in.Notifications)
 	if in.CapacityPlanning.Reservations != nil {
 		out.CapacityPlanning.Reservations = append([]CapacityReservation(nil), in.CapacityPlanning.Reservations...)
@@ -1105,6 +1110,9 @@ func validateSystemSettingsUpdateRules(settings SystemSettings) error {
 	if t := settings.Thresholds; t.P99LatencyStopConsecutiveSamples != nil && *t.P99LatencyStopConsecutiveSamples > 0 && t.MaxP99LatencyMs == nil {
 		return fmt.Errorf("thresholds.p99_latency_stop_consecutive_samples requires thresholds.max_p99_latency_ms")
 	}
+	if err := validatePhaseLatencyThresholds(settings.Thresholds.PhaseLatency); err != nil {
+		return err
+	}
 	// An empty project would be stored inert (skipped from every capacity sum and
 	// dropped on the next load), silently reserving nothing.
 	for index, reservation := range settings.CapacityPlanning.Reservations {
@@ -1339,6 +1347,7 @@ func cloneThresholdSettings(in ThresholdSettings) ThresholdSettings {
 		v := *in.FleetSaturatedAvailableSlots
 		out.FleetSaturatedAvailableSlots = &v
 	}
+	out.PhaseLatency = clonePhaseLatencyThresholds(in.PhaseLatency)
 	return out
 }
 

@@ -7,7 +7,7 @@ import type { LiveMetrics, TxMetrics } from '../types'
 import { formatWaterfallMs, type WaterfallPhaseKey } from './waterfall/phases'
 import type { WaterfallNode, WaterfallPhaseSpan, WaterfallStatus } from './waterfall/types'
 import type { WaterfallTimeSink } from './waterfall/analysis'
-import { PHASES_NOT_REPORTED_TEXT, reuseValueText, txObservationStats, txPhaseVector, type LivePhaseVector, type PhaseObservationStats } from './livePhaseModel'
+import { LIVE_PHASE_STATISTIC_LABELS, PHASES_NOT_REPORTED_TEXT, reuseValueText, txObservationStats, txPhasePercentileVector, txPhaseVector, type LivePhaseStatistic, type LivePhaseVector, type PhaseObservationStats } from './livePhaseModel'
 import { STABLE_MAX_TRANSACTIONS, stableMinuteBaselineRow, type StableMinuteBaseline, type StableMinuteBaselineRow, type StableMinuteState } from './liveWindowRetention'
 import { formatTimeOfDay } from '../utils/dateTime'
 
@@ -70,6 +70,13 @@ export interface LiveWaterfallPayload {
   baseline?: StableMinuteBaselineRow
   /** Set when the latest window had no sample: the figures are from this earlier window. */
   heldFrom?: string
+  /**
+   * The statistic the bar shows. With a percentile, a row whose record has
+   * no per-phase percentiles (an older generator) falls back to averages and
+   * sets `percentileFallback`.
+   */
+  statistic?: LivePhaseStatistic
+  percentileFallback?: boolean
 }
 
 const errorPctOf = (tx: TxMetrics) => (tx.count > 0 ? (Math.max(0, tx.errors) / tx.count) * 100 : 0)
@@ -122,6 +129,25 @@ export interface LiveWaterfallOptions {
   showBaseline?: boolean
   /** Transactions held from earlier windows (see advanceLiveWaterfallHold). */
   held?: LiveWaterfallHold
+  /** The statistic the bars show (default 'avg'). */
+  statistic?: LivePhaseStatistic
+}
+
+/**
+ * The row's bar for a statistic: the averages, or each phase's percentile
+ * laid end to end, falling back to the averages when the record carries no
+ * per-phase percentiles.
+ */
+export function liveWaterfallVector(tx: TxMetrics, statistic: LivePhaseStatistic = 'avg'): { vector: LivePhaseVector; percentileFallback: boolean } {
+  if (statistic === 'avg') return { vector: txPhaseVector(tx), percentileFallback: false }
+  const percentile = txPhasePercentileVector(tx, statistic)
+  return percentile ? { vector: percentile, percentileFallback: false } : { vector: txPhaseVector(tx), percentileFallback: true }
+}
+
+/** Whether any row has per-phase percentiles to show. */
+export function liveWaterfallHasPhasePercentiles(transactions: Record<string, TxMetrics> | undefined, held?: LiveWaterfallHold): boolean {
+  return activeEntries(transactions).some(({ tx }) => Boolean(tx.phase_percentiles))
+    || Object.values(held ?? {}).some(row => Boolean(row.tx?.phase_percentiles))
 }
 
 /** A transaction last seen in an earlier window, kept for LIVE_WATERFALL_HOLD_WINDOWS. */
@@ -179,7 +205,7 @@ export function liveWaterfallReuseDetail(stats: PhaseObservationStats): string {
   }
 }
 
-type RankedRow = { name: string; tx: TxMetrics; heldFrom?: string; vector: LivePhaseVector }
+type RankedRow = { name: string; tx: TxMetrics; heldFrom?: string; vector: LivePhaseVector; percentileFallback: boolean }
 const slowestFirst = (a: RankedRow, b: RankedRow) => b.vector.avgMs - a.vector.avgMs || a.name.localeCompare(b.name)
 
 /**
@@ -191,19 +217,21 @@ const slowestFirst = (a: RankedRow, b: RankedRow) => b.vector.avgMs - a.vector.a
  * so an earlier window can never push a current transaction out.
  */
 export function liveWaterfallNodes(transactions: Record<string, TxMetrics> | undefined, options: LiveWaterfallOptions = {}): WaterfallNode<LiveWaterfallPayload>[] {
-  const withBaseline = Boolean(options.showBaseline && options.baseline)
+  const statistic = options.statistic ?? 'avg'
+  // The baseline keeps averages only: a percentile bar has nothing to compare with.
+  const withBaseline = Boolean(options.showBaseline && options.baseline) && statistic === 'avg'
   const current: RankedRow[] = activeEntries(transactions)
-    .map(entry => ({ ...entry, vector: txPhaseVector(entry.tx) }))
+    .map(entry => ({ ...entry, ...liveWaterfallVector(entry.tx, statistic) }))
     .sort(slowestFirst)
     .slice(0, LIVE_WATERFALL_MAX_ROWS)
   const present = new Set(activeEntries(transactions).map(r => r.name))
   const held: RankedRow[] = Object.entries(options.held ?? {})
     .filter(([name, row]) => !present.has(name) && row.windowsAgo > 0 && row.tx?.count > 0)
-    .map(([name, row]) => ({ name, tx: row.tx, heldFrom: row.lastSeen, vector: txPhaseVector(row.tx) }))
+    .map(([name, row]) => ({ name, tx: row.tx, heldFrom: row.lastSeen, ...liveWaterfallVector(row.tx, statistic) }))
     .sort(slowestFirst)
     .slice(0, Math.max(0, LIVE_WATERFALL_MAX_ROWS - current.length))
   const rows = [...current, ...held].sort(slowestFirst)
-  return rows.map(({ name, tx, vector, heldFrom }) => {
+  return rows.map(({ name, tx, vector, heldFrom, percentileFallback }) => {
     const phases = liveWaterfallSpans(vector)
     const stats = txObservationStats(tx)
     const phasesUnknown = vector.serverSource === 'unknown'
@@ -214,6 +242,7 @@ export function liveWaterfallNodes(transactions: Record<string, TxMetrics> | und
       `${fmtPct(errorPctOf(tx))} errors`,
       phasesUnknown ? `${PHASES_NOT_REPORTED_TEXT.toLowerCase()} (restored from history)` : stats.setupUnmeasured ? 'reuse not measured' : stats.reusePct === undefined ? 'reuse not reported' : liveWaterfallReuseDetail(stats),
       vector.serverSource === 'ttfb' && vector.download > 0 ? 'download includes samples with no first byte' : undefined,
+      statistic !== 'avg' && !phasesUnknown ? (percentileFallback ? 'averages: phase percentiles not reported' : `each phase's own ${LIVE_PHASE_STATISTIC_LABELS[statistic]}, not additive`) : undefined,
     ].filter(Boolean).join(' · ')
     const base = withBaseline ? stableMinuteBaselineRow(options.baseline, name) : undefined
     const node: WaterfallNode<LiveWaterfallPayload> = {
@@ -233,7 +262,7 @@ export function liveWaterfallNodes(transactions: Record<string, TxMetrics> | und
       timingSource: phasesUnknown ? 'duration' : 'aggregate',
       ...(phasesUnknown ? { derived: true } : {}),
       children: [],
-      payload: heldFrom ? { name, tx, vector, baseline: base, heldFrom } : { name, tx, vector, baseline: base },
+      payload: { name, tx, vector, baseline: base, ...(heldFrom ? { heldFrom } : {}), ...(statistic !== 'avg' ? { statistic, percentileFallback } : {}) },
     }
     if (withBaseline) {
       if (base) {
@@ -257,13 +286,14 @@ export function liveWaterfallSpanMs(nodes: readonly WaterfallNode<LiveWaterfallP
  * Headline facts for independent rows. The shared sinks add row durations as
  * if they ran in one session, which is wrong here.
  */
-export function liveWaterfallSinks(nodes: readonly WaterfallNode<LiveWaterfallPayload>[], transactions?: Record<string, TxMetrics>): WaterfallTimeSink[] {
+export function liveWaterfallSinks(nodes: readonly WaterfallNode<LiveWaterfallPayload>[], transactions?: Record<string, TxMetrics>, statistic: LivePhaseStatistic = 'avg'): WaterfallTimeSink[] {
   const sinks: WaterfallTimeSink[] = []
   // Held rows are from earlier windows: they are listed, but are not this window's facts.
   const live = nodes.filter(n => !n.payload?.heldFrom)
   if (!live.length) return sinks
   const slowest = live.reduce((a, b) => ((b.durationMs ?? 0) > (a.durationMs ?? 0) ? b : a))
-  sinks.push({ id: 'slowest', label: `Slowest: ${slowest.label}`, detail: `${formatWaterfallMs(slowest.durationMs ?? 0)} average this window`, targetId: slowest.id, tone: 'neutral' })
+  const slowestBasis = statistic === 'avg' ? 'average this window' : `phase ${LIVE_PHASE_STATISTIC_LABELS[statistic]}s laid end to end this window`
+  sinks.push({ id: 'slowest', label: `Slowest: ${slowest.label}`, detail: `${formatWaterfallMs(slowest.durationMs ?? 0)} ${slowestBasis}`, targetId: slowest.id, tone: 'neutral' })
   // Count-weighted, so a busy transaction weighs more than a rare one. Every
   // transaction in the window counts, including rows past the panel's cap.
   const totals = new Map<string, number>()
@@ -280,7 +310,7 @@ export function liveWaterfallSinks(nodes: readonly WaterfallNode<LiveWaterfallPa
   }
   const heavy = [...totals].sort((a, b) => b[1] - a[1])[0]
   if (heavy && all > 0 && heavy[1] > 0) {
-    sinks.push({ id: 'dominant-phase', label: `${PHASE_NAMES[heavy[0] as keyof typeof PHASE_NAMES]} = ${Math.round((heavy[1] / all) * 100)}% of sampled time`, detail: 'Weighted by each transaction’s samples this window', tone: 'neutral' })
+    sinks.push({ id: 'dominant-phase', label: `${PHASE_NAMES[heavy[0] as keyof typeof PHASE_NAMES]} = ${Math.round((heavy[1] / all) * 100)}% of sampled time`, detail: 'From averages, weighted by each transaction’s samples this window', tone: 'neutral' })
   }
   const grown = live.filter(n => n.delta && n.delta.outcome !== 'added').sort((a, b) => (b.delta!.ms) - (a.delta!.ms))[0]
   if (grown?.delta && grown.delta.ms >= 0.5) {

@@ -3,7 +3,7 @@
  * business-transaction samples (total_transactions + total_errors); a sample
  * that opened several connections counts once.
  */
-import type { LiveMetrics, SystemResources } from '../types'
+import type { LiveMetrics, PhasePercentileSet, SystemResources } from '../types'
 import { phaseObservationStats, txRestoredWithoutPhases, type PhaseObservationStats } from './livePhaseModel'
 
 /** Ephemeral port use at or above this share is flagged as an exhaustion risk. */
@@ -39,6 +39,11 @@ export interface ConnectionHealth {
    * row's, not a generator's.
    */
   fromHistory: boolean
+  /**
+   * The fleet's per-phase percentiles; undefined when unknown (a load
+   * generator predates them, or the window was restored from history).
+   */
+  phasePercentiles?: PhasePercentileSet
 }
 
 /**
@@ -104,5 +109,6 @@ export function connectionHealth(metrics: LiveMetrics | undefined, options: { ru
     timeWait: worst(metrics, r => r.tcp_time_wait, true),
     ephemeralPortPct: worst(metrics, r => r.ephemeral_port_utilization_pct, false),
     fromHistory: liveWindowFromHistory(metrics, options),
+    phasePercentiles: metrics.phase_percentiles && typeof metrics.phase_percentiles === 'object' ? metrics.phase_percentiles : undefined,
   }
 }

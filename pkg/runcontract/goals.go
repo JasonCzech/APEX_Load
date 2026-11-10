@@ -145,4 +145,10 @@ type TransactionSLARule struct {
 	SLOTTFTMs  *float64 `json:"slo_ttft_ms,omitempty"`
 	SLOTPOTMs  *float64 `json:"slo_tpot_ms,omitempty"`
 	SLOE2EMs   *float64 `json:"slo_e2e_ms,omitempty"`
+	// Phase judges one network phase instead of the whole duration: dns,
+	// connect, tls, server (TTFB minus setup) or download, over the samples
+	// that spent time in it. Only the duration metrics (average, min, max,
+	// p90, p95, p99) take a phase; with no such sample the rule is not
+	// evaluated rather than passed or failed.
+	Phase string `json:"phase,omitempty"`
 }

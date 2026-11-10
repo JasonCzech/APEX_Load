@@ -433,11 +433,16 @@ describe('ReportComposer test notes source panel', () => {
 		;(report.manifest as typeof report.manifest & { transaction_rule_results: unknown[] }).transaction_rule_results = [{
 			rule: { population: 'action', protocol: 'kafka', group: 'consumer', transaction: 'Checkout', metric: 'p95_duration_ms', comparator: 'lte', threshold: 800, severity: 'fail' },
 			status: 'fail', observed: 912, matched_count: 42, message: 'breached',
+		}, {
+			rule: { transaction: 'Checkout', phase: 'connect', metric: 'p95_duration_ms', comparator: 'lte', threshold: 50, severity: 'fail' },
+			status: 'pass', observed: 12, matched_count: 9, message: 'passed',
 		}]
 		apiMock.getTestArchiveReport.mockResolvedValueOnce(report)
 
 		await renderComposer('engineer')
 
+		// A phase rule names its phase, so it never reads as the whole-duration rule.
+		expect(container.textContent).toContain('connect p95_duration_ms')
 		expect(container.textContent).toContain('Transaction SLA rules')
 		expect(container.textContent).toContain('Checkout')
 		expect(container.textContent).toContain('p95_duration_ms')

@@ -43,8 +43,15 @@ const THRESHOLD_ALERT_METRIC_LABELS: Record<string, string> = {
   avg_transfer_ms: 'Avg transfer time',
 }
 
+const PHASE_ALERT_LABELS: Record<string, string> = { dns: 'DNS', connect: 'Connect', tls: 'TLS', server: 'Server', download: 'Download' }
+
 export function thresholdAlertMetricLabel(metric: string): string {
-  return THRESHOLD_ALERT_METRIC_LABELS[metric] || metric
+  const known = THRESHOLD_ALERT_METRIC_LABELS[metric]
+  if (known) return known
+  // Phase latency rules: phase_<phase>_p<percentile>_ms, e.g. "Connect P95 latency".
+  const phase = /^phase_(dns|connect|tls|server|download)_p(50|90|95|99)_ms$/.exec(metric)
+  if (phase) return `${PHASE_ALERT_LABELS[phase[1]]} P${phase[2]} latency`
+  return metric
 }
 
 function asFiniteNumber(value: unknown): number | undefined {

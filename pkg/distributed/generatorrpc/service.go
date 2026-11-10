@@ -396,10 +396,13 @@ type metricAccumulator struct {
 	tlsSumMs         float64
 	ttfbSumMs        float64
 	phaseObserved    engine.PhaseObservations
-	bytesSent        int64
-	bytesReceived    int64
-	digest           *engine.TDigest
-	sketch           *engine.DurationSketch
+	// phases records per-phase sketches; only the fleet and transaction
+	// accumulators keep them (nil elsewhere).
+	phases        *engine.PhaseSketchRecorder
+	bytesSent     int64
+	bytesReceived int64
+	digest        *engine.TDigest
+	sketch        *engine.DurationSketch
 }
 
 const (
@@ -456,7 +459,7 @@ func effectiveBatchWindowMs(a assignedTest, fallbackMs int64) int64 {
 
 func newTransactionWindowAggregate() *transactionWindowAggregate {
 	return &transactionWindowAggregate{
-		fleet:             newMetricAccumulator("fleet"),
+		fleet:             newPhaseMetricAccumulator("fleet"),
 		transactions:      make(map[string]*metricAccumulator),
 		dependencies:      make(map[string]*metricAccumulator),
 		soap:              make(map[string]*metricAccumulator),
@@ -469,6 +472,12 @@ func newMetricAccumulator(name string) *metricAccumulator {
 	return &metricAccumulator{name: name, digest: engine.NewTDigest(200), sketch: engine.NewDurationSketch()}
 }
 
+func newPhaseMetricAccumulator(name string) *metricAccumulator {
+	accumulator := newMetricAccumulator(name)
+	accumulator.phases = &engine.PhaseSketchRecorder{}
+	return accumulator
+}
+
 func (a *transactionWindowAggregate) add(tx TransactionMetric) {
 	if a == nil {
 		return
@@ -479,6 +488,9 @@ func (a *transactionWindowAggregate) add(tx TransactionMetric) {
 	transactionName := ""
 	if name := strings.TrimSpace(tx.Name); name != "" {
 		acc := boundedWindowAccumulator(a.transactions, name)
+		if acc.phases == nil && acc.count == 0 {
+			acc.phases = &engine.PhaseSketchRecorder{}
+		}
 		acc.add(tx)
 		transactionName = acc.name
 	}
@@ -657,6 +669,7 @@ func (a *metricAccumulator) add(tx TransactionMetric) {
 	a.tlsSumMs += tx.TLSMs
 	a.ttfbSumMs += tx.TTFBMs
 	a.phaseObserved.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
+	a.phases.ObserveMs(tx.DNSMs, tx.ConnectMs, tx.TLSMs, tx.TTFBMs, tx.DurationMs)
 	a.bytesSent += tx.BytesSent
 	a.bytesReceived += tx.BytesReceived
 	a.digest.Add(tx.DurationMs * float64(time.Millisecond))
@@ -668,6 +681,10 @@ func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 		return nil
 	}
 	digestSnapshot, sketchSnapshot := a.digest.Snapshot(), a.sketch.Snapshot()
+	var phaseSketches *engine.PhaseSketches
+	if a.phases != nil {
+		phaseSketches = a.phases.Snapshot()
+	}
 	successes := a.count - a.errors
 	count := float64(a.count)
 	return &MetricAggregate{
@@ -686,6 +703,7 @@ func (a *metricAccumulator) finalize(windowSec float64) *MetricAggregate {
 		AvgTLSMs:         a.tlsSumMs / count,
 		AvgTTFBMs:        a.ttfbSumMs / count,
 		PhaseObserved:    a.phaseObserved.Clone(),
+		PhaseSketches:    phaseSketches,
 		BytesSent:        a.bytesSent,
 		BytesReceived:    a.bytesReceived,
 		TPS:              float64(successes) / windowSec,
@@ -2657,7 +2675,47 @@ func isGeneratorTerminalLifecycle(state string) bool {
 	}
 }
 
+// boundPhaseSketchAggregates keeps the batch's phase sketches within
+// engine.MaxWindowPhaseSketchBins: the fleet's first, then the busiest
+// transactions and actions. Entries past the budget send none, which the
+// controller reads as unknown percentiles. It copies before clearing, so
+// aggregates kept for a lifecycle replay are not changed.
+func boundPhaseSketchAggregates(aggregates metricsAggregateSet) metricsAggregateSet {
+	total := 0
+	if aggregates.Fleet != nil {
+		total += aggregates.Fleet.PhaseSketches.Bins()
+	}
+	for _, values := range [][]MetricAggregate{aggregates.Transactions, aggregates.Actions} {
+		for i := range values {
+			total += values[i].PhaseSketches.Bins()
+		}
+	}
+	if total <= engine.MaxWindowPhaseSketchBins {
+		return aggregates
+	}
+	if aggregates.Fleet != nil {
+		fleet := *aggregates.Fleet
+		aggregates.Fleet = &fleet
+	}
+	aggregates.Transactions = append([]MetricAggregate(nil), aggregates.Transactions...)
+	aggregates.Actions = append([]MetricAggregate(nil), aggregates.Actions...)
+	var priority []engine.PhaseSketchBudgetEntry
+	if aggregates.Fleet != nil {
+		priority = append(priority, engine.PhaseSketchBudgetEntry{Key: "fleet", Sketches: &aggregates.Fleet.PhaseSketches})
+	}
+	entries := make([]engine.PhaseSketchBudgetEntry, 0, len(aggregates.Transactions)+len(aggregates.Actions))
+	for i := range aggregates.Transactions {
+		entries = append(entries, engine.PhaseSketchBudgetEntry{Key: "t:" + aggregates.Transactions[i].Name, Count: aggregates.Transactions[i].Count, Sketches: &aggregates.Transactions[i].PhaseSketches})
+	}
+	for i := range aggregates.Actions {
+		entries = append(entries, engine.PhaseSketchBudgetEntry{Key: "a:" + aggregates.Actions[i].Name, Count: aggregates.Actions[i].Count, Sketches: &aggregates.Actions[i].PhaseSketches})
+	}
+	engine.ApplyPhaseSketchBudget(engine.MaxWindowPhaseSketchBins, priority, entries)
+	return aggregates
+}
+
 func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint64, stats GeneratorStats, transactions []TransactionMetric, aggregates metricsAggregateSet, paused bool, groupAssignments map[string]int32, lifecycleState string, lifecycleError string, telemetry *MetricsTelemetry) *pb.MetricsBatch {
+	aggregates = boundPhaseSketchAggregates(aggregates)
 	activeVUsers := stats.ActiveVUsers
 	collectionFinal := IsMetricsCollectionFinal(lifecycleState)
 	if paused || collectionFinal {
@@ -2805,6 +2863,7 @@ func (s *Service) metricsBatchForMetrics(testID string, executionGeneration uint
 		RequestCountsVersion:          CurrentRequestCountsVersion,
 		GroupTransactionsVersion:      CurrentGroupTransactionsVersion,
 		LlmSummaryVersion:             CurrentLLMSummaryVersion,
+		PhaseSketchVersion:            engine.PhaseSketchVersion,
 		PropertyMetrics:               metricAggregatesToProto(aggregates.Properties),
 		RegionMetrics:                 metricAggregatesToProto(aggregates.Regions),
 		FleetMetrics:                  metricAggregateToProto(aggregates.Fleet),
@@ -3678,6 +3737,7 @@ func engineActionMetricsToAggregates(values map[string]*engine.ActionMetrics) []
 			AvgTLSMs:         metrics.AvgTLSMs,
 			AvgTTFBMs:        metrics.AvgTTFBMs,
 			PhaseObserved:    metrics.PhaseObserved.Clone(),
+			PhaseSketches:    metrics.PhaseSketches.Clone(),
 			BytesSent:        metrics.BytesSent,
 			BytesReceived:    metrics.BytesRecv,
 			ByteEvidence:     metrics.ByteEvidence,
@@ -3956,6 +4016,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	durations := engine.NewDurationDistributionMerge()
 	var weightedAvgMs, weightedDNSMs, weightedConnectMs, weightedTLSMs, weightedTTFBMs float64
 	var phaseObserved engine.PhaseObservationMerge
+	var phaseSketches engine.PhaseSketchMerge
 	var measuredBytesSent, measuredBytesReceived int64
 	hasByteEvidence := false
 	for _, value := range values {
@@ -3989,6 +4050,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 		weightedTLSMs += value.AvgTLSMs * count
 		weightedTTFBMs += value.AvgTTFBMs * count
 		phaseObserved.Add(value.PhaseObserved, value.Count)
+		phaseSketches.Add(value.PhaseSketches, value.Count)
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		if hasByteEvidence {
@@ -4030,6 +4092,7 @@ func mergeMetricAggregates(values []MetricAggregate) *MetricAggregate {
 	out.AvgTLSMs = weightedTLSMs / divisor
 	out.AvgTTFBMs = weightedTTFBMs / divisor
 	out.PhaseObserved = phaseObserved.Result()
+	out.PhaseSketches = phaseSketches.Result()
 	// Sketches merge exactly and are preferred; t-digests serve older peers.
 	if durations.Kind() != "" && durations.Count() == out.Count {
 		out.DurationDigest, out.DurationSketch = durations.Snapshots()
