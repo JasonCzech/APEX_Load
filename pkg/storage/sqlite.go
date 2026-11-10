@@ -185,6 +185,7 @@ type IntervalSummaryRecord struct {
 	Browser                  *BrowserMetricsSummaryRecord           `json:"browser,omitempty"`
 	BrowserByDevice          map[string]*BrowserDeviceMetricsRecord `json:"browser_by_device,omitempty"`
 	Latency                  *NetworkLatencySummaryRecord           `json:"latency,omitempty"`
+	NetworkPhases            *IntervalNetworkPhasesRecord           `json:"network_phases,omitempty"`
 	DroppedResultsAvailable  bool                                   `json:"dropped_results_available,omitempty"`
 	DroppedResults           int64                                  `json:"dropped_results,omitempty"`
 	WebsocketClients         int                                    `json:"websocket_clients,omitempty"`
@@ -198,6 +199,25 @@ type IntervalSummaryRecord struct {
 	TransportLagMs           float64                                `json:"transport_lag_ms,omitempty"`
 	ControllerFanoutLagMs    float64                                `json:"controller_fanout_lag_ms,omitempty"`
 	SampleAgeMs              float64                                `json:"sample_age_ms,omitempty"`
+}
+
+// IntervalNetworkPhasesRecord is the fleet network-phase breakdown of one
+// live interval: the phase averages over every sample, the server and
+// no-response split derived from them, and the phase observation counts that
+// tell a skipped phase from a fast one. A nil record means the interval
+// carried no phase data (a row written before this column existed, or a
+// sample with no phases), which reads back as unknown, never as zero.
+// PhaseObserved is kept verbatim as the engine's JSON so storage does not
+// pin its shape; AvgServerMs and AvgNoResponseMs are nil when it is unknown.
+type IntervalNetworkPhasesRecord struct {
+	AvgDNSMs        float64         `json:"avg_dns_ms"`
+	AvgConnectMs    float64         `json:"avg_connect_ms"`
+	AvgTLSMs        float64         `json:"avg_tls_ms"`
+	AvgTTFBMs       float64         `json:"avg_ttfb_ms"`
+	AvgWaitMs       float64         `json:"avg_wait_ms"`
+	AvgServerMs     *float64        `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs *float64        `json:"avg_no_response_ms,omitempty"`
+	PhaseObserved   json.RawMessage `json:"phase_observed,omitempty"`
 }
 
 // IntervalTransactionRecord is the bounded, chart-focused transaction

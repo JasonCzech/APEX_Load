@@ -1870,6 +1870,10 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		if err != nil {
 			return err
 		}
+		networkPhasesJSON, err := marshalNullableJSON(record.NetworkPhases)
+		if err != nil {
+			return err
+		}
 		var collectedAt any
 		if !record.CollectedAt.IsZero() {
 			collectedAt = record.CollectedAt
@@ -1893,11 +1897,11 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 		_, err = s.db.Exec(`INSERT INTO test_interval_summaries (
 			test_id, schema_version, timestamp, active_vusers, tps, avg_response_ms, error_pct,
 			total_transactions, total_errors, p50_ms, p90_ms, p95_ms, p99_ms,
-			native_evidence_json, llm_json, java_http_json, messaging_json, messaging_progress_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json,
+			native_evidence_json, llm_json, java_http_json, messaging_json, messaging_progress_json, transactions_json, by_region_json, browser_json, browser_by_device_json, latency_json, network_phases_json,
 			dropped_results_available, dropped_results, websocket_clients, websocket_dropped_messages, websocket_dropped_events,
 			generator_published_at, controller_received_at, collected_at, published_at,
 			generator_processing_lag_ms, transport_lag_ms, controller_fanout_lag_ms, sample_age_ms
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			testID,
 			record.SchemaVersion,
 			record.Timestamp,
@@ -1921,6 +1925,7 @@ func (s *SQLiteStore) SaveHistory(testID string, timestamp time.Time, metrics an
 			browserJSON,
 			browserByDeviceJSON,
 			latencyJSON,
+			networkPhasesJSON,
 			record.DroppedResultsAvailable,
 			record.DroppedResults,
 			record.WebsocketClients,
@@ -2070,6 +2075,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		browser_json,
 		browser_by_device_json,
 		latency_json,
+		network_phases_json,
 		dropped_results_available,
 		dropped_results,
 		websocket_clients,
@@ -2108,6 +2114,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		var browserJSON sql.NullString
 		var browserByDeviceJSON sql.NullString
 		var latencyJSON sql.NullString
+		var networkPhasesJSON sql.NullString
 		var droppedResultsAvailable sql.NullBool
 		var droppedResults sql.NullInt64
 		var websocketClients sql.NullInt64
@@ -2146,6 +2153,7 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 			&browserJSON,
 			&browserByDeviceJSON,
 			&latencyJSON,
+			&networkPhasesJSON,
 			&droppedResultsAvailable,
 			&droppedResults,
 			&websocketClients,
@@ -2196,6 +2204,11 @@ func (s *SQLiteStore) getTypedHistoryLimit(testID string, limit int) ([]any, err
 		}
 		if latencyJSON.Valid && strings.TrimSpace(latencyJSON.String) != "" {
 			if err := json.Unmarshal([]byte(latencyJSON.String), &record.Latency); err != nil {
+				return nil, err
+			}
+		}
+		if networkPhasesJSON.Valid && strings.TrimSpace(networkPhasesJSON.String) != "" {
+			if err := json.Unmarshal([]byte(networkPhasesJSON.String), &record.NetworkPhases); err != nil {
 				return nil, err
 			}
 		}
@@ -2311,6 +2324,16 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		BrowserByDevice     map[string]*browserDeviceEnvelope     `json:"browser_by_device,omitempty"`
 		Latency             *NetworkLatencySummaryRecord          `json:"latency,omitempty"`
 		Telemetry           *telemetryEnvelope                    `json:"telemetry,omitempty"`
+		// The fleet phase fields are pointers so a sample that carries none
+		// stores no phase record (read back as unknown) instead of zeros.
+		AvgDNSMs        *float64        `json:"avg_dns_ms,omitempty"`
+		AvgConnectMs    *float64        `json:"avg_connect_ms,omitempty"`
+		AvgTLSMs        *float64        `json:"avg_tls_ms,omitempty"`
+		AvgTTFBMs       *float64        `json:"avg_ttfb_ms,omitempty"`
+		AvgWaitMs       *float64        `json:"avg_wait_ms,omitempty"`
+		AvgServerMs     *float64        `json:"avg_server_ms,omitempty"`
+		AvgNoResponseMs *float64        `json:"avg_no_response_ms,omitempty"`
+		PhaseObserved   json.RawMessage `json:"phase_observed,omitempty"`
 	}
 
 	payload, err := json.Marshal(metrics)
@@ -2392,6 +2415,7 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 			Targets: append([]NetworkLatencyTargetRecord(nil), summary.Latency.Targets...),
 		}
 	}
+	record.NetworkPhases = intervalNetworkPhasesRecord(summary.AvgDNSMs, summary.AvgConnectMs, summary.AvgTLSMs, summary.AvgTTFBMs, summary.AvgWaitMs, summary.AvgServerMs, summary.AvgNoResponseMs, summary.PhaseObserved)
 	if record.Timestamp.IsZero() {
 		record.Timestamp = timestamp
 	}
@@ -2411,6 +2435,46 @@ func intervalSummaryRecordFromMetrics(timestamp time.Time, metrics any) (Interva
 		record.SampleAgeMs = summary.Telemetry.SampleAgeMs
 	}
 	return record, nil
+}
+
+// intervalNetworkPhasesRecord builds the stored phase record of one interval,
+// or nil when the sample carries no phase field at all. A present record
+// stores an absent average as 0: the live JSON omits a zero average, so within
+// a sample that has phases, absent means zero.
+func intervalNetworkPhasesRecord(dns, connect, tls, ttfb, wait, server, noResponse *float64, observed json.RawMessage) *IntervalNetworkPhasesRecord {
+	trimmed := strings.TrimSpace(string(observed))
+	if trimmed == "null" {
+		trimmed = ""
+	}
+	if dns == nil && connect == nil && tls == nil && ttfb == nil && wait == nil && server == nil && noResponse == nil && trimmed == "" {
+		return nil
+	}
+	value := func(v *float64) float64 {
+		if v == nil {
+			return 0
+		}
+		return *v
+	}
+	clone := func(v *float64) *float64 {
+		if v == nil {
+			return nil
+		}
+		out := *v
+		return &out
+	}
+	record := &IntervalNetworkPhasesRecord{
+		AvgDNSMs:        value(dns),
+		AvgConnectMs:    value(connect),
+		AvgTLSMs:        value(tls),
+		AvgTTFBMs:       value(ttfb),
+		AvgWaitMs:       value(wait),
+		AvgServerMs:     clone(server),
+		AvgNoResponseMs: clone(noResponse),
+	}
+	if trimmed != "" {
+		record.PhaseObserved = json.RawMessage(trimmed)
+	}
+	return record
 }
 
 const (
