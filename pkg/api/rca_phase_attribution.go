@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net/url"
 	"slices"
-	"strings"
 
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/rca/signatures"
@@ -24,7 +23,7 @@ const (
 // rcaReportDeterministicError reports whether a report build failed for a
 // reason the frozen archive itself decides: one of the report's own bounds.
 func rcaReportDeterministicError(err error) bool {
-	return err != nil && strings.HasPrefix(err.Error(), "archive report exceeds ")
+	return errors.Is(err, errArchiveReportBound)
 }
 
 // rcaBuildArchiveReport builds (or reads the cached) archive report the

@@ -408,6 +408,11 @@ func addSummaryLLMSeries(reader *rcaSeriesReader, scope rcaIdentityScope, summar
 	ts := newTransactionSeries(dimension, scope, -1, reader.maxPoints)
 	ts.reader = reader
 	templates, _ := ts.templatesFor(key, bucket)
+	// These series aggregate the whole run, whichever key they are filed
+	// under.
+	for _, s := range []*rca.Series{&templates.ttft, &templates.tpot, &templates.outputTokensPerSec, &templates.throttleRate} {
+		s.RunLevel = true
+	}
 	for _, w := range windows {
 		s := summaries[w.summary]
 		ok, streamed, ttftP95, tpotP95, outTokSec, throttlePct := extractIntervalLLMValues(s.LLM, w.end.Sub(w.start).Seconds())

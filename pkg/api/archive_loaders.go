@@ -449,7 +449,7 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 		metric := series[index][name]
 		if metric == nil {
 			if transactionSeriesCells >= maxArchiveReportAggregateCells {
-				return fmt.Errorf("archive summary exceeds %d transaction series cells", maxArchiveReportAggregateCells)
+				return archiveReportBoundErrorf("archive summary exceeds %d transaction series cells", maxArchiveReportAggregateCells)
 			}
 			transactionSeriesCells++
 			metric = &intervalTransactionAccumulator{}
@@ -500,7 +500,7 @@ func loadArchiveIntervalSummariesForFiltersContext(ctx context.Context, record *
 		transactionName := intervalTransactionName(tx.ActionName)
 		if _, exists := transactionNames[transactionName]; !exists {
 			if len(transactionNames) >= maxArchiveAnalysisDimensions {
-				return fmt.Errorf("archive summary exceeds %d distinct transaction names", maxArchiveAnalysisDimensions)
+				return archiveReportBoundErrorf("archive summary exceeds %d distinct transaction names", maxArchiveAnalysisDimensions)
 			}
 			transactionNames[transactionName] = struct{}{}
 		}
@@ -900,7 +900,7 @@ func readAllArchiveRecordsContext[T any](ctx context.Context, record *storage.Ru
 		}
 		totalBytes += len(scanner.Bytes())
 		if len(items) >= maxArchiveAnalysisRecords || totalBytes > maxArchiveAnalysisBytes {
-			return nil, fmt.Errorf("archive exceeds bounded analysis limit (%d records or %d bytes)", maxArchiveAnalysisRecords, maxArchiveAnalysisBytes)
+			return nil, archiveReportBoundErrorf("archive exceeds bounded analysis limit (%d records or %d bytes)", maxArchiveAnalysisRecords, maxArchiveAnalysisBytes)
 		}
 		var item T
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
@@ -930,7 +930,7 @@ func readJSONLFiltered[T any](path string, predicate func(*T) bool) ([]T, int, e
 	for scanner.Scan() {
 		totalBytes += len(scanner.Bytes())
 		if len(items) >= maxArchiveAnalysisRecords || totalBytes > maxArchiveAnalysisBytes {
-			return nil, 0, fmt.Errorf("archive exceeds bounded analysis limit")
+			return nil, 0, archiveReportBoundErrorf("archive exceeds bounded analysis limit")
 		}
 		var item T
 		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
@@ -1227,7 +1227,7 @@ func recordFirstFiniteIntervalTransactionIndexes(firstIndexByName map[string]int
 			continue
 		}
 		if len(firstIndexByName) >= maxArchiveAnalysisDimensions {
-			return fmt.Errorf("archive summaries exceed %d distinct transaction names", maxArchiveAnalysisDimensions)
+			return archiveReportBoundErrorf("archive summaries exceed %d distinct transaction names", maxArchiveAnalysisDimensions)
 		}
 		firstIndexByName[name] = index
 	}

@@ -2,7 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -162,7 +166,7 @@ func TestRCAPhaseAttributionLimitationsAndReuse(t *testing.T) {
 		reanalyz bool
 	}{
 		{name: "transient error", err: errors.New("read transactions.jsonl: connection reset"), code: limitationPhaseAttributionInterrupted, reanalyz: true},
-		{name: "report bound", err: errors.New("archive report exceeds 256 distinct action values"), code: limitationPhaseAttributionUnavailable},
+		{name: "report bound", err: archiveReportBoundErrorf("archive report exceeds %d distinct %s values", 256, "action"), code: limitationPhaseAttributionUnavailable},
 		{name: "no anatomy", report: &RunArchiveReport{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -185,7 +189,7 @@ func TestRCAPhaseAttributionInputNotesAnUnbuildableBaseline(t *testing.T) {
 	current := &RunArchiveTimeAnatomy{Transactions: []RunArchiveTransactionAnatomy{phaseAnatomyFixture("ok", 480, 500, 0, 0, 0)}}
 	stubRCAReportBuild(t, func(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
 		if record.TestID == "baseline" {
-			return nil, errors.New("archive report exceeds 256 distinct action values")
+			return nil, archiveReportBoundErrorf("archive report exceeds %d distinct %s values", 256, "action")
 		}
 		return &RunArchiveReport{TimeAnatomy: current}, nil
 	})
@@ -195,5 +199,54 @@ func TestRCAPhaseAttributionInputNotesAnUnbuildableBaseline(t *testing.T) {
 	if err != nil || len(attributions) != 1 || attributions[0].Source != signatures.PhaseSourceTail || len(limitations) != 1 ||
 		limitations[0].Code != limitationPhaseAttributionUnavailable || !strings.HasPrefix(limitations[0].Detail, "the baseline's time anatomy could not be built") {
 		t.Fatalf("%v %+v %+v", err, attributions, limitations)
+	}
+}
+
+// A real report build that hits the request dimension bound fails with the
+// same message as before, is classified as deterministic, and leaves an
+// assessment identical requests reuse.
+func TestRCAPhaseAttributionRequestDimensionBoundIsReusable(t *testing.T) {
+	root := t.TempDir()
+	start := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
+	file, err := os.Create(filepath.Join(root, "transactions.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoder := json.NewEncoder(file)
+	rows := maxArchiveAnalysisDimensions + 1
+	for i := 0; i < rows; i++ {
+		if err := encoder.Encode(TransactionEvent{Timestamp: start.Add(time.Duration(i) * time.Millisecond), ActionName: fmt.Sprintf("GET /r/%d", i), Population: "action", Success: true, DurationMs: 10}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"resources.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(root, name), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	end := start.Add(time.Minute)
+	manifest, _ := json.Marshal(RunArchiveManifest{SchemaVersion: archiveSchemaVersion, TestID: "bound", TestName: "bound", Status: "COMPLETE", CreatedAt: start, CompletedAt: end,
+		Provenance: RunArchiveProvenance{StartedAt: &start}, TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "interval_summaries.jsonl", TransactionCount: int64(rows)})
+	if err := os.WriteFile(filepath.Join(root, "manifest.json"), manifest, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	record := &storage.RunArchiveRecord{TestID: "bound", SchemaVersion: archiveSchemaVersion, ArchivePath: root, ManifestPath: filepath.Join(root, "manifest.json"), CreatedAt: start, CompletedAt: end, TransactionCount: int64(rows)}
+
+	_, buildErr := buildRunArchiveReport(record)
+	if buildErr == nil || buildErr.Error() != "archive exceeds request dimension limit" || !errors.Is(buildErr, errArchiveReportBound) {
+		t.Fatalf("build: %v", buildErr)
+	}
+	stubRCAReportBuild(t, buildRunArchiveReport)
+	_, limitations, err := (&Server{}).rcaPhaseAttributionInput(context.Background(), context.Background(), record, nil)
+	if err != nil || len(limitations) != 1 || limitations[0].Code != limitationPhaseAttributionUnavailable ||
+		limitations[0].Detail != "the run's time anatomy could not be built: archive exceeds request dimension limit" || rca.CutByBudget(limitations) {
+		t.Fatalf("%v %+v", err, limitations)
+	}
+	// The bounded-analysis loader's limit is a bound too.
+	if !rcaReportDeterministicError(fmt.Errorf("read summaries: %w", archiveReportBoundErrorf("archive exceeds bounded analysis limit"))) {
+		t.Fatal("a wrapped bounded-analysis error is not deterministic")
 	}
 }

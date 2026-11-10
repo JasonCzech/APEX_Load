@@ -194,14 +194,21 @@ func transferLimitation(transactions []string) (Limitation, bool) {
 	return Limitation{Code: LimitationPhaseTransfer, Detail: fmt.Sprintf("the extra time of %s went mostly to download, which points at bandwidth or payload size; no signature measures either", strings.Join(transactions, ", "))}, true
 }
 
-// streamedTransactions are the transaction nodes with LLM streaming
-// telemetry (TTFT or TPOT series). A streamed response's tokens all arrive
-// after its first byte, so its download time is generation time, not
-// bandwidth or payload.
+// streamedTransactions are the transaction nodes with their own LLM
+// streaming telemetry: a TTFT or TPOT series of that transaction with at
+// least one valid, finite point (a point is valid only when the interval
+// streamed). A run-level series attached to a transaction does not count.
+// A streamed response's tokens all arrive after its first byte, so its
+// download time is generation time, not bandwidth or payload.
 func streamedTransactions(series []Series) map[string]bool {
 	streamed := map[string]bool{}
 	for _, s := range series {
-		if !strings.HasPrefix(s.ID, NodeTransaction+"/") || (s.Measures != signatures.KindTTFT && s.Measures != signatures.KindTPOT) {
+		if s.RunLevel || !strings.HasPrefix(s.ID, NodeTransaction+"/") || (s.Measures != signatures.KindTTFT && s.Measures != signatures.KindTPOT) {
+			continue
+		}
+		if !slices.ContainsFunc(s.Points, func(p SeriesPoint) bool {
+			return p.Valid && !math.IsNaN(p.Value) && !math.IsInf(p.Value, 0)
+		}) {
 			continue
 		}
 		for _, node := range seriesNodes(s) {

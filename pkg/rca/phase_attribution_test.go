@@ -1,6 +1,7 @@
 package rca
 
 import (
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -205,8 +206,25 @@ func TestPhaseBonusNeverRescuesAContradictedSignature(t *testing.T) {
 func TestStreamedTransactionDownloadIsNotTransfer(t *testing.T) {
 	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
 	download := tailAttribution(map[string]float64{"download": 380})
-	streamedSeries := append(slices.Clone(series), Series{ID: "transaction/checkout/ttft_p95_ms", Kind: SeriesLatency, Measures: signatures.KindTTFT})
+	ttft := func(runLevel bool, points ...SeriesPoint) []Series {
+		return append(slices.Clone(series), Series{ID: "transaction/checkout/ttft_p95_ms", Kind: SeriesLatency, Measures: signatures.KindTTFT, RunLevel: runLevel, Points: points})
+	}
+	streamedSeries := ttft(false, SeriesPoint{At: detectStart, Value: 0}, SeriesPoint{At: detectStart.Add(time.Minute), Value: 840, Valid: true})
 	plain, _, _ := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	// Telemetry that does not show this transaction streaming does not
+	// excuse its download: no points, only invalid (non-streamed) points,
+	// or the run-level series the interval-summary fallback files under it.
+	for name, notStreamed := range map[string][]Series{
+		"point-less":  ttft(false),
+		"all invalid": ttft(false, SeriesPoint{At: detectStart, Value: 0}, SeriesPoint{At: detectStart.Add(time.Minute), Value: 900}),
+		"non-finite":  ttft(false, SeriesPoint{At: detectStart, Value: math.NaN(), Valid: true}),
+		"run-level":   ttft(true, SeriesPoint{At: detectStart, Value: 840, Valid: true}),
+	} {
+		hypotheses, _, limitations := HypothesizeWithPhases(anomalies, notStreamed, allJudged(notStreamed), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{download})
+		if h := hypothesisFor(hypotheses, "resource_pressure"); !hasLimitation(limitations, LimitationPhaseTransfer) || h == nil || len(h.Contradicting) != 1 {
+			t.Fatalf("%s: %+v %+v", name, h, limitations)
+		}
+	}
 	hypotheses, _, limitations := HypothesizeWithPhases(anomalies, streamedSeries, allJudged(streamedSeries), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{download})
 	a, h := hypothesisFor(plain, "resource_pressure"), hypothesisFor(hypotheses, "resource_pressure")
 	if a == nil || h == nil || h.Score != a.Score || h.Confidence != a.Confidence || len(h.Contradicting) != 0 || hasLimitation(limitations, LimitationPhaseTransfer) {

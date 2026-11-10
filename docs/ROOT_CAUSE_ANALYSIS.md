@@ -512,7 +512,7 @@ errors, or falling throughput, on a transaction or action series.
   supports a signature: it has no onset and no graph path. A change
   dominated by download points at bandwidth or payload size, which no
   signature measures (`phase_transfer_unmodeled`), except on a transaction
-  with LLM streaming telemetry (TTFT or TPOT series), whose tokens all
+  that streamed (its own TTFT or TPOT series has a valid point; the run-level interval-summary fallback does not count), whose tokens all
   arrive after the first byte: there download growth is neither a transfer
   problem nor evidence for or against any signature. A run or comparable
   baseline whose report exceeds one of the report's own bounds is noted as
