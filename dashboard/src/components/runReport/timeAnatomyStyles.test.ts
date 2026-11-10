@@ -42,8 +42,9 @@ const contrast = (a: string, b: string) => {
 
 describe('time anatomy phase palette', () => {
   const slotFor = (phase: string) => {
-    const base = block(anatomyCss, '.run-report-time-anatomy,\n.run-report-anatomy-drawer {')
-    return new RegExp(`--rr-phase-${phase}:\\s*var\\(--chart-([1-6])\\b`).exec(base)?.[1] || ''
+    // The report sets the shared waterfall's tokens on its panel, its drawer and its portaled tooltip.
+    const base = block(anatomyCss, '.run-report-time-anatomy,\n.run-report-anatomy-drawer,\n.wf-tooltip.rr-anatomy-tooltip {')
+    return new RegExp(`--phase-${phase}:\\s*var\\(--chart-([1-6])\\b`).exec(base)?.[1] || ''
   }
 
   it('takes each timed phase from its own validated theme series colour', () => {
@@ -53,7 +54,9 @@ describe('time anatomy phase palette', () => {
     // --chart-4 is red in every theme: a phase in it would read as an error.
     expect(slots).not.toContain('4')
     // No theme override may swap a timed phase back to a hand-picked colour.
-    for (const phase of TIMED_PHASES) expect(anatomyCss.match(new RegExp(`--rr-phase-${phase}:`, 'g'))).toHaveLength(1)
+    for (const phase of TIMED_PHASES) expect(anatomyCss.match(new RegExp(`--phase-${phase}:`, 'g'))).toHaveLength(1)
+    // The fallback renderer's own tokens are gone with it.
+    expect(anatomyCss).not.toContain('--rr-phase-')
   })
 
   it.each(Object.entries(themes))('%s: phases are distinct and readable on the card', (_, { selector, surface }) => {

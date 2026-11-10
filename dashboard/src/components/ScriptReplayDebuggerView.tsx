@@ -1,5 +1,4 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
-import RequestResponseInspector from './RequestResponseInspector'
 import type { RequestResponseInspectorTab, ResponseActions } from './requestResponseInspectorModel'
 
 import { scriptDataUsage } from './scriptDataUsageModel'
@@ -24,7 +23,7 @@ import { formatPacingTiming } from './runtimeTiming'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
-import { memo, useMemo, useRef, useState, useEffect } from 'react'
+import { lazy, memo, Suspense, useMemo, useRef, useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
@@ -72,6 +71,11 @@ import type {
 } from './scriptEditorState'
 import type { useScriptReplayDebuggerController } from './useScriptReplayDebuggerController'
 import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
+
+// The Request/Response inspector and its header, correlation and network
+// tables load with the first selected step, keeping them out of the
+// ScriptEditor chunk.
+const RequestResponseInspector = lazy(() => import('./RequestResponseInspector'))
 
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
 const DEBUG_LOG_VIRTUALIZE_THRESHOLD = 100
@@ -1013,6 +1017,7 @@ export function ScriptReplayDebuggerView({
                     {!replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, F9, or Cmd/Ctrl+B), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
+                      <Suspense fallback={<div className="debugger-empty" role="status">Loading request and response…</div>}>
                       <RequestResponseInspector
                         event={selectedReplayEvent}
                         index={selectedReplayEventIndex}
@@ -1037,6 +1042,7 @@ export function ScriptReplayDebuggerView({
                         events={debugEvents}
                         onSelectEvent={selectInspectorEvent}
                       />
+                      </Suspense>
                     ) : (replaying && browserReplaySession?.current_action) ? (
                       (() => {
                         const ca = browserReplaySession?.current_action

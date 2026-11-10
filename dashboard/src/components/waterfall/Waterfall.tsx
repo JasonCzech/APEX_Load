@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { defaultRangeExtractor, useVirtualizer, type Range } from '@tanstack/react-virtual'
-import { type WaterfallTimeSink, ancestorIds, criticalPathIds, defaultWaterfallExpanded, isFailureCandidate, flattenAll, flattenVisible, isTimed, topTimeSinks, walk } from './analysis'
+import { type WaterfallTimeSink, ancestorIds, criticalPathIds, defaultWaterfallExpanded, isFailureCandidate, flattenAll, flattenVisible, isTimed, topTimeSinks, walk, waterfallRowDomId } from './analysis'
 import { clampViewport, fitViewport, fullViewport, isFullViewport, niceTicks, panViewport, zoomViewport, type WaterfallViewport } from './axis'
 import { WATERFALL_TOGGLE_PHASES, type WaterfallPhaseKey } from './phases'
 import { WaterfallMinimap } from './WaterfallMinimap'
@@ -61,6 +61,15 @@ export interface WaterfallProps<T> {
   scaleLabels?: Partial<Record<WaterfallScaleMode, string>>
   /** Sort options offered, in order (default: all; 'change' only with deltas). */
   sortModes?: readonly WaterfallSortMode[]
+  /** Legend name of hatched idle time (default "Think / idle"). */
+  idleLegendLabel?: string
+  /**
+   * Row DOM ids become `waterfallRowDomId(rowIdPrefix, node.id)`, so a caller
+   * can find a row by its node id (to scroll the page to it).
+   */
+  rowIdPrefix?: string
+  /** Extra class on the tooltip, which is portaled out of `.wf-root`. */
+  tooltipClassName?: string
 }
 
 const SORT_LABELS: Record<WaterfallSortMode, string> = {
@@ -109,6 +118,9 @@ export function Waterfall<T>({
   showStartOffset = true,
   scaleLabels,
   sortModes = ALL_SORT_MODES,
+  idleLegendLabel = 'Think / idle',
+  rowIdPrefix,
+  tooltipClassName,
 }: WaterfallProps<T>) {
   const baseId = useId().replace(/:/g, '')
   const tooltipId = `${baseId}-tooltip`
@@ -189,7 +201,10 @@ export function Waterfall<T>({
   const maxTicks = axisWidth > 0 ? Math.min(8, Math.max(2, Math.floor(axisWidth / 64))) : 8
   const ticks = useMemo(() => niceTicks(viewport, maxTicks), [viewport, maxTicks])
   const fullSpan = useMemo(() => fullViewport(total), [total])
-  const rowDomId = (id: string) => `${baseId}-r${domIndex.get(id) ?? 'x'}-${safeDomPart(id)}`
+  const rowDomId = (id: string) => (rowIdPrefix ? waterfallRowDomId(rowIdPrefix, id) : `${baseId}-r${domIndex.get(id) ?? 'x'}-${safeDomPart(id)}`)
+  // A bar id never equals another row's id: an encoded prefixed id has `_` only before four hex
+  // digits (never `_bar`), and a default id is unique by its `-r{index}-` part.
+  const barDomId = (domId: string) => `${domId}_bar`
   const activeIndex = rows.findIndex(r => r.node.id === selectedId)
   const activeRow = activeIndex >= 0 ? rows[activeIndex] : null
   const selectedNode = selectedId ? nodeById.get(selectedId) ?? null : null
@@ -597,7 +612,7 @@ export function Waterfall<T>({
     // again whenever the list scrolls under the anchored tooltip.
     const measure = () => {
       const id = rowDomId(activeNodeId)
-      const rect = (document.getElementById(`${id}-bar`) ?? document.getElementById(id))?.getBoundingClientRect()
+      const rect = (document.getElementById(barDomId(id)) ?? document.getElementById(id))?.getBoundingClientRect()
       // Hide rather than float over other UI when the row is scrolled out of the grid.
       const view = bodyRef.current?.getBoundingClientRect()
       // No layout (zero-size grid) means nothing to compare against: treat as visible.
@@ -648,7 +663,7 @@ export function Waterfall<T>({
         key={r.node.id}
         row={r}
         domId={domId}
-        barId={`${domId}-bar`}
+        barId={barDomId(domId)}
         viewport={viewport}
         scaleMode={scaleMode}
         ticks={ticks}
@@ -713,7 +728,7 @@ export function Waterfall<T>({
             </button>
           </li>
         ))}
-        {showIdleLegend && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-gap" aria-hidden="true" />Think / idle</span></li>}
+        {showIdleLegend && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-gap" aria-hidden="true" />{idleLegendLabel}</span></li>}
         {hasDelta && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-ghost" aria-hidden="true" />{baselineLabel}</span></li>}
         {hidden.size > 0 && <li><button type="button" className="wf-legend-chip" onClick={() => setHidden(new Set())}>Show all</button></li>}
       </ul>
@@ -810,7 +825,7 @@ export function Waterfall<T>({
         </div>
       )}
       {/* Portaled: .wf-root's container query makes it the containing block for position: fixed. */}
-      {tipState && tipNode && typeof document !== 'undefined' && createPortal(<WaterfallTooltip id={tooltipId} node={tipNode} state={tipState} critical={critical.has(tipNode.id)} phaseLabels={phaseLabels} showStart={showStartOffset} />, document.body)}
+      {tipState && tipNode && typeof document !== 'undefined' && createPortal(<WaterfallTooltip id={tooltipId} className={tooltipClassName} node={tipNode} state={tipState} critical={critical.has(tipNode.id)} phaseLabels={phaseLabels} showStart={showStartOffset} />, document.body)}
     </div>
   )
 }

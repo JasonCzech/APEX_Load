@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { childGaps, criticalPathIds, dominantPhase, filterTree, flattenAll, flattenVisible, phaseTotals, selfChildTime, sortSiblings, topTimeSinks } from './analysis'
+import { childGaps, criticalPathIds, dominantPhase, filterTree, flattenAll, flattenVisible, phaseTotals, selfChildTime, sortSiblings, topTimeSinks, waterfallRowDomId } from './analysis'
 import { nodeFromAggregatePhaseVector, phasesFromTraceTimings } from './aggregate'
 import type { WaterfallNode, WaterfallPhaseSpan } from './types'
 
@@ -171,5 +171,38 @@ describe('round-7 analysis fixes', () => {
     const ids = criticalPathIds([onlyA])
     expect(ids.has('a')).toBe(false)
     expect(ids.has('b')).toBe(true)
+  })
+})
+
+describe('waterfall gaps known only up to a point', () => {
+  it('draws no gap and claims no self time past the end of the known children', () => {
+    const tx = { ...parent('tx', [leaf('a', 0, 10), leaf('b', 20, 10)]), durationMs: 60 }
+    expect(childGaps(tx).map(gap => [gap.startMs, gap.durationMs])).toEqual([[10, 10], [30, 30]])
+    expect(selfChildTime(tx)).toMatchObject({ selfMs: 40 })
+    // Children complete only up to 30 ms (truncated): the trailing stretch is unknown.
+    const truncated = { ...tx, gapsKnownUntilMs: 30 }
+    expect(childGaps(truncated).map(gap => [gap.startMs, gap.durationMs])).toEqual([[10, 10]])
+    expect(selfChildTime(truncated)).toBeNull()
+    // Children may be missing anywhere (partial): no gap at all.
+    expect(childGaps({ ...tx, gapsKnownUntilMs: 0 })).toEqual([])
+    // Known through the end: unchanged.
+    expect(childGaps({ ...tx, gapsKnownUntilMs: 60 })).toEqual(childGaps(tx))
+    expect(selfChildTime({ ...tx, gapsKnownUntilMs: 60 })).toEqual(selfChildTime(tx))
+  })
+
+  it('clips a gap that straddles the known end', () => {
+    const tx = parent('tx', [leaf('a', 0, 10), leaf('b', 50, 10)])
+    expect(childGaps({ ...tx, gapsKnownUntilMs: 30 }).map(gap => [gap.startMs, gap.durationMs])).toEqual([[10, 20]])
+  })
+})
+
+describe('waterfall row DOM ids', () => {
+  it('gives distinct node ids distinct ids under a prefix, none of which is another row\'s bar id', () => {
+    const ids = ['3|GET /a b#1', '3|GET /a_b#1', '3|GET /a.b#1', 'x-bar', 'x', 'x_bar']
+    const dom = ids.map(id => waterfallRowDomId('p', id))
+    expect(new Set(dom).size).toBe(ids.length)
+    for (const id of dom) expect(id).toMatch(/^p-[A-Za-z0-9_-]+$/)
+    // A bar id is its row id plus `_bar`, which no encoded row id can equal.
+    for (const id of dom) expect(dom).not.toContain(`${id}_bar`)
   })
 })

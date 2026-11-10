@@ -9,8 +9,9 @@ import type { ArchiveTransactionWaterfall, ArchiveWaterfallRow, RunArchiveRepres
 import fixture from './__fixtures__/timeAnatomyReport.json'
 import RepresentativeTransactionDrawer from './RepresentativeTransactionDrawer'
 
-const mocks = vi.hoisted(() => ({ api: { getTestArchiveTransactionWaterfall: vi.fn() } }))
+const mocks = vi.hoisted(() => ({ api: { getTestArchiveTransactionWaterfall: vi.fn() }, download: vi.fn() }))
 vi.mock('../../hooks/useApi', () => ({ useApi: () => mocks.api }))
+vi.mock('../../utils/fileUtils', () => ({ downloadTextFile: mocks.download }))
 
 const anatomy = fixture.time_anatomy as unknown as RunArchiveTimeAnatomy
 const sample = anatomy.transactions[0].representatives!.find(item => item.reason === 'p95') as RunArchiveRepresentativeSample
@@ -33,6 +34,15 @@ const response: ArchiveTransactionWaterfall = {
   ],
   requests_total: 2,
   decomposition: { instances: 1, avg_duration_ms: 130, phases: { dns_ms: 0, connect_ms: 10, tls_ms: 0, server_ms: 85, download_ms: 15, unsplit_ms: 0 }, non_request_ms: 20, overlap_ms: 0, avg_requests_per_instance: 2 },
+}
+
+/** The shared waterfall's rows, in display order. */
+const gridRows = (root: ParentNode) => Array.from(root.querySelectorAll<HTMLElement>('[role="treegrid"] [data-node-id]'))
+const rowLabels = (root: ParentNode) => gridRows(root).map(item => item.querySelector('.wf-name-label')?.textContent)
+const clickRow = (root: ParentNode, label: string) => {
+  const target = gridRows(root).find(item => item.querySelector('.wf-name-label')?.textContent === label)?.querySelector<HTMLElement>('.wf-name-label')
+  expect(target).toBeTruthy()
+  return act(async () => { target?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
 }
 
 function apiError(status: number) {
@@ -105,14 +115,22 @@ describe('RepresentativeTransactionDrawer', () => {
   it('draws the rebuilt transaction from the backend phases', async () => {
     mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue(response)
     await open()
-    const rows = Array.from(container.querySelectorAll('.rr-phase-row'))
-    expect(rows.map(item => item.querySelector('.rr-phase-label')?.textContent)).toEqual(['Checkout', 'GET /cart', 'POST /cart', 'Outside requests'])
+    expect(container.querySelector('[role="treegrid"]')?.getAttribute('aria-label')).toBe('Waterfall for p95 Checkout')
+    expect(rowLabels(container)).toEqual(['Checkout', 'GET /cart', 'POST /cart', 'Outside requests'])
     expect(container.textContent).toContain('This Checkout: server 65%')
-    const post = Array.from(container.querySelectorAll<HTMLButtonElement>('.rr-phase-row button')).find(button => button.textContent?.includes('POST /cart'))
-    expect(post).toBeTruthy()
-    if (!post) return
-    await act(async () => post.click())
+    // Measured per request, from the backend phases; the outside row is muted.
+    const post = gridRows(container).find(item => item.textContent?.includes('POST /cart'))
+    expect(post?.querySelector('[data-source]')?.getAttribute('data-source')).toBe('protocol_evidence')
+    expect(post?.querySelectorAll('.wf-seg.phase-connect, .wf-seg.phase-wait, .wf-seg.phase-receive')).toHaveLength(3)
+    expect(gridRows(container)[3].querySelector('.wf-bar-think.wf-bar-derived')).not.toBeNull()
+    await clickRow(container, 'POST /cart')
+    expect(post?.getAttribute('aria-selected')).toBe('true')
     expect(container.querySelector('.rr-anatomy-row-pane')?.textContent).toContain('Connectionnew')
+    // The report's phase names, not the debugger's.
+    const legend = container.querySelector('.wf-legend')?.textContent
+    expect(legend).toContain('Server wait')
+    expect(legend).toContain('Outside requests')
+    expect(legend).not.toContain('Think / idle')
   })
 
   it('sends the ordinal hints for a transaction open across any number of rows', async () => {
@@ -134,9 +152,9 @@ describe('RepresentativeTransactionDrawer', () => {
     expect(container.querySelectorAll('.rr-anatomy-callout')).toHaveLength(1)
     expect(container.querySelector('.rr-anatomy-composition')).toBeNull()
     expect(container.textContent).not.toContain('This Checkout:')
-    const rows = Array.from(container.querySelectorAll('.rr-phase-row'))
-    expect(rows.map(item => item.querySelector('.rr-phase-label')?.textContent)).toEqual(['Checkout', 'GET /cart', 'POST /cart'])
-    expect(rows[0].querySelectorAll('.rr-phase-gap')).toHaveLength(0)
+    expect(rowLabels(container)).toEqual(['Checkout', 'GET /cart', 'POST /cart'])
+    expect(gridRows(container)[0].querySelectorAll('.wf-gap')).toHaveLength(0)
+    expect(container.querySelector('.wf-legend')?.textContent).not.toContain('Outside requests')
   })
 
   it('says why a work-budget drill-down has no requests', async () => {
@@ -159,8 +177,7 @@ describe('RepresentativeTransactionDrawer', () => {
     expect(callouts[0]).not.toMatch(/pending_global_cap|identity_cap/)
     // The one-VUser replay holds its full request set, so its breakdown and outside time stay.
     expect(container.textContent).toContain('This Checkout: server 65%')
-    const rows = Array.from(container.querySelectorAll('.rr-phase-row'))
-    expect(rows.map(item => item.querySelector('.rr-phase-label')?.textContent)).toEqual(['Checkout', 'GET /cart', 'POST /cart', 'Outside requests'])
+    expect(rowLabels(container)).toEqual(['Checkout', 'GET /cart', 'POST /cart', 'Outside requests'])
   })
 
   it('draws the root as its decomposition and keeps tiny gaps off the list', async () => {
@@ -176,16 +193,24 @@ describe('RepresentativeTransactionDrawer', () => {
       requests_total: 3,
     })
     await open()
-    const rows = Array.from(container.querySelectorAll('.rr-phase-row'))
+    const rows = gridRows(container)
     // The 0.1 ms gaps get no rows; the 100 ms one at the end does.
-    expect(rows.map(item => item.querySelector('.rr-phase-label')?.textContent)).toEqual(['Checkout', 'GET /a', 'GET /b', 'GET /c', 'Outside requests'])
-    const rootTrack = rows[0].querySelector('.rr-phase-track')
-    expect(rootTrack?.querySelector('.rr-phase-parent')).toBeNull()
-    expect(rootTrack?.querySelectorAll('.rr-phase-wait').length).toBeGreaterThan(0)
-    expect(rootTrack?.querySelectorAll('.rr-phase-receive')).toHaveLength(1)
-    expect(rootTrack?.querySelectorAll('.rr-phase-gap')).toHaveLength(3)
-    expect(rows[0].querySelector('.sr-only')?.textContent).toContain('Server wait 280 ms, Download 20 ms, outside requests 100 ms')
-    expect(container.querySelector('.rr-phase-legend')?.textContent).toContain('Outside requests')
+    expect(rowLabels(container)).toEqual(['Checkout', 'GET /a', 'GET /b', 'GET /c', 'Outside requests'])
+    // The root track draws each request in its dominant phase and hatches the time none ran.
+    const rootTrack = rows[0].querySelector('.wf-bar-parent')
+    expect(rootTrack?.querySelectorAll('.wf-mini.phase-wait')).toHaveLength(3)
+    expect(rootTrack?.querySelectorAll('.wf-gap:not(.think)')).toHaveLength(2)
+    expect(rootTrack?.querySelectorAll('.wf-gap.think')).toHaveLength(1)
+    expect(container.querySelector('.wf-legend')?.textContent).toContain('Outside requests')
+    expect(container.querySelector('.rr-anatomy-definitions')?.textContent).toContain('Outside requests: Time inside the transaction when none of its requests was running')
+    // The facts strip names time outside requests as the report does, not as think time.
+    const facts = container.querySelector('[aria-label="Where this instance spent its time"]')?.textContent
+    // Hatched gaps count too: the 100 ms row plus the 0.1 and 0.2 ms gaps.
+    expect(facts).toContain('Outside requests = 100.3 ms (25%)')
+    expect(facts).not.toContain('Think time')
+    // Phases carry the report's names, never the debugger's TTFB wording.
+    expect(facts).toContain('Server wait = ')
+    expect(facts).not.toContain('Wait (TTFB)')
   })
 
   it.each([
@@ -216,6 +241,12 @@ describe('RepresentativeTransactionDrawer', () => {
     expect(container.textContent).toContain('GET /cart')
   })
 
+  it('offers no HAR before the instance is rebuilt', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockReturnValue(new Promise(() => {}))
+    await open()
+    expect(Array.from(container.querySelectorAll('button')).some(button => button.textContent === 'Download HAR')).toBe(false)
+  })
+
   it('offers no Retry for a missing event', async () => {
     mocks.api.getTestArchiveTransactionWaterfall.mockRejectedValue(apiError(404))
     await open()
@@ -227,6 +258,62 @@ describe('RepresentativeTransactionDrawer', () => {
     await open()
     expect(container.textContent).toContain('Showing first 2 of 812 requests.')
     expect(container.textContent).toContain('Legacy archive: VUser IDs may be reused, so requests from another VUser may appear.')
+    // The time after the last kept request is unknown: no outside row, no hatching there.
+    expect(rowLabels(container)).toEqual(['Checkout', 'GET /cart', 'POST /cart'])
+    expect(gridRows(container)[0].querySelectorAll('.wf-gap')).toHaveLength(0)
+  })
+
+  it('offers the trace of a traced request in its APM provider, and only then', async () => {
+    const links = [{ provider: 'dynatrace', connection_id: 'dt-1', url: 'https://abc123.live.dynatrace.com/ui/apps/dynatrace.distributedtracing/explorer?traceId=4bf92f3577b34da6a3ce929d0e0e4736' }]
+    const traced = { ...response.requests[1], trace_id: '4bf92f3577b34da6a3ce929d0e0e4736', trace_links: links }
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue({ ...response, requests: [response.requests[0], traced] })
+    await open()
+    await clickRow(container, 'POST /cart')
+    const pane = container.querySelector('.rr-anatomy-row-pane')
+    const anchors = Array.from(pane?.querySelectorAll<HTMLAnchorElement>('a') || [])
+    expect(anchors.map(anchor => anchor.textContent)).toEqual(['Open trace in Dynatrace', 'Open trace in Dynatrace'])
+    expect(anchors.every(anchor => anchor.href === links[0].url && anchor.target === '_blank' && anchor.rel === 'noopener noreferrer')).toBe(true)
+    // One sits on the server phase row.
+    const server = Array.from(pane?.querySelectorAll('tbody tr') || []).find(tr => tr.querySelector('th')?.textContent === 'Server wait')
+    expect(server?.querySelector('a')?.textContent).toBe('Open trace in Dynatrace')
+    expect(pane?.textContent).toContain('4bf92f3577b34da6a3ce929d0e0e4736')
+    // A request with no trace offers none.
+    await clickRow(container, 'GET /cart')
+    expect(container.querySelector('.rr-anatomy-row-pane a')).toBeNull()
+  })
+
+  it('says when the APM link settings could not be read', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue({ ...response, trace_links_unavailable: true })
+    await open()
+    expect(container.textContent).toContain('APM link settings could not be read; trace IDs are still shown.')
+  })
+
+  it('downloads the shown instance as a HAR built from the archive rows', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue(response)
+    mocks.download.mockResolvedValue('browser_started')
+    await open()
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === 'Download HAR')
+    expect(button).toBeTruthy()
+    await act(async () => button?.click())
+    expect(mocks.download).toHaveBeenCalledTimes(1)
+    const [content, name, type] = mocks.download.mock.calls[0] as [string, string, string]
+    expect(name).toMatch(/^p95-checkout-[a-z0-9]{8}\.har$/)
+    expect(type).toBe('application/json')
+    const har = JSON.parse(content)
+    expect(har.log.version).toBe('1.2')
+    expect(har.log.pages).toEqual([expect.objectContaining({ id: 'page_1', title: 'P95 Checkout' })])
+    expect(har.log.entries.map((entry: { request: { method: string } }) => entry.request.method)).toEqual(['GET', 'POST'])
+    expect(har.log.entries[1].timings).toMatchObject({ connect: 10, wait: 70, receive: 10 })
+    expect(container.querySelector('[role="alert"]')).toBeNull()
+  })
+
+  it('shows why a HAR could not be saved', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue(response)
+    mocks.download.mockRejectedValue(new Error('The native save bridge is unavailable in the desktop application.'))
+    await open()
+    const button = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === 'Download HAR')
+    await act(async () => button?.click())
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe('The native save bridge is unavailable in the desktop application.')
   })
 
   it('closes on Escape and returns focus to the chip', async () => {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { BrowserReplayEvent } from '../../types/replay'
 import { buildDebugTimelineModel } from './debugEventModel'
-import { debugRequestView, toCurl, toHarLog } from './debugRequestExport'
+import { debugRequestView, harTimings, toCurl, toHarLog } from './debugRequestExport'
 
 const event: BrowserReplayEvent = {
   phase: 'action', action_index: 0, action_name: 'Pay', action_type: 'request', method: 'POST', target: 'https://shop.test/pay?x=1',
@@ -98,5 +98,23 @@ describe('HAR picks the document chain', () => {
     const entry = toHarLog(debugRequestView(e)!, row).log.entries[0]
     expect(entry.time).toBe(300)
     expect(entry.startedDateTime).toBe('2026-11-09T12:00:00.100Z')
+  })
+})
+
+describe('HAR timings from phase durations', () => {
+  const segments = [{ key: 'dns', durationMs: 5 }, { key: 'tls', durationMs: 10 }, { key: 'connect', durationMs: 20 }, { key: 'total', durationMs: 65 }]
+  const sum = (t: ReturnType<typeof harTimings>['timings']) => Math.max(0, t.blocked) + Math.max(0, t.dns) + Math.max(0, t.connect) + t.send + t.wait + t.receive
+
+  it('puts an untimed remainder in blocked by default, or in wait when asked, and always adds up', () => {
+    const blocked = harTimings(segments, 100)
+    expect(blocked).toEqual({ measured: true, timings: { blocked: 65, dns: 5, connect: 30, ssl: 10, send: 0, wait: 0, receive: 0 } })
+    const wait = harTimings(segments, 100, 'wait')
+    expect(wait.timings).toMatchObject({ blocked: 0, wait: 65, connect: 30, ssl: 10 })
+    expect(sum(blocked.timings)).toBe(100)
+    expect(sum(wait.timings)).toBe(100)
+  })
+
+  it('reports a total-only request as all wait', () => {
+    expect(harTimings([{ key: 'total', durationMs: 40 }], 40, 'wait')).toEqual({ measured: false, timings: { blocked: -1, dns: -1, connect: -1, ssl: -1, send: 0, wait: 40, receive: 0 } })
   })
 })

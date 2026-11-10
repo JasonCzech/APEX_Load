@@ -5,6 +5,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { LIVE_TRACE_LINKS_MAX_IDS, type ExemplarLink, type LiveTraceLinksResponse } from '../types/rca'
 import { formatTimeOfDay } from '../utils/dateTime'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
+import { traceLinkProviderLabel } from './traceLinkLabels'
 import { formatWaterfallMs } from './waterfall/phases'
 import { EXEMPLAR_RETENTION_MS, EXEMPLAR_WINDOW_TOLERANCE_MS, exemplarWindowsInRange, exemplarsForTransactions, nearestExemplarWindow, slowestExemplarWindowInRange, type ExemplarTimeRange, type ExemplarWindow } from './liveWindowRetention'
 import './LiveWaterfallPanel.css'
@@ -25,12 +26,7 @@ const REASON_LABELS: Record<string, string> = {
   sample: 'Sample',
 }
 
-const LINK_PROVIDER_LABELS: Record<string, string> = {
-  dynatrace: 'Dynatrace',
-  elasticsearch: 'Kibana (ELK)',
-}
-
-const linkLabel = (link: ExemplarLink) => `Open in ${LINK_PROVIDER_LABELS[link.provider] ?? link.provider}`
+const linkLabel = (link: ExemplarLink) => `Open in ${traceLinkProviderLabel(link.provider)}`
 
 interface Props {
   testId: string
