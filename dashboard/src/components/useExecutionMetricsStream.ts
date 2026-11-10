@@ -6,6 +6,7 @@ import { LiveMetrics, MetricsHistoryPoint, NetworkLatency, TelemetryHealth, Test
 import { isCompletedTestStatus } from '../utils/testStatusUtils'
 import { recordClientTelemetryReceipt } from './clientTelemetryReceipt'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
+import { advanceLiveWindowRetention, emptyLiveWindowRetention, type LiveWindowRetention } from './liveWindowRetention'
 import { mapExecutionHistory, mapExecutionMetricToHistoryPoint, mergeMetricsHistory } from './testExecutionMetricsModel'
 
 // Upper bound on retained live points. The previous 300-point cap truncated
@@ -61,6 +62,9 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   const { getTest } = useTestApi()
   const [localMetricsHistory, setLocalMetricsHistory] = useState<MetricsHistoryPoint[]>([])
   const [latestMetrics, setLatestMetrics] = useState<LiveMetrics>()
+  // Per-window exemplars and the first stable minute's phase averages, which
+  // history points do not keep. Bounded; reset on run change.
+  const [liveRetention, setLiveRetention] = useState<LiveWindowRetention>(emptyLiveWindowRetention)
 
   // Distinguish the first socket open (nothing has been missed yet) from a
   // reconnect (a window may have been missed while the socket was down, and
@@ -111,6 +115,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   useEffect(() => {
     setLocalMetricsHistory([])
     setLatestMetrics(undefined)
+    setLiveRetention(emptyLiveWindowRetention())
     lastSeenTimestampRef.current = undefined
     hasConnectedRef.current = false
     // Reset the completed-run backfill guard too: this effect just wiped the
@@ -147,6 +152,9 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
 
     const point = mapExecutionMetricToHistoryPoint({ ...msg.data, timestamp: msg.timestamp })
     lastSeenTimestampRef.current = msg.timestamp
+    const windowData = msg.data
+    const windowTimestamp = msg.timestamp
+    setLiveRetention(prev => advanceLiveWindowRetention(prev, windowData, windowTimestamp))
 
     setLocalMetricsHistory((prev) => [...prev, applyLatencyTargets(point, msg.data?.latency)].slice(-EXECUTION_STREAM_HISTORY_LIMIT))
   }, [])
@@ -182,5 +190,5 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
     onOpen: handleStreamOpen,
   })
 
-  return { localMetricsHistory, latestMetrics }
+  return { localMetricsHistory, latestMetrics, liveRetention }
 }

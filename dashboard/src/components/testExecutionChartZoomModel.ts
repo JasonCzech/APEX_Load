@@ -125,3 +125,20 @@ export function getExecutionChartRefArea(state: ExecutionChartZoomState) {
     refAreaEnd: (state.refAreaRight ?? state.refAreaLeft)?.label ?? '',
   }
 }
+
+/** Pointer travel (px) under which a press and release is a click, not a zoom drag. */
+export const EXECUTION_CHART_CLICK_SLOP_PX = 4
+
+export interface ExecutionChartPointerPosition {
+  x: number
+  y: number
+}
+
+/**
+ * A press and release on a chart counts as a point click when the pointer
+ * barely moved; anything longer is the drag-to-zoom gesture.
+ */
+export function isExecutionChartClick(down: ExecutionChartPointerPosition | null | undefined, up: ExecutionChartPointerPosition | null | undefined, slopPx = EXECUTION_CHART_CLICK_SLOP_PX): boolean {
+  if (!down || !up || ![down.x, down.y, up.x, up.y].every(Number.isFinite)) return false
+  return Math.hypot(up.x - down.x, up.y - down.y) <= slopPx
+}

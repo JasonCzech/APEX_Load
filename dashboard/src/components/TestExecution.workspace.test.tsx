@@ -94,6 +94,10 @@ describe('TestExecution advanced details', () => {
     await render()
     await clickTab('Diagnostics')
     expect(container.textContent).toContain('Diagnostics Graphs Content')
+    // Connection health sits between the graphs and the telemetry panels.
+    const text = container.textContent || ''
+    expect(text.indexOf('Connection health')).toBeGreaterThan(text.indexOf('Diagnostics Graphs Content'))
+    expect(text.indexOf('Connection health')).toBeLessThan(text.indexOf('Telemetry Capacity Content'))
     expect(container.textContent).toContain('Telemetry Capacity Content')
     await clickTab('Configuration')
     expect(container.textContent).toContain('Configuration Content compact')

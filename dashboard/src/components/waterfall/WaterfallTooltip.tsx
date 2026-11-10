@@ -14,8 +14,12 @@ export interface WaterfallTooltipState {
 
 const TOOLTIP_WIDTH = 300
 
-/** Floating, non-interactive tooltip shared by pointer hover and keyboard focus. */
-export function WaterfallTooltip({ id, node, state, critical }: { id: string; node: WaterfallNode<unknown>; state: WaterfallTooltipState; critical: boolean }) {
+/**
+ * Floating, non-interactive tooltip shared by pointer hover and keyboard focus.
+ * `showStart` false leaves out the "starts +…" offset, for rows that share no
+ * timeline (independent aggregates all drawn from 0).
+ */
+export function WaterfallTooltip({ id, node, state, critical, phaseLabels, showStart = true }: { id: string; node: WaterfallNode<unknown>; state: WaterfallTooltipState; critical: boolean; phaseLabels?: Partial<Record<WaterfallPhaseKey, string>>; showStart?: boolean }) {
   const totals = phaseTotals(node)
   const phases = WATERFALL_PHASES.filter(p => (totals.get(p.key) ?? 0) > 0)
   const split = selfChildTime(node)
@@ -40,7 +44,7 @@ export function WaterfallTooltip({ id, node, state, critical }: { id: string; no
       <div className="wf-tooltip-meta">
         {node.statusCode != null ? `HTTP ${node.statusCode} · ` : ''}
         {node.durationMs != null ? formatWaterfallMs(node.durationMs) : 'No timing'}
-        {node.startMs != null && ` · starts +${formatWaterfallMs(node.startMs)}`}
+        {showStart && node.startMs != null && ` · starts +${formatWaterfallMs(node.startMs)}`}
         {source && ` · ${source.label}`}
         {node.connectionReused ? ' · reused connection' : ''}
         {critical ? ' · critical path' : ''}
@@ -60,7 +64,7 @@ export function WaterfallTooltip({ id, node, state, critical }: { id: string; no
           {phases.map(p => (
             <li key={p.key} className={state.phase === p.key ? 'current' : undefined}>
               <i className={`wf-swatch phase-${p.key}`} aria-hidden="true" />
-              <span>{p.label}</span>
+              <span>{phaseLabels?.[p.key] ?? p.label}</span>
               <span>{formatWaterfallMs(totals.get(p.key) ?? 0)}</span>
             </li>
           ))}

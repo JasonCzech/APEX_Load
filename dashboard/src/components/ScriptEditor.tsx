@@ -319,7 +319,6 @@ import {
   transitionScriptProtocol,
 } from './scriptEditorRuntimeSettingsModel'
 import { useScriptRuntimeSettingsController } from './useScriptRuntimeSettingsController'
-import { fetchAmplificationLoadReport } from './debugLoadAmplificationModel'
 import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
@@ -8053,7 +8052,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         recordingDiff={recordingDiff}
         loadComparison={scriptId ? {
           listLoadRuns: () => api.listScriptLoadRuns(scriptId),
-          getLoadReport: testId => fetchAmplificationLoadReport(api.getTestArchiveReport, testId),
+          // Loaded with the Debug vs load panel's own chunk, off ScriptEditor's.
+          getLoadReport: testId => import('./debugLoadAmplificationModel').then(model => model.fetchAmplificationLoadReport(api.getTestArchiveReport, testId)),
         } : undefined}
         tabRequest={debugSummaryTabRequest}
         consumeRecordingDiffFocus={consumeRecordingDiffFocus}
