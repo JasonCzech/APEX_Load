@@ -49,10 +49,17 @@ export interface WaterfallNode<T = unknown> {
    * (self time, gaps, phase totals, the parent track) still sees every child.
    */
   sourceChildren?: WaterfallNode<T>[]
+  /**
+   * Comparison overlay: the baseline's bar for the same action, drawn from this
+   * node's start so the two lengths line up.
+   */
+  ghost?: { durationMs: number; phases: WaterfallPhaseSpan[] }
+  /** Change against a baseline (current − baseline) and a one-line explanation. */
+  delta?: { ms: number; label: string; outcome?: 'same' | 'now_failing' | 'now_passing' | 'added' | 'removed' }
   payload?: T
 }
 
-export type WaterfallSortMode = 'chronological' | 'slowest' | 'dominant'
+export type WaterfallSortMode = 'chronological' | 'slowest' | 'dominant' | 'change'
 export type WaterfallScaleMode = 'waterfall' | 'stacked'
 
 export interface WaterfallFlatRow<T = unknown> {

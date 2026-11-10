@@ -45,6 +45,12 @@ export function WaterfallTooltip({ id, node, state, critical }: { id: string; no
         {node.connectionReused ? ' · reused connection' : ''}
         {critical ? ' · critical path' : ''}
       </div>
+      {node.delta && (
+        <div className="wf-tooltip-gap">
+          vs baseline: {node.delta.label}
+          {node.ghost ? ` (baseline ${formatWaterfallMs(node.ghost.durationMs)})` : ''}
+        </div>
+      )}
       {state.gapMs != null && <div className="wf-tooltip-gap">Idle gap: {formatWaterfallMs(state.gapMs)} with no child running (think time, pacing or client work)</div>}
       {child && <div className="wf-tooltip-gap">{child.label}: {formatWaterfallMs(child.durationMs ?? 0)}</div>}
       {node.kind === 'think' && <div className="wf-tooltip-gap">Think time: a scripted pause, not network time</div>}
