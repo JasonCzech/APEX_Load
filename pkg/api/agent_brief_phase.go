@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // agentPhaseBasis names what a brief's phase attribution compares: the mean
@@ -51,7 +52,7 @@ func agentPhaseOf(report *RunArchiveReport, detail string) (*AgentPhaseAttributi
 			continue
 		}
 		entry := AgentPhaseTransaction{
-			Transaction: tx.Name, TailDeltaMs: agentRound(tail.Delta.TotalMs, "ms"),
+			Transaction: agentCapRunes(tx.Name, agentSafeNameMaxRunes), TailDeltaMs: agentRound(tail.Delta.TotalMs, "ms"),
 			MedianMs: agentRound(tail.Median.AvgDurationMs, "ms"), TailMs: agentRound(tail.Tail.AvgDurationMs, "ms"),
 			TailSamples: tail.Tail.Joined, Sampled: tail.BandEstimate == "sampled", PhasesMs: map[string]float64{},
 		}
@@ -85,6 +86,30 @@ var agentPhaseWords = map[string]string{"dns": "DNS", "connect": "connect", "tls
 
 // agentPhaseOrder is the order a split is stated in.
 var agentPhaseOrder = []string{"dns", "connect", "tls", "server", "download", "unsplit", "non_request", "overlap"}
+
+// agentCapRunes keeps a name to at most n runes, marking a cut with "…".
+func agentCapRunes(name string, n int) string {
+	if utf8.RuneCountInString(name) <= n {
+		return name
+	}
+	return string([]rune(name)[:n-1]) + "…"
+}
+
+// agentTrimPhaseAttribution drops a brief's phase rows from the smallest
+// tail delta up while fits says the brief is over its caps: they are
+// supplementary, so they give way before any finding or metric row. It
+// returns how many it dropped.
+func agentTrimPhaseAttribution(phase *AgentPhaseAttribution, fits func() bool) int {
+	if phase == nil {
+		return 0
+	}
+	cut := 0
+	for len(phase.Transactions) > 0 && !fits() {
+		phase.Transactions = phase.Transactions[:len(phase.Transactions)-1]
+		cut++
+	}
+	return cut
+}
 
 // agentSignedMs renders a brief's rounded milliseconds with a sign.
 func agentSignedMs(v float64) string {

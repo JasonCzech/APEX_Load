@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // agentFixtureAnatomy is a time anatomy with n transactions whose tails
@@ -88,5 +89,37 @@ func TestAgentBriefPhaseAttributionAbsentWithoutAnatomy(t *testing.T) {
 	}
 	if strings.Contains(renderAgentBriefMarkdown(brief), "Where the P95 tail goes") {
 		t.Fatal("an empty attribution rendered a heading")
+	}
+}
+
+// Long transaction names are capped, and the byte budget trims phase rows
+// before findings, counting what it cut.
+func TestAgentBriefPhaseAttributionStaysWithinTheBudget(t *testing.T) {
+	report := agentFixtureReport()
+	report.TimeAnatomy = agentFixtureAnatomy(8)
+	for i := range report.TimeAnatomy.Transactions {
+		report.TimeAnatomy.Transactions[i].Name = fmt.Sprintf("%d %s", i, strings.Repeat("x", 1500))
+	}
+	for _, detail := range []string{agentDetailSummary, agentDetailStandard, agentDetailFull} {
+		brief := buildAgentFixtureBrief(t, agentFixture{name: "long", report: report}, detail)
+		budget := agentDetailBudgets[detail]
+		jsonSize, markdownSize := agentBriefSizes(brief)
+		if jsonSize > budget.JSONBytes || markdownSize > budget.MarkdownBytes {
+			t.Fatalf("%s: %d / %d bytes over %d / %d", detail, jsonSize, markdownSize, budget.JSONBytes, budget.MarkdownBytes)
+		}
+		phase := brief.PhaseAttribution
+		for _, tx := range phase.Transactions {
+			if n := utf8.RuneCountInString(tx.Transaction); n > agentSafeNameMaxRunes {
+				t.Fatalf("%s: %d-rune name", detail, n)
+			}
+		}
+		if listed, cut := len(phase.Transactions), brief.Truncation.Omitted["phase_attribution"]; listed+cut != 8 {
+			t.Fatalf("%s: %d listed + %d omitted", detail, listed, cut)
+		}
+	}
+	// With room for every row, nothing is cut by the budget.
+	full := buildAgentFixtureBrief(t, agentFixture{name: "phase", report: func() *RunArchiveReport { r := agentFixtureReport(); r.TimeAnatomy = agentFixtureAnatomy(8); return r }()}, agentDetailFull)
+	if len(full.PhaseAttribution.Transactions) != 8 {
+		t.Fatalf("%d", len(full.PhaseAttribution.Transactions))
 	}
 }

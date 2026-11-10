@@ -838,6 +838,9 @@ func applyAgentBudget(brief *AgentBrief, budget agentDetailBudget) {
 		return lo
 	}
 	rows := len(metrics)
+	if cut := agentTrimPhaseAttribution(brief.PhaseAttribution, func() bool { return fits(most, rows) }); cut > 0 {
+		omitted["phase_attribution"] += cut
+	}
 	floor := min(budget.FindingsFloor, most)
 	switch {
 	case fits(floor, rows):
