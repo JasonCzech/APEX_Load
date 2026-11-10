@@ -844,7 +844,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
       return [
         {
           key: 'network-dns',
-          label: 'DNS Lookup',
+          label: 'DNS lookup',
           description: 'Resolve a deterministic host and retain record evidence.',
           action: { name: `DNS_Query_${sequence}`, type: 'dns_query', target: 'localhost', headers: {}, params: { record_type: 'A' }, extractors: [{ name: 'record_count', source: 'record_count', type: 'jsonpath', expression: '$.record_count' }], assertions: [{ type: 'record_count', expected: 1 }], think_time_after: true },
         },

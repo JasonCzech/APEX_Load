@@ -147,6 +147,16 @@ policy:pkg/convert/enterprisearchive/parameters.go:rewriteKnownParameterReferenc
 # knowledge is which LoadRunner .prm keys (ParamName/ColumnName/...) name a
 # parameter, which is format-specific by definition.
 policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseParameterSectionSensitive
+
+# pkg/convert/enterprisearchive/runtime_context.go
+# VuGen-only: the ProxyPasswordIsEncrypted marker and its unrecoverable
+# encrypted placeholder exist only in LoadRunner runtime settings. Both read
+# the converted draft through the shared dsl.HTTPProxyCredentialsActive and
+# credential.ParseReference, and decide only which runtime-settings disposition
+# row and import callout to show (the 11/06 proxy credential rule). They
+# classify, sanitize and redact nothing.
+policy:pkg/convert/enterprisearchive/runtime_context.go:encryptedProxyPasswordCallout
+policy:pkg/convert/enterprisearchive/runtime_context.go:refineEncryptedProxyPasswordDisposition
 policy:pkg/convert/enterprisearchive/runtime_config.go:normalizeRuntimeProxyURL
 policy:pkg/convert/enterprisearchive/zip.go:redactArchiveMaskedBodyMetadata
 policy:pkg/convert/jmeter/converter_assertions_auth.go:authConfigFromJMeterAuth

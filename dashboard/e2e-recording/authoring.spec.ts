@@ -220,7 +220,9 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByRole('button',{name:'Add breakpoint on Finish',exact:true}).click()
   await page.getByRole('complementary',{name:'Actions',exact:true}).getByRole('treeitem',{name:/^Use customer/}).click()
   const before=h.target.events.length
-  await page.getByRole('button',{name:'Run to selected action',exact:true}).click()
+  // Run to selected action lives in the Debug run menu.
+  await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run to selected action',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Use customer'})).toBeVisible()
   expect(h.target.events.slice(before).map(e=>e.query.name)).toEqual(['extract'])
   await page.getByRole('button',{name:'Continue',exact:true}).click()
