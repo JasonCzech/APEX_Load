@@ -289,6 +289,14 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
         <div><dt>Elapsed time</dt><dd>{model.elapsedMs == null ? 'Unavailable' : `${(model.elapsedMs / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} s`}</dd></div>
         <div><dt>Passed actions</dt><dd>{model.passed}</dd></div><div><dt>Failed actions</dt><dd>{model.failed}</dd></div>
       </dl>
+      {model.followingFailures && (
+        <p className="debug-summary-following">
+          <span>{model.followingFailures.text}</span>
+          {model.followingFailures.eventIndex != null && (
+            <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectEvent(model.followingFailures!.eventIndex!)}>Go to first failure</button>
+          )}
+        </p>
+      )}
       {model.incomplete && <p className="warning-message">Some run evidence was dropped or truncated. Counts reflect retained actions.</p>}
       {model.outcome === 'Stopped' && <p>The run was stopped before completion. Results cover actions that finished.</p>}
       <TabList className="debug-summary-tabs ux-underline-tabs" aria-label="Debug summary sections">

@@ -509,3 +509,514 @@ describe('RequestResponseInspector', () => {
     expect(button('Open Debug options')).toBeUndefined()
   })
 })
+
+/** Holds the selection and the sub-tab like ScriptReplayDebuggerView: onSelectEvent moves the selection. */
+function RunHarness({ events, initialIndex = 0, initialTab = 'response', onSelect, ...rest }: Omit<Overrides, 'event'> & {
+  events: BrowserReplayEvent[]; initialIndex?: number; initialTab?: RequestResponseInspectorTab; onSelect?: (index: number) => void
+}) {
+  const [index, setIndex] = useState(initialIndex)
+  const [tab, setTab] = useState<RequestResponseInspectorTab>(initialTab)
+  return <RequestResponseInspector
+    {...props({ event: events[index], ...rest })}
+    index={index}
+    events={events}
+    onSelectEvent={next => { onSelect?.(next); setIndex(next) }}
+    tab={tab}
+    onTabChange={next => { rest.onTabChange?.(next); setTab(next) }}
+  />
+}
+
+const loginEvent = (overrides: Partial<BrowserReplayEvent> = {}) => event({
+  event_id: 'login', phase: 'init', action_index: 0, action_name: 'T02_LoginSFApp', method: 'POST', target: '/', success: false, status_code: 200,
+  error_message: 'extractor "c_cshc" found no match: extraction found no match: no match for regex "cshc=(\\w+)"',
+  diagnosis: { category: 'correlation', severity: 'error', cause: 'extractor "c_cshc" found no match' },
+  snapshot: {
+    request_method: 'POST', request_url: 'https://org.example.test/', request_headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, request_body: 'un=user&pw=[REDACTED]',
+    response_status: 200, response_headers: { 'Content-Type': 'text/html; charset=UTF-8' }, response_body_state: 'captured',
+    response_body: '<!DOCTYPE html><html><head><title>Login | Salesforce</title></head><body><form><input type="password" name="pw"></form><p>cshc missing; CSHC not here</p></body></html>',
+  },
+  ...overrides,
+})
+
+const auraFollower = (overrides: Partial<BrowserReplayEvent> = {}) => event({
+  event_id: 'aura-1', action_name: 'ActionBarController.getActions #1', method: 'POST', target: '/aura?r=920', success: false, status_code: 401,
+  error_message: 'expected status 200, got 401',
+  diagnosis: {
+    category: 'assertion', severity: 'error', cause: 'expected status 200, got 401', evidence: 'Protocol status: 401', action: 'Review the assertion.',
+    follows_failure_event_id: 'login', follows_failure_action: 'T02_LoginSFApp', follows_reason: 'aura_invalid_session', unresolved_variables: ['c_interactionid'],
+  },
+  repair_suggestions: [{ id: 'aura-1:fix-first-failure', title: 'Fix the first failure first', description: 'T02_LoginSFApp failed first.', draft_patch_type: 'follows_failure' }],
+  snapshot: {
+    request_method: 'POST', request_url: 'https://org.example.test/aura?r=920', request_headers: { 'Content-Type': 'application/json' }, request_body: '{"recordId":"{{var.c_interactionid}}"}',
+    response_status: 401, response_headers: { 'Content-Type': 'application/json' }, response_body: '{"event":{"descriptor":"markup://aura:invalidSession"}}',
+  },
+  ...overrides,
+})
+
+const loginScript: ScriptDefinition = {
+  ...script,
+  init: [{ name: 'T02_LoginSFApp', type: 'POST', target: '/', extractors: [{ name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc=(\\w+)' }] }],
+}
+
+describe('RequestResponseInspector follow-on failures and navigation', () => {
+  it('leads a follower with the earlier failure, shows its error once, and goes to the first failure', () => {
+    const onSelect = vi.fn()
+    render(<RunHarness events={[loginEvent(), event(), auraFollower()]} initialIndex={2} onSelect={onSelect} />)
+    const verdict = container.querySelector('[aria-label="Verdict"]')!
+    expect(verdict.classList.contains('is-follower')).toBe(true)
+    expect(verdict.querySelector('.rr-inspector-follows-chip')?.textContent).toBe('Follows an earlier failure')
+    expect(verdict.querySelector('.rr-inspector-follows-text')?.textContent).toBe(
+      "This request failed after the run's first failure, T02_LoginSFApp. Salesforce rejected the session (aura:invalidSession). The request still contains {{var.c_interactionid}} because that value was never set.",
+    )
+    expect(occurrences('expected status 200, got 401')).toBe(1)
+    expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1)
+    // The rule-based diagnosis is not the verdict any more.
+    expect(verdict.querySelector('.replay-diagnosis-panel')).toBeNull()
+    expect(verdict.textContent).not.toContain('Review the assertion.')
+    // A follower opens on its rejected response.
+    expect(selectedTab()?.textContent).toBe('Response')
+
+    act(() => button('Go to first failure', verdict)!.click())
+    expect(onSelect).toHaveBeenCalledWith(0)
+    expect(container.querySelector('.rr-inspector-name')?.textContent).toBe('T02_LoginSFApp')
+    expect(container.querySelector('[aria-label="Verdict"]')?.classList.contains('is-follower')).toBe(false)
+    // Focus stays in the header's failure navigation instead of dropping to the page.
+    expect(document.activeElement?.textContent).toBe('Next failure')
+  })
+
+  it('moves the rule-based diagnosis of a follower to Raw', () => {
+    render(<RunHarness events={[loginEvent(), auraFollower()]} initialIndex={1} />)
+    act(() => tab('Raw')!.click())
+    const section = panel().querySelector('.rr-inspector-rule-diagnosis')!
+    expect(section.querySelector('h4')?.textContent).toBe('Rule-based diagnosis')
+    expect(section.getAttribute('aria-labelledby')).toBe(section.querySelector('h4')!.id)
+    expect(section.querySelector('.replay-diagnosis-chip')?.textContent).toBe('Assertion')
+    expect(section.textContent).toContain('Protocol status: 401')
+    expect(section.textContent).toContain('Review the assertion.')
+    // The engine's fix-first-failure suggestion is the verdict's button, not repeated here.
+    expect(section.textContent).not.toContain('Fix the first failure first')
+    expect(occurrences('expected status 200, got 401')).toBe(1)
+  })
+
+  it('disables Go to first failure when that event is no longer retained', () => {
+    const onSelect = vi.fn()
+    render(<RunHarness events={[event(), auraFollower()]} initialIndex={1} onSelect={onSelect} />)
+    const go = button('Go to first failure')!
+    expect(go.disabled).toBe(true)
+    const note = container.querySelector('.rr-inspector-verdict-note')!
+    expect(note.textContent).toBe('First failure is no longer retained')
+    expect(go.getAttribute('aria-describedby')).toBe(note.id)
+    act(() => go.click())
+    expect(onSelect).not.toHaveBeenCalled()
+    // Without selection the button is not offered at all.
+    render(<Harness event={auraFollower()} />)
+    expect(button('Go to first failure')).toBeUndefined()
+    expect(container.querySelector('.rr-inspector-follows-chip')).not.toBeNull()
+  })
+
+  it('steps through failures with Previous and Next failure, skipping async callbacks', () => {
+    const onSelect = vi.fn()
+    const events = [loginEvent(), event({ event_id: 'ok' }), event({ event_id: 'async', phase: 'async', success: false, error_message: 'callback failed' }), auraFollower()]
+    render(<RunHarness events={events} onSelect={onSelect} />)
+    const header = () => container.querySelector('.rr-inspector-header')!
+    const group = () => header().querySelector('[role="group"][aria-label="Failures"]')!
+    const previous = () => button('Previous failure', group())!
+    const next = () => button('Next failure', group())!
+    expect(previous().disabled).toBe(true)
+    expect(next().disabled).toBe(false)
+    next().focus()
+    act(() => next().click())
+    expect(onSelect).toHaveBeenLastCalledWith(3)
+    expect(header().querySelector('.rr-inspector-name')?.textContent).toBe('ActionBarController.getActions #1')
+    expect(next().disabled).toBe(true)
+    // The pressed button is now disabled: focus moves to the other one.
+    expect(document.activeElement).toBe(previous())
+    act(() => previous().click())
+    expect(onSelect).toHaveBeenLastCalledWith(0)
+
+    // A passed event between failures has both directions; a run with no failures has none.
+    render(<RunHarness events={events} initialIndex={1} key="passed" />)
+    expect(previous().disabled).toBe(false)
+    expect(next().disabled).toBe(false)
+    render(<RunHarness events={[event(), event()]} key="none" />)
+    expect(previous().disabled).toBe(true)
+    expect(next().disabled).toBe(true)
+    // Not offered without a way to select.
+    render(<Harness event={event()} />)
+    expect(container.querySelector('[role="group"][aria-label="Failures"]')).toBeNull()
+  })
+
+  it("keeps focus in the inspector when the run's only failure leaves both buttons disabled", () => {
+    const only = event({ event_id: 'only', started_at: '2026-10-25T12:00:02Z', success: false, status_code: 500, error_message: 'boom', snapshot: wireSnapshot })
+    const events = [event({ event_id: 'a' }), event({ event_id: 'b', started_at: '2026-10-25T12:00:01Z' }), only]
+    render(<RunHarness events={events} />)
+    const next = () => button('Next failure')!
+    const previous = () => button('Previous failure')!
+    next().focus()
+    act(() => next().click())
+    expect(container.querySelector('.rr-inspector-name')?.textContent).toBe('Checkout')
+    expect(next().disabled).toBe(true)
+    expect(previous().disabled).toBe(true)
+    // Neither button can take focus: the selected view's tab does.
+    expect(document.activeElement).not.toBe(document.body)
+    expect(document.activeElement).toBe(selectedTab())
+
+    // Previous failure from a pass after the only failure lands the same way.
+    render(<RunHarness events={[only, event({ event_id: 'after', started_at: '2026-10-25T12:00:03Z' })]} initialIndex={1} key="after" />)
+    previous().focus()
+    act(() => previous().click())
+    expect(previous().disabled).toBe(true)
+    expect(next().disabled).toBe(true)
+    expect(document.activeElement).toBe(selectedTab())
+  })
+
+  it('copies the wire request as cURL', () => {
+    const onCopySection = vi.fn(async () => {})
+    render(<Harness event={loginEvent()} index={4} onCopySection={onCopySection} />)
+    const copy = button('Copy as cURL', container.querySelector('.rr-inspector-header')!)!
+    act(() => copy.click())
+    expect(onCopySection).toHaveBeenCalledWith('4:curl', [
+      'curl', '--globoff', '--request POST', "--url 'https://org.example.test/'",
+      "--header 'Content-Type: application/x-www-form-urlencoded'", "--data-raw 'un=user&pw=[REDACTED]'",
+    ].join(' \\\n  '))
+    render(<Harness event={loginEvent()} index={4} copiedSection="4:curl" />)
+    expect(container.querySelector('.rr-inspector-curl')?.textContent).toBe('Copied')
+    // A complete copy has nothing to explain.
+    expect(container.querySelector('.rr-inspector-curl-gaps')).toBeNull()
+    expect(container.querySelector('.rr-inspector-curl')?.hasAttribute('aria-describedby')).toBe(false)
+    // Nothing captured on the wire, nothing to copy.
+    render(<Harness event={event()} />)
+    expect(button('Copy as cURL')).toBeUndefined()
+  })
+
+  it('labels a cURL copy of a request retention cut beside the button, and copies the command alone', () => {
+    const onCopySection = vi.fn(async () => {})
+    const cut = loginEvent()
+    cut.snapshot = { ...cut.snapshot!, request_body: 'un=user&pw=...[truncated]', request_headers_omitted: true }
+    render(<Harness event={cut} index={4} onCopySection={onCopySection} />)
+    const header = container.querySelector('.rr-inspector-header')!
+    expect(button('Copy as cURL', header)).toBeUndefined()
+    const copy = button('Copy as cURL (incomplete)', header)!
+    // Said in visible text (not only a title tooltip, which touch and keyboard users never see), and describing the button.
+    expect(copy.title).toBe('')
+    const gaps = container.querySelector('.rr-inspector-curl-gaps')!
+    expect(gaps.textContent).toBe('cURL copy is incomplete: body truncated by retention limits; some headers omitted or shortened by retention limits. The copy is the captured request only.')
+    expect(copy.getAttribute('aria-describedby')).toBe(gaps.id)
+    expect(gaps.id).not.toBe('')
+    act(() => copy.click())
+    const copied = (onCopySection.mock.calls[0] as unknown as [string, string])[1]
+    // No "# …" lines, which an interactive zsh would run as commands: the copy pastes as one curl command.
+    expect(copied.split('\n')[0]).toBe('curl \\')
+    expect(copied.split('\n').some(line => line.trimStart().startsWith('#'))).toBe(false)
+    expect(copied.endsWith("--data-raw 'un=user&pw=...[truncated]'")).toBe(true)
+    render(<Harness event={cut} index={4} copiedSection="4:curl" />)
+    expect(container.querySelector('.rr-inspector-curl')?.textContent).toBe('Copied')
+  })
+
+  it('names an HTML page and flags an unexpected login page in Response', () => {
+    render(<Harness event={loginEvent()} initialTab="response" />)
+    act(() => tab('Response')!.click())
+    const summary = panel().querySelector('.rr-inspector-response-summary')!
+    expect(summary.querySelector('.rr-inspector-page-title')?.textContent).toBe('HTML page “Login | Salesforce”')
+    expect(summary.querySelector('.rr-inspector-login-chip')?.textContent).toBe('Looks like a login page')
+
+    // Expected (a GET to the login page) or not HTML: no flag.
+    const get = loginEvent({ success: true, error_message: undefined, diagnosis: undefined })
+    get.snapshot = { ...get.snapshot!, request_method: 'GET', request_url: 'https://org.example.test/login' }
+    render(<Harness event={get} />)
+    expect(panel().querySelector('.rr-inspector-page-title')?.textContent).toBe('HTML page “Login | Salesforce”')
+    expect(panel().querySelector('.rr-inspector-login-chip')).toBeNull()
+    // A GET to a login host's root (how Salesforce scripts start) expects it too.
+    const host = loginEvent({ success: true, error_message: undefined, diagnosis: undefined, event_id: 'host', started_at: '2026-10-25T12:09:00Z' })
+    host.snapshot = { ...host.snapshot!, request_method: 'GET', request_url: 'https://login.salesforce.com/' }
+    render(<Harness event={host} />)
+    expect(panel().querySelector('.rr-inspector-login-chip')).toBeNull()
+    // A body cut by retention is read in part, and the summary says so.
+    const cut = loginEvent({ success: true, error_message: undefined, diagnosis: undefined, event_id: 'cut', started_at: '2026-10-25T12:10:00Z' })
+    cut.snapshot = { ...cut.snapshot!, response_body: '<!DOCTYPE html><title>Login | Salesforce</title><p>first part...[truncated]' }
+    render(<Harness event={cut} />)
+    expect(panel().querySelector('.rr-inspector-page-title')?.textContent).toBe('HTML page “Login | Salesforce” (partial body)')
+    render(<Harness event={event({ snapshot: wireSnapshot })} />)
+    expect(panel().querySelector('.rr-inspector-page-title')).toBeNull()
+    expect(panel().querySelector('.rr-inspector-login-chip')).toBeNull()
+  })
+
+  it('finds text in the response body, counts it, and clears on Escape', () => {
+    render(<Harness event={event({ snapshot: { ...wireSnapshot, response_body: '{"token":"abc","Token2":"TOKEN"}' } })} />)
+    const find = panel().querySelector<HTMLInputElement>('input[aria-label="Find in response body"]')!
+    const count = () => panel().querySelector('.rr-inspector-find-count')!
+    expect(count().getAttribute('role')).toBe('status')
+    expect(count().textContent).toBe('')
+    typeInto(find, 'token')
+    expect(count().textContent).toBe('3 matches')
+    typeInto(find, 'nothing')
+    expect(count().textContent).toBe('No matches')
+    typeInto(find, '"abc"')
+    expect(count().textContent).toBe('1 match')
+    press(find, 'Escape')
+    expect(find.value).toBe('')
+    expect(count().textContent).toBe('')
+
+    render(<Harness event={event({ snapshot: { ...wireSnapshot, response_body: 'data: one\ndata: two', response_body_state: 'partial' } })} index={1} />)
+    typeInto(panel().querySelector<HTMLInputElement>('input[aria-label="Find in response body"]')!, 'data')
+    expect(count().textContent).toBe('2 matches (partial body)')
+    // Retention cut the body (its state stays "captured"): "No matches" is not
+    // proof of absence, and its marker is not a match.
+    render(<Harness event={event({ snapshot: { ...wireSnapshot, response_body: '{"token":"abc","rest":"...[truncated]', response_body_state: 'captured' } })} index={3} />)
+    const findCut = panel().querySelector<HTMLInputElement>('input[aria-label="Find in response body"]')!
+    typeInto(findCut, 'sid=')
+    expect(count().textContent).toBe('No matches (partial body)')
+    typeInto(findCut, 'truncated')
+    expect(count().textContent).toBe('No matches (partial body)')
+    typeInto(findCut, 'token')
+    expect(count().textContent).toBe('1 match (partial body)')
+    // No body, no field.
+    render(<Harness event={event({ snapshot: { ...wireSnapshot, response_body: '' } })} index={2} />)
+    expect(panel().querySelector('input[aria-label="Find in response body"]')).toBeNull()
+  })
+
+  it('draws the timing bar: the main request phases and the rest of the action, or the total', () => {
+    render(<Harness event={event({
+      duration_ms: 693, snapshot: wireSnapshot,
+      network_entries: [{ method: 'POST', url: 'https://api.example.test/checkout', har: { phases: [{ name: 'send', start_ms: 0, end_ms: 0.1 }, { name: 'request_wait', start_ms: 0.1, end_ms: 156.7 }, { name: 'response', start_ms: 156.7, end_ms: 156.9 }] } }],
+    } as Partial<BrowserReplayEvent>)} initialTab="timing" />)
+    const timing = panel().querySelector('[aria-label="Timing"]')!
+    expect(timing).toBe(panel().firstElementChild)
+    expect(timing.textContent).toContain('693 ms total')
+    const bar = timing.querySelector('[role="img"]')!
+    expect(bar.getAttribute('aria-label')).toBe('Total 693 ms: send 0.1 ms, waiting 157 ms, receive 0.2 ms, sub-resources and processing 536 ms')
+    expect(Array.from(bar.children).map(node => node.className)).toEqual([
+      'rr-inspector-timing-segment is-send', 'rr-inspector-timing-segment is-wait', 'rr-inspector-timing-segment is-receive', 'rr-inspector-timing-segment is-rest',
+    ])
+    expect(timing.querySelector('.rr-inspector-timing-legend')?.textContent).toContain('Sub-resources and processing')
+
+    render(<Harness event={event()} initialTab="timing" />)
+    expect(panel().querySelector('[aria-label="Timing"] [role="img"]')?.getAttribute('aria-label')).toBe('Total 1.25 s')
+    expect(panel().querySelector('.rr-inspector-timing-legend')).toBeNull()
+  })
+
+  it('withholds the hop phases with the rest of the runtime evidence, leaving the total', () => {
+    const phased = event({
+      duration_ms: 693, snapshot: wireSnapshot,
+      network_entries: [{ method: 'POST', url: 'https://api.example.test/checkout', har: { phases: [{ name: 'send', start_ms: 0, end_ms: 0.1 }, { name: 'request_wait', start_ms: 0.1, end_ms: 156.7 }, { name: 'response', start_ms: 156.7, end_ms: 156.9 }] } }],
+    } as Partial<BrowserReplayEvent>)
+    render(<Harness event={phased} initialTab="timing" />)
+    expect(panel().querySelector('.rr-inspector-timing-legend')).not.toBeNull()
+    render(<Harness event={phased} initialTab="timing" runtimeVariablesUnavailable />)
+    const timing = panel().querySelector('[aria-label="Timing"]')!
+    expect(timing.querySelector('[role="img"]')?.getAttribute('aria-label')).toBe('Total 693 ms')
+    expect(Array.from(timing.querySelectorAll('.rr-inspector-timing-segment')).map(node => node.className)).toEqual(['rr-inspector-timing-segment is-total'])
+    expect(timing.querySelector('.rr-inspector-timing-legend')).toBeNull()
+    expect(timing.textContent).toContain('693 ms total')
+    expect(timing.textContent).not.toContain('Waiting')
+  })
+
+  it('opens a failed extractor on Correlation with the tester seeded from the definition', () => {
+    const onTabChange = vi.fn()
+    render(<RunHarness events={[loginEvent(), event({ started_at: '2026-10-25T12:00:05Z', snapshot: wireSnapshot })]} script={loginScript} onTabChange={onTabChange} />)
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
+    expect(onTabChange).not.toHaveBeenCalled()
+    const heading = Array.from(panel().querySelectorAll('h4')).find(node => node.textContent === 'Testing the failing extractor c_cshc')
+    expect(heading).toBeDefined()
+    const expression = () => panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!
+    expect(expression().value).toBe('cshc=(\\w+)')
+    expect(panel().querySelector<HTMLInputElement>('.extractor-tester-name input')!.value).toBe('c_cshc')
+    expect(panel().querySelector('.extractor-tester-result')?.textContent).toBe('No matches in this response.')
+
+    // An edit on the same event is kept across a look at another view.
+    typeInto(expression(), 'cshc ([a-z]+)')
+    const field = expression()
+    act(() => tab('Response')!.click())
+    act(() => tab('Correlation')!.click())
+    expect(expression().value).toBe('cshc ([a-z]+)')
+    expect(panel().querySelector('.extractor-tester-count')?.textContent).toBe('1 match')
+    // And when the session delivers the same event again as new objects (a poll):
+    // the tester is not re-keyed or re-seeded, so the very same field keeps the edit.
+    render(<RunHarness events={[loginEvent(), event({ started_at: '2026-10-25T12:00:05Z', snapshot: wireSnapshot })]} script={{ ...loginScript }} onTabChange={onTabChange} />)
+    expect(expression()).toBe(field)
+    expect(expression().value).toBe('cshc ([a-z]+)')
+    expect(Array.from(panel().querySelectorAll('h4')).some(node => node.textContent === 'Testing the failing extractor c_cshc')).toBe(true)
+  })
+
+  it('updates the failing extractor in place from the tester, and keeps naming it after the edit', () => {
+    const replaceExtractorDefinition = vi.fn((): true | string => true)
+    const addExtractorDefinition = vi.fn()
+    render(<Harness event={loginEvent()} script={loginScript} replaceExtractorDefinition={replaceExtractorDefinition} addExtractorDefinition={addExtractorDefinition as never} />)
+    expect(button('Add as extractor', panel())).toBeUndefined()
+    typeInto(panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!, 'cshc ([a-z]+)')
+    act(() => button('Update extractor c_cshc', panel())!.click())
+    expect(replaceExtractorDefinition).toHaveBeenCalledWith(expect.objectContaining({ event_id: 'login' }), 'c_cshc', { source: 'body', type: 'regex', expression: 'cshc ([a-z]+)' })
+    expect(addExtractorDefinition).not.toHaveBeenCalled()
+    // The edited script no longer matches the replay; the tester still names what it is testing.
+    render(<Harness event={loginEvent()} script={{ ...loginScript, init: [{ ...loginScript.init![0], extractors: [{ name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc ([a-z]+)' }] }] }}
+      replayMatchesCurrentScript={false} replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Testing the failing extractor c_cshc')
+    expect(panel().querySelector('.extractor-tester-added')?.textContent).toBe('Updated “c_cshc” on this step. Replay to check it.')
+    // Without the replace path (a read-only view) the seeded tester offers no Update.
+    render(<Harness event={loginEvent({ started_at: '2026-10-25T12:07:00Z' })} script={loginScript} />)
+    expect(button('Update extractor c_cshc', panel())).toBeUndefined()
+    expect(button('Add as extractor', panel())).toBeDefined()
+  })
+
+  it('seeds the tester only from a replay that matches the script, and names a surface it cannot show', () => {
+    render(<Harness event={loginEvent()} script={loginScript} replayMatchesCurrentScript={false} />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Test an extractor against this response')
+    expect(panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!.value).toBe('')
+
+    const urlScript: ScriptDefinition = { ...script, init: [{ ...loginScript.init![0], extractors: [{ name: 'c_cshc', source: 'url', type: 'regex', expression: 'cshc=(\\w+)' }] }] }
+    render(<Harness event={loginEvent({ started_at: '2026-10-25T12:08:00Z' })} script={urlScript} replaceExtractorDefinition={vi.fn((): true | string => true)} />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Test an extractor against this response')
+    expect(panel().querySelector('.rr-inspector-tester-note')?.textContent).toBe('The failing extractor c_cshc reads the URL, which the tester cannot show; edit it in the action instead.')
+    // Not tried against the body as if it were a body extractor.
+    expect(panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!.value).toBe('')
+    expect(button('Update extractor c_cshc', panel())).toBeUndefined()
+  })
+
+  it('says when the failing extractor applies transforms or a response scope the tester cannot', () => {
+    const scoped: ScriptDefinition = { ...script, init: [{ ...loginScript.init![0], extractors: [{
+      name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc=(\\w+)',
+      dfes: ['JsonXml'], scope: { redirects: 'include', content_type: 'text/html*' },
+    }] }] }
+    render(<Harness event={loginEvent({ started_at: '2026-10-25T12:09:00Z' })} script={scoped} replaceExtractorDefinition={vi.fn((): true | string => true)} />)
+    // Still seeded (Update keeps the transforms and scope), but it does not claim to test the extractor.
+    expect(panel().querySelector('h4')?.textContent).toBe('Trying the expression of the failing extractor c_cshc')
+    expect(panel().querySelector('.rr-inspector-tester-note')?.textContent).toBe(
+      'The tester tries the expression on this step’s final response only. It cannot apply its data-format transforms (JsonXml), redirect hops and its Content-Type filter, so its matches can differ from the replay’s. Update keeps those settings.')
+    expect(panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!.value).toBe('cshc=(\\w+)')
+    expect(button('Update extractor c_cshc', panel())).toBeDefined()
+    // An empty scope and no DFEs are the final response the tester reads.
+    const plain: ScriptDefinition = { ...script, init: [{ ...loginScript.init![0], extractors: [{ name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc=(\\w+)', dfes: [], scope: { redirects: 'exclude' } }] }] }
+    render(<Harness event={loginEvent({ started_at: '2026-10-25T12:10:00Z' })} script={plain} />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Testing the failing extractor c_cshc')
+    expect(panel().querySelector('.rr-inspector-tester-note')).toBeNull()
+  })
+
+  it('seeds the tester when the replay matches the script again on the same event, unless the plain tester was edited', () => {
+    const replaceExtractorDefinition = vi.fn((): true | string => true)
+    const heading = () => panel().querySelector('h4')?.textContent
+    const expression = () => panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!
+    // Unapplied JSON edits: the replay does not match, so the tester starts plain.
+    render(<Harness event={loginEvent()} script={loginScript} replayMatchesCurrentScript={false} replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(heading()).toBe('Test an extractor against this response')
+    expect(expression().value).toBe('')
+    // Applied or discarded: the same event now seeds it, with Update.
+    render(<Harness event={loginEvent()} script={loginScript} replayMatchesCurrentScript replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(heading()).toBe('Testing the failing extractor c_cshc')
+    expect(expression().value).toBe('cshc=(\\w+)')
+    expect(button('Update extractor c_cshc', panel())).toBeDefined()
+    // Once seeded it stays: an edit survives the replay going out of step and back.
+    typeInto(expression(), 'cshc ([a-z]+)')
+    render(<Harness event={loginEvent()} script={loginScript} replayMatchesCurrentScript={false} replaceExtractorDefinition={replaceExtractorDefinition} />)
+    render(<Harness event={loginEvent()} script={loginScript} replayMatchesCurrentScript replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(heading()).toBe('Testing the failing extractor c_cshc')
+    expect(expression().value).toBe('cshc ([a-z]+)')
+
+    // A plain tester the user already typed into is not replaced by a late seed.
+    const later = loginEvent({ started_at: '2026-10-25T12:09:00Z' })
+    render(<Harness event={later} script={loginScript} replayMatchesCurrentScript={false} replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(heading()).toBe('Test an extractor against this response')
+    typeInto(expression(), 'my own (\\w+)')
+    render(<Harness event={later} script={loginScript} replayMatchesCurrentScript replaceExtractorDefinition={replaceExtractorDefinition} />)
+    expect(heading()).toBe('Test an extractor against this response')
+    expect(expression().value).toBe('my own (\\w+)')
+    expect(button('Update extractor c_cshc', panel())).toBeUndefined()
+  })
+
+  it('says why Update could not change the step', () => {
+    const replaceExtractorDefinition = vi.fn((): true | string => 'apply or discard the JSON edits first.')
+    render(<Harness event={loginEvent()} script={loginScript} replaceExtractorDefinition={replaceExtractorDefinition} />)
+    act(() => button('Update extractor c_cshc', panel())!.click())
+    expect(panel().querySelector('.extractor-tester-actions .extractor-tester-error')?.textContent).toBe('Could not update “c_cshc”: apply or discard the JSON edits first.')
+  })
+
+  it('re-seeds the tester per event and leaves other events with the plain tester', () => {
+    const other = event({ started_at: '2026-10-25T12:00:05Z', snapshot: wireSnapshot })
+    render(<Harness event={loginEvent()} script={loginScript} initialTab="correlation" />)
+    const expression = () => panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!
+    typeInto(expression(), 'edited')
+    render(<Harness event={other} index={1} script={loginScript} initialTab="correlation" />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Test an extractor against this response')
+    expect(expression().value).toBe('')
+    render(<Harness event={loginEvent()} index={0} script={loginScript} initialTab="correlation" />)
+    expect(expression().value).toBe('cshc=(\\w+)')
+    // Without a definition by that name the tester is not seeded.
+    render(<Harness event={loginEvent({ started_at: '2026-10-25T12:09:00Z' })} script={script} initialTab="correlation" />)
+    expect(panel().querySelector('h4')?.textContent).toBe('Test an extractor against this response')
+    expect(expression().value).toBe('')
+  })
+
+  it('lists the values never set in this run in Correlation', () => {
+    render(<Harness event={event({ success: false, status_code: 500, error_message: 'boom', diagnosis: { category: 'runtime', severity: 'error', cause: 'boom', unresolved_variables: ['c_interactionid', 'c_token'] } })} />)
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
+    expect(panel().querySelector('.rr-inspector-unset')?.textContent).toBe('Not set in this run: c_interactionid, c_token')
+    expect(panel().textContent).not.toContain('No extractions or variable changes were recorded for this action.')
+  })
+
+  it('picks the default view per failed event, honours a click until the event changes, and keeps the pick for passes', () => {
+    const onTabChange = vi.fn()
+    const noResponse = event({ event_id: 'down', started_at: '2026-10-25T12:00:02Z', success: false, status_code: undefined, error_message: 'connection refused' })
+    const passed = event({ event_id: 'ok', started_at: '2026-10-25T12:00:03Z', snapshot: wireSnapshot })
+    const events = [loginEvent(), noResponse, auraFollower({ started_at: '2026-10-25T12:00:04Z' }), passed]
+    render(<RunHarness events={events} script={loginScript} onTabChange={onTabChange} />)
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
+    act(() => button('Next failure')!.click())
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Timing & transport')
+    // A click on this event is honoured.
+    act(() => tab('Request')!.click())
+    expect(selectedTab()?.textContent).toBe('Request')
+    expect(onTabChange).toHaveBeenCalledTimes(1)
+    act(() => button('Next failure')!.click())
+    expect(selectedTab()?.textContent).toBe('Response')
+    // The click lasted until the event changed: coming back opens the default again.
+    act(() => button('Previous failure')!.click())
+    expect(container.querySelector('.rr-inspector-name')?.textContent).toBe('Checkout')
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Timing & transport')
+    act(() => button('Previous failure')!.click())
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
+    // Defaults never overwrite the pick: a passed event shows it.
+    expect(onTabChange).toHaveBeenCalledTimes(1)
+    render(<RunHarness events={events} script={loginScript} initialIndex={3} initialTab="request" key="passed" />)
+    expect(selectedTab()?.textContent).toBe('Request')
+  })
+
+  it('moves focus with the default view only when focus was on a tab', () => {
+    const passed = event({ snapshot: wireSnapshot })
+    render(<Harness event={passed} initialTab="request" />)
+    tab('Request')!.focus()
+    render(<Harness event={loginEvent()} index={1} script={loginScript} initialTab="request" />)
+    expect(selectedTab()?.firstElementChild?.textContent).toBe('Correlation')
+    expect(document.activeElement).toBe(selectedTab())
+    const outside = document.createElement('button')
+    document.body.appendChild(outside)
+    outside.focus()
+    render(<Harness event={passed} index={0} initialTab="request" />)
+    expect(selectedTab()?.textContent).toBe('Request')
+    expect(document.activeElement).toBe(outside)
+    outside.remove()
+  })
+})
+
+describe('RequestResponseInspector header layout', () => {
+  // jsdom has no layout, so the rules are read. The header's items do not
+  // shrink (`.rr-inspector-header > *` is flex 0 0 auto); the tools group must,
+  // or it stays one max-content line (about 530px of buttons) and overflows a
+  // narrow pane instead of wrapping its buttons.
+  const rule = (css: string, selector: string) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\>]/g, '\\$&')
+    return css.match(new RegExp(`(?:^|\\n)${escaped} \\{([^}]*)\\}`))?.[1] ?? ''
+  }
+
+  it('lets the header tools shrink to the pane and wrap their buttons', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/RequestResponseInspector.css', 'utf8') as string
+    expect(rule(css, '.rr-inspector-header > *')).toContain('flex: 0 0 auto;')
+    // A more specific rule than `> *`, so it wins for the tools group.
+    const tools = rule(css, '.rr-inspector-header .rr-inspector-header-tools')
+    expect(tools).toMatch(/\bflex: 0 1 auto;/)
+    expect(tools).toMatch(/\bflex-wrap: wrap;/)
+    expect(tools).toMatch(/\bmin-width: 0;/)
+    expect(tools).toMatch(/\bmax-width: 100%;/)
+    expect(rule(css, '.rr-inspector-failure-nav')).toMatch(/\bflex-wrap: wrap;/)
+  })
+})

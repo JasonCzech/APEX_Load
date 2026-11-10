@@ -43,12 +43,15 @@ func appendReplayReportEvent(report *ReplayReport, event ReplayActionEvent) Repl
 		omitUnredactableReplayActionEvent(&event)
 	}
 	if report == nil {
+		event.requestVariables, event.concurrentGroupID = replayRequestVariables{}, ""
 		return BoundReplayActionEventForRetention(event, false)
 	}
 
 	event.EventIndex = report.totalEventCount
 	report.totalEventCount++
+	annotateReplayFailureDiagnosis(report, &event)
 	recordReplayReportDiagnosis(report, event)
+	event.requestVariables, event.concurrentGroupID = replayRequestVariables{}, ""
 	recordReplayArtifactManifestEvent(report, event)
 	if budget := report.messageDetailBudget; budget != nil && event.Snapshot != nil {
 		if budget.retainedItems >= budget.maxItems || min(budget.maxItemBytes, budget.remainingBytes) < snapshotBaseOverhead {
@@ -253,6 +256,12 @@ func stripReplayEventRichEvidence(event *ReplayActionEvent) {
 		diagnosis.Severity = truncateReplayScalar(diagnosis.Severity, maxReplayIdentityBytes)
 		diagnosis.Cause = truncateReplayScalar(diagnosis.Cause, maxReplayErrorBytes)
 		diagnosis.Action = truncateReplayScalar(diagnosis.Action, maxReplayErrorBytes)
+		// Follow-on links and unresolved variable names are small identity
+		// data, so the compact projection keeps them (bounded).
+		diagnosis.FollowsFailureEventID = truncateReplayScalar(diagnosis.FollowsFailureEventID, maxReplayIdentityBytes)
+		diagnosis.FollowsFailureAction = truncateReplayScalar(diagnosis.FollowsFailureAction, maxReplayIdentityBytes)
+		diagnosis.FollowsReason = truncateReplayScalar(diagnosis.FollowsReason, maxReplayIdentityBytes)
+		diagnosis.UnresolvedVariables = boundReplayUnresolvedVariables(diagnosis.UnresolvedVariables)
 		diagnosis.Evidence = ""
 		diagnosis.Signals = nil
 		diagnosis.FrameContext = ""
@@ -299,7 +308,24 @@ func recordReplayReportDiagnosis(report *ReplayReport, event ReplayActionEvent) 
 		summary.FirstFailureEventID = truncateReplayScalar(event.EventID, maxReplayIdentityBytes)
 		summary.FirstFailureAction = truncateReplayScalar(event.ActionName, maxReplayIdentityBytes)
 		summary.FirstFailureCause = truncateReplayScalar(cause, maxReplayErrorBytes)
+		report.firstFailureIsRoot = replayPhaseCanRootFollowingFailures(event.Phase)
+		report.firstFailureEventIndex = event.EventIndex
+		report.firstFailureCompletedAt = event.CompletedAt
+		report.firstFailureConcurrentGroup = event.concurrentGroupID
 	}
+}
+
+// boundReplayUnresolvedVariables returns a detached, bounded copy so compact
+// retention never shares the rich event's slice.
+func boundReplayUnresolvedVariables(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	bounded := make([]string, 0, min(len(names), maxReplayUnresolvedVariables))
+	for _, name := range names[:min(len(names), maxReplayUnresolvedVariables)] {
+		bounded = append(bounded, truncateReplayScalar(name, maxReplayIdentityBytes))
+	}
+	return bounded
 }
 
 func recordReplayArtifactManifestEvent(report *ReplayReport, event ReplayActionEvent) {

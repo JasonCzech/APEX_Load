@@ -91,8 +91,46 @@
   font-variant-numeric: tabular-nums;
 }
 
-.rr-inspector-edit {
+/* Failure navigation, Copy as cURL and Edit sit at the header's end. In a
+   narrow pane the group takes a line of its own and wraps its buttons there:
+   it may shrink (unlike the header's other items, `> *` above), so it is never
+   wider than the header, and the failure pair wraps too. */
+.rr-inspector-header .rr-inspector-header-tools {
+  display: inline-flex;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   margin-left: auto;
+}
+
+.rr-inspector-failure-nav {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.rr-inspector-failure-nav .btn,
+.rr-inspector-header-tools .rr-inspector-curl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Why a cURL copy is incomplete, under the header (the button describes itself by it). */
+.rr-inspector-curl-gaps {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: right;
+  overflow-wrap: break-word;
+}
+
+.rr-inspector-icon {
+  flex: 0 0 auto;
 }
 
 /* Verdict: the error once, its diagnosis and repairs; a single line on success. */
@@ -127,6 +165,56 @@
 
 .rr-inspector-diagnosis-chip {
   align-self: flex-start;
+}
+
+/* A failure that follows the run's first one: informational, not alarming;
+   its cause is elsewhere. */
+.rr-inspector-verdict.is-follower {
+  padding: 12px 14px;
+  border: 1px solid var(--accent-border, var(--border));
+  border-radius: 10px;
+  background: var(--accent-soft);
+}
+
+.rr-inspector-follows-chip {
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid var(--accent-border, var(--border));
+  border-radius: 999px;
+  background: var(--bg-primary);
+  color: var(--accent-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.rr-inspector-follows-text {
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.rr-inspector-verdict-error.is-quiet {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+}
+
+.rr-inspector-verdict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.rr-inspector-verdict-note {
+  color: var(--text-secondary);
+}
+
+.rr-inspector-rule-diagnosis {
+  min-width: 0;
 }
 
 .rr-inspector .link-button.rr-inspector-link {
@@ -192,6 +280,143 @@
    layout, so the code box may grow further before it scrolls inside itself. */
 .rr-inspector-snapshot .debugger-snapshot-body > .snapshot-code {
   max-height: max(260px, calc(100vh - var(--debugger-dock-offset, 220px) - 340px));
+}
+
+/* Response summary row: what the page is, and a find over its body. */
+.rr-inspector-response-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  font-size: 13px;
+}
+
+.rr-inspector-page-title {
+  min-width: 0;
+  color: var(--text-primary);
+  overflow-wrap: break-word;
+}
+
+.rr-inspector-login-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--warning-border, var(--border));
+  border-radius: 999px;
+  background: var(--warning-bg, transparent);
+  color: var(--warning-text, var(--warning));
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.rr-inspector-find {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  min-width: 0;
+}
+
+.rr-inspector-find input {
+  width: 16ch;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.rr-inspector-find-count {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Correlation: references the request still carried unresolved. */
+.rr-inspector-unset {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13px;
+  overflow-wrap: break-word;
+}
+
+/* Correlation: a failing extractor the tester cannot try as defined. */
+.rr-inspector-tester-note {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: break-word;
+}
+
+/* Timing & transport: Started → Completed as one stacked bar. */
+.rr-inspector-timing {
+  --rr-timing-connect: var(--warning, #f59e0b);
+  --rr-timing-send: var(--accent, #3b82f6);
+  --rr-timing-wait: var(--success, #10b981);
+  --rr-timing-receive: var(--info, #0ea5e9);
+  --rr-timing-rest: var(--subtle-fill-strong, var(--bg-hover));
+  --rr-timing-total: var(--accent, #3b82f6);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.rr-inspector-timing-span {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rr-inspector-timing-span strong {
+  color: var(--text-primary);
+}
+
+.rr-inspector-timing-bar {
+  display: flex;
+  height: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+}
+
+.rr-inspector-timing-segment,
+.rr-inspector-timing-swatch {
+  flex: 0 0 auto;
+}
+
+.rr-inspector-timing-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: 6px;
+  border-radius: 2px;
+  vertical-align: -1px;
+}
+
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-connect { background: var(--rr-timing-connect); }
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-send { background: var(--rr-timing-send); }
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-wait { background: var(--rr-timing-wait); }
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-receive { background: var(--rr-timing-receive); }
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-rest { background: var(--rr-timing-rest); }
+:is(.rr-inspector-timing-segment, .rr-inspector-timing-swatch).is-total { background: var(--rr-timing-total); }
+
+.rr-inspector-timing-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.rr-inspector-timing-ms {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Request: "Sent on the wire" or "As scripted". */

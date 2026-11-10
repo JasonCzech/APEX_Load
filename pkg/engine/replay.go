@@ -207,6 +207,15 @@ type ReplayReport struct {
 	evidenceProjectionCount int
 	manifestSnapshots       map[*protocol.ErrorSnapshot]struct{}
 	retainedSnapshotClones  map[*protocol.ErrorSnapshot]*protocol.ErrorSnapshot
+	// firstFailureIsRoot is set when the summary's first failure ran in a
+	// phase (init/action/teardown) that later failures may be linked to.
+	firstFailureIsRoot     bool
+	firstFailureEventIndex int
+	// firstFailureCompletedAt and firstFailureConcurrentGroup keep a failure
+	// that was already in flight when the first failure finished from being
+	// linked to it.
+	firstFailureCompletedAt     time.Time
+	firstFailureConcurrentGroup string
 }
 
 // ReplayStreamedChildEvidence describes one streamed result before aggregate
@@ -282,6 +291,13 @@ type ReplayActionEvent struct {
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
 
 	parentBusinessTransaction bool
+	// requestVariables carries the {{var.NAME}} names template resolution left
+	// unresolved on this event's request, recorded before any scrubbing. The
+	// append seam consumes it.
+	requestVariables replayRequestVariables
+	// concurrentGroupID identifies the concurrent HTTP group a child ran in, so
+	// siblings that ran together are never linked as first failure and follower.
+	concurrentGroupID string
 	// CorrelationEvidence exists only between protocol execution and the
 	// pre-scrub debug observer. It is cleared before any public replay boundary.
 	CorrelationEvidence *protocol.CorrelationEvidence `json:"-"`
@@ -330,6 +346,18 @@ type ReplayDiagnosis struct {
 	Signals          []string `json:"signals,omitempty"`
 	FrameContext     string   `json:"frame_context,omitempty"`
 	SuggestedLocator string   `json:"suggested_locator,omitempty"`
+	// FollowsFailureEventID links a failure that shows a session-loss signal
+	// to the run's earlier first failure, so a cascade is not read as N
+	// independent defects. Category/Cause/Action stay the rule-based result.
+	FollowsFailureEventID string `json:"follows_failure_event_id,omitempty"`
+	FollowsFailureAction  string `json:"follows_failure_action,omitempty"`
+	// FollowsReason is one of aura_invalid_session, http_401, http_403, or
+	// unresolved_variable (the first that applies, in that order).
+	FollowsReason string `json:"follows_reason,omitempty"`
+	// UnresolvedVariables names the {{var.NAME}} references template
+	// resolution could not resolve for the failed request (sorted,
+	// deduplicated, bounded). Names only, never values.
+	UnresolvedVariables []string `json:"unresolved_variables,omitempty"`
 }
 
 type ReplayRepairSuggestion struct {
@@ -348,6 +376,9 @@ type ReplayDiagnosisSummary struct {
 	FirstFailureEventID string         `json:"first_failure_event_id,omitempty"`
 	FirstFailureAction  string         `json:"first_failure_action,omitempty"`
 	FirstFailureCause   string         `json:"first_failure_cause,omitempty"`
+	// FollowingFailureCount counts the failures linked to the first failure
+	// through ReplayDiagnosis.FollowsFailureEventID.
+	FollowingFailureCount int `json:"following_failure_count,omitempty"`
 }
 
 // defaultReplaySeed seeds replay's random data selection and random template
@@ -978,6 +1009,7 @@ type replayUnit struct {
 	requestCount              int      // sibling count within an http_sequence container; 0 otherwise
 	leafOrdinal               int      // 0-based execution order of this leaf within its top-level action
 	prepared                  *preparedHTTPChild
+	concurrentGroupID         string // the concurrent HTTP group's boundary event ID; "" otherwise
 	skipDebugBoundary         bool
 	synthErr                  error // when set, emit a failed event instead of executing (e.g. parse error)
 }
@@ -1567,6 +1599,7 @@ func runReplayUnit(
 		child := unit.prepared
 		_, capture := debugController.(ReplayDebugControllerCorrelationObserver)
 		event, shouldContinue = finishReplayProtocolAction(ctx, vu, unit.action, child.action, child.result, child.err, child.started, child.completed, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, true, globalThinkCfg, report, capture, nil, child.debugEvidence, child.debugError)
+		event.requestVariables = vu.publishableReplayRequestVariables(child.requestVariables)
 	} else {
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
 		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, vu.browserReplayAuthoredStep(unit))
@@ -1670,6 +1703,7 @@ func applyReplayUnitIdentityDebug(action *ReplayDebugAction, unit replayUnit) {
 func applyReplayUnitIdentityEvent(event *ReplayActionEvent, unit replayUnit) {
 	event.ParentActionName = unit.parentName
 	event.parentBusinessTransaction = unit.parentBusinessTransaction
+	event.concurrentGroupID = unit.concurrentGroupID
 	event.RequestCount = unit.requestCount
 	event.LeafOrdinal = unit.leafOrdinal
 	if unit.requestIndex != nil {
@@ -1776,6 +1810,7 @@ func runReplayAction(
 		return event, false
 	}
 	resolved := vu.resolveAction(action)
+	requestVariables := vu.takeReplayRequestVariables()
 	if len(authored) == 1 {
 		resolved.BrowserAuthoredStep = authored[0].Clone()
 	}
@@ -1837,6 +1872,7 @@ func runReplayAction(
 	vu.debugRetryEvidence, vu.debugRetryError = nil, nil
 	event, ok := finishReplayProtocolAction(ctx, vu, action, resolved, result, err, start, completedAt, phase, actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence, streamedChildFailure, debugEvidence, debugError)
 	event.StreamedChildren, event.StreamedChildrenOmittedCount = streamedChildren, omittedChildren
+	event.requestVariables = vu.publishableReplayRequestVariables(requestVariables)
 	if vu.unredactedDebug && vu.runtimeCredentialRedactionError() != nil {
 		event.CredentialClassificationError = vu.runtimeCredentialRedactionError().Error()
 	}
