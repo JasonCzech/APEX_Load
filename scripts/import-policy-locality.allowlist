@@ -148,6 +148,13 @@ policy:pkg/convert/enterprisearchive/parameters.go:rewriteKnownParameterReferenc
 # parameter, which is format-specific by definition.
 policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseParameterSectionSensitive
 policy:pkg/convert/enterprisearchive/runtime_config.go:normalizeRuntimeProxyURL
+# Both decide only how the LoadRunner ProxyPasswordIsEncrypted runtime-settings
+# row is reported: they read the importer's own RuntimeConfig marker and write
+# its RuntimeSettingDisposition parity row. Whether proxy credentials are sent
+# is delegated to dsl.HTTPProxyCredentialsActive and secret references to
+# credential.ParseReference; nothing here classifies or rewrites a credential.
+policy:pkg/convert/enterprisearchive/runtime_context.go:encryptedProxyPasswordCallout
+policy:pkg/convert/enterprisearchive/runtime_context.go:refineEncryptedProxyPasswordDisposition
 policy:pkg/convert/enterprisearchive/zip.go:redactArchiveMaskedBodyMetadata
 policy:pkg/convert/jmeter/converter_assertions_auth.go:authConfigFromJMeterAuth
 policy:pkg/convert/jmeter/converter_native_samplers.go:injectURLCredentials
