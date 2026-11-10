@@ -42,14 +42,33 @@ import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapF
 import type { ReplayScreenshotSelection } from './scriptEditorState'
 import {
   REQUEST_RESPONSE_INSPECTOR_TABS,
+  adjacentFailureIndexes,
   availableInspectorTabs,
+  buildCurlCommand,
+  capturedResponseBody,
   canTestExtractor,
+  countLiteralMatches,
+  curlCommandGaps,
+  defaultInspectorTabForEvent,
   diagnosisCauseRepeatsError,
+  eventIndexById,
+  extractorTesterUnappliedSettings,
+  extractorTesterUnsupportedSurface,
+  failingExtractorName,
+  findExtractorDefinition,
+  followerVerdictText,
+  formatFindResult,
   formatMillisecondsAsSecondsLabel,
+  formatTimingMs,
   hasReplayExtractions,
+  htmlPageInsight,
   inspectorStatusLabel,
   inspectorTabCount,
+  inspectorTimingBar,
+  inspectorTimingBarLabel,
+  isFollowerFailure,
   replayNetworkEntries,
+  unresolvedVariables,
   type ReplayVariableDiff,
   type RequestResponseInspectorTab,
   type ResponseActions,
@@ -73,15 +92,33 @@ export interface RequestResponseInspectorProps {
   onEditAction: (event: BrowserReplayEvent) => void
   onOpenDebugOptions: () => void
   addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
+  /**
+   * Replaces the event's step's extractor named name with the given source,
+   * type and expression, in place: true when it did, else why not. Lets the
+   * tester fix the failing extractor instead of adding a copy beside it.
+   */
+  replaceExtractorDefinition?: (event: BrowserReplayEvent, name: string, extractor: Pick<ScriptExtractorDefinition, 'source' | 'type' | 'expression'>) => true | string
   http3UpgradeScopes?: (event: BrowserReplayEvent) => HTTP3UpgradeScope[]
   onSwitchToHTTP3Upgrade?: (event: BrowserReplayEvent, scope: HTTP3UpgradeScope) => void
   responseActions?: ResponseActions
   onViewScreenshot: (selection: ReplayScreenshotSelection) => void
   /** Opens the debug Summary's Recording diff; absent when it cannot be reached. */
   onCompareWithRecording?: () => void
+  /** The run's events, in the same positions as index (Previous/Next failure, Go to first failure). */
+  events?: readonly BrowserReplayEvent[]
+  /** Selects another event by its position in events, as the action list does. */
+  onSelectEvent?: (index: number) => void
 }
 
 type RequestView = 'wire' | 'scripted'
+
+function ChevronIcon({ direction }: { direction: 'up' | 'down' }) {
+  return (
+    <svg className="rr-inspector-icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false">
+      <path d={direction === 'up' ? 'M4 10l4-4 4 4' : 'M4 6l4 4 4-4'} fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 /** One replayed action's evidence: a header, the verdict, then one view at a time. */
 export default function RequestResponseInspector({
@@ -99,11 +136,14 @@ export default function RequestResponseInspector({
   onEditAction,
   onOpenDebugOptions,
   addExtractorDefinition,
+  replaceExtractorDefinition,
   http3UpgradeScopes,
   onSwitchToHTTP3Upgrade,
   responseActions,
   onViewScreenshot,
   onCompareWithRecording,
+  events,
+  onSelectEvent,
 }: RequestResponseInspectorProps) {
   const baseId = useId()
   // The Request view choice belongs to one event: another event, or a new run, opens on the default.
@@ -111,8 +151,27 @@ export default function RequestResponseInspector({
   const [requestViewChoice, setRequestViewChoice] = useState<{ eventKey: string; view: RequestView } | null>(null)
   const preferredRequestView = requestViewChoice?.eventKey === eventKey ? requestViewChoice.view : null
   const setPreferredRequestView = (view: RequestView) => setRequestViewChoice({ eventKey, view })
+  const [findInBody, setFindInBody] = useState<{ eventKey: string; query: string } | null>(null)
+  const findQuery = findInBody?.eventKey === eventKey ? findInBody.query : ''
   const available = availableInspectorTabs(event)
-  const activeTab = available.has(tab) ? tab : 'response'
+  // A failed event opens on the view that explains it, until the user picks a
+  // tab for it; a passed one shows the user's last pick. Display only: the
+  // remembered pick (tab) is never overwritten by a default.
+  const [tabPickedFor, setTabPickedFor] = useState<string | null>(null)
+  // The pick lasts until the event changes: coming back to an event opens it
+  // on its default again, whatever was clicked elsewhere in between.
+  const [pickEventKey, setPickEventKey] = useState(eventKey)
+  if (pickEventKey !== eventKey) {
+    setPickEventKey(eventKey)
+    setTabPickedFor(null)
+  }
+  const suggestedTab = tabPickedFor === eventKey ? null : defaultInspectorTabForEvent(event)
+  const requestedTab = suggestedTab ?? tab
+  const activeTab = available.has(requestedTab) ? requestedTab : 'response'
+  const pickTab = (id: RequestResponseInspectorTab) => {
+    setTabPickedFor(eventKey)
+    onTabChange(id)
+  }
   const tabs = REQUEST_RESPONSE_INSPECTOR_TABS.filter(item => available.has(item.id))
   const tabId = (id: RequestResponseInspectorTab) => `${baseId}-tab-${id}`
   const panelId = (id: RequestResponseInspectorTab) => `${baseId}-panel-${id}`
@@ -166,61 +225,190 @@ export default function RequestResponseInspector({
   const structuredSnapshot = snapshot && hasStructuredReplaySnapshot(snapshot) ? snapshot : null
 
   const verdictError = event.success ? null : event.error_message || 'Action failed.'
-  const renderVerdict = () => (
+  const follower = isFollowerFailure(event)
+  const firstFailureIndex = follower && events ? eventIndexById(events, event.diagnosis?.follows_failure_event_id) : null
+  const failureNav = onSelectEvent && events ? adjacentFailureIndexes(events, index) : null
+  // A failure-navigation click keeps focus in the inspector: the button pressed
+  // may be disabled (last failure) or gone (Go to first failure) once the
+  // selection moves, so focus goes to it when it can, else to the other one,
+  // else (the run's only failure: both disabled) to the selected view's tab.
+  const previousFailureRef = useRef<HTMLButtonElement>(null)
+  const nextFailureRef = useRef<HTMLButtonElement>(null)
+  const pendingNavFocus = useRef<'previous' | 'next' | null>(null)
+  const selectFailure = (target: number, focus: 'previous' | 'next') => {
+    if (!onSelectEvent) return
+    pendingNavFocus.current = focus
+    onSelectEvent(target)
+  }
+  useLayoutEffect(() => {
+    const wanted = pendingNavFocus.current
+    if (!wanted) return
+    pendingNavFocus.current = null
+    const [first, second] = wanted === 'previous' ? [previousFailureRef.current, nextFailureRef.current] : [nextFailureRef.current, previousFailureRef.current]
+    const target = first && !first.disabled ? first
+      : second && !second.disabled ? second
+        : rootRef.current?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+    if (target && document.activeElement !== target) target.focus()
+  }, [index])
+  const curlCommand = structuredSnapshot ? buildCurlCommand(structuredSnapshot) : null
+  // A snapshot cut by retention still copies, labelled incomplete (the button
+  // and its tooltip name each gap) rather than passing for the wire request.
+  const curlGaps = structuredSnapshot ? curlCommandGaps(structuredSnapshot) : []
+  const curlGapsId = `${baseId}-curl-gaps`
+
+  // The step's failing extractor seeds the tester. It is resolved only while
+  // the replay matches the script (so a reordered action's same-named
+  // extractor is not taken for it), and once found it stays for the event:
+  // updating it in place must not re-resolve or re-key what the user is
+  // testing. Until found (unapplied JSON edits, say) it is looked for again
+  // whenever the replay matches, unless the user has already edited the plain
+  // tester for this event, whose draft a seed would replace.
+  const testable = canTestExtractor(event)
+  const failingName = testable ? failingExtractorName(event) : null
+  const testerKey = failingName ? `${eventKey}:${failingName}` : 'free'
+  const resolveFailingExtractor = () => {
+    const stepKey = replayEventStepKey(event)
+    return failingName && stepKey && replayMatchesCurrentScript
+      ? findExtractorDefinition(resolveAuthorJsonScopeByKey(script, stepKey)?.action.extractors, failingName)
+      : null
+  }
+  const [failingSeed, setFailingSeed] = useState(() => ({ key: testerKey, extractor: resolveFailingExtractor() }))
+  const [plainTesterEdited, setPlainTesterEdited] = useState<string | null>(null)
+  if (failingSeed.key !== testerKey) {
+    setFailingSeed({ key: testerKey, extractor: resolveFailingExtractor() })
+    setPlainTesterEdited(null)
+  } else if (failingSeed.extractor === null && failingName && replayMatchesCurrentScript && plainTesterEdited !== testerKey) {
+    const extractor = resolveFailingExtractor()
+    if (extractor) setFailingSeed({ key: testerKey, extractor })
+  }
+  const failingExtractor = failingSeed.key === testerKey ? failingSeed.extractor : null
+
+  // The engine's rule-based diagnosis: the verdict for most failures, and
+  // background (in Raw) for a failure that follows the run's first one.
+  const renderDiagnosis = (diagnosis: NonNullable<BrowserReplayEvent['diagnosis']>, options: { compare: boolean; suggestions: NonNullable<BrowserReplayEvent['repair_suggestions']> }) => (
+    <div className="replay-diagnosis-panel">
+      <div>
+        <span className="replay-detail-label">Diagnosis</span>
+        <span className="replay-diagnosis-chip rr-inspector-diagnosis-chip">{formatReplayDiagnosisCategory(diagnosis.category)}</span>
+        {/* The error is shown once: a cause that repeats it is left out. */}
+        {diagnosis.cause && !diagnosisCauseRepeatsError(diagnosis.cause, verdictError) && <p>{diagnosis.cause}</p>}
+        {diagnosis.evidence && <small>{diagnosis.evidence}</small>}
+        {diagnosis.action && <small>{diagnosis.action}</small>}
+        {options.compare && !event.success && diagnosis.category === CORRELATION_DIAGNOSIS_CATEGORY && onCompareWithRecording && (
+          <button type="button" className="link-button rr-inspector-link" onClick={onCompareWithRecording}>Compare with recording</button>
+        )}
+      </div>
+      {options.suggestions.length > 0 && (
+        <RepairSuggestionList
+          suggestions={options.suggestions}
+          className="replay-repair-suggestions"
+          itemClassName="replay-repair-suggestion"
+          label="Draft repair suggestions"
+          labelClassName="replay-detail-label"
+          renderExtraAction={suggestion => {
+            const fields = suggestion.fields || {}
+            const expression = fields.expression
+            const isExtractorFix = !!expression && (
+              suggestion.draft_patch_type?.includes('extractor')
+              || suggestion.draft_patch_type === 'add_extractor'
+              || !!fields.source
+            )
+            if (!isExtractorFix || editableActionIndex === null) return null
+            return (
+              <button
+                type="button"
+                className="btn btn-sm btn-secondary"
+                onClick={() => addExtractorDefinition(editableActionIndex, {
+                  name: fields.name || 'correlation_value',
+                  source: fields.source || 'body',
+                  type: fields.type || fields.extract_type || 'regex',
+                  expression: expression as string,
+                })}
+              >
+                Add as extractor
+              </button>
+            )
+          }}
+        />
+      )}
+    </div>
+  )
+
+  const renderFollowerVerdict = () => {
+    const { lead, reason } = followerVerdictText(event)
+    const noteId = `${baseId}-first-failure-note`
+    return (
+      <section className="rr-inspector-verdict is-failed is-follower" aria-label="Verdict">
+        <span className="rr-inspector-follows-chip">Follows an earlier failure</span>
+        <p className="rr-inspector-follows-text">{reason ? `${lead} ${reason}` : lead}</p>
+        <p className="rr-inspector-verdict-error is-quiet" role="alert">{verdictError}</p>
+        {onSelectEvent && events && (
+          <div className="rr-inspector-verdict-actions">
+            <button
+              type="button"
+              className="btn btn-sm btn-primary"
+              disabled={firstFailureIndex === null}
+              aria-describedby={firstFailureIndex === null ? noteId : undefined}
+              onClick={() => { if (firstFailureIndex !== null) selectFailure(firstFailureIndex, 'next') }}
+            >
+              Go to first failure
+            </button>
+            {firstFailureIndex === null && <small id={noteId} className="rr-inspector-verdict-note">First failure is no longer retained</small>}
+          </div>
+        )}
+      </section>
+    )
+  }
+
+  const renderVerdict = () => follower ? renderFollowerVerdict() : (
     <section className={`rr-inspector-verdict ${event.success ? 'is-passed' : 'is-failed'}`} aria-label="Verdict">
       {verdictError === null
         ? <p className="rr-inspector-verdict-line">Passed{event.status_code ? ` · HTTP ${event.status_code}` : ''}</p>
         : <p className="rr-inspector-verdict-error" role="alert">{verdictError}</p>}
-      {event.diagnosis && (
-        <div className="replay-diagnosis-panel">
-          <div>
-            <span className="replay-detail-label">Diagnosis</span>
-            <span className="replay-diagnosis-chip rr-inspector-diagnosis-chip">{formatReplayDiagnosisCategory(event.diagnosis.category)}</span>
-            {/* The error is shown once: a cause that repeats it is left out. */}
-            {event.diagnosis.cause && !diagnosisCauseRepeatsError(event.diagnosis.cause, verdictError) && <p>{event.diagnosis.cause}</p>}
-            {event.diagnosis.evidence && <small>{event.diagnosis.evidence}</small>}
-            {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
-            {!event.success && event.diagnosis.category === CORRELATION_DIAGNOSIS_CATEGORY && onCompareWithRecording && (
-              <button type="button" className="link-button rr-inspector-link" onClick={onCompareWithRecording}>Compare with recording</button>
-            )}
-          </div>
-          {(event.repair_suggestions || []).length > 0 && (
-            <RepairSuggestionList
-              suggestions={event.repair_suggestions || []}
-              className="replay-repair-suggestions"
-              itemClassName="replay-repair-suggestion"
-              label="Draft repair suggestions"
-              labelClassName="replay-detail-label"
-              renderExtraAction={suggestion => {
-                const fields = suggestion.fields || {}
-                const expression = fields.expression
-                const isExtractorFix = !!expression && (
-                  suggestion.draft_patch_type?.includes('extractor')
-                  || suggestion.draft_patch_type === 'add_extractor'
-                  || !!fields.source
-                )
-                if (!isExtractorFix || editableActionIndex === null) return null
-                return (
-                  <button
-                    type="button"
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => addExtractorDefinition(editableActionIndex, {
-                      name: fields.name || 'correlation_value',
-                      source: fields.source || 'body',
-                      type: fields.type || fields.extract_type || 'regex',
-                      expression: expression as string,
-                    })}
-                  >
-                    Add as extractor
-                  </button>
-                )
-              }}
-            />
-          )}
-        </div>
-      )}
+      {event.diagnosis && renderDiagnosis(event.diagnosis, { compare: true, suggestions: event.repair_suggestions || [] })}
     </section>
   )
+
+  // What the response is (an HTML page, maybe an unexpected login page) and a
+  // find over its captured body.
+  // A body cut by retention (or captured in part) is said to be partial, so
+  // "No matches" or a missing login form does not read as proof of absence.
+  const renderResponseSummary = (structured: NonNullable<typeof structuredSnapshot>) => {
+    const page = htmlPageInsight(event)
+    const captured = structured.response_body ? capturedResponseBody(event) : null
+    const body = captured?.text || ''
+    const partial = captured?.partial ?? false
+    if (!page?.title && !page?.looksLikeLogin && !body) return null
+    return (
+      <div className="rr-inspector-response-summary">
+        {page && (page.title || page.partial) && (
+          <span className="rr-inspector-page-title">HTML page{page.title ? ` “${page.title}”` : ''}{page.partial ? ' (partial body)' : ''}</span>
+        )}
+        {page?.looksLikeLogin && <span className="rr-inspector-login-chip">Looks like a login page</span>}
+        {body && (
+          <div className="rr-inspector-find">
+            <input
+              type="search"
+              autoComplete="off"
+              aria-label="Find in response body"
+              placeholder="Find in body"
+              value={findQuery}
+              onChange={change => setFindInBody({ eventKey, query: change.target.value })}
+              onKeyDown={key => {
+                if (key.key !== 'Escape' || !findQuery) return
+                key.preventDefault()
+                key.stopPropagation()
+                setFindInBody({ eventKey, query: '' })
+              }}
+            />
+            <span className="rr-inspector-find-count" role="status">
+              {findQuery ? formatFindResult(countLiteralMatches(body, findQuery), partial) : ''}
+            </span>
+          </div>
+        )}
+      </div>
+    )
+  }
 
   const renderResponse = () => {
     const soapFault = snapshot ? extractSOAPFaultSummaryFromBody(snapshot.response_body) : null
@@ -234,6 +422,7 @@ export default function RequestResponseInspector({
       )}
       {structuredSnapshot && (
         <div className="debugger-http-snapshot rr-inspector-snapshot">
+          {renderResponseSummary(structuredSnapshot)}
           {soapFault && (
             <div className="replay-code-block">
               <div className="replay-code-block-header">
@@ -361,13 +550,26 @@ export default function RequestResponseInspector({
   const renderCorrelation = () => {
     const changedVariables = Object.entries(variableDiff)
     const liveTable = event.action_type === 'live_table'
-    const testable = canTestExtractor(event)
-    const empty = !liveTable && !hasReplayExtractions(event) && changedVariables.length === 0 && !testable
+    const unset = unresolvedVariables(event)
+    const empty = !liveTable && !hasReplayExtractions(event) && changedVariables.length === 0 && !testable && unset.length === 0
     const testerHeadingId = `${baseId}-extractor-tester`
+    const stepKey = replayEventStepKey(event)
+    // A failing extractor that reads what the tester cannot show (the URL,
+    // the status code) is named instead of being tried against the body.
+    const unsupportedSurface = failingExtractor ? extractorTesterUnsupportedSurface(failingExtractor) : null
+    const seed = failingExtractor && !unsupportedSurface ? failingExtractor : null
+    // Transforms and a response scope the tester cannot apply: its matches can
+    // differ from the replay's, so it says so instead of claiming to test it.
+    const unapplied = extractorTesterUnappliedSettings(seed)
     return <>
-      {liveTable && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && replayEventStepKey(event)
-        ? resolveAuthorJsonScopeByKey(script, replayEventStepKey(event)!)?.action
+      {liveTable && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && stepKey
+        ? resolveAuthorJsonScopeByKey(script, stepKey)?.action
         : undefined} />}
+      {unset.length > 0 && (
+        <p className="rr-inspector-unset">
+          <span className="replay-detail-label">Not set in this run:</span> {unset.join(', ')}
+        </p>
+      )}
       <ReplayExtractions event={event} />
       {changedVariables.length > 0 && (
         <div className="replay-code-block">
@@ -388,11 +590,37 @@ export default function RequestResponseInspector({
       )}
       {testable && (
         <section className="rr-inspector-extractor-tester" aria-labelledby={testerHeadingId}>
-          <h4 id={testerHeadingId}>Test an extractor against this response</h4>
+          <h4 id={testerHeadingId}>{!seed ? 'Test an extractor against this response'
+            : unapplied.length ? `Trying the expression of the failing extractor ${seed.name}`
+              : `Testing the failing extractor ${seed.name}`}</h4>
+          {seed && unapplied.length > 0 && (
+            <p className="rr-inspector-tester-note">
+              The tester tries the expression on this step’s final response only. It cannot apply {unapplied.length > 1 ? `${unapplied.slice(0, -1).join(', ')} and ${unapplied[unapplied.length - 1]}` : unapplied[0]}, so its matches can differ from the replay’s. Update keeps those settings.
+            </p>
+          )}
+          {failingExtractor && unsupportedSurface && (
+            <p className="rr-inspector-tester-note">
+              The failing extractor {failingExtractor.name} reads {unsupportedSurface}, which the tester cannot show; edit it in the action instead.
+            </p>
+          )}
           <ExtractorTester
+            // A failing extractor's draft belongs to its event: another event
+            // starts afresh, and a seed found late (the replay matches the
+            // script again) starts the untouched tester from it.
+            key={seed ? `${testerKey}:seeded` : testerKey}
             event={event}
             actionIndex={editableActionIndex}
             onAddExtractor={addExtractorDefinition}
+            initialDraft={seed ? {
+              name: seed.name,
+              source: seed.source,
+              type: seed.type,
+              expression: seed.expression,
+            } : undefined}
+            onUpdateExtractor={seed && replaceExtractorDefinition
+              ? next => replaceExtractorDefinition(event, seed.name, next)
+              : undefined}
+            onDraftChange={seed ? undefined : () => setPlainTesterEdited(testerKey)}
           />
         </section>
       )}
@@ -406,7 +634,29 @@ export default function RequestResponseInspector({
     const bodyState = snapshot?.response_body_state || event.response_body_state
     const version = runtimeVariablesUnavailable ? null : httpReplayVersionEvidence(event.protocol_evidence)
     const content = runtimeVariablesUnavailable ? null : httpResponseContentEvidence(event.protocol_evidence, bodyState)
+    // Hop phases are runtime evidence: withheld with it, leaving the total.
+    const bar = runtimeVariablesUnavailable ? inspectorTimingBar({ ...event, network_entries: undefined, snapshot: undefined }) : inspectorTimingBar(event)
     return <>
+      <section className="rr-inspector-timing" aria-label="Timing">
+        <p className="rr-inspector-timing-span">
+          {formatReplayTime(event.started_at)} {'→'} {formatReplayTime(event.completed_at)} · <strong>{formatTimingMs(bar.totalMs)} total</strong>
+        </p>
+        <div className="rr-inspector-timing-bar" role="img" aria-label={inspectorTimingBarLabel(bar)}>
+          {bar.segments.map(segment => (
+            <span key={segment.key} className={`rr-inspector-timing-segment is-${segment.key}`} style={{ width: `${segment.widthPct}%` }} />
+          ))}
+        </div>
+        {bar.phased && (
+          <ul className="rr-inspector-timing-legend" aria-hidden="true">
+            {bar.segments.map(segment => (
+              <li key={segment.key}>
+                <span className={`rr-inspector-timing-swatch is-${segment.key}`} />
+                {segment.label} <span className="rr-inspector-timing-ms">{formatTimingMs(segment.durationMs)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
       <div className="replay-event-detail-grid">
         <div>
           <span className="replay-detail-label">Started</span>
@@ -513,7 +763,15 @@ export default function RequestResponseInspector({
   const renderRaw = () => {
     const omittedCount = event.protocol_evidence_omitted_count
     const protocolSummary = formatProtocolEvidenceSummary(event.protocol_evidence)
+    const ruleHeadingId = `${baseId}-rule-diagnosis`
     return <>
+      {follower && event.diagnosis && (
+        <section className="rr-inspector-rule-diagnosis" aria-labelledby={ruleHeadingId}>
+          <h4 id={ruleHeadingId}>Rule-based diagnosis</h4>
+          {/* The engine's own fix-first-failure suggestion is the verdict's Go to first failure. */}
+          {renderDiagnosis(event.diagnosis, { compare: false, suggestions: (event.repair_suggestions || []).filter(suggestion => suggestion.draft_patch_type !== 'follows_failure') })}
+        </section>
+      )}
       {Boolean(omittedCount) && <p role="status">{omittedCount} protocol evidence {omittedCount === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
       {event.protocol_evidence && (
         <div className="replay-code-block">
@@ -554,8 +812,48 @@ export default function RequestResponseInspector({
         {methodTarget && <span className="replay-event-target rr-inspector-target" title={methodTarget}>{methodTarget}</span>}
         <span className={`rr-inspector-status ${event.success ? 'is-success' : 'is-failure'}`}>{inspectorStatusLabel(event)}</span>
         <span className="rr-inspector-duration">{formatMillisecondsAsSecondsLabel(event.duration_ms)}</span>
-        {!replaying && replayMatchesCurrentScript && <button type="button" className="btn btn-sm btn-secondary rr-inspector-edit" onClick={() => onEditAction(event)}>Edit this action</button>}
+        <div className="rr-inspector-header-tools">
+          {failureNav && onSelectEvent && (
+            <div className="rr-inspector-failure-nav" role="group" aria-label="Failures">
+              <button
+                ref={previousFailureRef}
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={failureNav.previous === null}
+                onClick={() => { if (failureNav.previous !== null) selectFailure(failureNav.previous, 'previous') }}
+              >
+                <ChevronIcon direction="up" /><span>Previous failure</span>
+              </button>
+              <button
+                ref={nextFailureRef}
+                type="button"
+                className="btn btn-sm btn-ghost"
+                disabled={failureNav.next === null}
+                onClick={() => { if (failureNav.next !== null) selectFailure(failureNav.next, 'next') }}
+              >
+                <ChevronIcon direction="down" /><span>Next failure</span>
+              </button>
+            </div>
+          )}
+          {curlCommand && (
+            <button
+              type="button"
+              className={`btn btn-sm btn-ghost rr-inspector-curl${curlGaps.length ? ' is-incomplete' : ''}`}
+              aria-describedby={curlGaps.length ? curlGapsId : undefined}
+              onClick={() => void onCopySection(`${index}:curl`, curlCommand)}
+            >
+              {copiedSection === `${index}:curl` ? 'Copied' : curlGaps.length ? 'Copy as cURL (incomplete)' : 'Copy as cURL'}
+            </button>
+          )}
+          {!replaying && replayMatchesCurrentScript && <button type="button" className="btn btn-sm btn-secondary rr-inspector-edit" onClick={() => onEditAction(event)}>Edit this action</button>}
+        </div>
       </header>
+      {/* Visible (not a title tooltip): touch and keyboard users see why too. */}
+      {curlCommand && curlGaps.length > 0 && (
+        <p id={curlGapsId} className="rr-inspector-curl-gaps">
+          cURL copy is incomplete: {curlGaps.join('; ')}. The copy is the captured request only.
+        </p>
+      )}
       {renderVerdict()}
       <TabList className="rr-inspector-tabs ux-underline-tabs" aria-label="Request and response views" onKeyDown={handleTabKey}>
         {tabs.map(item => {
@@ -571,7 +869,7 @@ export default function RequestResponseInspector({
               aria-controls={panelId(item.id)}
               tabIndex={selected ? 0 : -1}
               className={selected ? 'active' : ''}
-              onClick={() => onTabChange(item.id)}
+              onClick={() => pickTab(item.id)}
               onFocus={() => { focusedTab.current = item.id }}
               onBlur={() => { focusedTab.current = null }}
             >

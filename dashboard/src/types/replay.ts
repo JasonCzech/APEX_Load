@@ -186,6 +186,14 @@ export interface ReplayDiagnosis {
   signals?: string[]
   frame_context?: string
   suggested_locator?: string
+  /** Set when this failure follows the run's first failure (a session-loss signal). */
+  follows_failure_event_id?: string
+  /** The first failure's action name. */
+  follows_failure_action?: string
+  /** aura_invalid_session | http_401 | http_403 | unresolved_variable */
+  follows_reason?: string
+  /** Names of {{var.NAME}} tokens still present in the request. */
+  unresolved_variables?: string[]
 }
 
 export interface ReplayRepairSuggestion {
@@ -204,6 +212,8 @@ export interface ReplayDiagnosisSummary {
   first_failure_event_id?: string
   first_failure_action?: string
   first_failure_cause?: string
+  /** Failures linked to the first failure (they follow it). */
+  following_failure_count?: number
 }
 
 export interface BrowserReplaySnapshot {
