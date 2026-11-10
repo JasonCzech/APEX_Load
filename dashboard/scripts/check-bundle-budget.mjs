@@ -168,6 +168,22 @@ const mib = (value) => value * 1024 * 1024
 // the JS per-asset ceiling to 950 KiB raw / 260 KiB gzip and aggregate CSS
 // inventory to 1080 KiB raw / 196 KiB gzip (~1.5-2% headroom); aggregate JS,
 // per-asset CSS and every route and startup guard stay unchanged.
+//
+// 2026-11-10 Time anatomy waterfalls, iteration replay, baseline anatomy diff
+// and debug vs load. PR #336's shared waterfall module, Debug Summary
+// waterfall drawer and run diff, plus R4's iteration replay panel, R5's
+// anatomy diff in the baseline comparison drawer and R6's Debug vs load
+// sub-tab (with their models and stylesheets) take aggregate JS to 9793 KiB
+// raw / 2834 KiB gzip and aggregate CSS to 1101 KiB raw / 200.14 KiB gzip.
+// Lazy loading would not help here: deferred chunks still count toward the
+// totals. The shared debugRunDiff/waterfall code now splits out of
+// ScriptEditor, which measures 949.69 KiB raw / 257.91 KiB gzip, inside its
+// ceiling. Initial shell (205.21 KiB gzip), Scripts route (237.00 KiB gzip)
+// and Test execution route (421.74 KiB gzip) stay within their guards. Move
+// aggregate JS to 9.75 MiB raw / 2.83 MiB gzip and aggregate CSS to 1125 KiB
+// raw / 204 KiB gzip (~2% headroom); per-asset and every route and startup
+// guard stay unchanged.
+//
 // 2026-11-10 Live dashboard Phase 3 (L1 live waterfall, L3 trace exemplars,
 // L4 connection health). The waterfall panel (with the shared Waterfall and
 // vendor-virtual), the exemplar drawer and the connection health panel load
@@ -186,24 +202,24 @@ const mib = (value) => value * 1024 * 1024
 // 15.5 KiB gzip, taking aggregate JS from 9.51 MiB raw / 2.75 MiB gzip
 // (2,883,977 B at PR #336) to 9.55 MiB raw / 2.77 MiB gzip (10,011,739 B /
 // 2,899,866 B). Move aggregate JS to 9.75 MiB raw / 2.82 MiB gzip (~2%
-// headroom). The JS per-asset guard (ScriptEditor), aggregate CSS (Phase 3
-// adds LiveWaterfallPanel.css, ~1.6 KiB gzip) and per-asset CSS guards and
-// the Initial shell and Scripts route guards are not changed here; the
-// ScriptEditor per-asset and aggregate CSS guards already fail at PR #336.
+// headroom). Phase 3 is stacked on the R4-R6 entry above, whose aggregate
+// JS (2.83 MiB gzip) and CSS (1125 KiB / 204 KiB gzip) ceilings already hold
+// it (Phase 3 adds LiveWaterfallPanel.css, ~1.6 KiB gzip). The per-asset,
+// Initial shell and Scripts route guards are not changed here.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(950),
     maxAssetGzipBytes: kib(260),
     maxTotalBytes: mib(9.75),
-    maxTotalGzipBytes: mib(2.82),
+    maxTotalGzipBytes: mib(2.83),
   }),
   '.css': Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(236),
     maxAssetGzipBytes: kib(38),
-    maxTotalBytes: kib(1080),
-    maxTotalGzipBytes: kib(196),
+    maxTotalBytes: kib(1125),
+    maxTotalGzipBytes: kib(204),
   }),
 })
 

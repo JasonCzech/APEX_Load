@@ -290,6 +290,11 @@ export function aggregateRoots(entry: RunArchiveTransactionAnatomy, statistic: A
   return (entry.requests || []).map(row => aggregateNode(row, statistic, row.key, pos(row.offset_ms?.p50_ms), false))
 }
 
+/** One aggregate row for a single request row, with a caller-chosen id and start (the baseline diff uses it). */
+export function anatomyRequestNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatistic, id: string, startMs: number | null, derived = false): AnatomyNode<RunArchiveAnatomyRequest> {
+  return aggregateNode(row, statistic, id, startMs, derived)
+}
+
 /** The muted `Other requests` row: offsets are not meaningful, so it starts at 0. */
 export function othersRoot(entry: RunArchiveTransactionAnatomy, statistic: AggregateStatistic = 'avg'): AnatomyNode<RunArchiveAnatomyRequest> | null {
   if (!entry.other_requests) return null

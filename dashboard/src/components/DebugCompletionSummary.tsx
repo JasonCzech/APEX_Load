@@ -6,8 +6,9 @@ import { debugTransactionRows } from './debugTransactionModel'
 import { DebugWaterfallPanel } from './DebugWaterfallPanel'
 import type { BrowserReplayEvent } from '../types/replay'
 import TabList from './ux/TabList'
+import DebugLoadComparisonPanel, { type DebugLoadComparisonSource } from './DebugLoadComparisonPanel'
 
-export type DebugSummaryTab = 'transactions' | 'issues' | 'recording-diff'
+export type DebugSummaryTab = 'transactions' | 'issues' | 'recording-diff' | 'load-comparison'
 /** Asks the Summary to show one of its sub-tabs; a new id asks again. */
 export interface DebugSummaryTabRequest { tab: DebugSummaryTab; id: number }
 
@@ -193,7 +194,7 @@ export function DebugSummaryRecordingDiff({ children, consumeFocusRequest }: {
   </section>
 }
 
-export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript, recordingDiff, tabRequest, consumeRecordingDiffFocus }: {
+export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript, recordingDiff, loadComparison, tabRequest, consumeRecordingDiffFocus }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
   onSelectEvent: (index: number) => void
   /** Jump the script editor to the action that produced an execution. */
@@ -203,6 +204,8 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
   onExportSession: () => Promise<void> | void
   /** The run compared with a recording (non-browser scripts), shown as the Recording diff sub-tab. */
   recordingDiff?: ReactNode
+  /** Loads the script's load runs for the Debug vs load sub-tab; absent for an unsaved script. */
+  loadComparison?: DebugLoadComparisonSource
   /** Opens a sub-tab from elsewhere (Request/Response's "Compare with recording"). */
   tabRequest?: DebugSummaryTabRequest | null
   /** Focuses the plain Recording diff (no sub-tabs while evidence is unavailable) after such a request. */
@@ -233,7 +236,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
   }, [model.events])
 
   const requestedTab = activeTabByRun?.key === snapshot.key ? activeTabByRun.tab : 'transactions'
-  const activeTab = requestedTab === 'recording-diff' && !recordingDiff ? 'transactions' : requestedTab
+  const activeTab = requestedTab === 'recording-diff' && !recordingDiff || requestedTab === 'load-comparison' && !loadComparison ? 'transactions' : requestedTab
   const setActiveTab = (tab: DebugSummaryTab) => setActiveTabByRun({ key: snapshot.key, tab })
 
   const summaryRef = useRef<HTMLElement>(null)
@@ -329,6 +332,20 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
             <span>Recording diff</span>
           </button>
         )}
+        {loadComparison && (
+          <button
+            type="button"
+            role="tab"
+            id="debug-summary-tab-load-comparison"
+            aria-selected={activeTab === 'load-comparison'}
+            aria-controls="debug-summary-panel-load-comparison"
+            tabIndex={activeTab === 'load-comparison' ? 0 : -1}
+            className={`debug-summary-tab ux-underline-tab ${activeTab === 'load-comparison' ? 'active' : ''}`}
+            onClick={() => setActiveTab('load-comparison')}
+          >
+            <span>Debug vs load</span>
+          </button>
+        )}
       </TabList>
       <div
         id="debug-summary-panel-transactions"
@@ -393,6 +410,17 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           hidden={activeTab !== 'recording-diff'}
         >
           <DebugSummaryRecordingDiff>{recordingDiff}</DebugSummaryRecordingDiff>
+        </div>
+      )}
+      {loadComparison && (
+        <div
+          id="debug-summary-panel-load-comparison"
+          role="tabpanel"
+          aria-labelledby="debug-summary-tab-load-comparison"
+          className="debug-summary-tabpanel"
+          hidden={activeTab !== 'load-comparison'}
+        >
+          <DebugLoadComparisonPanel snapshot={snapshot} source={loadComparison} active={activeTab === 'load-comparison'} stale={stale} />
         </div>
       )}
     </>}

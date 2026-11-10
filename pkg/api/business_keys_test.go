@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -396,5 +397,44 @@ func TestSanitizeBusinessKeyDigests(t *testing.T) {
 	got := sanitizeBusinessKeyDigests(map[string]string{"order_id": "bk1:abc", "bad name!": "bk1:abc", "other": "plain", "long": "bk1:" + strings.Repeat("a", 80)})
 	if len(got) != 1 || got["order_id"] != "bk1:abc" || sanitizeBusinessKeyDigests(map[string]string{"x": "y"}) != nil {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestBusinessKeyMatchesCarryTheirIterationIdentity(t *testing.T) {
+	persisted := taRequest(4, 9007199254740993, 3, 10, 20, "pay", 1)
+	persisted.EventID = "tx_0123456789abcdef0123456789abcdef"
+	persisted.Extractions = map[string]string{"order_id": "ORD-1"}
+	legacy := taRequest(6, 0, 2, 40, 20, "pay", 1)
+	legacy.Extractions = map[string]string{"order_id": "ORD-1"}
+	record := writeArchiveTransactionsForTest(t, []TransactionEvent{taRequest(1, 1, 1, 0, 1, "noise", 1), persisted, legacy})
+	manifest, err := loadRunArchiveManifestFromRecord(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	results := []BusinessKeyLookupResult{{Index: 0}}
+	if err := matchBusinessKeyRequests(context.Background(), record, manifest, "order_id", []string{"ORD-1"}, nil, results); err != nil {
+		t.Fatal(err)
+	}
+	matches := results[0].Requests.Matches
+	if len(matches) != 2 {
+		t.Fatalf("matches = %+v", matches)
+	}
+	if m := matches[0]; m.EventID != persisted.EventID || m.Ordinal != 1 || m.VUserID != 4 || m.VUserLifetime != 9007199254740993 || m.Iteration != 3 || m.Group != "g1" {
+		t.Fatalf("persisted match = %+v", m)
+	}
+	line, err := os.ReadFile(filepath.Join(record.ArchivePath, manifest.TransactionsFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	derived, err := decodeArchiveWaterfallLine(bytes.Split(line, []byte("\n"))[2], 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m := matches[1]; m.EventID == "" || m.EventID != derived.EventID || m.Ordinal != 2 || m.VUserID != 6 || m.VUserLifetime != 0 || m.Iteration != 2 {
+		t.Fatalf("legacy match = %+v (derived %q)", m, derived.EventID)
+	}
+	raw, _ := json.Marshal(matches[0])
+	if !strings.Contains(string(raw), `"vuser_lifetime":"9007199254740993"`) {
+		t.Fatalf("lifetime is not a string: %s", raw)
 	}
 }

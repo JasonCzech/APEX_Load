@@ -85,6 +85,12 @@ type BusinessKeyRequest struct {
 	TraceID    string    `json:"trace_id,omitempty"`
 	// MatchedBy is "digest" or "value".
 	MatchedBy string `json:"matched_by"`
+	// The row's identity, so a match can open its iteration replay.
+	EventID       string `json:"event_id,omitempty"`
+	Ordinal       int64  `json:"ordinal"` // line index in transactions.jsonl
+	VUserID       int    `json:"vuser_id,omitempty"`
+	VUserLifetime uint64 `json:"vuser_lifetime,string,omitempty"`
+	Iteration     int64  `json:"iteration,omitempty"`
 }
 
 type BusinessKeyLogs struct {
@@ -238,11 +244,23 @@ func matchBusinessKeyRequests(ctx context.Context, record *storage.RunArchiveRec
 				results[i].Requests.Matches = append(results[i].Requests.Matches, BusinessKeyRequest{
 					Timestamp: row.Timestamp, Population: row.Population, Group: row.Group, Name: row.ActionName, DurationMs: row.DurationMs,
 					Success: row.Success, StatusCode: row.StatusCode, TraceID: firstNonEmpty(row.SentTraceID, row.TraceID), MatchedBy: by,
+					EventID: businessKeyRowEventID(row, int64(rows)), Ordinal: int64(rows),
+					VUserID: row.VUserID, VUserLifetime: row.VUserLifetime, Iteration: row.Iteration,
 				})
 			}
 		}
 	}
 	return scanner.Err()
+}
+
+// businessKeyRowEventID is the row's event_id: the persisted one, else the
+// one derived at its line ordinal exactly as the archive readers derive it.
+func businessKeyRowEventID(row TransactionEvent, ordinal int64) string {
+	if row.EventID != "" {
+		return row.EventID
+	}
+	sanitizeArchiveDecodedRecordAt(&row, ordinal)
+	return row.EventID
 }
 
 // lookupBusinessKeyLogs searches the mapped source's logs over the run for

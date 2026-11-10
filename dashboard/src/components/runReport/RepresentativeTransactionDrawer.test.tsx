@@ -4,6 +4,7 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import type { IterationReplayTarget } from '../../types/iterationReplay'
 import type { ArchiveTransactionWaterfall, ArchiveWaterfallRow, RunArchiveRepresentativeSample, RunArchiveTimeAnatomy } from '../../types/timeAnatomy'
 import fixture from './__fixtures__/timeAnatomyReport.json'
 import RepresentativeTransactionDrawer from './RepresentativeTransactionDrawer'
@@ -38,11 +39,11 @@ function apiError(status: number) {
   return Object.assign(new Error(`HTTP ${status}`), { status })
 }
 
-function Harness({ chosen = sample }: { chosen?: RunArchiveRepresentativeSample }) {
+function Harness({ chosen = sample, onOpenIteration }: { chosen?: RunArchiveRepresentativeSample; onOpenIteration?: (target: IterationReplayTarget) => void }) {
   const [open, setOpen] = useState(false)
   return <>
     <button type="button" id="chip" onClick={() => setOpen(true)}>P95 130 ms</button>
-    {open && <RepresentativeTransactionDrawer testId="run-1" transactionName="Checkout" sample={chosen} onClose={() => setOpen(false)} />}
+    {open && <RepresentativeTransactionDrawer testId="run-1" transactionName="Checkout" sample={chosen} onClose={() => setOpen(false)} onOpenIteration={onOpenIteration} />}
   </>
 }
 
@@ -62,14 +63,32 @@ describe('RepresentativeTransactionDrawer', () => {
     vi.clearAllMocks()
   })
 
-  const open = async (chosen?: RunArchiveRepresentativeSample) => {
-    await act(async () => root.render(<Harness chosen={chosen} />))
+  const open = async (chosen?: RunArchiveRepresentativeSample, onOpenIteration?: (target: IterationReplayTarget) => void) => {
+    await act(async () => root.render(<Harness chosen={chosen} onOpenIteration={onOpenIteration} />))
     const chip = container.querySelector<HTMLButtonElement>('#chip')
     expect(chip).toBeTruthy()
     if (!chip) return
     chip.focus()
     await act(async () => chip.click())
   }
+
+  it('opens the instance\'s iteration and closes', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue(response)
+    const onOpenIteration = vi.fn()
+    const chosen = { ...sample, group: 'shop', vuser_id: 4, vuser_lifetime: '77', iteration: 9 }
+    await open(chosen, onOpenIteration)
+    const button = [...container.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === 'Open iteration')
+    expect(button).toBeTruthy()
+    await act(async () => button!.click())
+    expect(onOpenIteration).toHaveBeenCalledWith({ group: 'shop', vuser_id: 4, vuser_lifetime: '77', iteration: 9, ordinal: chosen.ordinal, source: 'Checkout' })
+    expect(container.querySelector('[role="dialog"]')).toBeNull()
+  })
+
+  it('offers no iteration without an identity or a handler', async () => {
+    mocks.api.getTestArchiveTransactionWaterfall.mockResolvedValue(response)
+    await open({ ...sample, iteration: undefined }, vi.fn())
+    expect([...container.querySelectorAll('button')].some(item => item.textContent === 'Open iteration')).toBe(false)
+  })
 
   it('asks for the event with its ordinal hints and shows a loading status', async () => {
     mocks.api.getTestArchiveTransactionWaterfall.mockReturnValue(new Promise(() => {}))

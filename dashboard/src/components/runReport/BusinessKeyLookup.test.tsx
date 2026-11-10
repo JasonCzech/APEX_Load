@@ -23,7 +23,9 @@ const mapping = { id: 'map-1', project_id: 'proj', kind: 'business_key_mapping',
 const lookup = {
   mapping: { id: 'map-1', revision: 2, label: 'Order ID', extraction: 'order_id', source_id: 'elastic-1', field: 'order.id' },
   results: [
-    { index: 0, requests: { total: 3, matches: [{ timestamp: '2026-10-05T12:00:01Z', group: 'shop', name: 'POST /pay', duration_ms: 820, success: false, status_code: 502, trace_id: 'abc', matched_by: 'digest' }] },
+    { index: 0, requests: { total: 3, matches: [
+      { timestamp: '2026-10-05T12:00:01Z', group: 'shop', name: 'POST /pay', duration_ms: 820, success: false, status_code: 502, trace_id: 'abc', matched_by: 'digest', event_id: 'tx_1', ordinal: 42, vuser_id: 7, vuser_lifetime: '9007199254740993', iteration: 3 },
+    ] },
       logs: { status: 'found', total: 1, entries: [{ timestamp: '2026-10-05T12:00:02Z', trace_id: 'abc', message: 'payment failed' }] } },
     { index: 1, requests: { total: 0, matches: [] }, logs: { status: 'not_found', total: 0, entries: [] } },
   ],
@@ -114,6 +116,34 @@ describe('BusinessKeyLookup', () => {
     await render({ testId: 'run-2' })
     expect(container.querySelector('textarea')!.value).toBe('')
     expect(container.querySelector('[aria-label="Result for ORD-1"]')).toBeNull()
+  })
+
+  it('opens a match\'s iteration in the iteration replay', async () => {
+    routes()
+    const onReplayIteration = vi.fn()
+    await render({ onReplayIteration })
+    await type(container.querySelector('textarea')!, 'ORD-1')
+    await act(async () => button('Look up').click())
+    const replay = container.querySelector<HTMLButtonElement>('[aria-label="Replay iteration 3 of VUser 7 for POST /pay"]')
+    expect(replay?.textContent).toBe('Replay iteration')
+    await act(async () => replay!.click())
+    expect(onReplayIteration).toHaveBeenCalledWith({ group: 'shop', vuser_id: 7, vuser_lifetime: '9007199254740993', iteration: 3, ordinal: 42, source: 'Business key' })
+    // Without the handler the column is not shown.
+    await render()
+    expect(container.querySelector('[aria-label^="Replay iteration"]')).toBeNull()
+  })
+
+  it('tells the page when its results are replaced or cleared, so a replay from an old match closes', async () => {
+    routes()
+    const onResultsReset = vi.fn()
+    await render({ onReplayIteration: vi.fn(), onResultsReset })
+    await type(container.querySelector('textarea')!, 'ORD-1')
+    await act(async () => button('Look up').click())
+    expect(onResultsReset).toHaveBeenCalledTimes(1)
+    await act(async () => button('Look up').click())
+    expect(onResultsReset).toHaveBeenCalledTimes(2)
+    await act(async () => button('Clear').click())
+    expect(onResultsReset).toHaveBeenCalledTimes(3)
   })
 
   it('refuses more than twenty values before sending them', async () => {

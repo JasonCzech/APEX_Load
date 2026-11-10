@@ -1,0 +1,9 @@
+/* Iteration replay (R4): the manual entry form; the rest reuses TimeAnatomy.css and Waterfall.css. */
+.rr-iteration-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; margin: 0; }
+.rr-iteration-form label { display: flex; flex-direction: column; gap: 4px; min-width: 0; font-size: 13px; color: var(--text-secondary); }
+.rr-iteration-form input { min-width: 0; width: 100%; }
+.rr-iteration-form label:first-of-type { flex: 1 1 200px; max-width: 320px; }
+.rr-iteration-form input[type='number'] { width: 120px; }
+.rr-iteration-form-hint { flex: 1 1 100%; color: var(--text-secondary); font-size: 12px; }
+.rr-iteration-drawer-hint { padding: 12px; }
+.run-report-iteration-replay h3 { margin: 0; overflow-wrap: anywhere; }

@@ -199,8 +199,11 @@ button.wf-sink:hover { background: var(--bg-hover); }
 .wf-hint { margin: 2px 0 0; font-size: 11px; color: var(--text-muted); }
 .wf-empty { color: var(--text-secondary); }
 
+/* Portaled to document.body: it must paint above every overlay a waterfall can
+   sit in (the baseline comparison drawer is 1100, dialogs up to 2400), at the
+   app's tooltip layer (.ux-tooltip). */
 .wf-tooltip {
-  position: fixed; z-index: 1000; pointer-events: none; padding: 8px 10px; border-radius: 8px; font-size: 12px;
+  position: fixed; z-index: 10000; pointer-events: none; padding: 8px 10px; border-radius: 8px; font-size: 12px;
   background: var(--bg-card, var(--bg-primary)); color: var(--text-primary); border: 1px solid var(--border);
   box-shadow: 0 6px 24px rgba(15, 23, 42, 0.18); display: flex; flex-direction: column; gap: 4px; box-sizing: border-box;
 }

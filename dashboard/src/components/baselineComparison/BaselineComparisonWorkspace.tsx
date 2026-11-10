@@ -11,6 +11,7 @@ import type { DashboardDefinition } from '../../hooks/api/useDashboardDefinition
 import { freezeBrowserPanelDefinition } from '../browserPanelInputs'
 import { comparisonColors, comparisonMagnitude, comparisonApi, comparisonVerdictLabel, type SavedComparisonSummary, comparisonRequestSignature, defaultPolicy, difference, measurementValue, metricOptions, metricUnit, number, resourceProviderLabel, verdictBlockers, withUnit, type ComparisonPolicy, type ComparisonRequest, type ComparisonRow, type ComparisonSnapshot, type MeasurementWindow, type Metric, type ResourceMapping, type RunIdentity } from './model'
 import { ComparisonDetail } from './ComparisonDetail'
+import { useAnatomyReports, type AnatomyReportSeeds } from './useAnatomyReports'
 import type { ReportLens } from '../../appRouting'
 import { REPORT_LENS_LABELS } from '../runReport/reportLensLabels'
 import './BaselineComparisonWorkspace.css'
@@ -18,11 +19,12 @@ import './BaselineComparisonWorkspace.css'
 // onAnalyzeRootCause analyzes the run's root cause against one baseline and
 // resolves to what happened.
 // lens is the report audience the page shows; the comparison's exports use it.
-type Props = { test: TestSummary; initialBaseline?: string; comparisonId?: string; canEditPolicy?: boolean; lens?: ReportLens; onSnapshot: (id: string) => void; onAnalyzeRootCause?: (baselineId: string) => Promise<string> }
+// reportSeeds are archive reports the page already loaded; the time anatomy diff uses them instead of refetching.
+type Props = { test: TestSummary; initialBaseline?: string; comparisonId?: string; canEditPolicy?: boolean; lens?: ReportLens; reportSeeds?: AnatomyReportSeeds; onSnapshot: (id: string) => void; onAnalyzeRootCause?: (baselineId: string) => Promise<string> }
 const thresholdFields = [['load_tolerance_pct', 'Load tolerance %'], ['latency_pct', 'Latency change %'], ['latency_ms', 'Minimum latency change (ms)'], ['throughput_pct', 'Throughput change %'], ['error_points', 'Error change (percentage points)'], ['resource_pct', 'Resource change %']] as const
 const errorText = (e: unknown) => e instanceof Error ? e.message : 'The comparison could not be loaded.'
 
-export default function BaselineComparisonWorkspace({ test, initialBaseline, comparisonId, canEditPolicy = false, lens = 'engineer', onSnapshot, onAnalyzeRootCause }: Props) {
+export default function BaselineComparisonWorkspace({ test, initialBaseline, comparisonId, canEditPolicy = false, lens = 'engineer', reportSeeds, onSnapshot, onAnalyzeRootCause }: Props) {
   const [rcaBusy, setRcaBusy] = useState(false)
   const [rcaMessage, setRcaMessage] = useState<{ text: string; error: boolean } | null>(null)
   const workspaceRef = useRef<HTMLDivElement>(null)
@@ -128,6 +130,10 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
   const virtualItems = virtual.getVirtualItems()
   const visibleRows = virtualItems.length ? virtualItems : rows.slice(0, 12).map((_, index) => ({ index, start: index * 76, end: (index + 1) * 76, size: 76, key: index }))
   const shownBaselines = snapshot?.baselines || []
+  // Both runs' time anatomy loads when a transaction's details open, once per run.
+  const anatomyRunIds = useMemo(() => (snapshot ? [snapshot.current.id, ...snapshot.baselines.map(run => run.id)] : []), [snapshot])
+  const [anatomyAttempt, setAnatomyAttempt] = useState(0)
+  const anatomy = useAnatomyReports(anatomyRunIds, Boolean(detail && snapshot?.request.population === 'transaction' && snapshot.transactions.some(row => row.id === detail.id)), reportSeeds, anatomyAttempt)
   // Each compared baseline is "Baseline n" in its column colour wherever it is
   // repeated (findings, setup rows, acceptance evidence); the key names it in
   // full once, and the tag's tooltip does too.
@@ -295,6 +301,6 @@ export default function BaselineComparisonWorkspace({ test, initialBaseline, com
         {savedPanel && <p role="status">Saved panel: {savedPanel.id} (revision {savedPanel.revision}){savedPanel.tabs[0]?.panels[0]?.query?.browser_inputs?.query_sha256 ? ` · query ${savedPanel.tabs[0].panels[0].query.browser_inputs.query_sha256}` : ''}{savedPanel.tabs[0]?.panels[0]?.query?.browser_inputs?.selection_receipt_sha256 ? ` · selection receipt ${savedPanel.tabs[0].panels[0].query.browser_inputs.selection_receipt_sha256}` : ''}</p>}
       </section>
     </>}
-    {detail && snapshot && <ComparisonDetail row={detail} snapshot={snapshot} onClose={() => setDetail(null)} />}
+    {detail && snapshot && <ComparisonDetail row={detail} snapshot={snapshot} anatomy={snapshot.transactions.some(row => row.id === detail.id) ? anatomy : undefined} onRetryAnatomy={() => setAnatomyAttempt(value => value + 1)} onClose={() => setDetail(null)} />}
   </div>
 }

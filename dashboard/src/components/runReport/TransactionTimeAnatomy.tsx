@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import type { ReportLens } from '../../appRouting'
+import type { IterationReplayTarget } from '../../types/iterationReplay'
 import type { RunArchiveAnatomyRequest, RunArchivePhaseStat, RunArchiveRepresentativeSample, RunArchiveTimeAnatomy, RunArchiveTransactionAnatomy } from '../../types/timeAnatomy'
 import PercentileQualityMark from '../PercentileQualityMark'
 import RepresentativeTransactionDrawer from './RepresentativeTransactionDrawer'
@@ -53,6 +54,8 @@ interface Props {
    */
   onSelectName?: (name: string) => void
   lens: ReportLens
+  /** Opens a representative's iteration in the iteration replay. */
+  onOpenIteration?: (target: IterationReplayTarget) => void
 }
 
 function readStoredStatistic(): AggregateStatistic | null {
@@ -120,7 +123,7 @@ function RowPane({ row }: { row: RunArchiveAnatomyRequest }) {
   </section>
 }
 
-function StatisticRadios({ value, onChange }: { value: AggregateStatistic; onChange: (next: AggregateStatistic) => void }) {
+export function StatisticRadios({ value, onChange }: { value: AggregateStatistic; onChange: (next: AggregateStatistic) => void }) {
   const refs = useRef<(HTMLButtonElement | null)[]>([])
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = AGGREGATE_STATISTICS.length - 1
@@ -140,7 +143,7 @@ function StatisticRadios({ value, onChange }: { value: AggregateStatistic; onCha
 }
 
 /** R1-R3 for business transactions: where each transaction's time goes. */
-export default function TransactionTimeAnatomy({ testId, anatomy, selectedName, onSelectName, lens }: Props) {
+export default function TransactionTimeAnatomy({ testId, anatomy, selectedName, onSelectName, lens, onOpenIteration }: Props) {
   const headingId = useId()
   const pickerId = useId()
   const [pickedName, setPickedName] = useState<string | null>(null)
@@ -293,7 +296,7 @@ export default function TransactionTimeAnatomy({ testId, anatomy, selectedName, 
         </> : <p>No limits were reached.</p>}
       </details>}
 
-      {drawerSample && <RepresentativeTransactionDrawer testId={testId} transactionName={entry.name} sample={drawerSample} onClose={() => setDrawerSample(null)} />}
+      {drawerSample && <RepresentativeTransactionDrawer testId={testId} transactionName={entry.name} sample={drawerSample} onClose={() => setDrawerSample(null)} onOpenIteration={onOpenIteration} />}
     </section>
   )
 }

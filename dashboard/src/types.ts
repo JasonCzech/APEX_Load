@@ -2267,6 +2267,8 @@ export interface RunArchiveReport {
   network_phases?: RunArchiveNetworkPhaseSummary
   /** Per business transaction: where its time goes, its P95 tail and representative instances. */
   time_anatomy?: import('./types/timeAnatomy').RunArchiveTimeAnatomy
+  /** The run's VUser iterations and the ones worth replaying. */
+  iterations?: import('./types/iterationReplay').RunArchiveIterationIndex
   /** Each execution process's network limits and UDP drops during the run. */
   host_network?: RunArchiveHostNetworkEvidence[]
   /** QUIC handshake checks of the HTTP/3 origins before the run started. */
