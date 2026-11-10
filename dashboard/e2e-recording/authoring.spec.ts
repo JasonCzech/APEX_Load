@@ -207,9 +207,13 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByText('Recent runs (1) · Compare evidence',{exact:true}).click()
   await page.getByRole('tab',{name:'Timeline',exact:true}).click()
   await page.getByLabel('Find execution').fill('Use customer')
-  await page.locator('.debug-execution-timeline').getByRole('button',{name:/Passed · Use customer/}).click()
+  // The timeline is a waterfall treegrid; a row selects its execution.
+  const timelineGrid=page.locator('.debug-execution-timeline').getByRole('treegrid',{name:'Execution timeline waterfall',exact:true})
+  await timelineGrid.locator('.wf-row[data-node-id]').filter({has:page.locator('.wf-name-label').getByText('Use customer',{exact:true})}).first().click()
   await expect(page.locator('.debug-selection-status')).toContainText('Inspecting action 2')
-  await page.locator('.topbar-debug-action-step').click()
+  // Step only shows inside a live session; start one paused at the first action.
+  await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run in step mode',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Get customer'})).toBeVisible()
   await page.locator('.topbar-debug-action-stop').click()
   await expect(page.locator('.topbar-debug-action-stop')).toHaveCount(0)

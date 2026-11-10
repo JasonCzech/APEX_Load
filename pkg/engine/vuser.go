@@ -144,6 +144,13 @@ type VUser struct {
 	// A managed run ID must be supplied by the scheduler. Never send a literal
 	// {{run.id}} placeholder to an external target from a direct/library run.
 	unresolvedRunRefs []string
+	// unresolvedVariableRefs names the {{var.NAME}} references resolveAction
+	// could not resolve on the request it sends (target, selector, value,
+	// headers, body, auth, SOAP and params, plus the script default headers
+	// an HTTP request sends unshadowed). Replay reports these names, never
+	// values; recordUnresolvedVariables scopes collection to those surfaces.
+	unresolvedVariableRefs    map[string]struct{}
+	recordUnresolvedVariables bool
 	// bodyResolutionError prevents an opted-in structural body from falling back
 	// to legacy interpolation after a malformed payload or a codec limit.
 	bodyResolutionError                           error

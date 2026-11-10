@@ -47313,6 +47313,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -47323,6 +47329,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -48118,6 +48128,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -48128,6 +48144,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -48533,6 +48553,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -49467,6 +49490,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -49477,6 +49506,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -50272,6 +50305,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -50282,6 +50321,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -50687,6 +50730,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -51668,6 +51714,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -51678,6 +51730,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -52473,6 +52529,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -52483,6 +52545,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -52888,6 +52954,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -53737,6 +53806,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -53747,6 +53822,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -54542,6 +54621,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -54552,6 +54637,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -54957,6 +55046,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -55806,6 +55898,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -55816,6 +55914,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -56611,6 +56713,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -56621,6 +56729,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -57026,6 +57138,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -165803,6 +165918,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -165813,6 +165934,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -166608,6 +166733,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -166618,6 +166749,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -167105,6 +167240,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -168154,6 +168292,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -168164,6 +168308,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -168959,6 +169107,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -168969,6 +169123,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -169456,6 +169614,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -170575,6 +170736,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -170585,6 +170752,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -171380,6 +171551,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -171390,6 +171567,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -171877,6 +172058,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -172932,6 +173116,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -172942,6 +173132,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -173737,6 +173931,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -173747,6 +173947,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -174234,6 +174438,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -175283,6 +175490,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -175293,6 +175506,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -176088,6 +176305,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -176098,6 +176321,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -176585,6 +176812,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -177639,6 +177869,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -177649,6 +177885,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -178444,6 +178684,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -178454,6 +178700,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -178941,6 +179191,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -179996,6 +180249,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -180006,6 +180265,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -180801,6 +181064,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -180811,6 +181080,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -181298,6 +181571,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -225034,6 +225310,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -225044,6 +225326,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -225839,6 +226125,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -225849,6 +226141,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -226336,6 +226632,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -227386,6 +227685,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -227396,6 +227701,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -228191,6 +228500,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -228201,6 +228516,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -228688,6 +229007,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -229809,6 +230131,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -229819,6 +230147,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -230614,6 +230946,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -230624,6 +230962,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -231111,6 +231453,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -232167,6 +232512,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -232177,6 +232528,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -232972,6 +233327,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -232982,6 +233343,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -233469,6 +233834,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -234519,6 +234887,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -234529,6 +234903,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -235324,6 +235702,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -235334,6 +235718,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -235821,6 +236209,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -236876,6 +237267,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -236886,6 +237283,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -237681,6 +238082,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -237691,6 +238098,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -238178,6 +238589,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -239234,6 +239648,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -239244,6 +239664,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -240039,6 +240463,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -240049,6 +240479,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -240536,6 +240970,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -266236,6 +266673,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -266246,6 +266689,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -267041,6 +267488,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -267051,6 +267504,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -267456,6 +267913,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -271106,6 +271566,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -271116,6 +271582,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -271911,6 +272381,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -271921,6 +272397,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -272408,6 +272888,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -290327,6 +290810,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -290337,6 +290826,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -291132,6 +291625,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -291142,6 +291641,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -291629,6 +292132,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -314529,6 +315035,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -314539,6 +315051,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -315334,6 +315850,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -315344,6 +315866,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -315749,6 +316275,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -325773,6 +326302,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -325783,6 +326318,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -326578,6 +327117,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -326588,6 +327133,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -327075,6 +327624,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true
@@ -384263,6 +384815,12 @@ paths:
                                 type: string
                               evidence:
                                 type: string
+                              follows_failure_action:
+                                type: string
+                              follows_failure_event_id:
+                                type: string
+                              follows_reason:
+                                type: string
                               frame_context:
                                 type: string
                               severity:
@@ -384273,6 +384831,10 @@ paths:
                                   type: string
                               suggested_locator:
                                 type: string
+                              unresolved_variables:
+                                type: array
+                                items:
+                                  type: string
                             required:
                               - category
                               - cause
@@ -385068,6 +385630,12 @@ paths:
                                   type: string
                                 evidence:
                                   type: string
+                                follows_failure_action:
+                                  type: string
+                                follows_failure_event_id:
+                                  type: string
+                                follows_reason:
+                                  type: string
                                 frame_context:
                                   type: string
                                 severity:
@@ -385078,6 +385646,10 @@ paths:
                                     type: string
                                 suggested_locator:
                                   type: string
+                                unresolved_variables:
+                                  type: array
+                                  items:
+                                    type: string
                               required:
                                 - category
                                 - cause
@@ -385565,6 +386137,9 @@ paths:
                                 type: string
                               first_failure_event_id:
                                 type: string
+                              following_failure_count:
+                                type: integer
+                                format: int64
                             required:
                               - failure_count
                             nullable: true

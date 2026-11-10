@@ -45,6 +45,7 @@ type preparedHTTPChild struct {
 	redaction                              *RedactionConfig
 	platformCredentials, scriptCredentials []string
 	structuredBody                         bool
+	requestVariables                       replayRequestVariables
 	publicEvidenceUnavailable              bool
 	publicationRedactionFailed             bool
 	retrySensitiveValues                   []string
@@ -306,7 +307,7 @@ func (vu *VUser) prepareConcurrentHTTP(action dsl.Action) ([]preparedHTTPChild, 
 			seen[name] = true
 			outputs[name] = extractor.Mode
 		}
-		prepared = append(prepared, preparedHTTPChild{authored: child, action: resolved, structuredBody: vu.structuredBodyResolvedAction == resolved, redaction: vu.RedactionConfig, platformCredentials: vu.runtimeCredentialScopes[runtimeCredentialActionScope], scriptCredentials: vu.runtimeCredentialScopes[runtimeCredentialScriptActionScope]})
+		prepared = append(prepared, preparedHTTPChild{authored: child, action: resolved, structuredBody: vu.structuredBodyResolvedAction == resolved, requestVariables: vu.takeReplayRequestVariables(), redaction: vu.RedactionConfig, platformCredentials: vu.runtimeCredentialScopes[runtimeCredentialActionScope], scriptCredentials: vu.runtimeCredentialScopes[runtimeCredentialScriptActionScope]})
 	}
 	for _, reference := range budget.references {
 		if _, found := dsl.HTTPConcurrentExtractorOutputSource(reference, outputs); found {

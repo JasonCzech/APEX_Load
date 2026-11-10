@@ -548,6 +548,11 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(issuesTable.getByRole('columnheader', { name: /Action/ })).toHaveAttribute('aria-sort', 'ascending')
   await summary.getByRole('button', { name: 'Inspect Check order' }).click()
   await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
+  // The run's only failure: nothing before or after it to step to; its wire request can be copied as cURL.
+  const inspectorHeader = page.locator('.rr-inspector-header')
+  await expect(inspectorHeader.getByRole('button', { name: 'Previous failure', exact: true })).toBeDisabled()
+  await expect(inspectorHeader.getByRole('button', { name: 'Next failure', exact: true })).toBeDisabled()
+  await expect(inspectorHeader.getByRole('button', { name: 'Copy as cURL', exact: true })).toBeVisible()
   // Periodic session refreshes must not take the selected evidence tab away.
   await page.waitForTimeout(1800)
   await expect(summary).toBeHidden()

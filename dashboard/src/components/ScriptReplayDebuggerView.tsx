@@ -133,6 +133,8 @@ export interface ScriptReplayDebuggerViewProps {
   onUpdateBreakpoints: (next: ScriptDebugBreakpoint[]) => Promise<void>
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
   addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
+  /** Replaces a replayed step's extractor in place (the inspector's failing-extractor tester): true when it did, else why not. */
+  replaceExtractorDefinition?: (event: ReplayActionEvent, name: string, extractor: Pick<ScriptExtractorDefinition, 'source' | 'type' | 'expression'>) => true | string
   applyReplaySuggestedLocator: (event: ReplayActionEvent, locator: string) => void
   breakpointSummary: string
   browserReplaySession: ScriptDebugSession | null
@@ -232,6 +234,7 @@ export function ScriptReplayDebuggerView({
   runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints,
   actionProblemRows,
   addExtractorDefinition,
+  replaceExtractorDefinition,
   breakpointSummary,
   browserReplaySession,
   clearDebugBreakpoints,
@@ -437,6 +440,19 @@ export function ScriptReplayDebuggerView({
     if (!followExecution || (!currentDebugActionKey && !currentDebugStepKey)) return
     debuggerRailRef.current?.querySelector<HTMLElement>('[aria-current="step"]')?.scrollIntoView?.({ block: 'nearest' })
   }, [currentDebugActionKey, currentDebugStepKey, followExecution])
+  // The inspector's failure navigation (Previous/Next failure, Go to first
+  // failure) selects like the action list: following execution turns off (the
+  // wrapped setter) and the outline highlight follows the selection, whose row
+  // is then scrolled into view.
+  const [railScrollRequest, setRailScrollRequest] = useState(0)
+  const selectInspectorEvent = (index: number) => {
+    jumpToEvent(index)
+    setRailScrollRequest(request => request + 1)
+  }
+  useEffect(() => {
+    if (!railScrollRequest) return
+    debuggerRailRef.current?.querySelector<HTMLElement>('[role="treeitem"][aria-selected="true"], .script-outline-row.selected')?.scrollIntoView?.({ block: 'nearest' })
+  }, [railScrollRequest])
   const goCurrent = () => { const failureIndex = isReplayPaused && browserReplaySession?.current_event?.success === false ? debugEvents.findIndex(e => e.event_id != null && e.event_id === browserReplaySession.current_event?.event_id) : -1; setExpandedReplayEvent(failureIndex >= 0 ? failureIndex : null); onFollowExecution(true); setDebugRailFilter(''); setDebuggerTab('request'); onOpenRequestResponse?.(); setNarrowPane('editor'); setDebugDetailCollapsed(false) }
 
   return (
@@ -1012,11 +1028,14 @@ export function ScriptReplayDebuggerView({
                         onEditAction={onEditReplayAction}
                         onOpenDebugOptions={() => setDebuggerSettingsOpen(true)}
                         addExtractorDefinition={addExtractorDefinition}
+                        replaceExtractorDefinition={replaceExtractorDefinition}
                         http3UpgradeScopes={http3UpgradeScopes}
                         onSwitchToHTTP3Upgrade={onSwitchToHTTP3Upgrade}
                         responseActions={responseActions}
                         onViewScreenshot={setReplayScreenshotSelection}
                         onCompareWithRecording={onCompareWithRecording}
+                        events={debugEvents}
+                        onSelectEvent={selectInspectorEvent}
                       />
                     ) : (replaying && browserReplaySession?.current_action) ? (
                       (() => {

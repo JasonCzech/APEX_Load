@@ -81,6 +81,21 @@ export function debugSummaryModel(snapshot: DebugCompletionSnapshot) {
       issues.push({ key: `log-${log.id}`, severity: log.level === 'warn' ? 'warning' : 'error', message: log.message, actionName: log.action_name, phase: log.phase })
     }
   }
+  const failed = events.filter(({ event }) => !event.success).length
+  // Failures the engine linked to the run's first one (session loss after it).
+  const diagnosisSummary = unavailable ? undefined : report?.diagnosis_summary
+  const followingCount = diagnosisSummary?.following_failure_count ?? 0
+  let followingFailures: { text: string; eventIndex: number | null } | null = null
+  if (Number.isSafeInteger(followingCount) && followingCount > 0) {
+    const total = Math.max(diagnosisSummary?.failure_count ?? 0, failed, followingCount)
+    const action = diagnosisSummary?.first_failure_action?.trim()
+    const firstId = diagnosisSummary?.first_failure_event_id
+    const first = firstId ? events.find(({ event }) => event.event_id === firstId) : undefined
+    followingFailures = {
+      text: `${followingCount.toLocaleString()} of ${total.toLocaleString()} failures follow the first failure${action ? ` (${action})` : ''}.`,
+      eventIndex: first ? first.index : null,
+    }
+  }
   const startedAt = report?.started_at || session.started_at
   const completedAt = report?.completed_at || session.completed_at
   const elapsed = startedAt && completedAt ? Date.parse(completedAt) - Date.parse(startedAt) : NaN
@@ -88,7 +103,8 @@ export function debugSummaryModel(snapshot: DebugCompletionSnapshot) {
     events, issues, unavailable,
     incomplete: unavailable || Boolean(session.dropped_event_count || report?.dropped_event_count || report?.truncated_event_evidence_count),
     passed: events.filter(({ event }) => event.success).length,
-    failed: events.filter(({ event }) => !event.success).length,
+    failed,
+    followingFailures,
     outcome: session.status === 'stopped' || report?.stopped ? 'Stopped' : session.status === 'failed' || report?.success === false ? 'Failed' : 'Passed',
     startedAt,
     elapsedMs: Number.isFinite(elapsed) && elapsed >= 0 ? elapsed : null,
