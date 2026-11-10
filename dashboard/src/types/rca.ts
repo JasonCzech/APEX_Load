@@ -408,6 +408,29 @@ export interface LinkedExemplar {
   links: ExemplarLink[]
 }
 
+/**
+ * The most trace ids one POST /tests/{id}/live/trace-links request may name:
+ * the server's maxLiveTraceLinkIDs (pkg/api/live_trace_links.go), which
+ * TestLiveTraceLinksClientCapMatchesServer pins to this value.
+ */
+export const LIVE_TRACE_LINKS_MAX_IDS = 600
+
+/** Request for POST /tests/{id}/live/trace-links (Go LiveTraceLinksRequest). */
+export interface LiveTraceLinksRequest {
+  /** 1 to LIVE_TRACE_LINKS_MAX_IDS (600) W3C trace ids (32 lowercase hex). */
+  trace_ids: string[]
+  /** RFC 3339 window the links open, from before to. */
+  from: string
+  to: string
+}
+
+/** Go LiveTraceLinksResponse: configured is false when the run has no trace provider with a trace link. */
+export interface LiveTraceLinksResponse {
+  traces: Array<{ trace_id: string; links: ExemplarLink[] }>
+  configured: boolean
+  links_unavailable?: boolean
+}
+
 export interface ExemplarPage {
   exemplars: LinkedExemplar[]
   total: number

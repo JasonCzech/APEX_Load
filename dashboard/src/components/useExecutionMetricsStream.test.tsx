@@ -26,7 +26,7 @@ vi.mock('../hooks/api/useTestApi', () => ({
 }))
 
 function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { status?: TestStatus; testId?: string }) {
-  const { localMetricsHistory, latestMetrics } = useExecutionMetricsStream(testId, status)
+  const { localMetricsHistory, latestMetrics, liveRetention } = useExecutionMetricsStream(testId, status)
   const latest = localMetricsHistory[localMetricsHistory.length - 1]
 
   return (
@@ -49,6 +49,8 @@ function MetricsStreamHarness({ status = 'RUNNING', testId = 'test-1' }: { statu
       <span data-testid="receipt-run">{getClientTelemetryReceipt(latestMetrics?.telemetry)?.testId}</span>
       <span data-testid="receipt-monotonic">{String(getClientTelemetryReceipt(latestMetrics?.telemetry)?.monotonicMs ?? -1)}</span>
       <span data-testid="received-at">{String(latestMetrics?.telemetry?.client_received_at ?? '')}</span>
+      <span data-testid="exemplar-windows">{String(liveRetention.exemplars.length)}</span>
+      <span data-testid="stable-phase">{liveRetention.stable.phase}</span>
     </div>
   )
 }
@@ -390,6 +392,30 @@ describe('useExecutionMetricsStream', () => {
     })
     expect(readTestId('count')).toBe('3')
     expect(readTestId('tps')).toBe('99')
+  })
+
+  it('retains window exemplars and resets them on run change', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+    const text = (id: string) => container.querySelector(`[data-testid="${id}"]`)?.textContent
+    for (let second = 0; second < 4; second++) {
+      await emit({
+        type: 'metrics_update',
+        timestamp: `2026-05-12T20:05:0${second}Z`,
+        data: {
+          timestamp: `2026-05-12T20:05:0${second}Z`, active_vusers: 10, tps: 1, avg_response_ms: 10, error_pct: 0, total_transactions: 1, total_errors: 0, p50_ms: 1, p90_ms: 1, p95_ms: 1, p99_ms: 1,
+          transactions: { Checkout: { name: 'Checkout', count: 1, errors: 0, avg_ms: 10, p50_ms: 1, p90_ms: 1, p99_ms: 1, exemplars: [{ trace_id: '0af7651916cd43dd8448eb211c80319c', duration_ms: 10, success: true, reason: 'sample', timestamp: '2026-05-12T20:05:00Z' }] } },
+        },
+      })
+    }
+    expect(text('exemplar-windows')).toBe('4')
+    expect(text('stable-phase')).toBe('collecting')
+    await act(async () => {
+      root.render(<MetricsStreamHarness testId="test-2" />)
+    })
+    expect(text('exemplar-windows')).toBe('0')
+    expect(text('stable-phase')).toBe('waiting')
   })
 
   async function emit(message: WSMessage) {

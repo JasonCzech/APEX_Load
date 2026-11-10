@@ -114,7 +114,8 @@ function WaterfallRowInner<T>({
     : null
   const isParent = hasChildren && node.kind !== 'request'
   const source = node.timingSource ? TIMING_SOURCE_LABELS[node.timingSource] : null
-  const statusText = node.statusCode != null ? `${STATUS_LABEL[node.status]} · ${node.statusCode}` : STATUS_LABEL[node.status]
+  const statusWord = node.statusLabel ?? STATUS_LABEL[node.status]
+  const statusText = node.statusCode != null ? `${statusWord} · ${node.statusCode}` : statusWord
   const cls = [
     'wf-row',
     `wf-kind-${node.kind}`,
@@ -173,6 +174,10 @@ function WaterfallRowInner<T>({
         )}
         {/* Shown only when narrow docks fold the status column away. */}
         {node.statusCode != null && <span className={`wf-code ${node.status}`} aria-hidden="true">{node.statusCode}</span>}
+        {/* A custom status (an aggregate row's error share, "No samples") folds here the same way. */}
+        {node.statusCode == null && node.statusLabel && node.statusLabel !== STATUS_LABEL[node.status] && (
+          <span className={`wf-code wf-code-label ${node.status}`} aria-hidden="true">{node.statusLabel}</span>
+        )}
         {node.redirect && node.redirect.count > 0 && (
           <span className="wf-badge wf-redirect">
             <span aria-hidden="true">↪ {node.redirect.count}</span>

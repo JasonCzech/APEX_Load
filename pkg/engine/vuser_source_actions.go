@@ -438,6 +438,15 @@ type sourceTransactionRuntimeState struct {
 	// duration at the stop and drops them.
 	stoppedPhaseRollup *sourceTransactionPhaseRollup
 	stoppedLLMRollup   *protocol.LLMDiagnostics
+	// traceExemplars are the trace contexts of the child requests that sent
+	// one while the transaction was open: the slowest, and the first that
+	// failed. The synthesized transaction result never goes on the wire
+	// itself, so without them a marker-based transaction (lr_start/lr_end)
+	// has no trace for live exemplars or the archive's trace_id.
+	// stoppedTraceExemplars holds them aside while stopped, like the rollups
+	// above.
+	traceExemplars        sourceTransactionTraceExemplars
+	stoppedTraceExemplars sourceTransactionTraceExemplars
 	// asyncDispatchEpoch is the VUser's dispatch epoch when the transaction
 	// opened inside an async dispatch (0 outside one): only then does the
 	// dispatch's own work (callback requests) roll into it.
@@ -587,7 +596,7 @@ func scaleDuration(value, num, den time.Duration) time.Duration {
 // and the failure close (finalizeSourceTransaction) both use it, so a
 // transaction closed either way reports the same anatomy.
 func applySourceTransactionRollups(source *protocol.Result, state *sourceTransactionRuntimeState, duration time.Duration, fallback func() *protocol.Result) *protocol.Result {
-	if state == nil || (!state.phaseRollup.hasPhases() && state.llmRollup == nil) {
+	if state == nil || (!state.phaseRollup.hasPhases() && state.llmRollup == nil && state.traceExemplars.empty()) {
 		return source
 	}
 	if source == nil {
@@ -601,6 +610,13 @@ func applySourceTransactionRollups(source *protocol.Result, state *sourceTransac
 	if state.llmRollup != nil {
 		source.ServerTelemetry = &protocol.ServerTelemetry{LLM: state.llmRollup}
 	}
+	// A failed transaction's trace is its error evidence (first_error
+	// exemplar, archive error exemplar, error-priority provider lookups), so
+	// it points at the child that failed when one sent a trace.
+	if exemplar := state.traceExemplars.pick(source.Success); exemplar != nil && source.TraceContext == nil {
+		sent := exemplar.context
+		source.TraceContext = &sent
+	}
 	return source
 }
 
@@ -608,6 +624,76 @@ type sourceTransactionTrace struct {
 	root trace.SpanContext
 	// end ends an exported root span; it runs at most once.
 	end func()
+}
+
+// sourceTransactionTraceExemplar is a child request's sent trace context,
+// its duration and whether it failed, so a transaction keeps the slowest one
+// and the first failed one.
+type sourceTransactionTraceExemplar struct {
+	context  protocol.SentTraceContext
+	duration time.Duration
+	failed   bool
+}
+
+// sourceTransactionTraceExemplars holds a transaction's candidate traces: the
+// slowest child that sent one, and the first failed child that sent one. A
+// failed transaction takes the failed child's trace (its error evidence must
+// show the error); a passing one, or a failed one whose failing children
+// sent none, takes the slowest.
+type sourceTransactionTraceExemplars struct {
+	slowest     *sourceTransactionTraceExemplar
+	firstFailed *sourceTransactionTraceExemplar
+}
+
+func (s sourceTransactionTraceExemplars) empty() bool {
+	return s.slowest == nil && s.firstFailed == nil
+}
+
+// offer adds one child's exemplar.
+func (s *sourceTransactionTraceExemplars) offer(candidate sourceTransactionTraceExemplar) {
+	keepSlowerTraceExemplar(&s.slowest, candidate)
+	if candidate.failed && s.firstFailed == nil {
+		next := candidate
+		s.firstFailed = &next
+	}
+}
+
+// merge adds exemplars collected later (a parallel branch, or the stopped
+// interval on resume): the earlier failure stays first.
+func (s *sourceTransactionTraceExemplars) merge(later sourceTransactionTraceExemplars) {
+	if later.slowest != nil {
+		keepSlowerTraceExemplar(&s.slowest, *later.slowest)
+	}
+	if s.firstFailed == nil && later.firstFailed != nil {
+		next := *later.firstFailed
+		s.firstFailed = &next
+	}
+}
+
+// pick returns the exemplar for a transaction with the given outcome.
+func (s sourceTransactionTraceExemplars) pick(success bool) *sourceTransactionTraceExemplar {
+	if !success && s.firstFailed != nil {
+		return s.firstFailed
+	}
+	return s.slowest
+}
+
+// sourceTransactionTraceExemplarOf returns the trace context a request really
+// sent (a cache hit or a malformed header has none to look up).
+func sourceTransactionTraceExemplarOf(result *protocol.Result) (sourceTransactionTraceExemplar, bool) {
+	if result == nil || result.TraceContext.LookupTraceID() == "" {
+		return sourceTransactionTraceExemplar{}, false
+	}
+	return sourceTransactionTraceExemplar{context: *result.TraceContext, duration: result.Duration, failed: !result.Success}, true
+}
+
+// keepSlowerTraceExemplar keeps the slower of *target and candidate; on a tie
+// the earlier one stays, so the pick does not depend on map order.
+func keepSlowerTraceExemplar(target **sourceTransactionTraceExemplar, candidate sourceTransactionTraceExemplar) {
+	if *target == nil || candidate.duration > (*target).duration {
+		next := candidate
+		*target = &next
+	}
 }
 
 // sourceTransactionEndNeedsGoalClaim reports whether an end marker will record
@@ -1319,6 +1405,11 @@ func (vu *VUser) noteSourceTransactionPhases(result *protocol.Result) {
 	if vu == nil || result == nil || result.BusinessTransaction || resultOutsideSourceTransactions(result) {
 		return
 	}
+	if exemplar, ok := sourceTransactionTraceExemplarOf(result); ok {
+		var offered sourceTransactionTraceExemplars
+		offered.offer(exemplar)
+		vu.offerSourceTransactionTraces(offered, vu.resultFromAsyncDispatch(result))
+	}
 	sample, ok := sourceTransactionPhaseSample(result)
 	if !ok {
 		return
@@ -1354,6 +1445,25 @@ func (vu *VUser) addSourceTransactionPhases(sample sourceTransactionPhaseRollup,
 	}
 }
 
+// offerSourceTransactionTraces offers a child request's (or a parallel
+// branch's) sent trace contexts to every open authored transaction that takes
+// them (the same rule as phases).
+func (vu *VUser) offerSourceTransactionTraces(exemplars sourceTransactionTraceExemplars, dispatch bool) {
+	if vu == nil || exemplars.empty() {
+		return
+	}
+	for _, state := range vu.sourceTransactions {
+		if !vu.sourceTransactionTakes(state, dispatch) {
+			continue
+		}
+		if state.stoppedAt.IsZero() {
+			state.traceExemplars.merge(exemplars)
+		} else {
+			state.stoppedTraceExemplars.merge(exemplars)
+		}
+	}
+}
+
 // resumeRollups moves what requests added while the transaction was stopped
 // into its rollups: the resumed duration includes the stopped interval.
 func (state *sourceTransactionRuntimeState) resumeRollups() {
@@ -1369,7 +1479,8 @@ func (state *sourceTransactionRuntimeState) resumeRollups() {
 	if state.stoppedLLMRollup != nil {
 		protocol.MergeLLMHopDiagnostics(&state.llmRollup, state.stoppedLLMRollup)
 	}
-	state.stoppedPhaseRollup, state.stoppedLLMRollup = nil, nil
+	state.traceExemplars.merge(state.stoppedTraceExemplars)
+	state.stoppedPhaseRollup, state.stoppedLLMRollup, state.stoppedTraceExemplars = nil, nil, sourceTransactionTraceExemplars{}
 }
 
 // resultOutsideSourceTransactions reports a result that never rolls into an
