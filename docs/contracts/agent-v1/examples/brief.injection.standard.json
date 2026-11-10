@@ -1,9 +1,9 @@
 {
   "schema": "apexload.agent_brief.v1",
-  "brief_digest": "bba63c3ea0ce997581347576d53256c880ce811c3db7c2abd81cbe1e8dd063d7",
+  "brief_digest": "2e87a73ec178c126b429020faf330ba4f79f1130e6845888f08abd31aeca6792",
   "generated_from": {
     "manifest_sha256": "abc123",
-    "builder_version": "1"
+    "builder_version": "2"
   },
   "detail_level": "standard",
   "run": {

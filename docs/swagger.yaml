@@ -61580,6 +61580,74 @@ paths:
                       required:
                         - samples
                         - scope
+                  phase_attribution:
+                    type: object
+                    properties:
+                      basis:
+                        type: string
+                      eligible:
+                        type: integer
+                        format: int64
+                      ineligible:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      join_coverage_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      partial:
+                        type: boolean
+                      partial_reasons:
+                        type: array
+                        items:
+                          type: string
+                      transactions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            dominant_phase:
+                              type: string
+                            dominant_share_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            median_ms:
+                              type: number
+                              format: double
+                            phases_ms:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            sampled:
+                              type: boolean
+                            tail_delta_ms:
+                              type: number
+                              format: double
+                            tail_ms:
+                              type: number
+                              format: double
+                            tail_samples:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - median_ms
+                            - phases_ms
+                            - tail_delta_ms
+                            - tail_ms
+                            - tail_samples
+                            - transaction
+                    required:
+                      - basis
+                      - eligible
+                      - partial
+                      - transactions
+                    nullable: true
                   rca:
                     type: object
                     properties:
@@ -456945,6 +457013,74 @@ paths:
                       required:
                         - samples
                         - scope
+                  phase_attribution:
+                    type: object
+                    properties:
+                      basis:
+                        type: string
+                      eligible:
+                        type: integer
+                        format: int64
+                      ineligible:
+                        type: object
+                        additionalProperties:
+                          type: integer
+                          format: int64
+                      join_coverage_pct:
+                        type: number
+                        format: double
+                        nullable: true
+                      partial:
+                        type: boolean
+                      partial_reasons:
+                        type: array
+                        items:
+                          type: string
+                      transactions:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            dominant_phase:
+                              type: string
+                            dominant_share_pct:
+                              type: number
+                              format: double
+                              nullable: true
+                            median_ms:
+                              type: number
+                              format: double
+                            phases_ms:
+                              type: object
+                              additionalProperties:
+                                type: number
+                                format: double
+                            sampled:
+                              type: boolean
+                            tail_delta_ms:
+                              type: number
+                              format: double
+                            tail_ms:
+                              type: number
+                              format: double
+                            tail_samples:
+                              type: integer
+                              format: int64
+                            transaction:
+                              type: string
+                          required:
+                            - median_ms
+                            - phases_ms
+                            - tail_delta_ms
+                            - tail_ms
+                            - tail_samples
+                            - transaction
+                    required:
+                      - basis
+                      - eligible
+                      - partial
+                      - transactions
+                    nullable: true
                   rca:
                     type: object
                     properties:

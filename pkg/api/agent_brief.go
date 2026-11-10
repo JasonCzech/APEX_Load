@@ -131,6 +131,10 @@ func buildAgentBrief(in agentBriefInputs, opts agentBriefOptions) (*AgentBrief, 
 	brief.Verdict = deriveAgentVerdict(report, in, findings, brief)
 	brief.Findings = findings
 	brief.Metrics = agentMetricRows(report, in.Comparison)
+	var phaseOmitted int
+	if brief.PhaseAttribution, phaseOmitted = agentPhaseOf(report, detail); phaseOmitted > 0 {
+		brief.Truncation.Omitted["phase_attribution"] = phaseOmitted
+	}
 	brief.ctrf = agentCTRFInputsOf(report)
 	// A drill-down reads the finding the way this brief did: against the
 	// same explicit comparison (a regression exists only there), or with no
@@ -874,6 +878,9 @@ func agentHowToGetMore(brief *AgentBrief) string {
 	}
 	if brief.Truncation.Omitted["metrics"] > 0 {
 		next = append(next, "the archive report lists every transaction")
+	}
+	if brief.Truncation.Omitted["phase_attribution"] > 0 {
+		next = append(next, "the archive report's time_anatomy splits every transaction")
 	}
 	if brief.Truncation.Omitted["resolved_ids"] > 0 {
 		next = append(next, "the baseline run's own brief lists its findings")

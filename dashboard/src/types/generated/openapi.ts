@@ -71817,6 +71817,25 @@ export interface operations {
               "sla_result"?: string;
               "throughput_per_s"?: (number) | null;
             }>;
+            "phase_attribution"?: ({
+              "basis": string;
+              "eligible": number;
+              "ineligible"?: Record<string, number>;
+              "join_coverage_pct"?: (number) | null;
+              "partial": boolean;
+              "partial_reasons"?: Array<string>;
+              "transactions": Array<{
+                "dominant_phase"?: string;
+                "dominant_share_pct"?: (number) | null;
+                "median_ms": number;
+                "phases_ms": Record<string, number>;
+                "sampled"?: boolean;
+                "tail_delta_ms": number;
+                "tail_ms": number;
+                "tail_samples": number;
+                "transaction": string;
+              }>;
+            }) | null;
             "rca"?: ({
               "analysis_id"?: string;
               "outcome"?: string;
@@ -75989,6 +76008,25 @@ export interface operations {
               "sla_result"?: string;
               "throughput_per_s"?: (number) | null;
             }>;
+            "phase_attribution"?: ({
+              "basis": string;
+              "eligible": number;
+              "ineligible"?: Record<string, number>;
+              "join_coverage_pct"?: (number) | null;
+              "partial": boolean;
+              "partial_reasons"?: Array<string>;
+              "transactions": Array<{
+                "dominant_phase"?: string;
+                "dominant_share_pct"?: (number) | null;
+                "median_ms": number;
+                "phases_ms": Record<string, number>;
+                "sampled"?: boolean;
+                "tail_delta_ms": number;
+                "tail_ms": number;
+                "tail_samples": number;
+                "transaction": string;
+              }>;
+            }) | null;
             "rca"?: ({
               "analysis_id"?: string;
               "outcome"?: string;

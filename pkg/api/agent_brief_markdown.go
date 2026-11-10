@@ -65,6 +65,23 @@ func renderAgentBriefMarkdown(brief *AgentBrief) string {
 		b.WriteString("\n")
 	}
 
+	if phase := brief.PhaseAttribution; phase != nil && len(phase.Transactions) > 0 {
+		b.WriteString("### Where the P95 tail goes\n\n")
+		for _, tx := range phase.Transactions {
+			parts := []string{}
+			for _, component := range agentPhaseOrder {
+				if value, ok := tx.PhasesMs[component]; ok {
+					parts = append(parts, agentPhaseWords[component]+" "+agentSignedMs(value))
+				}
+			}
+			fmt.Fprintf(&b, "- %s: tail %s vs median (%d tail samples): %s\n", markdownInline(agentSafeName(tx.Transaction)), agentSignedMs(tx.TailDeltaMs), tx.TailSamples, strings.Join(parts, ", "))
+		}
+		if phase.Partial {
+			fmt.Fprintf(&b, "- partial anatomy: %s\n", strings.Join(phase.PartialReasons, ", "))
+		}
+		b.WriteString("\n")
+	}
+
 	if len(brief.Findings) > 0 {
 		b.WriteString("### Findings\n\n")
 		hasUntrusted := false
