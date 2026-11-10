@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -87,23 +88,40 @@ func stubRCAReportBuild(t *testing.T, build func(*storage.RunArchiveRecord) (*Ru
 	t.Cleanup(func() { rcaBuildArchiveReport = saved })
 }
 
-func TestRCAPhaseAttributionInputStopsWithTheReadTime(t *testing.T) {
+// blockedRCAReportBuild stubs a build that runs until released. finish
+// releases the builds and waits until the given number of them returned, so
+// none the test abandoned outlives it (and its stub).
+func blockedRCAReportBuild(t *testing.T) (finish func(builds int)) {
+	t.Helper()
 	release := make(chan struct{})
-	defer close(release)
+	returned := make(chan struct{}, 16)
 	stubRCAReportBuild(t, func(*storage.RunArchiveRecord) (*RunArchiveReport, error) {
+		defer func() { returned <- struct{}{} }()
 		<-release
 		return &RunArchiveReport{}, nil
 	})
+	return func(builds int) {
+		close(release)
+		for i := 0; i < builds; i++ {
+			<-returned
+		}
+	}
+}
+
+func TestRCAPhaseAttributionInputStopsWithTheReadTime(t *testing.T) {
+	finish := blockedRCAReportBuild(t)
+	// Two builds are abandoned below; both return before the stub goes.
+	defer finish(2)
 	s := &Server{}
 	record := &storage.RunArchiveRecord{TestID: "run"}
 
 	// The read time runs out mid-build: the anatomy is left out, the
-	// analysis goes on.
+	// analysis goes on, and the assessment counts as cut by the budget.
 	readCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
 	attributions, limitations, err := s.rcaPhaseAttributionInput(context.Background(), readCtx, record, nil)
-	if err != nil || attributions != nil || len(limitations) != 1 || limitations[0].Code != limitationPhaseAttributionUnavailable ||
-		!strings.Contains(limitations[0].Detail, "not built within the evidence read time") {
+	if err != nil || attributions != nil || len(limitations) != 1 || limitations[0].Code != limitationPhaseAttributionInterrupted ||
+		!strings.Contains(limitations[0].Detail, "not built within the evidence read time") || !rca.CutByBudget(limitations) {
 		t.Fatalf("%v %+v", err, limitations)
 	}
 
@@ -118,16 +136,48 @@ func TestRCAPhaseAttributionInputStopsWithTheReadTime(t *testing.T) {
 }
 
 func TestRCAPhaseAttributionInputDoesNotStartPastTheReadTime(t *testing.T) {
-	called := false
+	var calls atomic.Int32
 	stubRCAReportBuild(t, func(*storage.RunArchiveRecord) (*RunArchiveReport, error) {
-		called = true
+		calls.Add(1)
 		return &RunArchiveReport{}, nil
 	})
 	readCtx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, limitations, err := (&Server{}).rcaPhaseAttributionInput(context.Background(), readCtx, &storage.RunArchiveRecord{TestID: "run"}, nil)
-	if err != nil || called || len(limitations) != 1 {
-		t.Fatalf("%v %v %+v", err, called, limitations)
+	if err != nil || calls.Load() != 0 || len(limitations) != 1 || limitations[0].Code != limitationPhaseAttributionInterrupted {
+		t.Fatalf("%v %d %+v", err, calls.Load(), limitations)
+	}
+}
+
+// Whether an assessment without phase attribution is reused for an
+// identical request: not when the build was interrupted or may have failed
+// transiently; yes when the frozen archive decided it, or simply has no
+// anatomy.
+func TestRCAPhaseAttributionLimitationsAndReuse(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		report   *RunArchiveReport
+		err      error
+		code     string
+		reanalyz bool
+	}{
+		{name: "transient error", err: errors.New("read transactions.jsonl: connection reset"), code: limitationPhaseAttributionInterrupted, reanalyz: true},
+		{name: "report bound", err: errors.New("archive report exceeds 256 distinct action values"), code: limitationPhaseAttributionUnavailable},
+		{name: "no anatomy", report: &RunArchiveReport{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stubRCAReportBuild(t, func(*storage.RunArchiveRecord) (*RunArchiveReport, error) { return tc.report, tc.err })
+			attributions, limitations, err := (&Server{}).rcaPhaseAttributionInput(context.Background(), context.Background(), &storage.RunArchiveRecord{TestID: "run"}, nil)
+			if err != nil || len(attributions) != 0 {
+				t.Fatalf("%v %+v", err, attributions)
+			}
+			if tc.code == "" && len(limitations) != 0 || tc.code != "" && (len(limitations) != 1 || limitations[0].Code != tc.code) {
+				t.Fatalf("%+v", limitations)
+			}
+			if got := rca.CutByBudget(limitations); got != tc.reanalyz {
+				t.Fatalf("CutByBudget = %v", got)
+			}
+		})
 	}
 }
 
@@ -135,7 +185,7 @@ func TestRCAPhaseAttributionInputNotesAnUnbuildableBaseline(t *testing.T) {
 	current := &RunArchiveTimeAnatomy{Transactions: []RunArchiveTransactionAnatomy{phaseAnatomyFixture("ok", 480, 500, 0, 0, 0)}}
 	stubRCAReportBuild(t, func(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
 		if record.TestID == "baseline" {
-			return nil, errors.New("baseline archive unreadable")
+			return nil, errors.New("archive report exceeds 256 distinct action values")
 		}
 		return &RunArchiveReport{TimeAnatomy: current}, nil
 	})

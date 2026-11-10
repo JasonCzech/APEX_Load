@@ -239,7 +239,9 @@ func HypothesizeWithPhases(anomalies []Anomaly, series []Series, judged JudgedSe
 			Available: map[string]signatures.Availability{},
 		}
 		var phaseRef *EvidenceRef
-		if shift, node := symptomPhaseShift(byID[symptom.Series], shifts); shift != nil {
+		// Only latency symptoms (TTFT and TPOT included) read the anatomy: an
+		// error-rate or throughput symptom says nothing about where time went.
+		if shift, node := symptomPhaseShift(kind, byID[symptom.Series], shifts); shift != nil {
 			if streamed[node] {
 				shift = withoutDownload(shift)
 			}

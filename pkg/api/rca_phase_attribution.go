@@ -5,15 +5,27 @@ import (
 	"errors"
 	"net/url"
 	"slices"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/rca/signatures"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-// limitationPhaseAttributionUnavailable: the run's time anatomy could not
-// be built, so no symptom transaction's phase split was read.
-const limitationPhaseAttributionUnavailable = "phase_attribution_unavailable"
+// Phase attribution limitations: a deterministic build failure of a frozen
+// archive (unavailable, reusable) and a build the read time or a possibly
+// transient error stopped (interrupted, which rca.CutByBudget counts so an
+// identical request is analyzed again).
+const (
+	limitationPhaseAttributionUnavailable = rca.LimitationPhaseAttributionUnavailable
+	limitationPhaseAttributionInterrupted = rca.LimitationPhaseAttributionInterrupted
+)
+
+// rcaReportDeterministicError reports whether a report build failed for a
+// reason the frozen archive itself decides: one of the report's own bounds.
+func rcaReportDeterministicError(err error) bool {
+	return err != nil && strings.HasPrefix(err.Error(), "archive report exceeds ")
+}
 
 // rcaBuildArchiveReport builds (or reads the cached) archive report the
 // phase attributions come from; tests replace it.
@@ -33,8 +45,11 @@ func (s *Server) rcaReportWithin(readCtx context.Context, record *storage.RunArc
 		err    error
 	}
 	done := make(chan built, 1)
+	// The hook is read here, not in the goroutine, which may outlive the
+	// wait.
+	build := rcaBuildArchiveReport
 	go func() {
-		report, err := rcaBuildArchiveReport(s, record)
+		report, err := build(s, record)
 		done <- built{report, err}
 	}()
 	select {
@@ -52,19 +67,19 @@ func (s *Server) rcaReportWithin(readCtx context.Context, record *storage.RunArc
 // baseline is comparable, the baseline's) from their archive reports and
 // returns the assessment's phase attributions. The reports are pure
 // functions of the frozen archives, so the attributions are too. A report
-// that cannot be built, or not within the read time, leaves its anatomy out
-// as phase_attribution_unavailable; only the caller's own cancellation
-// (ctx) is an error.
+// that cannot be built leaves its anatomy out: phase_attribution_unavailable
+// when the archive decides it, phase_attribution_interrupted when the read
+// time ran out or the error may be transient. Only the caller's own
+// cancellation (ctx) is an error.
 func (s *Server) rcaPhaseAttributionInput(ctx, readCtx context.Context, record *storage.RunArchiveRecord, baseline *rcaBaselineArchive) ([]rca.PhaseAttribution, []rca.Limitation, error) {
 	unavailable := func(what string, err error) rca.Limitation {
-		detail := what + " could not be built"
 		switch {
+		case rcaReportDeterministicError(err):
+			return rca.Limitation{Code: limitationPhaseAttributionUnavailable, Detail: what + " could not be built: " + err.Error()}
 		case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
-			detail = what + " was not built within the evidence read time"
-		case err != nil:
-			detail += ": " + err.Error()
+			return rca.Limitation{Code: limitationPhaseAttributionInterrupted, Detail: what + " was not built within the evidence read time"}
 		}
-		return rca.Limitation{Code: limitationPhaseAttributionUnavailable, Detail: detail}
+		return rca.Limitation{Code: limitationPhaseAttributionInterrupted, Detail: what + " could not be built: " + err.Error()}
 	}
 	report, err := s.rcaReportWithin(readCtx, record)
 	if ctxErr := ctx.Err(); ctxErr != nil {

@@ -482,7 +482,8 @@ errors, or falling throughput, on a transaction or action series.
   band subtracts 1 (0.25 off the path). A signature is supported with any
   support and a positive score. A cold start scores higher when the symptom
   began at a load step.
-- **Phase attribution.** A symptom on a business transaction also reads that
+- **Phase attribution.** A latency symptom (TTFT and TPOT included) on a
+  business transaction also reads that
   transaction's time anatomy from the archive report: where its P95 tail's
   extra time goes against its median, and, with a comparable baseline, where
   its mean grew against the baseline's mean (the baseline comparison wins
@@ -503,17 +504,25 @@ errors, or falling throughput, on a transaction or action series.
   and `pool_exhaustion`, and TLS for `resource_pressure` (handshake CPU) only
   when the baseline comparison shows more full handshakes (reuse down or TLS
   observed on more requests by 10 points or more). A change dominated by a
-  phase a signature cannot explain subtracts 0.5, is cited as contradicting
-  evidence and keeps the hypothesis from `high`. Attribution alone never
+  phase a signature cannot explain (TLS counts for `resource_pressure` only
+  with more handshakes) subtracts 0.5, even when a lesser phase it explains
+  also grew, is cited as contradicting evidence and keeps the hypothesis
+  from `high`. Error-rate and throughput symptoms do not read the anatomy.
+  Attribution alone never
   supports a signature: it has no onset and no graph path. A change
   dominated by download points at bandwidth or payload size, which no
   signature measures (`phase_transfer_unmodeled`), except on a transaction
   with LLM streaming telemetry (TTFT or TPOT series), whose tokens all
   arrive after the first byte: there download growth is neither a transfer
   problem nor evidence for or against any signature. A run or comparable
-  baseline whose report could not be built, or not within the evidence read
-  time, is noted as `phase_attribution_unavailable` and the analysis goes
-  on; only the caller's own cancellation stops it.
+  baseline whose report exceeds one of the report's own bounds is noted as
+  `phase_attribution_unavailable` (the frozen archive decides it, so the
+  assessment is reused). One whose report was not built within the evidence
+  read time, or failed with any other error, is noted as
+  `phase_attribution_interrupted`; like a wall-time budget cut, that
+  assessment does not answer an identical request, which is analyzed
+  again. Either way the analysis goes on; only the caller's own
+  cancellation stops it.
 - **Hypotheses** carry the symptoms they explain (one cause behind several
   symptoms, or seen both over time and against the baseline, is one
   hypothesis: the same signature on the same evidence series), score, rank,

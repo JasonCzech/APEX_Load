@@ -153,8 +153,11 @@ func TestSignaturePhaseScoring(t *testing.T) {
 	if r, plain := judge(signatures.NetworkPhase, support, &tls), judge(signatures.NetworkPhase, support, nil); !r.PhaseSupported || r.Score <= plain.Score {
 		t.Fatalf("network_phase %+v", r)
 	}
-	// TLS growth backs handshake CPU only with more handshakes.
-	if r := judge(signatures.ResourcePressure, cpu, &tls); r.PhaseSupported || r.PhaseContradicted {
+	// TLS growth backs handshake CPU only with more handshakes; a
+	// TLS-dominated change without them is one resource pressure cannot
+	// explain, so it weakens it.
+	if r, plain := judge(signatures.ResourcePressure, cpu, &tls), judge(signatures.ResourcePressure, cpu, nil); r.PhaseSupported || !r.PhaseContradicted ||
+		r.Score != plain.Score-0.5 || !strings.Contains(strings.Join(r.Reasons, " "), "not in server or TLS with more handshakes") {
 		t.Fatalf("resource_pressure without handshakes %+v", r)
 	}
 	tls.HandshakesUp, tls.HandshakeDetail = true, "connection reuse fell from 90% to 20%"
@@ -219,5 +222,53 @@ func TestStreamedTransactionDownloadIsNotTransfer(t *testing.T) {
 	hypotheses, _, _ = HypothesizeWithPhases(anomalies, streamedSeries, allJudged(streamedSeries), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{server})
 	if h := hypothesisFor(hypotheses, "resource_pressure"); h == nil || h.Score <= a.Score {
 		t.Fatalf("%+v", h)
+	}
+}
+
+// Only a latency symptom reads the anatomy: an error-rate symptom on the
+// same transaction gets no bonus, no penalty and no transfer limitation.
+func TestPhaseAttributionIgnoresErrorRateSymptoms(t *testing.T) {
+	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
+	const errorSeries = "transaction/checkout/error_rate"
+	anomalies[0].Series = errorSeries
+	series[0] = Series{ID: errorSeries, Kind: SeriesErrorRate}
+	plain, _, plainLimits := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	base := hypothesisFor(plain, "resource_pressure")
+	if base == nil {
+		t.Fatalf("fixture: %+v", plain)
+	}
+	for _, phases := range []map[string]float64{{"server": 380}, {"download": 380}} {
+		hypotheses, _, limitations := HypothesizeWithPhases(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{tailAttribution(phases)})
+		h := hypothesisFor(hypotheses, "resource_pressure")
+		if h == nil || h.Score != base.Score || h.Confidence != base.Confidence || len(h.Contradicting) != 0 || len(h.Supporting) != len(base.Supporting) ||
+			hasLimitation(limitations, LimitationPhaseTransfer) || len(limitations) != len(plainLimits) {
+			t.Fatalf("%v: %+v %+v", phases, h, limitations)
+		}
+	}
+}
+
+// A dominant phase the signature cannot explain weakens it even when a
+// lesser phase it does explain also grew.
+func TestUnexplainedDominantPhaseWinsOverALesserMatch(t *testing.T) {
+	wait := signatures.Observation{AnomalyID: "d", Kind: signatures.KindDBWait, Direction: signatures.Increase, Order: signatures.Precedes, Connected: true, PeakZ: 5}
+	shift := signatures.PhaseShift{Transaction: "checkout", Source: signatures.PhaseSourceTail, DeltaMs: 400, Dominant: signatures.PhaseDownload, Grown: []signatures.PhaseGrowth{
+		{Phase: signatures.PhaseDownload, DeltaMs: 240, Share: 0.6}, {Phase: signatures.PhaseServer, DeltaMs: 120, Share: 0.3},
+	}}
+	judge := func(shift *signatures.PhaseShift) signatures.Result {
+		return signatures.DatabaseWait.Judge(signatures.Context{
+			Symptom:      signatures.Observation{Kind: signatures.KindLatency, Direction: signatures.Increase},
+			Observations: []signatures.Observation{wait},
+			Available:    map[string]signatures.Availability{signatures.KindDBWait: {Any: true, Connected: true}},
+			Phase:        shift,
+		})
+	}
+	plain, r := judge(nil), judge(&shift)
+	if r.PhaseSupported || !r.PhaseContradicted || r.Score != plain.Score-0.5 || !strings.Contains(strings.Join(r.Reasons, " "), "in download, not in server") {
+		t.Fatalf("%+v", r)
+	}
+	// Without a dominant phase, the lesser match still strengthens it.
+	shift.Dominant = ""
+	if r := judge(&shift); !r.PhaseSupported || r.PhaseContradicted || r.Score != plain.Score+0.5 {
+		t.Fatalf("%+v", r)
 	}
 }

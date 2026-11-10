@@ -48,6 +48,16 @@ const (
 // measures either.
 const LimitationPhaseTransfer = "phase_transfer_unmodeled"
 
+// Phase attribution limitations. Unavailable: a time anatomy could not be
+// built from its frozen archive, which another attempt would not change.
+// Interrupted: the build did not finish within the evidence read time; it
+// describes the controller's load, so CutByBudget counts it and an
+// identical request is analyzed again.
+const (
+	LimitationPhaseAttributionUnavailable = "phase_attribution_unavailable"
+	LimitationPhaseAttributionInterrupted = "phase_attribution_interrupted"
+)
+
 // PhaseAttribution is one business transaction's time anatomy, as the
 // assessment reads it: where its extra time went, against its own median
 // (tail) or the baseline run (baseline).
@@ -160,10 +170,10 @@ func phaseShifts(attributions []PhaseAttribution) (map[string]signatures.PhaseSh
 	return shifts, refs
 }
 
-// symptomPhaseShift is the phase shift of the transaction a symptom's
-// series measures, if any.
-func symptomPhaseShift(s Series, shifts map[string]signatures.PhaseShift) (*signatures.PhaseShift, string) {
-	if !strings.HasPrefix(s.ID, NodeTransaction+"/") {
+// symptomPhaseShift is the phase shift of the transaction a latency
+// symptom's series measures, if any.
+func symptomPhaseShift(kind string, s Series, shifts map[string]signatures.PhaseShift) (*signatures.PhaseShift, string) {
+	if kind != signatures.KindLatency && kind != signatures.KindTTFT && kind != signatures.KindTPOT || !strings.HasPrefix(s.ID, NodeTransaction+"/") {
 		return nil, ""
 	}
 	for _, node := range seriesNodes(s) {
