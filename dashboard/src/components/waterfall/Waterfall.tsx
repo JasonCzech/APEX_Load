@@ -86,8 +86,10 @@ export function Waterfall<T>({
   // Keep the viewport valid as a live run grows; stay at full span when the user has not zoomed.
   const lastTotalRef = useRef(total)
   useEffect(() => {
-    setViewportState(vp => (isFullViewport(vp, lastTotalRef.current) ? fullViewport(total) : clampViewport(vp, total)))
+    // Read the previous total now: the updater runs later, after the ref moved on.
+    const previous = lastTotalRef.current
     lastTotalRef.current = total
+    setViewportState(vp => (isFullViewport(vp, previous) ? fullViewport(total) : clampViewport(vp, total)))
   }, [total])
 
   const isExpanded = useCallback(

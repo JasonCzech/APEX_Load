@@ -128,4 +128,16 @@ describe('DebugWaterfallPanel', () => {
     expect(checkout().getAttribute('aria-expanded')).toBe('false')
   })
 
+
+  it('keeps showing the whole run while it grows', () => {
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    cleanup = () => { act(() => root.unmount()); container.remove() }
+    act(() => root.render(<DebugWaterfallPanel events={[ev(0)]} />))
+    act(() => root.render(<DebugWaterfallPanel events={[ev(0), ev(1), ev(2), ev(3)]} />))
+    const slider = container.querySelector('.wf-minimap-window')!
+    expect(slider.getAttribute('aria-valuetext')).toMatch(/^Showing 0 to 380 ms of 380 ms$/)
+  })
+
 })
