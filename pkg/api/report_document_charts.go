@@ -31,6 +31,7 @@ type reportDocumentChartSpec struct {
 	EndLabel    string
 	Series      []reportChartSeries
 	Bars        []reportChartBar
+	Stacks      []reportChartStack
 	HighlightAt float64
 	Height      int
 }
@@ -92,7 +93,25 @@ func reportDocumentChartSpecs(report *RunArchiveReport) []reportDocumentChartSpe
 }
 
 func buildReportDocumentCharts(report *RunArchiveReport) ([]reportDocumentChart, error) {
-	specs := reportDocumentChartSpecs(report)
+	return rasterizeReportCharts(reportDocumentChartSpecs(report))
+}
+
+// buildReportDocumentChartsForProfile rasterizes the charts the profile's
+// sections draw: the performance graphs when it includes graphs, and the
+// time anatomy's stacked bars when it includes time_anatomy.
+func buildReportDocumentChartsForProfile(report *RunArchiveReport, profile RunArchiveReportProfile) ([]reportDocumentChart, error) {
+	included := reportSectionSet(profile.IncludedSections)
+	var specs []reportDocumentChartSpec
+	if _, ok := included["graphs"]; ok {
+		specs = append(specs, reportDocumentChartSpecs(report)...)
+	}
+	if _, ok := included["time_anatomy"]; ok {
+		specs = append(specs, reportTimeAnatomyChartSpecs(report)...)
+	}
+	return rasterizeReportCharts(specs)
+}
+
+func rasterizeReportCharts(specs []reportDocumentChartSpec) ([]reportDocumentChart, error) {
 	if len(specs) == 0 {
 		return nil, nil
 	}
@@ -144,7 +163,9 @@ func rasterizeReportChart(spec reportDocumentChartSpec, regular, bold font.Face)
 	chartFillRect(canvas, 0, 0, 2, height, chartBorder)
 	chartFillRect(canvas, width-2, 0, width, height, chartBorder)
 	chartText(canvas, bold, 32, 46, chartInk, spec.Title, false)
-	if len(spec.Bars) > 0 {
+	if len(spec.Stacks) > 0 {
+		drawReportStackedBarChart(canvas, spec, regular)
+	} else if len(spec.Bars) > 0 {
 		drawReportBarChart(canvas, spec, regular)
 	} else {
 		drawReportLineChart(canvas, spec, regular)
