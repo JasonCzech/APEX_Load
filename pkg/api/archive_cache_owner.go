@@ -10,6 +10,7 @@ type archiveReadCaches struct {
 	reports           *boundedArchiveCache[RunArchiveReport]
 	manifests         *boundedArchiveCache[RunArchiveManifest]
 	sanitizedPlans    *boundedArchiveCache[sanitizedRunArchivePlan]
+	waterfalls        *boundedArchiveCache[archiveWaterfallResult]
 	catalogReadSlots  chan struct{}
 }
 
@@ -19,6 +20,7 @@ func newArchiveReadCaches() *archiveReadCaches {
 		reports:           newWeightedBoundedArchiveCache(runArchiveReportCacheEntries, runArchiveReportCacheBytes, archiveJSONWeight[RunArchiveReport]),
 		manifests:         newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, archiveJSONWeight[RunArchiveManifest]),
 		sanitizedPlans:    newWeightedBoundedArchiveCache(runArchiveManifestCacheEntries, runArchiveManifestCacheBytes, sanitizedArchivePlanWeight),
+		waterfalls:        newArchiveWaterfallCache(),
 		catalogReadSlots:  make(chan struct{}, 2),
 	}
 }

@@ -145,8 +145,9 @@ describe('TestExecutionCharts real Recharts overlay rendering', () => {
       txDnsMs: 2,
       txConnectMs: 4,
       txTlsMs: 6,
-      txTtfbMs: 12,
-      txWaitMs: 8,
+      txServerMs: 12,
+      txDownloadMs: 8,
+      txNoResponseMs: 2,
       errTimeout: 1,
       errConnect: 0,
       err5xx: 1,
@@ -194,8 +195,9 @@ describe('TestExecutionCharts real Recharts overlay rendering', () => {
       txDnsMs: 3,
       txConnectMs: 5,
       txTlsMs: 7,
-      txTtfbMs: 14,
-      txWaitMs: 9,
+      txServerMs: 14,
+      txDownloadMs: 9,
+      txNoResponseMs: 3,
       errTimeout: 2,
       errConnect: 1,
       err5xx: 1,
@@ -308,6 +310,11 @@ describe('TestExecutionCharts real Recharts overlay rendering', () => {
       expect(card, chartId).not.toBeNull()
       const before = curvePaths(card)
       expect(before.length, `${chartId} primary curves before overlay`).toBeGreaterThan(0)
+      if (chartId === 'tx_network_phases') {
+        // Every phase, Server, Download and No first byte included, draws a curve.
+        const areas = before.filter(path => path.classList.contains('recharts-area-curve'))
+        expect(areas.length, 'network phase area curves').toBe(6)
+      }
       const primaryYBefore = parsePathYValues(before[0].getAttribute('d'))
 
       await triggerContextAction(card, 'Overlay VUsers')

@@ -7355,6 +7355,56 @@ export interface operations {
               "summary"?: string;
               "threshold_ms"?: number;
             }>;
+            "time_anatomy"?: ({
+              "coverage"?: {
+                "clamped_request_samples"?: number;
+                "interrupted_transaction_rows"?: number;
+                "joined_transaction_rows"?: number;
+                "late_request_rows"?: number;
+                "legacy_identity_rows"?: number;
+                "partial_transaction_rows"?: number;
+                "request_rows"?: number;
+                "requests_claimed_across_iteration"?: number;
+                "requests_ending_after_transaction"?: number;
+                "requests_in_transactions"?: number;
+                "requests_outside_transactions"?: number;
+                "retried_request_samples"?: number;
+                "transaction_rows"?: number;
+                "transaction_rows_without_requests"?: number;
+                "unjoinable_transaction_rows"?: number;
+                "unknown_population_rows"?: number;
+              };
+              "join_rule"?: string;
+              "phase_model"?: string;
+              "schema"?: string;
+              "transactions"?: Array<{
+                "decomposition"?: Record<string, unknown>;
+                "duration"?: Record<string, unknown>;
+                "failed_instances"?: number;
+                "instances"?: number;
+                "interrupted_instances"?: number;
+                "joined_instances"?: number;
+                "name"?: string;
+                "other_requests"?: (Record<string, unknown>) | null;
+                "partial_instances"?: number;
+                "representatives"?: Array<Record<string, unknown>>;
+                "requests"?: Array<Record<string, unknown>>;
+                "requests_truncated"?: boolean;
+                "sla_status"?: string;
+                "tail"?: (Record<string, unknown>) | null;
+              }>;
+              "truncation"?: {
+                "identities_evicted"?: number;
+                "pending_requests_dropped"?: number;
+                "pending_requests_evicted"?: number;
+                "reasons"?: Array<string>;
+                "request_rows_omitted"?: number;
+                "transactions_not_emitted"?: number;
+                "transactions_omitted"?: number;
+                "transactions_tracked"?: number;
+                "truncated"?: boolean;
+              };
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count"?: number;
               "excluded_error_count"?: number;
@@ -44392,6 +44442,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -44416,6 +44468,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -44426,6 +44479,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -44450,6 +44505,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -44749,7 +44805,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -45164,6 +45222,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -45417,7 +45483,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -45508,6 +45576,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -45532,6 +45602,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -45550,6 +45621,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -45574,6 +45647,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -45975,6 +46049,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -45999,6 +46075,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46009,10 +46086,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -46037,6 +46124,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46100,6 +46188,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -46124,6 +46214,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46332,6 +46423,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -46356,6 +46449,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -52886,6 +52980,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -52910,6 +53006,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -53252,6 +53356,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -53276,6 +53382,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -54132,7 +54246,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -54223,6 +54339,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -54247,6 +54365,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -54265,6 +54384,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -54289,6 +54410,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -54841,6 +54963,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -54865,6 +54989,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -54875,10 +55000,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -54903,6 +55038,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -54966,6 +55102,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -54990,6 +55128,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55221,6 +55360,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -55245,6 +55386,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55258,7 +55400,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -55349,6 +55493,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -55373,6 +55519,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -55731,6 +55885,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -55755,6 +55911,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -56869,6 +57033,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -56893,6 +57059,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -57235,10 +57409,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -57263,6 +57447,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -57658,6 +57850,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -57682,6 +57876,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -58305,6 +58507,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -58329,6 +58533,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -77998,7 +78210,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -78089,6 +78303,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -78113,6 +78329,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -78131,6 +78348,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -78155,6 +78374,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -78707,6 +78927,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -78731,6 +78953,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -78741,10 +78964,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -78769,6 +79002,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -78832,6 +79066,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -78856,6 +79092,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79087,6 +79324,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -79111,6 +79350,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79120,7 +79360,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -79211,6 +79453,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -79235,6 +79479,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -79593,6 +79845,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -79617,6 +79871,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -80731,6 +80993,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -80755,6 +81019,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -81097,10 +81369,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -81125,6 +81407,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -81520,6 +81810,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -81544,6 +81836,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -82167,6 +82467,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -82191,6 +82493,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -85373,6 +85683,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -85397,6 +85709,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -85407,6 +85720,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -85431,6 +85746,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -85730,7 +86046,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -86145,6 +86463,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -86398,7 +86724,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -86489,6 +86817,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -86513,6 +86843,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -86531,6 +86862,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -86555,6 +86888,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -86956,6 +87290,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -86980,6 +87316,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -86990,10 +87327,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -87018,6 +87365,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87081,6 +87429,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -87105,6 +87455,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87313,6 +87664,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -87337,6 +87690,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -99674,6 +100028,100 @@ export interface operations {
               "summary": string;
               "threshold_ms"?: number;
             }>;
+            "time_anatomy"?: ({
+              "coverage": {
+                "clamped_request_samples": number;
+                "interrupted_transaction_rows": number;
+                "joined_transaction_rows": number;
+                "late_request_rows": number;
+                "legacy_identity_rows": number;
+                "partial_transaction_rows"?: number;
+                "request_rows": number;
+                "requests_claimed_across_iteration": number;
+                "requests_ending_after_transaction": number;
+                "requests_in_transactions": number;
+                "requests_outside_transactions": number;
+                "retried_request_samples": number;
+                "transaction_rows": number;
+                "transaction_rows_without_requests": number;
+                "unjoinable_transaction_rows": number;
+                "unknown_population_rows": number;
+              };
+              "join_rule": string;
+              "phase_model": string;
+              "schema": string;
+              "transactions": Array<{
+                "decomposition": {
+                  "avg_duration_ms": number;
+                  "avg_requests_per_instance": number;
+                  "instances": number;
+                  "non_request_ms": number;
+                  "overlap_ms": number;
+                  "phases": Record<string, unknown>;
+                };
+                "duration": {
+                  "avg_ms": number;
+                  "avg_when_observed_ms"?: (number) | null;
+                  "max_ms": number;
+                  "observed_pct"?: (number) | null;
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "percentile_quality"?: string;
+                  "samples": number;
+                };
+                "failed_instances": number;
+                "instances": number;
+                "interrupted_instances": number;
+                "joined_instances": number;
+                "name": string;
+                "other_requests"?: ({
+                  "action_name": string;
+                  "connections": Record<string, unknown>;
+                  "dependency_type"?: string;
+                  "failed": number;
+                  "key": string;
+                  "occurrence": number;
+                  "occurrence_folded"?: boolean;
+                  "offset_ms": Record<string, unknown>;
+                  "phases": Record<string, unknown>;
+                  "presence_pct": number;
+                  "samples": number;
+                  "source_step_index"?: number;
+                }) | null;
+                "partial_instances"?: number;
+                "representatives"?: Array<Record<string, unknown>>;
+                "requests": Array<Record<string, unknown>>;
+                "requests_truncated"?: boolean;
+                "sla_status"?: string;
+                "tail"?: ({
+                  "band_estimate": string;
+                  "delta": Record<string, unknown>;
+                  "headline"?: string;
+                  "instances": number;
+                  "median": Record<string, unknown>;
+                  "requests"?: Array<Record<string, unknown>>;
+                  "sampled_instances": number;
+                  "status": string;
+                  "tail": Record<string, unknown>;
+                  "threshold_p50_ms": number;
+                  "threshold_p95_ms": number;
+                  "threshold_quality"?: string;
+                }) | null;
+              }>;
+              "truncation": {
+                "identities_evicted"?: number;
+                "pending_requests_dropped"?: number;
+                "pending_requests_evicted"?: number;
+                "reasons"?: Array<string>;
+                "request_rows_omitted"?: number;
+                "transactions_not_emitted"?: number;
+                "transactions_omitted"?: number;
+                "transactions_tracked": number;
+                "truncated": boolean;
+              };
+            }) | null;
             "transaction_response_time_sla_results"?: Array<{
               "eligible_success_count": number;
               "excluded_error_count": number;
@@ -99963,6 +100411,174 @@ export interface operations {
         };
       };
       "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleGetRunArchiveTransactionWaterfall": {
+    parameters: {
+      "path": {
+        "event_id": string;
+        "id": string;
+      };
+      "query"?: {
+        "first_ordinal"?: string;
+        "max_requests"?: string;
+        "ordinal"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": ({
+            "decomposition"?: ({
+              "avg_duration_ms": number;
+              "avg_requests_per_instance": number;
+              "instances": number;
+              "non_request_ms": number;
+              "overlap_ms": number;
+              "phases": {
+                "connect_ms": number;
+                "dns_ms": number;
+                "download_ms": number;
+                "server_ms": number;
+                "tls_ms": number;
+                "unsplit_ms": number;
+              };
+            }) | null;
+            "enclosing_transactions"?: Array<{
+              "action_name": string;
+              "event_id": string;
+              "ordinal": number;
+              "span_ms": number;
+              "timestamp": string;
+            }>;
+            "identity_quality": string;
+            "join_may_differ"?: boolean;
+            "join_may_differ_reasons"?: Array<string>;
+            "join_rule": string;
+            "late_requests"?: number;
+            "partial"?: boolean;
+            "partial_reasons"?: Array<string>;
+            "phase_model": string;
+            "requests": Array<{
+              "action_name": string;
+              "clamped"?: boolean;
+              "connection"?: string;
+              "dependency_target"?: string;
+              "dependency_type"?: string;
+              "duration_ms": number;
+              "elapsed_ms"?: number;
+              "error_class"?: string;
+              "error_message"?: string;
+              "event_id": string;
+              "http_version"?: string;
+              "interrupted"?: boolean;
+              "iteration"?: number;
+              "offset_ms": number;
+              "ordinal": number;
+              "phases": {
+                "connect_ms": number;
+                "dns_ms": number;
+                "download_ms": number;
+                "server_ms": number;
+                "tls_ms": number;
+                "unsplit_ms": number;
+              };
+              "population": string;
+              "retried"?: boolean;
+              "source_step_index"?: number;
+              "source_transaction"?: string;
+              "status_code"?: number;
+              "success": boolean;
+              "timestamp": string;
+              "trace_id"?: string;
+              "vuser_id"?: number;
+              "vuser_lifetime"?: number;
+            }>;
+            "requests_total": number;
+            "root": {
+              "action_name": string;
+              "clamped"?: boolean;
+              "connection"?: string;
+              "dependency_target"?: string;
+              "dependency_type"?: string;
+              "duration_ms": number;
+              "elapsed_ms"?: number;
+              "error_class"?: string;
+              "error_message"?: string;
+              "event_id": string;
+              "http_version"?: string;
+              "interrupted"?: boolean;
+              "iteration"?: number;
+              "offset_ms": number;
+              "ordinal": number;
+              "phases": {
+                "connect_ms": number;
+                "dns_ms": number;
+                "download_ms": number;
+                "server_ms": number;
+                "tls_ms": number;
+                "unsplit_ms": number;
+              };
+              "population": string;
+              "retried"?: boolean;
+              "source_step_index"?: number;
+              "source_transaction"?: string;
+              "status_code"?: number;
+              "success": boolean;
+              "timestamp": string;
+              "trace_id"?: string;
+              "vuser_id"?: number;
+              "vuser_lifetime"?: number;
+            };
+            "schema": string;
+            "truncated"?: boolean;
+          }) | null;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -106154,6 +106770,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -106178,6 +106796,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -106520,6 +107146,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -106544,6 +107172,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -107400,7 +108036,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -107491,6 +108129,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -107515,6 +108155,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -107533,6 +108174,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -107557,6 +108200,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108109,6 +108753,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -108133,6 +108779,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108143,10 +108790,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -108171,6 +108828,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108234,6 +108892,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -108258,6 +108918,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108489,6 +109150,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -108513,6 +109176,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108526,7 +109190,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -108617,6 +109283,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -108641,6 +109309,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -108999,6 +109675,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -109023,6 +109701,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -110137,6 +110823,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -110161,6 +110849,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -110503,10 +111199,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -110531,6 +111237,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -110926,6 +111640,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -110950,6 +111666,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -111573,6 +112297,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -111597,6 +112323,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -132589,6 +133323,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -132613,6 +133349,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -132955,6 +133699,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -132979,6 +133725,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -133835,7 +134589,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -133926,6 +134682,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -133950,6 +134708,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -133968,6 +134727,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -133992,6 +134753,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -134544,6 +135306,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -134568,6 +135332,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -134578,10 +135343,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -134606,6 +135381,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -134669,6 +135445,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -134693,6 +135471,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -134924,6 +135703,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -134948,6 +135729,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -134961,7 +135743,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -135052,6 +135836,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -135076,6 +135862,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -135434,6 +136228,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -135458,6 +136254,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -136572,6 +137376,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -136596,6 +137402,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -136938,10 +137752,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -136966,6 +137790,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -137361,6 +138193,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -137385,6 +138219,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -138008,6 +138850,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -138032,6 +138876,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -154390,6 +155242,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -154414,6 +155268,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -154424,6 +155279,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -154448,6 +155305,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -154747,7 +155605,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -155162,6 +156022,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -155415,7 +156283,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -155506,6 +156376,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -155530,6 +156402,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -155548,6 +156421,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -155572,6 +156447,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -155973,6 +156849,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -155997,6 +156875,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -156007,10 +156886,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -156035,6 +156924,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -156098,6 +156988,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -156122,6 +157014,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -156330,6 +157223,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -156354,6 +157249,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157067,6 +157963,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -157091,6 +157989,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157101,6 +158000,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -157125,6 +158026,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157424,7 +158326,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -157839,6 +158743,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -158092,7 +159004,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -158183,6 +159097,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -158207,6 +159123,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158225,6 +159142,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -158249,6 +159168,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158650,6 +159570,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -158674,6 +159596,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158684,10 +159607,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -158712,6 +159645,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158775,6 +159709,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -158799,6 +159735,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -159007,6 +159944,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -159031,6 +159970,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -159744,6 +160684,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -159768,6 +160710,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -159778,6 +160721,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -159802,6 +160747,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -160101,7 +161047,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -160516,6 +161464,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -160769,7 +161725,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -160860,6 +161818,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -160884,6 +161844,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -160902,6 +161863,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -160926,6 +161889,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161327,6 +162291,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -161351,6 +162317,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161361,10 +162328,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -161389,6 +162366,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161452,6 +162430,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -161476,6 +162456,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161684,6 +162665,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -161708,6 +162691,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162421,6 +163405,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -162445,6 +163431,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162455,6 +163442,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -162479,6 +163468,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162778,7 +163768,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -163193,6 +164185,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -163446,7 +164446,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -163537,6 +164539,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -163561,6 +164565,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -163579,6 +164584,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -163603,6 +164610,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -164004,6 +165012,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -164028,6 +165038,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -164038,10 +165049,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -164066,6 +165087,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -164129,6 +165151,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -164153,6 +165177,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -164361,6 +165386,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -164385,6 +165412,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165098,6 +166126,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -165122,6 +166152,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165132,6 +166163,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -165156,6 +166189,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165455,7 +166489,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -165870,6 +166906,14 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -166123,7 +167167,9 @@ export interface operations {
                 "active_vusers": number;
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
+                "avg_no_response_ms"?: (number) | null;
                 "avg_response_ms": number;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "avg_wait_ms"?: number;
@@ -166214,6 +167260,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -166238,6 +167286,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166256,6 +167305,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -166280,6 +167331,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166681,6 +167733,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -166705,6 +167759,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166715,10 +167770,20 @@ export interface operations {
                 "p95_ms": number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -166743,6 +167808,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166806,6 +167872,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -166830,6 +167898,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -167038,6 +168107,8 @@ export interface operations {
                   "avg_connect_ms"?: number;
                   "avg_dns_ms"?: number;
                   "avg_ms": number;
+                  "avg_no_response_ms"?: (number) | null;
+                  "avg_server_ms"?: (number) | null;
                   "avg_tls_ms"?: number;
                   "avg_ttfb_ms"?: number;
                   "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -167062,6 +168133,7 @@ export interface operations {
                   "p95_ms"?: number;
                   "p99_ms": number;
                   "percentile_quality"?: string;
+                  "phase_observed"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -169655,6 +170727,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -169679,6 +170753,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -170021,6 +171103,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -170045,6 +171129,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -170901,7 +171993,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -170992,6 +172086,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -171016,6 +172112,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -171034,6 +172131,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -171058,6 +172157,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -171610,6 +172710,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -171634,6 +172736,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -171644,10 +172747,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -171672,6 +172785,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -171735,6 +172849,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -171759,6 +172875,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -171990,6 +173107,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -172014,6 +173133,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -172027,7 +173147,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -172118,6 +173240,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -172142,6 +173266,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -172500,6 +173632,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -172524,6 +173658,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -173638,6 +174780,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -173662,6 +174806,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -174004,10 +175156,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -174032,6 +175194,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -174427,6 +175597,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -174451,6 +175623,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -175074,6 +176254,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -175098,6 +176280,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -199640,6 +200830,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -199664,6 +200856,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -200006,6 +201206,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -200030,6 +201232,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -200886,7 +202096,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -200977,6 +202189,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201001,6 +202215,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -201019,6 +202234,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201043,6 +202260,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -201595,6 +202813,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201619,6 +202839,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -201629,10 +202850,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201657,6 +202888,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -201720,6 +202952,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201744,6 +202978,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -201975,6 +203210,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -201999,6 +203236,7 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -202012,7 +203250,9 @@ export interface operations {
               "active_vusers": number;
               "avg_connect_ms"?: number;
               "avg_dns_ms"?: number;
+              "avg_no_response_ms"?: (number) | null;
               "avg_response_ms": number;
+              "avg_server_ms"?: (number) | null;
               "avg_tls_ms"?: number;
               "avg_ttfb_ms"?: number;
               "avg_wait_ms"?: number;
@@ -202103,6 +203343,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -202127,6 +203369,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -202485,6 +203735,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -202509,6 +203761,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -203623,6 +204883,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -203647,6 +204909,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -203989,10 +205259,20 @@ export interface operations {
               "p95_ms": number;
               "p99_ms": number;
               "percentile_quality"?: string;
+              "phase_observed"?: ({
+                "connect": number;
+                "dns": number;
+                "no_ttfb"?: number;
+                "no_ttfb_remainder_ms"?: number;
+                "no_ttfb_setup_ms"?: number;
+                "tls": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -204017,6 +205297,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -204412,6 +205700,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -204436,6 +205726,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -205059,6 +206357,8 @@ export interface operations {
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
                 "avg_ms": number;
+                "avg_no_response_ms"?: (number) | null;
+                "avg_server_ms"?: (number) | null;
                 "avg_tls_ms"?: number;
                 "avg_ttfb_ms"?: number;
                 "by_group"?: Record<string, (Record<string, unknown>) | null>;
@@ -205083,6 +206383,14 @@ export interface operations {
                 "p95_ms"?: number;
                 "p99_ms": number;
                 "percentile_quality"?: string;
+                "phase_observed"?: ({
+                  "connect": number;
+                  "dns": number;
+                  "no_ttfb"?: number;
+                  "no_ttfb_remainder_ms"?: number;
+                  "no_ttfb_setup_ms"?: number;
+                  "tls": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -226628,6 +227936,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/archive/transactions": {
     "get": operations["handleGetRunArchiveTransactions"];
+  };
+  "/api/v1/tests/{id}/archive/transactions/{event_id}/waterfall": {
+    "get": operations["handleGetRunArchiveTransactionWaterfall"];
   };
   "/api/v1/tests/{id}/archive/verify": {
     "get": operations["handleVerifyRunArchive"];

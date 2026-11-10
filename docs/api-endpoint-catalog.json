@@ -7267,6 +7267,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/tests/{id}/archive/transactions/{event_id}/waterfall",
+      "operationId": "handleGetRunArchiveTransactionWaterfall",
+      "summary": "Get Run Archive Transaction Waterfall",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/tests/{id}/archive/verify",
       "operationId": "handleVerifyRunArchive",
       "summary": "Verify Run Archive",

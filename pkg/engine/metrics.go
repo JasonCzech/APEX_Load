@@ -145,7 +145,12 @@ type MetricsSnapshot struct {
 	AvgConnectMs float64 `json:"avg_connect_ms,omitempty"`
 	AvgTLSMs     float64 `json:"avg_tls_ms,omitempty"`
 	AvgTTFBMs    float64 `json:"avg_ttfb_ms,omitempty"`
-	AvgWaitMs    float64 `json:"avg_wait_ms,omitempty"`
+	// AvgWaitMs is the download tail: duration - TTFB summed over the samples
+	// that got a first byte, divided by all samples.
+	AvgWaitMs float64 `json:"avg_wait_ms,omitempty"`
+	// PhaseObserved counts the business transactions that spent time in each
+	// connection-setup phase; the averages above divide by all of them.
+	PhaseObserved *PhaseObservations `json:"phase_observed,omitempty"`
 	// ErrorsByClass counts failed business transactions by taxonomy class
 	// (timeout/connection/http_4xx/http_5xx/assertion/other).
 	ErrorsByClass      map[string]int64 `json:"errors_by_class,omitempty"`
@@ -383,6 +388,7 @@ type ActionMetrics struct {
 	AvgConnectMs     float64                 `json:"avg_connect_ms,omitempty"`
 	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
 	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
+	PhaseObserved    *PhaseObservations      `json:"phase_observed,omitempty"`
 	CorrelationIDs   []string
 	CorrelationCount int64
 	Count            int64
@@ -775,6 +781,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 
 	var totalDuration time.Duration
 	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
+	var phaseObserved PhaseObservations
 	// The window's own percentiles and the group shares' are reported but
 	// never sent as distributions, so they need only the sketch.
 	windowSketch := NewDurationSketch()
@@ -849,8 +856,13 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			totalConnectMs += durationToMilliseconds(r.ConnectTime)
 			totalTLSMs += durationToMilliseconds(r.TLSTime)
 			totalTTFBMs += durationToMilliseconds(r.TTFB)
-			if waitMs := durationToMilliseconds(r.Duration) - durationToMilliseconds(r.TTFB); waitMs > 0 {
-				totalWaitMs += waitMs
+			phaseObserved.Observe(r.DNSTime, r.ConnectTime, r.TLSTime, r.TTFB, r.Duration)
+			// Download (duration - TTFB) only exists for a sample that got a
+			// first byte; a timeout's time is no-response, not download.
+			if r.TTFB > 0 {
+				if waitMs := durationToMilliseconds(r.Duration) - durationToMilliseconds(r.TTFB); waitMs > 0 {
+					totalWaitMs += waitMs
+				}
 			}
 
 			transactionName := boundedDimensionKey(r.ActionName, snap.ByTransaction)
@@ -1095,6 +1107,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.AvgTLSMs = totalTLSMs / attempts
 		snap.AvgTTFBMs = totalTTFBMs / attempts
 		snap.AvgWaitMs = totalWaitMs / attempts
+		snap.PhaseObserved = &phaseObserved
 
 		snap.P50 = time.Duration(windowSketch.Quantile(0.50))
 		snap.P90 = time.Duration(windowSketch.Quantile(0.90))
@@ -1259,6 +1272,10 @@ func mergeActionResult(metrics *ActionMetrics, result *protocol.Result) {
 	metrics.AvgConnectMs += durationToMilliseconds(result.ConnectTime)
 	metrics.AvgTLSMs += durationToMilliseconds(result.TLSTime)
 	metrics.AvgTTFBMs += durationToMilliseconds(result.TTFB)
+	if metrics.PhaseObserved == nil {
+		metrics.PhaseObserved = &PhaseObservations{}
+	}
+	metrics.PhaseObserved.Observe(result.DNSTime, result.ConnectTime, result.TLSTime, result.TTFB, result.Duration)
 	if result.ServerTelemetry != nil {
 		if metrics.ServerTelemetry == nil {
 			metrics.ServerTelemetry = &ServerTelemetrySummary{}

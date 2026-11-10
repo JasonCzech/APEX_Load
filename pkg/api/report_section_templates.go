@@ -749,7 +749,7 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{define "network_phases"}}
 <h2>{{sectionTitle "network_phases"}}</h2>
 {{if gt .Report.NetworkPhases.Samples 0}}
-<p class="section-copy">Averages across {{hint .Report.NetworkPhases.Samples}} measured requests and transactions; a new connection is not opened for every request, so averages sit well below a single connection's time. Root-cause analysis compares each interval with its own baseline instead.</p>
+<p class="section-copy">Averages across {{hint .Report.NetworkPhases.Samples}} measured requests (business-transaction rows are left out: they repeat their requests' time); a new connection is not opened for every request, so averages sit well below a single connection's time. Root-cause analysis compares each interval with its own baseline instead.</p>
 <table>
   <thead><tr><th>Phase</th><th class="num">Avg (ms)</th><th class="num">Max (ms)</th></tr></thead>
   <tbody>

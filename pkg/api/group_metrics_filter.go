@@ -145,6 +145,10 @@ func filterLiveMetricsForGroups(live *LiveMetrics, filter groupFilterQuery) *Liv
 		selected = append(selected, groupMetrics)
 	}
 	applySelectedGroupAggregate(&out, selected)
+	if len(selected) > 0 && len(selected) == len(live.GroupMetrics) {
+		// Every group is selected, so the fleet's phase averages are theirs.
+		copyLivePhaseMetrics(&out, live)
+	}
 	out.Transactions = transactionsForGroups(live.Transactions, selectedNames)
 	out.MessagingProgress = messagingProgressForGroups(live.MessagingProgress, filter.Names)
 	return &out
@@ -441,6 +445,20 @@ func clearLivePerformanceMetrics(live *LiveMetrics) {
 	live.P95Ms = 0
 	live.P99Ms = 0
 	live.PercentileQuality = ""
+	// Network phases have no group dimension: fleet-wide averages beside a
+	// group's own average response time would not add up to it.
+	copyLivePhaseMetrics(live, &LiveMetrics{})
+}
+
+func copyLivePhaseMetrics(dst, src *LiveMetrics) {
+	dst.AvgDNSMs = src.AvgDNSMs
+	dst.AvgConnectMs = src.AvgConnectMs
+	dst.AvgTLSMs = src.AvgTLSMs
+	dst.AvgTTFBMs = src.AvgTTFBMs
+	dst.AvgWaitMs = src.AvgWaitMs
+	dst.PhaseObserved = src.PhaseObserved.Clone()
+	dst.AvgServerMs = cloneFloat64Ptr(src.AvgServerMs)
+	dst.AvgNoResponseMs = cloneFloat64Ptr(src.AvgNoResponseMs)
 }
 
 func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics) {

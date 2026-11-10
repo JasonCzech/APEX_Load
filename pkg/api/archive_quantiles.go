@@ -124,6 +124,10 @@ type archiveQuantileAccumulator struct {
 	// gate marks a percentile that can decide a release gate.
 	gate   bool
 	budget *archiveQuantileBudget
+	// exactLimit, when positive, replaces archiveExactQuantileLimit as the
+	// number of samples kept exact before the sketch. Non-gate accumulators
+	// that exist many times per report (time anatomy rows) keep fewer.
+	exactLimit int
 }
 
 // newArchiveGateQuantileAccumulator returns an accumulator for a percentile
@@ -149,17 +153,25 @@ func (acc *archiveQuantileAccumulator) Add(value float64) {
 // keepExact reports whether the next sample still fits the exact list.
 func (acc *archiveQuantileAccumulator) keepExact() bool {
 	n := len(acc.exact)
-	if n < archiveExactQuantileLimit {
+	if n < acc.ordinaryExactLimit() {
 		return true
 	}
 	return acc.gate && n < archiveGateExactQuantileLimit && acc.budget.take(archiveGateExactSampleBytes)
+}
+
+// ordinaryExactLimit is how many samples stay exact without the gate budget.
+func (acc *archiveQuantileAccumulator) ordinaryExactLimit() int {
+	if acc.exactLimit > 0 {
+		return acc.exactLimit
+	}
+	return archiveExactQuantileLimit
 }
 
 // promote moves the exact samples into a sketch and returns a gate
 // accumulator's extra exact samples to the budget.
 func (acc *archiveQuantileAccumulator) promote() {
 	if acc.gate {
-		acc.budget.release(int64(max(len(acc.exact)-archiveExactQuantileLimit, 0)) * archiveGateExactSampleBytes)
+		acc.budget.release(int64(max(len(acc.exact)-acc.ordinaryExactLimit(), 0)) * archiveGateExactSampleBytes)
 	}
 	acc.sketch = engine.NewDurationSketch()
 	for _, sample := range acc.exact {

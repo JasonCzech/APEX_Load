@@ -117,6 +117,7 @@ var schemaReleases = []schemaRelease{
 	{Version: 85, Name: "scenario-schedule-analysis-policy-selections", Fingerprint: "e40819e161ae55df70b7a459e6ec18892cc80e11ba9b877a181998c93029e3d7"},
 	{Version: 86, Name: "durable-telemetry-render-population", Fingerprint: "4c953fdf61a2762bfcafc2faa98f613a6079a5444ca579dc74940c78d2b870e4"},
 	{Version: 87, Name: "durable-llm-interval-summaries", Fingerprint: "f4a5491397cee54920613f667c09bd4f88dc763c26106677eade9d8115080f30"},
+	{Version: 88, Name: "durable-network-phase-interval-summaries", Fingerprint: "23887bb451dc17d7b388ba141e2eb5ffd1f8037c16743041c2614fe9ae02ef20"},
 }
 
 type SchemaMigrationRecord struct {

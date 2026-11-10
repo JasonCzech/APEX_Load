@@ -1,5 +1,6 @@
 export type { TelemetryBudgetPolicy, TelemetryPolicyEvidence } from './types/telemetryPolicy'
 export type { RunAnalysisPolicySelection, RunAnalysisPolicySelections } from './types/analysisPolicies'
+export * from './types/timeAnatomy'
 // Compatibility barrel for dashboard domain contracts. New API/domain code
 // should import from ./types/<domain>; existing consumers can migrate without a
 // flag day while these re-exports preserve their public type names.
@@ -1371,6 +1372,14 @@ export interface TransactionEvent {
   success: boolean
   /** A script-declared transaction rather than a request; graphs prefer these when a run has any. */
   business_transaction?: boolean
+  /** The archive row's population: "action" (request), "transaction" or "unknown". */
+  population?: string
+  vuser_id?: number
+  /** 63-bit nonce; the controller sends it as a string where precision matters. */
+  vuser_lifetime?: number | string
+  iteration?: number
+  elapsed_ms?: number
+  source_step_index?: number
   error_message?: string
   extractions?: Record<string, string>
   page_url?: string
@@ -2256,6 +2265,8 @@ export interface RunArchiveReport {
   change_attribution?: RunArchiveChangeAttribution
   report_profiles?: RunArchiveReportProfile[]
   network_phases?: RunArchiveNetworkPhaseSummary
+  /** Per business transaction: where its time goes, its P95 tail and representative instances. */
+  time_anatomy?: import('./types/timeAnatomy').RunArchiveTimeAnatomy
   /** Each execution process's network limits and UDP drops during the run. */
   host_network?: RunArchiveHostNetworkEvidence[]
   /** QUIC handshake checks of the HTTP/3 origins before the run started. */
@@ -2858,6 +2869,25 @@ export type TestStatus =
   | 'ABORTED'
   | 'PAUSED'
 
+/**
+ * Samples that spent time in each connection-setup phase. Phase averages
+ * divide by every sample (reused connections count as 0), so
+ * `avg_tls_ms * count / tls` is the average handshake and
+ * `1 - connect / count` is the connection reuse rate. Absent when a
+ * contributing generator predates it.
+ */
+export interface PhaseObservations {
+  dns: number
+  connect: number
+  tls: number
+  /** Samples that got no first response byte (TTFB 0). */
+  no_ttfb?: number
+  /** Sum of those samples' DNS + connect + TLS (ms). */
+  no_ttfb_setup_ms?: number
+  /** Sum of those samples' duration minus their setup (ms). */
+  no_ttfb_remainder_ms?: number
+}
+
 export interface LiveMetrics {
   llm?: LiveLLMMetrics
   java_http?: import('./types/javaHttp').JavaHTTPActions
@@ -2922,8 +2952,22 @@ export interface LiveMetrics {
   avg_dns_ms?: number
   avg_connect_ms?: number
   avg_tls_ms?: number
+  /** TTFB measured from request start, so it includes DNS + connect + TLS. */
   avg_ttfb_ms?: number
+  /**
+   * Download tail (duration - TTFB, not server wait). With `phase_observed`
+   * known it counts only samples that got a first byte; from an older
+   * generator it is average duration minus average TTFB.
+   */
   avg_wait_ms?: number
+  phase_observed?: PhaseObservations
+  /** TTFB minus setup over first-byte samples; absent when `phase_observed` is unknown. */
+  avg_server_ms?: number
+  /**
+   * Time after setup of samples with no first byte. DNS + connect + TLS +
+   * server + wait + no-response = avg_response_ms. Absent when unknown.
+   */
+  avg_no_response_ms?: number
   error_breakdown?: Record<string, number>
   transactions?: Record<string, TxMetrics>
 	transaction_response_time_sla?: TransactionResponseTimeSLAResult[]
@@ -3303,6 +3347,9 @@ export interface TxMetrics {
   avg_connect_ms?: number
   avg_tls_ms?: number
   avg_ttfb_ms?: number
+  phase_observed?: PhaseObservations
+  avg_server_ms?: number
+  avg_no_response_ms?: number
   correlation_ids?: string[]
   correlation_count?: number
   count: number
@@ -3577,8 +3624,14 @@ export interface MetricsHistoryPoint {
   txDnsMs?: number
   txConnectMs?: number
   txTlsMs?: number
+  /** Raw TTFB from request start; includes DNS + connect + TLS. Not stackable. */
   txTtfbMs?: number
-  txWaitMs?: number
+  /** TTFB minus connection setup (server processing + network RTT). */
+  txServerMs?: number
+  /** Duration minus TTFB (content download). */
+  txDownloadMs?: number
+  /** Time after setup of samples that never got a first byte. */
+  txNoResponseMs?: number
   // Error taxonomy counts per interval
   errTimeout?: number
   errConnection?: number

@@ -898,6 +898,23 @@ message MetricAggregate {
   string byte_evidence = 24;
   int64 byte_samples = 25;
   LLMSummary llm = 26;
+  // Samples that spent time in each connection-setup phase (version 1). A
+  // generator that predates it leaves it unset and the controller reports
+  // the observations as unknown.
+  PhaseObservations phase_observed = 27;
+}
+
+message PhaseObservations {
+  uint32 version = 1;
+  int64 dns = 2;
+  int64 connect = 3;
+  int64 tls = 4;
+  // Samples that got no first response byte (TTFB 0), the sum of their
+  // DNS+connect+TLS, and the sum of their duration minus that setup. With
+  // them the controller splits time into server, download and no-response.
+  int64 no_ttfb = 5;
+  double no_ttfb_setup_ms = 6;
+  double no_ttfb_remainder_ms = 7;
 }
 
 message LLMBandSummary {

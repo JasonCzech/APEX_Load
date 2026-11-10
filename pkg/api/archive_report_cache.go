@@ -32,6 +32,10 @@ type boundedArchiveCacheCall[T any] struct {
 	err   error
 	cache bool
 	size  int64
+	// waiters and cancel are used only by getOrLoadShared: the callers still
+	// waiting, and the load's cancel func for when the last one leaves.
+	waiters int
+	cancel  context.CancelFunc
 }
 
 // boundedArchiveCache is a small LRU with per-key singleflight. Reports can be
@@ -108,6 +112,61 @@ func (c *boundedArchiveCache[T]) getOrLoadContext(ctx context.Context, key strin
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	}
+}
+
+// getOrLoadShared is getOrLoadContext for a load nobody else needs once its
+// callers are gone: the load runs under its own context, which no single
+// caller can cancel, and it is canceled when the last waiting caller leaves.
+// A caller arriving after that starts a fresh load.
+func (c *boundedArchiveCache[T]) getOrLoadShared(ctx context.Context, key string, load func(context.Context) (*T, error)) (*T, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if key == "" {
+		return load(ctx)
+	}
+	c.mu.Lock()
+	if element := c.items[key]; element != nil {
+		c.lru.MoveToFront(element)
+		value := element.Value.(*boundedArchiveCacheEntry[T]).value
+		c.mu.Unlock()
+		return value, nil
+	}
+	call := c.inFlight[key]
+	if call == nil {
+		loadCtx, cancel := context.WithCancel(context.Background())
+		call = &boundedArchiveCacheCall[T]{done: make(chan struct{}), cache: true, cancel: cancel}
+		c.inFlight[key] = call
+		go c.completeLoad(key, call, func() (*T, error) {
+			defer cancel()
+			return load(loadCtx)
+		})
+	}
+	call.waiters++
+	c.mu.Unlock()
+	select {
+	case <-call.done:
+		return call.value, call.err
+	case <-ctx.Done():
+	}
+	c.mu.Lock()
+	call.waiters--
+	select {
+	case <-call.done:
+		// Completed meanwhile (done is closed under c.mu).
+	default:
+		if call.waiters == 0 && call.cancel != nil {
+			call.cancel()
+			if c.inFlight[key] == call {
+				delete(c.inFlight, key)
+			}
+		}
+	}
+	c.mu.Unlock()
+	return nil, ctx.Err()
 }
 
 func (c *boundedArchiveCache[T]) completeLoad(key string, call *boundedArchiveCacheCall[T], load func() (*T, error)) {
@@ -347,4 +406,5 @@ func (c *archiveReadCaches) forgetRunArchiveCache(testID string) {
 	c.reports.deleteTest(testID)
 	c.manifests.deleteTest(testID)
 	c.sanitizedPlans.deleteTest(testID)
+	c.waterfalls.deleteTest(testID)
 }

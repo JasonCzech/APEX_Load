@@ -1760,6 +1760,7 @@ func intervalSummaryRecordToLiveMetrics(record storage.IntervalSummaryRecord) *L
 		BrowserByDevice:     browserDeviceSummaryRecordToLiveMetrics(record.BrowserByDevice),
 		Latency:             networkLatencyRecordToLiveMetrics(record.Latency),
 	}
+	applyIntervalNetworkPhases(live, record.NetworkPhases)
 	if len(record.LLM) > 0 {
 		var llm LiveLLMMetrics
 		if err := json.Unmarshal(record.LLM, &llm); err == nil {

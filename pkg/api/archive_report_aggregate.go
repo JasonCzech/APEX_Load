@@ -123,6 +123,13 @@ func (a *runArchiveNetworkPhaseAccumulator) merge(tx TransactionEvent) {
 			mix.Add(facts)
 		}
 	}
+	// A business transaction row repeats its requests' phases (an auto
+	// per-action transaction copies them; an authored one rolls them up), so
+	// counting it would count the same network time twice. Legacy rows of
+	// unknown population still count.
+	if archiveEventPopulation(tx) == "transaction" {
+		return
+	}
 	// Skip rows with no positive phase measurement. Using <= 0 also discards any
 	// negative "unmeasured" sentinel a future importer/protocol might emit, so it
 	// cannot pull the averages below the real values.

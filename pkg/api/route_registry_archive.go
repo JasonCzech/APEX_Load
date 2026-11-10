@@ -45,6 +45,9 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/transactions", "handleGetRunArchiveTransactions", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveTransactions)
 		}),
+		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/transactions/{event_id}/waterfall", "handleGetRunArchiveTransactionWaterfall", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleGetRunArchiveTransactionWaterfall)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/browser-findings", "handleGetRunArchiveBrowserFindings", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRunArchiveBrowserFindings)
 		}),

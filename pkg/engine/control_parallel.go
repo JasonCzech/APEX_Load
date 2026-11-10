@@ -27,21 +27,61 @@ type parallelBranchResult struct {
 	err                        error
 	failed                     bool
 	publicationRedactionFailed bool
+	// phases sums the branch's request phases for the parent's open
+	// authored transactions (a branch VUser has none of its own).
+	phases sourceTransactionPhaseRollup
 }
 
 type parallelResultSink struct {
 	downstream ResultSink
 	failed     atomic.Bool
+	// dispatchBranch is set when the block started from an async callback:
+	// the branch's work is that dispatch's, and its phases go to the
+	// parent's transactions opened during it. Otherwise dispatch work of the
+	// branch's own (its async callbacks) joins none of the parent's open
+	// transactions, which were all opened outside that dispatch.
+	dispatchBranch bool
+	// phases sums the branch's request phases for the parent's open
+	// authored transactions.
+	phasesMu sync.Mutex
+	phases   sourceTransactionPhaseRollup
 }
 
 func (s *parallelResultSink) RecordResult(result *protocol.Result) error {
 	if result != nil && !result.Success {
 		s.failed.Store(true)
 	}
+	s.notePhases(result)
 	if s.downstream == nil {
 		return nil
 	}
 	return s.downstream.RecordResult(result)
+}
+
+// notePhases applies noteSourceTransactionPhases' rule to a branch request.
+func (s *parallelResultSink) notePhases(result *protocol.Result) {
+	if s == nil || result == nil || result.BusinessTransaction {
+		return
+	}
+	if resultOutsideSourceTransactions(result) {
+		return
+	}
+	if dispatch, _ := result.ProtocolEvidence["async_dispatch"].(bool); dispatch && !s.dispatchBranch {
+		return
+	}
+	sample, ok := sourceTransactionPhaseSample(result)
+	if !ok {
+		return
+	}
+	s.phasesMu.Lock()
+	s.phases.merge(sample)
+	s.phasesMu.Unlock()
+}
+
+func (s *parallelResultSink) phaseTotals() sourceTransactionPhaseRollup {
+	s.phasesMu.Lock()
+	defer s.phasesMu.Unlock()
+	return s.phases
 }
 
 func (s *parallelResultSink) RecordTransaction(result *protocol.Result) error {
@@ -123,6 +163,9 @@ func (vu *VUser) runParallelBranchesTimed(ctx context.Context, control *dsl.Cont
 	defer cancel()
 	results := make([]parallelBranchResult, len(control.Branches))
 	semaphore := make(chan struct{}, concurrency)
+	// Branches share the parent's dispatch-epoch counter; create it before
+	// they start, as they run concurrently.
+	vu.asyncDispatchEpochCounter()
 	var wg sync.WaitGroup
 	for index, branch := range control.Branches {
 		index, branch := index, branch
@@ -149,6 +192,13 @@ func (vu *VUser) runParallelBranchesTimed(ctx context.Context, control *dsl.Cont
 		spans = append(spans, quotaWaitSpan{start: result.started, end: result.completed, waits: result.quotaWaits})
 	}
 	idleWindows := idleQuotaWindows(spans)
+	// Branch requests ran inside the parent's open authored transactions.
+	// When the block ran from an async callback they are dispatch work, which
+	// joins only the transactions opened during that dispatch, like the
+	// callback's own requests (sourceTransactionTakes).
+	for _, result := range results {
+		vu.addSourceTransactionPhases(result.phases, vu.asyncDispatchActive())
+	}
 	for _, result := range results {
 		if result.publicationRedactionFailed {
 			vu.failRuntimeCredentialRedaction(fmt.Errorf("runtime credential redaction capacity exceeded"))
@@ -184,7 +234,8 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		result.err, result.failed = err, true
 		return
 	}
-	sink := &parallelResultSink{downstream: vu.ResultSink}
+	dispatchBranch := vu.asyncDispatchActive()
+	sink := &parallelResultSink{downstream: vu.ResultSink, dispatchBranch: dispatchBranch}
 	variables := cloneStringMap(vu.Variables)
 	if variables == nil {
 		variables = make(map[string]string)
@@ -228,7 +279,14 @@ func (vu *VUser) runParallelBranch(ctx context.Context, index int, branch dsl.Pa
 		ActionBoundaryCtx:            vu.ActionBoundaryCtx,
 		extractedVariables:           make(map[string]int),
 		sourceTransactions:           make(map[string]*sourceTransactionRuntimeState),
+		asyncDispatchBranch:          dispatchBranch,
+		asyncDispatchEpochs:          vu.asyncDispatchEpochs,
 	}
+	if dispatchBranch {
+		// Everything the branch records is this dispatch's work.
+		branchVU.asyncDispatchEpoch = vu.asyncDispatchEpoch
+	}
+	defer func() { result.phases = sink.phaseTotals() }()
 	if vu.liveTables != nil {
 		branchVU.liveTableLane = vu.liveTables.branchLane(vu.liveTableLane, index)
 		defer func() {

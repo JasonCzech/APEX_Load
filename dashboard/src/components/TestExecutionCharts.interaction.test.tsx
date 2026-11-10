@@ -549,13 +549,13 @@ describe('TestExecutionCharts context menu', () => {
   it('connects sparse network phases, emphasis, and overlays without inventing measurements', async () => {
     const base = { vusers: 10, tps: 5, avgMs: 100, errorPct: 0, p50: 80, p90: 120, p99: 160 }
     const samples: MetricsHistoryPoint[] = [
-      { ...base, time: '10:00:00', txDnsMs: 2, txConnectMs: 4, txTlsMs: 6, txTtfbMs: 8, txWaitMs: 10 },
+      { ...base, time: '10:00:00', txDnsMs: 2, txConnectMs: 4, txTlsMs: 6, txServerMs: 8, txDownloadMs: 10, txNoResponseMs: 3 },
       { ...base, time: '10:00:01', tps: Number.NaN },
-      { ...base, time: '10:00:02', txDnsMs: 6, txConnectMs: 8, txTlsMs: 10, txTtfbMs: 12, txWaitMs: 14 },
+      { ...base, time: '10:00:02', txDnsMs: 6, txConnectMs: 8, txTlsMs: 10, txServerMs: 12, txDownloadMs: 14, txNoResponseMs: 5 },
     ]
     await renderGraphSourceState({ filteredData: samples, activeGraphGroupTab: 'infrastructure', expandedChart: 'tx_network_phases' })
     const chart = container.querySelector<HTMLElement>('[data-chart-id="tx_network_phases"]')!
-    const phaseKeys = ['txDnsMs', 'txConnectMs', 'txTlsMs', 'txTtfbMs', 'txWaitMs']
+    const phaseKeys = ['txDnsMs', 'txConnectMs', 'txTlsMs', 'txServerMs', 'txDownloadMs', 'txNoResponseMs']
     for (const [index, key] of phaseKeys.entries()) {
       const area = chart.querySelector(`path[data-testid="mock-area"][data-key="${key}__smoothed"]`)
       expect(area, `${key} phase area`).not.toBeNull()
@@ -582,11 +582,11 @@ describe('TestExecutionCharts context menu', () => {
     await act(async () => menuButton('Export Graph Data')!.click())
     const downloads = vi.mocked(downloadTextFile).mock.calls
     const csvRows = downloads[downloads.length - 1][0].split('\n')
-    // All five phases and the TPS overlay are absent at the middle timestamp.
+    // All six phases and the TPS overlay are absent at the middle timestamp.
     // Connecting their paths must not export zero or a fabricated interpolation.
-    expect(csvRows[2].split(',').slice(0, 7)).toEqual(['10:00:01', '', '', '', '', '', ''])
-    expect(csvRows[1].split(',').slice(0, 6)).toEqual(['10:00:00', '2', '4', '6', '8', '10'])
-    expect(csvRows[3].split(',').slice(0, 6)).toEqual(['10:00:02', '6', '8', '10', '12', '14'])
+    expect(csvRows[2].split(',').slice(0, 8)).toEqual(['10:00:01', '', '', '', '', '', '', ''])
+    expect(csvRows[1].split(',').slice(0, 7)).toEqual(['10:00:00', '2', '4', '6', '8', '10', '3'])
+    expect(csvRows[3].split(',').slice(0, 7)).toEqual(['10:00:02', '6', '8', '10', '12', '14', '5'])
     expect(samples[1].txDnsMs).toBeUndefined()
     expect(samples[1].tps).toBeNaN()
 
@@ -597,10 +597,12 @@ describe('TestExecutionCharts context menu', () => {
       return next
     })
     await renderGraphSourceState({ filteredData: withoutTls, activeGraphGroupTab: 'infrastructure', expandedChart: 'tx_network_phases' })
-    const ttfb = chart.querySelector('[data-testid="mock-area"][data-key="txTtfbMs__smoothed"]')
-    const wait = chart.querySelector('[data-testid="mock-area"][data-key="txWaitMs__smoothed"]')
-    expect(ttfb?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txTtfbMs__smoothed')
-    expect(wait?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txTtfbMs__smoothed,txWaitMs__smoothed')
+    const server = chart.querySelector('[data-testid="mock-area"][data-key="txServerMs__smoothed"]')
+    const download = chart.querySelector('[data-testid="mock-area"][data-key="txDownloadMs__smoothed"]')
+    const noResponse = chart.querySelector('[data-testid="mock-area"][data-key="txNoResponseMs__smoothed"]')
+    expect(server?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txServerMs__smoothed')
+    expect(download?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txServerMs__smoothed,txDownloadMs__smoothed')
+    expect(noResponse?.getAttribute('data-gap-stack-keys')).toBe('txDnsMs__smoothed,txConnectMs__smoothed,txServerMs__smoothed,txDownloadMs__smoothed,txNoResponseMs__smoothed')
   })
 
   it('connects sparse group lines and their gradient underlays while exports retain gaps', async () => {

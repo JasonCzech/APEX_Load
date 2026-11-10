@@ -112,6 +112,9 @@ func TestBuildRunArchiveReportAggregatesNetworkPhases(t *testing.T) {
 		{Timestamp: timestamp, TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DependencyType: "http", DependencyTarget: "api.example.test", DNSMs: 1, ConnectMs: 2, TLSMs: 3, TTFBMs: 40, Success: true},
 		{Timestamp: timestamp.Add(time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Checkout", DependencyType: "http", DependencyTarget: "api.example.test", DNSMs: 3, ConnectMs: 6, TLSMs: 9, TTFBMs: 80, Success: true},
 		{Timestamp: timestamp.Add(2 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, ActionName: "Health", DNSMs: 0, ConnectMs: 0, TLSMs: 0, TTFBMs: 0, Success: true},
+		// A business transaction repeats its requests' phases; counting it
+		// would count the same network time twice.
+		{Timestamp: timestamp.Add(3 * time.Second), TestID: manifest.TestID, TestName: manifest.TestName, Population: "transaction", BusinessTransaction: true, ActionName: "Checkout", DependencyType: "http", DependencyTarget: "api.example.test", DNSMs: 4, ConnectMs: 8, TLSMs: 12, TTFBMs: 120, Success: true},
 	} {
 		if err := encoder.Encode(tx); err != nil {
 			t.Fatalf("Encode transaction returned error: %v", err)
@@ -141,6 +144,30 @@ func TestBuildRunArchiveReportAggregatesNetworkPhases(t *testing.T) {
 	}
 	if got := report.NetworkPhases.ByDependency["http:api.example.test"]; got.Count != 2 || got.MaxConnectMs != 6 {
 		t.Fatalf("dependency network phases = %#v, want dependency rollup", got)
+	}
+}
+
+func TestBuildRunArchiveReportNetworkPhasesKeepLegacyUnknownRows(t *testing.T) {
+	timestamp := time.Date(2026, time.May, 16, 10, 0, 0, 0, time.UTC)
+	record := writeArchiveTransactionsForTest(t, []TransactionEvent{
+		// A legacy row of unknown population (no population, no dependency
+		// type) still counts.
+		{Timestamp: timestamp, TestID: "test-query", ActionName: "Legacy", DNSMs: 2, ConnectMs: 4, TLSMs: 6, TTFBMs: 50, Success: true},
+	})
+	for _, name := range []string{"resources.jsonl", "interval_summaries.jsonl"} {
+		if err := os.WriteFile(filepath.Join(record.ArchivePath, name), nil, 0o644); err != nil {
+			t.Fatalf("WriteFile %s returned error: %v", name, err)
+		}
+	}
+	report, err := buildRunArchiveReport(record)
+	if err != nil {
+		t.Fatalf("buildRunArchiveReport returned error: %v", err)
+	}
+	if got := report.NetworkPhases.Overall; got.Count != 1 || got.AvgTTFBMs != 50 {
+		t.Fatalf("overall network phases = %#v, want the legacy row counted", got)
+	}
+	if got := report.NetworkPhases.ByAction["Legacy"]; got.Count != 1 {
+		t.Fatalf("legacy action network phases = %#v", got)
 	}
 }
 

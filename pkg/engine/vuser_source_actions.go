@@ -427,6 +427,181 @@ type sourceTransactionRuntimeState struct {
 	// the state stays comparable.
 	trace     *sourceTransactionTrace
 	llmRollup *protocol.LLMDiagnostics
+	// phaseRollup sums the connection-setup and TTFB phases of the requests
+	// recorded while the transaction was open, so a multi-request authored
+	// transaction reports where its time went instead of zeros.
+	phaseRollup *sourceTransactionPhaseRollup
+	// stoppedPhaseRollup and stoppedLLMRollup hold what requests add while
+	// the transaction is stopped (lr_stop_transaction). A resume puts the
+	// stopped interval back in the duration (LoadRunner reports start to end),
+	// so it moves them into the rollups; an end while still stopped caps the
+	// duration at the stop and drops them.
+	stoppedPhaseRollup *sourceTransactionPhaseRollup
+	stoppedLLMRollup   *protocol.LLMDiagnostics
+	// asyncDispatchEpoch is the VUser's dispatch epoch when the transaction
+	// opened inside an async dispatch (0 outside one): only then does the
+	// dispatch's own work (callback requests) roll into it.
+	asyncDispatchEpoch uint64
+}
+
+type sourceTransactionPhaseRollup struct {
+	dns, connect, tls, ttfb time.Duration
+	// unsplit counts the child requests that took time but recorded no first
+	// byte: a timeout or connection failure, or a protocol that records no
+	// TTFB (gRPC, JDBC, WebSocket, ...). Their time after setup is neither
+	// server nor download time.
+	unsplit int64
+}
+
+func (r *sourceTransactionPhaseRollup) add(dns, connect, tls, ttfb time.Duration) {
+	if r == nil {
+		return
+	}
+	r.dns += max(0, dns)
+	r.connect += max(0, connect)
+	r.tls += max(0, tls)
+	r.ttfb += max(0, ttfb)
+}
+
+// merge adds another rollup (or one child's sample) into r.
+func (r *sourceTransactionPhaseRollup) merge(other sourceTransactionPhaseRollup) {
+	if r == nil {
+		return
+	}
+	r.add(other.dns, other.connect, other.tls, other.ttfb)
+	r.unsplit += max(0, other.unsplit)
+}
+
+// sourceTransactionPhaseSample is one child result's contribution to the open
+// authored transactions' phase rollups; ok is false when it contributes
+// nothing (no phase time, and not a timed protocol step without a first
+// byte). A protocol step that took time without a first byte (DependencyType
+// names the protocol, so engine bookkeeping rows are left out) marks the
+// rollup unsplit, unless it never went to the network
+// (resultResolvedLocally): a cache hit or a locally resolved step has no
+// first byte to miss, so its time stays in the transaction without
+// discarding the TTFB of the requests that were answered.
+func sourceTransactionPhaseSample(result *protocol.Result) (sample sourceTransactionPhaseRollup, ok bool) {
+	if result == nil {
+		return sample, false
+	}
+	sample.add(result.DNSTime, result.ConnectTime, result.TLSTime, result.TTFB)
+	if result.TTFB <= 0 && result.Duration > 0 && strings.TrimSpace(result.DependencyType) != "" && !resultResolvedLocally(result) {
+		sample.unsplit = 1
+	}
+	return sample, sample.unsplit > 0 || sample.dns > 0 || sample.connect > 0 || sample.tls > 0 || sample.ttfb > 0
+}
+
+// resultResolvedLocally reports a result that made no network exchange, so
+// its missing TTFB is not a missing response: a response served from the
+// browser-cache simulation (HTTPVersionSource or
+// protocol_evidence.response_content_source "cache"), or an HTTP step that
+// finished before dispatching a request (an HTML step resolved against the
+// page context, a refused action), which keeps ByteEvidenceNone because
+// the HTTP adapter sets body evidence only once it dispatches or serves from
+// the cache. Other protocols' ByteEvidenceNone steps (WebSocket handshakes,
+// pings, closes) are network exchanges without a TTFB and stay unsplit.
+func resultResolvedLocally(result *protocol.Result) bool {
+	if result == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(result.HTTPVersionSource), "cache") {
+		return true
+	}
+	if source, ok := result.ProtocolEvidence["response_content_source"].(string); ok && strings.EqualFold(strings.TrimSpace(source), "cache") {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(result.DependencyType), "http") && result.ByteEvidence == protocol.ByteEvidenceNone
+}
+
+// boundedTo returns the rollup bounded to the transaction's own duration so
+// that setup (DNS+connect+TLS) <= TTFB <= duration (setup <= duration without
+// a first byte). Then setup + server + download + no-response never exceeds
+// the duration in the live phase stack or the report.
+//
+// A transaction sample has one TTFB, so its time after the TTFB is all
+// download. When any child request took time without a first byte (unsplit:
+// a timeout, or a protocol with no TTFB), that time would be charted as
+// download, so the rollup reports no TTFB: the transaction keeps its setup
+// phases and the rest of its time goes to the unsplit (no-TTFB) bucket, never
+// to server or download.
+//
+// The sums are serial time, so overlapping requests (web_concurrent groups,
+// parallel branches) can add up to more than the transaction took. The rule
+// is to scale, never to clamp in phase order: when the TTFB sum exceeds the
+// duration, all four phases scale by duration/TTFB-sum, so each keeps its
+// share (setup vs server time) of the overlapped work; when the setup sum
+// still exceeds the bounded TTFB (requests that set up but got no first
+// byte), the three setup phases scale together to fit it. Clamping in order
+// would hand the whole budget to DNS and connect and zero TLS and server
+// time. The request rows keep the unscaled detail.
+func (r *sourceTransactionPhaseRollup) boundedTo(duration time.Duration) (dns, connect, tls, ttfb time.Duration) {
+	if r == nil {
+		return 0, 0, 0, 0
+	}
+	duration = max(0, duration)
+	dns, connect, tls, ttfb = r.dns, r.connect, r.tls, r.ttfb
+	if r.unsplit > 0 {
+		ttfb = 0
+	}
+	if ttfb > duration {
+		dns = scaleDuration(dns, duration, ttfb)
+		connect = scaleDuration(connect, duration, ttfb)
+		tls = scaleDuration(tls, duration, ttfb)
+		ttfb = duration
+	}
+	limit := duration
+	if ttfb > 0 {
+		limit = ttfb
+	}
+	if setup := dns + connect + tls; setup > limit {
+		dns = scaleDuration(dns, limit, setup)
+		connect = scaleDuration(connect, limit, setup)
+		tls = scaleDuration(tls, limit, setup)
+		// Rounding can leave the scaled sum a nanosecond over the limit.
+		if over := dns + connect + tls - limit; over > 0 {
+			dns = max(0, dns-over)
+		}
+	}
+	return dns, connect, tls, ttfb
+}
+
+// hasPhases reports a rollup with phase time to put on a transaction (one
+// holding only unsplit children reports what a transaction without a rollup
+// does).
+func (r *sourceTransactionPhaseRollup) hasPhases() bool {
+	return r != nil && (r.dns > 0 || r.connect > 0 || r.tls > 0 || r.ttfb > 0)
+}
+
+// scaleDuration returns value * num / den (den > 0), rounded down.
+func scaleDuration(value, num, den time.Duration) time.Duration {
+	if value <= 0 || num <= 0 || den <= 0 {
+		return 0
+	}
+	return time.Duration(float64(value) * (float64(num) / float64(den)))
+}
+
+// applySourceTransactionRollups puts the transaction's child phase and LLM
+// rollups on its synthesized source result (creating one from fallback when
+// source is nil and there is a rollup), bounded to duration. The end marker
+// and the failure close (finalizeSourceTransaction) both use it, so a
+// transaction closed either way reports the same anatomy.
+func applySourceTransactionRollups(source *protocol.Result, state *sourceTransactionRuntimeState, duration time.Duration, fallback func() *protocol.Result) *protocol.Result {
+	if state == nil || (!state.phaseRollup.hasPhases() && state.llmRollup == nil) {
+		return source
+	}
+	if source == nil {
+		// recordTransaction keeps the VUser's region, network profile and
+		// phase for fields this synthesized source leaves empty.
+		source = fallback()
+	}
+	if state.phaseRollup.hasPhases() {
+		source.DNSTime, source.ConnectTime, source.TLSTime, source.TTFB = state.phaseRollup.boundedTo(duration)
+	}
+	if state.llmRollup != nil {
+		source.ServerTelemetry = &protocol.ServerTelemetry{LLM: state.llmRollup}
+	}
+	return source
 }
 
 type sourceTransactionTrace struct {
@@ -542,12 +717,40 @@ func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result 
 		ErrorMessage: reason,
 		AuthoredStep: state.authoredStep.Clone(),
 	}
+	source = applySourceTransactionRollups(source, state, duration, nil)
 	// The wall-clock span keeps think time inside the transaction in its
 	// interval (journey accounting reads it).
 	prevAuthoredAction := vu.currentAuthoredAction
 	vu.currentAuthoredAction = nil
 	defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
+	defer vu.recordingSourceTransaction(state)()
 	return vu.recordTransactionSpan(name, duration, false, source, state.startedAt)
+}
+
+// recordingSourceTransaction makes the transaction row recorded next carry
+// the dispatch epoch the authored transaction opened in (none when it opened
+// outside a dispatch, even if it closes inside one), and returns the restore.
+func (vu *VUser) recordingSourceTransaction(state *sourceTransactionRuntimeState) func() {
+	prevEpoch, prevSet := vu.recordingTransactionEpoch, vu.recordingTransactionEpochSet
+	vu.recordingTransactionEpoch, vu.recordingTransactionEpochSet = 0, true
+	if state != nil {
+		vu.recordingTransactionEpoch = state.asyncDispatchEpoch
+	}
+	return func() { vu.recordingTransactionEpoch, vu.recordingTransactionEpochSet = prevEpoch, prevSet }
+}
+
+// transactionDispatchEpoch is the async_dispatch_epoch a transaction row
+// carries: an authored transaction's own (recordingSourceTransaction), else
+// the current dispatch's for one recorded during a dispatch (an http_sequence
+// aggregate run from a callback), else 0 (none).
+func (vu *VUser) transactionDispatchEpoch() uint64 {
+	if vu.recordingTransactionEpochSet {
+		return vu.recordingTransactionEpoch
+	}
+	if vu.asyncDispatchActive() {
+		return vu.asyncDispatchEpoch
+	}
+	return 0
 }
 
 // carryOpenSourceTransactions moves the transactions still open when a new
@@ -948,6 +1151,9 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 			parent:       parentKey,
 			iteration:    vu.currentIteration.Load(),
 		}
+		if vu.asyncDispatchActive() {
+			vu.sourceTransactions[key].asyncDispatchEpoch = vu.asyncDispatchEpoch
+		}
 		vu.startSourceTransactionTraceRoot(ctx, vu.sourceTransactions[key])
 		return nil
 	case "lr_end_transaction", "lr_end_sub_transaction", "lr_end_sub_trans":
@@ -986,17 +1192,16 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		vu.currentAuthoredAction = nil
 		defer func() { vu.currentAuthoredAction = prevAuthoredAction }()
 		txSource := sourceTransactionSourceResult(endName, status, state.startedAt, state.authoredStep)
-		if state.llmRollup != nil {
-			if txSource == nil {
-				txSource = &protocol.Result{
-					ActionName: nameWithoutSpaces(endName),
-					StartTime:  state.startedAt,
-					Success:    success,
-				}
+		txSource = applySourceTransactionRollups(txSource, state, duration, func() *protocol.Result {
+			return &protocol.Result{
+				ActionName: nameWithoutSpaces(endName),
+				StartTime:  state.startedAt,
+				Success:    success,
 			}
-			txSource.ServerTelemetry = &protocol.ServerTelemetry{LLM: state.llmRollup}
-		}
+		})
+		restoreEpoch := vu.recordingSourceTransaction(state)
 		vu.recordTransactionSpan(endName, duration, success, txSource, state.startedAt)
+		restoreEpoch()
 		vu.Variables[sourceTransactionStatusKey(endName)] = strconv.FormatBool(success)
 		return nil
 	case "lr_set_transaction_status":
@@ -1064,6 +1269,7 @@ func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, actio
 		}
 		state.stoppedAt = time.Time{}
 		state.stoppedThinkTime = 0
+		state.resumeRollups()
 		return nil
 	case "lr_set_transaction":
 		transactionName, duration, status, ok := sourceSetTransactionArguments(action)
@@ -1100,13 +1306,149 @@ func nameWithoutSpaces(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func (vu *VUser) noteSourceTransactionLLM(result *protocol.Result) {
-	if vu == nil || result == nil || result.BusinessTransaction || result.ServerTelemetry == nil || result.ServerTelemetry.LLM == nil {
+// noteSourceTransactionPhases adds a request's phases to the open authored
+// transactions (nested ones included) that take it (sourceTransactionTakes).
+// The sums are serial time: requests that overlap (concurrent resources) can
+// add up to more than the elapsed time.
+//
+// Async-conversation responses and background requests are never part of an
+// authored transaction (see applyAsyncResults), so they are left out. A
+// parallel branch's requests reach the parent's transactions through the
+// branch's result sink (see parallelResultSink).
+func (vu *VUser) noteSourceTransactionPhases(result *protocol.Result) {
+	if vu == nil || result == nil || result.BusinessTransaction || resultOutsideSourceTransactions(result) {
+		return
+	}
+	sample, ok := sourceTransactionPhaseSample(result)
+	if !ok {
+		return
+	}
+	vu.addSourceTransactionPhases(sample, vu.resultFromAsyncDispatch(result))
+}
+
+// addSourceTransactionPhases adds one request's (or a parallel branch's)
+// phases to every open authored transaction that takes them; dispatch marks
+// work recorded during an async dispatch. A stopped transaction
+// (lr_stop_transaction) holds them aside: its duration ends at the stop
+// unless it is resumed, and a resume puts the stopped interval back in the
+// duration, so the held phases join the rollup only then (see resumeRollups).
+func (vu *VUser) addSourceTransactionPhases(sample sourceTransactionPhaseRollup, dispatch bool) {
+	if vu == nil {
+		return
+	}
+	if sample.unsplit <= 0 && sample.dns <= 0 && sample.connect <= 0 && sample.tls <= 0 && sample.ttfb <= 0 {
 		return
 	}
 	for _, state := range vu.sourceTransactions {
-		if state != nil {
+		if !vu.sourceTransactionTakes(state, dispatch) {
+			continue
+		}
+		target := &state.phaseRollup
+		if !state.stoppedAt.IsZero() {
+			target = &state.stoppedPhaseRollup
+		}
+		if *target == nil {
+			*target = &sourceTransactionPhaseRollup{}
+		}
+		(*target).merge(sample)
+	}
+}
+
+// resumeRollups moves what requests added while the transaction was stopped
+// into its rollups: the resumed duration includes the stopped interval.
+func (state *sourceTransactionRuntimeState) resumeRollups() {
+	if state == nil {
+		return
+	}
+	if held := state.stoppedPhaseRollup; held != nil {
+		if state.phaseRollup == nil {
+			state.phaseRollup = &sourceTransactionPhaseRollup{}
+		}
+		state.phaseRollup.merge(*held)
+	}
+	if state.stoppedLLMRollup != nil {
+		protocol.MergeLLMHopDiagnostics(&state.llmRollup, state.stoppedLLMRollup)
+	}
+	state.stoppedPhaseRollup, state.stoppedLLMRollup = nil, nil
+}
+
+// resultOutsideSourceTransactions reports a result that never rolls into an
+// authored transaction: an async-conversation response or a background
+// request. They run beside the script's flow, not inside the transaction
+// that happened to be open when they were dispatched.
+func resultOutsideSourceTransactions(result *protocol.Result) bool {
+	if result == nil || result.ProtocolEvidence == nil {
+		return false
+	}
+	if _, ok := result.ProtocolEvidence["async_conversation"]; ok {
+		return true
+	}
+	if background, ok := result.ProtocolEvidence["background_request"].(bool); ok && background {
+		return true
+	}
+	return false
+}
+
+// asyncDispatchEpochEvidence is the protocol_evidence key (int64, > 0)
+// naming the async dispatch a result was recorded in, stamped beside
+// async_dispatch on every dispatch result; a business-transaction row carries
+// the epoch its authored transaction opened in (or, for another transaction
+// row recorded during a dispatch, that dispatch's). The report lets a
+// dispatch request row be claimed only by a transaction row with the same
+// epoch, mirroring sourceTransactionTakes.
+const asyncDispatchEpochEvidence = "async_dispatch_epoch"
+
+// asyncDispatchActive reports whether what the VUser records now is async
+// dispatch work: it is dispatching conversation results (callbacks
+// included), or it is a parallel branch whose block started from a callback.
+func (vu *VUser) asyncDispatchActive() bool {
+	return vu != nil && (vu.inAsyncDispatch || vu.asyncDispatchBranch)
+}
+
+// resultFromAsyncDispatch reports a result recorded during an async dispatch
+// (recordResult stamps protocol_evidence.async_dispatch on those).
+func (vu *VUser) resultFromAsyncDispatch(result *protocol.Result) bool {
+	if vu.asyncDispatchActive() {
+		return true
+	}
+	if result == nil || result.ProtocolEvidence == nil {
+		return false
+	}
+	dispatch, ok := result.ProtocolEvidence["async_dispatch"].(bool)
+	return ok && dispatch
+}
+
+// sourceTransactionTakes reports whether an open authored transaction takes
+// a request's rollup. Work recorded outside an async dispatch joins every
+// open transaction. Dispatch work (callback steps, and parallel branches
+// started from a callback) joins only the transactions opened during that
+// same dispatch: a callback's lr_start/end pair rolls up its own requests,
+// while a transaction that was already open when the dispatch began never
+// takes them. Every transaction a dispatch branch VUser holds opened inside
+// the branch, so inside the dispatch.
+func (vu *VUser) sourceTransactionTakes(state *sourceTransactionRuntimeState, dispatch bool) bool {
+	if state == nil {
+		return false
+	}
+	if !dispatch || vu.asyncDispatchBranch {
+		return true
+	}
+	return vu.inAsyncDispatch && state.asyncDispatchEpoch != 0 && state.asyncDispatchEpoch == vu.asyncDispatchEpoch
+}
+
+func (vu *VUser) noteSourceTransactionLLM(result *protocol.Result) {
+	if vu == nil || result == nil || result.BusinessTransaction || result.ServerTelemetry == nil || result.ServerTelemetry.LLM == nil || resultOutsideSourceTransactions(result) {
+		return
+	}
+	dispatch := vu.resultFromAsyncDispatch(result)
+	for _, state := range vu.sourceTransactions {
+		if !vu.sourceTransactionTakes(state, dispatch) {
+			continue
+		}
+		if state.stoppedAt.IsZero() {
 			protocol.MergeLLMHopDiagnostics(&state.llmRollup, result.ServerTelemetry.LLM)
+		} else {
+			protocol.MergeLLMHopDiagnostics(&state.stoppedLLMRollup, result.ServerTelemetry.LLM)
 		}
 	}
 }
