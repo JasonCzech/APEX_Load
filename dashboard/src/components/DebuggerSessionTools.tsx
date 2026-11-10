@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import type { BrowserReplayEvent, BrowserReplayReport, ScriptDebugBreakpoint, ReplayRuntimeSnapshot } from '../types/replay'
 import type { ScriptDefinition, ScriptParameterDefinition } from '../types/scripts'
 import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
-import { DebugRunDiffPanel } from './DebugRunDiffPanel'
+import LazyLoadBoundary from './LazyLoadBoundary'
+// The run comparison (two retained runs) loads on first use, off ScriptEditor's chunk.
+const DebugRunDiffPanel = lazy(() => import('./DebugRunDiffPanel'))
 import { buildRunDiffOptions } from './waterfall/debugRunDiff'
 import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
@@ -253,7 +255,11 @@ export function DebugRunHistory({ runs, current, currentRecord }: { runs: DebugR
     {buildRunDiffOptions(admittedRuns, admittedCurrent, currentRecord).length > 1 && (
       <details className="debug-run-diff-section" open>
         <summary>Compare timing between runs</summary>
-        <DebugRunDiffPanel runs={admittedRuns} current={admittedCurrent} currentRecord={currentRecord} />
+        <LazyLoadBoundary title="The run comparison could not be loaded.">
+          <Suspense fallback={<p role="status">Loading the run comparison…</p>}>
+            <DebugRunDiffPanel runs={admittedRuns} current={admittedCurrent} currentRecord={currentRecord} />
+          </Suspense>
+        </LazyLoadBoundary>
       </details>
     )}
     <HistoricalEvidence key={selected.id} report={selected.report} />

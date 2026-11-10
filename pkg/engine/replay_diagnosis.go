@@ -126,6 +126,11 @@ func classifyReplayFailure(event ReplayActionEvent) ReplayDiagnosis {
 	case event.StatusCode >= 500 && event.StatusCode <= 599:
 		category = "service_unavailable"
 		addSignal(statusText)
+	case !isBrowserAction && replayAuraReportHasInvalidSession(event.ProtocolEvidence["aura"]):
+		// Salesforce answered the Aura batch with aura:invalidSession, usually
+		// at HTTP 200; the message names no auth needle, so check the evidence.
+		category = "auth_session"
+		addSignal("auth_session")
 	case isBrowserAction && (event.ProtocolEvidence["assertion_failure"] != nil || containsAny(strings.ToLower(errorText), "assertion failed", "assertion requires", "(unexpected)", "does not contain", "text =", "page title =", "exceeded max")):
 		category = "assertion"
 		addSignal("browser_assertion")
@@ -495,7 +500,9 @@ func collectReplayRepairSuggestions(events []ReplayActionEvent) []ReplayRepairSu
 	seen := make(map[string]struct{})
 	for _, event := range events {
 		for _, suggestion := range event.RepairSuggestions {
-			if suggestion.ID == "" {
+			// A follower's only suggestion points back at the first failure,
+			// whose own suggestion already represents it in the report list.
+			if suggestion.ID == "" || suggestion.DraftPatchType == ReplayFollowsFailureDraftPatchType {
 				continue
 			}
 			if _, ok := seen[suggestion.ID]; ok {

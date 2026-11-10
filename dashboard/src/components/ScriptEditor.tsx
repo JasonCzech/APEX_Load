@@ -35,6 +35,7 @@ import { applyValueCorrelation, laterUses, stepLayoutKey, suggestValueName, upda
 import { boundaryExpression } from './extractorMatch'
 import type { StepPosition } from './referenceScopeModel'
 import type { ResponseActions } from './ScriptReplayDebuggerView'
+import { extractorUpdateBlocker } from './requestResponseInspectorModel'
 import { templateStepNames, type TemplateSpot } from './sharedDataTemplates'
 import { useDeferredScriptInspectorFocus } from './useDeferredScriptInspectorFocus'
 import { startPointerDrag } from './pointerDrag'
@@ -318,7 +319,6 @@ import {
   transitionScriptProtocol,
 } from './scriptEditorRuntimeSettingsModel'
 import { useScriptRuntimeSettingsController } from './useScriptRuntimeSettingsController'
-import { fetchAmplificationLoadReport } from './debugLoadAmplificationModel'
 import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
@@ -7282,6 +7282,28 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setCorrelationReview({ source: position, sourceName: stepName(position), value: selection.text, boundaries: selection.boundaries, suggestedName: saved || suggestValueName(event.snapshot?.response_body || '', selection.start, taken), taken, uses: laterUses(script, position, selection.text) })
     },
   }
+  // The inspector's failing-extractor tester: the step's extractor named name
+  // takes the tested source, type and expression in place (its name and other
+  // settings stay), so the failing definition is fixed rather than shadowed.
+  // It says why when it cannot (extractorUpdateBlocker).
+  const replaceEventExtractor = (event: BrowserReplayEvent, name: string, next: Pick<ScriptExtractorDefinition, 'source' | 'type' | 'expression'>): true | string => {
+    const position = eventStep(event)
+    const action = position ? resolveAuthorJsonScopeByKey(script, authorFocusKey(position))?.action : undefined
+    const blocker = extractorUpdateBlocker({
+      onStep: Boolean(position),
+      jsonUnapplied: jsonDirty || Boolean(jsonParseMessage),
+      stepsInPlace: replayLayoutKey !== null && replayLayoutKey === currentLayoutKey && Boolean(action),
+      hasExtractor: (action?.extractors || []).some(existing => existing.name === name),
+    })
+    if (blocker || !position || !replayStepsInPlace) return blocker || 'the step changed since this replay.'
+    replaceScriptWithHistory(updateStep(script, position, step => ({
+      ...step,
+      extractors: (step.extractors || []).map(existing => existing.name === name ? { ...existing, ...next, name } : existing),
+    })))
+    setSuccess(`Updated extractor "${name}" on ${stepName(position)}. Changes are not saved yet.`)
+    setError('')
+    return true
+  }
   const applyCorrelationReview = (name: string, uses: ValueUse[]) => {
     if (!correlationReview) return
     const result = applyValueCorrelation(script, correlationReview.source, savedValue(name, correlationReview.boundaries), uses)
@@ -8030,7 +8052,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         recordingDiff={recordingDiff}
         loadComparison={scriptId ? {
           listLoadRuns: () => api.listScriptLoadRuns(scriptId),
-          getLoadReport: testId => fetchAmplificationLoadReport(api.getTestArchiveReport, testId),
+          // Loaded with the Debug vs load panel's own chunk, off ScriptEditor's.
+          getLoadReport: testId => import('./debugLoadAmplificationModel').then(model => model.fetchAmplificationLoadReport(api.getTestArchiveReport, testId)),
         } : undefined}
         tabRequest={debugSummaryTabRequest}
         consumeRecordingDiffFocus={consumeRecordingDiffFocus}
@@ -9057,6 +9080,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             onOpenHistory={() => setShowHistory(true)}
             actionProblemRows={actionProblemRows}
             addExtractorDefinition={addExtractorDefinition}
+            replaceExtractorDefinition={replaceEventExtractor}
             responseActions={responseActions}
             applyReplaySuggestedLocator={applyReplaySuggestedLocator}
             breakpointSummary={breakpointSummary}

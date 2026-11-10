@@ -196,7 +196,13 @@ export function inspectorPanel(page: Page, name: InspectorTabName): Locator {
   return page.locator('.rr-inspector').getByRole('tabpanel', { name: inspectorTabNamePattern(name) })
 }
 
-/** Selects an inspector sub-tab (the choice persists across selected actions) and returns its panel. */
+/**
+ * Selects an inspector sub-tab and returns its panel. The choice persists
+ * across passed actions; a newly selected failed action opens on the view that
+ * explains it (Correlation for an extractor failure or unset values, Timing &
+ * transport without a response, else Response), so select the tab again after
+ * selecting a failure.
+ */
 export async function openInspectorTab(page: Page, name: InspectorTabName): Promise<Locator> {
   const tab = inspectorTab(page, name)
   await tab.click()

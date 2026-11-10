@@ -206,10 +206,16 @@ const mib = (value) => value * 1024 * 1024
 // JS (2.83 MiB gzip) and CSS (1125 KiB / 204 KiB gzip) ceilings already hold
 // it (Phase 3 adds LiveWaterfallPanel.css, ~1.6 KiB gzip). The per-asset,
 // Initial shell and Scripts route guards are not changed here.
+// 2026-11-10 After merging main (#337), R4-R6 moved the Debug vs load and run
+// comparison panels into lazy chunks to keep ScriptEditor inside 950 KiB raw /
+// 260 KiB gzip. Phase 3's shared Waterfall changes (legend, scale and tooltip
+// fixes the live waterfall needs) then leave ScriptEditor at 950.02 KiB raw /
+// 259.22 KiB gzip. Move the per-asset raw ceiling to 955 KiB (~0.5% headroom);
+// the gzip ceiling, which tracks transfer size, is unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
-    maxAssetBytes: kib(950),
+    maxAssetBytes: kib(955),
     maxAssetGzipBytes: kib(260),
     maxTotalBytes: mib(9.75),
     maxTotalGzipBytes: mib(2.83),

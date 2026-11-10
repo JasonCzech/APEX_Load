@@ -216,6 +216,9 @@ func cloneReplayDiagnosis(diagnosis *ReplayDiagnosis) *ReplayDiagnosis {
 	if len(diagnosis.Signals) > 0 {
 		cloned.Signals = append([]string(nil), diagnosis.Signals...)
 	}
+	if len(diagnosis.UnresolvedVariables) > 0 {
+		cloned.UnresolvedVariables = append([]string(nil), diagnosis.UnresolvedVariables...)
+	}
 	return &cloned
 }
 

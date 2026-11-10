@@ -1181,6 +1181,10 @@ export interface ScriptReplayActionEvent {
     signals?: string[]
     frame_context?: string
     suggested_locator?: string
+    follows_failure_event_id?: string
+    follows_failure_action?: string
+    follows_reason?: string
+    unresolved_variables?: string[]
   }
   repair_suggestions?: Array<{
     id: string
@@ -1209,6 +1213,7 @@ export interface ScriptReplayReport {
     first_failure_event_id?: string
     first_failure_action?: string
     first_failure_cause?: string
+    following_failure_count?: number
   }
   repair_suggestions?: ScriptReplayActionEvent['repair_suggestions']
   group: string
