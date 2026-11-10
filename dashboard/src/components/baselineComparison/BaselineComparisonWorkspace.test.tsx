@@ -3,7 +3,8 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { TestSummary } from '../../types'
+import type { RunArchiveReport, TestSummary } from '../../types'
+import { anatomyOf, requestRow, transaction } from './__fixtures__/anatomyDiff'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -130,5 +131,71 @@ describe('BaselineComparisonWorkspace saved assessments', () => {
     expect(request).toHaveBeenCalledWith('/monitoring/dashboard-definitions', expect.objectContaining({ method: 'POST' }))
     expect(container.textContent).toContain('Saved panel: panel-1 (revision 1)')
     expect(container.textContent).toContain(`selection receipt ${'b'.repeat(64)}`)
+  })
+
+  it('loads the baseline time anatomy once when a transaction opens, reusing the page report for the current run', async () => {
+    const run = (id: string, name: string) => ({ id, name, release_id: id, release_name: 'R1', scenario_id: 's', status: 'COMPLETE', vusers: 4, peak_vusers: 4, pinned: true, archive_available: true })
+    const tx = { id: 'tx/0', name: 'Login', group: 'g', source: 'transaction', unit: 'ms', current: { samples: 10, p95: 20 }, baselines: { 'run-a': { measurement: { samples: 10, p95: 10 }, qualification: [], approximate: false } } }
+    api.snapshot.mockResolvedValue({
+      id: 'cmp-1', project_id: 'p', created_at: '2026-10-08T10:00:00Z', rule_version: 'v1', current: run('run-b', 'Candidate'), baselines: [run('run-a', 'Baseline')],
+      request: { baseline_ids: ['run-a'], population: 'transaction' }, policy: {}, transactions: [tx], resources: [], warnings: [], setup: [], findings: [],
+      verdict: { status: 'not_evaluated', evaluated: 0, unavailable: 0, metrics: [], evidence: [] },
+    })
+    const anatomy = (server: number) => anatomyOf([transaction('Login', [requestRow(1, 'POST /login', { server })], { server })])
+    request.mockReset()
+    request.mockImplementation(async (path: string) => {
+      if (path.startsWith('/tests/run-a/archive/report')) return { manifest: { test_id: 'run-a' }, time_anatomy: anatomy(100) }
+      throw new Error(`unexpected ${path}`)
+    })
+    const test = { id: 'run-b', name: 'Candidate', status: 'COMPLETE', created_at: '2026-10-08T09:00:00Z', groups: [] } as unknown as TestSummary
+    const seeds = [{ manifest: { test_id: 'run-b' }, time_anatomy: anatomy(150) } as unknown as RunArchiveReport]
+    await act(async () => root.render(<BaselineComparisonWorkspace test={test} comparisonId="cmp-1" reportSeeds={seeds} onSnapshot={vi.fn()} />))
+    for (let i = 0; i < 6; i++) await act(async () => { await Promise.resolve() })
+    expect(request).not.toHaveBeenCalled()
+    const open = async () => {
+      await act(async () => (container.querySelector('.bc-matrix tbody th[scope="row"] button') as HTMLButtonElement).click())
+      for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve() })
+    }
+    await open()
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.textContent).toContain('Time anatomy diff')
+    expect(dialog.textContent).toContain('Mean +50.0 ms: 100% server')
+    expect(request).toHaveBeenCalledTimes(1)
+    expect(request.mock.calls[0][0]).toBe('/tests/run-a/archive/report?include_release_trend=false')
+    await act(async () => ([...dialog.querySelectorAll('button')].find(b => b.textContent === 'Close details') as HTMLButtonElement).click())
+    await open()
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Mean +50.0 ms')
+    expect(request).toHaveBeenCalledTimes(1)
+  })
+
+  it('retries a failed baseline time anatomy from the details without closing them', async () => {
+    const run = (id: string, name: string) => ({ id, name, release_id: id, release_name: 'R1', scenario_id: 's', status: 'COMPLETE', vusers: 4, peak_vusers: 4, pinned: true, archive_available: true })
+    const tx = { id: 'tx/0', name: 'Login', group: 'g', source: 'transaction', unit: 'ms', current: { samples: 10, p95: 20 }, baselines: { 'run-a': { measurement: { samples: 10, p95: 10 }, qualification: [], approximate: false } } }
+    api.snapshot.mockResolvedValue({
+      id: 'cmp-1', project_id: 'p', created_at: '2026-10-08T10:00:00Z', rule_version: 'v1', current: run('run-b', 'Candidate'), baselines: [run('run-a', 'Baseline')],
+      request: { baseline_ids: ['run-a'], population: 'transaction' }, policy: {}, transactions: [tx], resources: [], warnings: [], setup: [], findings: [],
+      verdict: { status: 'not_evaluated', evaluated: 0, unavailable: 0, metrics: [], evidence: [] },
+    })
+    const anatomy = (server: number) => anatomyOf([transaction('Login', [requestRow(1, 'POST /login', { server })], { server })])
+    request.mockReset()
+    let calls = 0
+    request.mockImplementation(async (path: string) => {
+      if (!path.startsWith('/tests/run-a/archive/report')) throw new Error(`unexpected ${path}`)
+      calls++
+      if (calls === 1) throw new Error('Service unavailable')
+      return { manifest: { test_id: 'run-a' }, time_anatomy: anatomy(100) }
+    })
+    const test = { id: 'run-b', name: 'Candidate', status: 'COMPLETE', created_at: '2026-10-08T09:00:00Z', groups: [] } as unknown as TestSummary
+    const seeds = [{ manifest: { test_id: 'run-b' }, time_anatomy: anatomy(150) } as unknown as RunArchiveReport]
+    await act(async () => root.render(<BaselineComparisonWorkspace test={test} comparisonId="cmp-1" reportSeeds={seeds} onSnapshot={vi.fn()} />))
+    for (let i = 0; i < 6; i++) await act(async () => { await Promise.resolve() })
+    await act(async () => (container.querySelector('.bc-matrix tbody th[scope="row"] button') as HTMLButtonElement).click())
+    for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve() })
+    const dialog = document.querySelector('[role="dialog"]')!
+    expect(dialog.querySelector('.bc-anatomy [role="alert"]')?.textContent).toContain('Baseline: Service unavailable')
+    await act(async () => (dialog.querySelector('.bc-anatomy [role="alert"] button') as HTMLButtonElement).click())
+    for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve() })
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('Mean +50.0 ms')
   })
 })

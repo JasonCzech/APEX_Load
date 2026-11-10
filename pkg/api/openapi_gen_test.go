@@ -2178,3 +2178,45 @@ func TestGeneratedSwaggerTypesTelemetryEvidence(t *testing.T) {
 		t.Fatal("no telemetry object with loss and coverage found in the contract")
 	}
 }
+
+func TestIterationWaterfallOpenAPIContractDocumentsQueryAndQuotedLifetimes(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("decode generated OpenAPI: %v", err)
+	}
+	operation, ok := spec.Paths["/api/v1/tests/{id}/archive/iterations/waterfall"]["get"]
+	if !ok {
+		t.Fatal("generated OpenAPI is missing the iteration waterfall")
+	}
+	parameters := map[string]oasParameter{}
+	for _, parameter := range operation.Parameters {
+		if parameter.In == "query" {
+			parameters[parameter.Name] = parameter
+		}
+	}
+	for _, name := range []string{"group", "iteration", "vuser_id", "vuser_lifetime", "first_ordinal", "last_ordinal", "ordinal", "max_rows"} {
+		if _, ok := parameters[name]; !ok {
+			t.Errorf("iteration waterfall does not document query parameter %q (have %v)", name, parameters)
+		}
+	}
+	if !parameters["iteration"].Required {
+		t.Errorf("iteration must be required: %#v", parameters["iteration"])
+	}
+	// `json:",string"` fields are quoted on the wire.
+	lifetime := operation.Responses["200"].Content["application/json"].Schema.Properties["vuser_lifetime"]
+	if lifetime.Type != "string" {
+		t.Errorf("vuser_lifetime = %#v, want a string (the ,string tag option)", lifetime)
+	}
+	if schema := quotedJSONScalarSchema(oasSchema{Type: "boolean"}); schema.Type != "string" || schema.Format != "" {
+		t.Errorf("quoted boolean = %#v", schema)
+	}
+	if schema := quotedJSONScalarSchema(oasSchema{Type: "object"}); schema.Type != "object" {
+		t.Errorf("a non-scalar ignores ,string: %#v", schema)
+	}
+}

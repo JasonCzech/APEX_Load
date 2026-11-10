@@ -507,25 +507,38 @@ export function Waterfall<T>({
     if (tip && !rows.some(r => r.node.id === tip.nodeId)) setTip(null)
   }, [rows, tip])
 
-  // Escape dismisses a hover tooltip (WCAG 1.4.13) without leaving the workspace.
+  // Escape dismisses a hover or keyboard tooltip (WCAG 1.4.13) without
+  // leaving the workspace, or the modal dialog the waterfall sits in.
+  const tipOpen = Boolean(tip) || keyboardTip
+  const tipRef = useRef(tip)
+  tipRef.current = tip
   useEffect(() => {
-    if (!tip) return
-    // Capture phase so the workspace's own Escape shortcut does not run first,
-    // but a focused text field, menu or dialog keeps its own Escape.
+    if (!tipOpen) return
+    // Window capture phase runs before a modal dialog's document capture
+    // listener and the workspace's own Escape shortcut. A focused text field,
+    // menu, listbox, or a dialog opened over the waterfall keeps its own
+    // Escape; a dialog that holds the waterfall does not, so the tooltip
+    // closes first and the dialog stays open.
     const onKey = (e: globalThis.KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
       const t = e.target as HTMLElement | null
-      if (t?.closest?.('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"], [role="listbox"]')) {
+      const body = bodyRef.current
+      const inGrid = Boolean(body && t instanceof Node && body.contains(t))
+      const owner = inGrid ? null : t?.closest?.('input, textarea, select, [contenteditable="true"], [role="menu"], [role="dialog"], [role="listbox"]')
+      if (owner && !(owner.matches('[role="dialog"]') && body && owner.contains(body))) {
         setTip(null)
         return
       }
+      // The keyboard tooltip follows grid focus; Escape elsewhere is not ours.
+      if (!tipRef.current && !inGrid) return
       e.preventDefault()
+      e.stopPropagation()
       setTip(null)
       setKeyboardTip(false)
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [tip])
+  }, [tipOpen])
 
   // A hover tooltip is stale once anything scrolls under the pointer.
   useEffect(() => {

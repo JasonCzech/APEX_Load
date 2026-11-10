@@ -47,6 +47,7 @@ import type { ScheduleClockChange } from '../../types/executionPlans'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
 import type { ExemplarPage, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
 import type { ArchiveTransactionWaterfall, ArchiveTransactionWaterfallParams } from '../../types/timeAnatomy'
+import type { ArchiveIterationWaterfall, ArchiveIterationWaterfallParams } from '../../types/iterationReplay'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -757,6 +758,18 @@ export function useTestApi() {
     [],
   )
 
+  // One VUser iteration rebuilt from its archive rows. first/last_ordinal
+  // from the report's iteration index bound the scan; the controller
+  // verifies them and falls back to a full scan when they are stale.
+  const getTestArchiveIterationWaterfall = useCallback(
+    (id: string, params: ArchiveIterationWaterfallParams, options?: ApiCallOptions) =>
+      request<ArchiveIterationWaterfall>(`/tests/${encodeURIComponent(id)}/archive/iterations/waterfall${buildQuery({
+        group: params.group, vuser_id: params.vuser_id, vuser_lifetime: params.vuser_lifetime, iteration: params.iteration,
+        first_ordinal: params.first_ordinal, last_ordinal: params.last_ordinal, ordinal: params.ordinal, max_rows: params.max_rows,
+      })}`, withCallOptions(undefined, options)),
+    [],
+  )
+
   const getTestReportAnnotations = useCallback(
     (id: string, profile: string, options?: ApiCallOptions) =>
       request<ReportAnnotationsResponse>(`/tests/${id}/report/annotations${buildQuery({ profile })}`, withCallOptions(undefined, options)),
@@ -972,6 +985,7 @@ export function useTestApi() {
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
       getTestArchiveTransactionWaterfall,
+      getTestArchiveIterationWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,
       listTestNotes,
@@ -1076,6 +1090,7 @@ export function useTestApi() {
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
       getTestArchiveTransactionWaterfall,
+      getTestArchiveIterationWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,
       listTestNotes,

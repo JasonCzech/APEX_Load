@@ -168,20 +168,35 @@ const mib = (value) => value * 1024 * 1024
 // the JS per-asset ceiling to 950 KiB raw / 260 KiB gzip and aggregate CSS
 // inventory to 1080 KiB raw / 196 KiB gzip (~1.5-2% headroom); aggregate JS,
 // per-asset CSS and every route and startup guard stay unchanged.
+//
+// 2026-11-10 Time anatomy waterfalls, iteration replay, baseline anatomy diff
+// and debug vs load. PR #336's shared waterfall module, Debug Summary
+// waterfall drawer and run diff, plus R4's iteration replay panel, R5's
+// anatomy diff in the baseline comparison drawer and R6's Debug vs load
+// sub-tab (with their models and stylesheets) take aggregate JS to 9793 KiB
+// raw / 2834 KiB gzip and aggregate CSS to 1101 KiB raw / 200.14 KiB gzip.
+// Lazy loading would not help here: deferred chunks still count toward the
+// totals. The shared debugRunDiff/waterfall code now splits out of
+// ScriptEditor, which measures 949.69 KiB raw / 257.91 KiB gzip, inside its
+// ceiling. Initial shell (205.21 KiB gzip), Scripts route (237.00 KiB gzip)
+// and Test execution route (421.74 KiB gzip) stay within their guards. Move
+// aggregate JS to 9.75 MiB raw / 2.83 MiB gzip and aggregate CSS to 1125 KiB
+// raw / 204 KiB gzip (~2% headroom); per-asset and every route and startup
+// guard stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(950),
     maxAssetGzipBytes: kib(260),
-    maxTotalBytes: mib(9.5),
-    maxTotalGzipBytes: mib(2.76),
+    maxTotalBytes: mib(9.75),
+    maxTotalGzipBytes: mib(2.83),
   }),
   '.css': Object.freeze({
     label: 'CSS',
     maxAssetBytes: kib(236),
     maxAssetGzipBytes: kib(38),
-    maxTotalBytes: kib(1080),
-    maxTotalGzipBytes: kib(196),
+    maxTotalBytes: kib(1125),
+    maxTotalGzipBytes: kib(204),
   }),
 })
 

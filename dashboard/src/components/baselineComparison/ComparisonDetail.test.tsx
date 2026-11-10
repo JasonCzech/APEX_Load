@@ -2,6 +2,7 @@
 import { act, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
+import { anatomyOf, requestRow, transaction } from './__fixtures__/anatomyDiff'
 import { ComparisonDetail } from './ComparisonDetail'
 import { defaultPolicy, type ComparisonRow, type ComparisonSnapshot, type Measurement, type RunIdentity } from './model'
 
@@ -30,4 +31,32 @@ it('shows canonical Prometheus comparison provenance, zero and gaps without requ
   expect(dialog.querySelector('tr:nth-child(2) td')?.textContent).toBe('0')
   expect(dialog.querySelector('[data-export-context]')?.getAttribute('data-export-context')).toContain('"definition_hash":"'+ 'a'.repeat(64)+'"')
  } finally {await act(async()=>root.unmount());node.remove()}
+})
+
+it('closes the time anatomy waterfall tooltip on Escape without closing the drawer', async () => {
+ ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+ vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} })
+ const node=document.createElement('div');document.body.appendChild(node);const root=createRoot(node)
+ const run=(id:string)=>({id,name:id,release_id:id,release_name:'R1',scenario_id:'s',status:'COMPLETE',vusers:1,peak_vusers:1,pinned:true,archive_available:true}) as RunIdentity
+ const row:ComparisonRow={id:'tx/0',name:'Login',source:'transaction',group:'g',unit:'ms',baselines:{}}
+ const snapshot:ComparisonSnapshot={id:'c',project_id:'p',current:run('cur'),baselines:[run('base')],created_at:'',rule_version:'v1',request:{baseline_ids:['base'],population:'transaction',allow_other_scenarios:false},policy:defaultPolicy,transactions:[row],resources:[],setup:[],findings:[],warnings:[]}
+ const load=(server:number)=>({status:'ready' as const,anatomy:anatomyOf([transaction('Login',[requestRow(1,'POST /login',{server}),requestRow(2,'GET /home',{server:server/2},{offset:server})],{server})])})
+ const onClose=vi.fn()
+ const escape=(target:Element)=>act(()=>{target.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}))})
+ try {
+  await act(async()=>root.render(<ComparisonDetail row={row} snapshot={snapshot} onClose={onClose} anatomy={{cur:load(200),base:load(100)}} />))
+  const grid=document.querySelector<HTMLElement>('[role="dialog"] [role="treegrid"]')!
+  expect(grid).toBeTruthy()
+  act(()=>grid.focus())
+  act(()=>{grid.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}))})
+  // The keyboard tooltip anchors to its row after an animation frame.
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,50))})
+  expect(document.querySelector('[role="tooltip"]')).toBeTruthy()
+  escape(grid)
+  expect(document.querySelector('[role="tooltip"]')).toBeNull()
+  expect(onClose).not.toHaveBeenCalled()
+  // With no tooltip open, Escape closes the drawer as before.
+  escape(grid)
+  expect(onClose).toHaveBeenCalledTimes(1)
+ } finally {await act(async()=>root.unmount());node.remove();vi.unstubAllGlobals()}
 })

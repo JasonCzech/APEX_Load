@@ -76,4 +76,5 @@ var modularAPIRouteCatalogs = []apiRouteCatalog{
 	objectRepositoryAPIRouteCatalog,
 	correlationRulesetAPIRouteCatalog,
 	recordingProfileAPIRouteCatalog,
+	scriptLoadRunsAPIRouteCatalog,
 }

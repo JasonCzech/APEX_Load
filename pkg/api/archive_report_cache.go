@@ -407,4 +407,5 @@ func (c *archiveReadCaches) forgetRunArchiveCache(testID string) {
 	c.manifests.deleteTest(testID)
 	c.sanitizedPlans.deleteTest(testID)
 	c.waterfalls.deleteTest(testID)
+	c.iterationWaterfalls.deleteTest(testID)
 }

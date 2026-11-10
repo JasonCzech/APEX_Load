@@ -1283,6 +1283,7 @@ func queryParameterSchema(route discoveredRoute, name string, repeated bool) oas
 func requiredQueryParameter(method, path, name string) bool {
 	required := map[string]map[string]bool{
 		"GET /api/v1/tests/{id}/errors/evidence":                   {"signature": true},
+		"GET /api/v1/tests/{id}/archive/iterations/waterfall":      {"iteration": true},
 		"GET /api/v1/applications/{id}/load-comparison":            {"scope": true},
 		"GET /api/v1/library/catalog":                              {"kind": true},
 		"GET /api/v1/library/remotes/{id}/catalog":                 {"kind": true},
@@ -1725,7 +1726,7 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 		properties := map[string]oasSchema{}
 		var required []string
 		for _, field := range value.Fields.List {
-			name, include, omitEmpty := jsonFieldName(field)
+			name, include, omitEmpty, quoted := jsonFieldTag(field)
 			if len(field.Names) == 0 && (!include || name == "") && anonymousJSONFieldPromotesMembers(field) {
 				embedded := openAPISchemaForASTTypeInPackage(field.Type, typeDefinitions, visiting, depth+1, currentPackage)
 				for embeddedName, embeddedProperty := range embedded.Properties {
@@ -1743,7 +1744,11 @@ func openAPISchemaForASTTypeInPackage(expr ast.Expr, typeDefinitions map[string]
 			if !include || name == "" {
 				continue
 			}
-			properties[name] = openAPISchemaForASTTypeInPackage(field.Type, typeDefinitions, visiting, depth+1, currentPackage)
+			property := openAPISchemaForASTTypeInPackage(field.Type, typeDefinitions, visiting, depth+1, currentPackage)
+			if quoted {
+				property = quotedJSONScalarSchema(property)
+			}
+			properties[name] = property
 			if !omitEmpty {
 				required = append(required, name)
 			}
@@ -1864,11 +1869,18 @@ func optionalHTTPVersionOpenAPISchema() oasSchema {
 }
 
 func jsonFieldName(field *ast.Field) (string, bool, bool) {
+	name, include, omitEmpty, _ := jsonFieldTag(field)
+	return name, include, omitEmpty
+}
+
+// jsonFieldTag is jsonFieldName plus whether the tag carries the ",string"
+// option, which encodes a number or boolean as a quoted JSON string.
+func jsonFieldTag(field *ast.Field) (string, bool, bool, bool) {
 	// encoding/json never serializes unexported fields, even when they carry an
 	// explicit tag. Exposing them here advertised process-only implementation
 	// details such as creationActor and runtimeSecretScope as public API fields.
 	if len(field.Names) > 0 && !ast.IsExported(field.Names[0].Name) {
-		return "", false, false
+		return "", false, false, false
 	}
 	if field.Tag != nil {
 		tagValue, err := strconv.Unquote(field.Tag.Value)
@@ -1876,7 +1888,7 @@ func jsonFieldName(field *ast.Field) (string, bool, bool) {
 			// openapi:"-" keeps a serialized field out of the public
 			// contract (an internal protocol field the server sets).
 			if slices.Contains(strings.Fields(tagValue), `openapi:"-"`) {
-				return "", false, false
+				return "", false, false, false
 			}
 			for _, tag := range strings.Fields(tagValue) {
 				if !strings.HasPrefix(tag, "json:") {
@@ -1888,25 +1900,47 @@ func jsonFieldName(field *ast.Field) (string, bool, bool) {
 				}
 				name := strings.SplitN(jsonTag, ",", 2)[0]
 				if name == "-" {
-					return "", false, false
+					return "", false, false, false
 				}
 				if name != "" {
-					omitEmpty := false
+					omitEmpty, quoted := false, false
 					for _, option := range strings.Split(jsonTag, ",")[1:] {
-						if option == "omitempty" || option == "omitzero" {
+						switch option {
+						case "omitempty", "omitzero":
 							omitEmpty = true
-							break
+						case "string":
+							quoted = true
 						}
 					}
-					return name, true, omitEmpty
+					return name, true, omitEmpty, quoted
 				}
 			}
 		}
 	}
 	if len(field.Names) == 0 {
-		return "", false, false
+		return "", false, false, false
 	}
-	return field.Names[0].Name, true, false
+	return field.Names[0].Name, true, false, false
+}
+
+// quotedJSONScalarSchema is a scalar's schema under the ",string" tag
+// option: encoding/json writes the number or boolean as a quoted string
+// (an int64 or uint64 nonce stays exact for JavaScript clients). Other
+// types ignore the option.
+func quotedJSONScalarSchema(schema oasSchema) oasSchema {
+	switch schema.Type {
+	case "integer", "number", "boolean":
+	default:
+		return schema
+	}
+	quoted := oasSchema{Type: "string", Description: schema.Description, Nullable: schema.Nullable}
+	if schema.Type == "integer" {
+		quoted.Format = schema.Format
+		if quoted.Format == "" {
+			quoted.Format = "int64"
+		}
+	}
+	return quoted
 }
 
 func inferredResponses(route discoveredRoute, analysis *handlerContractAnalysis) map[string]oasResponse {
