@@ -321,6 +321,103 @@
         "why"
       ]
     },
+    "AgentPhaseAttribution": {
+      "properties": {
+        "basis": {
+          "type": "string",
+          "enum": [
+            "p95_tail_vs_median"
+          ]
+        },
+        "transactions": {
+          "items": {
+            "$ref": "#/$defs/AgentPhaseTransaction"
+          },
+          "type": "array"
+        },
+        "eligible": {
+          "type": "integer"
+        },
+        "ineligible": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "type": "object"
+        },
+        "partial": {
+          "type": "boolean"
+        },
+        "partial_reasons": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "join_coverage_pct": {
+          "type": "number"
+        }
+      },
+      "type": "object",
+      "required": [
+        "basis",
+        "transactions",
+        "eligible",
+        "partial"
+      ]
+    },
+    "AgentPhaseTransaction": {
+      "properties": {
+        "transaction": {
+          "type": "string"
+        },
+        "tail_delta_ms": {
+          "type": "number"
+        },
+        "median_ms": {
+          "type": "number"
+        },
+        "tail_ms": {
+          "type": "number"
+        },
+        "tail_samples": {
+          "type": "integer"
+        },
+        "dominant_phase": {
+          "type": "string",
+          "enum": [
+            "dns",
+            "connect",
+            "tls",
+            "server",
+            "download",
+            "unsplit",
+            "non_request",
+            "overlap"
+          ]
+        },
+        "dominant_share_pct": {
+          "type": "number"
+        },
+        "phases_ms": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "type": "object"
+        },
+        "sampled": {
+          "type": "boolean"
+        }
+      },
+      "type": "object",
+      "required": [
+        "transaction",
+        "tail_delta_ms",
+        "median_ms",
+        "tail_ms",
+        "tail_samples",
+        "phases_ms"
+      ]
+    },
     "AgentRCA": {
       "properties": {
         "source": {
@@ -691,6 +788,9 @@
     },
     "rca": {
       "$ref": "#/$defs/AgentRCA"
+    },
+    "phase_attribution": {
+      "$ref": "#/$defs/AgentPhaseAttribution"
     },
     "links": {
       "$ref": "#/$defs/AgentLinks"

@@ -60,6 +60,7 @@ func agentFixtures() []agentFixture {
 	errorRate.ByAction["Browse"] = browse
 
 	regression := agentFixtureReport()
+	regression.TimeAnatomy = agentFixtureAnatomy(2)
 	comparison := &BaselineComparisonSnapshot{
 		ID:           "cmp-1",
 		Baselines:    []BaselineRunIdentity{{ID: "run-0"}},

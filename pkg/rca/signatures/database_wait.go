@@ -8,4 +8,5 @@ var DatabaseWait = Signature{
 	Symptoms:      symptomsOfService,
 	Competing:     []string{"pool_exhaustion", "resource_pressure"},
 	Falsification: "database wait and lock times stay within their baselines while the symptom holds",
+	Phases:        []PhaseIndicator{{Phase: PhaseServer}},
 }

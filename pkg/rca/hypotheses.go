@@ -208,6 +208,16 @@ func loadCoincident(a Anomaly, levels []LoadLevel, settle time.Duration) bool {
 // symptom's scope count as measured, and one cause behind several symptoms
 // is one hypothesis.
 func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, graph Graph, levels []LoadLevel, params DetectParams) ([]Hypothesis, string, []Limitation) {
+	return HypothesizeWithPhases(anomalies, series, judged, graph, levels, params, nil)
+}
+
+// HypothesizeWithPhases is Hypothesize with the run's phase attributions:
+// where each symptom transaction's extra time went corroborates or weakens
+// the signatures its other evidence judges, and is cited with them.
+func HypothesizeWithPhases(anomalies []Anomaly, series []Series, judged JudgedSeries, graph Graph, levels []LoadLevel, params DetectParams, attributions []PhaseAttribution) ([]Hypothesis, string, []Limitation) {
+	shifts, shiftRefs := phaseShifts(attributions)
+	streamed := streamedTransactions(series)
+	var transfer []string
 	byID := make(map[string]Series, len(series))
 	for _, s := range series {
 		byID[s.ID] = s
@@ -227,6 +237,20 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 		ctx := signatures.Context{
 			Symptom:   signatures.Observation{AnomalyID: symptom.ID, Series: symptom.Series, Kind: kind, Direction: symptom.Direction, PeakZ: symptom.PeakZ, LoadCoincident: loadCoincident(symptom, levels, params.LevelSettle)},
 			Available: map[string]signatures.Availability{},
+		}
+		var phaseRef *EvidenceRef
+		// Only latency symptoms (TTFT and TPOT included) read the anatomy: an
+		// error-rate or throughput symptom says nothing about where time went.
+		if shift, node := symptomPhaseShift(kind, byID[symptom.Series], shifts); shift != nil {
+			if streamed[node] {
+				shift = withoutDownload(shift)
+			}
+			ctx.Phase = shift
+			ref := shiftRefs[node]
+			phaseRef = &ref
+			if shift.Dominant == signatures.PhaseDownload {
+				transfer = append(transfer, shift.Transaction)
+			}
 		}
 		for _, s := range series {
 			evidence := measures(s)
@@ -274,7 +298,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 		}
 		for _, sig := range all {
 			if r := results[sig.Name]; r.Verdict == signatures.Supported {
-				mergeHypothesis(merged, buildHypothesis(sig, r, symptom, causes, causeNodes, results, supported), r)
+				mergeHypothesis(merged, buildHypothesis(sig, r, symptom, causes, causeNodes, results, supported, phaseRef), r)
 			}
 		}
 	}
@@ -296,6 +320,9 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 	for i := range hypotheses {
 		hypotheses[i].Rank = i + 1
 	}
+	if limitation, ok := transferLimitation(transfer); ok {
+		limitations = append(limitations, limitation)
+	}
 	switch {
 	case symptoms == 0:
 		limitations = append(limitations, Limitation{Code: LimitationNoSymptoms, Detail: "no transaction latency, error or throughput anomaly to explain"})
@@ -313,7 +340,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 // hypothesis: its chain of onsets, the evidence for and against it, the
 // hypotheses competing with it and how confident the evidence allows it to
 // be.
-func buildHypothesis(sig signatures.Signature, r signatures.Result, symptom Anomaly, causes map[string]Anomaly, causeNodes map[string][]string, results map[string]signatures.Result, supported []string) Hypothesis {
+func buildHypothesis(sig signatures.Signature, r signatures.Result, symptom Anomaly, causes map[string]Anomaly, causeNodes map[string][]string, results map[string]signatures.Result, supported []string, phaseRef *EvidenceRef) Hypothesis {
 	h := Hypothesis{
 		Signature: sig.Name, Symptoms: []string{symptom.ID},
 		Score: math.Round(r.Score*1000) / 1000, Falsification: sig.Falsification,
@@ -333,6 +360,13 @@ func buildHypothesis(sig signatures.Signature, r signatures.Result, symptom Anom
 	}
 	for _, o := range r.Contradicting {
 		h.Contradicting = append(h.Contradicting, causes[o.AnomalyID].Evidence...)
+	}
+	// The symptom transaction's time anatomy is cited where it decided.
+	if phaseRef != nil && r.PhaseSupported {
+		h.Supporting = append(h.Supporting, *phaseRef)
+	}
+	if phaseRef != nil && r.PhaseContradicted {
+		h.Contradicting = append(h.Contradicting, *phaseRef)
 	}
 	for _, other := range supported {
 		if other != sig.Name {

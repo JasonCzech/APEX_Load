@@ -29,11 +29,9 @@ func writeRunArchiveReportDOCXWithProfileAndAnnotations(report *RunArchiveReport
 	if err != nil {
 		return err
 	}
-	var charts []reportDocumentChart
-	if _, hasGraphs := reportSectionSet(profile.IncludedSections)["graphs"]; hasGraphs {
-		if charts, err = buildReportDocumentCharts(report); err != nil {
-			return err
-		}
+	charts, err := buildReportDocumentChartsForProfile(report, profile)
+	if err != nil {
+		return err
 	}
 	bodyXML, title, err := convertReportHTMLToDOCXBody(htmlReport, charts)
 	if err != nil {

@@ -9,4 +9,7 @@ var PoolExhaustion = Signature{
 	Symptoms:      symptomsOfService,
 	Competing:     []string{"database_wait", "resource_pressure"},
 	Falsification: "pool usage and pool waits stay within their baselines while the symptom holds",
+	// A client-side pool, SNAT or ephemeral-port exhaustion shows as connect
+	// growth; a server-side pool wait as server time.
+	Phases: []PhaseIndicator{{Phase: PhaseConnect}, {Phase: PhaseServer}},
 }

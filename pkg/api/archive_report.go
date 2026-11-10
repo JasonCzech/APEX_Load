@@ -118,7 +118,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			return quantiles, nil
 		}
 		if len(values) >= maxArchiveAnalysisDimensions {
-			return nil, fmt.Errorf("archive report exceeds %d distinct %s values", maxArchiveAnalysisDimensions, dimension)
+			return nil, archiveReportBoundErrorf("archive report exceeds %d distinct %s values", maxArchiveAnalysisDimensions, dimension)
 		}
 		quantiles := &archiveQuantileAccumulator{}
 		values[key] = quantiles
@@ -150,7 +150,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if population == "unknown" {
 			if unknownRecords[tx.ActionName] == nil {
 				if len(unknownRecords) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive exceeds unclassified record dimension limit")
+					return archiveReportBoundErrorf("archive exceeds unclassified record dimension limit")
 				}
 				unknownRecords[tx.ActionName] = &archivePopulationAccumulator{}
 			}
@@ -159,7 +159,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if population == "action" {
 			if requests[tx.ActionName] == nil {
 				if len(requests) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive exceeds request dimension limit")
+					return archiveReportBoundErrorf("archive exceeds request dimension limit")
 				}
 				requests[tx.ActionName] = newArchiveGatePopulationAccumulator(gateQuantileBudget)
 			}
@@ -168,7 +168,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		if population == "transaction" {
 			if namedTransactions[tx.ActionName] == nil {
 				if len(namedTransactions) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive exceeds named transaction dimension limit")
+					return archiveReportBoundErrorf("archive exceeds named transaction dimension limit")
 				}
 				namedTransactions[tx.ActionName] = newArchiveGatePopulationAccumulator(gateQuantileBudget)
 			}
@@ -181,7 +181,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			report.Overview.Errors++
 			signature := archiveErrorPatternSignature(tx)
 			if _, exists := errorPatterns[signature]; !exists && len(errorPatterns) >= maxArchiveAnalysisDimensions {
-				return fmt.Errorf("archive report exceeds %d distinct error patterns", maxArchiveAnalysisDimensions)
+				return archiveReportBoundErrorf("archive report exceeds %d distinct error patterns", maxArchiveAnalysisDimensions)
 			}
 			mergeArchiveErrorPattern(errorPatterns, errorPatternActions, tx)
 		}
@@ -205,7 +205,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 					buckets := actionSummaryBuckets[key]
 					if len(buckets) == 0 {
 						if len(summaries) > maxArchiveReportAggregateCells-actionSummaryCells {
-							return fmt.Errorf("archive report exceeds %d action summary buckets", maxArchiveReportAggregateCells)
+							return archiveReportBoundErrorf("archive report exceeds %d action summary buckets", maxArchiveReportAggregateCells)
 						}
 						buckets = make([]archiveActionSummaryBucket, len(summaries))
 						actionSummaryCells += len(summaries)
@@ -224,7 +224,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		if bucketTime := archiveSOAPFaultBucketTimestamp(tx.Timestamp); !bucketTime.IsZero() && (archiveSOAPFaultCode(tx) != "" || archiveSOAPFaultCategory(tx) != "") {
 			if _, exists := faultTimelineBuckets[bucketTime]; !exists && len(faultTimelineBuckets) >= maxArchiveAnalysisDimensions {
-				return fmt.Errorf("archive report exceeds %d SOAP fault timeline buckets", maxArchiveAnalysisDimensions)
+				return archiveReportBoundErrorf("archive report exceeds %d SOAP fault timeline buckets", maxArchiveAnalysisDimensions)
 			}
 		}
 		mergeArchiveSOAPFaultTimelineBucket(faultTimelineBuckets, tx)
@@ -232,7 +232,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			requestKB, responseKB, overheadKB := archiveSOAPPayloadTelemetry(tx)
 			if requestKB != 0 || responseKB != 0 || overheadKB != 0 {
 				if _, exists := payloadTimelineBuckets[bucketTime]; !exists && len(payloadTimelineBuckets) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive report exceeds %d SOAP payload timeline buckets", maxArchiveAnalysisDimensions)
+					return archiveReportBoundErrorf("archive report exceeds %d SOAP payload timeline buckets", maxArchiveAnalysisDimensions)
 				}
 			}
 		}
@@ -271,11 +271,11 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 		}
 		faultCode := archiveSOAPFaultCode(tx)
 		if _, exists := report.BySOAPFaultCode[faultCode]; faultCode != "" && !exists && len(report.BySOAPFaultCode) >= maxArchiveAnalysisDimensions {
-			return fmt.Errorf("archive report exceeds %d SOAP fault codes", maxArchiveAnalysisDimensions)
+			return archiveReportBoundErrorf("archive report exceeds %d SOAP fault codes", maxArchiveAnalysisDimensions)
 		}
 		faultCategory := archiveSOAPFaultCategory(tx)
 		if _, exists := report.BySOAPFaultCategory[faultCategory]; faultCategory != "" && !exists && len(report.BySOAPFaultCategory) >= maxArchiveAnalysisDimensions {
-			return fmt.Errorf("archive report exceeds %d SOAP fault categories", maxArchiveAnalysisDimensions)
+			return archiveReportBoundErrorf("archive report exceeds %d SOAP fault categories", maxArchiveAnalysisDimensions)
 		}
 		incrementArchiveCount(report.BySOAPFaultCode, faultCode)
 		incrementArchiveCount(report.BySOAPFaultCategory, faultCategory)
@@ -286,7 +286,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			mergeReportBrowserMetrics(report.Overview.Browser, tx.ClientMetrics)
 			if engine := tx.ClientMetrics.BrowserEngine; engine != "" {
 				if _, exists := report.BrowserByEngine[engine]; !exists && len(report.BrowserByEngine) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive report exceeds %d browser engines", maxArchiveAnalysisDimensions)
+					return archiveReportBoundErrorf("archive report exceeds %d browser engines", maxArchiveAnalysisDimensions)
 				}
 				engineMetrics, ok := report.BrowserByEngine[engine]
 				if !ok {
@@ -297,7 +297,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			}
 			if platform := tx.ClientMetrics.DevicePlatform; platform != "" {
 				if _, exists := report.BrowserByPlatform[platform]; !exists && len(report.BrowserByPlatform) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive report exceeds %d browser platforms", maxArchiveAnalysisDimensions)
+					return archiveReportBoundErrorf("archive report exceeds %d browser platforms", maxArchiveAnalysisDimensions)
 				}
 				platformMetrics, ok := report.BrowserByPlatform[platform]
 				if !ok {
@@ -311,7 +311,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 			}
 			if profile := tx.ClientMetrics.DeviceProfile; profile != "" {
 				if _, exists := report.BrowserByDevice[profile]; !exists && len(report.BrowserByDevice) >= maxArchiveAnalysisDimensions {
-					return fmt.Errorf("archive report exceeds %d browser device profiles", maxArchiveAnalysisDimensions)
+					return archiveReportBoundErrorf("archive report exceeds %d browser device profiles", maxArchiveAnalysisDimensions)
 				}
 				deviceMetrics, ok := report.BrowserByDevice[profile]
 				if !ok {
@@ -340,7 +340,7 @@ func buildRunArchiveReport(record *storage.RunArchiveRecord) (*RunArchiveReport,
 				dependencyKey = tx.DependencyType + ":" + dependencyKey
 			}
 			if _, exists := networkPhases.byDependency[dependencyKey]; dependencyKey != "" && !exists && len(networkPhases.byDependency) >= maxArchiveAnalysisDimensions {
-				return fmt.Errorf("archive report exceeds %d network phase dependencies", maxArchiveAnalysisDimensions)
+				return archiveReportBoundErrorf("archive report exceeds %d network phase dependencies", maxArchiveAnalysisDimensions)
 			}
 		}
 		networkPhases.merge(tx)
@@ -858,7 +858,7 @@ func (acc *runArchiveWeb2MigrationAccumulator) merge(tx TransactionEvent) error 
 		return nil
 	}
 	if _, exists := acc.stepSet[stepKey]; !exists && len(acc.stepSet) >= maxArchiveAnalysisDimensions {
-		return fmt.Errorf("archive report exceeds %d Web 2.0 source steps", maxArchiveAnalysisDimensions)
+		return archiveReportBoundErrorf("archive report exceeds %d Web 2.0 source steps", maxArchiveAnalysisDimensions)
 	}
 	acc.stepSet[stepKey] = struct{}{}
 	acc.replayed++
@@ -868,13 +868,13 @@ func (acc *runArchiveWeb2MigrationAccumulator) merge(tx TransactionEvent) error 
 	acc.evidence["source_step_labels"]++
 	if tx.SourceTransaction != "" {
 		if _, exists := acc.transactionSet[tx.SourceTransaction]; !exists && len(acc.transactionSet) >= maxArchiveAnalysisDimensions {
-			return fmt.Errorf("archive report exceeds %d Web 2.0 transaction groups", maxArchiveAnalysisDimensions)
+			return archiveReportBoundErrorf("archive report exceeds %d Web 2.0 transaction groups", maxArchiveAnalysisDimensions)
 		}
 		acc.transactionSet[tx.SourceTransaction] = struct{}{}
 	}
 	if tx.SourceProfile != "" {
 		if _, exists := acc.profileSet[tx.SourceProfile]; !exists && len(acc.profileSet) >= maxArchiveAnalysisDimensions {
-			return fmt.Errorf("archive report exceeds %d Web 2.0 source profiles", maxArchiveAnalysisDimensions)
+			return archiveReportBoundErrorf("archive report exceeds %d Web 2.0 source profiles", maxArchiveAnalysisDimensions)
 		}
 		acc.profileSet[tx.SourceProfile] = struct{}{}
 	}
@@ -1028,8 +1028,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "analysis_zip", "pdf", "docx", "jsonl", "parquet"},
-			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
-			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "network_phases", "web2_migration"},
+			IncludedSections: []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "time_anatomy", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"baseline_comparison", "verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "rca", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "controller_failover", "telemetry_acceptance", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "llm_performance", "protocol_diagnostics", "browser", "browser_findings", "interaction_map", "journey_risk", "soap", "time_anatomy", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",

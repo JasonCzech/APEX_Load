@@ -8,4 +8,5 @@ var GarbageCollection = Signature{
 	Symptoms:      symptomsOfService,
 	Competing:     []string{"resource_pressure"},
 	Falsification: "garbage-collection time stays within its baseline before and during the symptom",
+	Phases:        []PhaseIndicator{{Phase: PhaseServer}},
 }

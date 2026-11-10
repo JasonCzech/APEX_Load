@@ -573,9 +573,17 @@ func TestRCADetectionLLMSeriesAndGPUReadinessProfile(t *testing.T) {
 	for _, suffix := range []string{"ttft_p95_ms", "tpot_p95_ms", "output_tokens_per_s", "throttle_rate"} {
 		id := "transaction/llm/" + suffix
 		s := reader.series[id]
-		if s == nil || len(s.Points) != 1 || !s.Points[0].Valid {
-			t.Fatalf("missing or invalid LLM RCA series %s: %+v", id, s)
+		if s == nil || len(s.Points) != 1 || !s.Points[0].Valid || !s.RunLevel {
+			t.Fatalf("missing, invalid or not run-level LLM RCA series %s: %+v", id, s)
 		}
+	}
+	// Filed under the alphabetically first transaction, the run-level
+	// series still does not describe it.
+	filed := newRCASeriesReader(-1, 100)
+	filed.series["transaction/Checkout/p95_ms"] = &rca.Series{ID: "transaction/Checkout/p95_ms"}
+	addSummaryLLMSeries(filed, rcaIdentityScope{project: "default", scenario: "sc-1"}, summaries)
+	if s := filed.series["transaction/Checkout/ttft_p95_ms"]; s == nil || !s.RunLevel {
+		t.Fatalf("fallback series on Checkout: %+v", s)
 	}
 	profile := gpuInferenceMonitoringProfile()
 	if profile.ID != "gpu-inference" || len(profile.RequiredMetrics) < 5 {

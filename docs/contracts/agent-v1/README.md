@@ -132,6 +132,10 @@ When two sources report the same subject, for example an SLA rule and the SLA ro
 
 At `summary` and `standard` detail, `run.scripts` and `validity.reasons` are capped (5 and 20 entries); `truncation.omitted` counts any cut as `scripts` or `validity_reasons`.
 
+### Phase attribution
+
+`phase_attribution` says where the slowest transactions' tail time goes, from the archive report's time anatomy (`basis: p95_tail_vs_median`: the mean instance above each transaction's P95 minus the mean instance at or below its P50). It lists the transactions whose tail attribution the report could state, largest `tail_delta_ms` first: 2 at `summary`, 5 at `standard`, 10 at `full`. These rows are the first thing the byte budget trims, before any finding or metric row, and `truncation.omitted.phase_attribution` counts every row left out; transaction names are capped at 80 characters. Each entry's `phases_ms` splits the delta into `dns`, `connect`, `tls`, `server`, `download`, `unsplit`, `non_request` and `overlap` (overlap counts negatively), and `dominant_phase` names the largest. `eligible` counts the transactions with an attribution, `ineligible` counts the others by why (`insufficient_samples`, `no_tail`, `low_join_coverage`), and `partial` with `partial_reasons` says the bounded anatomy left rows or transactions out. The block is absent when the run has no time anatomy.
+
 ## Untrusted text
 
 Error samples, response bodies, server error text and script-sourced strings come from the system under test. They can contain text written to steer a model. The brief keeps such text only in a finding's `untrusted` field (and a finding detail's `samples`), and only after these steps:

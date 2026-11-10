@@ -13,6 +13,7 @@ var ColdStart = Signature{
 	Symptoms:      symptomsOfService,
 	Competing:     []string{"resource_pressure"},
 	Falsification: "replica counts, restarts and kills stay constant through the window",
+	Phases:        []PhaseIndicator{{Phase: PhaseServer}},
 	Extra: func(ctx Context, r *Result) {
 		if len(r.Supporting) > 0 && ctx.Symptom.LoadCoincident {
 			r.Score += bonusLoadStep

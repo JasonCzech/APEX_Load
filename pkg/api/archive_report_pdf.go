@@ -41,15 +41,11 @@ func writeRunArchiveReportPDFWithProfileAndAnnotations(report *RunArchiveReport,
 	lines := buildRunArchiveReportPDFLines(report, profile, annotations, manifest)
 	headings := buildDOCXSectionHeadings(report, profile, annotations, manifest)
 	headings["Review summary"] = struct{}{}
-	var charts []reportDocumentChart
-	if _, hasGraphs := reportSectionSet(profile.IncludedSections)["graphs"]; hasGraphs {
-		var err error
-		charts, err = buildReportDocumentCharts(report)
-		if err != nil {
-			return err
-		}
+	charts, err := buildReportDocumentChartsForProfile(report, profile)
+	if err != nil {
+		return err
 	}
-	_, err := writer.Write(renderTextPDF(lines, headings, profile.Label, charts))
+	_, err = writer.Write(renderTextPDF(lines, headings, profile.Label, charts))
 	return err
 }
 

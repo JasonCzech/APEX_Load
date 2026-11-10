@@ -13,7 +13,7 @@ const (
 	// agentBriefBuilderVersion changes whenever the same archive would yield
 	// a different brief, so a consumer can tell a builder change from a run
 	// change.
-	agentBriefBuilderVersion = "1"
+	agentBriefBuilderVersion = "2"
 )
 
 // Detail levels.
@@ -117,8 +117,11 @@ type AgentBrief struct {
 	Metrics       []AgentMetricRow     `json:"metrics"`
 	Findings      []AgentFinding       `json:"findings"`
 	RCA           *AgentRCA            `json:"rca,omitempty"`
-	Links         AgentLinks           `json:"links"`
-	Truncation    AgentTruncation      `json:"truncation"`
+	// PhaseAttribution says where the slowest transactions' tail time goes,
+	// from the report's time anatomy; absent when the run has none.
+	PhaseAttribution *AgentPhaseAttribution `json:"phase_attribution,omitempty"`
+	Links            AgentLinks             `json:"links"`
+	Truncation       AgentTruncation        `json:"truncation"`
 
 	// ctrf is what the CTRF rendering judges beyond the brief itself: every
 	// transaction SLA rule result, passing ones included, and the goal's
@@ -324,6 +327,44 @@ type AgentRCA struct {
 	State         string   `json:"state,omitempty"`
 	Outcome       string   `json:"outcome,omitempty"`
 	TopHypotheses []string `json:"top_hypotheses"`
+}
+
+// AgentPhaseAttribution is the report's tail attribution, bounded: the
+// transactions with the largest P95-tail deltas, each split by component.
+type AgentPhaseAttribution struct {
+	Basis        string                  `json:"basis" jsonschema:"enum=p95_tail_vs_median"`
+	Transactions []AgentPhaseTransaction `json:"transactions"`
+	// Eligible counts the transactions whose tail attribution the report
+	// could state; Ineligible counts the others by status
+	// (insufficient_samples, no_tail, low_join_coverage).
+	Eligible   int            `json:"eligible"`
+	Ineligible map[string]int `json:"ineligible,omitempty"`
+	// Partial says the bounded anatomy left rows or transactions out;
+	// PartialReasons are its truncation reasons.
+	Partial        bool     `json:"partial"`
+	PartialReasons []string `json:"partial_reasons,omitempty"`
+	// JoinCoveragePct is the share of transaction rows joined to their
+	// requests.
+	JoinCoveragePct *float64 `json:"join_coverage_pct,omitempty"`
+}
+
+// AgentPhaseTransaction is one transaction's tail attribution: the tail
+// band's mean minus the median band's, split into components that add up
+// to it.
+type AgentPhaseTransaction struct {
+	Transaction string  `json:"transaction"`
+	TailDeltaMs float64 `json:"tail_delta_ms"`
+	MedianMs    float64 `json:"median_ms"`
+	TailMs      float64 `json:"tail_ms"`
+	TailSamples int64   `json:"tail_samples"`
+	// DominantPhase is the component that carried the most extra time.
+	DominantPhase    string   `json:"dominant_phase,omitempty" jsonschema:"enum=dns,enum=connect,enum=tls,enum=server,enum=download,enum=unsplit,enum=non_request,enum=overlap"`
+	DominantSharePct *float64 `json:"dominant_share_pct,omitempty"`
+	// PhasesMs is each component's share of the delta, in ms; components
+	// under 0.5 ms are left out. Overlap counts negatively.
+	PhasesMs map[string]float64 `json:"phases_ms"`
+	// Sampled says the bands were estimated from a sample of instances.
+	Sampled bool `json:"sampled,omitempty"`
 }
 
 // AgentLinks are API paths (under /api/v1) and the dashboard route.

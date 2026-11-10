@@ -553,6 +553,7 @@ var reportSectionLabels = map[string]string{
 	"summary_timeline":     "Summary timeline",
 	"actions":              "Action summary",
 	"network_phases":       "Network phase breakdown",
+	"time_anatomy":         "Time anatomy",
 	"errors":               "Error patterns",
 	"resources":            "Resource peaks",
 	"browser":              "Browser metrics",
@@ -609,6 +610,9 @@ var reportSectionApplies = map[string]func(d *runArchiveHTMLReportData) bool{
 			len(d.Report.SalesforceEPT) > 0 || len(d.Report.AuraParity) > 0
 	},
 	"web2_migration": func(d *runArchiveHTMLReportData) bool { return d.Report.Web2Migration != nil },
+	"time_anatomy": func(d *runArchiveHTMLReportData) bool {
+		return d.Report != nil && d.Report.TimeAnatomy != nil && len(d.Report.TimeAnatomy.Transactions) > 0
+	},
 	"soap": func(d *runArchiveHTMLReportData) bool {
 		return len(d.SOAPOperationRows)+len(d.SOAPFaultCodeRows)+len(d.SOAPFaultBuckets)+len(d.SOAPPayloadBuckets) > 0
 	},
@@ -1169,6 +1173,9 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 		PDF: pdfLLMPerformanceLines,
 		CSV: csvLLMPerformanceRows,
 	})
+
+	// --- Time anatomy ------------------------------------------------------
+	add(reportSectionRenderer{ID: "time_anatomy", PDF: timeAnatomyPDF, CSV: timeAnatomyCSV})
 
 	// --- Network phases ----------------------------------------------------
 	add(reportSectionRenderer{ID: "network_phases", Label: "Network Phase Breakdown",

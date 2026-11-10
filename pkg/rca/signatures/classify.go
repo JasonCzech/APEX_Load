@@ -124,10 +124,11 @@ func Fingerprint() string {
 		Required, Competing []string
 		Indicators          []Indicator
 		Symptoms            []string
+		Phases              []PhaseIndicator
 	}
 	var set []described
 	for _, s := range All() {
-		set = append(set, described{s.Name, s.Falsification, s.Required, s.Competing, s.Indicators, s.Symptoms})
+		set = append(set, described{s.Name, s.Falsification, s.Required, s.Competing, s.Indicators, s.Symptoms, s.Phases})
 	}
 	// The classifier table's fields are unexported, which JSON would skip.
 	type keywords struct {
@@ -138,7 +139,7 @@ func Fingerprint() string {
 	for _, c := range classifiers {
 		table = append(table, keywords{c.kind, c.tokens, c.phrases})
 	}
-	weights := []float64{weightUnconnected, weightUnordered, penaltyFollows, penaltyFlat, penaltyFlatLoose, bonusLoadStep}
+	weights := []float64{weightUnconnected, weightUnordered, penaltyFollows, penaltyFlat, penaltyFlatLoose, bonusLoadStep, bonusPhase, penaltyPhase}
 	body, _ := json.Marshal(struct {
 		Version     string
 		Signatures  []described

@@ -746,6 +746,30 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{else}}<p class="muted">No LLM inference telemetry was captured for this run.</p>{{end}}
 {{end}}
 
+{{define "time_anatomy"}}
+<h2>{{sectionTitle "time_anatomy"}}</h2>
+{{with .TimeAnatomyView}}
+<p class="section-copy">Where each business transaction's time goes: its slowest request rows split by phase at {{.StatisticLabel}}, and what its slow tail (the instances above its P95) spends extra time on against its median.{{with .CoverageNote}} {{.}}{{end}} {{.BarNote}}</p>
+{{if .Partial}}<p class="muted">Partial anatomy: the bounded join left some rows out ({{.PartialReasons}}).</p>{{end}}
+{{$view := .}}
+{{range .Entries}}
+<h3>{{.Name}}</h3>
+<p class="section-copy">{{hint .Instances}} instances, {{$view.StatisticLabel}} {{msValue .DurationMs}} ms.{{with .Tail}} {{.}}{{end}}</p>
+{{if .Rows}}
+<div class="charts">{{.ChartSVG}}</div>
+<table>
+  <thead><tr><th>Request</th>{{range $view.Phases}}<th class="num">{{.Label}} (ms)</th>{{end}}<th class="num">Total (ms)</th></tr></thead>
+  <tbody>
+  {{range .Rows}}<tr><td>{{.Label}}</td>{{range .Cells}}<td class="num">{{.}}</td>{{end}}<td class="num">{{msValue .TotalMs}}</td></tr>{{end}}
+  </tbody>
+</table>
+{{if .MoreRows}}<p class="muted">{{.MoreRows}} more request rows are in the JSON report.</p>{{end}}
+{{end}}
+{{end}}
+{{if .Omitted}}<p class="muted">{{.Omitted}} more transactions are in the JSON report.</p>{{end}}
+{{else}}<p class="muted">No business-transaction time anatomy was captured for this run.</p>{{end}}
+{{end}}
+
 {{define "network_phases"}}
 <h2>{{sectionTitle "network_phases"}}</h2>
 {{if gt .Report.NetworkPhases.Samples 0}}

@@ -164,12 +164,13 @@ func (b *Budgeter) Truncations() []BudgetTruncation {
 // evidence, or skipped a stage, because the wall-time or heap budget ran out.
 // Such an assessment describes the load on the controller when it ran, not
 // the run, so identical inputs may be analyzed again rather than answered
-// with it. A series or point count the budget cut is not timing and does not
+// with it. A phase-attribution read the evidence read time stopped counts
+// too. A series or point count the budget cut is not timing and does not
 // count.
 func CutByBudget(limitations []Limitation) bool {
 	for _, l := range limitations {
 		switch l.Code {
-		case LimitationStageSkipped:
+		case LimitationStageSkipped, LimitationPhaseAttributionInterrupted:
 			return true
 		case LimitationBudgetTruncated:
 			if strings.HasPrefix(l.Detail, BudgetWallTime+":") || strings.HasPrefix(l.Detail, BudgetHeap+":") {

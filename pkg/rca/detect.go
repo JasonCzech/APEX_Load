@@ -113,6 +113,10 @@ type Series struct {
 	// Document describes a browser document series' cohort (browser
 	// baseline, browser_baseline.v1); nil for every other series.
 	Document *DocumentCohort
+	// RunLevel marks a series that aggregates the whole run but is filed
+	// under a transaction for want of a per-key one (the interval-summary
+	// LLM fallback): it does not describe that transaction.
+	RunLevel bool
 }
 
 // External reports whether a series measures the system under test from

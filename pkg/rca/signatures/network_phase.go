@@ -9,4 +9,5 @@ var NetworkPhase = Signature{
 	Symptoms:      []string{KindLatency, KindErrors},
 	Competing:     []string{"retries", "resource_pressure"},
 	Falsification: "DNS, connect and TLS times to the affected dependencies stay within their baselines",
+	Phases:        []PhaseIndicator{{Phase: PhaseDNS}, {Phase: PhaseConnect}, {Phase: PhaseTLS}},
 }
