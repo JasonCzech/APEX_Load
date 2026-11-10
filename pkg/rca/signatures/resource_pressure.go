@@ -9,4 +9,7 @@ var ResourcePressure = Signature{
 	Symptoms:      symptomsOfService,
 	Competing:     []string{"garbage_collection", "pool_exhaustion", "cold_start"},
 	Falsification: "CPU and memory on the services and hosts behind the affected dependencies stay within their baselines through the window",
+	// TLS growth counts only when more full handshakes ran (reuse fell or TLS
+	// was observed on more requests): handshake CPU.
+	Phases: []PhaseIndicator{{Phase: PhaseServer}, {Phase: PhaseTLS, NeedsHandshakes: true}},
 }

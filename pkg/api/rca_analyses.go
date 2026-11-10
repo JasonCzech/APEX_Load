@@ -1195,6 +1195,13 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 			return nil, nil, readErr(err)
 		}
 	}
+	// Each transaction's time anatomy, the run's and a comparable
+	// baseline's, says where its extra time went; built from the same
+	// frozen archives, before the engine's budget starts.
+	phaseAttributions, phaseLimitation := s.rcaPhaseAttributionInput(record, baselineArchive)
+	if err := readCtx.Err(); err != nil {
+		return nil, nil, readErr(err)
+	}
 	// The engine's budget starts here, with the evidence in hand; the
 	// detection reads below check it, as the stages do.
 	budget := rca.DefaultBudget
@@ -1202,6 +1209,7 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 	input := rca.AnalysisInput{
 		Acceptance: archiveAcceptance(manifest),
 		Validity:   archiveValidityInput(manifest, counter.counted(), summaries, resources),
+		Phases:     phaseAttributions,
 	}
 	observations := newGraphObservationCollector()
 	if input.Detection, err = archiveDetectionInput(ctx, record, manifest, summaries, input.Validity.ArrivalModel, budgeter, budget, observations.observe); err != nil {
@@ -1266,6 +1274,9 @@ func (s *Server) assessRCAAnalysisWithExcerpts(ctx context.Context, analysis *st
 		return nil, nil, err
 	}
 	assessment := rca.Analyze(input, budgeter)
+	if phaseLimitation != nil {
+		assessment.Limitations = append(assessment.Limitations, *phaseLimitation)
+	}
 	assessment.BrowserSelection = payload.BrowserSelection
 	assessment.AnalysisID, assessment.Revision, assessment.Inputs = analysis.ID, analysis.Revision, payload.Inputs
 	return &assessment, rcaEvidenceExcerpts(&assessment, input.Detection.Series), nil

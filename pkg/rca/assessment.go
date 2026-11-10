@@ -33,7 +33,7 @@ const LimitationStageSkipped = "stage_skipped"
 
 // EngineVersionBase names the engine's generation; EngineVersion appends the
 // versions and a fingerprint of every value that shapes an assessment.
-const EngineVersionBase = "apexload.rca.engine.v8"
+const EngineVersionBase = "apexload.rca.engine.v9"
 
 // EngineVersion identifies everything that decides an assessment from frozen
 // inputs: the rules' and parameters' versions, a fingerprint of every value
@@ -48,12 +48,14 @@ func EngineVersion() string {
 		Detect     DetectParams
 		Validity   ValidityRules
 		Hypotheses []any
+		Phases     []any
 		Capacity   []any
 		Graph      []any
 		Browser    BrowserBaselineParams
 	}{
 		DefaultBudget, DefaultDetectParams, DefaultValidityRules,
 		[]any{LeadMargin, MaxGraphHops, MaxHypotheses},
+		[]any{PhaseMinInstances, PhaseMinTailInstances, PhaseMinMedianInstances, PhaseMinJoinCoverage, PhaseMinDeltaMs, PhaseMinDeltaRatio, PhaseMinGrowthMs, PhaseMinShare, PhaseDominantShare, PhaseHandshakeShiftPct, MaxPhaseAttributions},
 		[]any{KneeSlopeRatio, MinKneeLevels, LittlesFlatFraction, LittlesMinPoints, MaxCapacityResults},
 		[]any{MaxGraphBytes, MaxValidityWindows},
 		DefaultBrowserBaselineParams,
@@ -218,6 +220,10 @@ type AnalysisInput struct {
 	Coverage   []Coverage
 	Detection  DetectionInput
 	Graph      GraphInput
+	// Phases are the run's business-transaction phase attributions: its
+	// slow tail against its median and, with a qualified baseline, its
+	// mean against the baseline's.
+	Phases []PhaseAttribution
 }
 
 // Analyze builds an assessment within budget: acceptance, validity, the
@@ -275,7 +281,7 @@ func Analyze(input AnalysisInput, budgeter *Budgeter) Assessment {
 		out.Limitations = append(out.Limitations, Limitation{Code: LimitationStageSkipped, Detail: "hypotheses: the analysis budget ran out first"})
 	default:
 		var limitations []Limitation
-		out.Hypotheses, out.Outcome, limitations = Hypothesize(out.Anomalies, input.Detection.Series, out.Detection.Judged, out.Graph, out.Detection.Levels, DefaultDetectParams)
+		out.Hypotheses, out.Outcome, limitations = HypothesizeWithPhases(out.Anomalies, input.Detection.Series, out.Detection.Judged, out.Graph, out.Detection.Levels, DefaultDetectParams, input.Phases)
 		out.Limitations = append(out.Limitations, limitations...)
 		if limitation, capped := capConfidenceByValidity(out.Hypotheses, out.Validity); capped {
 			out.Limitations = append(out.Limitations, limitation)

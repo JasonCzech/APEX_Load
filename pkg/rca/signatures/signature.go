@@ -12,7 +12,7 @@ import (
 
 // Version identifies the signature set; it is part of every analysis's
 // frozen inputs.
-const Version = "signatures.v2"
+const Version = "signatures.v3"
 
 // Evidence kinds: what a series measures.
 const (
@@ -93,6 +93,9 @@ type Context struct {
 	// Observations are the other anomalies in the symptom's window.
 	Observations []Observation
 	Available    map[string]Availability
+	// Phase is where the symptom transaction's extra time went, when its
+	// time anatomy had enough samples to say; nil otherwise.
+	Phase *PhaseShift
 }
 
 // Indicator is an evidence kind and the direction that supports a
@@ -113,6 +116,9 @@ type Signature struct {
 	Symptoms      []string
 	Competing     []string
 	Falsification string
+	// Phases are the request phases whose growth in the symptom
+	// transaction's extra time corroborates the signature.
+	Phases []PhaseIndicator
 	// Extra adds signature-specific support or contradiction.
 	Extra func(Context, *Result)
 }
@@ -130,6 +136,10 @@ type Result struct {
 	Notes   []string
 	Missing []string
 	Score   float64
+	// PhaseSupported says the symptom transaction's phase shift
+	// strengthened the signature; PhaseContradicted that it weakened it.
+	PhaseSupported    bool
+	PhaseContradicted bool
 }
 
 // Weights: an observation the graph connects counts fully, one it does not
@@ -194,6 +204,7 @@ func (s Signature) Judge(ctx Context) Result {
 		}
 		r.Reasons = append(r.Reasons, indicator.Kind+" stayed within its baseline")
 	}
+	s.judgePhases(ctx.Phase, &r)
 	if s.Extra != nil {
 		s.Extra(ctx, &r)
 	}

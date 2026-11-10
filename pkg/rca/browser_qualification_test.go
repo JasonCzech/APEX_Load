@@ -85,8 +85,8 @@ func TestBrowserQualificationAlsoGuardsInRunDetection(t *testing.T) {
 }
 
 func TestBrowserTimelineOnsetQualificationAndInvalidBucketFiltering(t *testing.T) {
-	if EngineVersionBase != "apexload.rca.engine.v8" {
-		t.Fatalf("EngineVersionBase = %q, want apexload.rca.engine.v8", EngineVersionBase)
+	if EngineVersionBase != "apexload.rca.engine.v9" {
+		t.Fatalf("EngineVersionBase = %q, want apexload.rca.engine.v9", EngineVersionBase)
 	}
 	values := browserNoisy(60, 1000, 10)
 	// Inject a massive outlier into bucket 10, marked invalid in Document.Windows.

@@ -443,7 +443,7 @@ points and the mapping decisions frozen into the evidence revision.
 
 ## Root-cause hypotheses and capacity
 
-Hypotheses (`pkg/rca/hypotheses.go`, signatures `signatures.v2` in
+Hypotheses (`pkg/rca/hypotheses.go`, signatures `signatures.v3` in
 `pkg/rca/signatures/`, one file each) explain symptoms: rising latency (including LLM `ttft` and `tpot`), rising
 errors, or falling throughput, on a transaction or action series.
 
@@ -482,6 +482,31 @@ errors, or falling throughput, on a transaction or action series.
   band subtracts 1 (0.25 off the path). A signature is supported with any
   support and a positive score. A cold start scores higher when the symptom
   began at a load step.
+- **Phase attribution.** A symptom on a business transaction also reads that
+  transaction's time anatomy from the archive report: where its P95 tail's
+  extra time goes against its median, and, with a comparable baseline, where
+  its mean grew against the baseline's mean (the baseline comparison wins
+  when both apply). It counts only with enough samples: a tail attribution
+  the report could state (at least 40 instances, 3 joined above P95 and 10
+  at or below P50, 80% joined), or at least 40 decomposed instances on each
+  side of the baseline comparison with 80% join coverage; and only with a
+  material change: at least 20 ms and a fifth of the reference mean. A phase
+  grew when it carries at least 10 ms and a quarter of the change, and
+  dominates at half. Growth in one of a signature's phases adds 0.5 to a
+  signature its other evidence supports and is cited as `time_anatomy`
+  supporting evidence, with the transaction and numbers in the confidence
+  reasons: connect for `network_phase` and `pool_exhaustion` (a client pool,
+  SNAT or port exhaustion), DNS and TLS for `network_phase`, server for
+  `resource_pressure`, `garbage_collection`, `database_wait`, `cold_start`
+  and `pool_exhaustion`, and TLS for `resource_pressure` (handshake CPU) only
+  when the baseline comparison shows more full handshakes (reuse down or TLS
+  observed on more requests by 10 points or more). A change dominated by a
+  phase a signature cannot explain subtracts 0.5, is cited as contradicting
+  evidence and keeps the hypothesis from `high`. Attribution alone never
+  supports a signature: it has no onset and no graph path. A change
+  dominated by download points at bandwidth or payload size, which no
+  signature measures (`phase_transfer_unmodeled`); a run whose report could
+  not be built is noted as `phase_attribution_unavailable`.
 - **Hypotheses** carry the symptoms they explain (one cause behind several
   symptoms, or seen both over time and against the baseline, is one
   hypothesis: the same signature on the same evidence series), score, rank,
