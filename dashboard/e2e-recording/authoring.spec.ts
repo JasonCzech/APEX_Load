@@ -209,7 +209,9 @@ test('debugger steps a recorded HTTP script, diagnoses failure and repairs it',a
   await page.getByLabel('Find execution').fill('Use customer')
   await page.locator('.debug-execution-timeline').getByRole('button',{name:/Passed · Use customer/}).click()
   await expect(page.locator('.debug-selection-status')).toContainText('Inspecting action 2')
-  await page.locator('.topbar-debug-action-step').click()
+  // Step only shows inside a live session; start one paused at the first action.
+  await page.locator('.topbar-debug-action-run').click()
+  await page.getByRole('menuitem',{name:'Run in step mode',exact:true}).click()
   await expect(page.getByRole('status').filter({hasText:'Paused before: Get customer'})).toBeVisible()
   await page.locator('.topbar-debug-action-stop').click()
   await expect(page.locator('.topbar-debug-action-stop')).toHaveCount(0)
