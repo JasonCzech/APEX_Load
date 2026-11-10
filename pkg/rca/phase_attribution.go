@@ -183,3 +183,32 @@ func transferLimitation(transactions []string) (Limitation, bool) {
 	transactions = slices.Compact(slices.Sorted(slices.Values(transactions)))
 	return Limitation{Code: LimitationPhaseTransfer, Detail: fmt.Sprintf("the extra time of %s went mostly to download, which points at bandwidth or payload size; no signature measures either", strings.Join(transactions, ", "))}, true
 }
+
+// streamedTransactions are the transaction nodes with LLM streaming
+// telemetry (TTFT or TPOT series). A streamed response's tokens all arrive
+// after its first byte, so its download time is generation time, not
+// bandwidth or payload.
+func streamedTransactions(series []Series) map[string]bool {
+	streamed := map[string]bool{}
+	for _, s := range series {
+		if !strings.HasPrefix(s.ID, NodeTransaction+"/") || (s.Measures != signatures.KindTTFT && s.Measures != signatures.KindTPOT) {
+			continue
+		}
+		for _, node := range seriesNodes(s) {
+			streamed[node] = true
+		}
+	}
+	return streamed
+}
+
+// withoutDownload drops download from a streamed transaction's shift: it
+// neither strengthens nor weakens a signature, nor reads as a transfer
+// problem.
+func withoutDownload(shift *signatures.PhaseShift) *signatures.PhaseShift {
+	out := *shift
+	out.Grown = slices.DeleteFunc(slices.Clone(shift.Grown), func(g signatures.PhaseGrowth) bool { return g.Phase == signatures.PhaseDownload })
+	if out.Dominant == signatures.PhaseDownload {
+		out.Dominant = ""
+	}
+	return &out
+}

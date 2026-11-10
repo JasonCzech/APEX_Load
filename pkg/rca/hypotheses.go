@@ -216,6 +216,7 @@ func Hypothesize(anomalies []Anomaly, series []Series, judged JudgedSeries, grap
 // the signatures its other evidence judges, and is cited with them.
 func HypothesizeWithPhases(anomalies []Anomaly, series []Series, judged JudgedSeries, graph Graph, levels []LoadLevel, params DetectParams, attributions []PhaseAttribution) ([]Hypothesis, string, []Limitation) {
 	shifts, shiftRefs := phaseShifts(attributions)
+	streamed := streamedTransactions(series)
 	var transfer []string
 	byID := make(map[string]Series, len(series))
 	for _, s := range series {
@@ -239,6 +240,9 @@ func HypothesizeWithPhases(anomalies []Anomaly, series []Series, judged JudgedSe
 		}
 		var phaseRef *EvidenceRef
 		if shift, node := symptomPhaseShift(byID[symptom.Series], shifts); shift != nil {
+			if streamed[node] {
+				shift = withoutDownload(shift)
+			}
 			ctx.Phase = shift
 			ref := shiftRefs[node]
 			phaseRef = &ref

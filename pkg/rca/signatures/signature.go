@@ -204,10 +204,12 @@ func (s Signature) Judge(ctx Context) Result {
 		}
 		r.Reasons = append(r.Reasons, indicator.Kind+" stayed within its baseline")
 	}
-	s.judgePhases(ctx.Phase, &r)
 	if s.Extra != nil {
 		s.Extra(ctx, &r)
 	}
+	// Phase attribution only strengthens a signature the rest of its
+	// evidence already supports, so it is applied last.
+	s.judgePhases(ctx.Phase, &r)
 	r.Reasons, r.Notes = uniqueSorted(r.Reasons), uniqueSorted(r.Notes)
 	if len(r.Supporting) > 0 && r.Score > 0 {
 		r.Verdict = Supported

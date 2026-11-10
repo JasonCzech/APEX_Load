@@ -1,6 +1,8 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/url"
 	"slices"
 
@@ -13,26 +15,78 @@ import (
 // be built, so no symptom transaction's phase split was read.
 const limitationPhaseAttributionUnavailable = "phase_attribution_unavailable"
 
+// rcaBuildArchiveReport builds (or reads the cached) archive report the
+// phase attributions come from; tests replace it.
+var rcaBuildArchiveReport = func(s *Server, record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
+	return s.archiveReadCaches().cachedRunArchiveReport(record)
+}
+
+// rcaReportWithin builds a report within readCtx. The cached build takes no
+// context, so it runs aside and the wait stops when readCtx ends: a build
+// still running then finishes into the cache for the next reader.
+func (s *Server) rcaReportWithin(readCtx context.Context, record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
+	if err := readCtx.Err(); err != nil {
+		return nil, err
+	}
+	type built struct {
+		report *RunArchiveReport
+		err    error
+	}
+	done := make(chan built, 1)
+	go func() {
+		report, err := rcaBuildArchiveReport(s, record)
+		done <- built{report, err}
+	}()
+	select {
+	case result := <-done:
+		if result.err == nil && result.report == nil {
+			result.err = errors.New("no report")
+		}
+		return result.report, result.err
+	case <-readCtx.Done():
+		return nil, readCtx.Err()
+	}
+}
+
 // rcaPhaseAttributionInput reads the run's time anatomy (and, when the
 // baseline is comparable, the baseline's) from their archive reports and
 // returns the assessment's phase attributions. The reports are pure
-// functions of the frozen archives, so the attributions are too.
-func (s *Server) rcaPhaseAttributionInput(record *storage.RunArchiveRecord, baseline *rcaBaselineArchive) ([]rca.PhaseAttribution, *rca.Limitation) {
-	report, err := s.archiveReadCaches().cachedRunArchiveReport(record)
-	if err != nil || report == nil {
-		detail := "the run's time anatomy could not be built"
-		if err != nil {
+// functions of the frozen archives, so the attributions are too. A report
+// that cannot be built, or not within the read time, leaves its anatomy out
+// as phase_attribution_unavailable; only the caller's own cancellation
+// (ctx) is an error.
+func (s *Server) rcaPhaseAttributionInput(ctx, readCtx context.Context, record *storage.RunArchiveRecord, baseline *rcaBaselineArchive) ([]rca.PhaseAttribution, []rca.Limitation, error) {
+	unavailable := func(what string, err error) rca.Limitation {
+		detail := what + " could not be built"
+		switch {
+		case errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled):
+			detail = what + " was not built within the evidence read time"
+		case err != nil:
 			detail += ": " + err.Error()
 		}
-		return nil, &rca.Limitation{Code: limitationPhaseAttributionUnavailable, Detail: detail}
+		return rca.Limitation{Code: limitationPhaseAttributionUnavailable, Detail: detail}
 	}
+	report, err := s.rcaReportWithin(readCtx, record)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return nil, nil, ctxErr
+	}
+	if err != nil {
+		return nil, []rca.Limitation{unavailable("the run's time anatomy", err)}, nil
+	}
+	var limitations []rca.Limitation
 	var baselineAnatomy *RunArchiveTimeAnatomy
 	if baseline.comparable() && baseline.record != nil {
-		if baselineReport, err := s.archiveReadCaches().cachedRunArchiveReport(baseline.record); err == nil && baselineReport != nil {
+		baselineReport, err := s.rcaReportWithin(readCtx, baseline.record)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, nil, ctxErr
+		}
+		if err != nil {
+			limitations = append(limitations, unavailable("the baseline's time anatomy", err))
+		} else {
 			baselineAnatomy = baselineReport.TimeAnatomy
 		}
 	}
-	return rcaPhaseAttributions(report.TimeAnatomy, baselineAnatomy), nil
+	return rcaPhaseAttributions(report.TimeAnatomy, baselineAnatomy), limitations, nil
 }
 
 // rcaPhaseAttributions turns time anatomies into phase attributions: each

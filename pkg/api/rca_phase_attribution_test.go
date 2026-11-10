@@ -1,10 +1,15 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jasonczech/apexload/pkg/rca"
 	"github.com/jasonczech/apexload/pkg/rca/signatures"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func phaseAnatomyFixture(status string, decompositionInstances int64, serverMs float64, reused, created int64, tlsObservedPct float64) RunArchiveTransactionAnatomy {
@@ -71,5 +76,74 @@ func TestRCAPhaseAttributionsSkipPartialAnatomy(t *testing.T) {
 	}
 	if rcaPhaseAttributions(nil, baseline) != nil {
 		t.Fatal("no anatomy, no attributions")
+	}
+}
+
+// stubRCAReportBuild replaces the report build for one test.
+func stubRCAReportBuild(t *testing.T, build func(*storage.RunArchiveRecord) (*RunArchiveReport, error)) {
+	t.Helper()
+	saved := rcaBuildArchiveReport
+	rcaBuildArchiveReport = func(_ *Server, record *storage.RunArchiveRecord) (*RunArchiveReport, error) { return build(record) }
+	t.Cleanup(func() { rcaBuildArchiveReport = saved })
+}
+
+func TestRCAPhaseAttributionInputStopsWithTheReadTime(t *testing.T) {
+	release := make(chan struct{})
+	defer close(release)
+	stubRCAReportBuild(t, func(*storage.RunArchiveRecord) (*RunArchiveReport, error) {
+		<-release
+		return &RunArchiveReport{}, nil
+	})
+	s := &Server{}
+	record := &storage.RunArchiveRecord{TestID: "run"}
+
+	// The read time runs out mid-build: the anatomy is left out, the
+	// analysis goes on.
+	readCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	attributions, limitations, err := s.rcaPhaseAttributionInput(context.Background(), readCtx, record, nil)
+	if err != nil || attributions != nil || len(limitations) != 1 || limitations[0].Code != limitationPhaseAttributionUnavailable ||
+		!strings.Contains(limitations[0].Detail, "not built within the evidence read time") {
+		t.Fatalf("%v %+v", err, limitations)
+	}
+
+	// The caller's own cancellation stops the analysis.
+	parent, cancelParent := context.WithCancel(context.Background())
+	child, cancelChild := context.WithTimeout(parent, time.Minute)
+	defer cancelChild()
+	go func() { time.Sleep(10 * time.Millisecond); cancelParent() }()
+	if _, _, err := s.rcaPhaseAttributionInput(parent, child, record, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("parent cancel: %v", err)
+	}
+}
+
+func TestRCAPhaseAttributionInputDoesNotStartPastTheReadTime(t *testing.T) {
+	called := false
+	stubRCAReportBuild(t, func(*storage.RunArchiveRecord) (*RunArchiveReport, error) {
+		called = true
+		return &RunArchiveReport{}, nil
+	})
+	readCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, limitations, err := (&Server{}).rcaPhaseAttributionInput(context.Background(), readCtx, &storage.RunArchiveRecord{TestID: "run"}, nil)
+	if err != nil || called || len(limitations) != 1 {
+		t.Fatalf("%v %v %+v", err, called, limitations)
+	}
+}
+
+func TestRCAPhaseAttributionInputNotesAnUnbuildableBaseline(t *testing.T) {
+	current := &RunArchiveTimeAnatomy{Transactions: []RunArchiveTransactionAnatomy{phaseAnatomyFixture("ok", 480, 500, 0, 0, 0)}}
+	stubRCAReportBuild(t, func(record *storage.RunArchiveRecord) (*RunArchiveReport, error) {
+		if record.TestID == "baseline" {
+			return nil, errors.New("baseline archive unreadable")
+		}
+		return &RunArchiveReport{TimeAnatomy: current}, nil
+	})
+	baseline := &rcaBaselineArchive{testID: "baseline", record: &storage.RunArchiveRecord{TestID: "baseline"}, manifest: &RunArchiveManifest{},
+		qualification: rca.WorkloadQualification{Status: rca.BaselineQualified}}
+	attributions, limitations, err := (&Server{}).rcaPhaseAttributionInput(context.Background(), context.Background(), &storage.RunArchiveRecord{TestID: "run"}, baseline)
+	if err != nil || len(attributions) != 1 || attributions[0].Source != signatures.PhaseSourceTail || len(limitations) != 1 ||
+		limitations[0].Code != limitationPhaseAttributionUnavailable || !strings.HasPrefix(limitations[0].Detail, "the baseline's time anatomy could not be built") {
+		t.Fatalf("%v %+v %+v", err, attributions, limitations)
 	}
 }

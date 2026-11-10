@@ -103,7 +103,8 @@ func signedMs(v float64) string {
 
 // judgePhases applies a symptom transaction's phase shift to a signature's
 // result: growth in one of its phases strengthens a supported signature, a
-// tail dominated by a phase it cannot explain weakens it.
+// tail dominated by a phase it cannot explain weakens it. It runs after
+// every other score change, just before the verdict.
 func (s Signature) judgePhases(shift *PhaseShift, r *Result) {
 	if shift == nil || len(s.Phases) == 0 {
 		return
@@ -113,7 +114,10 @@ func (s Signature) judgePhases(shift *PhaseShift, r *Result) {
 			if indicator.Phase != g.Phase || indicator.NeedsHandshakes && !shift.HandshakesUp {
 				continue
 			}
-			if len(r.Supporting) == 0 {
+			// Only a result that is already supported (some support and a
+			// positive score) is strengthened: the bonus never turns a
+			// contradicted signature into a hypothesis.
+			if len(r.Supporting) == 0 || r.Score <= 0 {
 				return
 			}
 			r.Score += bonusPhase

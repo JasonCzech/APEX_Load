@@ -1,6 +1,7 @@
 package rca
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -170,5 +171,53 @@ func TestSignaturePhaseScoring(t *testing.T) {
 	lag := signatures.Observation{AnomalyID: "l", Kind: signatures.KindConsumerLag, Direction: signatures.Increase, Order: signatures.Precedes, Connected: true, PeakZ: 5}
 	if r, plain := judge(signatures.ConsumerLag, lag, &connect), judge(signatures.ConsumerLag, lag, nil); r.Score != plain.Score || r.PhaseContradicted {
 		t.Fatalf("consumer_lag %+v", r)
+	}
+}
+
+// A signature its own evidence contradicts stays contradicted: the phase
+// bonus never creates a hypothesis.
+func TestPhaseBonusNeverRescuesAContradictedSignature(t *testing.T) {
+	cpu := signatures.Observation{AnomalyID: "c", Kind: signatures.KindCPU, Direction: signatures.Increase, Order: signatures.Unordered, Connected: false, PeakZ: 3}
+	memory := signatures.Observation{AnomalyID: "m", Kind: signatures.KindMemory, Direction: signatures.Increase, Order: signatures.Follows, Connected: true, PeakZ: 3}
+	server := signatures.PhaseShift{Transaction: "checkout", Source: signatures.PhaseSourceTail, DeltaMs: 400, Dominant: signatures.PhaseServer, Grown: []signatures.PhaseGrowth{{Phase: signatures.PhaseServer, DeltaMs: 380, Share: 0.95}}}
+	judge := func(shift *signatures.PhaseShift) signatures.Result {
+		return signatures.ResourcePressure.Judge(signatures.Context{
+			Symptom:      signatures.Observation{Kind: signatures.KindLatency, Direction: signatures.Increase},
+			Observations: []signatures.Observation{cpu, memory},
+			Available:    map[string]signatures.Availability{signatures.KindCPU: {Any: true}, signatures.KindMemory: {Any: true, Connected: true}},
+			Phase:        shift,
+		})
+	}
+	plain, phased := judge(nil), judge(&server)
+	if plain.Verdict != signatures.Contradicted || plain.Score >= 0 {
+		t.Fatalf("fixture: %+v", plain)
+	}
+	if phased.Verdict != signatures.Contradicted || phased.PhaseSupported || phased.Score != plain.Score {
+		t.Fatalf("the phase bonus rescued a contradicted signature: %+v", phased)
+	}
+}
+
+// A streamed LLM transaction's download time is generation time: it is
+// neither a transfer problem nor evidence against service signatures.
+func TestStreamedTransactionDownloadIsNotTransfer(t *testing.T) {
+	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
+	download := tailAttribution(map[string]float64{"download": 380})
+	streamedSeries := append(slices.Clone(series), Series{ID: "transaction/checkout/ttft_p95_ms", Kind: SeriesLatency, Measures: signatures.KindTTFT})
+	plain, _, _ := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	hypotheses, _, limitations := HypothesizeWithPhases(anomalies, streamedSeries, allJudged(streamedSeries), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{download})
+	a, h := hypothesisFor(plain, "resource_pressure"), hypothesisFor(hypotheses, "resource_pressure")
+	if a == nil || h == nil || h.Score != a.Score || h.Confidence != a.Confidence || len(h.Contradicting) != 0 || hasLimitation(limitations, LimitationPhaseTransfer) {
+		t.Fatalf("%+v %+v", h, limitations)
+	}
+	// The same download tail without LLM telemetry is still a transfer
+	// problem.
+	if _, _, limitations := HypothesizeWithPhases(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{download}); !hasLimitation(limitations, LimitationPhaseTransfer) {
+		t.Fatalf("%+v", limitations)
+	}
+	// Server growth in a streamed transaction still counts.
+	server := tailAttribution(map[string]float64{"server": 200, "download": 180})
+	hypotheses, _, _ = HypothesizeWithPhases(anomalies, streamedSeries, allJudged(streamedSeries), graph, oneLevel(200), DefaultDetectParams, []PhaseAttribution{server})
+	if h := hypothesisFor(hypotheses, "resource_pressure"); h == nil || h.Score <= a.Score {
+		t.Fatalf("%+v", h)
 	}
 }

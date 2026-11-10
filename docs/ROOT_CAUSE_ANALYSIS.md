@@ -493,7 +493,9 @@ errors, or falling throughput, on a transaction or action series.
   material change: at least 20 ms and a fifth of the reference mean. A phase
   grew when it carries at least 10 ms and a quarter of the change, and
   dominates at half. Growth in one of a signature's phases adds 0.5 to a
-  signature its other evidence supports and is cited as `time_anatomy`
+  signature its other evidence already supports (some support and a
+  positive score after every other weight), so it never turns a
+  contradicted signature into a hypothesis, and is cited as `time_anatomy`
   supporting evidence, with the transaction and numbers in the confidence
   reasons: connect for `network_phase` and `pool_exhaustion` (a client pool,
   SNAT or port exhaustion), DNS and TLS for `network_phase`, server for
@@ -505,8 +507,13 @@ errors, or falling throughput, on a transaction or action series.
   evidence and keeps the hypothesis from `high`. Attribution alone never
   supports a signature: it has no onset and no graph path. A change
   dominated by download points at bandwidth or payload size, which no
-  signature measures (`phase_transfer_unmodeled`); a run whose report could
-  not be built is noted as `phase_attribution_unavailable`.
+  signature measures (`phase_transfer_unmodeled`), except on a transaction
+  with LLM streaming telemetry (TTFT or TPOT series), whose tokens all
+  arrive after the first byte: there download growth is neither a transfer
+  problem nor evidence for or against any signature. A run or comparable
+  baseline whose report could not be built, or not within the evidence read
+  time, is noted as `phase_attribution_unavailable` and the analysis goes
+  on; only the caller's own cancellation stops it.
 - **Hypotheses** carry the symptoms they explain (one cause behind several
   symptoms, or seen both over time and against the baseline, is one
   hypothesis: the same signature on the same evidence series), score, rank,
