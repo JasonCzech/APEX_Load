@@ -523,6 +523,21 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(summary.getByRole('heading', { name: 'Debug summary' })).toBeFocused()
   await expect(summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Export session', exact: true })).toBeVisible()
   await expect(summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
+  const expectFactsOnOneLine = async () => {
+    const layout = await summary.locator('.debug-summary-facts').evaluate(list => {
+      const listRect = list.getBoundingClientRect()
+      const items = Array.from(list.querySelectorAll(':scope > div')).map(node => {
+        const rect = node.getBoundingClientRect()
+        return { top: Math.round(rect.top), height: Math.round(rect.height), right: Math.round(rect.right) }
+      })
+      return { listRight: Math.round(listRect.right), items }
+    })
+    expect(layout.items).toHaveLength(8)
+    expect(new Set(layout.items.map(box => box.top)).size).toBe(1)
+    expect(new Set(layout.items.map(box => box.height)).size).toBe(1)
+    expect(Math.max(...layout.items.map(box => box.right))).toBeLessThanOrEqual(layout.listRight + 1)
+  }
+  await expectFactsOnOneLine()
   const summaryTabs = summary.getByRole('tablist', { name: 'Debug summary sections', exact: true })
   await expect(summaryTabs.getByRole('tab', { name: 'Transactions', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(summary.getByRole('region', { name: 'Execution waterfall', exact: true })).toBeVisible()
@@ -566,13 +581,20 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await page.screenshot({ path: testInfo.outputPath('debug-summary-desktop.png') })
   await page.setViewportSize({ width: 900, height: 850 })
   await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
+  await expectFactsOnOneLine()
+  await page.setViewportSize({ width: 768, height: 850 })
+  const mobileTops = await summary.locator('.debug-summary-facts > div').evaluateAll(nodes =>
+    nodes.map(node => Math.round(node.getBoundingClientRect().top)),
+  )
+  expect(new Set(mobileTops).size).toBeGreaterThan(1)
+  await page.setViewportSize({ width: 900, height: 850 })
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run in step mode', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Get customer' })).toBeVisible()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await expect(summary).toBeVisible()
   await expect(summary.getByRole('status').filter({ hasText: 'Stopped' })).toBeVisible()
-  await expect(summary).toContainText('No network traffic was retained')
+  await expect(summary.getByRole('heading', { name: 'Network evidence', exact: true })).toHaveCount(0)
   await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toHaveCount(0)
 })
 
@@ -653,11 +675,14 @@ for (const protocol of ['http', 'browser'] as const) test(`${protocol} HAR captu
     expect(raw).not.toContain('private-password'); expect(raw).not.toContain('private-token')
     return JSON.parse(raw)
   }
+  const sessionIdValue = summary.locator('.debug-summary-facts div').filter({ hasText: 'Session ID' }).locator('dd')
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expect(summary).toBeVisible({ timeout: 60_000 })
   await expect(summary.getByRole('status').filter({ hasText: 'Passed' })).toBeVisible()
-  await expect(summary).toContainText('256 KiB per body')
+  await expect(summary.getByRole('heading', { name: 'Network evidence', exact: true })).toHaveCount(0)
+  const firstSessionId = (await sessionIdValue.textContent())?.trim()
+  expect(firstSessionId).toBeTruthy()
   const rich = await downloadHAR()
   expect(rich.log.entries.some((e: { request: { url: string } }) => e.request.url.endsWith('/har-start'))).toBe(true)
   const last = rich.log.entries.find((e: { request: { url: string } }) => e.request.url.endsWith('/har-end'))
@@ -669,11 +694,11 @@ for (const protocol of ['http', 'browser'] as const) test(`${protocol} HAR captu
   await options.getByRole('checkbox', { name: 'Retain intermediate redirects', exact: true }).uncheck()
   await options.getByRole('checkbox', { name: 'Retain detailed timings', exact: true }).uncheck()
   await options.getByRole('button', { name: 'Done', exact: true }).click()
-  await expect(summary).toContainText('Bodies: request and response')
+  await expect(sessionIdValue).toHaveText(firstSessionId!)
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expect(summary).toBeVisible({ timeout: 60_000 })
-  await expect(summary).toContainText('Bodies: none')
+  await expect(sessionIdValue).not.toHaveText(firstSessionId!)
   const limited = await downloadHAR()
   expect(limited.log.entries.some((e: { request: { url: string } }) => e.request.url.endsWith('/har-start'))).toBe(false)
   for (const entry of limited.log.entries) { expect(entry.request.postData).toBeUndefined(); expect(entry.response.content.text).toBeUndefined(); expect(entry.timings.dns).toBe(-1); expect(entry.timings.connect).toBe(-1) }

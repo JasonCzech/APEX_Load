@@ -95,6 +95,15 @@ describe('debug summary page', () => {
       expect(container.textContent).toContain('Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.')
       expect(container.textContent).not.toContain('Debug again')
 
+      // Verify all eight summary facts from Script to Failed actions render in order with hover titles
+      const factTerms = [...container.querySelectorAll('.debug-summary-facts > div > dt')].map(node => node.textContent)
+      expect(factTerms).toEqual(['Script', 'Group', 'Session ID', 'Source', 'Started', 'Elapsed time', 'Passed actions', 'Failed actions'])
+      const factValues = [...container.querySelectorAll<HTMLElement>('.debug-summary-facts > div > dd')]
+      expect(factValues[0]?.getAttribute('title')).toBe('Store')
+      expect(factValues[1]?.getAttribute('title')).toBe('Checkout')
+      expect(factValues[2]?.getAttribute('title')).toBe('run-1')
+      expect(factValues[3]?.getAttribute('title')).toBe('Unsaved draft')
+
       // Verify Download HAR is placed in .debug-summary-actions right beside Export session
       const headerActionButtons = [...container.querySelectorAll('.debug-summary-heading .debug-summary-actions button')].map(node => node.textContent)
       expect(headerActionButtons).toEqual(['Export session', 'Download HAR'])
@@ -139,10 +148,14 @@ describe('debug summary page', () => {
       await act(async () => button('Download HAR').click())
       expect(onDownloadHAR).toHaveBeenCalledTimes(1)
       expect(container.querySelector('[role="alert"]')?.textContent).toBe('Session expired.')
+      expect(container.querySelector('[aria-label="HAR download"]')).toBeNull()
+      expect(container.textContent).not.toContain('Network evidence')
       snapshot.session.har.available = false; snapshot.session.har.reason = 'No network traffic was retained for this run.'
       render()
       expect(button('Download HAR')).toBeUndefined()
-      expect(container.textContent).toContain('No network traffic was retained')
+      expect(container.querySelector('[aria-label="HAR download"]')).toBeNull()
+      expect(container.textContent).not.toContain('Network evidence')
+      expect(container.textContent).not.toContain('No network traffic was retained')
       render(true)
       expect(container.textContent).not.toContain('Expected 200, got 500')
       expect(button('Inspect Checkout')).toBeUndefined()
@@ -168,7 +181,28 @@ describe('debug summary page', () => {
       const nextRows = executionRows()
       expect(nextRows[0]?.getAttribute('aria-selected')).toBe('false')
       expect(nextRows[1]?.getAttribute('aria-selected')).toBe('true')
+
+      // Empty script/group names fall back to '—' so fact rows never collapse
+      const blankRun: DebugCompletionSnapshot = { ...nextRun, key: 'run-3', scriptName: '', report: { ...nextRun.report!, group: '' }, session: { ...nextRun.session, id: '', group: '' } }
+      act(() => root.render(<Summary snapshot={blankRun} stale={false} unavailable={false} onExportSession={onExportSession} onSelectEvent={onSelectEvent} onDownloadHAR={onDownloadHAR} />))
+      const blankValues = [...container.querySelectorAll<HTMLElement>('.debug-summary-facts > div > dd')].slice(0, 3).map(node => node.textContent)
+      expect(blankValues).toEqual(['—', '—', '—'])
     } finally { act(() => root.unmount()); container.remove() }
+  })
+
+  it('keeps the summary facts on one non-wrapping row outside mobile and omits the retired HAR meta section', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    // @ts-expect-error node:url is available in the Vitest runtime.
+    const { fileURLToPath, URL: NodeURL } = await import('node:url')
+    const css = readFileSync(fileURLToPath(new NodeURL('./DebugCompletionSummary.css', import.meta.url)), 'utf8') as string
+    const mobileIdx = css.indexOf('@media (max-width: 768px)')
+    expect(mobileIdx).toBeGreaterThan(0)
+    const desktopCss = css.slice(0, mobileIdx)
+    const mobileCss = css.slice(mobileIdx)
+    expect(desktopCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*nowrap/)
+    expect(mobileCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*grid/)
+    expect(css).not.toContain('.debug-summary-har-meta')
   })
 
   it('shows the recording comparison as the Recording diff sub-tab and opens it on request', async () => {

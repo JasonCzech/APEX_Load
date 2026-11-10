@@ -252,6 +252,12 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
 
   const hidden = unavailable || model.unavailable
   const har = snapshot.session.har
+  const scriptLabel = snapshot.scriptName || '—'
+  const groupLabel = snapshot.report?.group || snapshot.session.group || '—'
+  const sessionIdLabel = snapshot.session.id || '—'
+  const sourceLabel = `${snapshot.draft ? 'Unsaved draft' : 'Saved script'}${snapshot.report?.script_revision ? ` · ${snapshot.report.script_revision}` : ''}`
+  const startedLabel = model.startedAt ? formatDisplayDateTime(model.startedAt) : 'Unavailable'
+  const elapsedLabel = model.elapsedMs == null ? 'Unavailable' : `${(model.elapsedMs / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} s`
   return <section className="debug-completion-summary" aria-label="Debug run summary" ref={summaryRef}>
     <header className="debug-summary-heading">
       <div><h2 ref={heading} tabIndex={-1}>Debug summary</h2><p role="status">{model.outcome}{model.incomplete || hidden ? ' · Incomplete evidence' : ''}</p></div>
@@ -281,12 +287,12 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
     {hidden && recordingDiff && <DebugSummaryRecordingDiff consumeFocusRequest={consumeRecordingDiffFocus}>{recordingDiff}</DebugSummaryRecordingDiff>}
     {!hidden && <>
       <dl className="debug-summary-facts">
-        <div><dt>Script</dt><dd>{snapshot.scriptName}</dd></div>
-        <div><dt>Group</dt><dd>{snapshot.report?.group || snapshot.session.group}</dd></div>
-        <div><dt>Session ID</dt><dd>{snapshot.session.id}</dd></div>
-        <div><dt>Source</dt><dd>{snapshot.draft ? 'Unsaved draft' : 'Saved script'}{snapshot.report?.script_revision ? ` · ${snapshot.report.script_revision}` : ''}</dd></div>
-        <div><dt>Started</dt><dd>{model.startedAt ? formatDisplayDateTime(model.startedAt) : 'Unavailable'}</dd></div>
-        <div><dt>Elapsed time</dt><dd>{model.elapsedMs == null ? 'Unavailable' : `${(model.elapsedMs / 1000).toLocaleString(undefined, { maximumFractionDigits: 2 })} s`}</dd></div>
+        <div><dt>Script</dt><dd title={scriptLabel}>{scriptLabel}</dd></div>
+        <div><dt>Group</dt><dd title={groupLabel}>{groupLabel}</dd></div>
+        <div><dt>Session ID</dt><dd title={sessionIdLabel}>{sessionIdLabel}</dd></div>
+        <div><dt>Source</dt><dd title={sourceLabel}>{sourceLabel}</dd></div>
+        <div><dt>Started</dt><dd title={startedLabel}>{startedLabel}</dd></div>
+        <div><dt>Elapsed time</dt><dd title={elapsedLabel}>{elapsedLabel}</dd></div>
         <div><dt>Passed actions</dt><dd>{model.passed}</dd></div><div><dt>Failed actions</dt><dd>{model.failed}</dd></div>
       </dl>
       {model.followingFailures && (
@@ -387,14 +393,6 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           </section>
         ) : (
           <p>{snapshot.transactions ? 'No executions were retained for this run.' : 'Transaction definitions were not retained for this run. Start a new run from the Debug menu to capture the transaction breakdown.'}</p>
-        )}
-        {har?.eligible && (
-          <section aria-label="HAR download" className="debug-summary-har-meta">
-            <h3>Network evidence</h3>
-            <p>{har.limitations}</p>
-            {har.options && <p>Bodies: {({ none: 'none', request: 'request only', response: 'response only', both: 'request and response' })[har.options.bodies]} · Intermediate redirects: {har.options.redirects ? 'on' : 'off'} · Detailed timings: {har.options.timings ? 'on' : 'off'}{har.options.bodies !== 'none' ? ` · ${har.options.max_body_bytes / 1024} KiB per body · ${har.options.max_total_body_bytes / 1048576} MiB per run` : ''}</p>}
-            {har.available ? <p>{har.retained_request_count.toLocaleString()} retained requests</p> : <p>{har.reason || 'No network traffic was retained for this run.'}</p>}
-          </section>
         )}
       </div>
       <div
