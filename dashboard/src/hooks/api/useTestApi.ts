@@ -45,7 +45,7 @@ import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
 import type { ScheduleClockChange } from '../../types/executionPlans'
 import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
-import type { ExemplarPage, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
+import type { ExemplarPage, LiveTraceLinksRequest, LiveTraceLinksResponse, RcaAnalysisResponse, RcaCritique, RcaWindowLinks } from '../../types/rca'
 import type { ArchiveTransactionWaterfall, ArchiveTransactionWaterfallParams } from '../../types/timeAnatomy'
 import type {
   RunCalendarResponse,
@@ -748,6 +748,13 @@ export function useTestApi() {
     [],
   )
 
+  // APM links for live exemplar trace ids; needs no archive.
+  const getLiveTraceLinks = useCallback(
+    (id: string, body: LiveTraceLinksRequest, options?: ApiCallOptions) =>
+      request<LiveTraceLinksResponse>(`/tests/${encodeURIComponent(id)}/live/trace-links`, withCallOptions({ method: 'POST', body: JSON.stringify(body) }, options)),
+    [],
+  )
+
   // One archived transaction (or request) rebuilt with its child requests.
   // The ordinal hints from a time-anatomy representative let the controller
   // skip straight to the row; it falls back to a scan when they are stale.
@@ -971,6 +978,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getLiveTraceLinks,
       getTestArchiveTransactionWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,
@@ -1075,6 +1083,7 @@ export function useTestApi() {
       getRootCauseAnalysis,
       requestRootCauseAnalysis,
       getTestArchiveExemplars,
+      getLiveTraceLinks,
       getTestArchiveTransactionWaterfall,
       getRootCauseCritiques,
       getRootCauseWindowLinks,

@@ -31,6 +31,8 @@ export interface WaterfallNode<T = unknown> {
   startMs: number | null
   durationMs: number | null
   status: WaterfallStatus
+  /** Status column text in place of the status's default word (e.g. an error share for an aggregate row). */
+  statusLabel?: string
   /** Phase spans for leaves; parents draw their children instead. */
   phases: WaterfallPhaseSpan[]
   timingSource?: WaterfallTimingSource

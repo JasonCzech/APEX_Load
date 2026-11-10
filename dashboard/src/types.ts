@@ -3354,6 +3354,10 @@ export interface TxMetrics {
   correlation_count?: number
   count: number
   errors: number
+  bytes_sent?: number
+  bytes_received?: number
+  byte_evidence?: string
+  byte_samples?: number
   avg_ms: number
   p50_ms: number
   p90_ms: number
@@ -3361,10 +3365,24 @@ export interface TxMetrics {
   p99_ms: number
   /** Set when a distributed window fell back from the merged duration sketch: 'approximate_tdigest' or 'averaged'. */
   percentile_quality?: string
+  /** This window's requests that sent trace context (at most one per reason); absent when none did. */
+  exemplars?: TraceExemplar[]
   /** The groups whose VUsers ran it in the window, sorted; absent when the source does not attribute transactions. */
   groups?: string[]
   /** Each group's share, when more than one group ran it. */
   by_group?: Record<string, TransactionGroupShare>
+}
+
+/** Go engine.TraceExemplar: one request whose trace context reached the server. */
+export interface TraceExemplar {
+  trace_id: string
+  span_id?: string
+  duration_ms: number
+  success: boolean
+  status_code?: number
+  /** 'slowest_success', 'first_error' or 'sample'. */
+  reason: string
+  timestamp: string
 }
 
 /** One group's part of a transaction more than one group ran in the window. */

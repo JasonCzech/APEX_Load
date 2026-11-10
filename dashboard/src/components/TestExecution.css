@@ -1578,6 +1578,16 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
+/*
+ * The live waterfall spans the chart grid in every density. The rule lives
+ * here, in the route's static stylesheet, so the lazy panel's loading and
+ * error cards span it too before (or without) its own chunk: in one grid cell
+ * the waterfall's `wf` container query folds the Status column away.
+ */
+.chart-card.live-waterfall-card {
+  grid-column: 1 / -1;
+}
+
 .chart-card.expanded {
   grid-column: 1 / -1;
   border-color: var(--accent);

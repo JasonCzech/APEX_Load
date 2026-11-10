@@ -98,6 +98,9 @@ var runArchiveAPIRouteCatalog = preserveRawAccessRequirementsForMethod(apiRouteC
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/links", "handleGetRCAWindowLinks", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCAWindowLinks)
 		}),
+		newAuthenticatedAPIRoute(http.MethodPost, "/api/v1/tests/{id}/live/trace-links", "handleLiveTraceLinks", withServiceAccountScope(viewerProjectAccessWithBodyLimit(resolveTestProjectID, liveTraceLinksMaxBodyBytes), "results:read"), func(s *Server) http.Handler {
+			return http.HandlerFunc(s.handleLiveTraceLinks)
+		}),
 		newAuthenticatedAPIRoute(http.MethodGet, "/api/v1/tests/{id}/archive/root-cause/analyses/{analysis_id}/bundle", "handleGetRCABundle", viewerProjectAccess(resolveTestProjectID), func(s *Server) http.Handler {
 			return http.HandlerFunc(s.handleGetRCABundle)
 		}),

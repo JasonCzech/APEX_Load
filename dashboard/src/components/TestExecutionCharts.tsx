@@ -28,6 +28,7 @@ import { downloadTextFile } from '../utils/fileUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+import { exemplarBucketRange, exemplarSelectionForSeries, liveExemplarsReceived, liveExemplarsRetained, type ExemplarTimeRange, type LiveWindowRetention } from './liveWindowRetention'
 import StatTile from './StatTile'
 import LazyLoadBoundary from './LazyLoadBoundary'
 import PrometheusPanelCard from './PrometheusPanelCard'
@@ -65,6 +66,7 @@ import {
   isLoadImpactChart,
   isLoadImpactGroupSeriesKey,
   isLoadImpactHeatmapChart,
+  isLiveWaterfallChart,
   isLoadImpactPercentilesChart,
   isImportedDashboardChart,
   isOverlayMetricAvailable,
@@ -127,8 +129,9 @@ import {
   routeLatencySeriesLabel,
   routeLatencyTargetLabelFromKey,
 } from './latencySeries'
-import { transactionChartSeriesNames } from './transactionChartSeries'
+import { transactionChartSeriesName, transactionChartSeriesNames } from './transactionChartSeries'
 import {
+  isExecutionChartClick,
   executionChartMaxMinuteRange,
   executionChartMinMinuteRange,
   executionChartMinuteRangeValue,
@@ -146,6 +149,11 @@ import {
 
 // Only a run that sends LLM requests shows its live LLM signals.
 const LiveLLMChartSignals = lazy(() => import('./LiveLLMSignals').then(module => ({ default: module.LiveLLMChartSignals })))
+// The live waterfall (and its shared Waterfall + virtualizer) and the exemplar
+// drawer load on first use, so they stay off the execution route's static
+// bundle (the 'test-execution' route budget in scripts/check-bundle-budget.mjs).
+const LiveWaterfallPanel = lazy(() => import('./LiveWaterfallPanel'))
+const LiveExemplarDrawer = lazy(() => import('./LiveExemplarDrawer'))
 
 interface Props {
   filteredData: MetricsHistoryPoint[]
@@ -193,6 +201,10 @@ interface Props {
   underLoadDisplayMode?: UnderLoadDisplayMode
   externalControlsTarget?: HTMLElement | null
   terminalStatus?: string
+  /** The run has ended (completed, failed or aborted): no further live window will arrive. */
+  runFinished?: boolean
+  /** Per-window exemplars and the first stable minute, kept by the metrics stream. */
+  liveRetention?: LiveWindowRetention
 }
 
 type ChartDropPosition = 'before' | 'after'
@@ -235,7 +247,7 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'imported', label: 'Dashboards' },
 ]
 
-const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
+const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'tx_live_waterfall', 'generator_impact', 'network_latency'])
 const llmChartIds = new Set(['llm_ttft', 'llm_tpot', 'llm_tokens'])
 const noTransactionNames: string[] = []
 // The graphs whose rows are the run total, its groups and its transactions.
@@ -571,11 +583,16 @@ export default function TestExecutionCharts({
   underLoadDisplayMode,
   externalControlsTarget = null,
   terminalStatus,
+  runFinished = false,
+  liveRetention,
 }: Props) {
   // Some callers provide already-built archive or scoped histories instead of
   // going through buildExecutionChartData. Normalize at the rendering boundary
   // as well so zero/NaN response-time sentinels cannot leak into any timeline,
   // percentile, group, transaction, or Under Load graph.
+  // A failed or aborted run's terminal status also means no further live
+  // window, for a surface that names the status but not runFinished.
+  const liveRunFinished = runFinished || terminalStatus === 'FAILED' || terminalStatus === 'ABORTED' || terminalStatus === 'COMPLETE'
   const filteredData = useMemo(
     () => carryForwardPositiveResponseTimes(sourceFilteredData),
     [sourceFilteredData],
@@ -649,7 +666,9 @@ export default function TestExecutionCharts({
   const [graphPage, setGraphPage] = useState({ scope: '', index: 0 })
   const [keyboardReorderedChartId, setKeyboardReorderedChartId] = useState<string | null>(null)
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
-  const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  // hoveredMs: the plot time under a right-click that opened the menu (the
+  // Actions button and the keyboard open it with none).
+  const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number; hoveredMs?: number } | null>(null)
   const [chartActionError, setChartActionError] = useState('')
   const [axisLabelPopover, setAxisLabelPopover] = useState<AxisLabelPopover>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
@@ -666,6 +685,16 @@ export default function TestExecutionCharts({
   const axisLabelPopoverRef = useRef<HTMLDivElement | null>(null)
   const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
   const pendingMouseMoveRef = useRef<{ zoomAnchor?: ExecutionChartZoomAnchor; cursor: GraphCursorState | null } | null>(null)
+  // L3: a press on a response-time chart, so a release without movement opens its exemplars.
+  const exemplarPressRef = useRef<{ chartId: string; x: number; y: number; timestampMs: number; anchor?: ExecutionChartZoomAnchor } | null>(null)
+  // The time under the pointer on each chart while it is hovered, so a
+  // right-click menu's "Show Trace Exemplars" opens there. Cleared when the
+  // pointer leaves the chart and when the run changes.
+  const lastHoverTimestampRef = useRef<Record<string, number>>({})
+  useEffect(() => {
+    lastHoverTimestampRef.current = {}
+  }, [runId])
+  const [exemplarDrawer, setExemplarDrawer] = useState<{ atMs: number; range?: ExemplarTimeRange; transactionNames: string[]; groups: string[]; returnFocusSelector?: string } | null>(null)
   const mouseMoveFrameRef = useRef<number | null>(null)
   const onChartMouseMoveRef = useRef(onChartMouseMove)
   // Per-chart memo cache for the expensive derived series (downsample + std-dev band + smoothing).
@@ -1197,7 +1226,7 @@ export default function TestExecutionCharts({
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
   const chartDataFor = (chart: ChartConfig) => {
-    if (isStatTileChart(chart)) {
+    if (isStatTileChart(chart) || isLiveWaterfallChart(chart)) {
       return []
     }
     if (isLoadImpactHeatmapChart(chart)) {
@@ -1252,9 +1281,46 @@ export default function TestExecutionCharts({
     mouseMoveFrameRef.current = window.requestAnimationFrame(flushPendingMouseMove)
   }
 
-  const handleChartMouseUp = () => {
+  // The response-time graphs (average and each percentile) open live
+  // exemplars, but only once this page has received live windows: a run that
+  // ended before the page loaded has none, and the menu item would only say so.
+  const isResponseTimeChart = (chart: ChartConfig) => chart.id === 'latency' || isResponsePercentileChart(chart)
+  const isExemplarChart = (chart: ChartConfig) => liveExemplarsReceived(liveRetention) && isResponseTimeChart(chart)
+  // A plain click opens the drawer only when there is something to show.
+  const isExemplarClickChart = (chart: ChartConfig) => liveExemplarsRetained(liveRetention) && isResponseTimeChart(chart)
+  // `pointMs` is a chart point's time: the response-time charts draw
+  // granularResponseTimeData, whose bucketed points keep only their first
+  // window's timestamp, so the drawer looks across the whole bucket.
+  const openExemplarDrawer = (chart: ChartConfig, atMs: number, options: { pointMs?: boolean; returnFocusSelector?: string } = {}) => {
+    const metric = isResponsePercentileChart(chart) ? chart.percentileKey : 'avgMs'
+    const selection = exemplarSelectionForSeries(visibleMetricKeysForChart(chart), {
+      totalKey: chart.totalKey ?? metric,
+      metric,
+      groupNames,
+      transactionName: transactionChartSeriesName,
+    })
+    const range = options.pointMs ? exemplarBucketRange(atMs, granularityBucketSeconds) : undefined
+    setExemplarDrawer({ atMs, ...(range ? { range } : {}), ...selection, returnFocusSelector: options.returnFocusSelector })
+  }
+  const handleChartMouseUp = (exemplarChartId?: string, domEvent?: { clientX: number; clientY: number }) => {
+    const press = exemplarPressRef.current
+    exemplarPressRef.current = null
     if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
       window.cancelAnimationFrame(mouseMoveFrameRef.current)
+    }
+    if (press && exemplarChartId === press.chartId && domEvent && isExecutionChartClick(press, { x: domEvent.clientX, y: domEvent.clientY })) {
+      const chart = displayedCharts.find(candidate => candidate.id === press.chartId)
+      if (chart) {
+        openExemplarDrawer(chart, press.timestampMs, { pointMs: true })
+        // A click is not a drag: a few pixels of wobble may have crossed a data
+        // point, so pull the selection back onto its start (applySelection then
+        // drops it) instead of zooming to a one- or two-point range.
+        mouseMoveFrameRef.current = null
+        pendingMouseMoveRef.current = null
+        if (press.anchor) onChartMouseMoveRef.current(press.anchor)
+        onZoom()
+        return
+      }
     }
     // React queues both reducer dispatches from this event in order, so the
     // latest throttled drag anchor becomes part of the same zoom snapshot
@@ -1386,6 +1452,7 @@ export default function TestExecutionCharts({
     const zoomAnchor = activeLabel !== undefined && typeof timestampMs === 'number'
       ? { label: activeLabel, timestampMs }
       : undefined
+    if (typeof timestampMs === 'number') lastHoverTimestampRef.current[chartId] = timestampMs
     let nextCursor: GraphCursorState | null = null
     if (surface === 'command-center') {
       // Recharts 3 exposes the hovered index but no activePayload on this chart
@@ -1401,6 +1468,7 @@ export default function TestExecutionCharts({
   const handleChartMouseDown = (
     event: MouseHandlerDataParam | undefined,
     data: ReadonlyArray<{ timestampMs?: number }>,
+    exemplarPress?: { chartId: string; domEvent?: { clientX: number; clientY: number; button?: number } },
   ) => {
     const activeIndex = typeof event?.activeTooltipIndex === 'number'
       ? event.activeTooltipIndex
@@ -1410,6 +1478,16 @@ export default function TestExecutionCharts({
     const timestampMs = Number.isInteger(activeIndex) && activeIndex >= 0
       ? data[activeIndex]?.timestampMs
       : undefined
+    const pressEvent = exemplarPress?.domEvent
+    exemplarPressRef.current = exemplarPress && pressEvent && (pressEvent.button ?? 0) === 0 && typeof timestampMs === 'number'
+      ? {
+        chartId: exemplarPress.chartId,
+        x: pressEvent.clientX,
+        y: pressEvent.clientY,
+        timestampMs,
+        anchor: event?.activeLabel !== undefined ? { label: event.activeLabel, timestampMs } : undefined,
+      }
+      : null
     onChartMouseDown(event?.activeLabel !== undefined && typeof timestampMs === 'number'
       ? { label: event.activeLabel, timestampMs }
       : undefined)
@@ -1417,6 +1495,7 @@ export default function TestExecutionCharts({
 
   const handleChartMouseLeave = (chartId: string) => {
     setHoveredChartId(current => current === chartId ? null : current)
+    delete lastHoverTimestampRef.current[chartId]
     pendingMouseMoveRef.current = null
     if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
       window.cancelAnimationFrame(mouseMoveFrameRef.current)
@@ -1630,10 +1709,16 @@ export default function TestExecutionCharts({
     const menuHeight = 340
     const viewportWidth = window.innerWidth || 1024
     const viewportHeight = window.innerHeight || 768
+    // A right-click on a hovered chart names the time under the pointer (the
+    // hover is cleared when the pointer leaves the card); the Actions button
+    // and the keyboard open the menu with none, so the drawer opens at the
+    // newest retained window.
+    const hoveredMs = lastHoverTimestampRef.current[chartId]
     setChartMenu({
       chartId,
       x: Math.max(12, Math.min(event.clientX, viewportWidth - menuWidth - 12)),
       y: Math.max(12, Math.min(event.clientY, viewportHeight - menuHeight - 12)),
+      ...(hoveredMs !== undefined ? { hoveredMs } : {}),
     })
   }
 
@@ -2942,6 +3027,47 @@ export default function TestExecutionCharts({
                 />
               )
             }
+            if (isLiveWaterfallChart(chart)) {
+              const liveWaterfallClassName = `${commandCenterSurface ? 'command-center-chart-card' : ''} ${expandedChart === chart.id ? 'expanded' : ''}`
+              const liveWaterfallCardRef = (element: HTMLElement | null) => {
+                chartCardRefs.current[chart.id] = element
+              }
+              return (
+                <LazyLoadBoundary key={chart.id} className="chart-card lazy-load-error live-waterfall-card" title="The live waterfall could not be loaded.">
+                <Suspense fallback={(
+                  <section ref={liveWaterfallCardRef} className={`chart-card live-waterfall-card ${liveWaterfallClassName}`} data-chart-id={chart.id} aria-label={chart.title} aria-busy="true">
+                    <div className="chart-card-header"><div className="chart-title-wrap"><h3 className="chart-title">{chart.title}</h3></div></div>
+                    <p className="live-waterfall-copy">Loading the live waterfall…</p>
+                  </section>
+                )}>
+                <LiveWaterfallPanel
+                  cardRef={liveWaterfallCardRef}
+                  dataChartId={chart.id}
+                  title={chart.title}
+                  latestMetrics={latestMetrics}
+                  stableMinute={liveRetention?.stable}
+                  runFinished={liveRunFinished}
+                  className={liveWaterfallClassName}
+                  onContextMenu={event => openChartMenu(event, chart.id)}
+                  onMouseEnter={() => setHoveredChartId(chart.id)}
+                  onMouseLeave={() => handleChartMouseLeave(chart.id)}
+                  headerActions={(
+                    <button
+                      className="btn btn-sm btn-ghost chart-actions-button"
+                      type="button"
+                      aria-label={`${chart.title} actions`}
+                      aria-haspopup="menu"
+                      aria-expanded={chartMenu?.chartId === chart.id}
+                      onClick={event => openChartMenuFromButton(event, chart.id)}
+                    >
+                      Actions
+                    </button>
+                  )}
+                />
+                </Suspense>
+                </LazyLoadBoundary>
+              )
+            }
             const chartData = chartDataFor(chart)
             const chartHeight = expandedChart === chart.id
               ? commandCenterSurface ? 360 : 400
@@ -3206,7 +3332,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={() => handleChartMouseUp()}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3337,9 +3463,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
+                onMouseDown={(event, domEvent) => handleChartMouseDown(event, displayChartData, isExemplarClickChart(chart) ? { chartId: chart.id, domEvent } : undefined)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={(_event, domEvent) => handleChartMouseUp(chart.id, domEvent)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3384,9 +3510,9 @@ export default function TestExecutionCharts({
                 data={displayChartData}
                 syncId="metrics"
                 margin={chartMargin}
-                onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
+                onMouseDown={(event, domEvent) => handleChartMouseDown(event, displayChartData, isExemplarClickChart(chart) ? { chartId: chart.id, domEvent } : undefined)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={(_event, domEvent) => handleChartMouseUp(chart.id, domEvent)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3452,7 +3578,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={() => handleChartMouseUp()}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3478,7 +3604,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={() => handleChartMouseUp()}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3517,7 +3643,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={() => handleChartMouseUp()}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3558,7 +3684,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event) => handleChartMouseDown(event, displayChartData)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={handleChartMouseUp}
+                onMouseUp={() => handleChartMouseUp()}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3647,7 +3773,9 @@ export default function TestExecutionCharts({
           }}
         >
           <div className="chart-context-menu-title">{displayTitleForChart(contextChart)}</div>
-          <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => void runChartAction(onResetZoom)}>Reset Zoom</button>
+          {/* The live waterfall has its own zoom (toolbar and overview) and is always
+              full width: the shared time-axis Reset Zoom and Expand Graph would not act on it. */}
+          {!isLiveWaterfallChart(contextChart) && <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => void runChartAction(onResetZoom)}>Reset Zoom</button>}
           {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
             .filter(key => isOverlayMetricAvailable(contextChart, key))
             .map(key => (
@@ -3660,14 +3788,49 @@ export default function TestExecutionCharts({
               {responseTimeNetworkMode === 'application' ? 'Include Network Latency' : 'Remove Network Latency'}
             </button>
           )}
-          <button type="button" role="menuitem" onClick={() => void runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
+          {!isLiveWaterfallChart(contextChart) && <button type="button" role="menuitem" onClick={() => void runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
             {expandedChart === contextChart.id ? 'Collapse Graph' : 'Expand Graph'}
-          </button>
+          </button>}
+          {isExemplarChart(contextChart) && (
+            <button type="button" role="menuitem" onClick={() => {
+              // Not runChartAction: it hands focus back to the trigger, and the drawer takes it.
+              setChartMenu(null)
+              // The time right-clicked on the plot, else the newest retained window.
+              const ring = liveRetention?.exemplars ?? []
+              // The menu item unmounts before the drawer records the opener, so
+              // name the chart's Actions button as where focus returns.
+              const hoveredMs = chartMenu?.hoveredMs
+              openExemplarDrawer(
+                contextChart,
+                hoveredMs ?? ring[ring.length - 1]?.tsMs ?? Date.now(),
+                { pointMs: hoveredMs !== undefined, returnFocusSelector: `[data-chart-id="${contextChart.id}"] .chart-actions-button` },
+              )
+            }}>Show Trace Exemplars</button>
+          )}
+          {!isLiveWaterfallChart(contextChart) && <>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => downloadChartSvgSnapshot(contextChart), 'Could not save the chart file')}>Download Snapshot</button>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => exportChartCsv(contextChart), 'Could not save the chart file')}>Export Graph Data</button>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => copyLatestValues(contextChart), 'Could not copy or save the latest chart values')}>Copy Latest Values</button>
-          <button type="button" role="menuitem" onClick={() => void runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
+          </>}
+          <button ref={isLiveWaterfallChart(contextChart) ? chartMenuFirstItemRef : undefined} type="button" role="menuitem" onClick={() => void runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
         </div>
+      )}
+      {exemplarDrawer && runId && liveRetention && (
+        <LazyLoadBoundary title="The trace exemplars could not be loaded.">
+        <Suspense fallback={null}>
+        <LiveExemplarDrawer
+          testId={runId}
+          ring={liveRetention.exemplars}
+          atMs={exemplarDrawer.atMs}
+          range={exemplarDrawer.range}
+          transactionNames={exemplarDrawer.transactionNames}
+          groups={exemplarDrawer.groups}
+          firstWindowMs={liveRetention.firstWindowMs}
+          returnFocusSelector={exemplarDrawer.returnFocusSelector}
+          onClose={() => setExemplarDrawer(null)}
+        />
+        </Suspense>
+        </LazyLoadBoundary>
       )}
       {axisLabelPopover && (
         <div

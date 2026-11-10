@@ -126115,6 +126115,68 @@ export interface operations {
       };
     };
   };
+  "handleLiveTraceLinks": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "from"?: string;
+          "to"?: string;
+          "trace_ids"?: Array<string>;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "configured": boolean;
+            "links_unavailable"?: boolean;
+            "traces": Array<{
+              "links": Array<{
+                "connection_id": string;
+                "provider": string;
+                "url": string;
+              }>;
+              "trace_id": string;
+            }>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleLoadModelSupportMatrix": {
     parameters: {
       "query"?: {
@@ -227994,6 +228056,9 @@ export interface paths {
   };
   "/api/v1/tests/{id}/live-tables/{tableID}/rows": {
     "get": operations["handleLiveTableRows"];
+  };
+  "/api/v1/tests/{id}/live/trace-links": {
+    "post": operations["handleLiveTraceLinks"];
   };
   "/api/v1/tests/{id}/manifest": {
     "get": operations["handleGetTestManifest"];
