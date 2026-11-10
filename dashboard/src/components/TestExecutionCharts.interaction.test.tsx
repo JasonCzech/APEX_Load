@@ -43,9 +43,9 @@ vi.mock('recharts', () => {
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
-      onMouseDown={domEvent => onMouseDown?.({ activeLabel: '10:00:00', activeTooltipIndex: 0 }, domEvent)}
+      onMouseDown={domEvent => onMouseDown?.((globalThis as { __mockChartDownState?: unknown }).__mockChartDownState ?? { activeLabel: '10:00:00', activeTooltipIndex: 0 }, domEvent)}
       onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1 })}
-      onMouseUp={domEvent => onMouseUp?.({}, domEvent)}
+      onMouseUp={domEvent => onMouseUp?.((globalThis as { __mockChartUpState?: unknown }).__mockChartUpState ?? {}, domEvent)}
     >
       {children}
     </svg>
@@ -3388,6 +3388,22 @@ describe('TestExecutionCharts live exemplars and waterfall', () => {
       latencyChart().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: upX, clientY: 50 }))
     })
   }
+
+  // Recharts sets the point under the pointer on a throttled mousemove: a
+  // press in the same frame as the move has none, and the release supplies it.
+  it('opens exemplars when only the release knows the point under the pointer', async () => {
+    const mockState = globalThis as { __mockChartDownState?: unknown; __mockChartUpState?: unknown }
+    mockState.__mockChartDownState = { isTooltipActive: false }
+    mockState.__mockChartUpState = { activeLabel: '20:05:00', activeTooltipIndex: 0 }
+    try {
+      await render()
+      await press(100, 101)
+      expect(document.querySelector('.live-exemplar-drawer')?.textContent).toContain('0af7651916cd43dd8448eb211c80319c')
+    } finally {
+      delete mockState.__mockChartDownState
+      delete mockState.__mockChartUpState
+    }
+  })
 
   it('opens the window\'s exemplars on a click but not on a zoom drag', async () => {
     await render()

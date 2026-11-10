@@ -686,7 +686,10 @@ export default function TestExecutionCharts({
   const sharedCursorRef = useRef<GraphCursorState | null>(activeCursor ?? null)
   const pendingMouseMoveRef = useRef<{ zoomAnchor?: ExecutionChartZoomAnchor; cursor: GraphCursorState | null } | null>(null)
   // L3: a press on a response-time chart, so a release without movement opens its exemplars.
-  const exemplarPressRef = useRef<{ chartId: string; x: number; y: number; timestampMs: number; anchor?: ExecutionChartZoomAnchor } | null>(null)
+  // Recharts sets the point under the pointer on a throttled mousemove, so a
+  // press made in the same frame as the move has none yet: the release (which
+  // comes after that frame) then supplies it.
+  const exemplarPressRef = useRef<{ chartId: string; x: number; y: number; timestampMs?: number; anchor?: ExecutionChartZoomAnchor } | null>(null)
   // The time under the pointer on each chart while it is hovered, so a
   // right-click menu's "Show Trace Exemplars" opens there. Cleared when the
   // pointer leaves the chart and when the run changes.
@@ -1302,16 +1305,21 @@ export default function TestExecutionCharts({
     const range = options.pointMs ? exemplarBucketRange(atMs, granularityBucketSeconds) : undefined
     setExemplarDrawer({ atMs, ...(range ? { range } : {}), ...selection, returnFocusSelector: options.returnFocusSelector })
   }
-  const handleChartMouseUp = (exemplarChartId?: string, domEvent?: { clientX: number; clientY: number }) => {
+  const handleChartMouseUp = (
+    exemplarChartId?: string,
+    domEvent?: { clientX: number; clientY: number },
+    releaseTimestampMs?: number,
+  ) => {
     const press = exemplarPressRef.current
     exemplarPressRef.current = null
     if (mouseMoveFrameRef.current !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
       window.cancelAnimationFrame(mouseMoveFrameRef.current)
     }
-    if (press && exemplarChartId === press.chartId && domEvent && isExecutionChartClick(press, { x: domEvent.clientX, y: domEvent.clientY })) {
+    const pressTimestampMs = press?.timestampMs ?? releaseTimestampMs
+    if (press && pressTimestampMs !== undefined && exemplarChartId === press.chartId && domEvent && isExecutionChartClick(press, { x: domEvent.clientX, y: domEvent.clientY })) {
       const chart = displayedCharts.find(candidate => candidate.id === press.chartId)
       if (chart) {
-        openExemplarDrawer(chart, press.timestampMs, { pointMs: true })
+        openExemplarDrawer(chart, pressTimestampMs, { pointMs: true })
         // A click is not a drag: a few pixels of wobble may have crossed a data
         // point, so pull the selection back onto its start (applySelection then
         // drops it) instead of zooming to a one- or two-point range.
@@ -1465,27 +1473,32 @@ export default function TestExecutionCharts({
     scheduleChartMouseMove(zoomAnchor, nextCursor)
   }
 
-  const handleChartMouseDown = (
-    event: MouseHandlerDataParam | undefined,
-    data: ReadonlyArray<{ timestampMs?: number }>,
-    exemplarPress?: { chartId: string; domEvent?: { clientX: number; clientY: number; button?: number } },
-  ) => {
+  // The data point under the pointer for a Recharts mouse event, if any.
+  const chartEventTimestampMs = (event: MouseHandlerDataParam | undefined, data: ReadonlyArray<{ timestampMs?: number }>) => {
     const activeIndex = typeof event?.activeTooltipIndex === 'number'
       ? event.activeTooltipIndex
       : typeof event?.activeTooltipIndex === 'string' && event.activeTooltipIndex.trim() !== ''
         ? Number(event.activeTooltipIndex)
         : Number.NaN
-    const timestampMs = Number.isInteger(activeIndex) && activeIndex >= 0
-      ? data[activeIndex]?.timestampMs
-      : undefined
+    return Number.isInteger(activeIndex) && activeIndex >= 0 ? data[activeIndex]?.timestampMs : undefined
+  }
+
+  const handleChartMouseDown = (
+    event: MouseHandlerDataParam | undefined,
+    data: ReadonlyArray<{ timestampMs?: number }>,
+    exemplarPress?: { chartId: string; domEvent?: { clientX: number; clientY: number; button?: number } },
+  ) => {
+    const timestampMs = chartEventTimestampMs(event, data)
     const pressEvent = exemplarPress?.domEvent
-    exemplarPressRef.current = exemplarPress && pressEvent && (pressEvent.button ?? 0) === 0 && typeof timestampMs === 'number'
+    exemplarPressRef.current = exemplarPress && pressEvent && (pressEvent.button ?? 0) === 0
       ? {
         chartId: exemplarPress.chartId,
         x: pressEvent.clientX,
         y: pressEvent.clientY,
-        timestampMs,
-        anchor: event?.activeLabel !== undefined ? { label: event.activeLabel, timestampMs } : undefined,
+        ...(typeof timestampMs === 'number' ? {
+          timestampMs,
+          anchor: event?.activeLabel !== undefined ? { label: event.activeLabel, timestampMs } : undefined,
+        } : {}),
       }
       : null
     onChartMouseDown(event?.activeLabel !== undefined && typeof timestampMs === 'number'
@@ -3465,7 +3478,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event, domEvent) => handleChartMouseDown(event, displayChartData, isExemplarClickChart(chart) ? { chartId: chart.id, domEvent } : undefined)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={(_event, domEvent) => handleChartMouseUp(chart.id, domEvent)}
+                onMouseUp={(event, domEvent) => handleChartMouseUp(chart.id, domEvent, chartEventTimestampMs(event, displayChartData))}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -3512,7 +3525,7 @@ export default function TestExecutionCharts({
                 margin={chartMargin}
                 onMouseDown={(event, domEvent) => handleChartMouseDown(event, displayChartData, isExemplarClickChart(chart) ? { chartId: chart.id, domEvent } : undefined)}
                 onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
-                onMouseUp={(_event, domEvent) => handleChartMouseUp(chart.id, domEvent)}
+                onMouseUp={(event, domEvent) => handleChartMouseUp(chart.id, domEvent, chartEventTimestampMs(event, displayChartData))}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
