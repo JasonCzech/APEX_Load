@@ -171,6 +171,20 @@ describe('debug vs load amplification model', () => {
     expect(empty.summary).toMatchObject({ basis: 'none', headline: 'No debug request could be matched to this load run.' })
   })
 
+  it('does not let many sub-millisecond rows add up to a headline network factor', () => {
+    const snapshot = amplificationSnapshot()
+    // Every in-transaction request spends ~0.2 ms on the network in debug: each row is "n/a".
+    for (const event of snapshot.report!.events.slice(0, 3)) {
+      const ttfb = Number(event.protocol_evidence!.timings!.ttfb_ms)
+      event.protocol_evidence = { timings: { ttfb_ms: ttfb, duration_ms: ttfb + 0.2 } }
+      event.duration_ms = ttfb + 0.2
+    }
+    const model = buildAmplificationModel(snapshot, amplificationReport(), 'avg')
+    expect(model.rows.slice(0, 3).every(row => row.network.kind !== 'ratio')).toBe(true)
+    expect(model.summary.network.kind).not.toBe('ratio')
+    expect(model.summary.headline).toMatch(/^Server ×[\d.]+, network (new|n\/a) under load/)
+  })
+
   it('guards factors against tiny and zero debug values', () => {
     expect(amplificationFactor(0, 5)).toEqual({ kind: 'new' })
     expect(amplificationFactor(0.2, 0.3)).toEqual({ kind: 'na' })

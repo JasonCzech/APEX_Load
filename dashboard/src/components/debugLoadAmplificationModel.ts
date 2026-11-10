@@ -391,19 +391,22 @@ function summarize(rows: readonly AmplificationRow[], statistic: AmplificationSt
   const excluded = matched.length - basisRows.length
   let rowsWithDownload = 0, rowsWithoutDownload = 0
   const total = (phases: readonly AmplificationPhase[], countDownload = false) => {
-    let debug = 0, load = 0, any = false
+    let debug = 0, load = 0, contributing = 0
     for (const row of basisRows) {
       const sums = row.loadMean && row.debug.phases ? groupSums(row.debug.phases, row.loadMean, phases) : null
       if (!sums) continue
       debug += sums.debug
       load += sums.load
-      any = true
+      contributing++
       if (countDownload) {
         if (sums.download) rowsWithDownload++
         else rowsWithoutDownload++
       }
     }
-    return any ? amplificationFactor(debug, load) : { kind: 'na' } as AmplificationFactor
+    // Per-request averages: the ratio is the same, but the too-small guard
+    // must apply per request, or many sub-millisecond rows (each "n/a" in the
+    // table) would add up to a headline ratio.
+    return contributing ? amplificationFactor(debug / contributing, load / contributing) : { kind: 'na' } as AmplificationFactor
   }
   const server = total(['server'])
   const network = total(NETWORK_PHASES, true)
