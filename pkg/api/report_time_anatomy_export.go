@@ -257,7 +257,7 @@ func timeAnatomyPDF(d *runArchiveHTMLReportData, lines *[]string) {
 		if len(entry.Rows) > 0 {
 			*lines = append(*lines, reportDocumentChartMarker+entry.Chart.ID, header)
 			for _, row := range entry.Rows {
-				*lines = append(*lines, "|"+reportPDFCell(row.Label)+"|"+strings.Join(row.Cells(), "|")+"|"+formatChartValue(math.Round(row.TotalMs))+"|")
+				*lines = append(*lines, "|"+reportPDFCell(row.Label)+"|"+strings.Join(row.Cells(), "|")+"|"+reportAnatomyMs(row.TotalMs)+"|")
 			}
 		}
 		if entry.MoreRows > 0 {
@@ -306,18 +306,16 @@ func timeAnatomyCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error
 type reportChartStack struct {
 	Label    string
 	Segments []float64
-	// Total labels the bar: the request's own statistic, which for a
-	// percentile is not the sum of the segments.
+	// Total labels the bar, as the row's Total: the request's own
+	// statistic, which for a percentile is not the sum of the segments.
 	Total float64
 }
 
-// stackLabel is the value a bar is labelled with: its own total when it has
-// one, else the sum of its segments.
-func stackLabel(stack reportChartStack, sum float64) float64 {
-	if stack.Total > 0 {
-		return stack.Total
-	}
-	return sum
+// reportAnatomyMs formats milliseconds as the HTML table's msValue does
+// (one decimal under 100 ms, whole and grouped above), so a bar's label and
+// its row's Total always read the same.
+func reportAnatomyMs(v float64) string {
+	return strings.TrimSuffix(formatReportMs(v), " ms")
 }
 
 // reportTimeAnatomyBarNote says what the bars stack and what labels them.
@@ -365,7 +363,7 @@ func svgStackedBarChart(spec reportDocumentChartSpec) template.HTML {
 	for i, stack := range spec.Stacks {
 		y := top + i*rowH
 		fmt.Fprintf(&b, `<text x="%d" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="12" text-anchor="end">%s</text>`, labelW, y+16, reportChartInk, svgText(truncateLabel(stack.Label, 34)))
-		left, total := float64(barLeft), 0.0
+		left := float64(barLeft)
 		for s, value := range stack.Segments {
 			if value <= 0 || s >= len(reportAnatomyPhases) {
 				continue
@@ -373,9 +371,8 @@ func svgStackedBarChart(spec reportDocumentChartSpec) template.HTML {
 			w := value / maxValue * barMax
 			fmt.Fprintf(&b, `<rect x="%.1f" y="%d" width="%.1f" height="16" fill="%s"/>`, left, y+4, w, reportAnatomyPhases[s].Color)
 			left += w
-			total += value
 		}
-		fmt.Fprintf(&b, `<text x="%.1f" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">%s %s</text>`, left+6, y+16, reportChartMuted, svgText(formatChartValue(math.Round(stackLabel(stack, total)))), svgText(spec.Unit))
+		fmt.Fprintf(&b, `<text x="%.1f" y="%d" fill="%s" font-family="Avenir Next, Segoe UI, sans-serif" font-size="11">%s %s</text>`, left+6, y+16, reportChartMuted, svgText(reportAnatomyMs(stack.Total)), svgText(spec.Unit))
 	}
 	b.WriteString(`</svg>`)
 	return template.HTML(b.String())
@@ -395,7 +392,7 @@ func drawReportStackedBarChart(img *image.RGBA, spec reportDocumentChartSpec, re
 	for index, stack := range spec.Stacks {
 		y := (76 + index*30) * scale
 		chartText(img, regular, left-14, y+20, chartInk, truncateLabel(stack.Label, 32), true)
-		at, total := left, 0.0
+		at := left
 		for s, value := range stack.Segments {
 			if value <= 0 || s >= len(reportAnatomyPhases) {
 				continue
@@ -403,8 +400,7 @@ func drawReportStackedBarChart(img *image.RGBA, spec reportDocumentChartSpec, re
 			width := int(value / maxValue * float64(right-left))
 			chartFillRect(img, at, y, at+width, y+25, reportAnatomyPhases[s].RGBA)
 			at += width
-			total += value
 		}
-		chartText(img, regular, at+9, y+21, chartMuted, formatChartValue(math.Round(stackLabel(stack, total)))+" ms", false)
+		chartText(img, regular, at+9, y+21, chartMuted, reportAnatomyMs(stack.Total)+" ms", false)
 	}
 }

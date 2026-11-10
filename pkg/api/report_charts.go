@@ -304,14 +304,17 @@ func formatChartValue(v float64) string {
 	return fmt.Sprintf("%.1f", v)
 }
 
+// truncateLabel keeps a label to at most max runes, never splitting a
+// UTF-8 sequence, and marks a cut with "…".
 func truncateLabel(s string, max int) string {
-	if len(s) <= max {
+	runes := []rune(s)
+	if len(runes) <= max {
 		return s
 	}
 	if max <= 1 {
-		return s[:max]
+		return string(runes[:max])
 	}
-	return s[:max-1] + "…"
+	return string(runes[:max-1]) + "…"
 }
 
 // svgText escapes a string for use as SVG/HTML text content.

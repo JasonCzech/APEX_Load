@@ -8,6 +8,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 // timeAnatomyExportReport is the consistency-matrix run with a time anatomy:
@@ -198,5 +199,50 @@ func TestTimeAnatomyExportRespectsTheProfile(t *testing.T) {
 	data := buildRunArchiveReportRenderData(plain, profile, nil, manifest)
 	if _, notCaptured := reportApplicableSections(profile, &data); !strings.Contains(strings.Join(notCaptured, ","), "Time anatomy") {
 		t.Fatalf("%v", notCaptured)
+	}
+}
+
+// A sub-100 ms total reads the same on the bar and in the table, and a
+// zero total is labelled zero, not the segment sum; multibyte names are cut
+// on rune boundaries.
+func TestTimeAnatomyExportLabelsAndMultibyteNames(t *testing.T) {
+	stat := func(v float64) RunArchivePhaseStat { return RunArchivePhaseStat{Samples: 100, P95Ms: v} }
+	name := strings.Repeat("支払い処理", 12) // 60 three-byte runes
+	action := strings.Repeat("Überweisung→", 4)
+	report := consistencyMatrixReport()
+	report.TimeAnatomy = &RunArchiveTimeAnatomy{Schema: timeAnatomySchema, Transactions: []RunArchiveTransactionAnatomy{{
+		Name: name, Instances: 100, Duration: stat(60),
+		Requests: []RunArchiveAnatomyRequest{
+			{Key: "1|a#1", ActionName: action, Occurrence: 1, Samples: 100, Phases: RunArchiveAnatomyPhaseStats{Server: stat(30), Download: stat(14.6), Total: stat(42.3)}},
+			{Key: "2|b#1", ActionName: "GET /zero", Occurrence: 1, Samples: 100, Phases: RunArchiveAnatomyPhaseStats{Server: stat(3)}},
+		},
+	}}}
+	view := buildReportTimeAnatomyView(report, reportTimeAnatomyStatistic)
+	chart := view.Entries[0].Chart
+	if !utf8.ValidString(chart.Title) || !strings.HasPrefix(chart.Title, string([]rune(name)[:47])+"…: ") {
+		t.Fatalf("%q", chart.Title)
+	}
+	svg := string(svgStackedBarChart(chart))
+	if !utf8.ValidString(svg) || !strings.Contains(svg, ">42.3 ms</text>") || !strings.Contains(svg, ">0.0 ms</text>") || strings.Contains(svg, ">3 ms</text>") {
+		t.Fatal(svg)
+	}
+	if label := truncateLabel(action, 34); !utf8.ValidString(label) || utf8.RuneCountInString(label) != 34 {
+		t.Fatalf("%q", label)
+	}
+
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "engineer", nil, consistencyMatrixManifest())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := string(html); !utf8.ValidString(page) || !strings.Contains(page, `<td class="num">42.3</td></tr>`) {
+		t.Fatal("HTML table total does not match the bar label")
+	}
+	profile, _ := lookupRunArchiveReportProfile("engineer")
+	text := strings.Join(buildRunArchiveReportPDFLines(report, profile, nil, consistencyMatrixManifest()), "\n")
+	if !strings.Contains(text, "|30|14.6|0|42.3|") {
+		t.Fatal(text)
+	}
+	if _, err := buildReportDocumentChartsForProfile(report, profile); err != nil {
+		t.Fatal(err)
 	}
 }
