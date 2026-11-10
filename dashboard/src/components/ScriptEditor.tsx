@@ -1,5 +1,6 @@
 import DebugCompletionSummary, { DebugSummaryRecordingDiff, type DebugSummaryTabRequest } from './DebugCompletionSummary'
 import RecordingDiffPanel from './RecordingDiffPanel'
+import { replayFrameForEvent, type ReplaySourceFrame } from './waterfall/replaySourceFrame'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
@@ -7990,6 +7991,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     replaceScriptWithHistory(nextScript)
     setRevalidateAfterEdit(count => count + 1)
   }
+  const canInspectRuntimeFrame = (frame: ReplaySourceFrame) => frame.action_index >= 0 && replayEditableActionsKey === currentEditableActionsKey && Boolean(resolveAuthorJsonScopeByKey(script, `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`))
+  const inspectRuntimeFrame = (frame: ReplaySourceFrame) => {
+    if (frame.action_index < 0 || replayEditableActionsKey !== currentEditableActionsKey) return
+    const key = `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`
+    const scope = resolveAuthorJsonScopeByKey(script, key)
+    if (!scope) return
+    changeFollowExecution(false)
+    setRuntimeFrameSourcePath(scope.path)
+    setSelectedOutlineParameterName(null)
+    setActiveAction(null)
+    setAuthorCodeFocus({ phase: frame.phase, actionIndex: frame.action_index, stepPath: frame.step_path || [], key, label: scope.action.name || scope.path })
+    setShowFullScriptJson(true)
+    openCenterTab(SCRIPT_JSON_TAB_ID)
+  }
   // The run compared with the script's recording (or an uploaded HAR): the
   // debug Summary's Recording diff, for non-browser scripts with a run.
   const recordingDiff = !isBrowserScript && replayReport ? (
@@ -8039,6 +8054,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         consumeRecordingDiffFocus={consumeRecordingDiffFocus}
         onExportSession={handleDownloadBrowserReplayExport}
         onSelectEvent={index => { returnToDebugger(); setDebuggerTab('request'); setExpandedReplayEvent(index) }}
+        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
+        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) inspectRuntimeFrame(frame) }}
         onDownloadHAR={async () => {
           const content = await api.exportScriptDebugSession(debugCompletionSnapshot.session.id, 'har')
           if (!(content instanceof Blob)) throw new Error('HAR export returned an invalid response.')
@@ -9126,20 +9143,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             runtimeVariablesUnavailable={runtimeVariablesUnavailable}
             currentRuntimeSnapshot={currentRuntimeSnapshot}
             currentRuntimeReason={runtimeAdmission.reason}
-            canInspectRuntimeFrame={frame => frame.action_index >= 0 && replayEditableActionsKey === currentEditableActionsKey && Boolean(resolveAuthorJsonScopeByKey(script, `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`))}
-            onInspectRuntimeFrame={frame => {
-              if (frame.action_index < 0 || replayEditableActionsKey !== currentEditableActionsKey) return
-              const key = `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`
-              const scope = resolveAuthorJsonScopeByKey(script, key)
-              if (!scope) return
-              changeFollowExecution(false)
-              setRuntimeFrameSourcePath(scope.path)
-              setSelectedOutlineParameterName(null)
-              setActiveAction(null)
-              setAuthorCodeFocus({ phase: frame.phase, actionIndex: frame.action_index, stepPath: frame.step_path || [], key, label: scope.action.name || scope.path })
-              setShowFullScriptJson(true)
-              openCenterTab(SCRIPT_JSON_TAB_ID)
-            }}
+            canInspectRuntimeFrame={canInspectRuntimeFrame}
+            onInspectRuntimeFrame={inspectRuntimeFrame}
             runtimeInspectionMode={runtimeInspectionMode}
             onRuntimeInspectionMode={setRuntimeInspectionMode}
             replayVariableTimeline={replayVariableTimeline}

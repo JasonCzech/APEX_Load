@@ -5,6 +5,8 @@ import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import { DebugRunDiffPanel } from './DebugRunDiffPanel'
+import { buildRunDiffOptions } from './waterfall/debugRunDiff'
 import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
@@ -17,11 +19,6 @@ import { appliedReplayExtractions } from './replayExtractionValues'
 import { ReplayExtractions } from './ReplayExtractions'
 import { placeSteps, stepOutputs } from './referenceScopeModel'
 import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
-import {
-  buildDebugTimelineModel,
-  DEBUG_TIMELINE_LEGEND_PHASES,
-  type DebugTimelineScaleMode,
-} from './debugTimelineWaterfallModel'
 
 function collectScriptAuthoredVariables(script?: ScriptDefinition): Map<string, string> {
   const result = new Map<string, string>()
@@ -225,196 +222,6 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
   </section>
 }
 
-export function DebugTimeline({
-  events,
-  selectedIndex,
-  onSelect,
-  onInspect,
-  variant = 'dock',
-}: {
-  events: BrowserReplayEvent[]
-  selectedIndex?: number | null
-  onSelect: (index: number) => void
-  onInspect?: (index: number) => void
-  variant?: 'dock' | 'summary'
-}) {
-  const [search, setSearch] = useState('')
-  const [failures, setFailures] = useState(false)
-  const [scaleMode, setScaleMode] = useState<DebugTimelineScaleMode>('waterfall')
-  const [localSelectedIndex, setLocalSelectedIndex] = useState<number | null>(null)
-
-  const model = useMemo(() => buildDebugTimelineModel(events, scaleMode), [events, scaleMode])
-  const q = search.toLowerCase()
-  const filteredRows = useMemo(
-    () => model.rows.filter(r => (!failures || !r.success) && `${r.actionName} ${r.target} ${r.location}`.toLowerCase().includes(q)),
-    [model.rows, failures, q],
-  )
-
-  useEffect(() => {
-    setLocalSelectedIndex(null)
-  }, [selectedIndex, events])
-
-  const activeIndex = localSelectedIndex ?? selectedIndex
-  // Only the real selection is highlighted and announced as current; the
-  // inspector previews the first visible row when nothing visible is selected.
-  const selectedRow = filteredRows.find(r => r.index === activeIndex) ?? null
-  const activeRow = selectedRow ?? filteredRows[0] ?? null
-  const selectionHidden = selectedRow === null && activeIndex != null && model.rows.some(r => r.index === activeIndex)
-
-  const renderPhaseBar = (t: { trackOffsetPct: number; trackWidthPct: number; segments: typeof model.rows[0]['segments'] }) => (
-    <div className="debug-timeline-bar-track" aria-hidden="true">
-      <div className="debug-timeline-bar-fill" style={{ left: `${t.trackOffsetPct}%`, width: `${t.trackWidthPct}%` }}>
-        {t.segments.map((seg, i) => (
-          <span
-            key={`${seg.key}-${i}`}
-            className={`debug-timeline-bar-segment phase-${seg.key}`}
-            style={{ width: `${seg.widthPct}%` }}
-            title={`${seg.label}: ${seg.durationMs.toFixed(1)} ms`}
-          />
-        ))}
-      </div>
-    </div>
-  )
-
-  return (
-    <div className={variant === 'summary' ? 'debug-summary-waterfall' : 'debug-execution-timeline'}>
-      <div className="debug-session-tools debug-timeline-toolbar">
-        <div>
-          <label>{variant === 'summary' ? 'Filter waterfall' : 'Find execution'}<input value={search} onChange={e => setSearch(e.target.value)} /></label>
-          <label><input type="checkbox" checked={failures} onChange={e => setFailures(e.target.checked)} />Failures only</label>
-        </div>
-        <div>
-          <div className="debug-timeline-scale-switch" role="group" aria-label="Timeline scale">
-            {([['waterfall', 'Waterfall (session)'], ['stacked', 'Stacked (100%)']] as const).map(([mode, label]) => (
-              <button key={mode} type="button" className={scaleMode === mode ? 'active' : ''} aria-pressed={scaleMode === mode} onClick={() => setScaleMode(mode)}>
-                {label}
-              </button>
-            ))}
-          </div>
-          <ul className="debug-timeline-legend" aria-label="Traffic phases">
-            {DEBUG_TIMELINE_LEGEND_PHASES.map(p => (
-              <li key={p.key}>
-                <i className={`debug-timeline-swatch phase-${p.key}`} aria-hidden="true" />
-                <span>{p.shortLabel}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-
-      {!filteredRows.length ? (
-        <p>{events.length ? 'No executions match these filters.' : 'No completed executions captured yet.'}</p>
-      ) : (
-        <div className="debug-timeline-workspace">
-          <div className="debug-timeline-waterfall-table" role="region" aria-label="Execution timeline waterfall">
-            <div className="debug-timeline-header" aria-hidden="true">
-              <span>Action / target</span>
-              <span>Status / protocol</span>
-              <span className="debug-timeline-col-time">Duration</span>
-              <div className="debug-timeline-ruler">
-                {model.rulerTicks.map((tick, idx) => <span key={idx}>{tick}</span>)}
-              </div>
-            </div>
-            {filteredRows.map(row => {
-              const isSelected = selectedRow?.index === row.index
-              const stateCls = row.success ? 'passed' : 'failed'
-              return (
-                <div key={row.id} className="debug-timeline-row-group">
-                  <button
-                    type="button"
-                    className={`debug-timeline-row debug-timeline-waterfall-row ${isSelected ? 'selected' : ''} ${stateCls}`}
-                    aria-current={isSelected ? 'true' : undefined}
-                    onClick={() => { setLocalSelectedIndex(row.index); onSelect(row.index) }}
-                  >
-                    <div className="debug-timeline-cell-main">
-                      <div>
-                        <span className={`debug-timeline-status-dot ${stateCls}`} aria-hidden="true" />
-                        <strong>{row.success ? 'Passed' : 'Failed'} · {row.actionName}</strong>
-                      </div>
-                      <small>{row.location} · {row.errorMessage || row.target}</small>
-                      {row.extractedVariables.length > 0 && <small>Variables: {row.extractedVariables.join(', ')}</small>}
-                    </div>
-                    <div className="debug-timeline-cell-proto">
-                      {row.statusCode != null && <span className={`debug-timeline-status-code ${stateCls}`}>HTTP {row.statusCode}</span>}
-                      <span>{row.protocolLabel}{row.connectionReused ? ' · reused' : ''}</span>
-                    </div>
-                    <span className="debug-timeline-cell-duration">{row.durationMs.toFixed(1)} ms</span>
-                    {renderPhaseBar(row)}
-                  </button>
-                  {isSelected && row.hops.length > 1 && (
-                    <div className="debug-timeline-hop-list" aria-label={`Network hops for ${row.actionName}`}>
-                      {row.hops.map(hop => (
-                        <div key={hop.hopIndex} className="debug-timeline-hop-row">
-                          <span>{hop.label}</span>
-                          <span>{hop.protocolLabel}{hop.connectionReused ? ' · reused' : ''}</span>
-                          <span className="debug-timeline-hop-duration">{hop.durationMs.toFixed(1)} ms</span>
-                          {renderPhaseBar(hop)}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-
-          {activeRow && (
-            <aside className="debug-timeline-inspector" aria-label="Timing breakdown">
-              <header>
-                <div>
-                  <strong>{activeRow.actionName}</strong>
-                  <span>
-                    {activeRow.location} · Queued at +{activeRow.startOffsetMs.toFixed(1)} ms · Started at +{activeRow.startedOffsetMs.toFixed(1)} ms · {activeRow.protocolLabel}
-                    {activeRow.connectionReused ? ' · Reused connection' : ''}
-                  </span>
-                  {!selectedRow && (
-                    <small className="debug-timeline-inspector-preview">
-                      {selectionHidden ? 'Selected execution is hidden by the current filters · ' : ''}Preview · first visible execution
-                    </small>
-                  )}
-                </div>
-                <code>{activeRow.durationMs.toFixed(1)} ms</code>
-              </header>
-              <div className="debug-timeline-breakdown-list">
-                {activeRow.breakdown.map((item, idx) => {
-                  const showCat = item.category !== 'execution' && item.category !== (idx > 0 ? activeRow.breakdown[idx - 1].category : null)
-                  return (
-                    <div key={item.key}>
-                      {showCat && <div className="debug-timeline-breakdown-category">{item.category === 'connection' ? 'Connection preparation' : 'Request and response'}</div>}
-                      <div className="debug-timeline-breakdown-row">
-                        <span>
-                          <i className={`debug-timeline-swatch phase-${item.key}`} aria-hidden="true" />
-                          <span>{item.label}</span>
-                        </span>
-                        <div aria-hidden="true">
-                          {item.durationMs > 0 && <span className={`phase-${item.key}`} style={{ left: `${item.startPct}%`, width: `${item.widthPct}%` }} />}
-                        </div>
-                        <span>{item.durationMs > 0 ? `${item.durationMs.toFixed(1)} ms` : item.unavailableReason || '—'}</span>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-              <footer>
-                <small>{activeRow.extractedVariables.length > 0 ? `Extracted: ${activeRow.extractedVariables.join(', ')}` : activeRow.errorMessage || `${activeRow.methodOrType} ${activeRow.target}`}</small>
-                <div className="debug-timeline-inspector-actions">
-                  <strong>Total: {activeRow.durationMs.toFixed(1)} ms</strong>
-                  {onInspect && (
-                    <button type="button" className="btn btn-sm btn-secondary" onClick={() => onInspect(activeRow.index)}>
-                      Inspect {activeRow.actionName || 'action'}
-                    </button>
-                  )}
-                </div>
-              </footer>
-            </aside>
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-
 function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   const [selected, setSelected] = useState(0)
   const event = report.events[selected]
@@ -443,6 +250,12 @@ export function DebugRunHistory({ runs, current, currentRecord }: { runs: DebugR
   return <details className="debug-run-history"><summary>Recent runs ({runs.length}) · Compare evidence</summary><p>Evidence stays in this editor session (up to 5 runs). Export to retain it before closing.</p><label>Inspect run<select value={selected.id} onChange={e => setSelectedId(e.target.value)}>{admittedRuns.map(r => <option key={r.id} value={r.id}>{r.report.started_at} · {r.report.protocol} · {r.report.stopped ? 'Stopped' : r.report.success ? 'Passed' : 'Failed'}</option>)}</select></label><button type="button" aria-pressed={pinnedBaselineId === selected.id} onClick={() => setPinnedBaselineId(selected.id)}>Pin comparison baseline</button>
     <p>{selected.draft ? 'Unsaved draft' : 'Saved script'} · {selected.report.script_revision || selected.report.script_hash || 'Revision identity unavailable'} · {selected.target} · {selected.failurePolicy}</p>
     {Boolean(selected.report.dropped_event_count || selected.report.truncated_event_evidence_count) && <p className="debug-history-retention">{selected.report.dropped_event_count || 0} executions omitted · {selected.report.truncated_event_evidence_count || 0} execution details truncated in retained evidence.</p>}
+    {buildRunDiffOptions(admittedRuns, admittedCurrent, currentRecord).length > 1 && (
+      <details className="debug-run-diff-section" open>
+        <summary>Compare timing between runs</summary>
+        <DebugRunDiffPanel runs={admittedRuns} current={admittedCurrent} currentRecord={currentRecord} />
+      </details>
+    )}
     <HistoricalEvidence key={selected.id} report={selected.report} />
     {admittedCurrent && <details><summary>Compare baseline with current run</summary><p>Baseline: {baseline.report.started_at} · Current: {admittedCurrent.started_at}</p><div className="debug-history-columns"><section><h4>Baseline configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(baseline, baseline.report), null, 2)} /></section><section><h4>Current configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(currentRecord, admittedCurrent), null, 2)} /></section></div>{diff.filter(row => row.fields.length).map(row => <details key={row.key}><summary>{(row.after || row.before)!.action_name} · {eventLocation((row.after || row.before)!)} · {row.fields.join(', ')}</summary><div className="debug-history-columns"><SnapshotBodyPreview body={JSON.stringify(row.before || null, null, 2)} /><SnapshotBodyPreview body={JSON.stringify(row.after || null, null, 2)} /></div></details>)}{diff.every(row => !row.fields.length) && <p>No outcome, request, response, assertion or variable differences in retained evidence.</p>}</details>}
   </details>
