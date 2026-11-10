@@ -89387,6 +89387,11 @@ export interface operations {
               "success": boolean;
               "timestamp": string;
               "trace_id"?: string;
+              "trace_links"?: Array<{
+                "connection_id": string;
+                "provider": string;
+                "url": string;
+              }>;
               "vuser_id"?: number;
               "vuser_lifetime"?: string;
             }>;
@@ -100715,6 +100720,11 @@ export interface operations {
               "success": boolean;
               "timestamp": string;
               "trace_id"?: string;
+              "trace_links"?: Array<{
+                "connection_id": string;
+                "provider": string;
+                "url": string;
+              }>;
               "vuser_id"?: number;
               "vuser_lifetime"?: string;
             }>;
@@ -100751,10 +100761,16 @@ export interface operations {
               "success": boolean;
               "timestamp": string;
               "trace_id"?: string;
+              "trace_links"?: Array<{
+                "connection_id": string;
+                "provider": string;
+                "url": string;
+              }>;
               "vuser_id"?: number;
               "vuser_lifetime"?: string;
             };
             "schema": string;
+            "trace_links_unavailable"?: boolean;
             "truncated"?: boolean;
           }) | null;
         };

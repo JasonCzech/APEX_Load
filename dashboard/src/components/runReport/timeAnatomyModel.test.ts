@@ -40,7 +40,13 @@ import {
   partialOnlyCopy,
   unjoinedCopy,
   waterfallRootsFromDrilldown,
+  drilldownOutsideSpans,
+  phaseDefinitionsText,
+  presentPhaseKeys,
+  traceLinkLabel,
+  traceLinkNote,
 } from './timeAnatomyModel'
+import { childGaps, phaseTotals, selfChildTime } from '../waterfall/analysis'
 
 const anatomy = fixture.time_anatomy as unknown as RunArchiveTimeAnatomy
 const checkout = anatomy.transactions[0]
@@ -126,7 +132,11 @@ describe('aggregate waterfall', () => {
     expect(p50[1].durationMs).not.toBe(p95[1].durationMs)
     expect(p95[1].phases.map(span => span.key)).toEqual(['dns', 'connect', 'tls', 'wait', 'receive'])
     expect(p95[1].status).toBe('incomplete')
+    expect(p95[1].statusLabel).toBe(`${checkout.requests[1].failed.toLocaleString()} failed`)
     expect(p95[0].status).toBe('passed')
+    expect(p95[0].statusLabel).toBe('Passed')
+    // Aggregate rows say they are statistics, not one request.
+    expect(p95.every(node => node.timingSource === 'aggregate')).toBe(true)
     expect(p95[2].label).toBe('GET /poll #9+')
     expect(p95[2].detail).toBe('P95 of each phase · in 60% of instances · reuse 100%')
     expect(aggregateRoots(checkout, 'avg')[0].detail).toBe('Average of each phase · reuse 90%')
@@ -360,27 +370,26 @@ describe('drill-down', () => {
     expect(gaps.map(gap => [gap.startMs, gap.durationMs])).toEqual([[20, 20], [90, 10], [110, 20]])
     expect(gaps.every(gap => gap.derived)).toBe(true)
     expect(root.children.map(node => node.kind)).toEqual(['request', 'think', 'request', 'think', 'request', 'think'])
-    // Every gap is also drawn on the root's own track.
-    expect(root.outside).toEqual([{ startMs: 20, endMs: 40 }, { startMs: 90, endMs: 100 }, { startMs: 110, endMs: 130 }])
+    expect(gaps.every(gap => gap.tooltipNote?.startsWith('Time inside the transaction when none of its requests was running'))).toBe(true)
+    // Every gap is drawn hatched on the root's track (here each as its own row).
+    expect(drilldownOutsideSpans([root])).toEqual([{ startMs: 20, endMs: 40 }, { startMs: 90, endMs: 100 }, { startMs: 110, endMs: 130 }])
+    expect(root.gapsKnownUntilMs).toBeUndefined()
   })
 
-  it('draws the root as its decomposition: request phases where they ran, gaps hatched', () => {
+  it('leaves the root track to the shared waterfall: its children and the gaps between them', () => {
     const [root] = waterfallRootsFromDrilldown(drilldown)
-    expect(root.phases).toEqual([
-      { key: 'total', startMs: 0, endMs: 20 },
-      { key: 'connect', startMs: 40, endMs: 50 },
-      { key: 'wait', startMs: 50, endMs: 80 },
-      { key: 'receive', startMs: 80, endMs: 90 },
-      { key: 'wait', startMs: 100, endMs: 108 },
-      { key: 'receive', startMs: 108, endMs: 110 },
-    ])
-    // Overlapping requests: the earlier one owns the shared time, so nothing is counted twice.
+    // A parent draws its children, so the root carries no phases of its own.
+    expect(root.phases).toEqual([])
+    // Phase totals and self time come from the requests.
+    expect(Object.fromEntries(phaseTotals(root))).toEqual({ total: 20, connect: 10, wait: 38, receive: 12 })
+    expect(selfChildTime(root)).toMatchObject({ childMs: 80, selfMs: 50, overlapMs: 0 })
+    // Overlapping requests: covered time is counted once, and only the uncovered end is outside.
     const [overlap] = waterfallRootsFromDrilldown({ ...drilldown, requests: [
       row({ event_id: 'x', ordinal: 1, offset_ms: 0, duration_ms: 100, phases: { dns_ms: 0, connect_ms: 0, tls_ms: 0, server_ms: 100, download_ms: 0, unsplit_ms: 0 } }),
       row({ event_id: 'y', ordinal: 2, offset_ms: 50, duration_ms: 70, phases: { dns_ms: 0, connect_ms: 0, tls_ms: 0, server_ms: 20, download_ms: 50, unsplit_ms: 0 } }),
     ] })
-    expect(overlap.phases).toEqual([{ key: 'wait', startMs: 0, endMs: 100 }, { key: 'receive', startMs: 100, endMs: 120 }])
-    expect(overlap.outside).toEqual([{ startMs: 120, endMs: 130 }])
+    expect(selfChildTime(overlap)).toMatchObject({ childMs: 120, selfMs: 10, overlapMs: 50 })
+    expect(drilldownOutsideSpans([overlap])).toEqual([{ startMs: 120, endMs: 130 }])
   })
 
   it('lists only material gaps as rows and keeps the small ones on the track', () => {
@@ -392,17 +401,21 @@ describe('drill-down', () => {
     ] })
     // Two 0.1 ms gaps stay on the root's track; the 100 ms tail (10%) gets its own row.
     expect(root.children.filter(node => node.kind === 'think').map(gap => [gap.startMs, gap.durationMs])).toEqual([[900, 100]])
-    expect(root.outside?.map(gap => +(gap.endMs - gap.startMs).toFixed(3))).toEqual([0.1, 0.1, 100])
+    expect(childGaps(root).map(gap => +gap.durationMs.toFixed(3))).toEqual([0.1, 0.1])
+    expect(drilldownOutsideSpans([root]).map(gap => +(gap.endMs - gap.startMs).toFixed(3))).toEqual([0.1, 0.1, 100])
     // 40 ms of 1,000 is under both thresholds; 50 ms is material.
     const [small] = waterfallRootsFromDrilldown({ ...drilldown, root: { ...drilldown.root, duration_ms: 1000 }, requests: [row({ event_id: 'a', ordinal: 1, offset_ms: 0, duration_ms: 960, phases: { ...phases, server_ms: 960 } })] })
     expect(small.children.map(node => node.kind)).toEqual(['request'])
-    expect(small.outside).toEqual([{ startMs: 960, endMs: 1000 }])
+    expect(drilldownOutsideSpans([small])).toEqual([{ startMs: 960, endMs: 1000 }])
   })
 
   it('leaves the time after the last request blank when the requests were truncated', () => {
     const [root] = waterfallRootsFromDrilldown({ ...drilldown, truncated: true, requests_total: 812 })
-    expect(root.outside).toEqual([{ startMs: 20, endMs: 40 }, { startMs: 90, endMs: 100 }])
+    expect(root.gapsKnownUntilMs).toBe(110)
+    expect(drilldownOutsideSpans([root])).toEqual([{ startMs: 20, endMs: 40 }, { startMs: 90, endMs: 100 }])
     expect(root.children[root.children.length - 1]?.kind).toBe('request')
+    // With the end unknown, no self time is claimed either.
+    expect(selfChildTime(root)).toBeNull()
   })
 
   it.each([
@@ -413,10 +426,13 @@ describe('drill-down', () => {
     expect(drilldownIsPartial(partial)).toBe(true)
     const [root] = waterfallRootsFromDrilldown(partial)
     // Requests may be missing anywhere in the window: no gap is called outside, leading, inner or trailing.
-    expect(root.outside).toBeUndefined()
+    expect(root.gapsKnownUntilMs).toBe(0)
+    expect(childGaps(root)).toEqual([])
+    expect(drilldownOutsideSpans([root])).toEqual([])
+    expect(selfChildTime(root)).toBeNull()
     expect(root.children.map(node => node.kind)).toEqual(['request', 'request', 'request'])
     // The request phases still draw where they ran.
-    expect(root.phases[0]).toEqual({ key: 'total', startMs: 0, endMs: 20 })
+    expect(root.children[0].phases[0]).toEqual({ key: 'total', startMs: 0, endMs: 20 })
     expect(drilldownIsPartial(drilldown)).toBe(false)
     expect(drilldownIsPartial({ partial: false })).toBe(false)
   })
@@ -427,7 +443,7 @@ describe('drill-down', () => {
     expect(drilldownJoinMayDiffer(differs)).toBe(true)
     expect(drilldownJoinMayDiffer({ ...differs, partial: true })).toBe(false)
     expect(drilldownJoinMayDiffer(drilldown)).toBe(false)
-    expect(waterfallRootsFromDrilldown(differs)[0].outside).toEqual(waterfallRootsFromDrilldown(drilldown)[0].outside)
+    expect(drilldownOutsideSpans(waterfallRootsFromDrilldown(differs))).toEqual(drilldownOutsideSpans(waterfallRootsFromDrilldown(drilldown)))
   })
 
   it('words partial and join-may-differ drill-downs from their reasons, never the raw codes', () => {
@@ -445,6 +461,19 @@ describe('drill-down', () => {
       expect(joinMayDifferCopy(reasons)).not.toMatch(codes)
       expect(joinMayDifferCopy(reasons)).not.toContain('some_future_code')
     }
+  })
+
+  it('points a traced row at its APM links and lists only the phases drawn', () => {
+    const links = [{ provider: 'dynatrace', connection_id: 'dt', url: 'https://abc.live.dynatrace.com/trace?traceId=t1' }, { provider: 'elasticsearch', connection_id: 'es', url: 'https://kibana.test/app/discover' }]
+    const [root] = waterfallRootsFromDrilldown({ ...drilldown, requests: [{ ...drilldown.requests[0], trace_id: 't1', trace_links: links }, ...drilldown.requests.slice(1)] })
+    const traced = root.children.find(node => node.id === 'b')
+    expect(traced?.tooltipNote).toBe('Server time is traced in Dynatrace and Kibana (ELK): select the row to open the trace.')
+    expect(root.children.find(node => node.id === 'a')?.tooltipNote).toBeUndefined()
+    expect(traceLinkNote({ trace_links: [] })).toBeUndefined()
+    expect(links.map(traceLinkLabel)).toEqual(['Open trace in Dynatrace', 'Open trace in Kibana (ELK)'])
+    expect(presentPhaseKeys([root])).toEqual(['connect', 'wait', 'receive', 'total'])
+    expect(phaseDefinitionsText(presentPhaseKeys([root]), true)).toMatch(/^Server wait: Time to first byte minus connection setup.* No TTFB split: The request recorded no time to first byte.* Outside requests: Time inside the transaction/)
+    expect(phaseDefinitionsText(['dns'], false)).toBe('')
   })
 
   it('keeps a request root as a request', () => {

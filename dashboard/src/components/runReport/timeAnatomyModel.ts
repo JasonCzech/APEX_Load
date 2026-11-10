@@ -6,12 +6,13 @@
  * and the browser never re-splits them: drill-down rows draw the backend
  * `phases` as they come, so no trace-timing helper is used here.
  *
- * The node shape mirrors `WaterfallNode` from the shared waterfall module
- * (../waterfall/types) field for field, so `<Waterfall>` can replace
- * `ReportPhaseBars` once that module lands on main. It is declared locally
- * until then because the shared module is still being edited.
+ * Rows are the shared `WaterfallNode`s (../waterfall/types), drawn by the
+ * shared `<Waterfall>`: aggregate rows with timing source 'aggregate',
+ * drill-down rows from the backend phases.
  */
 import type { ReportLens } from '../../appRouting'
+import type { ExemplarLink } from '../../types/rca'
+import { traceLinkProviderLabel } from '../traceLinkLabels'
 import { getErrorMessage } from '../../utils/errorUtils'
 import type {
   ArchiveTransactionWaterfall,
@@ -29,73 +30,17 @@ import type {
   TimeAnatomyTailComponentName,
   TimeAnatomyTruncationReason,
 } from '../../types/timeAnatomy'
+import { nodeFromAggregatePhaseVector, type AggregatePhaseStat, type AggregatePhaseVector, type AggregateStatistic } from '../waterfall/aggregate'
+import { childGaps, waterfallRowDomId } from '../waterfall/analysis'
+import type { WaterfallPhaseKey } from '../waterfall/phases'
+import type { WaterfallNode, WaterfallPhaseSpan } from '../waterfall/types'
 
-// ---------------------------------------------------------------------------
-// Node shape (structurally compatible with ../waterfall/types WaterfallNode)
+export type { AggregateStatistic } from '../waterfall/aggregate'
 
-/** The shared phase keys: server draws as `wait`, download as `receive`, unsplit as `total`. */
-export type AnatomyPhaseKey = 'dns' | 'connect' | 'tls' | 'wait' | 'receive' | 'total'
+/** The shared phase keys a report draws: server as `wait`, download as `receive`, unsplit as `total`. */
+export type AnatomyPhaseKey = Extract<WaterfallPhaseKey, 'dns' | 'connect' | 'tls' | 'wait' | 'receive' | 'total'>
 
-export interface AnatomyPhaseSpan {
-  key: AnatomyPhaseKey
-  startMs: number
-  endMs: number
-}
-
-export interface AnatomyTimeSpan {
-  startMs: number
-  endMs: number
-}
-
-export type AnatomyNodeKind = 'transaction' | 'request' | 'think'
-export type AnatomyNodeStatus = 'passed' | 'failed' | 'incomplete' | 'not_run'
-
-export interface AnatomyNode<T = unknown> {
-  id: string
-  kind: AnatomyNodeKind
-  label: string
-  detail?: string
-  startMs: number | null
-  durationMs: number | null
-  status: AnatomyNodeStatus
-  phases: AnatomyPhaseSpan[]
-  timingSource?: 'aggregate' | 'protocol_evidence' | 'duration'
-  statusCode?: number
-  connectionReused?: boolean
-  derived?: boolean
-  errorMessage?: string
-  /**
-   * Stretches of the row's own window in which none of its children ran,
-   * drawn hatched on its track. Report-only: the shared waterfall has no
-   * such field, and it is optional so the shape stays assignable.
-   */
-  outside?: AnatomyTimeSpan[]
-  children: AnatomyNode<T>[]
-  payload?: T
-}
-
-export type AggregateStatistic = 'avg' | 'p50' | 'p90' | 'p95' | 'p99'
 export const AGGREGATE_STATISTICS: readonly AggregateStatistic[] = ['avg', 'p50', 'p90', 'p95', 'p99']
-
-export interface AggregatePhaseStat {
-  avg?: number
-  p50?: number
-  p90?: number
-  p95?: number
-  p99?: number
-  observedPct?: number
-}
-
-export type AggregatePhaseName = 'dns' | 'connect' | 'tls' | 'server' | 'download'
-export type AggregatePhaseVector = Partial<Record<AggregatePhaseName, AggregatePhaseStat>>
-
-const AGGREGATE_PHASE_KEYS: Record<AggregatePhaseName, AnatomyPhaseKey> = {
-  dns: 'dns',
-  connect: 'connect',
-  tls: 'tls',
-  server: 'wait',
-  download: 'receive',
-}
 
 /**
  * Legend labels. `wait` is the server's share of TTFB: the controller counts
@@ -253,31 +198,34 @@ function rowLabel(row: RunArchiveAnatomyRequest): string {
   return row.action_name
 }
 
-function aggregateNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatistic, id: string, startMs: number | null, derived: boolean): AnatomyNode<RunArchiveAnatomyRequest> {
-  const vector = toAggregateVector(row.phases)
-  const spans: AnatomyPhaseSpan[] = []
-  let cursor = 0
-  for (const name of Object.keys(AGGREGATE_PHASE_KEYS) as AggregatePhaseName[]) {
-    const ms = pos(vector[name]?.[statistic])
-    if (ms > 0) {
-      spans.push({ key: AGGREGATE_PHASE_KEYS[name], startMs: cursor, endMs: cursor + ms })
-      cursor += ms
-    }
-  }
+/** The status column of an aggregate row: how many of its samples failed. */
+function aggregateStatusLabel(row: RunArchiveAnatomyRequest): string {
+  return row.failed > 0 ? `${formatCount(row.failed)} failed` : 'Passed'
+}
+
+/**
+ * One aggregate row: the shared aggregate adapter's phase spans for the
+ * statistic, then the untimed (no TTFB) remainder as a `total` span.
+ */
+function aggregateNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatistic, id: string, startMs: number | null, derived: boolean): WaterfallNode<RunArchiveAnatomyRequest> {
+  const base = nodeFromAggregatePhaseVector({ id, label: rowLabel(row), detail: rowDetail(row, statistic), offsetMs: 0, vector: toAggregateVector(row.phases), statistic })
+  const phases: WaterfallPhaseSpan[] = [...base.phases]
+  let cursor = base.durationMs ?? 0
   const unsplit = statValue(row.phases?.unsplit, statistic)
   if (unsplit > 0) {
-    spans.push({ key: 'total', startMs: cursor, endMs: cursor + unsplit })
+    phases.push({ key: 'total', startMs: cursor, endMs: cursor + unsplit })
     cursor += unsplit
   }
   return {
     id,
     kind: 'request',
-    label: rowLabel(row),
-    detail: rowDetail(row, statistic),
+    label: base.label,
+    detail: base.detail,
     startMs,
     durationMs: cursor,
     status: row.failed > 0 ? 'incomplete' : 'passed',
-    phases: spans,
+    statusLabel: aggregateStatusLabel(row),
+    phases,
     timingSource: 'aggregate',
     derived,
     children: [],
@@ -286,25 +234,25 @@ function aggregateNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatis
 }
 
 /** One aggregate row per request key, in backend order. Offsets are the median offset whatever the statistic. */
-export function aggregateRoots(entry: RunArchiveTransactionAnatomy, statistic: AggregateStatistic): AnatomyNode<RunArchiveAnatomyRequest>[] {
+export function aggregateRoots(entry: RunArchiveTransactionAnatomy, statistic: AggregateStatistic): WaterfallNode<RunArchiveAnatomyRequest>[] {
   return (entry.requests || []).map(row => aggregateNode(row, statistic, row.key, pos(row.offset_ms?.p50_ms), false))
 }
 
 /** One aggregate row for a single request row, with a caller-chosen id and start (the baseline diff uses it). */
-export function anatomyRequestNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatistic, id: string, startMs: number | null, derived = false): AnatomyNode<RunArchiveAnatomyRequest> {
+export function anatomyRequestNode(row: RunArchiveAnatomyRequest, statistic: AggregateStatistic, id: string, startMs: number | null, derived = false): WaterfallNode<RunArchiveAnatomyRequest> {
   return aggregateNode(row, statistic, id, startMs, derived)
 }
 
 /** The muted `Other requests` row: offsets are not meaningful, so it starts at 0. */
-export function othersRoot(entry: RunArchiveTransactionAnatomy, statistic: AggregateStatistic = 'avg'): AnatomyNode<RunArchiveAnatomyRequest> | null {
+export function othersRoot(entry: RunArchiveTransactionAnatomy, statistic: AggregateStatistic = 'avg'): WaterfallNode<RunArchiveAnatomyRequest> | null {
   if (!entry.other_requests) return null
   const node = aggregateNode(entry.other_requests, statistic, 'other-requests', 0, true)
   return { ...node, label: 'Other requests', detail: `${formatCount(entry.other_requests.samples)} samples beyond the row limit; start not meaningful` }
 }
 
-export function aggregateSpanMs(roots: AnatomyNode[]): number {
+export function aggregateSpanMs(roots: readonly WaterfallNode<unknown>[]): number {
   let span = 0
-  const visit = (node: AnatomyNode) => {
+  const visit = (node: WaterfallNode<unknown>) => {
     span = Math.max(span, pos(node.startMs) + pos(node.durationMs))
     node.children.forEach(visit)
   }
@@ -621,8 +569,8 @@ const DRILLDOWN_PHASES: readonly [keyof RunArchivePhaseMeans, AnatomyPhaseKey][]
   ['unsplit_ms', 'total'],
 ]
 
-function spansFromBackendPhases(phases: RunArchivePhaseMeans | undefined): AnatomyPhaseSpan[] {
-  const spans: AnatomyPhaseSpan[] = []
+function spansFromBackendPhases(phases: RunArchivePhaseMeans | undefined): WaterfallPhaseSpan[] {
+  const spans: WaterfallPhaseSpan[] = []
   let cursor = 0
   for (const [field, key] of DRILLDOWN_PHASES) {
     const ms = pos(phases?.[field])
@@ -634,10 +582,23 @@ function spansFromBackendPhases(phases: RunArchivePhaseMeans | undefined): Anato
   return spans
 }
 
-function drilldownRequestNode(row: ArchiveWaterfallRow): AnatomyNode<ArchiveWaterfallRow> {
+/** The action that opens one trace link: "Open trace in Dynatrace". */
+export function traceLinkLabel(link: Pick<ExemplarLink, 'provider'>): string {
+  return `Open trace in ${traceLinkProviderLabel(link.provider)}`
+}
+
+/** The tooltip line of a row whose trace can be opened in an APM. */
+export function traceLinkNote(row: Pick<ArchiveWaterfallRow, 'trace_links'>): string | undefined {
+  const providers = [...new Set((row.trace_links || []).map(link => traceLinkProviderLabel(link.provider)))]
+  if (!providers.length) return undefined
+  return `Server time is traced in ${providers.join(' and ')}: select the row to open the trace.`
+}
+
+function drilldownRequestNode(row: ArchiveWaterfallRow): WaterfallNode<ArchiveWaterfallRow> {
   const spans = spansFromBackendPhases(row.phases)
   const split = spans.some(span => span.key !== 'total')
   const detail = [row.dependency_target, row.http_version ? `HTTP/${row.http_version}` : '', row.connection ? `${row.connection} connection` : ''].filter(Boolean).join(' · ')
+  const note = traceLinkNote(row)
   return {
     id: row.event_id || `ordinal-${row.ordinal}`,
     kind: row.population === 'transaction' ? 'transaction' : 'request',
@@ -651,6 +612,7 @@ function drilldownRequestNode(row: ArchiveWaterfallRow): AnatomyNode<ArchiveWate
     statusCode: row.status_code,
     connectionReused: row.connection === 'reused' ? true : row.connection === 'new' ? false : undefined,
     errorMessage: row.error_message,
+    ...(note ? { tooltipNote: note } : {}),
     children: [],
     payload: row,
   }
@@ -664,45 +626,29 @@ export function isMaterialGap(gapMs: number, spanMs: number): boolean {
   return gapMs >= MATERIAL_GAP_MS || (spanMs > 0 && gapMs >= spanMs * MATERIAL_GAP_SHARE)
 }
 
-/** Appends a span, merging it into the previous one when they touch and share a key. */
-function pushPhaseSpan(spans: AnatomyPhaseSpan[], key: AnatomyPhaseKey, startMs: number, endMs: number) {
-  if (endMs - startMs <= 0) return
-  const last = spans[spans.length - 1]
-  if (last && last.key === key && Math.abs(last.endMs - startMs) < 1e-9) {
-    last.endMs = endMs
-    return
-  }
-  spans.push({ key, startMs, endMs })
-}
-
 /**
  * The drill-down's tree: the transaction root, its requests from the backend
  * `phases`, and the time no request was running.
  *
- * The root's own track reads as the decomposition: each stretch of its window
- * takes the phase of the request that was running then (the earliest-starting
- * one where requests overlap), and the stretches with no request are hatched
- * `outside` segments. Only material gaps (see isMaterialGap) also get a row of
- * their own, so a run of sub-millisecond gaps does not flood the list. When the
- * backend truncated the requests, the time after the last one is unknown and
- * is left blank rather than counted as outside. When the drill-down is
- * partial (drilldownIsPartial), requests may be missing anywhere in the
- * window, so no gap is drawn or counted as outside at all.
+ * The shared waterfall draws the root's track from its children: each
+ * request in its dominant phase, and the stretches with no request running
+ * hatched (childGaps). Only material gaps (see isMaterialGap) also get an
+ * "Outside requests" row of their own, so a run of sub-millisecond gaps does
+ * not flood the list. When the backend truncated the requests, the time after
+ * the last one is unknown: `gapsKnownUntilMs` stops the hatching there. When
+ * the drill-down is partial (drilldownIsPartial), requests may be missing
+ * anywhere in the window, so no gap is drawn or counted as outside at all.
  */
-export function waterfallRootsFromDrilldown(resp: ArchiveTransactionWaterfall): AnatomyNode<ArchiveWaterfallRow>[] {
+export function waterfallRootsFromDrilldown(resp: ArchiveTransactionWaterfall): WaterfallNode<ArchiveWaterfallRow>[] {
   const root = resp.root
   const span = Math.max(pos(root.duration_ms), pos(root.elapsed_ms))
   const requests = [...(resp.requests || [])].sort((a, b) => pos(a.offset_ms) - pos(b.offset_ms) || a.ordinal - b.ordinal)
-  const children: AnatomyNode<ArchiveWaterfallRow>[] = []
-  const projected: AnatomyPhaseSpan[] = []
-  const outside: AnatomyTimeSpan[] = []
+  const children: WaterfallNode<ArchiveWaterfallRow>[] = []
   let coveredEnd = 0
   let gapIndex = 0
   const partial = drilldownIsPartial(resp)
   const pushGap = (from: number, to: number) => {
-    if (partial || to - from <= 0) return
-    outside.push({ startMs: from, endMs: to })
-    if (!isMaterialGap(to - from, span)) return
+    if (partial || to - from <= 0 || !isMaterialGap(to - from, span)) return
     gapIndex += 1
     children.push({
       id: `${root.event_id}-gap-${gapIndex}`,
@@ -714,28 +660,23 @@ export function waterfallRootsFromDrilldown(resp: ArchiveTransactionWaterfall): 
       status: 'passed',
       phases: [],
       derived: true,
+      tooltipNote: OUTSIDE_REQUESTS_DEFINITION,
       children: [],
     })
   }
   for (const request of requests) {
     const start = Math.min(pos(request.offset_ms), span)
     if (start > coveredEnd) pushGap(coveredEnd, start)
-    const node = drilldownRequestNode(request)
-    children.push(node)
-    const end = Math.min(span, start + pos(request.duration_ms))
-    // Project the part of this request that no earlier request already covers.
-    const segments = node.phases.length ? node.phases : [{ key: 'total' as const, startMs: 0, endMs: pos(request.duration_ms) }]
-    for (const segment of segments) {
-      const from = Math.max(start + segment.startMs, coveredEnd)
-      const to = Math.min(start + segment.endMs, end)
-      pushPhaseSpan(projected, segment.key, from, to)
-    }
-    coveredEnd = Math.max(coveredEnd, end)
+    children.push(drilldownRequestNode(request))
+    coveredEnd = Math.max(coveredEnd, Math.min(span, start + pos(request.duration_ms)))
   }
-  if (requests.length && span > coveredEnd && !resp.truncated) pushGap(coveredEnd, span)
+  // Partial: requests may be missing anywhere. Truncated: the time after the last one is unknown.
+  const gapsKnownUntilMs = partial ? 0 : resp.truncated ? coveredEnd : undefined
+  if (requests.length && span > coveredEnd && gapsKnownUntilMs === undefined) pushGap(coveredEnd, span)
 
   const rootIsTransaction = root.population !== 'action'
-  const rootNode: AnatomyNode<ArchiveWaterfallRow> = rootIsTransaction
+  const note = traceLinkNote(root)
+  const rootNode: WaterfallNode<ArchiveWaterfallRow> = rootIsTransaction
     ? {
       id: root.event_id,
       kind: 'transaction',
@@ -744,10 +685,11 @@ export function waterfallRootsFromDrilldown(resp: ArchiveTransactionWaterfall): 
       startMs: 0,
       durationMs: span,
       status: root.interrupted ? 'incomplete' : root.success ? 'passed' : 'failed',
-      phases: projected,
-      ...(outside.length ? { outside } : {}),
+      phases: [],
       statusCode: root.status_code,
       errorMessage: root.error_message,
+      ...(gapsKnownUntilMs !== undefined ? { gapsKnownUntilMs } : {}),
+      ...(note ? { tooltipNote: note } : {}),
       children,
       payload: root,
     }
@@ -755,15 +697,32 @@ export function waterfallRootsFromDrilldown(resp: ArchiveTransactionWaterfall): 
   return [rootNode]
 }
 
-/** Depth-first rows for the non-virtualized renderer. */
-export function flattenNodes<T>(roots: AnatomyNode<T>[]): { node: AnatomyNode<T>; depth: number }[] {
-  const out: { node: AnatomyNode<T>; depth: number }[] = []
-  const visit = (node: AnatomyNode<T>, depth: number) => {
-    out.push({ node, depth })
-    node.children.forEach(child => visit(child, depth + 1))
+/** The phases these rows draw, in legend order: the legend lists only those. */
+export function presentPhaseKeys(roots: readonly WaterfallNode<unknown>[]): AnatomyPhaseKey[] {
+  const present = new Set<string>()
+  const visit = (node: WaterfallNode<unknown>) => {
+    for (const span of node.phases) present.add(span.key)
+    node.children.forEach(visit)
   }
-  roots.forEach(root => visit(root, 0))
-  return out
+  roots.forEach(visit)
+  return ANATOMY_PHASE_ORDER.filter(key => present.has(key))
+}
+
+/** The definitions line under a report waterfall: the defined phases it draws, then outside-request time. */
+export function phaseDefinitionsText(keys: readonly AnatomyPhaseKey[], includeOutside: boolean): string {
+  const definitions = keys.filter(key => ANATOMY_PHASE_DEFINITIONS[key]).map(key => `${ANATOMY_PHASE_LABELS[key]}: ${ANATOMY_PHASE_DEFINITIONS[key]}`)
+  if (includeOutside) definitions.push(`${OUTSIDE_REQUESTS_LABEL}: ${OUTSIDE_REQUESTS_DEFINITION}`)
+  return definitions.join(' ')
+}
+
+/** Time outside requests the drill-down draws: an "Outside requests" row or a hatched gap on a root's track. */
+export function drilldownOutsideSpans(roots: readonly WaterfallNode<unknown>[]): { startMs: number; endMs: number }[] {
+  const spans: { startMs: number; endMs: number }[] = []
+  for (const root of roots) {
+    for (const gap of childGaps(root)) spans.push({ startMs: gap.startMs, endMs: gap.startMs + gap.durationMs })
+    for (const child of root.children) if (child.kind === 'think' && child.startMs != null && child.durationMs != null) spans.push({ startMs: child.startMs, endMs: child.startMs + child.durationMs })
+  }
+  return spans.sort((a, b) => a.startMs - b.startMs)
 }
 
 export const REPRESENTATIVE_LABELS = { p50: 'Median', p95: 'P95', slowest: 'Slowest', failed: 'Failed' } as const
@@ -841,10 +800,10 @@ export function anatomyAnnouncement(entry: RunArchiveTransactionAnatomy | undefi
 }
 
 /**
- * A DOM id for a waterfall row, so a caller can scroll it into view. The
- * encoding is lossless (every character outside [A-Za-z0-9-] becomes `_` plus
- * its four-digit UTF-16 code), so distinct keys never share an id.
+ * A DOM id for a waterfall row, so a caller can scroll it into view: the id
+ * the shared waterfall gives the row under `rowIdPrefix` (lossless, so
+ * distinct keys never share an id).
  */
 export function reportPhaseRowId(prefix: string, id: string): string {
-  return `${prefix}-${id.replace(/[^A-Za-z0-9-]/g, char => `_${char.charCodeAt(0).toString(16).padStart(4, '0')}`)}`
+  return waterfallRowDomId(prefix, id)
 }
