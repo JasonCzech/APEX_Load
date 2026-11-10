@@ -461295,6 +461295,21 @@ paths:
                           format: date-time
                         trace_id:
                           type: string
+                        trace_links:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              provider:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                              - connection_id
+                              - provider
+                              - url
                         vuser_id:
                           type: integer
                           format: int64
@@ -504748,6 +504763,21 @@ paths:
                           format: date-time
                         trace_id:
                           type: string
+                        trace_links:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              connection_id:
+                                type: string
+                              provider:
+                                type: string
+                              url:
+                                type: string
+                            required:
+                              - connection_id
+                              - provider
+                              - url
                         vuser_id:
                           type: integer
                           format: int64
@@ -504852,6 +504882,21 @@ paths:
                         format: date-time
                       trace_id:
                         type: string
+                      trace_links:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            connection_id:
+                              type: string
+                            provider:
+                              type: string
+                            url:
+                              type: string
+                          required:
+                            - connection_id
+                            - provider
+                            - url
                       vuser_id:
                         type: integer
                         format: int64
@@ -504870,6 +504915,8 @@ paths:
                       - timestamp
                   schema:
                     type: string
+                  trace_links_unavailable:
+                    type: boolean
                   truncated:
                     type: boolean
                 required:

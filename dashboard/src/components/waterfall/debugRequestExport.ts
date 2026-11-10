@@ -62,6 +62,36 @@ function hopStartedAt(eventStart: string, offsetMs: number): string {
   return offsetMs > 0 && Number.isFinite(ms) ? new Date(ms + offsetMs).toISOString() : eventStart
 }
 
+export interface HarTimings {
+  blocked: number
+  dns: number
+  connect: number
+  ssl: number
+  send: number
+  wait: number
+  receive: number
+}
+
+/**
+ * HAR 1.2 timings from phase durations (shared waterfall keys). Measured when
+ * any real phase exists: then time not explained by a phase (an untimed
+ * remainder) goes to `remainder` (`blocked` by default), so the timings add up
+ * to `time` as HAR requires (ssl sits inside connect). With only a total, it
+ * is all `wait`.
+ */
+export function harTimings(segments: readonly { key: string; durationMs: number }[], time: number, remainder: 'blocked' | 'wait' = 'blocked'): { timings: HarTimings; measured: boolean } {
+  const sum = (key: string) => segments.filter(s => s.key === key).reduce((a, s) => a + s.durationMs, 0)
+  const measured = segments.some(s => s.key !== 'total' && s.durationMs > 0)
+  if (!measured) return { timings: { blocked: -1, dns: -1, connect: -1, ssl: -1, send: 0, wait: time, receive: 0 }, measured }
+  const timings: HarTimings = { blocked: sum('queueing'), dns: sum('dns') || -1, connect: sum('connect') + sum('tls') || -1, ssl: sum('tls') || -1, send: sum('send'), wait: sum('wait'), receive: sum('receive') }
+  // HAR requires time = blocked + dns + connect + send + wait + receive (ssl is inside connect).
+  const explained = Math.max(0, timings.blocked) + Math.max(0, timings.dns) + Math.max(0, timings.connect) + timings.send + timings.wait + timings.receive
+  const rest = time - explained
+  if (rest > 0 && remainder === 'wait') timings.wait += rest
+  else if (rest > 0) timings.blocked = Math.max(0, timings.blocked) + rest
+  return { timings, measured }
+}
+
 const headerList = (h: Record<string, string>) => Object.entries(h).map(([name, value]) => ({ name, value }))
 
 /** A HAR 1.2 log holding this one request, for browser devtools or HAR viewers. */
@@ -78,17 +108,7 @@ export function toHarLog(view: DebugRequestView, row: DebugTimelineRowModel) {
   const lastHop = row.hops.length > 1 && primary.length ? primary[primary.length - 1] : null
   const segments = lastHop ? lastHop.segments : row.segments
   const time = lastHop ? lastHop.durationMs : row.durationMs
-  const sum = (key: string) => segments.filter(s => s.key === key).reduce((a, s) => a + s.durationMs, 0)
-  // Measured when any real phase exists, whatever the reported source.
-  const measured = segments.some(s => s.key !== 'total' && s.durationMs > 0)
-  let timings: { blocked: number; dns: number; connect: number; ssl: number; send: number; wait: number; receive: number }
-  if (measured) {
-    timings = { blocked: sum('queueing'), dns: sum('dns') || -1, connect: sum('connect') + sum('tls') || -1, ssl: sum('tls') || -1, send: sum('send'), wait: sum('wait'), receive: sum('receive') }
-    // HAR requires time = blocked + dns + connect + send + wait + receive (ssl is inside connect).
-    const explained = Math.max(0, timings.blocked) + Math.max(0, timings.dns) + Math.max(0, timings.connect) + timings.send + timings.wait + timings.receive
-    const rest = time - explained
-    if (rest > 0) timings.blocked = Math.max(0, timings.blocked) + rest
-  } else timings = { blocked: -1, dns: -1, connect: -1, ssl: -1, send: 0, wait: time, receive: 0 }
+  const { timings, measured } = harTimings(segments, time)
   let query: Array<{ name: string; value: string }> = []
   try {
     query = [...new URL(view.url).searchParams].map(([name, value]) => ({ name, value }))

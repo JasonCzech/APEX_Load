@@ -19,7 +19,7 @@ const TOOLTIP_WIDTH = 300
  * `showStart` false leaves out the "starts +…" offset, for rows that share no
  * timeline (independent aggregates all drawn from 0).
  */
-export function WaterfallTooltip({ id, node, state, critical, phaseLabels, showStart = true }: { id: string; node: WaterfallNode<unknown>; state: WaterfallTooltipState; critical: boolean; phaseLabels?: Partial<Record<WaterfallPhaseKey, string>>; showStart?: boolean }) {
+export function WaterfallTooltip({ id, className, node, state, critical, phaseLabels, showStart = true }: { id: string; className?: string; node: WaterfallNode<unknown>; state: WaterfallTooltipState; critical: boolean; phaseLabels?: Partial<Record<WaterfallPhaseKey, string>>; showStart?: boolean }) {
   const totals = phaseTotals(node)
   const phases = WATERFALL_PHASES.filter(p => (totals.get(p.key) ?? 0) > 0)
   const split = selfChildTime(node)
@@ -39,7 +39,7 @@ export function WaterfallTooltip({ id, node, state, critical, phaseLabels, showS
   const top = below + height + 8 <= vh ? below : above >= 8 ? above : Math.max(8, vh - height - 8)
   const source = node.timingSource ? TIMING_SOURCE_LABELS[node.timingSource] : null
   return (
-    <div ref={ref} id={id} role="tooltip" className="wf-tooltip" style={{ left, top, width: TOOLTIP_WIDTH, maxBlockSize: 'calc(100vh - 16px)', overflow: 'hidden' }}>
+    <div ref={ref} id={id} role="tooltip" className={`wf-tooltip${className ? ` ${className}` : ''}`} style={{ left, top, width: TOOLTIP_WIDTH, maxBlockSize: 'calc(100vh - 16px)', overflow: 'hidden' }}>
       <strong>{node.label}</strong>
       <div className="wf-tooltip-meta">
         {node.statusCode != null ? `HTTP ${node.statusCode} · ` : ''}
@@ -57,7 +57,8 @@ export function WaterfallTooltip({ id, node, state, critical, phaseLabels, showS
       )}
       {state.gapMs != null && <div className="wf-tooltip-gap">Idle gap: {formatWaterfallMs(state.gapMs)} with no child running (think time, pacing or client work)</div>}
       {child && <div className="wf-tooltip-gap">{child.label}: {formatWaterfallMs(child.durationMs ?? 0)}</div>}
-      {node.kind === 'think' && <div className="wf-tooltip-gap">Think time: a scripted pause, not network time</div>}
+      {node.kind === 'think' && !node.tooltipNote && <div className="wf-tooltip-gap">Think time: a scripted pause, not network time</div>}
+      {node.tooltipNote && <div className="wf-tooltip-gap">{node.tooltipNote}</div>}
       {node.kind === 'marker' && <div className="wf-tooltip-gap">Transaction marker: bookkeeping, not network time</div>}
       {phases.length > 0 && !(phases.length === 1 && phases[0].key === 'total') && (
         <ul>

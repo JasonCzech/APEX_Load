@@ -96,6 +96,8 @@ export interface SelfChildTime {
 export function selfChildTime(node: WaterfallNode<unknown>): SelfChildTime | null {
   const kids = timingChildren(node)
   if (!isTimed(node) || kids.length === 0) return null
+  // Children may be missing: time with none running is not known to be self time.
+  if (node.gapsKnownUntilMs != null && node.gapsKnownUntilMs < node.startMs + node.durationMs) return null
   const start = node.startMs
   const end = start + node.durationMs
   // Think time is time outside child work, so it counts as self time.
@@ -122,20 +124,34 @@ export interface WaterfallGap {
   durationMs: number
 }
 
-/** Intervals inside a parent's span with no child running. */
+/**
+ * Intervals inside a parent's span with no child running. A parent whose
+ * children are complete only up to `gapsKnownUntilMs` has no gaps past it.
+ */
 export function childGaps(node: WaterfallNode<unknown>, minMs = EPSILON_MS): WaterfallGap[] {
   const kids = timingChildren(node)
   if (!isTimed(node) || kids.length === 0) return []
-  const end = node.startMs + node.durationMs
+  const end = Math.min(node.startMs + node.durationMs, node.gapsKnownUntilMs ?? Infinity)
   const spans = kids.filter(isTimedWork).sort((a, b) => a.startMs - b.startMs)
   const gaps: WaterfallGap[] = []
   let cursor = node.startMs
   for (const c of spans) {
-    if (c.startMs - cursor > minMs) gaps.push({ startMs: cursor, durationMs: c.startMs - cursor })
+    if (c.startMs >= end) break
+    const to = Math.min(c.startMs, end)
+    if (to - cursor > minMs) gaps.push({ startMs: cursor, durationMs: to - cursor })
     cursor = Math.max(cursor, c.startMs + c.durationMs)
   }
   if (end - cursor > minMs && spans.length > 0) gaps.push({ startMs: cursor, durationMs: end - cursor })
   return gaps
+}
+
+/**
+ * A DOM id for a row under a caller's prefix, so the caller can find the row
+ * (scroll it into view). Lossless: every character outside [A-Za-z0-9-]
+ * becomes `_` plus its four-digit UTF-16 code, so distinct ids never share one.
+ */
+export function waterfallRowDomId(prefix: string, id: string): string {
+  return `${prefix}-${id.replace(/[^A-Za-z0-9-]/g, char => `_${char.charCodeAt(0).toString(16).padStart(4, '0')}`)}`
 }
 
 /**
@@ -265,6 +281,8 @@ export interface WaterfallTimeSink {
   /** Node to select when the chip is activated. */
   targetId?: string
   tone: 'neutral' | 'warning' | 'danger'
+  /** The phase a phase fact names, so a caller can name it in its own words. */
+  phaseKey?: WaterfallPhaseKey
 }
 
 /**
@@ -325,6 +343,7 @@ export function topTimeSinks(roots: readonly WaterfallNode<unknown>[], elapsedMs
   if (heavy && measuredSum > 0 && heavy[1] > 0) {
     sinks.push({
       id: 'dominant-phase',
+      phaseKey: heavy[0],
       label: `${WATERFALL_PHASE_BY_KEY[heavy[0]].shortLabel} = ${Math.round((heavy[1] / measuredSum) * 100)}% of measured phase time`,
       detail: `${formatWaterfallMs(heavy[1])} across ${phasedLeaves} ${phasedLeaves === 1 ? 'request' : 'requests'} with phase timings`,
       tone: 'neutral',

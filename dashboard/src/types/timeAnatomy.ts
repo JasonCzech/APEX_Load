@@ -7,6 +7,8 @@
 // keys are exactly the Go omitempty/pointer fields. `vuser_lifetime` is a
 // 63-bit nonce, so it crosses JSON as a string.
 
+import type { ExemplarLink } from './rca'
+
 export type TimeAnatomyTruncationReason =
   | 'transaction_cap'
   | 'report_transaction_cap'
@@ -253,6 +255,8 @@ export interface ArchiveTransactionWaterfall {
    */
   join_may_differ?: boolean
   join_may_differ_reasons?: string[]
+  /** The run's APM link settings could not be read, so no row carries trace links. */
+  trace_links_unavailable?: boolean
 }
 
 export interface ArchiveWaterfallRow {
@@ -280,6 +284,12 @@ export interface ArchiveWaterfallRow {
   retried?: boolean
   connection?: 'new' | 'reused' | 'unknown'
   trace_id?: string
+  /**
+   * Links that open this row's trace in the run's APM providers: only on
+   * the transaction drill-down (not the iteration waterfall), and only when
+   * the row has a trace id and the test has a trace link template.
+   */
+  trace_links?: ExemplarLink[]
   vuser_id?: number
   vuser_lifetime?: string
   iteration?: number

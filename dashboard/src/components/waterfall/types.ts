@@ -45,6 +45,18 @@ export interface WaterfallNode<T = unknown> {
   /** Synthetic row built from counts rather than per-hop evidence. */
   derived?: boolean
   errorMessage?: string
+  /**
+   * A line the tooltip adds about this row (a trace to open, what a hatched
+   * row means). On a think row it replaces the default think-time line.
+   */
+  tooltipNote?: string
+  /**
+   * Offset from the waterfall origin up to which this parent's children are
+   * known to be complete. Past it, time with no child running is unknown,
+   * not idle: no gap is drawn there and no self time is claimed. At or before
+   * the node's start, children may be missing anywhere.
+   */
+  gapsKnownUntilMs?: number
   children: WaterfallNode<T>[]
   /**
    * Set on a copy a filter trimmed: the full child list, so timing analysis

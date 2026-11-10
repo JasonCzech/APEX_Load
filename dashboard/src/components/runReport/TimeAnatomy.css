@@ -1,20 +1,21 @@
 /*
  * Report time anatomy (Where the time goes) and its drill-down drawer.
- * Phase colours are scoped .rr-phase-* tokens until the shared waterfall
- * (and its --phase-* tokens) is on main. The five timed phases take five of
- * each theme's --chart-* series colours, which are tuned per theme for CVD and
- * normal-vision separation and 3:1 on the card (themeChartPalette.test.ts).
- * --chart-4 (red in every theme) is left out so no phase reads as an error.
- * The untimed remainder stays a neutral, hatched slate.
+ * Both draw with the shared <Waterfall>; inside the report its --phase-*
+ * tokens are set from the theme's --chart-* series colours, which are tuned
+ * per theme for CVD and normal-vision separation and 3:1 on the card
+ * (themeChartPalette.test.ts). --chart-4 (red in every theme) is left out so
+ * no phase reads as an error. The untimed remainder stays a neutral, hatched
+ * slate. The tooltip is portaled to the body, so it carries the tokens too.
  */
 .run-report-time-anatomy,
-.run-report-anatomy-drawer {
-  --rr-phase-dns: var(--chart-6, #ed499a);
-  --rr-phase-connect: var(--chart-3, #c8800d);
-  --rr-phase-tls: var(--chart-1, #895af4);
-  --rr-phase-wait: var(--chart-5, #3a81f5);
-  --rr-phase-receive: var(--chart-2, #17ac78);
-  --rr-phase-total: #94a3b8;
+.run-report-anatomy-drawer,
+.wf-tooltip.rr-anatomy-tooltip {
+  --phase-dns: var(--chart-6, #ed499a);
+  --phase-connect: var(--chart-3, #c8800d);
+  --phase-tls: var(--chart-1, #895af4);
+  --phase-wait: var(--chart-5, #3a81f5);
+  --phase-receive: var(--chart-2, #17ac78);
+  --phase-total: #94a3b8;
   --rr-anatomy-up: var(--danger, #ef4444);
   --rr-anatomy-down: var(--success, #10b981);
   --rr-anatomy-track: var(--subtle-fill, rgba(255, 255, 255, 0.035));
@@ -23,19 +24,16 @@
 
 :root[data-theme='light'] .run-report-time-anatomy,
 :root[data-theme='light'] .run-report-anatomy-drawer,
+:root[data-theme='light'] .wf-tooltip.rr-anatomy-tooltip,
 :root[data-theme='solarized-light'] .run-report-time-anatomy,
-:root[data-theme='solarized-light'] .run-report-anatomy-drawer {
-  --rr-phase-total: #475569;
+:root[data-theme='solarized-light'] .run-report-anatomy-drawer,
+:root[data-theme='solarized-light'] .wf-tooltip.rr-anatomy-tooltip {
+  --phase-total: #475569;
   --rr-anatomy-track: rgba(15, 23, 42, 0.05);
 }
 
-.rr-phase-dns { background-color: var(--rr-phase-dns); }
-.rr-phase-connect { background-color: var(--rr-phase-connect); }
-.rr-phase-tls { background-color: var(--rr-phase-tls); }
-.rr-phase-wait { background-color: var(--rr-phase-wait); }
-.rr-phase-receive { background-color: var(--rr-phase-receive); }
-.rr-phase-total {
-  background-color: var(--rr-phase-total);
+/* The untimed (no TTFB) remainder is hatched, so it never reads as a measured phase. */
+:is(.rr-anatomy-waterfall, .rr-anatomy-tooltip) .phase-total {
   background-image: repeating-linear-gradient(135deg, transparent 0 4px, rgba(255, 255, 255, 0.18) 4px 6px);
 }
 
@@ -118,43 +116,11 @@
 .rr-anatomy-stat button.active { background: var(--accent-soft); color: var(--accent-text, var(--text-primary)); font-weight: 600; }
 .rr-anatomy-stat button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* Phase bars (fallback renderer) */
-.rr-phase-bars { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.rr-phase-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: 12px; color: var(--text-secondary); }
-.rr-phase-legend li { display: inline-flex; align-items: center; gap: 4px; }
-.rr-phase-swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
-.rr-phase-legend li[title] { cursor: help; }
-.rr-phase-swatch.rr-phase-gap { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rr-phase-total) 60%, transparent); }
-.rr-phase-definitions { margin: 0; color: var(--text-secondary); font-size: 12px; }
-.rr-phase-rows { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
-.rr-phase-row-button {
-  display: grid;
-  grid-template-columns: minmax(140px, 1.1fr) minmax(120px, 2.4fr) 76px;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 4px 6px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  text-align: start;
-}
-button.rr-phase-row-button { cursor: pointer; }
-button.rr-phase-row-button:hover { background: var(--bg-hover); }
-button.rr-phase-row-button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.rr-phase-row.selected .rr-phase-row-button { background: var(--accent-soft); }
-.rr-phase-name { display: flex; flex-direction: column; min-width: 0; }
-.rr-phase-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.rr-phase-detail { overflow: hidden; color: var(--text-secondary); text-overflow: ellipsis; white-space: nowrap; }
-.rr-phase-track { position: relative; height: 14px; border-radius: 3px; background: var(--rr-anatomy-track); }
-.rr-phase-seg { position: absolute; inset-block: 2px; border-radius: 1px; }
-.rr-phase-parent { background: color-mix(in srgb, var(--rr-phase-total) 30%, transparent); border: 1px solid color-mix(in srgb, var(--rr-phase-total) 55%, transparent); }
-.rr-phase-gap { background: repeating-linear-gradient(135deg, transparent 0 4px, color-mix(in srgb, var(--rr-phase-total) 45%, transparent) 4px 6px); }
-.rr-phase-duration { text-align: end; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rr-phase-row-muted { opacity: 0.7; }
-.rr-phase-row-failed .rr-phase-label { color: var(--danger-text, var(--danger)); }
+/* Report waterfalls */
+.rr-anatomy-definitions { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.rr-anatomy-trace-links { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; }
+.rr-anatomy-trace-links-inline { margin-inline-start: 10px; }
+.rr-anatomy-facts code { overflow-wrap: anywhere; }
 
 /* Selected-row pane, coverage and audit */
 .rr-anatomy-row-pane { padding: 10px 12px; border: 1px solid var(--rr-anatomy-rule); border-radius: 8px; background: var(--bg-card); }
@@ -191,8 +157,6 @@ button.rr-phase-row-button:focus-visible { outline: 2px solid var(--accent); out
 @media (prefers-reduced-motion: reduce) { .rr-anatomy-spinner { animation: none; } }
 
 @media (max-width: 640px) {
-  .rr-phase-row-button { grid-template-columns: minmax(0, 1fr) 64px; }
-  .rr-phase-track { grid-column: 1 / -1; grid-row: 2; }
   .rr-anatomy-diverging-row { grid-template-columns: minmax(0, 1fr) auto; }
   .rr-anatomy-diverging-track { grid-column: 1 / -1; grid-row: 2; }
   .rr-anatomy-facts { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
