@@ -33,8 +33,10 @@ func networkPhaseHistorySample(at time.Time, dns float64) map[string]any {
 // legacy row reads back as unknown.
 func exerciseNetworkPhaseHistory(t *testing.T, store *SQLiteStore, now time.Time) {
 	t.Helper()
-	if err := store.SaveTest(&TestRecord{ID: "run", Name: "run", Status: "RUNNING", StartTime: now}); err != nil {
-		t.Fatal(err)
+	for _, id := range []string{"run", "older"} {
+		if err := store.SaveTest(&TestRecord{ID: id, Name: id, Status: "RUNNING", StartTime: now}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := store.SaveHistory("run", now, map[string]any{"timestamp": now, "avg_response_ms": 100.0}); err != nil {
 		t.Fatal(err)
@@ -69,6 +71,28 @@ func exerciseNetworkPhaseHistory(t *testing.T, store *SQLiteStore, now time.Time
 		}
 		if observed["dns"] != 3 || observed["connect"] != 4 || observed["tls"] != 4 || observed["no_ttfb"] != 1 || observed["no_ttfb_setup_ms"] != 2.5 || observed["no_ttfb_remainder_ms"] != 60 {
 			t.Fatalf("row %d phase_observed = %+v", index, observed)
+		}
+	}
+	// A generator that predates phase observations sends averages only, or an
+	// explicit null: the averages are kept and the observations stay unknown.
+	for offset, observed := range map[int]any{3: nil, 4: json.RawMessage(`null`)} {
+		at := now.Add(time.Duration(offset) * time.Second)
+		sample := map[string]any{"timestamp": at, "avg_connect_ms": 4.5, "avg_ttfb_ms": 80.0}
+		if observed != nil {
+			sample["phase_observed"] = observed
+		}
+		if err := store.SaveHistory("older", at, sample); err != nil {
+			t.Fatal(err)
+		}
+	}
+	older, err := store.GetHistory("older")
+	if err != nil || len(older) != 2 {
+		t.Fatalf("GetHistory(older): %+v, err=%v", older, err)
+	}
+	for index, row := range older {
+		got := row.(IntervalSummaryRecord).NetworkPhases
+		if got == nil || got.AvgConnectMs != 4.5 || got.AvgTTFBMs != 80 || len(got.PhaseObserved) != 0 || got.AvgServerMs != nil || got.AvgNoResponseMs != nil {
+			t.Fatalf("older row %d phases = %+v", index, got)
 		}
 	}
 	limited, err := store.GetHistoryLimit("run", 1)

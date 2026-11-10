@@ -1796,6 +1796,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 		}
 		var aggregate IntervalSummaryRecord
 		var weightedResponse float64
+		var phases archiveIntervalPhaseMerge
 		var attempts, bucketTx, bucketErrors int64
 		durations := engine.NewDurationDistributionMerge()
 		var sourceThroughputGap float64
@@ -1851,6 +1852,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 			}
 			attempts += rowAttempts
 			weightedResponse += record.AvgResponseMs * float64(rowAttempts)
+			phases.add(record, rowAttempts)
 			bucketTx += record.TotalTx
 			bucketErrors += record.TotalErrors
 			cumulativeTx += record.TotalTx
@@ -1926,6 +1928,7 @@ func mergeRemoteArchiveIntervalSummariesWithCoverage(destinationPath string, bun
 			aggregate.AvgResponseMs = weightedResponse / float64(attempts)
 			aggregate.ErrorPct = float64(bucketErrors) / float64(bucketTx+bucketErrors) * 100
 		}
+		phases.apply(&aggregate, attempts)
 		if aggregate.TargetTPS > 0 {
 			aggregate.ThroughputGapPct, aggregate.ThroughputTargetMissed = throughputGap(aggregate.TPS, aggregate.TargetTPS)
 		} else {
@@ -2342,6 +2345,7 @@ type remoteArchiveFleetIntervalMetric struct {
 	hasPercentiles  bool
 	groups          map[string]*remoteArchiveFleetGroupMetric
 	transactions    map[string]*intervalTransactionAccumulator
+	phases          archiveRawPhaseSums
 }
 
 type remoteArchiveFleetGroupMetric struct {
@@ -2362,6 +2366,7 @@ type remoteArchiveFleetRawMetric struct {
 	totalDurationMs float64
 	durations       []float64
 	groups          map[string]*remoteArchiveFleetGroupMetric
+	phases          archiveRawPhaseSums
 }
 
 func addRemoteArchiveFleetRawMetric(metric *remoteArchiveFleetRawMetric, transaction TransactionEvent) {
@@ -2375,6 +2380,7 @@ func addRemoteArchiveFleetRawMetric(metric *remoteArchiveFleetRawMetric, transac
 	}
 	metric.totalDurationMs += transaction.DurationMs
 	metric.durations = append(metric.durations, transaction.DurationMs)
+	metric.phases.observe(transaction)
 	groupName := strings.TrimSpace(transaction.Group)
 	if groupName == "" {
 		return
@@ -2403,6 +2409,7 @@ func mergeRemoteArchiveFleetRawMetric(interval *remoteArchiveFleetIntervalMetric
 	interval.successes += incoming.successes
 	interval.errors += incoming.errors
 	interval.totalDurationMs += incoming.totalDurationMs
+	interval.phases.add(incoming.phases)
 	*durations = append(*durations, incoming.durations...)
 	if len(incoming.groups) == 0 {
 		return
@@ -2615,6 +2622,18 @@ func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, i
 	if len(budgets) == 0 {
 		defer outputBudget.close()
 	}
+	var phaseCoverage archiveFleetPhaseCoverage
+	if exact {
+		scan, _, err := openArchiveArtifactForRead(filepath.Dir(provisionalPath), filepath.Base(provisionalPath))
+		if err != nil {
+			return 0, err
+		}
+		phaseCoverage, err = scanArchiveFleetPhaseCoverage(json.NewDecoder(scan))
+		_ = scan.Close()
+		if err != nil {
+			return 0, err
+		}
+	}
 	source, _, err := openArchiveArtifactForRead(filepath.Dir(provisionalPath), filepath.Base(provisionalPath))
 	if err != nil {
 		return 0, err
@@ -2677,6 +2696,7 @@ func writeRemoteArchiveFleetSummaries(destinationPath, provisionalPath string, i
 				record.AvgResponseMs = 0
 				record.ErrorPct = 0
 			}
+			interval.phases.applyExact(&record, attempts, phaseCoverage)
 			if interval.hasPercentiles {
 				record.P50Ms = interval.p50
 				record.P90Ms = interval.p90

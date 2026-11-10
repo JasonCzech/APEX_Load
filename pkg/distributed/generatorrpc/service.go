@@ -2287,7 +2287,7 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 	if totalAttempts > 0 {
 		avgResponse = totalDuration / float64(totalAttempts)
 	}
-	_ = writer.RecordIntervalSummary(archiveIntervalSummary{
+	summary := archiveIntervalSummary{
 		JavaHTTP:            archiveJavaHTTPFromBatch(batch),
 		Messaging:           archiveMessagingFromBatch(batch),
 		BrowserDocuments:    browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
@@ -2312,7 +2312,9 @@ func (s *Service) recordMetricsBatch(testID string, writer *archiveRecorder, bat
 		Browser:             archiveSummaryBrowserFromBatch(batch),
 		BrowserByDevice:     archiveSummaryBrowserDevicesFromBatch(batch),
 		Telemetry:           archiveSummaryTelemetryFromBatch(batch),
-	})
+	}
+	summary.setNetworkPhases(metricAggregateFromProto(batch.GetFleetMetrics()))
+	_ = writer.RecordIntervalSummary(summary)
 	if archiveErr := writer.claimRecordingFailure(); archiveErr != nil {
 		// The engine's result-sink contract is non-blocking and intentionally
 		// ignores returned sink errors. Escalate the recorder's sticky failure

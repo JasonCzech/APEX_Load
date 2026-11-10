@@ -1834,6 +1834,18 @@ export interface IntervalSummaryRecord {
   p90_ms: number
   p95_ms: number
   p99_ms: number
+  /**
+   * Fleet network-phase breakdown, as on LiveMetrics. Absent on archives
+   * written before it was recorded and on group/action-filtered summaries.
+   */
+  avg_dns_ms?: number
+  avg_connect_ms?: number
+  avg_tls_ms?: number
+  avg_ttfb_ms?: number
+  avg_wait_ms?: number
+  phase_observed?: PhaseObservations
+  avg_server_ms?: number
+  avg_no_response_ms?: number
   groups?: Record<string, GroupLiveMetrics>
   transactions?: Record<string, IntervalTransactionMetrics>
   browser?: BrowserLiveMetrics
