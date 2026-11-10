@@ -171,9 +171,11 @@ func phaseShifts(attributions []PhaseAttribution) (map[string]signatures.PhaseSh
 }
 
 // symptomPhaseShift is the phase shift of the transaction a latency
-// symptom's series measures, if any.
+// symptom's series measures, if any. A run-level series (the interval-summary
+// fallback filed under the first transaction) measures the whole run, not
+// that transaction, so it borrows no transaction's shift.
 func symptomPhaseShift(kind string, s Series, shifts map[string]signatures.PhaseShift) (*signatures.PhaseShift, string) {
-	if kind != signatures.KindLatency && kind != signatures.KindTTFT && kind != signatures.KindTPOT || !strings.HasPrefix(s.ID, NodeTransaction+"/") {
+	if s.RunLevel || kind != signatures.KindLatency && kind != signatures.KindTTFT && kind != signatures.KindTPOT || !strings.HasPrefix(s.ID, NodeTransaction+"/") {
 		return nil, ""
 	}
 	for _, node := range seriesNodes(s) {

@@ -290,3 +290,21 @@ func TestUnexplainedDominantPhaseWinsOverALesserMatch(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 }
+
+// A run-level TTFT symptom (the interval-summary fallback filed under the
+// first transaction) describes the whole run, not that transaction, so it
+// must not borrow that transaction's tail shift or report its download as a
+// transfer problem.
+func TestRunLevelSymptomDoesNotBorrowATransactionShift(t *testing.T) {
+	anomalies, series, graph := hypothesisFixture(7*time.Minute, 10*time.Second, true)
+	const runLevel = "transaction/checkout/ttft_p95_ms"
+	anomalies[0].Series = runLevel
+	series[0] = Series{ID: runLevel, Kind: SeriesLatency, Measures: signatures.KindTTFT, RunLevel: true,
+		Points: []SeriesPoint{{At: detectStart, Value: 840, Valid: true}}}
+	_, _, plainLimits := Hypothesize(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams)
+	_, _, limitations := HypothesizeWithPhases(anomalies, series, allJudged(series), graph, oneLevel(200), DefaultDetectParams,
+		[]PhaseAttribution{tailAttribution(map[string]float64{"download": 380})})
+	if hasLimitation(limitations, LimitationPhaseTransfer) || len(limitations) != len(plainLimits) {
+		t.Fatalf("%+v vs %+v", limitations, plainLimits)
+	}
+}
