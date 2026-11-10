@@ -65,10 +65,13 @@ export function HTTPNetworkTraceEvidence({
   evidence,
   networkEntries,
   unavailable = false,
+  inline = false,
 }: {
   evidence?: ProtocolEvidence
   networkEntries?: BrowserReplayNetworkEntry[]
   unavailable?: boolean
+  /** Shown expanded under a heading instead of inside its own disclosure. */
+  inline?: boolean
 }) {
   if (unavailable) return null
   const hops = (Array.isArray(networkEntries) ? networkEntries : []).filter(entry => Boolean(entry && (traceObject(entry.trace) || entry.har)))
@@ -82,9 +85,9 @@ export function HTTPNetworkTraceEvidence({
 
   const headline = formatNetworkTraceSummaryHeadline(trace, hops.length)
 
-  return (
-    <details className="replay-network-trace">
-      <summary>Network &amp; transport trace{headline ? ` · ${headline}` : ''}</summary>
+  const title = <>Network &amp; transport trace{headline ? ` · ${headline}` : ''}</>
+  const content = (
+    <>
       {trace && (
         <section className="sub-section" aria-label="HTTP transport and TLS trace">
           <dl>
@@ -255,6 +258,9 @@ export function HTTPNetworkTraceEvidence({
           </ol>
         </section>
       )}
-    </details>
+    </>
   )
+  return inline
+    ? <section className="replay-network-trace replay-network-trace-inline" aria-label="Network and transport trace"><h4 className="replay-network-trace-title">{title}</h4>{content}</section>
+    : <details className="replay-network-trace"><summary>{title}</summary>{content}</details>
 }

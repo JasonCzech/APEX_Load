@@ -1,22 +1,16 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
-import LiveTableStepResult from './LiveTableStepResult'
-import { ReplayExtractions } from './ReplayExtractions'
-import ResponseSelection, { type ResponseSelectionValue } from './ResponseSelection'
-import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
-import { replayEventStepKey } from './actionChecksModel'
+import RequestResponseInspector from './RequestResponseInspector'
+import type { RequestResponseInspectorTab, ResponseActions } from './requestResponseInspectorModel'
 
 import { scriptDataUsage } from './scriptDataUsageModel'
 import { liveTableSandboxError } from './liveTableSandboxModel'
 import TooltipButton from './ux/TooltipButton'
 import PanelToggle from './ux/PanelToggle'
-import ResourceSnapshotList from './ResourceSnapshotList'
-import { executionLabel, eventLocation, type DebugRunRecord, responseBodyMessage } from './debuggerExperience'
-import { DebugProfiles, DebugVariableWatches, DebugTimeline, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
-import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
-import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
-import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
-import { httpReplayVersionEvidence } from './httpActionVersionModel'
-import { httpResponseContentEvidence } from './httpResponseContentEvidenceModel'
+import { executionLabel, eventLocation, type DebugRunRecord } from './debuggerExperience'
+import { DebugProfiles, DebugVariableWatches, DebugRunHistory, DebugBreakpointControls } from './DebuggerSessionTools'
+import { DebugWaterfallPanel } from './DebugWaterfallPanel'
+import { replayFrameForEvent } from './waterfall/replaySourceFrame'
+import type { HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { debugContinuesAfterFailure, debugOverrideCount, debugRunIdError, sessionVariablesError } from './scriptSidebarModel'
 import type { OutlineModel } from './scriptOutlineModel'
 import ScriptOutlineTree, { type OutlineDebug, type ScriptOutlineSelection } from './ScriptOutlineTree'
@@ -48,15 +42,7 @@ import type {
   ScriptDefinition,
   ScriptExtractorDefinition,
 } from '../types/scripts'
-import type { useApi } from '../hooks/useApi'
-import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
-import { CorrelationDiagnosePanel, type RecordingStatusState } from './CorrelationDiagnosePanel'
-import { ExtractorTester } from './ExtractorTester'
-import RepairSuggestionList from './RepairSuggestionList'
-import SnapshotBodyPreview, { DebugLogHighlightedText } from './SnapshotBodyPreview'
-import SnapshotTextPreview from './SnapshotTextPreview'
-import { AuraRequestBodyTabs, AuraResponsePreview } from './AuraEnvelopeEditor'
-import { isAuraEndpointTarget } from './auraEnvelopeModel'
+import { DebugLogHighlightedText } from './SnapshotBodyPreview'
 import type { IssueDetail } from './IssueDetailsDialog'
 import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import {
@@ -67,29 +53,17 @@ import {
   formatDebugLeafSuffix,
   formatReplayDiagnosisCategory,
   highlightDebugLogRaw,
-  hasStructuredReplaySnapshot,
+  isReplayTerminal,
   normalizeDebugPhase,
 } from './scriptEditorReplayModel'
 import {
   DEBUGGER_LAYOUT_LIMITS,
   type DebugRailRenderRow,
   formatDebugPhaseLabel,
-  formatProtocolEvidenceSummary,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import {
-  formatConsoleEntries,
-  formatNetworkEntries,
-  formatReplayHeaders,
-  formatReplayTime,
-  hasBrowserReplayArtifacts,
-} from './scriptEditorUtils'
+import { formatReplayTime } from './scriptEditorUtils'
 import { sanitizeDownloadName } from './scriptEditorHelpers'
-import {
-  formatSnapshotRequestSection,
-  formatSnapshotResponseSection,
-} from '../utils/snapshotFormatUtils'
-import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
 import type {
   ReplayActivityItem,
   ReplayOptionsState,
@@ -131,7 +105,6 @@ const DebugConsoleLogEntry = memo(function DebugConsoleLogEntry({ entry }: { ent
 })
 
 type ReplayActionEvent = BrowserReplayEvent
-type ReplayDebuggerApi = Pick<ReturnType<typeof useApi>, 'diagnoseScriptReplay' | 'diagnoseCorrelations'>
 type ReplayDebuggerController = ReturnType<typeof useScriptReplayDebuggerController>
 
 interface ReplayVariableTimelineEntry {
@@ -143,21 +116,7 @@ interface ReplayVariableTimelineEntry {
   previous?: string
 }
 
-/** What text selected in a replayed response can become, by the event's step. */
-export interface ResponseActions {
-  /** Whether the response's status can become a check (HTTP). */
-  offersStatus: boolean
-  disabledReason: (event: BrowserReplayEvent) => string
-  laterUses: (event: BrowserReplayEvent, text: string) => number
-  /** Each adds to the event's step and says whether it did (false: the step already had it). */
-  onContains: (event: BrowserReplayEvent, text: string) => boolean
-  onSave: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => boolean
-  onCorrelate: (event: BrowserReplayEvent, selection: ResponseSelectionValue) => void
-  /** Sets the step's status check to status, adding one when it has none. */
-  onStatus: (event: BrowserReplayEvent, status: number) => boolean
-  /** The status the event's step already checks for, if any. */
-  checkedStatus: (event: BrowserReplayEvent) => number | undefined
-}
+export type { ResponseActions } from './requestResponseInspectorModel'
 
 export interface ScriptReplayDebuggerViewProps {
   /** The debugger's run controls (Step, Continue, Stop…), drawn first in the session bar. */
@@ -173,9 +132,7 @@ export interface ScriptReplayDebuggerViewProps {
   onFollowExecution: (enabled: boolean) => void
   onUpdateBreakpoints: (next: ScriptDebugBreakpoint[]) => Promise<void>
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
-  activeReplaySessionId: string | null
   addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
-  api: ReplayDebuggerApi
   applyReplaySuggestedLocator: (event: ReplayActionEvent, locator: string) => void
   breakpointSummary: string
   browserReplaySession: ScriptDebugSession | null
@@ -208,6 +165,8 @@ export interface ScriptReplayDebuggerViewProps {
   onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
   onOpenRequestResponse?: () => void
+  /** Opens the debug Summary's Recording diff (the run compared with a recording); absent when it cannot be reached. */
+  onCompareWithRecording?: () => void
   onSelectProblemAction: (row: ScriptPhaseActionRow) => void
   additionalIssues?: IssueDetail[]
   onSelectAdditionalIssue?: (issue: IssueDetail) => void
@@ -249,9 +208,6 @@ export interface ScriptReplayDebuggerViewProps {
   responseActions?: ResponseActions
   scriptId?: string | null
   scriptLevelIssues: AuthoringIssue[]
-  scriptRecordingStatus: ScriptRecordingStatus | null
-  scriptRecordingStatusState: RecordingStatusState
-  retryScriptRecordingStatus: () => void
   selectedOutlineParameterName: string | null
   selectOutlineParameter: (parameterName: string) => void
   parameterReferenceCounts: Map<string, number>
@@ -268,11 +224,6 @@ export interface ScriptReplayDebuggerViewProps {
   warnings: string[]
 }
 
-function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fallbackMs = 0): string {
-  const normalized = Number.isFinite(valueMs) ? Number(valueMs) : fallbackMs
-  return `${(normalized / 1000).toLocaleString(undefined, { maximumFractionDigits: 3 })}s`
-}
-
 export function ScriptReplayDebuggerView({
   sessionControls,
   readinessPopover,
@@ -280,9 +231,7 @@ export function ScriptReplayDebuggerView({
   onOpenHistory,
   runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints,
   actionProblemRows,
-  activeReplaySessionId,
   addExtractorDefinition,
-  api,
   breakpointSummary,
   browserReplaySession,
   clearDebugBreakpoints,
@@ -310,6 +259,7 @@ export function ScriptReplayDebuggerView({
   onSwitchToHTTP3Upgrade,
   onActivateDebug,
   onOpenRequestResponse,
+  onCompareWithRecording,
   onSelectProblemAction,
   additionalIssues = [],
   onSelectAdditionalIssue,
@@ -336,9 +286,6 @@ export function ScriptReplayDebuggerView({
   responseActions,
   scriptId,
   scriptLevelIssues,
-  scriptRecordingStatus,
-  scriptRecordingStatusState,
-  retryScriptRecordingStatus,
   selectedOutlineParameterName,
   selectOutlineParameter,
   parameterReferenceCounts,
@@ -417,29 +364,11 @@ export function ScriptReplayDebuggerView({
     ? debugLogVirtualizer.getVirtualItems().map(virtualItem => ({ entry: debugFilteredLogs[virtualItem.index], virtualItem }))
     : debugFilteredLogs.map(entry => ({ entry, virtualItem: null }))
   const isReplayPaused = browserReplaySession?.status === 'paused'
-  const replayTerminal = Boolean(replayReport?.completed_at) &&
-    !replaying &&
-    (!browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status))
+  const replayTerminal = isReplayTerminal(replayReport, replaying, browserReplaySession)
   const replayMatchesCurrentScript = replayEditableActionsKey !== null &&
     currentEditableActionsKey !== null &&
     replayEditableActionsKey === currentEditableActionsKey
   const dataUsage = useMemo(() => scriptDataUsage(script), [script])
-  // Identify the diagnosis inputs: the replay session plus the editable-action
-  // snapshot taken when that replay started. The live draft is intentionally
-  // not part of this key — applying a diagnosis fix edits the draft, and that
-  // must not wipe the presented diagnosis (the panel tracks draft drift itself
-  // through currentEditableActionsKey). Memoized: the event list can be large
-  // and grows on every replay progress event.
-  const correlationDiagnosisKey = useMemo(() => JSON.stringify({
-    scriptId,
-    replaySessionId: replayReport?.replay_session_id || activeReplaySessionId,
-    scriptHash: replayReport?.script_hash,
-    scriptRevision: replayReport?.script_revision,
-    startedAt: replayReport?.started_at,
-    completedAt: replayReport?.completed_at,
-    eventCount: replayReport?.events?.length ?? 0,
-    replayEditableActionsKey,
-  }), [scriptId, replayReport, activeReplaySessionId, replayEditableActionsKey])
 
   useEffect(() => { if (debuggerSettingsOpen) debuggerSettingsRef.current?.querySelector<HTMLInputElement>('input')?.focus() }, [debuggerSettingsOpen, debuggerSettingsRef])
   const variablesError = sessionVariablesError(replayOptions.variablesText)
@@ -452,6 +381,8 @@ export function ScriptReplayDebuggerView({
   const [rawLogs, setRawLogs] = useState(false)
   const [breakpointsPending, setBreakpointsPending] = useState(false)
   const [variablesSubtab, setVariablesSubtab] = useState<'values' | 'sources'>('values')
+  // The Request/Response sub-tab stays put while another action is selected.
+  const [inspectorTab, setInspectorTab] = useState<RequestResponseInspectorTab>('response')
   const runtimeFailures = debugEvents.map((event, index) => ({ event, index })).filter(({ event }) => !event.success)
   // Until the controller admits a session, the start is only being checked.
   const startPending = replaying && replayStartPending && !browserReplaySession
@@ -1063,376 +994,30 @@ export function ScriptReplayDebuggerView({
                 </section>
                 {!isBrowserScript && debugDetailHost && createPortal(
                   <div className="debugger-center-body debugger-request-body">
-                    {replayReport && (
-                      <details><summary>Compare with a recording (optional)</summary><CorrelationDiagnosePanel
-                        scriptId={scriptId ?? null}
-                        replaySessionId={replayReport.replay_session_id || activeReplaySessionId || undefined}
-                        replayTerminal={replayTerminal}
-                        replayMatchesCurrentScript={replayMatchesCurrentScript}
-                        projectId={projectId}
-                        events={replayReport.events}
-                        recordingStatus={scriptRecordingStatus}
-                        recordingStatusState={scriptRecordingStatusState}
-                        onRetryRecordingStatus={retryScriptRecordingStatus}
-                        diagnosisKey={correlationDiagnosisKey}
-                        currentEditableActionsKey={currentEditableActionsKey}
-                        actionCount={script.actions.length}
-                        diagnoseWithBaseline={(id, replay, replaySessionId) => api.diagnoseScriptReplay(id, replay, replaySessionId)}
-                        diagnoseWithUpload={(recorded, replay) => api.diagnoseCorrelations(recorded, replay)}
-                        onAddExtractor={addExtractorDefinition}
-                      /></details>
-                    )}
                     {!replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, F9, or Cmd/Ctrl+B), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
-                      (() => {
-                        const event = selectedReplayEvent
-                        const index = selectedReplayEventIndex
-                        const editableActionIndex = event.phase === 'action' && typeof event.action_index === 'number' && event.action_index < script.actions.length
-                          ? event.action_index
-                          : null
-                        const variableDiff = replayVariableDiffs[index] || {}
-                        const changedVariables = Object.entries(variableDiff)
-                        const snapshotSoapFault = event.snapshot ? extractSOAPFaultSummaryFromBody(event.snapshot.response_body) : null
-                        const replayPageURL = event.page_url || event.snapshot?.page_url
-                        const replayPageTitle = event.page_title || event.snapshot?.page_title
-                        const replayDOMSummary = event.dom_summary || event.snapshot?.dom_summary
-                        const replayConsoleEntries = event.console_entries || event.snapshot?.console_entries
-                        const replayNetworkEntries = event.network_entries || event.snapshot?.network_entries
-                        const replayHTML = event.html || event.snapshot?.html
-                        const replayScreenshotBase64 = event.screenshot_base64 || event.snapshot?.screenshot_base64
-                        return (
-                          <div className="debugger-detail">
-                            <div className="debugger-detail-head">
-                              {!replaying && replayMatchesCurrentScript && <button type="button" className="btn btn-sm btn-secondary" onClick={() => onEditReplayAction(event)}>Edit this action</button>}
-                              <span className="replay-event-phase">{event.phase}</span>
-                              <strong>{event.action_name || 'Unnamed action'}</strong>
-                              <span className="replay-event-target">{event.method || event.action_type} {event.target}</span>
-                              <span className={event.success ? 'text-success' : 'text-danger'}>{event.success ? `HTTP ${event.status_code || 'OK'}` : event.error_message || 'Failed'}</span>
-                              <span>{formatMillisecondsAsSecondsLabel(event.duration_ms)}</span>
-                            </div>
-                            <div className="replay-event-body">
-                                <div className="replay-event-detail-grid">
-                                  <div>
-                                    <span className="replay-detail-label">Started</span>
-                                    <div>{formatReplayTime(event.started_at)}</div>
-                                  </div>
-                                  <div>
-                                    <span className="replay-detail-label">Completed</span>
-                                    <div>{formatReplayTime(event.completed_at)}</div>
-                                  </div>
-                                  {replayPageURL && (
-                                    <div>
-                                      <span className="replay-detail-label">Page URL</span>
-                                      <div className="replay-page-url">{replayPageURL}</div>
-                                    </div>
-                                  )}
-                                  {replayPageTitle && (
-                                    <div>
-                                      <span className="replay-detail-label">Page Title</span>
-                                      <div>{replayPageTitle}</div>
-                                    </div>
-                                  )}
-                                </div>
-                                      {!isBrowserScript && <section aria-label="Response evidence">
-                                  <strong>Actual response: {event.status_code || 'No protocol status'}</strong>
-                                  {event.error_message && <p role="alert">{event.error_message}</p>}
-                                  {event.snapshot?.response_body
-                                    ? <p>Body captured. <button type="button" className="link-button" onClick={() => document.getElementById('debug-captured-response')?.scrollIntoView({ block: 'nearest' })}>View captured response below</button></p>
-                                    : (() => {
-                                      const body = responseBodyMessage(event.snapshot?.response_body_state || event.response_body_state)
-                                      return <p>{body.text}{body.capturable && <> <button type="button" className="link-button" onClick={() => setDebuggerSettingsOpen(true)}>Open Debug options</button></>}</p>
-                                    })()}
-                                  {/* Provenance answers "how do we know", after the answer itself: closed by default, headline kept in the summary. */}
-                                  {!runtimeVariablesUnavailable && (() => {
-                                    const bodyState = event.snapshot?.response_body_state || event.response_body_state
-                                    const version = httpReplayVersionEvidence(event.protocol_evidence)
-                                    const content = httpResponseContentEvidence(event.protocol_evidence, bodyState)
-                                    if (!version && !content) return null
-                                    return <details className="replay-protocol-evidence">
-                                      <summary>Protocol evidence{[version?.actual, content?.state].filter(Boolean).map(part => ` · ${part}`).join('')}</summary>
-                                      <HTTPVersionReplayEvidence evidence={event.protocol_evidence}
-                                        upgrade={!replaying && replayMatchesCurrentScript && onSwitchToHTTP3Upgrade && http3UpgradeScopes
-                                          ? { scopes: http3UpgradeScopes(event), onSwitch: scope => onSwitchToHTTP3Upgrade(event, scope) } : undefined} />
-                                      <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={bodyState} />
-                                    </details>
-                                  })()}
-                                  <HTTPNetworkTraceEvidence
-                                    evidence={event.protocol_evidence}
-                                    networkEntries={replayNetworkEntries}
-                                    unavailable={runtimeVariablesUnavailable}
-                                  />
-                                </section>}
-                                <ResourceSnapshotList snapshot={event.snapshot} />
-                                {event.diagnosis && (
-                                  <div className="replay-diagnosis-panel">
-                                    <div>
-                                      <span className="replay-detail-label">Diagnosis</span>
-                                      <strong>{formatReplayDiagnosisCategory(event.diagnosis.category)}</strong>
-                                      <p>{event.diagnosis.cause}</p>
-                                      {event.diagnosis.evidence && <small>{event.diagnosis.evidence}</small>}
-
-                                {event.diagnosis.action && <small>{event.diagnosis.action}</small>}
-                                    </div>
-                                    {(event.repair_suggestions || []).length > 0 && (
-                                      <RepairSuggestionList
-                                        suggestions={event.repair_suggestions || []}
-                                        className="replay-repair-suggestions"
-                                        itemClassName="replay-repair-suggestion"
-                                        label="Draft repair suggestions"
-                                        labelClassName="replay-detail-label"
-                                        renderExtraAction={suggestion => {
-                                          const fields = suggestion.fields || {}
-                                          const expression = fields.expression
-                                          const isExtractorFix = !!expression && (
-                                            suggestion.draft_patch_type?.includes('extractor')
-                                            || suggestion.draft_patch_type === 'add_extractor'
-                                            || !!fields.source
-                                          )
-                                          if (!isExtractorFix || editableActionIndex === null) return null
-                                          return (
-                                            <button
-                                              type="button"
-                                              className="btn btn-sm btn-secondary"
-                                              onClick={() => addExtractorDefinition(editableActionIndex, {
-                                                name: fields.name || 'correlation_value',
-                                                source: fields.source || 'body',
-                                                type: fields.type || fields.extract_type || 'regex',
-                                                expression: expression as string,
-                                              })}
-                                            >
-                                              Add as extractor
-                                            </button>
-                                          )
-                                        }}
-                                      />
-                                    )}
-                                  </div>
-                                )}
-                                {Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
-                                {event.protocol_evidence && (
-                                  <details className="replay-code-block">
-                                    <summary>Protocol Evidence{formatProtocolEvidenceSummary(event.protocol_evidence) ? ` · ${formatProtocolEvidenceSummary(event.protocol_evidence)}` : ''}</summary>
-                                    <SnapshotBodyPreview
-                                      body={JSON.stringify(event.protocol_evidence, null, 2)}
-                                      headers={{ 'Content-Type': 'application/json' }}
-                                      emptyMessage="No protocol evidence captured"
-                                    />
-                                  </details>
-                                )}
-                                {hasBrowserReplayArtifacts(event) && (
-                                  <div className="replay-browser-grid">
-                                    <div className="replay-browser-grid-header">
-                                      <span className="replay-detail-label">Browser Artifacts</span>
-                                    </div>
-                                    {replayDOMSummary && (
-                                      <div className="replay-code-block">
-                                        <span className="replay-detail-label">DOM Summary</span>
-                                        <SnapshotBodyPreview
-                                          body={JSON.stringify(replayDOMSummary, null, 2)}
-                                          headers={{ 'Content-Type': 'application/json' }}
-                                        />
-                                      </div>
-                                    )}
-                                    {replayConsoleEntries?.length ? (
-                                      <div className="replay-code-block">
-                                        <span className="replay-detail-label">Console</span>
-                                        <SnapshotTextPreview
-                                          text={formatConsoleEntries(replayConsoleEntries)}
-                                        />
-                                      </div>
-                                    ) : null}
-                                    {replayNetworkEntries?.length ? (
-                                      <div className="replay-code-block replay-browser-network">
-                                        <span className="replay-detail-label">Network</span>
-                                        <SnapshotTextPreview
-                                          text={formatNetworkEntries(replayNetworkEntries)}
-                                        />
-                                      </div>
-                                    ) : null}
-                                    {replayScreenshotBase64 && (
-                                      <div className="replay-screenshot-block">
-                                        <div className="replay-code-block-header">
-                                          <span className="replay-detail-label">Screenshot</span>
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-ghost"
-                                            onClick={() => setReplayScreenshotSelection({
-                                              alt: `${event.action_name || 'Replay action'} screenshot`,
-                                              src: `data:image/png;base64,${replayScreenshotBase64}`,
-                                            })}
-                                          >
-                                            View full size
-                                          </button>
-                                        </div>
-                                        <button
-                                          type="button"
-                                          className="replay-screenshot-button"
-                                          onClick={() => setReplayScreenshotSelection({
-                                            alt: `${event.action_name || 'Replay action'} screenshot`,
-                                            src: `data:image/png;base64,${replayScreenshotBase64}`,
-                                          })}
-                                        >
-                                          <img src={`data:image/png;base64,${replayScreenshotBase64}`} alt={`${event.action_name || 'Replay action'} screenshot`} />
-                                        </button>
-                                      </div>
-                                    )}
-                                    {replayHTML && (
-                                      <div className="replay-code-block replay-browser-html">
-                                        <span className="replay-detail-label">HTML</span>
-                                        <SnapshotTextPreview
-                                          text={replayHTML}
-                                        />
-                                      </div>
-                                    )}
-                                  </div>
-                                )}
-
-                                <div className="replay-code-block">
-                                  <span className="replay-detail-label">Resolved Headers</span>
-                                  <SnapshotTextPreview text={formatReplayHeaders(event.headers)} />
-                                </div>
-                                {event.body && (
-                                  <div className="replay-code-block">
-                                    <span className="replay-detail-label">Resolved Body</span>
-                                    <AuraRequestBodyTabs body={event.body}>
-                                      <SnapshotBodyPreview
-                                        body={event.body}
-                                        headers={event.headers}
-                                      />
-                                    </AuraRequestBodyTabs>
-                                  </div>
-                                )}
-                                {event.action_type === 'live_table' && <LiveTableStepResult event={event} action={replayMatchesCurrentScript && replayEventStepKey(event)
-                                  ? resolveAuthorJsonScopeByKey(script, replayEventStepKey(event)!)?.action
-                                  : undefined} />}
-                                <ReplayExtractions event={event} />
-                                {!isBrowserScript && (event.snapshot?.response_body || event.snapshot?.response_headers) && (
-                                  <details><summary>Test an extractor against this response</summary><ExtractorTester
-                                    event={event}
-                                    actionIndex={editableActionIndex}
-                                    onAddExtractor={addExtractorDefinition}
-                                  /></details>
-                                )}
-                                {changedVariables.length > 0 && (
-                                  <div className="replay-code-block">
-                                    <span className="replay-detail-label">Variable Changes</span>
-                                    <div className="replay-variable-diff-list">
-                                      {changedVariables.map(([name, diff]) => (
-                                        <div key={`${index}-${name}`} className="replay-variable-diff-item">
-                                          <div className="replay-variable-diff-name">{name}</div>
-                                          <div className="replay-variable-diff-values">
-                                            <span className="replay-variable-diff-before">{diff.previous ?? 'unset'}</span>
-                                            <span className="replay-variable-diff-arrow">{'→'}</span>
-                                            <span className="replay-variable-diff-after">{diff.next}</span>
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                                {event.snapshot && (
-                                  hasStructuredReplaySnapshot(event.snapshot) ? (
-                                    <div className="replay-event-detail-grid debugger-http-snapshot">
-                                      {snapshotSoapFault && (
-                                        <div className="replay-code-block">
-                                          <div className="replay-code-block-header">
-                                            <span className="replay-detail-label">SOAP Fault</span>
-                                            <button
-                                              type="button"
-                                              className="btn btn-sm btn-ghost"
-                                              onClick={() => void handleCopyReplaySnapshotSection(`${index}:soap-fault`, formatSOAPFaultSummary(snapshotSoapFault))}
-                                            >
-                                              {copiedReplaySnapshotSection === `${index}:soap-fault` ? 'Copied' : 'Copy fault'}
-                                            </button>
-                                          </div>
-                                          <pre><DebugLogHighlightedText text={formatSOAPFaultSummary(snapshotSoapFault)} /></pre>
-                                        </div>
-                                      )}
-                                      <div className="replay-code-block">
-                                        <div className="replay-code-block-header">
-                                          <span className="replay-detail-label">Request</span>
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-ghost"
-                                            onClick={() => void handleCopyReplaySnapshotSection(`${index}:request`, formatSnapshotRequestSection(event.snapshot))}
-                                          >
-                                            {copiedReplaySnapshotSection === `${index}:request` ? 'Copied' : 'Copy full request'}
-                                          </button>
-                                        </div>
-                                        <pre><DebugLogHighlightedText text={`${event.snapshot.request_method || 'n/a'} ${event.snapshot.request_url || ''}`.trim()} /></pre>
-                                        {event.snapshot.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}
-                                        {event.snapshot.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}
-                                        <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.request_headers)} />
-                                        {/* The resolved body above already has its Aura tabs; the snapshot gets them only without it. */}
-                                        <AuraRequestBodyTabs body={event.body ? undefined : event.snapshot.request_body}>
-                                          <div className="debugger-snapshot-body">
-                                            <SnapshotBodyPreview
-                                              body={event.snapshot.request_body}
-                                              headers={event.snapshot.request_headers}
-                                              emptyMessage="No request body captured"
-                                            />
-                                          </div>
-                                        </AuraRequestBodyTabs>
-                                      </div>
-                                      <div className="replay-code-block">
-                                        <div className="replay-code-block-header">
-                                          <span id="debug-captured-response" className="replay-detail-label">Response</span>
-                                          <button
-                                            type="button"
-                                            className="btn btn-sm btn-ghost"
-                                            onClick={() => void handleCopyReplaySnapshotSection(`${index}:response`, formatSnapshotResponseSection(event.snapshot, event.status_code))}
-                                          >
-                                            {copiedReplaySnapshotSection === `${index}:response` ? 'Copied' : 'Copy full response'}
-                                          </button>
-                                        </div>
-                                        {(() => {
-                                          const showAuraResponse = isAuraEndpointTarget(event.snapshot.request_url || event.target)
-                                            || Boolean(event.snapshot.response_body && /^\s*(?:while\s*\(\s*1\s*\)|for\s*\(\s*;\s*;\s*\))/.test(event.snapshot.response_body))
-                                          const response = <>
-                                            <pre><DebugLogHighlightedText text={String(event.snapshot.response_status || event.status_code || 'n/a')} /></pre>
-                                            <SnapshotTextPreview text={formatReplayHeaders(event.snapshot.response_headers)} />
-                                            {showAuraResponse && <AuraResponsePreview body={event.snapshot.response_body} />}
-                                            <div className="debugger-snapshot-body">
-                                              <SnapshotBodyPreview
-                                                body={event.snapshot.response_body}
-                                                headers={event.snapshot.response_headers}
-                                                emptyMessage="No response body captured"
-                                              />
-                                            </div>
-                                          </>
-                                          const bodyState = event.snapshot.response_body_state || event.response_body_state
-                                          // One selection per event: another event, or a new replay, starts afresh.
-                                          return responseActions ? <ResponseSelection
-                                            key={`${index}:${event.started_at}`}
-                                            body={event.snapshot.response_body}
-                                            bodyState={bodyState === 'partial' || bodyState === 'redacted' ? bodyState : 'whole'}
-                                            status={responseActions.offersStatus ? event.snapshot.response_status || event.status_code : undefined}
-                                            checkedStatus={responseActions.checkedStatus(event)}
-                                            disabledReason={responseActions.disabledReason(event)}
-                                            laterUses={text => responseActions.laterUses(event, text)}
-                                            onContains={text => responseActions.onContains(event, text)}
-                                            onSave={selection => responseActions.onSave(event, selection)}
-                                            onCorrelate={selection => responseActions.onCorrelate(event, selection)}
-                                            onStatus={status => responseActions.onStatus(event, status)}
-                                          >{response}</ResponseSelection> : response
-                                        })()}
-                                      </div>
-                                    </div>
-                                  ) : (
-                                    <div className="replay-code-block">
-                                      <span className="replay-detail-label">Snapshot</span>
-                                      <SnapshotBodyPreview
-                                        body={JSON.stringify(event.snapshot, null, 2)}
-                                        headers={{ 'Content-Type': 'application/json' }}
-                                      />
-                                    </div>
-                                  )
-                                )}
-                            </div>
-                          </div>
-                        )
-                      })()
+                      <RequestResponseInspector
+                        event={selectedReplayEvent}
+                        index={selectedReplayEventIndex}
+                        script={script}
+                        tab={inspectorTab}
+                        onTabChange={setInspectorTab}
+                        replaying={replaying}
+                        replayMatchesCurrentScript={replayMatchesCurrentScript}
+                        runtimeVariablesUnavailable={runtimeVariablesUnavailable}
+                        variableDiff={replayVariableDiffs[selectedReplayEventIndex] || {}}
+                        copiedSection={copiedReplaySnapshotSection}
+                        onCopySection={handleCopyReplaySnapshotSection}
+                        onEditAction={onEditReplayAction}
+                        onOpenDebugOptions={() => setDebuggerSettingsOpen(true)}
+                        addExtractorDefinition={addExtractorDefinition}
+                        http3UpgradeScopes={http3UpgradeScopes}
+                        onSwitchToHTTP3Upgrade={onSwitchToHTTP3Upgrade}
+                        responseActions={responseActions}
+                        onViewScreenshot={setReplayScreenshotSelection}
+                        onCompareWithRecording={onCompareWithRecording}
+                      />
                     ) : (replaying && browserReplaySession?.current_action) ? (
                       (() => {
                         const ca = browserReplaySession?.current_action
@@ -1451,7 +1036,10 @@ export function ScriptReplayDebuggerView({
                         )
                       })()
                     ) : (
-                      <div className="debugger-empty">Select an action from the list to inspect its request and response.</div>
+                      <div className="debugger-empty">
+                        Select an action from the list to inspect its request and response.
+                        {onCompareWithRecording && <> <button type="button" className="link-button" onClick={onCompareWithRecording}>Compare with a recording</button></>}
+                      </div>
                     )}
                   </div>,
                   debugDetailHost,
@@ -1542,7 +1130,14 @@ export function ScriptReplayDebuggerView({
                     </div>
                   ) : debuggerBottomTab === 'timeline' ? (
                     <div className="debugger-timeline">
-                      <DebugTimeline events={debugEvents} selectedIndex={selectedReplayEventIndex} onSelect={jumpToEvent} />
+                      <DebugWaterfallPanel
+                        events={debugEvents}
+                        selectedEventIndex={selectedReplayEventIndex}
+                        onSelectEvent={jumpToEvent}
+                        onInspectEvent={jumpToEvent}
+                        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
+                        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } }}
+                      />
                       <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>
                   ) : debuggerBottomTab === 'problems' ? (

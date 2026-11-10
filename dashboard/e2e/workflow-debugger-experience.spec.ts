@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { test, expect, idOf, json, login, expectDebugOutcome } from './support/workflow'
+import type { Locator } from '@playwright/test'
+import { test, expect, idOf, json, login, expectDebugOutcome, inspectorPanel, inspectorTab, inspectorVerdict, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 let target: Server
@@ -90,13 +91,18 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Check order' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Get customer' }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Body captured')
+  // The inspected step passed and its captured response body is shown on the default Response tab.
+  // A plain line, not a live region: it describes the selection rather than announcing it.
+  await expect(inspectorVerdict(page).locator('.rr-inspector-verdict-line')).toHaveText('Passed · HTTP 200')
+  await expect(inspectorVerdict(page).getByRole('status')).toHaveCount(0)
+  await expect(inspectorTab(page, 'Response')).toHaveAttribute('aria-selected', 'true')
+  await expect(inspectorPanel(page, 'Response').locator('.debugger-snapshot-body')).toContainText('debug-customer')
   // Inspecting a step stops following; follow again before continuing.
   await page.getByLabel('Follow execution', { exact: true }).check()
   await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   await page.getByRole('tab', { name: /^Problems/ }).click()
   const problems = page.getByRole('tabpanel', { name: 'Problems' })
   await expect(problems).toContainText('1 runtime failures')
@@ -174,21 +180,24 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await variablesSubtabs.getByRole('tab', { name: 'Current values', exact: true }).click()
   await page.getByRole('tab', { name: 'Timeline', exact: true }).click()
   const timeline = page.locator('.debug-execution-timeline')
-  await expect(timeline.getByRole('region', { name: 'Execution timeline waterfall', exact: true })).toBeVisible()
-  const timingBreakdown = timeline.getByRole('complementary', { name: 'Timing breakdown', exact: true })
+  const timelineGrid = timeline.getByRole('treegrid', { name: 'Execution timeline waterfall', exact: true })
+  await expect(timelineGrid).toBeVisible()
+  const timelineRow = (name: string) => timelineGrid.locator('.wf-row[data-node-id]').filter({ has: page.locator('.wf-name-label').getByText(name, { exact: true }) }).first()
+  await page.getByLabel('Find execution').fill('Check order')
+  const checkOrderRow = timelineRow('Check order')
+  await checkOrderRow.click()
+  const rowDetails = timeline.getByRole('complementary', { name: 'Selected row details', exact: true })
+  await expect(rowDetails).toContainText('Check order')
+  const timingBreakdown = rowDetails.getByLabel('Timing breakdown', { exact: true })
   await expect(timingBreakdown).toBeVisible()
   await expect(timingBreakdown).toContainText('Connection preparation')
   await expect(timingBreakdown).toContainText('Request and response')
   await expect(timingBreakdown).toContainText('Waiting (TTFB)')
   await timeline.getByRole('group', { name: 'Timeline scale', exact: true }).getByRole('button', { name: 'Stacked (100%)', exact: true }).click()
-  await expect(timeline.locator('.debug-timeline-ruler')).toContainText('100%')
+  await expect(timeline.locator('.wf-axis')).toContainText('100%')
   await timeline.getByRole('group', { name: 'Timeline scale', exact: true }).getByRole('button', { name: 'Waterfall (session)', exact: true }).click()
-  await page.getByLabel('Find execution').fill('Check order')
-  await expect(timingBreakdown).toContainText('Check order')
-  const checkOrderRow = timeline.getByRole('button', { name: /Passed · Check order/ })
-  await checkOrderRow.click()
   // A phase-total segment is the no-timing fallback; debug runs retain HAR timings by default.
-  expect(await checkOrderRow.locator('.debug-timeline-bar-segment:not(.phase-total)').count()).toBeGreaterThan(0)
+  expect(await checkOrderRow.locator('.wf-seg:not(.phase-total)').count()).toBeGreaterThan(0)
   await expect(page.locator('.debug-selection-status')).toContainText('Inspecting action 2')
   await expect(page.getByRole('tab', { name: 'Output', exact: true })).toHaveCount(0)
   await page.getByRole('tab', { name: 'Summary', exact: true }).click()
@@ -264,35 +273,53 @@ test('request and response code fills the debug pane and follows dock resizing',
   await expect(page.getByRole('region', { name: 'Debug detail', exact: true })).toBeVisible()
   const requestCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Request$/ }) })
   const responseCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Response$/ }) })
-  await expect(requestCard.locator('.snapshot-code')).toContainText('debug-customer')
+  // The inspector shows one payload at a time: Response (default) or Request ("Sent on the wire" by default).
+  // Inactive views stay mounted (so drafts survive), hidden.
+  const requestView = page.getByRole('group', { name: 'Request view', exact: true })
   await expect(responseCard.locator('.snapshot-code')).toContainText('ready')
+  await expect(responseCard).toBeVisible()
+  await expect(requestCard).toBeHidden()
+  await openInspectorTab(page, 'Request')
+  await expect(requestView.getByRole('button', { name: 'Sent on the wire', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(requestCard.locator('.snapshot-code')).toContainText('debug-customer')
+  await expect(requestCard).toBeVisible()
+  await expect(responseCard).toBeHidden()
   if (await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).click()
   }
 
-  const geometry = async () => Promise.all([requestCard, responseCard].map(card => card.evaluate(element => {
-    const code = element.querySelector<HTMLElement>('.snapshot-code')!
-    const body = code.closest('.debugger-snapshot-body') || code.parentElement!
-    const buttons = Array.from(body.querySelectorAll<HTMLElement>('.snapshot-body-actions')).at(-1)!
-    const grid = element.closest<HTMLElement>('.replay-event-detail-grid')!
-    const scrollport = element.closest<HTMLElement>('.debugger-center-body')!
-    const codeBounds = code.getBoundingClientRect()
-    const gridBounds = grid.getBoundingClientRect()
-    const scrollBounds = scrollport.getBoundingClientRect()
-    return {
-      codeHeight: codeBounds.height,
-      codeToActionsGap: buttons.getBoundingClientRect().top - codeBounds.bottom,
-      gridBottomGap: scrollBounds.top + scrollport.clientTop + scrollport.clientHeight - parseFloat(getComputedStyle(scrollport).paddingBottom) - gridBounds.bottom,
-      bodyBottomGap: body.getBoundingClientRect().bottom - buttons.getBoundingClientRect().bottom,
+  // Each payload is measured on its own sub-tab, where it is the only payload in the panel.
+  const payloadCards = [['Request', requestCard], ['Response', responseCard]] as const
+  const geometry = async () => {
+    const result = []
+    for (const [tab, card] of payloadCards) {
+      await openInspectorTab(page, tab)
+      result.push(await card.evaluate(element => {
+        const code = element.querySelector<HTMLElement>('.snapshot-code')!
+        const body = code.closest('.debugger-snapshot-body') || code.parentElement!
+        const buttons = Array.from(body.querySelectorAll<HTMLElement>('.snapshot-body-actions')).at(-1)!
+        const scrollport = element.closest<HTMLElement>('.debugger-center-body')!
+        const codeBounds = code.getBoundingClientRect()
+        // The payload card is the last block in its sub-tab panel, so it must reach the pane bottom itself.
+        const cardBounds = element.getBoundingClientRect()
+        const scrollBounds = scrollport.getBoundingClientRect()
+        return {
+          codeHeight: codeBounds.height,
+          codeToActionsGap: buttons.getBoundingClientRect().top - codeBounds.bottom,
+          cardBottomGap: scrollBounds.top + scrollport.clientTop + scrollport.clientHeight - parseFloat(getComputedStyle(scrollport).paddingBottom) - cardBounds.bottom,
+          bodyBottomGap: body.getBoundingClientRect().bottom - buttons.getBoundingClientRect().bottom,
+        }
+      }))
     }
-  })))
+    return result
+  }
   const expectFilledBodies = async () => {
     await expect.poll(async () => (await geometry()).map(bounds => ({
       ...bounds,
-      fillsPane: bounds.codeHeight > 40 && Math.abs(bounds.gridBottomGap) <= 30
+      fillsPane: bounds.codeHeight > 40 && Math.abs(bounds.cardBottomGap) <= 30
         && bounds.codeToActionsGap >= 0 && bounds.codeToActionsGap <= 12
         && Math.abs(bounds.bodyBottomGap) <= 2,
-    })), { message: 'Both payload code areas must stretch to their actions and the remaining debug pane height' }).toMatchObject([{ fillsPane: true }, { fillsPane: true }])
+    })), { message: 'Each payload code area must stretch to its actions and the remaining debug pane height' }).toMatchObject([{ fillsPane: true }, { fillsPane: true }])
     return geometry()
   }
   const collapsed = await expectFilledBodies()
@@ -319,17 +346,8 @@ test('request and response code fills the debug pane and follows dock resizing',
   await actions.getByRole('treeitem', { name: /^Long payload/ }).click()
   await page.setViewportSize({ width: 1400, height: 900 })
   const resolvedBodyCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-detail-label').filter({ hasText: /^Resolved Body$/ }) })
-  await expect(resolvedBodyCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
-  await expect(requestCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
-  await expect(responseCard.locator('pre.snapshot-code')).toContainText('last-retained-response-value')
-  const railCardLayout = await Promise.all([resolvedBodyCard, requestCard, responseCard].map(card => card.evaluate((el: HTMLElement) => {
-    const rect = el.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom, width: rect.width }
-  })))
-  expect(railCardLayout[1].width).toBeGreaterThan(220)
-  expect(Math.abs(railCardLayout[2].width - railCardLayout[1].width)).toBeLessThanOrEqual(2)
-  expect(railCardLayout[1].top).toBeGreaterThanOrEqual(railCardLayout[0].bottom - 2)
-  for (const codeBox of [resolvedBodyCard.locator('pre.snapshot-code'), requestCard.locator('pre.snapshot-code'), responseCard.locator('pre.snapshot-code')]) {
+  const cardWidth = (card: Locator) => card.evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
+  const expectScrollableCode = async (codeBox: Locator) => {
     await codeBox.scrollIntoViewIfNeeded()
     const scrollMetrics = await codeBox.evaluate((el: HTMLElement) => {
       const style = getComputedStyle(el)
@@ -345,8 +363,28 @@ test('request and response code fills the debug pane and follows dock resizing',
     expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
     expect(scrollMetrics.scrollTop).toBeGreaterThan(0)
   }
+  // Request › As scripted shows the resolved body; Sent on the wire replaces it with the wire request.
+  await openInspectorTab(page, 'Request')
+  await requestView.getByRole('button', { name: 'As scripted', exact: true }).click()
+  await expect(requestView.getByRole('button', { name: 'As scripted', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(resolvedBodyCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(requestCard).toHaveCount(0)
+  const resolvedBodyWidth = await cardWidth(resolvedBodyCard)
+  await expectScrollableCode(resolvedBodyCard.locator('pre.snapshot-code'))
+  await requestView.getByRole('button', { name: 'Sent on the wire', exact: true }).click()
+  await expect(requestView.getByRole('button', { name: 'Sent on the wire', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(requestCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(resolvedBodyCard).toHaveCount(0)
+  const requestWidth = await cardWidth(requestCard)
+  expect(requestWidth).toBeGreaterThan(220)
+  expect(Math.abs(resolvedBodyWidth - requestWidth)).toBeLessThanOrEqual(2)
+  await expectScrollableCode(requestCard.locator('pre.snapshot-code'))
   await requestCard.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('debugger-right-rail-scrollable.png') })
+  await openInspectorTab(page, 'Response')
+  await expect(responseCard.locator('pre.snapshot-code')).toContainText('last-retained-response-value')
+  expect(Math.abs(await cardWidth(responseCard) - requestWidth)).toBeLessThanOrEqual(2)
+  await expectScrollableCode(responseCard.locator('pre.snapshot-code'))
 
   // Full retained payloads remain reachable through the existing preview control.
   await page.setViewportSize({ width: 900, height: 1000 })
@@ -440,7 +478,10 @@ test('failures-only debugger capture preserves fetched resource evidence', async
     expect(terminal.report.events[0].snapshot.resources[0]).toMatchObject({ request_url: `${targetURL}/capture-resource`, response_status: 200, response_body_state: 'captured' })
     await expect.poll(() => suppressedTerminalMessages).toBeGreaterThan(0)
     await expectDebugOutcome(page, 'failed')
-    const resources = page.getByRole('region', { name: 'Captured resources', exact: true })
+    // Captured resources live on the inspector's Network tab, which carries a count badge.
+    await expect(inspectorTab(page, 'Network')).toHaveAccessibleName(/^Network \d+$/)
+    const network = await openInspectorTab(page, 'Network')
+    const resources = network.getByRole('region', { name: 'Captured resources', exact: true })
     await expect(resources).toContainText('/capture-resource')
     await resources.locator('summary').click()
     await expect(resources).toContainText('diagnostic evidence')
@@ -475,7 +516,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
   await expect(summary).toBeVisible()
-  await expect(summary.getByRole('status')).toContainText('Failed')
+  await expect(summary.getByRole('status').filter({ hasText: 'Failed' })).toBeVisible()
   await expect(summary).toContainText('Debug_summary_checkout')
   await expect(summary).toContainText('Check order')
   await expect(summary).toContainText('HTTP 200')
@@ -506,7 +547,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await issuesTable.getByRole('button', { name: /Action/ }).click()
   await expect(issuesTable.getByRole('columnheader', { name: /Action/ })).toHaveAttribute('aria-sort', 'ascending')
   await summary.getByRole('button', { name: 'Inspect Check order' }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   // Periodic session refreshes must not take the selected evidence tab away.
   await page.waitForTimeout(1800)
   await expect(summary).toBeHidden()
@@ -525,7 +566,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Get customer' })).toBeVisible()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await expect(summary).toBeVisible()
-  await expect(summary.getByRole('status')).toContainText('Stopped')
+  await expect(summary.getByRole('status').filter({ hasText: 'Stopped' })).toBeVisible()
   await expect(summary).toContainText('No network traffic was retained')
   await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toHaveCount(0)
 })
@@ -549,7 +590,7 @@ test('browser debug completion summary exports observed page and resource reques
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
   await expect(summary).toBeVisible({ timeout: 60_000 })
-  await expect(summary.getByRole('status')).toContainText('Passed')
+  await expect(summary.getByRole('status').filter({ hasText: 'Passed' })).toBeVisible()
   await expect(summary.getByRole('button', { name: 'Export session', exact: true })).toBeVisible()
   const downloadPromise = page.waitForEvent('download')
   await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
@@ -610,7 +651,7 @@ for (const protocol of ['http', 'browser'] as const) test(`${protocol} HAR captu
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   await expect(summary).toBeVisible({ timeout: 60_000 })
-  await expect(summary.getByRole('status')).toContainText('Passed')
+  await expect(summary.getByRole('status').filter({ hasText: 'Passed' })).toBeVisible()
   await expect(summary).toContainText('256 KiB per body')
   const rich = await downloadHAR()
   expect(rich.log.entries.some((e: { request: { url: string } }) => e.request.url.endsWith('/har-start'))).toBe(true)
@@ -662,29 +703,29 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   await page.getByRole('menuitem', { name: 'Run a single iteration', exact: true }).click()
   const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
   await expect(summary).toBeVisible()
-  await expect(summary.getByRole('status')).toContainText('Failed')
-  const table = summary.getByRole('table', { name: 'Transactions from the completed debug run' })
-  await expect(table.getByRole('columnheader', { name: 'Elapsed time (ms)', exact: true })).toBeVisible()
-  const row = (name: string) => table.getByRole('row').filter({ has: page.getByRole('rowheader').filter({ hasText: name }) })
+  await expect(summary.getByRole('status').filter({ hasText: 'Failed' })).toBeVisible()
+  const grid = summary.getByRole('treegrid', { name: 'Transactions and executions', exact: true })
+  await expect(grid.getByRole('columnheader', { name: 'Duration', exact: true })).toBeVisible()
+  const row = (name: string) => grid.locator('.wf-row[data-node-id]').filter({ has: page.locator('.wf-name-label').getByText(name, { exact: true }) }).first()
+  const details = summary.getByRole('complementary', { name: 'Selected row details', exact: true })
   await expect(row('Setup')).toContainText('Passed')
   await expect(row('Checkout')).toContainText('Failed')
   await expect(row('Receipt')).toContainText('Passed')
-  await expect(table.getByText('Cart page', { exact: true })).toHaveCount(0)
-  const expandCheckout = table.getByRole('button', { name: 'Expand Checkout', exact: true })
-  await expandCheckout.focus(); await expandCheckout.press('Enter')
-  await expect(table.getByRole('button', { name: 'Collapse Checkout', exact: true })).toHaveAttribute('aria-expanded', 'true')
+  // Transactions open by default; left/right arrows collapse and expand the selected row.
+  await row('Checkout').click()
+  await expect(row('Checkout')).toHaveAttribute('aria-expanded', 'true')
+  await grid.press('ArrowLeft')
+  await expect(row('Checkout')).toHaveAttribute('aria-expanded', 'false')
+  await expect(grid.getByText('Cart page', { exact: true })).toHaveCount(0)
+  await grid.press('ArrowRight')
+  await expect(row('Checkout')).toHaveAttribute('aria-expanded', 'true')
   // Both subtransactions declare Checkout as their parent, even while overlapping.
   await expect(row('Totals')).toContainText('Passed')
-  await table.getByRole('button', { name: 'Expand Cart', exact: true }).press('Space')
-  await table.getByRole('button', { name: 'Expand Cart page', exact: true }).click()
   await expect(row('Cart page')).toContainText('Failed')
   await expect(row('Get customer')).toContainText('Passed')
   await expect(row('Check order')).toContainText('Failed')
-  await expect(row('Check order')).toContainText('Action time:')
-  await expect(row('Totals')).toContainText('Passed')
-  await expect(row('Receipt')).toContainText('Passed')
   await expect(summary.locator('.table-pagination-toolbar')).toHaveCount(0)
-  const breakdown = table.getByRole('note', { name: 'Timing breakdown for Checkout', exact: true })
+  const breakdown = details.getByRole('note', { name: 'Timing breakdown for Checkout', exact: true })
   await expect(breakdown).toContainText('outside child spans')
   const outside = (await breakdown.innerText()).match(/([\d,.]+) ms outside child spans/)
   expect(outside).not.toBeNull()
@@ -692,39 +733,49 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   const overlap = (await breakdown.innerText()).match(/([\d,.]+) ms counted more than once/)
   expect(overlap).not.toBeNull()
   expect(Number(overlap![1].replaceAll(',', ''))).toBeGreaterThanOrEqual(20)
-  await expect(row('Checkout').locator('time')).toHaveCount(2)
-  await expect(row('Check order').locator('time')).toHaveCount(2)
-  await expect(row('Check order').getByRole('cell').nth(4)).toContainText('ms')
-  await expect(table.getByRole('columnheader', { name: /^Waterfall/ })).toBeVisible()
-  await expect(row('Checkout').locator('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toBeVisible()
-  await expect(row('Checkout').locator('.debug-transaction-waterfall-cell .phase-wait')).toHaveCount(1)
-  await expect(row('Check order').locator('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toBeVisible()
+  await expect(details.locator('time')).toHaveCount(2)
+  await expect(details).toContainText('Self time')
+  // Parents draw their children's real spans; leaves draw their phases.
+  await expect(row('Checkout').locator('.wf-bar-parent')).toBeVisible()
+  expect(await row('Checkout').locator('.wf-mini').count()).toBeGreaterThan(0)
+  await expect(row('Check order').locator('.wf-bar')).toBeVisible()
+  await expect(row('Check order').locator('.wf-cell-duration')).toContainText('ms')
   await page.screenshot({ path: testInfo.outputPath('transaction-summary-desktop.png'), fullPage: true })
-  await table.getByRole('button', { name: 'Inspect Check order', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await row('Check order').click()
+  // Execution rows keep the old table's start/end/elapsed/action-time evidence.
+  await expect(details.locator('time')).toHaveCount(2)
+  await expect(details).toContainText('Elapsed')
+  await expect(details).toContainText('Action time')
+  await details.getByRole('button', { name: 'Inspect Check order', exact: true }).click()
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   await page.getByRole('tab', { name: 'Summary', exact: true }).click()
-  // Returning to Summary restores the transaction table.
-  if (await table.getByRole('button', { name: 'Expand Checkout', exact: true }).isVisible()) {
-    await table.getByRole('button', { name: 'Expand Checkout', exact: true }).click()
-    await table.getByRole('button', { name: 'Expand Cart', exact: true }).click()
-    await table.getByRole('button', { name: 'Expand Cart page', exact: true }).click()
-  }
-  await expect(table.getByText('Check order', { exact: true })).toBeVisible()
+  // Returning to Summary restores the transaction tree.
+  await expect(row('Check order')).toBeVisible()
   await page.setViewportSize({ width: 900, height: 1000 })
-  const scrollRegion = summary.getByRole('region', { name: 'Transaction timings', exact: true })
-  await scrollRegion.focus(); await expect(scrollRegion).toBeFocused()
-  expect(await scrollRegion.evaluate(element => element.scrollWidth > element.clientWidth)).toBe(true)
-  await scrollRegion.press('ArrowRight')
-  await expect.poll(() => scrollRegion.evaluate(element => element.scrollLeft)).toBeGreaterThan(0)
+  await grid.focus(); await expect(grid).toBeFocused()
+  await grid.press('Home')
+  await expect(grid.locator('.wf-row.selected')).toHaveCount(1)
+  await grid.press(']')
+  await expect(grid.locator('.wf-row.selected')).toContainText('Failed')
+  // At 900px every column of the selected row stays inside the grid's visible box.
+  const gridBox = await grid.boundingBox()
+  for (const cell of ['.wf-cell-name', '.wf-cell-duration', '.wf-cell-timeline']) {
+    const box = await grid.locator(`.wf-row.selected ${cell}`).boundingBox()
+    expect(box && gridBox && box.x >= gridBox.x - 1 && box.x + box.width <= gridBox.x + gridBox.width + 1).toBe(true)
+  }
   await page.screenshot({ path: testInfo.outputPath('transaction-summary-narrow.png'), fullPage: true })
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run in step mode', exact: true }).click()
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Start Setup' })).toBeVisible()
   await page.getByRole('button', { name: 'Stop', exact: true }).click()
   await expect(summary).toBeVisible()
-  await expect(summary.getByRole('status')).toContainText('Stopped')
+  await expect(summary.getByRole('status').filter({ hasText: 'Stopped' })).toBeVisible()
+  // Subtrees that never ran start collapsed; open the path down to Check order.
+  await expect(row('Not run')).toHaveAttribute('aria-expanded', 'false')
+  for (const name of ['Not run', 'Checkout', 'Cart', 'Cart page']) {
+    await row(name).getByRole('button', { name: `Expand ${name}`, exact: true }).click()
+  }
   await expect(row('Checkout')).toContainText('Not run')
-  await expect(row('Checkout').locator('time')).toHaveCount(0)
-  await expect(row('Checkout').locator('.debug-transaction-waterfall-cell')).toHaveText('—')
-  await expect(table.getByText('Check order', { exact: true })).toHaveCount(0)
+  await expect(row('Checkout').locator('.wf-untimed')).toHaveText('Not run')
+  await expect(row('Check order')).toContainText('Not run')
 })

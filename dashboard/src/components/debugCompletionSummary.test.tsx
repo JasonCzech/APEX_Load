@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from 'react'
+import { act, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { describe, expect, it, vi } from 'vitest'
@@ -114,7 +114,13 @@ describe('debug summary page', () => {
       // Verify Execution waterfall is rendered inside the Transactions tabpanel
       const waterfallSection = transactionsPanel.querySelector('[aria-label="Execution waterfall"]')
       expect(waterfallSection).not.toBeNull()
-      expect(waterfallSection?.querySelectorAll('.debug-timeline-waterfall-row')).toHaveLength(2)
+      expect(waterfallSection?.querySelector('[role="treegrid"]')).not.toBeNull()
+      // Init and Actions iteration headers, each with its execution.
+      expect([...waterfallSection!.querySelectorAll('.wf-row.wf-kind-iteration')].map(row => row.querySelector('.wf-name-label')?.textContent)).toEqual(['Init', 'Actions'])
+      expect(waterfallSection?.querySelectorAll('.wf-row[data-node-id]:not(.wf-kind-iteration)')).toHaveLength(2)
+      // The first failure is selected and its details are open in the drawer.
+      expect(waterfallSection?.querySelector('.wf-row.selected .wf-name-label')?.textContent).toBe('Checkout')
+      expect(waterfallSection?.querySelector('[aria-label="Selected row details"]')?.textContent).toContain('Expected 200, got 500')
 
       // Switch to Errors and warnings tab and back
       act(() => tabs[1].click())
@@ -148,9 +154,10 @@ describe('debug summary page', () => {
       act(() => errTab.click())
       expect(errTab.getAttribute('aria-selected')).toBe('true')
       act(() => txTab.click())
-      const firstRowBtn = container.querySelectorAll<HTMLButtonElement>('.debug-timeline-waterfall-row')[0]!
-      act(() => firstRowBtn.click())
-      expect(firstRowBtn.getAttribute('aria-current')).toBe('true')
+      const executionRows = () => [...container.querySelectorAll<HTMLElement>('.wf-row[data-node-id]:not(.wf-kind-iteration)')]
+      const firstRow = executionRows()[0]!
+      act(() => firstRow.click())
+      expect(executionRows()[0].getAttribute('aria-selected')).toBe('true')
       act(() => errTab.click())
       expect(errTab.getAttribute('aria-selected')).toBe('true')
       const nextRun: DebugCompletionSnapshot = { ...snapshot, key: 'run-2', session: { ...snapshot.session, id: 'run-2' } }
@@ -158,9 +165,109 @@ describe('debug summary page', () => {
       const [nextTxTab, nextErrTab] = [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
       expect(nextTxTab.getAttribute('aria-selected')).toBe('true')
       expect(nextErrTab.getAttribute('aria-selected')).toBe('false')
-      const nextRows = container.querySelectorAll<HTMLButtonElement>('.debug-timeline-waterfall-row')
-      expect(nextRows[1]?.getAttribute('aria-current')).toBe('true')
+      const nextRows = executionRows()
+      expect(nextRows[0]?.getAttribute('aria-selected')).toBe('false')
+      expect(nextRows[1]?.getAttribute('aria-selected')).toBe('true')
     } finally { act(() => root.unmount()); container.remove() }
+  })
+
+  it('shows the recording comparison as the Recording diff sub-tab and opens it on request', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    type TabRequest = import('./DebugCompletionSummary').DebugSummaryTabRequest
+    const snapshot = fixture()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const diff = <p data-testid="diff">Compared with the recording</p>
+    const render = ({ recordingDiff = diff as ReactNode, tabRequest = null as TabRequest | null, unavailable = false } = {}) => act(() => root.render(
+      <Summary snapshot={snapshot} stale={false} unavailable={unavailable} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()}
+        recordingDiff={recordingDiff} tabRequest={tabRequest} />))
+    const tabs = () => [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
+    const diffTab = () => container.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')
+    const diffPanel = () => container.querySelector<HTMLElement>('#debug-summary-panel-recording-diff')
+    const transactionsPanel = () => container.querySelector<HTMLElement>('#debug-summary-panel-transactions')!
+    try {
+      // A request already present at mount is not acted on.
+      render({ tabRequest: { tab: 'recording-diff', id: 1 } })
+      expect(tabs().map(tab => tab.firstElementChild?.textContent)).toEqual(['Transactions', 'Errors and warnings', 'Recording diff'])
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('false')
+      expect(diffTab()?.tabIndex).toBe(-1)
+      expect(diffTab()?.getAttribute('aria-controls')).toBe('debug-summary-panel-recording-diff')
+      expect(diffPanel()?.getAttribute('role')).toBe('tabpanel')
+      expect(diffPanel()?.getAttribute('aria-labelledby')).toBe('debug-summary-tab-recording-diff')
+      expect(diffPanel()?.hidden).toBe(true)
+      expect(transactionsPanel().hidden).toBe(false)
+
+      act(() => diffTab()!.click())
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+      expect(diffTab()?.tabIndex).toBe(0)
+      expect(transactionsPanel().hidden).toBe(true)
+      expect(diffPanel()?.hidden).toBe(false)
+      const section = diffPanel()!.querySelector('section[aria-label="Recording diff"]')!
+      expect(section.querySelector('h3')?.textContent).toBe('Recording diff')
+      expect(section.querySelector('[data-testid="diff"]')?.textContent).toBe('Compared with the recording')
+
+      // A newer request switches to the tab and focuses it; the same request again does not.
+      act(() => tabs()[0].click())
+      expect(diffPanel()?.hidden).toBe(true)
+      render({ tabRequest: { tab: 'recording-diff', id: 2 } })
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+      expect(diffPanel()?.hidden).toBe(false)
+      expect(document.activeElement).toBe(diffTab())
+      act(() => tabs()[1].click())
+      render({ tabRequest: { tab: 'recording-diff', id: 2 } })
+      expect(tabs()[1].getAttribute('aria-selected')).toBe('true')
+      expect(diffPanel()?.hidden).toBe(true)
+      render({ tabRequest: { tab: 'recording-diff', id: 3 } })
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+
+      // Without a comparison there is no third tab, and a request for it shows Transactions.
+      render({ recordingDiff: null, tabRequest: { tab: 'recording-diff', id: 4 } })
+      expect(tabs().map(tab => tab.firstElementChild?.textContent)).toEqual(['Transactions', 'Errors and warnings'])
+      expect(diffPanel()).toBeNull()
+      expect(tabs()[0].getAttribute('aria-selected')).toBe('true')
+      expect(transactionsPanel().hidden).toBe(false)
+      expect(container.querySelector('[aria-label="Recording diff"]')).toBeNull()
+
+      // With runtime evidence unavailable the comparison is a plain section under the warning.
+      render({ unavailable: true, tabRequest: { tab: 'recording-diff', id: 4 } })
+      expect(container.textContent).toContain('Runtime evidence unavailable.')
+      expect(tabs()).toHaveLength(0)
+      expect(diffPanel()).toBeNull()
+      const plain = container.querySelector('section[aria-label="Recording diff"]')
+      expect(plain?.querySelector('h3')?.textContent).toBe('Recording diff')
+      expect(plain?.querySelector('[data-testid="diff"]')).not.toBeNull()
+    } finally { act(() => root.unmount()); container.remove() }
+  })
+
+  it('focuses the plain Recording diff once per request, when it is not a sub-tab', async () => {
+    const { default: Summary, DebugSummaryRecordingDiff } = await import('./DebugCompletionSummary')
+    const snapshot = fixture()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const outside = document.createElement('button'); document.body.appendChild(outside)
+    let pending = false
+    const consume = () => { const value = pending; pending = false; return value }
+    const heading = () => container.querySelector<HTMLElement>('section[aria-label="Recording diff"] h3')
+    try {
+      // Live or paused run: the section alone (ScriptEditor's fallback).
+      outside.focus()
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff</p></DebugSummaryRecordingDiff>))
+      expect(document.activeElement).toBe(outside)
+      pending = true
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff again</p></DebugSummaryRecordingDiff>))
+      expect(heading()?.tabIndex).toBe(-1)
+      expect(document.activeElement).toBe(heading())
+      // A later render without a new request leaves focus alone.
+      outside.focus()
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff</p></DebugSummaryRecordingDiff>))
+      expect(document.activeElement).toBe(outside)
+
+      // Runtime evidence unavailable: the summary's plain section takes focus on request too.
+      pending = true
+      act(() => root.render(<Summary snapshot={snapshot} stale={false} unavailable onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()}
+        recordingDiff={<p>diff</p>} tabRequest={{ tab: 'recording-diff', id: 1 }} consumeRecordingDiffFocus={consume} />))
+      expect(document.activeElement).toBe(heading())
+    } finally { act(() => root.unmount()); container.remove(); outside.remove() }
   })
 
   it('sorts and filters the errors and warnings table', async () => {
@@ -298,37 +405,55 @@ describe('debug summary transaction table', () => {
     }]
     const consoleErrorSpy = vi.spyOn(console, 'error')
     const inspect = vi.fn(), container = document.createElement('div'), root = createRoot(container)
+    document.body.appendChild(container)
     const render = (unavailable = false) => act(() => root.render(<Summary snapshot={run} stale={false} unavailable={unavailable} onExportSession={vi.fn()} onSelectEvent={inspect} onDownloadHAR={vi.fn()} />))
+    const rowByLabel = (label: string) => [...container.querySelectorAll<HTMLElement>('.wf-row[data-node-id]')].find(row => row.querySelector('.wf-name-label')?.textContent === label)
     try {
       render()
-      const table = container.querySelector('table')!
-      expect(table.textContent).toContain('Elapsed time (ms)')
-      expect(table.textContent).toContain('Waterfall')
-      expect(table.getAttribute('data-table-pagination')).toBe('off')
-      expect(table.textContent).not.toContain('Pay')
-      expect(table.querySelectorAll('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toHaveLength(1)
-      expect(table.querySelector('.debug-transaction-waterfall-cell .phase-wait')).not.toBeNull()
-      const expand = table.querySelector<HTMLButtonElement>('button[aria-expanded]')!
-      expect(expand.getAttribute('aria-expanded')).toBe('false')
-      act(() => expand.click())
-      expect(table.textContent).toContain('Pay')
-      expect(table.querySelectorAll('.debug-transaction-waterfall-cell .debug-timeline-bar-track')).toHaveLength(2)
-      expect(table.querySelector('[aria-label="Timing breakdown for Checkout"]')?.textContent).toContain('outside child spans')
-      expect(table.textContent).toContain('Action time:')
-      expect(expand.getAttribute('aria-expanded')).toBe('true')
-      expect(table.querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
-      const child = [...table.querySelectorAll('tr')].find(row => row.textContent?.includes('Pay'))!
-      expect(child.querySelectorAll('.debug-transaction-waterfall-cell .phase-wait')).toHaveLength(2)
+      const grid = container.querySelector('[role="treegrid"]')!
+      expect(grid.getAttribute('aria-label')).toBe('Transactions and executions')
+      expect(grid.textContent).toContain('Duration')
+      // Transactions start expanded: Actions › Checkout › Pay.
+      const checkout = rowByLabel('Checkout')!
+      expect(checkout.classList.contains('wf-kind-transaction')).toBe(true)
+      expect(checkout.getAttribute('aria-expanded')).toBe('true')
+      const pay = rowByLabel('Pay')!
+      expect(pay.getAttribute('aria-level')).toBe('3')
+      expect(pay.querySelectorAll('.wf-seg.phase-wait')).toHaveLength(2)
+      expect(pay.textContent).toContain('↪ 1')
+      expect(pay.textContent).toContain('Measured')
+      // The parent draws its child's real span instead of phase totals.
+      expect(checkout.querySelector('.wf-bar-parent .wf-mini')).not.toBeNull()
+      // Redirect hops stay collapsed until the request is expanded.
+      expect(container.querySelectorAll('.wf-kind-hop')).toHaveLength(0)
+      act(() => pay.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      expect(container.querySelectorAll('.wf-kind-hop')).toHaveLength(2)
       expect(consoleErrorSpy.mock.calls.some(call => String(call[0] ?? '').includes('same key'))).toBe(false)
-      act(() => child.querySelector<HTMLButtonElement>('button')!.click())
+      // Selecting the transaction explains its elapsed time in the drawer.
+      act(() => rowByLabel('Checkout')!.click())
+      const drawer = () => container.querySelector('[aria-label="Selected row details"]')!
+      expect(drawer().querySelector('[aria-label="Timing breakdown for Checkout"]')?.textContent).toContain('outside child spans')
+      expect(drawer().querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
+      expect(drawer().textContent).toContain('Self time')
+      // Selecting the request offers inspection of its execution.
+      act(() => rowByLabel('Pay')!.click())
+      const inspectButton = [...drawer().querySelectorAll('button')].find(b => b.textContent === 'Inspect Pay')!
+      act(() => inspectButton.click())
       expect(inspect).toHaveBeenCalledWith(0)
-      act(() => expand.click())
-      expect(table.textContent).not.toContain('Pay')
+      expect([...drawer().querySelectorAll('[role="tab"]')].map(t => t.textContent)).toEqual(['Timing', 'Request', 'Response', 'Headers', 'Correlation', 'Transport'])
+      // Execution rows keep start/end/elapsed/action time from the old table.
+      expect(drawer().querySelectorAll('time')).toHaveLength(2)
+      expect(drawer().textContent).toContain('Elapsed')
+      expect(drawer().textContent).toContain('Action time')
+      // Collapsing the transaction hides its children.
+      act(() => rowByLabel('Checkout')!.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      expect(rowByLabel('Pay')).toBeUndefined()
       render(true)
-      expect(container.querySelector('[aria-label="Transaction details"]')).toBeNull()
+      expect(container.querySelector('[aria-label="Execution waterfall"]')).toBeNull()
     } finally {
       consoleErrorSpy.mockRestore()
       act(() => root.unmount())
+      container.remove()
     }
   })
 
@@ -374,20 +499,39 @@ describe('debug summary transaction table', () => {
     const container = document.createElement('div'), root = createRoot(container)
     try {
       act(() => root.render(<Summary snapshot={run} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()} />))
-      const rows = [...container.querySelectorAll('#debug-summary-panel-transactions tbody tr')]
-      expect(rows).toHaveLength(4)
-      // Checkout (marker transaction) aggregates Cart's phases and spans the full 0..1000ms window
-      const checkoutBar = rows[0].querySelector<HTMLElement>('.debug-transaction-waterfall-cell .debug-timeline-bar-fill')
-      expect(checkoutBar).not.toBeNull()
+      const rowByLabel = (label: string) => [...container.querySelectorAll<HTMLElement>('#debug-summary-panel-transactions .wf-row[data-node-id]')].find(row => row.querySelector('.wf-name-label')?.textContent === label)
+      // Checkout (marker transaction) spans the full 0..1000 ms window and nests its markers and Cart.
+      const checkoutBar = rowByLabel('Checkout')!.querySelector<HTMLElement>('.wf-bar')
       expect(checkoutBar?.style.left).toBe('0%')
       expect(checkoutBar?.style.width).toBe('100%')
-      expect(rows[0].querySelector('.phase-dns')).not.toBeNull()
-      expect(rows[0].querySelector('.phase-wait')).not.toBeNull()
-      // Open (incomplete marker transaction without end), Unrun (Not run), and Manual (lr_set_transaction) have durationMs === null and render '—'
-      expect(rows[1].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
-      expect(rows[2].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
-      expect(rows[3].querySelector('.debug-transaction-waterfall-cell')?.textContent).toBe('—')
+      expect(rowByLabel('Cart')!.getAttribute('aria-level')).toBe('3')
+      expect(rowByLabel('Start Checkout')!.getAttribute('aria-level')).toBe('3')
+      expect(rowByLabel('End Checkout')!.getAttribute('aria-level')).toBe('3')
+      expect(rowByLabel('Cart')!.querySelector('.wf-seg.phase-dns')).not.toBeNull()
+      expect(rowByLabel('Cart')!.querySelector('.wf-seg.phase-wait')).not.toBeNull()
+      expect(rowByLabel('Cart')!.textContent).toContain('Derived')
+      // Open (no end marker) and Manual (lr_set_transaction) have no retained span; Unrun never ran.
+      expect(rowByLabel('Open')!.querySelector('.wf-untimed')?.textContent).toBe('No timing')
+      expect(rowByLabel('Manual')!.querySelector('.wf-untimed')?.textContent).toBe('No timing')
+      // Subtrees that never ran start collapsed so they do not bury the run.
+      expect(rowByLabel('Not run')!.classList.contains('wf-kind-iteration')).toBe(true)
+      expect(rowByLabel('Not run')!.getAttribute('aria-expanded')).toBe('false')
+      expect(rowByLabel('Unrun')).toBeUndefined()
+      act(() => rowByLabel('Not run')!.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+      expect(rowByLabel('Unrun')!.querySelector('.wf-untimed')?.textContent).toBe('Not run')
+    } finally { act(() => root.unmount()) }
+  })
+  it('lists defined transactions even when no executions were retained', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const run = fixture()
+    run.transactions = captureDebugTransactionDefinitions({ name: 'Empty', version: '1.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Home', type: 'request', method: 'GET', target: '/', metadata: { source_transaction: 'Browse' } }] })
+    run.report!.events = []
+    const container = document.createElement('div'), root = createRoot(container)
+    try {
+      act(() => root.render(<Summary snapshot={run} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()} />))
+      const grid = container.querySelector('[role="treegrid"]')
+      expect(grid).not.toBeNull()
+      expect(grid?.textContent).toContain('Not run')
     } finally { act(() => root.unmount()) }
   })
 })
-

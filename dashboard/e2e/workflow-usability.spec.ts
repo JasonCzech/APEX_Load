@@ -1,5 +1,5 @@
 import axe from 'axe-core'
-import { test, expect, seedScript, json, idOf, mutation, runStatus } from './support/workflow'
+import { test, expect, seedScript, json, idOf, mutation, runStatus, inspectorPanel, inspectorTab, inspectorVerdict } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 test('HTTP method edits preserve action type through save and reload', async ({page,request}) => {
@@ -148,13 +148,21 @@ for (const status of [200,503]) {
   const panes=page.getByRole('group',{name:'Debug panes'})
   if(await panes.isVisible()) await panes.getByRole('button',{name:'Outline',exact:true}).click()
   await page.getByRole('complementary',{name:'Actions',exact:true}).getByRole('treeitem',{name:'orders'}).click()
-  const evidence=page.getByRole('region',{name:'Response evidence'})
-  await expect(evidence).toContainText(`Actual response: ${status}`)
+  // The actual status is the header pill; the captured body is on the default Response tab.
+  await expect(page.locator('.rr-inspector-header .rr-inspector-status')).toHaveText(`HTTP ${status}`)
+  await expect(inspectorTab(page,'Response')).toHaveAttribute('aria-selected','true')
+  const capturedResponse=inspectorPanel(page,'Response').locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Response$/ }) })
   if(status===503){
-   await expect(page.locator('.replay-code-block').filter({ has: page.locator('#debug-captured-response') })).toContainText('Service unavailable')
+   await expect(inspectorVerdict(page).getByRole('alert')).toBeVisible()
+   await expect(capturedResponse).toContainText('Service unavailable')
    await expect(page.getByText('Investigate target availability and the response evidence.',{exact:false})).toBeVisible()
    await expect(page.getByText('narrow the assertion',{exact:false})).toHaveCount(0)
-  } else await expect(evidence).toContainText('Body captured')
+  } else {
+   await expect(inspectorVerdict(page).locator('.rr-inspector-verdict-line')).toHaveText('Passed · HTTP 200')
+   await expect(inspectorVerdict(page).getByRole('status')).toHaveCount(0)
+   await expect(capturedResponse.locator('.debugger-snapshot-body')).toContainText('orders')
+   await expect(page.locator('.rr-inspector-body-state')).toHaveCount(0)
+  }
  })
 }
 

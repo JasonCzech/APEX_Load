@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises'
 import { createGzip, constants, gzipSync } from 'node:zlib'
 import type { Locator, Page, TestInfo } from '@playwright/test'
 import type { ScriptDefinition } from '../src/types/scripts'
-import { test, expect, idOf, json, login, mutation, expectDebugOutcome } from './support/workflow'
+import { test, expect, idOf, json, login, mutation, expectDebugOutcome, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery, type Workspace } from './support/workspace'
 
 const capturedToken = 'captured-response-token-abcdef123456'
@@ -143,12 +143,13 @@ async function reopenSavedScript(page: Page, workspace: Workspace, id: string) {
   await expect(page.getByRole('group', { name: 'Script workspace' })).toBeVisible()
 }
 
-// Protocol provenance sits in a closed "Protocol evidence" disclosure under the response
-// (the network trace beside it is a separate disclosure, details.replay-network-trace).
+// Protocol provenance sits on the inspector's "Timing & transport" tab under its own
+// heading (the network trace below it is rendered inline as section.replay-network-trace).
 async function openProtocolEvidence(page: Page) {
-  const disclosure = page.locator('details.replay-protocol-evidence').filter({ has: page.locator(':scope > summary', { hasText: /^Protocol evidence/ }) })
-  await expect(disclosure).toBeVisible()
-  if (!await disclosure.evaluate(element => (element as HTMLDetailsElement).open)) await disclosure.locator('summary').click()
+  const timing = await openInspectorTab(page, 'Timing & transport')
+  const section = timing.getByRole('region', { name: 'Protocol evidence', exact: true })
+  await expect(section.getByRole('heading', { name: /^Protocol evidence/ })).toBeVisible()
+  return section
 }
 
 async function selectReplayAction(page: Page, name: string) {
@@ -172,6 +173,10 @@ function responseEvidenceGeometry(element: Element) {
     const port = parent.getBoundingClientRect()
     clipTop = Math.max(clipTop, port.top + parent.clientTop + 8)
     clipBottom = Math.min(clipBottom, port.top + parent.clientTop + parent.clientHeight - 8)
+    // A sticky header inside the scrollport (the debugger inspector's) covers what scrolls beneath it.
+    for (const sticky of Array.from(parent.querySelectorAll<HTMLElement>('.rr-inspector-header'))) {
+      if (!sticky.contains(element) && getComputedStyle(sticky).position === 'sticky') clipTop = Math.max(clipTop, sticky.getBoundingClientRect().bottom + 8)
+    }
   }
   const unoccluded = [0.1, 0.5, 0.9].every(fraction => {
     const hit = document.elementFromPoint(bounds.left + bounds.width / 2, bounds.top + bounds.height * fraction)
@@ -203,6 +208,10 @@ async function alignEvidenceScrollports(focus: Locator) {
         let safeTop = Math.max(0, header?.getBoundingClientRect().bottom || 0)
         for (const parent of ancestry.slice(index)) {
           if (clips(parent)) safeTop = Math.max(safeTop, parent.getBoundingClientRect().top + parent.clientTop)
+        }
+        // Content scrolled into this port must land below its sticky inspector header.
+        for (const sticky of Array.from(port.querySelectorAll<HTMLElement>('.rr-inspector-header'))) {
+          if (!sticky.contains(element) && getComputedStyle(sticky).position === 'sticky') safeTop = Math.max(safeTop, sticky.getBoundingClientRect().bottom)
         }
         port.scrollTop += target.getBoundingClientRect().top - safeTop - 16
       }
