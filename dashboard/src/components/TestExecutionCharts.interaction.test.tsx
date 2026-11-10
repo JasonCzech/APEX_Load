@@ -1601,6 +1601,7 @@ describe('TestExecutionCharts context menu', () => {
       'Show Network & Disk I/O (KB/s)',
       'Show Network Phase Breakdown — Transaction Traffic (ms)',
       'Show Live waterfall',
+      'Show Phase share heatmap',
       'Show Generator Impact',
       'Show Route Latency (ms)',
     ])
@@ -2086,7 +2087,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('20 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('21 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -2135,8 +2136,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('19 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(20)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('20 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -2196,7 +2197,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
     expect(responseChart?.textContent).toContain('82.6ms')
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(20)
 
     const resetButton = buttonByText('Reset Graphs')
     expect(resetButton?.className).toContain('btn-chip')
@@ -2205,7 +2206,7 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(20)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(21)
   })
 
   it('traps graph configuration focus, closes on Escape, and restores its trigger', async () => {

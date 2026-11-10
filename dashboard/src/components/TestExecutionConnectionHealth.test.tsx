@@ -135,7 +135,7 @@ describe('TestExecutionConnectionHealth', () => {
     expect(tile('Ephemeral ports used')?.classList.contains('warning')).toBe(true)
     expect(tile('Ephemeral ports used')?.textContent).toContain('port exhaustion risk')
     expect(tile('TCP TIME_WAIT')?.textContent).toContain('Not reported')
-    expect(container.textContent).toContain('P95 need per-phase percentiles')
+    expect(container.textContent).toContain('this window has none, so only the averages are shown')
   })
 
   it('shows a measured zero TIME_WAIT and an unmeasured protocol honestly', async () => {

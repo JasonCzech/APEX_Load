@@ -249,6 +249,38 @@ type archiveIntervalSummary struct {
 	Browser             *archiveBrowserLiveMetrics                    `json:"browser,omitempty"`
 	BrowserByDevice     map[string]*archiveBrowserDeviceMetric        `json:"browser_by_device,omitempty"`
 	Telemetry           *archiveTelemetryHealth                       `json:"telemetry,omitempty"`
+	// The generator's network-phase breakdown over the same attempts, with the
+	// JSON keys of api.IntervalSummaryRecord, so distributed finalization can
+	// merge it into the fleet interval. Absent when the batch has none.
+	AvgDNSMs        float64                   `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs    float64                   `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs        float64                   `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs       float64                   `json:"avg_ttfb_ms,omitempty"`
+	AvgWaitMs       float64                   `json:"avg_wait_ms,omitempty"`
+	PhaseObserved   *engine.PhaseObservations `json:"phase_observed,omitempty"`
+	AvgServerMs     *float64                  `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs *float64                  `json:"avg_no_response_ms,omitempty"`
+}
+
+// setNetworkPhases copies a fleet aggregate's network phases onto the
+// generator's archived interval, deriving the server/download/no-response
+// split the way the controller's live fleet does (applyRemoteMetricsBatch):
+// from the observation counts when known, else download as avg - TTFB.
+func (summary *archiveIntervalSummary) setNetworkPhases(aggregate *MetricAggregate) {
+	if summary == nil || aggregate == nil || aggregate.Count <= 0 {
+		return
+	}
+	summary.AvgDNSMs = aggregate.AvgDNSMs
+	summary.AvgConnectMs = aggregate.AvgConnectMs
+	summary.AvgTLSMs = aggregate.AvgTLSMs
+	summary.AvgTTFBMs = aggregate.AvgTTFBMs
+	summary.PhaseObserved = aggregate.PhaseObserved.Clone()
+	if server, download, noResponse, ok := summary.PhaseObserved.ResponseSplit(aggregate.Count, aggregate.AvgMs, aggregate.AvgDNSMs, aggregate.AvgConnectMs, aggregate.AvgTLSMs, aggregate.AvgTTFBMs); ok {
+		summary.AvgServerMs, summary.AvgNoResponseMs = &server, &noResponse
+		summary.AvgWaitMs = download
+	} else if wait := aggregate.AvgMs - aggregate.AvgTTFBMs; wait > 0 {
+		summary.AvgWaitMs = wait
+	}
 }
 
 // archiveIntervalTransactionMetrics is the generator-side wire-compatible

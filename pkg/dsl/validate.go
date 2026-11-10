@@ -1929,6 +1929,18 @@ func validateGoalConfigIssues(goal *GoalConfig) []string {
 		default:
 			issues = append(issues, path+".iterations must be warm, all or cold")
 		}
+		if rule.Phase != "" {
+			switch rule.Phase {
+			case "dns", "connect", "tls", "server", "download":
+			default:
+				issues = append(issues, path+".phase must be dns, connect, tls, server or download")
+			}
+			switch rule.Metric {
+			case "average_duration_ms", "min_duration_ms", "max_duration_ms", "p90_duration_ms", "p95_duration_ms", "p99_duration_ms":
+			default:
+				issues = append(issues, path+".phase applies only to average_duration_ms, min_duration_ms, max_duration_ms, p90_duration_ms, p95_duration_ms or p99_duration_ms")
+			}
+		}
 	}
 
 	return issues

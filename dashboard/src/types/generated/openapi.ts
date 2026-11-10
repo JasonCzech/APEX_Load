@@ -1228,6 +1228,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -7971,6 +7972,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -8814,6 +8816,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -9678,6 +9681,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -10444,6 +10448,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -16797,6 +16802,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -17724,6 +17730,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -18467,6 +18474,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -20456,6 +20464,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -21808,6 +21817,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -22426,6 +22436,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -23495,6 +23506,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -24236,6 +24248,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -25486,6 +25499,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -26808,6 +26822,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -28021,6 +28036,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -29733,6 +29749,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -30846,6 +30863,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -31710,6 +31728,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -37236,6 +37255,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -37991,6 +38011,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -43387,6 +43408,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -43828,6 +43850,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -44512,6 +44535,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -44549,6 +44573,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -44743,6 +44768,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -45273,6 +45299,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -45646,6 +45680,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -45691,6 +45726,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46119,6 +46155,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46136,6 +46173,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -46168,6 +46213,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46258,6 +46304,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -46493,6 +46540,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -47578,6 +47626,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -48638,6 +48687,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -50441,6 +50491,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -51550,6 +51601,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -52080,6 +52132,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -53057,6 +53110,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -53432,6 +53493,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -53972,6 +54041,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -54409,6 +54479,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -54454,6 +54525,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55033,6 +55105,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55050,6 +55123,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -55082,6 +55193,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55172,6 +55284,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55430,6 +55543,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -55569,6 +55683,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -55961,6 +56083,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -57110,6 +57240,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -57460,6 +57598,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -57497,6 +57673,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -57926,6 +58110,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -58583,6 +58775,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -62066,6 +62266,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -62806,6 +63007,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -63450,6 +63652,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -64190,6 +64393,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -66694,6 +66898,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -68672,6 +68877,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -69448,6 +69654,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -70500,6 +70707,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -73174,6 +73382,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -78382,6 +78591,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -78427,6 +78637,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79006,6 +79217,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79023,6 +79235,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -79055,6 +79305,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79145,6 +79396,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79403,6 +79655,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -79538,6 +79791,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -79930,6 +80191,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -81079,6 +81348,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -81429,6 +81706,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -81466,6 +81781,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -81895,6 +82218,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -82552,6 +82883,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -85762,6 +86101,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -85799,6 +86139,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -85993,6 +86334,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -86523,6 +86865,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -86896,6 +87246,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -86941,6 +87292,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87369,6 +87721,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87386,6 +87739,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -87418,6 +87779,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87508,6 +87870,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -87743,6 +88106,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -89888,6 +90252,7 @@ export interface operations {
                   "max_telemetry_sample_age_ms"?: (number) | null;
                   "max_telemetry_transport_lag_ms"?: (number) | null;
                   "p99_latency_stop_consecutive_samples"?: (number) | null;
+                  "phase_latency"?: Array<Record<string, unknown>>;
                 };
               };
               "generator_inventory"?: Array<{
@@ -90089,6 +90454,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -90943,6 +91309,7 @@ export interface operations {
                   "max_telemetry_sample_age_ms"?: (number) | null;
                   "max_telemetry_transport_lag_ms"?: (number) | null;
                   "p99_latency_stop_consecutive_samples"?: (number) | null;
+                  "phase_latency"?: Array<Record<string, unknown>>;
                 };
               };
               "generator_inventory"?: Array<{
@@ -91144,6 +91511,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -91990,6 +92358,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -98870,6 +99239,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -101355,6 +101725,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -102316,6 +102687,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -103622,6 +103994,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -104368,6 +104741,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -106804,6 +107178,12 @@ export interface operations {
               "max_telemetry_sample_age_ms"?: (number) | null;
               "max_telemetry_transport_lag_ms"?: (number) | null;
               "p99_latency_stop_consecutive_samples"?: (number) | null;
+              "phase_latency"?: Array<{
+                "max_ms": number;
+                "percentile": number;
+                "phase": string;
+                "stop_consecutive_samples"?: (number) | null;
+              }>;
             };
           };
         };
@@ -107053,6 +107433,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -107429,6 +107817,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -107969,6 +108365,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -108406,6 +108803,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -108451,6 +108849,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -109030,6 +109429,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -109047,6 +109447,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -109079,6 +109517,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -109169,6 +109608,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -109427,6 +109867,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -109566,6 +110007,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -109958,6 +110407,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -111107,6 +111564,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -111457,6 +111922,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -111494,6 +111997,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -111923,6 +112434,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -112580,6 +113099,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -115245,6 +115772,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -115795,6 +116323,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -116253,6 +116782,7 @@ export interface operations {
                   "max_telemetry_sample_age_ms"?: (number) | null;
                   "max_telemetry_transport_lag_ms"?: (number) | null;
                   "p99_latency_stop_consecutive_samples"?: (number) | null;
+                  "phase_latency"?: Array<Record<string, unknown>>;
                 };
               };
               "generator_inventory"?: Array<{
@@ -119490,6 +120020,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -120238,6 +120769,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -125677,6 +126209,7 @@ export interface operations {
                     "group"?: string;
                     "iterations"?: string;
                     "metric": string;
+                    "phase"?: string;
                     "population"?: string;
                     "protocol"?: string;
                     "severity"?: string;
@@ -133752,6 +134285,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -134127,6 +134668,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -134667,6 +135216,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -135104,6 +135654,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -135149,6 +135700,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -135728,6 +136280,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -135745,6 +136298,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -135777,6 +136368,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -135867,6 +136459,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136125,6 +136718,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -136264,6 +136858,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -136656,6 +137258,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -137805,6 +138415,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -138155,6 +138773,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -138192,6 +138848,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -138621,6 +139285,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -139278,6 +139950,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -140675,6 +141355,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -143212,6 +143893,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -144260,6 +144942,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -145016,6 +145699,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -145841,6 +146525,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -146916,6 +147601,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -147659,6 +148345,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -150070,6 +150757,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -150811,6 +151499,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -153295,6 +153984,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -154041,6 +154731,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -154782,6 +155473,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -155664,6 +156356,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -155701,6 +156394,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -155895,6 +156589,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -156425,6 +157120,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -156798,6 +157501,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -156843,6 +157547,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157271,6 +157976,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157288,6 +157994,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -157320,6 +158034,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157410,6 +158125,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -157645,6 +158361,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158385,6 +159102,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158422,6 +159140,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -158616,6 +159335,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -159146,6 +159866,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -159519,6 +160247,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -159564,6 +160293,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -159992,6 +160722,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -160009,6 +160740,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -160041,6 +160780,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -160131,6 +160871,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -160366,6 +161107,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161106,6 +161848,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161143,6 +161886,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -161337,6 +162081,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -161867,6 +162612,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -162240,6 +162993,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162285,6 +163039,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162713,6 +163468,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162730,6 +163486,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -162762,6 +163526,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -162852,6 +163617,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -163087,6 +163853,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -163827,6 +164594,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -163864,6 +164632,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -164058,6 +164827,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -164588,6 +165358,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -164961,6 +165739,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165006,6 +165785,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165434,6 +166214,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165451,6 +166232,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -165483,6 +166272,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165573,6 +166363,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -165808,6 +166599,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166548,6 +167340,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166585,6 +167378,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -166779,6 +167573,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -167309,6 +168104,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "properties"?: Record<string, (Record<string, unknown>) | null>;
                 "request_errors"?: number;
                 "request_rate"?: number;
@@ -167682,6 +168485,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -167727,6 +168531,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -168155,6 +168960,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -168172,6 +168978,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "properties"?: Record<string, ({
                   "avg_connect_ms"?: number;
@@ -168204,6 +169018,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -168294,6 +169109,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -168529,6 +169345,7 @@ export interface operations {
                   "p99_ms": number;
                   "percentile_quality"?: string;
                   "phase_observed"?: (Record<string, unknown>) | null;
+                  "phase_percentiles"?: (Record<string, unknown>) | null;
                   "server_telemetry"?: (Record<string, unknown>) | null;
                   "tps": number;
                 }) | null>;
@@ -169593,6 +170410,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -170447,6 +171265,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -171156,6 +171975,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -171531,6 +172358,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -172071,6 +172906,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -172508,6 +173344,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -172553,6 +173390,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -173132,6 +173970,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -173149,6 +173988,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -173181,6 +174058,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -173271,6 +174149,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -173529,6 +174408,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -173668,6 +174548,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -174060,6 +174948,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -175209,6 +176105,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -175559,6 +176463,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -175596,6 +176538,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -176025,6 +176975,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -176682,6 +177640,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -180778,6 +181744,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -183516,6 +184483,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -185169,6 +186137,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -186292,6 +187261,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -187914,6 +188884,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -189672,6 +190643,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -191412,6 +192384,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -193148,6 +194121,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -194888,6 +195862,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -201385,6 +202360,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -201760,6 +202743,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -202300,6 +203291,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -202737,6 +203729,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -202782,6 +203775,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -203361,6 +204355,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -203378,6 +204373,44 @@ export interface operations {
                 "no_ttfb_remainder_ms"?: number;
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
+              }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
               }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
@@ -203410,6 +204443,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -203500,6 +204534,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -203758,6 +204793,7 @@ export interface operations {
                 "p99_ms": number;
                 "percentile_quality"?: string;
                 "phase_observed"?: (Record<string, unknown>) | null;
+                "phase_percentiles"?: (Record<string, unknown>) | null;
                 "server_telemetry"?: (Record<string, unknown>) | null;
                 "tps": number;
               }) | null>;
@@ -203897,6 +204933,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -204289,6 +205333,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -205438,6 +206490,14 @@ export interface operations {
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
                 }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
+                }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
                   "avg_consumer_lag_ms"?: number;
@@ -205788,6 +206848,44 @@ export interface operations {
                 "no_ttfb_setup_ms"?: number;
                 "tls": number;
               }) | null;
+              "phase_percentiles"?: ({
+                "connect"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "dns"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "download"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "server"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "tls"?: ({
+                  "p50_ms": number;
+                  "p90_ms": number;
+                  "p95_ms": number;
+                  "p99_ms": number;
+                  "samples": number;
+                }) | null;
+                "version": number;
+              }) | null;
               "properties"?: Record<string, ({
                 "avg_connect_ms"?: number;
                 "avg_dns_ms"?: number;
@@ -205825,6 +206923,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -206254,6 +207360,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -206911,6 +208025,14 @@ export interface operations {
                   "no_ttfb_remainder_ms"?: number;
                   "no_ttfb_setup_ms"?: number;
                   "tls": number;
+                }) | null;
+                "phase_percentiles"?: ({
+                  "connect"?: (Record<string, unknown>) | null;
+                  "dns"?: (Record<string, unknown>) | null;
+                  "download"?: (Record<string, unknown>) | null;
+                  "server"?: (Record<string, unknown>) | null;
+                  "tls"?: (Record<string, unknown>) | null;
+                  "version": number;
                 }) | null;
                 "server_telemetry"?: ({
                   "abort_count"?: number;
@@ -208598,6 +209720,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -209352,6 +210475,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -212930,6 +214054,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -213988,6 +215113,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric": string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -215938,6 +217064,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -217044,6 +218171,7 @@ export interface operations {
                   "group"?: string;
                   "iterations"?: string;
                   "metric": string;
+                  "phase"?: string;
                   "population"?: string;
                   "protocol"?: string;
                   "severity"?: string;
@@ -220893,6 +222021,12 @@ export interface operations {
             "max_telemetry_sample_age_ms"?: (number) | null;
             "max_telemetry_transport_lag_ms"?: (number) | null;
             "p99_latency_stop_consecutive_samples"?: (number) | null;
+            "phase_latency"?: Array<{
+              "max_ms"?: number;
+              "percentile"?: number;
+              "phase"?: string;
+              "stop_consecutive_samples"?: (number) | null;
+            }>;
           };
         };
       };
@@ -221073,6 +222207,12 @@ export interface operations {
               "max_telemetry_sample_age_ms"?: (number) | null;
               "max_telemetry_transport_lag_ms"?: (number) | null;
               "p99_latency_stop_consecutive_samples"?: (number) | null;
+              "phase_latency"?: Array<{
+                "max_ms": number;
+                "percentile": number;
+                "phase": string;
+                "stop_consecutive_samples"?: (number) | null;
+              }>;
             };
           };
         };
@@ -222967,6 +224107,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;
@@ -223698,6 +224839,7 @@ export interface operations {
               "group"?: string;
               "iterations"?: string;
               "metric"?: string;
+              "phase"?: string;
               "population"?: string;
               "protocol"?: string;
               "severity"?: string;
@@ -225380,6 +226522,7 @@ export interface operations {
                 "group"?: string;
                 "iterations"?: string;
                 "metric"?: string;
+                "phase"?: string;
                 "population"?: string;
                 "protocol"?: string;
                 "severity"?: string;

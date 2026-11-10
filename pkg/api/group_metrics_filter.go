@@ -459,6 +459,7 @@ func copyLivePhaseMetrics(dst, src *LiveMetrics) {
 	dst.PhaseObserved = src.PhaseObserved.Clone()
 	dst.AvgServerMs = cloneFloat64Ptr(src.AvgServerMs)
 	dst.AvgNoResponseMs = cloneFloat64Ptr(src.AvgNoResponseMs)
+	dst.PhasePercentiles = src.PhasePercentiles.Clone()
 }
 
 func applySelectedGroupAggregate(live *LiveMetrics, selected []*GroupLiveMetrics) {

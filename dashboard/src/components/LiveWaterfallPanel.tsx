@@ -2,7 +2,20 @@ import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState, type
 import type { LiveMetrics } from '../types'
 import { Waterfall } from './waterfall/Waterfall'
 import { formatWaterfallMs } from './waterfall/phases'
-import { PHASES_NOT_REPORTED_TEXT, SETUP_UNMEASURED_TEXT, reuseBasisText, reuseValueText, txObservationStats, txPercentilesReported } from './livePhaseModel'
+import {
+  LIVE_PHASE_STATISTIC_LABELS,
+  PERCENTILE_PHASES,
+  PERCENTILE_PHASE_LABELS,
+  PHASES_NOT_REPORTED_TEXT,
+  PHASE_PERCENTILES_NOT_REPORTED_TEXT,
+  SETUP_UNMEASURED_TEXT,
+  phasePercentileMs,
+  reuseBasisText,
+  reuseValueText,
+  txObservationStats,
+  txPercentilesReported,
+  type LivePhaseStatistic,
+} from './livePhaseModel'
 import { isDegradedLivePercentileQuality, percentileQualityDescription } from '../utils/percentileQuality'
 import { formatTimeOfDay } from '../utils/dateTime'
 import { stableMinuteBaseline, type StableMinuteState } from './liveWindowRetention'
@@ -14,6 +27,7 @@ import {
   LIVE_WATERFALL_PHASE_LABELS,
   LIVE_WATERFALL_RESTORED_TEXT,
   advanceLiveWaterfallHold,
+  liveWaterfallHasPhasePercentiles,
   liveWaterfallNodes,
   liveWaterfallTransactionCount,
   liveWaterfallSinks,
@@ -44,6 +58,41 @@ interface Props {
 const LIVE_WATERFALL_SCALE_LABELS = { waterfall: 'Absolute (ms)' } as const
 const LIVE_WATERFALL_SORT_MODES = ['slowest', 'dominant', 'change'] as const
 const msText = (v: number | undefined) => (v === undefined ? 'None this window' : formatWaterfallMs(v))
+const LIVE_WATERFALL_STATISTICS: readonly LivePhaseStatistic[] = ['avg', 'p50', 'p95', 'p99']
+
+/** Each phase's percentiles over the samples that spent time in it. */
+function PhasePercentileTable({ name, tx }: { name: string; tx: LiveWaterfallPayload['tx'] }) {
+  const set = tx.phase_percentiles
+  if (!set) return <p className="wf-drawer-status" role="note">{PHASE_PERCENTILES_NOT_REPORTED_TEXT}.</p>
+  return (
+    <>
+      <table className="wf-headers live-waterfall-phase-table">
+        <caption className="sr-only">Per-phase percentiles for {name}</caption>
+        <thead><tr><th scope="col">Phase</th><th scope="col">Samples</th><th scope="col">P50</th><th scope="col">P90</th><th scope="col">P95</th><th scope="col">P99</th></tr></thead>
+        <tbody>
+          {PERCENTILE_PHASES.map(phase => {
+            const row = set[phase]
+            const cell = (statistic: 'p50' | 'p95' | 'p99') => {
+              const ms = phasePercentileMs(set, phase, statistic)
+              return ms === undefined ? '—' : formatWaterfallMs(ms)
+            }
+            return (
+              <tr key={phase}>
+                <th scope="row">{PERCENTILE_PHASE_LABELS[phase]}</th>
+                <td>{row && row.samples > 0 ? row.samples.toLocaleString() : 'None this window'}</td>
+                <td>{cell('p50')}</td>
+                <td>{row && row.samples > 0 ? formatWaterfallMs(row.p90_ms) : '—'}</td>
+                <td>{cell('p95')}</td>
+                <td>{cell('p99')}</td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      <p className="wf-drawer-status">Each phase's percentiles are over the samples that spent time in it: DNS, connect and TLS when that phase took time, server and download when a first byte arrived. They do not add up to the transaction's percentiles.</p>
+    </>
+  )
+}
 
 function LiveWaterfallDrawer({ payload, onClose }: { payload: LiveWaterfallPayload; onClose: () => void }) {
   const { tx, vector, baseline } = payload
@@ -129,7 +178,8 @@ function LiveWaterfallDrawer({ payload, onClose }: { payload: LiveWaterfallPaylo
         {isDegradedLivePercentileQuality(tx.percentile_quality) && (
           <p className="wf-drawer-status" role="note">{percentileQualityDescription(tx.percentile_quality)}</p>
         )}
-        <p className="wf-drawer-status">Percentiles are of the whole transaction; per-phase percentiles are not on the live wire yet.</p>
+        <h5>Phase percentiles</h5>
+        {phasesUnknown ? <p className="wf-drawer-status">{PHASES_NOT_REPORTED_TEXT}.</p> : <PhasePercentileTable name={payload.name} tx={tx} />}
       </div>
     </div>
   )
@@ -148,8 +198,8 @@ export default function LiveWaterfallPanel({ title, latestMetrics, stableMinute,
   // dropped out, or Close), focus would fall to <body>, so it goes back to the grid.
   const drawerFocused = useRef(false)
   const [compare, setCompare] = useState(true)
+  const [requestedStatistic, setStatistic] = useState<LivePhaseStatistic>('avg')
   const baseline = useMemo(() => (stableMinute ? stableMinuteBaseline(stableMinute) : null), [stableMinute])
-  const showBaseline = compare && Boolean(baseline)
   // Transactions missing from a window stay listed for a few windows, so a
   // low-rate one does not vanish and reappear (taking an open drawer with it).
   // Keyed by the window's timestamp, so a re-render of the same window does not age the hold.
@@ -160,9 +210,16 @@ export default function LiveWaterfallPanel({ title, latestMetrics, stableMinute,
     heldRows = advanceLiveWaterfallHold(hold.rows, latestMetrics)
     setHold({ windowKey, rows: heldRows })
   }
-  const roots = useMemo(() => liveWaterfallNodes(latestMetrics?.transactions, { baseline, showBaseline, held: heldRows }), [latestMetrics?.transactions, baseline, showBaseline, heldRows])
+  // Percentile bars need per-phase percentiles: with none in view (older
+  // generators) the bars stay averages and a note says why.
+  const percentilesAvailable = useMemo(() => liveWaterfallHasPhasePercentiles(latestMetrics?.transactions, heldRows), [latestMetrics?.transactions, heldRows])
+  const statistic: LivePhaseStatistic = percentilesAvailable ? requestedStatistic : 'avg'
+  // The first stable minute keeps averages only.
+  const showBaseline = compare && Boolean(baseline) && statistic === 'avg'
+  const roots = useMemo(() => liveWaterfallNodes(latestMetrics?.transactions, { baseline, showBaseline, held: heldRows, statistic }), [latestMetrics?.transactions, baseline, showBaseline, heldRows, statistic])
   const spanMs = liveWaterfallSpanMs(roots)
-  const sinks = useMemo(() => liveWaterfallSinks(roots, latestMetrics?.transactions), [roots, latestMetrics?.transactions])
+  const sinks = useMemo(() => liveWaterfallSinks(roots, latestMetrics?.transactions, statistic), [roots, latestMetrics?.transactions, statistic])
+  const percentileFallbackRows = statistic !== 'avg' && roots.some(n => n.payload?.percentileFallback)
   const transactionCount = useMemo(() => liveWaterfallTransactionCount(latestMetrics?.transactions), [latestMetrics?.transactions])
   const selected = selectedId ? roots.find(n => n.id === selectedId)?.payload : undefined
   // A selected row that has dropped out closes its drawer for good, so it cannot reopen by itself later.
@@ -196,13 +253,28 @@ export default function LiveWaterfallPanel({ title, latestMetrics, stableMinute,
     section.focus()
   }, [drawerOpen])
 
+  const statisticNoteId = dataChartId ? `${dataChartId}-statistic-note` : undefined
   const toolbar = (
     <>
+      <div className="live-waterfall-statistic" role="group" aria-label="Bar statistic" aria-describedby={statisticNoteId}>
+        {LIVE_WATERFALL_STATISTICS.map(option => (
+          <button
+            key={option}
+            type="button"
+            className={`wf-chip-toggle${statistic === option ? ' active' : ''}`}
+            aria-pressed={statistic === option}
+            disabled={option !== 'avg' && !percentilesAvailable}
+            onClick={() => setStatistic(option)}
+          >
+            {LIVE_PHASE_STATISTIC_LABELS[option]}
+          </button>
+        ))}
+      </div>
       <button
         type="button"
         className={`wf-chip-toggle${showBaseline ? ' active' : ''}`}
         aria-pressed={showBaseline}
-        disabled={!baseline}
+        disabled={!baseline || statistic !== 'avg'}
         aria-describedby={dataChartId ? `${dataChartId}-baseline-note` : undefined}
         onClick={() => setCompare(v => !v)}
       >
@@ -235,6 +307,13 @@ export default function LiveWaterfallPanel({ title, latestMetrics, stableMinute,
         {unobserved ? ' Some generators predate phase observations, so their reuse and handshake counts are not reported.' : ''}
       </p>
       {restored && <p className="live-waterfall-copy" role="note">{LIVE_WATERFALL_RESTORED_TEXT}</p>}
+      <p id={statisticNoteId} className="live-waterfall-copy" role="note">
+        {statistic === 'avg'
+          ? percentilesAvailable || roots.length === 0
+            ? 'Bars show phase averages.'
+            : `Bars show phase averages. ${PHASE_PERCENTILES_NOT_REPORTED_TEXT}, so P50, P95 and P99 are unavailable.`
+          : `Each segment is that phase's own ${LIVE_PHASE_STATISTIC_LABELS[statistic]} over the samples that spent time in it. Percentiles do not add up: a bar is not the transaction's ${LIVE_PHASE_STATISTIC_LABELS[statistic]}, and the first stable minute comparison is off.${percentileFallbackRows ? ' Rows marked "averages" come from a load generator that predates per-phase percentiles.' : ''}`}
+      </p>
       {transactionCount > LIVE_WATERFALL_MAX_ROWS && (
         <p className="live-waterfall-copy" role="note">
           Showing the {LIVE_WATERFALL_MAX_ROWS} slowest of {transactionCount.toLocaleString()} transactions this window (rows held from earlier windows are listed only in space this window leaves); the phase share in the facts covers all of them.
@@ -243,7 +322,7 @@ export default function LiveWaterfallPanel({ title, latestMetrics, stableMinute,
       <Waterfall<LiveWaterfallPayload>
         roots={roots}
         spanMs={spanMs}
-        ariaLabel={`${title}: average phases per transaction`}
+        ariaLabel={`${title}: ${statistic === 'avg' ? 'average phases' : `phase ${LIVE_PHASE_STATISTIC_LABELS[statistic]}s`} per transaction`}
         selectedId={selected ? selectedId : null}
         onSelect={n => setSelectedId(n.id)}
         initialSortMode="slowest"

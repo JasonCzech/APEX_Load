@@ -1,0 +1,15 @@
+.phase-share-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.phase-share-copy, .phase-share-empty { margin: 0; font-size: 12px; color: var(--text-secondary); }
+.phase-share-toolbar { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; }
+.phase-share-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 0; padding: 0; list-style: none; font-size: 11px; color: var(--text-secondary); }
+.phase-share-legend li { display: inline-flex; align-items: center; gap: 4px; }
+.phase-share-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.phase-share-grid { display: grid; gap: 2px; align-items: stretch; min-width: 0; overflow-x: auto; }
+.phase-share-row-label { font-size: 11px; color: var(--text-secondary); padding-right: 6px; white-space: nowrap; align-self: center; }
+.phase-share-cell { min-height: 18px; border-radius: 2px; background: transparent; outline: 1px solid color-mix(in srgb, var(--border-color, #cbd5e1) 40%, transparent); outline-offset: -1px; }
+.phase-share-cell.not-reported { background: repeating-linear-gradient(45deg, transparent 0 3px, color-mix(in srgb, var(--text-muted, #94a3b8) 35%, transparent) 3px 5px); }
+.phase-share-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--text-muted); }
+.phase-share-table-wrap { overflow-x: auto; max-height: 320px; }
+.phase-share-table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.phase-share-table th, .phase-share-table td { padding: 2px 8px; text-align: right; border-bottom: 1px solid var(--border-color, #e2e8f0); }
+.phase-share-table th[scope='row'], .phase-share-table thead th:first-child { text-align: left; }

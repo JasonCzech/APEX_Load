@@ -544,6 +544,19 @@ type IntervalSummaryRecord struct {
 	// LoadLevelDurationSketches holds the version 2 distributions beside
 	// LoadLevelDurationDigests; the report prefers them.
 	LoadLevelDurationSketches map[string]*engine.DurationSketchSnapshot `json:"load_level_duration_sketches,omitempty"`
+	// The fleet network-phase breakdown, as on LiveMetrics: averages over every
+	// attempt, the observation counts that tell a skipped phase from a fast
+	// one, and the server/no-response split derived from them (nil when the
+	// observations are unknown). A row written before these fields existed, or
+	// a group/action-filtered row, carries none: the phases are unknown, not 0.
+	AvgDNSMs        float64                   `json:"avg_dns_ms,omitempty"`
+	AvgConnectMs    float64                   `json:"avg_connect_ms,omitempty"`
+	AvgTLSMs        float64                   `json:"avg_tls_ms,omitempty"`
+	AvgTTFBMs       float64                   `json:"avg_ttfb_ms,omitempty"`
+	AvgWaitMs       float64                   `json:"avg_wait_ms,omitempty"`
+	PhaseObserved   *engine.PhaseObservations `json:"phase_observed,omitempty"`
+	AvgServerMs     *float64                  `json:"avg_server_ms,omitempty"`
+	AvgNoResponseMs *float64                  `json:"avg_no_response_ms,omitempty"`
 	// PercentileQuality identifies how the interval percentile distribution was
 	// obtained. It is empty for legacy/local rows, "source_generator" for an
 	// unmerged generator row, "merged_sketch" when generator sketches were

@@ -67,6 +67,12 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	if len(batches) == 0 {
 		llmSummaryVersion = 0
 	}
+	// Phase sketches: a generator without them leaves the merged phase
+	// percentiles unknown (each aggregate's merge already does so).
+	phaseSketchVersion := engine.PhaseSketchVersion
+	if len(batches) == 0 {
+		phaseSketchVersion = 0
+	}
 	fleetTPS := 0.0
 	groupTPS := make(map[string]float64)
 	statsList := make([]generatorrpc.GeneratorStats, 0, len(batches))
@@ -181,6 +187,9 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 		}
 		if batch.LLMSummaryVersion != generatorrpc.CurrentLLMSummaryVersion {
 			llmSummaryVersion = 0
+		}
+		if batch.PhaseSketchVersion != engine.PhaseSketchVersion {
+			phaseSketchVersion = 0
 		}
 		dimensionMetrics = append(dimensionMetrics, batch.ActionDimensionMetrics...)
 		jointMetrics = append(jointMetrics, batch.ActionPropertyMetrics...)
@@ -373,6 +382,7 @@ func aggregateDistributedMetricsBatches(testID string, batches map[string]genera
 	combined.RequestCountsVersion = requestCountsVersion
 	combined.GroupTransactionsVersion = groupTransactionsVersion
 	combined.LLMSummaryVersion = llmSummaryVersion
+	combined.PhaseSketchVersion = phaseSketchVersion
 	combined.Stats = aggregateDistributedGeneratorStats(statsList)
 	return combined, fleetTPS, groupTPS
 }
@@ -1076,6 +1086,7 @@ func applyDistributedAggregateMetrics(test *ManagedTest, live *LiveMetrics, batc
 	live.AvgTLSMs = fleet.AvgTLSMs
 	live.AvgTTFBMs = fleet.AvgTTFBMs
 	live.PhaseObserved = fleet.PhaseObserved.Clone()
+	live.PhasePercentiles = fleet.PhaseSketches.Percentiles()
 	if download, ok := applyLivePhaseSplit(live, fleet.Count); ok {
 		// Download over the samples that got a first byte.
 		live.AvgWaitMs = download
@@ -1273,6 +1284,7 @@ func txMetricsFromAggregate(aggregate generatorrpc.MetricAggregate) *TxMetrics {
 		AvgTLSMs:           aggregate.AvgTLSMs,
 		AvgTTFBMs:          aggregate.AvgTTFBMs,
 		PhaseObserved:      aggregate.PhaseObserved.Clone(),
+		PhasePercentiles:   aggregate.PhaseSketches.Percentiles(),
 		Count:              aggregate.Count,
 		Errors:             aggregate.Errors,
 		BytesSent:          aggregate.BytesSent,
@@ -1748,6 +1760,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		copy.Messaging = copy.Messaging.Clone()
 		copy.Exemplars = append([]engine.TraceExemplar(nil), copy.Exemplars...)
 		copy.PhaseObserved = copy.PhaseObserved.Clone()
+		copy.PhaseSketches = copy.PhaseSketches.Clone()
 		if copy.PercentileQuality == "" && copy.DurationSketch == nil && copy.DurationDigest != nil {
 			// A generator that predates the sketch took its percentiles from
 			// its t-digest.
@@ -1759,6 +1772,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	durations := engine.NewDurationDistributionMerge()
 	var avgMsSum, dnsSum, connectSum, tlsSum, ttfbSum float64
 	var phaseObserved engine.PhaseObservationMerge
+	var phaseSketches engine.PhaseSketchMerge
 	var measuredBytesSent, measuredBytesReceived int64
 	hasByteEvidence := false
 	for _, value := range values {
@@ -1792,6 +1806,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 		tlsSum += value.AvgTLSMs * count
 		ttfbSum += value.AvgTTFBMs * count
 		phaseObserved.Add(value.PhaseObserved, value.Count)
+		phaseSketches.Add(value.PhaseSketches, value.Count)
 		out.BytesSent += value.BytesSent
 		out.BytesReceived += value.BytesReceived
 		if hasByteEvidence {
@@ -1834,6 +1849,7 @@ func mergeGeneratorMetricAggregates(values []generatorrpc.MetricAggregate) *gene
 	out.AvgTLSMs = tlsSum / divisor
 	out.AvgTTFBMs = ttfbSum / divisor
 	out.PhaseObserved = phaseObserved.Result()
+	out.PhaseSketches = phaseSketches.Result()
 	// Sketches merge exactly and are preferred; t-digests serve older
 	// generators.
 	if kind := durations.Kind(); kind != "" && durations.Count() == out.Count {

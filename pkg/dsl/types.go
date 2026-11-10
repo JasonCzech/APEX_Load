@@ -167,6 +167,11 @@ type TransactionSLARule struct {
 	// ("" or "warm"), "all", or "cold" ones only. Samples from sessions
 	// that never run warm are judged by every value but "cold".
 	Iterations string `json:"iterations,omitempty"`
+	// Phase judges one network phase instead of the whole duration: dns,
+	// connect, tls, server or download, over the samples that spent time in
+	// it. Only the duration metrics (average, min, max, p90, p95, p99) take
+	// a phase.
+	Phase string `json:"phase,omitempty"`
 }
 
 type ScriptMetadata struct {

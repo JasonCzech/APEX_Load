@@ -229,7 +229,11 @@ type MetricsBatch struct {
 	GroupTransactionsVersion uint32
 	// LLMSummaryVersion is 1 when action metrics carry mergeable LLMSummary
 	// sketches; 0 from an older generator.
-	LLMSummaryVersion          uint32
+	LLMSummaryVersion uint32
+	// PhaseSketchVersion is 1 when the fleet, transaction and action
+	// aggregates carry PhaseSketches; 0 from an older generator, whose
+	// per-phase percentiles are unknown.
+	PhaseSketchVersion         uint32
 	PropertyMetrics            []MetricAggregate
 	RegionMetrics              []MetricAggregate
 	Browser                    *BrowserMetrics
@@ -414,6 +418,10 @@ type MetricAggregate struct {
 	// PhaseObserved counts samples that spent time in DNS, connect and TLS;
 	// nil when unknown (a generator that predates it).
 	PhaseObserved *engine.PhaseObservations
+	// PhaseSketches are the per-phase distributions behind the phase
+	// percentiles, kept for the fleet, transaction and action aggregates of a
+	// batch with PhaseSketchVersion 1; nil means unknown.
+	PhaseSketches *engine.PhaseSketches
 	// PercentileQuality is set where a controller merges aggregates, when
 	// their percentiles could not come from a merged sketch. It is never
 	// sent.
@@ -1907,7 +1915,11 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	if err != nil {
 		return MetricsBatch{}, err
 	}
+	return metricsBatchFromProto(batch), nil
+}
 
+// metricsBatchFromProto decodes one received batch.
+func metricsBatchFromProto(batch *pb.MetricsBatch) MetricsBatch {
 	transactions := make([]TransactionMetric, 0, len(batch.GetTransactions()))
 	for _, tx := range batch.GetTransactions() {
 		var serverTelemetry *ServerTelemetry
@@ -1995,7 +2007,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 	windows, windowsComplete := collectionWindowsFromProto(batch.GetCollectionWindows(), batch.GetCollectionWindowsComplete())
 	jointMetrics, jointInfo := jointPublicationFromProto(batch.GetJointMetricsInfo(), batch.GetJointMetricsV4())
 
-	return MetricsBatch{
+	out := MetricsBatch{
 		CollectionWindows: windows, CollectionWindowsComplete: windowsComplete,
 		BrowserDocuments:            browserDocumentsFromJSON(batch.GetBrowserDocumentSummaryJson(), batch.GetBrowserDocumentSummaryVersion()),
 		BrowserDocumentsVersion:     batch.GetBrowserDocumentSummaryVersion(),
@@ -2026,6 +2038,7 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		RequestCountsVersion:        batch.GetRequestCountsVersion(),
 		GroupTransactionsVersion:    batch.GetGroupTransactionsVersion(),
 		LLMSummaryVersion:           batch.GetLlmSummaryVersion(),
+		PhaseSketchVersion:          batch.GetPhaseSketchVersion(),
 		PropertyMetrics:             metricAggregatesFromProto(batch.GetPropertyMetrics()),
 		RegionMetrics:               metricAggregatesFromProto(batch.GetRegionMetrics()),
 		Browser:                     browserMetricsFromProto(batch.GetBrowserMetrics()),
@@ -2040,7 +2053,9 @@ func (s *MetricsStream) Receive() (MetricsBatch, error) {
 		LiveBrowserInteractionsJSON: append([]string(nil), batch.GetLiveBrowserInteractionsJson()...),
 		LiveJourneyEvents:           liveJourneyEventsFromProto(batch.GetLiveJourneyEvents()),
 		LiveBrowserTruncation:       liveBrowserTruncationFromProto(batch.GetLiveBrowserTruncation()),
-	}, nil
+	}
+	gatePhaseSketches(&out)
+	return out
 }
 
 func liveJourneyEventsFromProto(rows []*pb.LiveJourneyEvent) []LiveJourneyEvent {
@@ -2335,7 +2350,7 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 	if value == nil {
 		return nil
 	}
-	return &MetricAggregate{
+	out := &MetricAggregate{
 		Name:             value.GetName(),
 		DependencyType:   value.GetDependencyType(),
 		DependencyTarget: value.GetDependencyTarget(),
@@ -2363,6 +2378,78 @@ func metricAggregateFromProto(value *pb.MetricAggregate) *MetricAggregate {
 		MessagingVersion: value.GetMessagingVersion(),
 		PhaseObserved:    phaseObservationsFromProto(value.GetPhaseObserved(), value.GetCount()),
 		Exemplars:        traceExemplarsFromProto(value.GetExemplars()),
+	}
+	out.PhaseSketches = phaseSketchesFromProto(value.GetPhaseSketches(), out.PhaseObserved, out.Count)
+	return out
+}
+
+// phaseSketchesFromProto keeps a peer's phase sketches only when each is a
+// valid sketch holding exactly the samples the phase observations count, so
+// a phase percentile never describes some other population.
+func phaseSketchesFromProto(value *pb.PhaseSketches, observed *engine.PhaseObservations, count int64) *engine.PhaseSketches {
+	if value == nil || value.GetVersion() != engine.PhaseSketchVersion {
+		return nil
+	}
+	out := &engine.PhaseSketches{
+		DNS:      durationSketchSnapshotFromProto(value.GetDns()),
+		Connect:  durationSketchSnapshotFromProto(value.GetConnect()),
+		TLS:      durationSketchSnapshotFromProto(value.GetTls()),
+		Server:   durationSketchSnapshotFromProto(value.GetServer()),
+		Download: durationSketchSnapshotFromProto(value.GetDownload()),
+	}
+	if !out.ConsistentWith(observed, count) {
+		return nil
+	}
+	return out
+}
+
+func phaseSketchesToProto(value *engine.PhaseSketches) *pb.PhaseSketches {
+	if value == nil {
+		return nil
+	}
+	return &pb.PhaseSketches{
+		Version:  engine.PhaseSketchVersion,
+		Dns:      durationSketchSnapshotToProto(value.DNS),
+		Connect:  durationSketchSnapshotToProto(value.Connect),
+		Tls:      durationSketchSnapshotToProto(value.TLS),
+		Server:   durationSketchSnapshotToProto(value.Server),
+		Download: durationSketchSnapshotToProto(value.Download),
+	}
+}
+
+// gatePhaseSketches drops phase sketches a batch does not vouch for: every
+// aggregate of a batch below PhaseSketchVersion 1, and every aggregate other
+// than the fleet, transaction and action ones (no generator fills those).
+func gatePhaseSketches(batch *MetricsBatch) {
+	if batch == nil {
+		return
+	}
+	keep := batch.PhaseSketchVersion == engine.PhaseSketchVersion
+	clear := func(values []MetricAggregate) {
+		for i := range values {
+			values[i].PhaseSketches = nil
+		}
+	}
+	if !keep {
+		if batch.FleetMetrics != nil {
+			batch.FleetMetrics.PhaseSketches = nil
+		}
+		clear(batch.TransactionMetrics)
+		clear(batch.ActionMetrics)
+	}
+	clear(batch.DependencyMetrics)
+	clear(batch.SOAPMetrics)
+	clear(batch.NetworkProfileMetrics)
+	clear(batch.ActionDimensionMetrics)
+	clear(batch.JointMetrics)
+	clear(batch.ActionPropertyMetrics)
+	clear(batch.PropertyMetrics)
+	clear(batch.RegionMetrics)
+	for i := range batch.Groups {
+		if batch.Groups[i].Metrics != nil {
+			batch.Groups[i].Metrics.PhaseSketches = nil
+		}
+		clear(batch.Groups[i].TransactionMetrics)
 	}
 }
 
@@ -2435,6 +2522,7 @@ func metricAggregateToProto(value *MetricAggregate) *pb.MetricAggregate {
 		MessagingVersion:     value.MessagingVersion,
 		Exemplars:            traceExemplarsToProto(value.Exemplars),
 		PhaseObserved:        phaseObservationsToProto(value.PhaseObserved),
+		PhaseSketches:        phaseSketchesToProto(value.PhaseSketches),
 	}
 }
 

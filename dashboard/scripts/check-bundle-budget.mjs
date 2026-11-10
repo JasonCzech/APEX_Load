@@ -212,6 +212,16 @@ const mib = (value) => value * 1024 * 1024
 // fixes the live waterfall needs) then leave ScriptEditor at 950.02 KiB raw /
 // 259.22 KiB gzip. Move the per-asset raw ceiling to 955 KiB (~0.5% headroom);
 // the gzip ceiling, which tracks transfer size, is unchanged.
+//
+// 2026-11-10 Live phase percentiles, thresholds and heatmap (L2/L5/L6) merged
+// with the report drawer waterfall (#346). #346's shared-waterfall report
+// styles plus L2/L5/L6's live waterfall percentile table, connection tiles,
+// phase rule editor and phase share heatmap stylesheets take aggregate CSS to
+// 1.09 MiB raw / 204.16 KiB gzip against the 204 KiB gzip total. Each change
+// fits alone; together they cross by 0.16 KiB. Lazy loading does not help: the
+// total counts deferred chunks. Move the aggregate CSS gzip total to 208 KiB
+// (~2% headroom); raw total, per-asset and every route and startup guard stay
+// unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
@@ -225,7 +235,7 @@ export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
     maxAssetBytes: kib(236),
     maxAssetGzipBytes: kib(38),
     maxTotalBytes: kib(1125),
-    maxTotalGzipBytes: kib(204),
+    maxTotalGzipBytes: kib(208),
   }),
 })
 

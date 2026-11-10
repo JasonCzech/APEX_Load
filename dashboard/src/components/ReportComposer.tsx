@@ -515,9 +515,9 @@ export default function ReportComposer({ testId, testName, profile, onClose, com
 				  <thead><tr><th>Transaction</th><th>Metric</th><th>Expectation</th><th>Observed</th><th>Severity</th><th>Result</th></tr></thead>
 				  <tbody>
 					{manifest?.transaction_rule_results?.map((result, index) => (
-					  <tr key={`${result.rule.transaction}-${result.rule.metric}-${index}`}>
+					  <tr key={`${result.rule.transaction}-${result.rule.phase ?? ''}-${result.rule.metric}-${index}`}>
 						<td>{result.rule.transaction}{(result.rule.population || result.rule.protocol || result.rule.group) && <small> · {result.rule.population || 'transaction'} · {result.rule.protocol || 'all protocols'} · {result.rule.group || 'all groups'}</small>}</td>
-						<td>{result.rule.metric}</td>
+						<td>{result.rule.phase ? `${result.rule.phase} ${result.rule.metric}` : result.rule.metric}</td>
 						<td>{result.rule.comparator} {result.rule.threshold}</td>
 						<td>{result.observed !== undefined && <PercentileQualityMark quality={result.percentile_quality} />}{result.observed ?? 'Not evaluated'}</td>
 						<td>{result.rule.severity || 'fail'}</td>

@@ -123,6 +123,7 @@ import {
   type TelemetryBudgetKey,
 } from './settingsPageModel'
 import './CreateTestModal.css'
+import PhaseLatencyThresholdEditor from './PhaseLatencyThresholdEditor'
 import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
@@ -1305,6 +1306,15 @@ export default function SettingsPage({
         ...prev.client_downloads,
         enabled,
       },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updatePhaseLatencyRules = (rules: NonNullable<DashboardSystemSettings['thresholds']['phase_latency']>) => {
+    setSettings((prev) => ({
+      ...prev,
+      thresholds: { ...prev.thresholds, phase_latency: rules.length ? rules : undefined },
     }))
     setSaveMessage('')
     setRequestError('')
@@ -4018,6 +4028,12 @@ export default function SettingsPage({
               />
             </div>
             {renderFieldIssues('thresholds.p99_latency_stop_consecutive_samples')}
+            <PhaseLatencyThresholdEditor
+              rules={settings.thresholds.phase_latency}
+              onChange={updatePhaseLatencyRules}
+              fieldAccessibility={fieldAccessibility}
+              renderFieldIssues={renderFieldIssues}
+            />
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Max Avg Server Processing (ms)</span>

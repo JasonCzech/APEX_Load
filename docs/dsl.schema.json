@@ -10994,6 +10994,9 @@
         "metric": {
           "type": "string"
         },
+        "phase": {
+          "type": "string"
+        },
         "population": {
           "type": "string"
         },

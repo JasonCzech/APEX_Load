@@ -4,7 +4,8 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { MetricsHistoryPoint } from '../types'
+import { IntervalSummaryRecord, MetricsHistoryPoint } from '../types'
+import { mapArchiveSummarySamples } from './testExecutionMetricsModel'
 import { transactionChartSeriesKey } from './transactionChartSeries'
 import { useExecutionChartModel } from './useExecutionChartModel'
 
@@ -40,6 +41,7 @@ function ChartHarness({
       <span data-testid="latest-cpu">{model.filteredData[model.filteredData.length - 1]?.cpuProcess ?? 'none'}</span>
       <span data-testid="latest-net">{model.filteredData[model.filteredData.length - 1]?.netSent ?? 'none'}</span>
       <span data-testid="latest-transaction-tps">{model.filteredData[model.filteredData.length - 1]?.[transactionChartSeriesKey('Search', 'tps')] ?? 'none'}</span>
+      <span data-testid="phase-points">{JSON.stringify(model.filteredData.map(point => [point.txDnsMs ?? null, point.txConnectMs ?? null, point.txTlsMs ?? null, point.txServerMs ?? null, point.txDownloadMs ?? null, point.txNoResponseMs ?? null]))}</span>
       <span data-testid="show-ref-area">{model.showRefArea ? 'yes' : 'no'}</span>
       <span data-testid="ref-left">{String(model.refAreaLeft)}</span>
       <span data-testid="ref-end">{String(model.refAreaEnd)}</span>
@@ -343,6 +345,59 @@ describe('useExecutionChartModel', () => {
       container.querySelector(`[data-testid="${testId}"]`)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
   }
+
+  it('keeps the network phase series for a completed run charted from archive summaries', async () => {
+    const summary = (timestamp: string, phases: Partial<IntervalSummaryRecord>): IntervalSummaryRecord => ({
+      timestamp,
+      test_id: 'test-1',
+      test_name: 'Checkout',
+      active_vusers: 4,
+      tps: 10,
+      avg_response_ms: 120,
+      error_pct: 0,
+      total_transactions: 10,
+      total_errors: 0,
+      p50_ms: 100,
+      p90_ms: 110,
+      p95_ms: 115,
+      p99_ms: 119,
+      ...phases,
+    })
+    const archived = mapArchiveSummarySamples([
+      // An archive row written before phases were recorded stays a gap.
+      summary('2026-05-12T20:00:00Z', {}),
+      summary('2026-05-12T20:00:01Z', {
+        avg_dns_ms: 1.5,
+        avg_connect_ms: 4.5,
+        avg_tls_ms: 9.25,
+        avg_ttfb_ms: 80,
+        avg_wait_ms: 30,
+        phase_observed: { dns: 2, connect: 4, tls: 4, no_ttfb: 1, no_ttfb_setup_ms: 2.5, no_ttfb_remainder_ms: 60 },
+        avg_server_ms: 62,
+        avg_no_response_ms: 6,
+      }),
+      // An older generator: averages without the observed split.
+      summary('2026-05-12T20:00:02Z', { avg_connect_ms: 4, avg_tls_ms: 6, avg_ttfb_ms: 70, avg_wait_ms: 50 }),
+    ])
+
+    await act(async () => {
+      root.render(
+        <ChartHarness
+          test={{ status: 'COMPLETE', archive: { interval_summary_count: 3 }, history: [] }}
+          history={[]}
+          localMetricsHistory={[]}
+          archiveSummaryHistory={archived}
+        />,
+      )
+    })
+
+    expect(JSON.parse(readTestId('phase-points') ?? '[]')).toEqual([
+      [null, null, null, null, null, null],
+      [1.5, 4.5, 9.3, 62, 30, 6],
+      // Server falls back to TTFB minus setup (70 - 4 - 6).
+      [null, 4, 6, 60, 50, null],
+    ])
+  })
 
   function readTestId(testId: string) {
     return container.querySelector(`[data-testid="${testId}"]`)?.textContent

@@ -84,6 +84,12 @@ export function validateGoalConfig(goalConfig: GoalConfig): string | null {
 		if (rule.iterations !== undefined && !['warm', 'all', 'cold'].includes(rule.iterations)) {
 			return `Transaction SLA rule ${index + 1} judges warm, all or cold browser iterations`
 		}
+		// Mirrors pkg/runcontract/transaction_sla.go: a phase judges one network
+		// phase, and only with a duration metric.
+		if (rule.phase !== undefined && (!['dns', 'connect', 'tls', 'server', 'download'].includes(rule.phase)
+			|| !['average_duration_ms', 'min_duration_ms', 'max_duration_ms', 'p90_duration_ms', 'p95_duration_ms', 'p99_duration_ms'].includes(rule.metric))) {
+			return `Transaction SLA rule ${index + 1} judges a phase (DNS, connect, TLS, server or download) only with a duration metric`
+		}
 	}
   if ((goalConfig.monitor_rules?.length || 0) > 32) return 'Monitoring criteria cannot contain more than 32 entries'
   for (const [index, rule] of (goalConfig.monitor_rules || []).entries()) {

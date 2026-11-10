@@ -1,0 +1,29 @@
+{
+  "active_vusers": 2,
+  "avg_connect_ms": 5.666666666666667,
+  "avg_dns_ms": 0.6666666666666666,
+  "avg_no_response_ms": 30,
+  "avg_response_ms": 133.33333333333334,
+  "avg_server_ms": 66.66666666666666,
+  "avg_tls_ms": 3.6666666666666665,
+  "avg_ttfb_ms": 73.33333333333333,
+  "avg_wait_ms": 26.66666666666668,
+  "error_pct": 33.33333333333333,
+  "p50_ms": 100.44702618042388,
+  "p90_ms": 180.0894052360848,
+  "p95_ms": 190.04470261804238,
+  "p99_ms": 198.0089405236085,
+  "phase_observed": {
+    "connect": 3,
+    "dns": 1,
+    "no_ttfb": 1,
+    "no_ttfb_remainder_ms": 90,
+    "no_ttfb_setup_ms": 10,
+    "tls": 2
+  },
+  "test_id": "phase-run",
+  "test_name": "Phases",
+  "total_errors": 1,
+  "total_transactions": 2,
+  "tps": 2
+}
