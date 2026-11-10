@@ -5,6 +5,8 @@ import type { ReplayOptionsState } from './scriptEditorState'
 import { compareRuns, eventLocation, readProfiles, safeProfile, variablesAt, type DebugRunRecord } from './debuggerExperience'
 import { omitUnavailableReplayReport, RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
+import { DebugRunDiffPanel } from './DebugRunDiffPanel'
+import { buildRunDiffOptions } from './waterfall/debugRunDiff'
 import { HTTPVersionReplayEvidence } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
@@ -248,6 +250,12 @@ export function DebugRunHistory({ runs, current, currentRecord }: { runs: DebugR
   return <details className="debug-run-history"><summary>Recent runs ({runs.length}) · Compare evidence</summary><p>Evidence stays in this editor session (up to 5 runs). Export to retain it before closing.</p><label>Inspect run<select value={selected.id} onChange={e => setSelectedId(e.target.value)}>{admittedRuns.map(r => <option key={r.id} value={r.id}>{r.report.started_at} · {r.report.protocol} · {r.report.stopped ? 'Stopped' : r.report.success ? 'Passed' : 'Failed'}</option>)}</select></label><button type="button" aria-pressed={pinnedBaselineId === selected.id} onClick={() => setPinnedBaselineId(selected.id)}>Pin comparison baseline</button>
     <p>{selected.draft ? 'Unsaved draft' : 'Saved script'} · {selected.report.script_revision || selected.report.script_hash || 'Revision identity unavailable'} · {selected.target} · {selected.failurePolicy}</p>
     {Boolean(selected.report.dropped_event_count || selected.report.truncated_event_evidence_count) && <p className="debug-history-retention">{selected.report.dropped_event_count || 0} executions omitted · {selected.report.truncated_event_evidence_count || 0} execution details truncated in retained evidence.</p>}
+    {buildRunDiffOptions(admittedRuns, admittedCurrent, currentRecord).length > 1 && (
+      <details className="debug-run-diff-section" open>
+        <summary>Compare timing between runs</summary>
+        <DebugRunDiffPanel runs={admittedRuns} current={admittedCurrent} currentRecord={currentRecord} />
+      </details>
+    )}
     <HistoricalEvidence key={selected.id} report={selected.report} />
     {admittedCurrent && <details><summary>Compare baseline with current run</summary><p>Baseline: {baseline.report.started_at} · Current: {admittedCurrent.started_at}</p><div className="debug-history-columns"><section><h4>Baseline configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(baseline, baseline.report), null, 2)} /></section><section><h4>Current configuration</h4><SnapshotBodyPreview body={JSON.stringify(configuration(currentRecord, admittedCurrent), null, 2)} /></section></div>{diff.filter(row => row.fields.length).map(row => <details key={row.key}><summary>{(row.after || row.before)!.action_name} · {eventLocation((row.after || row.before)!)} · {row.fields.join(', ')}</summary><div className="debug-history-columns"><SnapshotBodyPreview body={JSON.stringify(row.before || null, null, 2)} /><SnapshotBodyPreview body={JSON.stringify(row.after || null, null, 2)} /></div></details>)}{diff.every(row => !row.fields.length) && <p>No outcome, request, response, assertion or variable differences in retained evidence.</p>}</details>}
   </details>

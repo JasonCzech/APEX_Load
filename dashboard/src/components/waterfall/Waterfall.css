@@ -172,6 +172,19 @@ button.wf-sink:hover { background: var(--bg-hover); }
 .wf-critical-mark { flex-shrink: 0; color: var(--accent, #2563eb); font-size: 9px; }
 .wf-bar-parent { inset-block: 12px; background: color-mix(in srgb, var(--phase-total) 14%, transparent); border: 1px solid color-mix(in srgb, var(--phase-total) 35%, transparent); }
 .wf-bar-think { background-color: transparent; border: 1px solid var(--wf-gap-stripe); }
+/* Comparison overlay (debug-run diff). */
+.wf-ghost { position: absolute; z-index: 1; inset-block: 6px; border: 1px dashed color-mix(in srgb, var(--text-secondary) 70%, transparent); border-radius: 3px; pointer-events: none; box-sizing: border-box; }
+.wf-delta-bar { position: absolute; z-index: 2; inset-block: 15px; min-inline-size: 2px; border-radius: 2px; pointer-events: none; }
+.wf-delta-bar.slower { background: var(--warning, #d97706); }
+.wf-delta-bar.faster { background: var(--success, #16a34a); }
+.wf-swatch-ghost { border: 1px dashed var(--text-secondary); }
+.wf-cell-duration.has-delta { flex-direction: column; align-items: flex-end; justify-content: center; gap: 0; line-height: 1.15; }
+.wf-delta-text { font-size: 10px; font-weight: 600; }
+.wf-delta-text.slower { color: var(--warning-text, #b45309); }
+.wf-delta-text.faster { color: var(--success-text, #15803d); }
+.wf-delta-text.same { color: var(--text-muted); font-weight: 400; }
+.wf-delta-text.failing { color: var(--danger-text, var(--danger)); }
+.wf-delta-bar.failing { background: var(--danger, #dc2626); }
 .wf-bar-marker { background: transparent; border: 1px dashed color-mix(in srgb, var(--phase-total) 60%, transparent); inset-block: 13px; }
 .wf-row.wf-status-failed .wf-bar-marker { border-color: var(--danger, #dc2626); }
 .wf-bar-derived { opacity: 0.75; border: 1px dashed var(--phase-total); }

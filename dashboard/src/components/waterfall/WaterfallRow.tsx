@@ -25,6 +25,14 @@ export interface WaterfallRowProps<T> {
   onTimelinePointer: (node: WaterfallNode<T>, event: PointerEvent<HTMLElement> | null) => void
 }
 
+type Delta = NonNullable<WaterfallNode['delta']>
+// Outcome before sign: a missing or new execution is a difference in what ran,
+// and a request that now fails fast is not an improvement.
+const deltaTone = (d: Delta) =>
+  d.outcome === 'added' || d.outcome === 'removed' ? 'same' : d.outcome === 'now_failing' ? 'failing' : d.ms >= 0.5 ? 'slower' : d.ms <= -0.5 ? 'faster' : 'same'
+const formatDelta = (d: Delta) =>
+  d.outcome === 'added' ? 'new' : d.outcome === 'removed' ? 'not run' : Math.abs(d.ms) < 0.5 ? '±0 ms' : `${d.ms > 0 ? '+' : '−'}${formatWaterfallMs(Math.abs(d.ms))}`
+
 const STATUS_LABEL = { passed: 'Passed', failed: 'Failed', incomplete: 'Incomplete', not_run: 'Not run' } as const
 
 const pct = (v: number) => `${Number.isFinite(v) ? v : 0}%`
@@ -98,6 +106,12 @@ function WaterfallRowInner<T>({
 }: WaterfallRowProps<T>) {
   const { node, depth, hasChildren, expanded } = row
   const f = frame(node, viewport, scaleMode)
+  // Comparison overlay, aligned to this node's start: the baseline's length and
+  // the stretch between the two ends (slower or faster).
+  const ghost = scaleMode === 'waterfall' && node.ghost && isTimed(node) ? projectSpan(node.startMs, node.ghost.durationMs, viewport) : null
+  const deltaBar = ghost && isTimed(node) && node.ghost && Math.abs(node.durationMs - node.ghost.durationMs) >= 0.5
+    ? projectSpan(node.startMs + Math.min(node.durationMs, node.ghost.durationMs), Math.abs(node.durationMs - node.ghost.durationMs), viewport)
+    : null
   const isParent = hasChildren && node.kind !== 'request'
   const source = node.timingSource ? TIMING_SOURCE_LABELS[node.timingSource] : null
   const statusText = node.statusCode != null ? `${STATUS_LABEL[node.status]} · ${node.statusCode}` : STATUS_LABEL[node.status]
@@ -171,8 +185,14 @@ function WaterfallRowInner<T>({
       <div role="gridcell" className="wf-cell wf-cell-status">
         <span className={`wf-status-text ${node.status}`}>{statusText}</span>
       </div>
-      <div role="gridcell" className="wf-cell wf-cell-duration">
-        {node.durationMs == null ? '—' : formatWaterfallMs(node.durationMs)}
+      <div role="gridcell" className={`wf-cell wf-cell-duration${node.delta ? ' has-delta' : ''}`}>
+        <span>{node.durationMs == null ? '—' : formatWaterfallMs(node.durationMs)}</span>
+        {node.delta && (
+          <small className={`wf-delta-text ${deltaTone(node.delta)}`}>
+            {formatDelta(node.delta)}
+            <span className="sr-only"> vs baseline: {node.delta.label}</span>
+          </small>
+        )}
       </div>
       <div
         role="gridcell"
@@ -193,6 +213,9 @@ function WaterfallRowInner<T>({
               {isParent ? <ParentTrack node={node} hidden={hiddenPhases} /> : node.kind === 'think' || node.kind === 'marker' ? null : <LeafBar node={node} hidden={hiddenPhases} />}
             </span>
           )}
+          {/* After the bar so the change stays visible on top of it. */}
+          {ghost && <span className="wf-ghost" style={{ left: pct(ghost.leftPct), width: pct(ghost.widthPct) }} aria-hidden="true" />}
+          {deltaBar && node.delta && <span className={`wf-delta-bar ${deltaTone(node.delta)}`} style={{ left: pct(deltaBar.leftPct), width: pct(deltaBar.widthPct) }} aria-hidden="true" />}
           {scaleMode === 'stacked' && node.durationMs != null && <span className="wf-bar-label" aria-hidden="true">{formatWaterfallMs(node.durationMs)}</span>}
           {!f && <span className="wf-untimed">{node.status === 'not_run' ? 'Not run' : 'No timing'}</span>}
         </div>

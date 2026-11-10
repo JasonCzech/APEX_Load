@@ -196,6 +196,7 @@ export function sortSiblings<T>(nodes: readonly WaterfallNode<T>[], mode: Waterf
   indexed.sort((x, y) => {
     let c = 0
     if (mode === 'slowest') c = dur(y.n) - dur(x.n)
+    else if (mode === 'change') c = Math.abs(y.n.delta?.ms ?? 0) - Math.abs(x.n.delta?.ms ?? 0)
     else if (mode === 'dominant') {
       const dx = dominantPhase(x.n)
       const dy = dominantPhase(y.n)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { defaultRangeExtractor, useVirtualizer, type Range } from '@tanstack/react-virtual'
-import { ancestorIds, criticalPathIds, defaultWaterfallExpanded, isFailureCandidate, flattenAll, flattenVisible, isTimed, topTimeSinks, walk } from './analysis'
+import { type WaterfallTimeSink, ancestorIds, criticalPathIds, defaultWaterfallExpanded, isFailureCandidate, flattenAll, flattenVisible, isTimed, topTimeSinks, walk } from './analysis'
 import { clampViewport, fitViewport, fullViewport, isFullViewport, niceTicks, panViewport, zoomViewport, type WaterfallViewport } from './axis'
 import { WATERFALL_TOGGLE_PHASES, type WaterfallPhaseKey } from './phases'
 import { WaterfallMinimap } from './WaterfallMinimap'
@@ -36,6 +36,12 @@ export interface WaterfallProps<T> {
   /** Docked detail drawer for the selection. */
   drawer?: ReactNode
   emptyMessage?: string
+  /** Replace the computed time sinks (a comparison shows its own headline facts). */
+  sinks?: WaterfallTimeSink[]
+  /** Accessible name for the facts strip. */
+  sinksLabel?: string
+  /** Sort to start with. */
+  initialSortMode?: WaterfallSortMode
   className?: string
 }
 
@@ -43,6 +49,7 @@ const SORT_LABELS: Record<WaterfallSortMode, string> = {
   chronological: 'Chronological',
   slowest: 'Slowest first',
   dominant: 'Dominant phase',
+  change: 'Largest change',
 }
 
 const EMPTY_SET: ReadonlySet<string> = new Set()
@@ -61,6 +68,9 @@ export function Waterfall<T>({
   defaultExpanded = defaultWaterfallExpanded,
   forceExpanded,
   forceExpandedKey,
+  sinks: sinksOverride,
+  sinksLabel = 'Top time sinks',
+  initialSortMode,
   toolbar,
   drawer,
   emptyMessage = 'No executions captured yet.',
@@ -70,7 +80,7 @@ export function Waterfall<T>({
   const tooltipId = `${baseId}-tooltip`
   const total = Math.max(spanMs, 1)
   const [toggled, setToggled] = useState<Map<string, boolean>>(() => new Map())
-  const [sortMode, setSortMode] = useState<WaterfallSortMode>('chronological')
+  const [sortMode, setSortMode] = useState<WaterfallSortMode>(initialSortMode ?? 'chronological')
   const [scaleMode, setScaleMode] = useState<WaterfallScaleMode>('waterfall')
   const [hidden, setHidden] = useState<Set<WaterfallPhaseKey>>(() => new Set())
   const [showCritical, setShowCritical] = useState(true)
@@ -120,7 +130,16 @@ export function Waterfall<T>({
     return excluded
   }, [roots, criticalPath])
   const critical = showCritical && criticalIsSelective ? criticalPath : EMPTY_SET
-  const sinks = useMemo(() => topTimeSinks(roots, total), [roots, total])
+  const computedSinks = useMemo(() => (sinksOverride ? null : topTimeSinks(roots, total)), [roots, total, sinksOverride])
+  const sinks = sinksOverride ?? computedSinks ?? []
+  // Comparison-only controls appear only when some row carries a change.
+  const hasDelta = useMemo(() => {
+    let found = false
+    walk(roots, n => {
+      if (!found && n.delta) found = true
+    })
+    return found
+  }, [roots])
   const viewportRef = useRef(viewport)
   viewportRef.current = viewport
   // Fit the tick count to the axis width so labels never overlap in narrow docks.
@@ -603,7 +622,7 @@ export function Waterfall<T>({
           <label className="wf-inline-label">
             Sort
             <select value={sortMode} onChange={e => setSortMode(e.target.value as WaterfallSortMode)}>
-              {(Object.keys(SORT_LABELS) as WaterfallSortMode[]).map(m => <option key={m} value={m}>{SORT_LABELS[m]}</option>)}
+              {(Object.keys(SORT_LABELS) as WaterfallSortMode[]).filter(m => m !== 'change' || hasDelta).map(m => <option key={m} value={m}>{SORT_LABELS[m]}</option>)}
             </select>
           </label>
           <div className="wf-segmented" role="group" aria-label="Timeline scale">
@@ -644,10 +663,11 @@ export function Waterfall<T>({
           </li>
         ))}
         <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-gap" aria-hidden="true" />Think / idle</span></li>
+        {hasDelta && <li><span className="wf-legend-chip static"><i className="wf-swatch wf-swatch-ghost" aria-hidden="true" />Baseline</span></li>}
         {hidden.size > 0 && <li><button type="button" className="wf-legend-chip" onClick={() => setHidden(new Set())}>Show all</button></li>}
       </ul>
       {sinks.length > 0 && (
-        <div className="wf-sinks" role="list" aria-label="Top time sinks">
+        <div className="wf-sinks" role="list" aria-label={sinksLabel}>
           {sinks.map(s => (
             <div role="listitem" key={s.id}>
               {s.targetId ? (
