@@ -76,7 +76,9 @@ const occurrences = (text: string) => (container.textContent ?? '').split(text).
 /** A header or form-field table by its accessible name, in the shown view. */
 const namedTable = (label: string, scope: ParentNode = panel()) => scope.querySelector<HTMLTableElement>(`table[aria-label="${label}"]`)
 /** Each body row's cells as text. */
-const rowCells = (table: Element | null) => Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => Array.from(row.children).map(cell => cell.textContent ?? ''))
+/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
+const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const rowCells = (table: Element | null) => Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => Array.from(row.children).map(cellText))
 /** The cells of the first body row whose header cell (or, without one, first cell) is name. */
 const rowNamed = (table: Element | null, name: string) => rowCells(table).find(cells => cells.includes(name))
 const press = (target: HTMLElement, key: string) => act(() => { target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })) })

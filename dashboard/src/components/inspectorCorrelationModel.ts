@@ -335,7 +335,8 @@ export function correlationVariablesSet(event: BrowserReplayEvent, variableDiff:
 /** The quiet line for reads whose resolution the event does not record, or null for none. */
 export function unknownReadsText(names: readonly string[]): string | null {
   if (names.length === 0) return null
-  return `Reads ${names.map(name => `{{var.${name}}}`).join(', ')} (resolution not recorded)`
+  const list = names.length === 1 ? names[0] : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+  return `Also reads ${list}. The run did not record whether ${names.length === 1 ? 'it had a value' : 'they had values'}.`
 }
 
 /** Whether the table has anything to show. */

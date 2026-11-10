@@ -176,7 +176,7 @@ describe('buildCorrelationTable', () => {
     const passed = buildCorrelationTable({ event: event(), variableDiff: {}, action: login })
     expect(passed.rows).toEqual([])
     expect(passed.unknownReads).toEqual(['user', 'csrf'])
-    expect(unknownReadsText(passed.unknownReads)).toBe('Reads {{var.user}}, {{var.csrf}} (resolution not recorded)')
+    expect(unknownReadsText(passed.unknownReads)).toBe('Also reads user and csrf. The run did not record whether they had values.')
     expect(unknownReadsText([])).toBeNull()
     expect(correlationTableIsEmpty(passed)).toBe(false)
     // Without the authored action an unset value is still listed.

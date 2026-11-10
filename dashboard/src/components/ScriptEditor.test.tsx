@@ -12791,7 +12791,7 @@ describe('ScriptEditor', () => {
 
     // Correlation: the action's extractions, one table row each.
     const correlationPanel = await openInspectorTab(container, 'Correlation')
-    const extraction = Array.from(correlationPanel.querySelectorAll('.rr-correlation-table tbody tr')).find(row => row.querySelector('th')?.textContent === 'confirmationId')
+    const extraction = Array.from(correlationPanel.querySelectorAll('.rr-correlation-table tbody tr')).find(row => row.querySelector('th .rr-correlation-one-line')?.textContent === 'confirmationId')
     expect(extraction?.children[0]?.textContent).toBe('Extracts')
     expect(extraction?.textContent).toContain('CONF-42')
     expect(responseBlocks + wireBlocks.length + scriptedBlocks.length).toBeGreaterThanOrEqual(3)

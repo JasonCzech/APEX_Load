@@ -113,8 +113,8 @@ export default function InspectorCorrelationTable({
                 return (
                   <tr key={row.key} className={row.tone === 'bad' ? 'rr-correlation-row-bad' : undefined}>
                     <td className="rr-correlation-direction">{row.direction}</td>
-                    {/* A narrow pane drops the Direction column; the variable cell then shows it (CSS, from data-direction). */}
-                    <th scope="row" className="rr-correlation-variable" data-direction={row.direction}><OneLine text={row.variable} /></th>
+                    {/* A narrow pane drops the Direction column; the variable cell then shows it as real text. */}
+                    <th scope="row" className="rr-correlation-variable"><OneLine text={row.variable} /><span className="rr-correlation-direction-inline">{row.direction}</span></th>
                     <td className="rr-correlation-where">
                       {row.where === null ? <span className="rr-correlation-quiet">Unknown</span> : <OneLine text={row.where} />}
                     </td>

@@ -79,6 +79,11 @@
   padding: 0;
 }
 
+/* Shown only in a narrow pane, where it stands in for the Direction column. */
+.rr-correlation-table .rr-correlation-direction-inline {
+  display: none;
+}
+
 /* A narrow debugger pane: the Direction column goes (the variable cell shows
    it as a small label instead, so one of the two is ever displayed), cells
    tighten, and a long result wraps as a rounded label rather than a pill. */
@@ -97,8 +102,7 @@
     display: none;
   }
 
-  .rr-correlation-table th.rr-correlation-variable::after {
-    content: attr(data-direction);
+  .rr-correlation-table .rr-correlation-direction-inline {
     display: block;
     color: var(--text-secondary);
     font-family: var(--font-sans, inherit);

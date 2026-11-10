@@ -41,7 +41,9 @@ function render(props: Partial<InspectorCorrelationTableProps> = {}) {
   act(() => root.render(<InspectorCorrelationTable event={event()} variableDiff={{}} script={null} copyKeyPrefix="0:correlation" copiedKey={null} onCopy={() => undefined} {...props} />))
 }
 
-const cells = (row: Element) => [...row.querySelectorAll('th, td')].map(cell => cell.textContent)
+/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
+const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const cells = (row: Element) => [...row.querySelectorAll('th, td')].map(cellText)
 
 describe('InspectorCorrelationTable', () => {
   it('renders a captioned table with column and row headers', () => {
@@ -56,11 +58,11 @@ describe('InspectorCorrelationTable', () => {
     // Copy is an icon button; its name carries the word.
     expect(cells(rows[0])).toEqual(['Extracts', 'token', 'body · regex', 'old→changed toabc', 'ExtractedUsed by 1 later step', ''])
     expect(rows[0].querySelector('button')?.getAttribute('aria-label')).toBe('Copy token value')
-    // The variable cell carries the direction for the narrow layout, which drops the Direction column.
-    expect(rows[0].querySelector('th')?.getAttribute('data-direction')).toBe('Extracts')
+    // The variable cell carries the direction as real text for the narrow layout, which drops the Direction column.
+    expect(rows[0].querySelector('th .rr-correlation-direction-inline')?.textContent).toBe('Extracts')
     // The authored request's read of csrf has no recorded resolution: one quiet line, not a row of Unknowns.
     expect(rows).toHaveLength(1)
-    expect(container.querySelector('.rr-correlation-unknown-reads')?.textContent).toBe('Reads {{var.csrf}} (resolution not recorded)')
+    expect(container.querySelector('.rr-correlation-unknown-reads')?.textContent).toBe('Also reads csrf. The run did not record whether it had a value.')
     // No horizontal scroll box: Result stays in the pane, and nothing needs a keyboard-unreachable scroll.
     expect(container.querySelector('.rr-correlation-scroll')).toBeNull()
   })
@@ -73,7 +75,7 @@ describe('InspectorCorrelationTable', () => {
       onCopy,
       copiedKey: '0:correlation:set:changed',
     })
-    const rowFor = (variable: string) => [...container.querySelectorAll('tbody tr')].find(row => row.querySelector('th')?.textContent === variable)!
+    const rowFor = (variable: string) => [...container.querySelectorAll('tbody tr')].find(row => cellText(row.querySelector('th')!) === variable)!
     expect(rowFor('secret').querySelector('button')).toBeNull()
     expect(rowFor('auth').querySelector('button')).toBeNull()
     const copy = rowFor('token').querySelector('button')!
@@ -92,11 +94,11 @@ describe('InspectorCorrelationTable', () => {
   it('never claims Resolved while runtime evidence is withheld', () => {
     const failed = event({ success: false, error_message: 'boom', diagnosis: { category: 'correlation', severity: 'error', cause: 'x', unresolved_variables: ['other'] } })
     render({ event: failed, script })
-    const csrf = () => [...container.querySelectorAll('tbody tr')].find(row => row.querySelector('th')?.textContent === 'csrf')
+    const csrf = () => [...container.querySelectorAll('tbody tr')].find(row => cellText(row.querySelector('th')!) === 'csrf')
     expect(csrf()?.querySelector('.rr-correlation-badge')?.textContent).toBe('Resolved')
     render({ event: failed, script, runtimeVariablesUnavailable: true })
     expect(csrf()).toBeUndefined()
-    expect(container.querySelector('.rr-correlation-unknown-reads')?.textContent).toBe('Reads {{var.csrf}} (resolution not recorded)')
+    expect(container.querySelector('.rr-correlation-unknown-reads')?.textContent).toBe('Also reads csrf. The run did not record whether it had a value.')
   })
 
   it('cuts long values to one line with the full text on hover, and leaves masked values as they came', () => {
