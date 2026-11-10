@@ -250,7 +250,7 @@ func timeAnatomyPDF(d *runArchiveHTMLReportData, lines *[]string) {
 	}
 	header += "Total|"
 	for _, entry := range view.Entries {
-		*lines = append(*lines, fmt.Sprintf("%s: %s instances, %s %s ms", reportPDFCell(entry.Name), formatPDFInt(entry.Instances), view.StatisticLabel(), formatChartValue(math.Round(entry.DurationMs))))
+		*lines = append(*lines, fmt.Sprintf("%s: %s instances, %s %s ms", reportPDFCell(entry.Name), formatPDFInt(entry.Instances), view.StatisticLabel(), reportAnatomyMs(entry.DurationMs)))
 		if entry.Tail != "" {
 			*lines = append(*lines, entry.Tail)
 		}
@@ -279,14 +279,14 @@ func timeAnatomyCSV(d *runArchiveHTMLReportData, write reportCSVWriteFunc) error
 	for _, tx := range anatomy.Transactions {
 		rows := [][2]string{
 			{"instances", strconv.FormatInt(tx.Instances, 10)},
-			{"p95_ms", formatChartValue(tx.Duration.P95Ms)},
+			{"p95_ms", formatCSVFloat(tx.Duration.P95Ms)},
 		}
 		if tx.Tail != nil {
 			rows = append(rows, [2]string{"tail_status", tx.Tail.Status})
 			if tx.Tail.Status == "ok" {
-				rows = append(rows, [2]string{"tail_delta_ms", formatChartValue(tx.Tail.Delta.TotalMs)}, [2]string{"tail_headline", tx.Tail.Headline})
+				rows = append(rows, [2]string{"tail_delta_ms", formatCSVFloat(tx.Tail.Delta.TotalMs)}, [2]string{"tail_headline", tx.Tail.Headline})
 				for _, component := range tx.Tail.Delta.Components {
-					rows = append(rows, [2]string{"tail_" + component.Component + "_ms", formatChartValue(component.DeltaMs)})
+					rows = append(rows, [2]string{"tail_" + component.Component + "_ms", formatCSVFloat(component.DeltaMs)})
 				}
 			}
 		}

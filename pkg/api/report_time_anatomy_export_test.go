@@ -246,3 +246,37 @@ func TestTimeAnatomyExportLabelsAndMultibyteNames(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The PDF entry header formats its P95 as the HTML does, and the CSV keeps
+// full precision.
+func TestTimeAnatomyExportHeaderAndCSVPrecision(t *testing.T) {
+	stat := func(v float64) RunArchivePhaseStat { return RunArchivePhaseStat{Samples: 100, P95Ms: v} }
+	report := consistencyMatrixReport()
+	report.TimeAnatomy = &RunArchiveTimeAnatomy{Schema: timeAnatomySchema, Transactions: []RunArchiveTransactionAnatomy{
+		{Name: "Search", Instances: 100, Duration: stat(45.3), Tail: &RunArchiveTailAttribution{Status: "ok", Instances: 100, Headline: "P95 tail",
+			Delta: RunArchiveTailDelta{TotalMs: 420.125, Components: []RunArchiveTailComponent{{Component: "server", DeltaMs: 360.0625}}}}},
+		{Name: "Export", Instances: 100, Duration: stat(1234.5678)},
+	}}
+	manifest := consistencyMatrixManifest()
+	profile, _ := lookupRunArchiveReportProfile("engineer")
+	text := strings.Join(buildRunArchiveReportPDFLines(report, profile, nil, manifest), "\n")
+	if !strings.Contains(text, "Search: 100 instances, P95 45.3 ms") || !strings.Contains(text, "Export: 100 instances, P95 1,235 ms") {
+		t.Fatal(text)
+	}
+	html, err := renderRunArchiveHTMLReportWithAnnotations(report, "engineer", nil, manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page := stdhtml.UnescapeString(string(html)); !strings.Contains(page, "P95 45.3 ms.") || !strings.Contains(page, "P95 1,235 ms.") {
+		t.Fatal("HTML and PDF headers differ")
+	}
+	var csv bytes.Buffer
+	if err := writeRunArchiveReportCSVWithProfileAndAnnotations(report, &csv, "engineer", nil, manifest); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"time_anatomy,Search,p95_ms,45.3", "time_anatomy,Search,tail_delta_ms,420.125", "time_anatomy,Search,tail_server_ms,360.0625", "time_anatomy,Export,p95_ms,1234.5678"} {
+		if !strings.Contains(csv.String(), want) {
+			t.Fatalf("missing %q in\n%s", want, csv.String())
+		}
+	}
+}
