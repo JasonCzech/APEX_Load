@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, StrictMode } from 'react'
+import { act, StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 import { describe, expect, it, vi } from 'vitest'
@@ -169,6 +169,105 @@ describe('debug summary page', () => {
       expect(nextRows[0]?.getAttribute('aria-selected')).toBe('false')
       expect(nextRows[1]?.getAttribute('aria-selected')).toBe('true')
     } finally { act(() => root.unmount()); container.remove() }
+  })
+
+  it('shows the recording comparison as the Recording diff sub-tab and opens it on request', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    type TabRequest = import('./DebugCompletionSummary').DebugSummaryTabRequest
+    const snapshot = fixture()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const diff = <p data-testid="diff">Compared with the recording</p>
+    const render = ({ recordingDiff = diff as ReactNode, tabRequest = null as TabRequest | null, unavailable = false } = {}) => act(() => root.render(
+      <Summary snapshot={snapshot} stale={false} unavailable={unavailable} onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()}
+        recordingDiff={recordingDiff} tabRequest={tabRequest} />))
+    const tabs = () => [...container.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Debug summary sections"] [role="tab"]')]
+    const diffTab = () => container.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')
+    const diffPanel = () => container.querySelector<HTMLElement>('#debug-summary-panel-recording-diff')
+    const transactionsPanel = () => container.querySelector<HTMLElement>('#debug-summary-panel-transactions')!
+    try {
+      // A request already present at mount is not acted on.
+      render({ tabRequest: { tab: 'recording-diff', id: 1 } })
+      expect(tabs().map(tab => tab.firstElementChild?.textContent)).toEqual(['Transactions', 'Errors and warnings', 'Recording diff'])
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('false')
+      expect(diffTab()?.tabIndex).toBe(-1)
+      expect(diffTab()?.getAttribute('aria-controls')).toBe('debug-summary-panel-recording-diff')
+      expect(diffPanel()?.getAttribute('role')).toBe('tabpanel')
+      expect(diffPanel()?.getAttribute('aria-labelledby')).toBe('debug-summary-tab-recording-diff')
+      expect(diffPanel()?.hidden).toBe(true)
+      expect(transactionsPanel().hidden).toBe(false)
+
+      act(() => diffTab()!.click())
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+      expect(diffTab()?.tabIndex).toBe(0)
+      expect(transactionsPanel().hidden).toBe(true)
+      expect(diffPanel()?.hidden).toBe(false)
+      const section = diffPanel()!.querySelector('section[aria-label="Recording diff"]')!
+      expect(section.querySelector('h3')?.textContent).toBe('Recording diff')
+      expect(section.querySelector('[data-testid="diff"]')?.textContent).toBe('Compared with the recording')
+
+      // A newer request switches to the tab and focuses it; the same request again does not.
+      act(() => tabs()[0].click())
+      expect(diffPanel()?.hidden).toBe(true)
+      render({ tabRequest: { tab: 'recording-diff', id: 2 } })
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+      expect(diffPanel()?.hidden).toBe(false)
+      expect(document.activeElement).toBe(diffTab())
+      act(() => tabs()[1].click())
+      render({ tabRequest: { tab: 'recording-diff', id: 2 } })
+      expect(tabs()[1].getAttribute('aria-selected')).toBe('true')
+      expect(diffPanel()?.hidden).toBe(true)
+      render({ tabRequest: { tab: 'recording-diff', id: 3 } })
+      expect(diffTab()?.getAttribute('aria-selected')).toBe('true')
+
+      // Without a comparison there is no third tab, and a request for it shows Transactions.
+      render({ recordingDiff: null, tabRequest: { tab: 'recording-diff', id: 4 } })
+      expect(tabs().map(tab => tab.firstElementChild?.textContent)).toEqual(['Transactions', 'Errors and warnings'])
+      expect(diffPanel()).toBeNull()
+      expect(tabs()[0].getAttribute('aria-selected')).toBe('true')
+      expect(transactionsPanel().hidden).toBe(false)
+      expect(container.querySelector('[aria-label="Recording diff"]')).toBeNull()
+
+      // With runtime evidence unavailable the comparison is a plain section under the warning.
+      render({ unavailable: true, tabRequest: { tab: 'recording-diff', id: 4 } })
+      expect(container.textContent).toContain('Runtime evidence unavailable.')
+      expect(tabs()).toHaveLength(0)
+      expect(diffPanel()).toBeNull()
+      const plain = container.querySelector('section[aria-label="Recording diff"]')
+      expect(plain?.querySelector('h3')?.textContent).toBe('Recording diff')
+      expect(plain?.querySelector('[data-testid="diff"]')).not.toBeNull()
+    } finally { act(() => root.unmount()); container.remove() }
+  })
+
+  it('focuses the plain Recording diff once per request, when it is not a sub-tab', async () => {
+    const { default: Summary, DebugSummaryRecordingDiff } = await import('./DebugCompletionSummary')
+    const snapshot = fixture()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const outside = document.createElement('button'); document.body.appendChild(outside)
+    let pending = false
+    const consume = () => { const value = pending; pending = false; return value }
+    const heading = () => container.querySelector<HTMLElement>('section[aria-label="Recording diff"] h3')
+    try {
+      // Live or paused run: the section alone (ScriptEditor's fallback).
+      outside.focus()
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff</p></DebugSummaryRecordingDiff>))
+      expect(document.activeElement).toBe(outside)
+      pending = true
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff again</p></DebugSummaryRecordingDiff>))
+      expect(heading()?.tabIndex).toBe(-1)
+      expect(document.activeElement).toBe(heading())
+      // A later render without a new request leaves focus alone.
+      outside.focus()
+      act(() => root.render(<DebugSummaryRecordingDiff consumeFocusRequest={consume}><p>diff</p></DebugSummaryRecordingDiff>))
+      expect(document.activeElement).toBe(outside)
+
+      // Runtime evidence unavailable: the summary's plain section takes focus on request too.
+      pending = true
+      act(() => root.render(<Summary snapshot={snapshot} stale={false} unavailable onExportSession={vi.fn()} onSelectEvent={vi.fn()} onDownloadHAR={vi.fn()}
+        recordingDiff={<p>diff</p>} tabRequest={{ tab: 'recording-diff', id: 1 }} consumeRecordingDiffFocus={consume} />))
+      expect(document.activeElement).toBe(heading())
+    } finally { act(() => root.unmount()); container.remove(); outside.remove() }
   })
 
   it('sorts and filters the errors and warnings table', async () => {

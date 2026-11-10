@@ -116,6 +116,15 @@ describe('HTTPNetworkTraceEvidence', () => {
     expect(html).not.toContain('replay-protocol-evidence')
   })
 
+  it('renders expanded under a heading, without a disclosure, when inline', () => {
+    const html = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={fullEvidence} networkEntries={hops} inline />)
+    expect(html).toMatch(/^<section class="replay-network-trace replay-network-trace-inline" aria-label="Network and transport trace"><h4 class="replay-network-trace-title">Network &amp; transport trace · /)
+    expect(html).not.toContain('<details class="replay-network-trace"')
+    expect(html).not.toContain('<summary>Network &amp; transport trace')
+    expect(html).toContain('Observed HTTP hops (2)')
+    expect(renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={fullEvidence} inline unavailable />)).toBe('')
+  })
+
   it('shows socket reuse as unknown when the trace omits connection_reused, and fresh only when it is explicitly false', () => {
     const unknown = renderToStaticMarkup(<HTTPNetworkTraceEvidence evidence={{ network_trace: { http_protocol: 'HTTP/1.1', remote_addr: '203.0.113.10:443' } }} />)
     expect(unknown).toContain('Socket reuse')

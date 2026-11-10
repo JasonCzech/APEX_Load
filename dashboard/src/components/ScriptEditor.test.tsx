@@ -386,6 +386,27 @@ async function returnToDebugger(root: ParentNode) {
   if (tab) await act(async () => { tab.click() })
 }
 
+// The Request/Response inspector shows one view at a time: Response, Request,
+// Correlation, Timing & transport, Network and Raw.
+function inspectorTab(root: ParentNode, label: string) {
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('[role="tablist"][aria-label="Request and response views"] [role="tab"]'))
+    .find(button => button.firstElementChild?.textContent === label)
+}
+
+async function openInspectorTab(root: ParentNode, label: string) {
+  const tab = inspectorTab(root, label)
+  expect(tab, `inspector tab ${label}`).toBeDefined()
+  await act(async () => { tab!.click() })
+  return root.querySelector<HTMLElement>('.debugger-request-body [role="tabpanel"]:not([hidden])')!
+}
+
+async function showRequestView(root: ParentNode, label: 'Sent on the wire' | 'As scripted') {
+  const button = Array.from(root.querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Request view"] button'))
+    .find(node => node.textContent === label)
+  expect(button, `request view ${label}`).toBeDefined()
+  await act(async () => { button!.click() })
+}
+
 function findDebuggerRunButton(root: ParentNode, title = 'Run Replay') {
   return findButtonByTitle(root, title)
 }
@@ -7258,8 +7279,14 @@ describe('ScriptEditor', () => {
     await flushReact()
 
     expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
-    await returnToDebugger(container)
-    const diagnoseButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+    // The recording comparison is the debug Summary's Recording diff sub-tab.
+    const recordingDiffTab = container.querySelector<HTMLButtonElement>('.center-tab-panel.active #debug-summary-tab-recording-diff')
+    expect(recordingDiffTab).not.toBeNull()
+    await act(async () => recordingDiffTab!.click())
+    expect(recordingDiffTab!.getAttribute('aria-selected')).toBe('true')
+    const recordingDiffPanel = container.querySelector<HTMLElement>('#debug-summary-panel-recording-diff')
+    expect(recordingDiffPanel?.hidden).toBe(false)
+    const diagnoseButton = Array.from(recordingDiffPanel?.querySelectorAll<HTMLButtonElement>('button') ?? [])
       .find(button => button.textContent === 'Diagnose correlations')
     expect(diagnoseButton).toBeDefined()
     expect(diagnoseButton?.disabled).toBe(false)
@@ -7274,6 +7301,98 @@ describe('ScriptEditor', () => {
       expect.any(Array),
       'debug-session-1',
     )
+  })
+
+  it('opens the Summary Recording diff from a correlation failure in Request/Response', async () => {
+    const failed = { phase: 'action', action_index: 0, action_name: 'Get Products', action_type: 'GET', method: 'GET', target: '/api/products',
+      status_code: 403, success: false, error_message: 'CSRF token rejected', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1,
+      diagnosis: { category: 'correlation', severity: 'error', cause: 'A rotated token was replayed.', evidence: 'csrf differs from the recording', action: 'Add an extractor.' },
+      snapshot: { request_url: '/api/products', response_status: 403, response_body: '{"error":"csrf"}' } }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+      success: false, error: 'CSRF token rejected', events: [failed],
+    }))
+    apiMock.getScriptRecordingStatus.mockResolvedValueOnce({ exists: true, correlation_usable: true, request_count: 1, correlation_request_count: 1 })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    if (!container.querySelector('.debugger-request-body [aria-label="Verdict"]')) {
+      await act(async () => debugOutlineRow(container, 'Get Products')!.click())
+    }
+    const verdict = container.querySelector('.debugger-request-body [aria-label="Verdict"]')!
+    // The error appears once, in the verdict; the header shows only the status.
+    expect(verdict.querySelector('[role="alert"]')?.textContent).toBe('CSRF token rejected')
+    expect(container.querySelector('.debugger-request-body')?.textContent?.split('CSRF token rejected')).toHaveLength(2)
+    expect(container.querySelector('.debugger-request-body .rr-inspector-status')?.textContent).toBe('HTTP 403')
+    // The comparison no longer sits in the per-action view.
+    expect(container.querySelector('.debugger-request-body')?.textContent).not.toContain('Diagnose correlations')
+    const compare = Array.from(verdict.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Compare with recording')
+    expect(compare).toBeDefined()
+    await act(async () => compare!.click())
+    const recordingDiffTab = container.querySelector<HTMLButtonElement>('.center-tab-panel.active #debug-summary-tab-recording-diff')
+    expect(recordingDiffTab?.getAttribute('aria-selected')).toBe('true')
+    expect(document.activeElement).toBe(recordingDiffTab)
+    const panel = container.querySelector<HTMLElement>('#debug-summary-panel-recording-diff')
+    expect(panel?.hidden).toBe(false)
+    expect(panel?.querySelector('[aria-label="Recording diff"] h3')?.textContent).toBe('Recording diff')
+    expect(Array.from(panel?.querySelectorAll('button') ?? []).some(button => button.textContent === 'Diagnose correlations')).toBe(true)
+    // Asking again after choosing another sub-tab returns to the Recording diff.
+    await act(async () => container.querySelector<HTMLButtonElement>('#debug-summary-tab-transactions')!.click())
+    expect(recordingDiffTab?.getAttribute('aria-selected')).toBe('false')
+    await returnToDebugger(container)
+    const compareAgain = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-request-body [aria-label="Verdict"] button')).find(button => button.textContent === 'Compare with recording')
+    await act(async () => compareAgain!.click())
+    expect(container.querySelector('.center-tab-panel.active #debug-summary-tab-recording-diff')?.getAttribute('aria-selected')).toBe('true')
+  })
+
+  it('opens the plain Recording diff from a live run\'s empty state and focuses it once per request', async () => {
+    const failed = { phase: 'action', action_index: 0, action_name: 'Get Products', action_type: 'GET', method: 'GET', target: '/api/products',
+      status_code: 403, success: false, error_message: 'CSRF token rejected', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1,
+      diagnosis: { category: 'correlation', severity: 'error', cause: 'A rotated token was replayed.', evidence: 'csrf differs from the recording', action: 'Add an extractor.' },
+      snapshot: { request_url: '/api/products', response_status: 403, response_body: '{"error":"csrf"}' } }
+    // The run is still live: no completed_at, and the poll never settles, so there is no finished summary.
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', success: false, events: [failed],
+    }))
+    apiMock.getScriptDebugSession.mockReturnValue(new Promise(() => {}))
+    apiMock.getScriptRecordingStatus.mockResolvedValueOnce({ exists: true, correlation_usable: true, request_count: 1, correlation_request_count: 1 })
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    // With no action selected, the inspector's empty state offers the comparison.
+    const emptyCompare = () => Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-request-body > .debugger-empty button'))
+      .find(button => button.textContent === 'Compare with a recording')
+    expect(emptyCompare()).toBeDefined()
+    await act(async () => emptyCompare()!.click())
+
+    // Summary shows the Recording diff as a plain section: no sub-tabs, and its heading takes focus.
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')
+    expect(summary?.textContent).toContain('Complete a debug run to view its summary.')
+    expect(summary?.querySelector('[role="tablist"][aria-label="Debug summary sections"]')).toBeNull()
+    const heading = summary?.querySelector<HTMLElement>('section[aria-label="Recording diff"] h3')
+    expect(heading?.textContent).toBe('Recording diff')
+    expect(document.activeElement).toBe(heading)
+    expect(Array.from(summary?.querySelectorAll('button') ?? []).some(button => button.textContent === 'Diagnose correlations')).toBe(true)
+
+    // Later renders (toggling an unrelated debug option) do not take focus back for the same request.
+    const elsewhere = document.createElement('button')
+    document.body.appendChild(elsewhere)
+    elsewhere.focus()
+    const follow = findInputByLabelText(container, 'Follow execution')!
+    expect(follow.checked).toBe(true)
+    await act(async () => follow.click())
+    await flushReact()
+    expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(false)
+    expect(container.querySelector('.center-tab-panel.active section[aria-label="Recording diff"] h3')).not.toBeNull()
+    expect(document.activeElement).toBe(elsewhere)
+
+    // A new request focuses it again.
+    await act(async () => findCenterTab(container, 'Request/Response')!.click())
+    await act(async () => emptyCompare()!.click())
+    expect(document.activeElement).toBe(container.querySelector('.center-tab-panel.active section[aria-label="Recording diff"] h3'))
+    elsewhere.remove()
   })
 
   it.each([{ follow: true, privacy: false }, { follow: false, privacy: false }, { follow: true, privacy: true }])('selects terminal GET evidence without overriding operator selection or privacy (follow=$follow, privacy=$privacy)', async ({ follow, privacy }) => {
@@ -7305,7 +7424,9 @@ describe('ScriptEditor', () => {
       const firstRow = debugOutlineRow(container, 'First evidence')!
       await act(async () => firstRow.click())
       expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(false)
-      expect(container.querySelector('[aria-label="Captured resources"]')?.textContent).toContain('/first-resource')
+      // Captured resources live in the inspector's Network view.
+      const firstNetwork = await openInspectorTab(container, 'Network')
+      expect(firstNetwork.querySelector('[aria-label="Captured resources"]')?.textContent).toContain('/first-resource')
     }
     await act(async () => {
       resolveGet({ session: { ...unavailableRuntimeMetadata('debug-session-1', 'failed', '3'), id: 'debug-session-1',
@@ -7320,7 +7441,11 @@ describe('ScriptEditor', () => {
     expect(debugOutlineRow(container, 'Failed evidence')?.querySelector('.script-outline-status.fail')).not.toBeNull()
     expect(debugOutlineRow(container, 'Failed evidence')?.getAttribute('aria-label')).toContain('Failed')
     await returnToDebugger(container)
-    const resources = container.querySelector('[aria-label="Captured resources"]')
+    const networkTab = inspectorTab(container, 'Network')
+    if (!privacy) expect(networkTab).toBeDefined()
+    const networkPanel = networkTab ? await openInspectorTab(container, 'Network') : null
+    // With privacy on, nothing anywhere may show the resources; otherwise they are in the Network view.
+    const resources = (privacy ? container : networkPanel!).querySelector('[aria-label="Captured resources"]')
     if (privacy) {
       expect(resources).toBeNull()
       expect(container.textContent).not.toContain('/failed-resource')
@@ -7547,7 +7672,9 @@ describe('ScriptEditor', () => {
     await flushReact()
     const socket = () => (useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage: (message: unknown) => void }).onMessage
     await act(async () => socket()({ type: 'script_debug_event', debug_session_id: 'debug-session-1', session_incarnation: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', state_revision: '1', event_index: 0, event: retainedReport.events[0] }))
-    const fullSize = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'View full size')
+    // The screenshot is a page artifact in the inspector's Network view.
+    const networkPanel = await openInspectorTab(container, 'Network')
+    const fullSize = Array.from(networkPanel.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'View full size')
     expect(fullSize).toBeDefined()
     await act(async () => fullSize!.click())
     expect(container.querySelector('[aria-label="Replay Screenshot"]')).not.toBeNull()
@@ -12388,20 +12515,23 @@ describe('ScriptEditor', () => {
 
     await returnToDebugger(container)
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
-    expect(container.textContent).toContain('SOAP Fault')
-    expect(container.textContent).toContain('SOAP 1.2')
-    expect(container.textContent).toContain('Code: env:Sender')
-    expect(container.textContent).toContain('Reason: Request validation failed')
-    expect(container.textContent).toContain('Extractions')
-    expect(container.textContent).toContain('Request')
-    expect(container.textContent).toContain('Response')
-    const copyFaultButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
-    const copyRequestButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
-    const copyResponseButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
+    // Response (the default view): the SOAP fault and the captured response.
+    const responsePanel = await openInspectorTab(container, 'Response')
+    expect(responsePanel.textContent).toContain('SOAP Fault')
+    expect(responsePanel.textContent).toContain('SOAP 1.2')
+    expect(responsePanel.textContent).toContain('Code: env:Sender')
+    expect(responsePanel.textContent).toContain('Reason: Request validation failed')
+    expect(responsePanel.textContent).toContain('Response')
+    expect(responsePanel.textContent).toContain('Open full text')
+    expect(responsePanel.textContent).toContain('env:Body')
+    expect(responsePanel.textContent).toContain('env:Fault')
+    const responseBlocks = responsePanel.querySelectorAll('.snapshot-code').length
+    expect(responsePanel.querySelectorAll('.snapshot-code-token-tag').length).toBeGreaterThan(0)
+    const copyFaultButton = Array.from(responsePanel.querySelectorAll('button')).find(button => button.textContent?.includes('Copy fault'))
+    const copyResponseButton = Array.from(responsePanel.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full response'))
     expect(copyFaultButton).toBeTruthy()
-    expect(copyRequestButton).toBeTruthy()
     expect(copyResponseButton).toBeTruthy()
-    if (!copyFaultButton || !copyRequestButton || !copyResponseButton) {
+    if (!copyFaultButton || !copyResponseButton) {
       return
     }
 
@@ -12417,6 +12547,29 @@ describe('ScriptEditor', () => {
     }))
 
     await act(async () => {
+      copyResponseButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(writeText).toHaveBeenLastCalledWith(formatSnapshotResponseSection({
+      response_status: 200,
+      response_headers: {
+        'Content-Type': 'application/soap+xml',
+        ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Trace-${index}`, `trace-${index}`])),
+      },
+      response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
+    }, 200))
+
+    // Request: what went on the wire by default, with the resolved request one toggle away.
+    const requestPanel = await openInspectorTab(container, 'Request')
+    expect(requestPanel.textContent).toContain('Request')
+    const copyRequestButton = Array.from(requestPanel.querySelectorAll('button')).find(button => button.textContent?.includes('Copy full request'))
+    expect(copyRequestButton).toBeTruthy()
+    if (!copyRequestButton) {
+      return
+    }
+
+    await act(async () => {
       copyRequestButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
@@ -12430,31 +12583,22 @@ describe('ScriptEditor', () => {
       },
       request_body: '<CreateOrder />',
     }))
-
-    await act(async () => {
-      copyResponseButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
-
-    expect(writeText).toHaveBeenLastCalledWith(formatSnapshotResponseSection({
-      response_status: 200,
-      response_headers: {
-        'Content-Type': 'application/soap+xml',
-        ...Object.fromEntries(Array.from({ length: 12 }, (_, index) => [`X-Trace-${index}`, `trace-${index}`])),
-      },
-      response_body: '<env:Envelope xmlns:env="http://www.w3.org/2003/05/soap-envelope"><env:Body><env:Fault><env:Code><env:Value>env:Sender</env:Value></env:Code><env:Reason><env:Text xml:lang="en">Request validation failed</env:Text></env:Reason></env:Fault></env:Body></env:Envelope>',
-    }, 200))
-    expect(container.textContent).toContain('Open full text')
-    const highlightedBlocks = Array.from(container.querySelectorAll('.snapshot-code'))
-    expect(highlightedBlocks.length).toBeGreaterThanOrEqual(4)
-    expect(highlightedBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
-    expect(highlightedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
-    const resolvedHeadersLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
+    const wireBlocks = Array.from(requestPanel.querySelectorAll('.snapshot-code'))
+    expect(wireBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
+    await showRequestView(container, 'As scripted')
+    const scriptedPanel = container.querySelector<HTMLElement>('.debugger-request-body [role="tabpanel"]:not([hidden])')!
+    const resolvedHeadersLabel = Array.from(scriptedPanel.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Resolved Headers')
     expect(resolvedHeadersLabel?.parentElement?.textContent).toContain('Copy')
-    expect(container.querySelectorAll('.snapshot-code-token-tag').length).toBeGreaterThan(0)
-    expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
-    expect(container.textContent).toContain('env:Body')
-    expect(container.textContent).toContain('env:Fault')
+    const scriptedBlocks = Array.from(scriptedPanel.querySelectorAll('.snapshot-code'))
+    expect(scriptedBlocks.some(block => block.textContent?.includes('<CreateOrder />'))).toBe(true)
+
+    // Correlation: the action's extractions.
+    const correlationPanel = await openInspectorTab(container, 'Correlation')
+    expect(correlationPanel.textContent).toContain('Extractions')
+    const correlationBlocks = Array.from(correlationPanel.querySelectorAll('.snapshot-code'))
+    expect(correlationBlocks.some(block => block.textContent?.includes('"confirmationId": "CONF-42"'))).toBe(true)
+    expect(correlationPanel.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
+    expect(responseBlocks + wireBlocks.length + scriptedBlocks.length + correlationBlocks.length).toBeGreaterThanOrEqual(4)
   })
 
   it('renders full multi-line resolved body and request/response snapshots inside scrollable code boxes while retaining Open full body', async () => {
@@ -12532,18 +12676,31 @@ describe('ScriptEditor', () => {
 
     const debugDetail = container.querySelector('.debugger-request-body')
     expect(debugDetail).not.toBeNull()
-    expect(debugDetail?.querySelectorAll('.debug-log-token').length).toBeGreaterThan(0)
+    // Each view shows one part of the exchange: collect the code boxes of the
+    // Response view, the wire request, and the request as scripted.
+    const codeBoxes: Element[] = []
+    const textBoxes: Element[] = []
+    const openFullBodyButtons: Element[] = []
+    let highlightedTokens = 0
+    const collect = (panel: Element) => {
+      codeBoxes.push(...panel.querySelectorAll('pre.snapshot-code'))
+      textBoxes.push(...panel.querySelectorAll('pre.snapshot-text-preview'))
+      openFullBodyButtons.push(...Array.from(panel.querySelectorAll('button')).filter(button => button.textContent?.includes('Open full body')))
+      highlightedTokens += panel.querySelectorAll('.debug-log-token').length
+    }
+    collect(await openInspectorTab(container, 'Response'))
+    collect(await openInspectorTab(container, 'Request'))
+    await showRequestView(container, 'As scripted')
+    collect(container.querySelector('.debugger-request-body [role="tabpanel"]:not([hidden])')!)
+    expect(highlightedTokens).toBeGreaterThan(0)
 
-    const codeBoxes = Array.from(debugDetail?.querySelectorAll('pre.snapshot-code') ?? [])
     expect(codeBoxes.some(box => box.textContent?.includes('resolved-val-23'))).toBe(true)
     expect(codeBoxes.some(box => box.textContent?.includes('req-val-23'))).toBe(true)
     expect(codeBoxes.some(box => box.textContent?.includes('res-val-23'))).toBe(true)
 
-    const textBoxes = Array.from(debugDetail?.querySelectorAll('pre.snapshot-text-preview') ?? [])
     expect(textBoxes.length).toBeGreaterThanOrEqual(3)
     expect(textBoxes.every(box => box.textContent?.includes('X-Custom-15: hdr-15'))).toBe(true)
 
-    const openFullBodyButtons = Array.from(debugDetail?.querySelectorAll('button') ?? []).filter(button => button.textContent?.includes('Open full body'))
     expect(openFullBodyButtons.length).toBeGreaterThanOrEqual(3)
   })
 
@@ -12628,18 +12785,15 @@ describe('ScriptEditor', () => {
       await Promise.resolve()
     })
 
-    if (!container.textContent?.includes('Protocol Evidence')) {
-      const replayEventHeader = container.querySelector('.replay-event-header')
-      await act(async () => {
-        replayEventHeader?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      })
-    }
-
     await returnToDebugger(container)
-    expect(container.textContent).toContain('Protocol Evidence')
-    expect(container.textContent).toContain('database / db_query / failed / sqlite')
-    expect(container.textContent).toContain('row_count')
-    expect(container.textContent).toContain('row_count assertion failed')
+    // The failure is the verdict; the raw protocol evidence is in the Raw view.
+    const verdict = container.querySelector('.debugger-request-body [aria-label="Verdict"]')
+    expect(verdict?.querySelector('[role="alert"]')?.textContent).toBe('row_count assertion failed')
+    const rawPanel = await openInspectorTab(container, 'Raw')
+    expect(rawPanel.textContent).toContain('Protocol Evidence')
+    expect(rawPanel.textContent).toContain('database / db_query / failed / sqlite')
+    expect(rawPanel.textContent).toContain('row_count')
+    expect(rawPanel.textContent).toContain('row_count assertion failed')
   })
 
   it('renders browser replay DOM summary and fallback snapshot with highlighted JSON previews', async () => {
@@ -12720,36 +12874,45 @@ describe('ScriptEditor', () => {
 
     await returnToDebugger(container)
     expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalled()
-    expect(container.textContent).toContain('Page URL')
-    expect(container.textContent).toContain('https://shop.example.com/catalog')
-    expect(container.textContent).toContain('Page Title')
-    expect(container.textContent).toContain('Catalog')
-    expect(container.textContent).toContain('DOM Summary')
-    expect(container.textContent).toContain('Snapshot')
-    expect(container.textContent).toContain('Console')
-    expect(container.textContent).toContain('Network')
-    expect(container.textContent).toContain('HTML')
-    expect(container.textContent).toContain('View full size')
-    expect(container.textContent).not.toContain('Expand artifacts')
-    expect(container.textContent).not.toContain('Collapse artifacts')
-    const activePanel = container.querySelector('.center-tab-panel.active') ?? container
-    expect(activePanel.textContent).toContain('Catalog loaded 11')
-    expect(activePanel.textContent).toContain('https://shop.example.com/api/catalog/11')
-    expect(activePanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
-    const highlightedBlocks = Array.from(container.querySelectorAll('.debugger-request-body .snapshot-code'))
-    expect(highlightedBlocks).toHaveLength(2)
-    expect(highlightedBlocks.some(block => block.textContent?.includes('"ready_state": "complete"'))).toBe(true)
-    expect(highlightedBlocks.some(block => block.textContent?.includes('"page_url": "https://shop.example.com/catalog"'))).toBe(true)
-    const consoleLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Console')
-    const networkLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'Network')
-    const htmlLabel = Array.from(container.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === 'HTML')
-    expect(consoleLabel?.parentElement?.textContent).toContain('Copy')
-    expect(networkLabel?.parentElement?.textContent).toContain('Copy')
-    expect(networkLabel?.parentElement?.classList.contains('replay-browser-network')).toBe(true)
-    expect(htmlLabel?.parentElement?.textContent).toContain('Copy')
-    expect(container.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
+    // Timing & transport: the page the action ended on.
+    const timingPanel = await openInspectorTab(container, 'Timing & transport')
+    expect(timingPanel.textContent).toContain('Page URL')
+    expect(timingPanel.textContent).toContain('https://shop.example.com/catalog')
+    expect(timingPanel.textContent).toContain('Page Title')
+    expect(timingPanel.textContent).toContain('Catalog')
+    // Network: network entries and the page artifacts.
+    const networkTab = inspectorTab(container, 'Network')
+    expect(networkTab?.textContent).toBe('Network 12')
+    const networkPanel = await openInspectorTab(container, 'Network')
+    expect(networkPanel.querySelector('[aria-label="Page artifacts"] h4')?.textContent).toBe('Page artifacts')
+    expect(networkPanel.textContent).toContain('DOM Summary')
+    expect(networkPanel.textContent).toContain('Console')
+    expect(networkPanel.textContent).toContain('Network entries')
+    expect(networkPanel.textContent).toContain('HTML')
+    expect(networkPanel.textContent).toContain('View full size')
+    expect(networkPanel.textContent).not.toContain('Expand artifacts')
+    expect(networkPanel.textContent).not.toContain('Collapse artifacts')
+    expect(networkPanel.textContent).toContain('Catalog loaded 11')
+    expect(networkPanel.textContent).toContain('https://shop.example.com/api/catalog/11')
+    expect(networkPanel.textContent).toContain('Catalog 59 featured product with additional merchandising detail')
+    const artifactBlocks = Array.from(networkPanel.querySelectorAll('.snapshot-code'))
+    expect(artifactBlocks).toHaveLength(1)
+    expect(artifactBlocks[0].textContent).toContain('"ready_state": "complete"')
+    expect(networkPanel.querySelectorAll('.snapshot-code-token-key').length).toBeGreaterThan(0)
+    const label = (text: string) => Array.from(networkPanel.querySelectorAll('.replay-code-block .replay-detail-label')).find(node => node.textContent === text)
+    expect(label('Console')?.parentElement?.textContent).toContain('Copy')
+    expect(label('Network entries')?.parentElement?.textContent).toContain('Copy')
+    expect(label('Network entries')?.parentElement?.classList.contains('replay-browser-network')).toBe(true)
+    expect(label('HTML')?.parentElement?.textContent).toContain('Copy')
+    // Raw: the snapshot without request/response fields, as highlighted JSON.
+    const rawPanel = await openInspectorTab(container, 'Raw')
+    expect(rawPanel.textContent).toContain('Snapshot')
+    const rawBlocks = Array.from(rawPanel.querySelectorAll('.snapshot-code'))
+    expect(rawBlocks).toHaveLength(1)
+    expect(rawBlocks[0].textContent).toContain('"page_url": "https://shop.example.com/catalog"')
 
-    const viewScreenshotButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
+    const networkPanelAgain = await openInspectorTab(container, 'Network')
+    const viewScreenshotButton = Array.from(networkPanelAgain.querySelectorAll('button')).find(button => button.textContent?.includes('View full size'))
     expect(viewScreenshotButton).toBeTruthy()
     if (!viewScreenshotButton) {
       return
@@ -12833,11 +12996,14 @@ describe('ScriptEditor', () => {
     })
 
     await returnToDebugger(container)
-    expect(container.textContent).toContain('Page URL')
-    expect(container.textContent).toContain('https://shop.example.com/catalog')
-    expect(container.textContent).toContain('Page Title')
-    expect(container.textContent).toContain('Catalog')
-    expect(container.textContent).not.toContain('Browser Artifacts')
+    const timingPanel = await openInspectorTab(container, 'Timing & transport')
+    expect(timingPanel.textContent).toContain('Page URL')
+    expect(timingPanel.textContent).toContain('https://shop.example.com/catalog')
+    expect(timingPanel.textContent).toContain('Page Title')
+    expect(timingPanel.textContent).toContain('Catalog')
+    // Without artifacts or resources there is no Network view and no empty artifacts section.
+    expect(inspectorTab(container, 'Network')).toBeUndefined()
+    expect(container.querySelector('[aria-label="Page artifacts"]')).toBeNull()
     expect(container.querySelector('.replay-browser-grid')).toBeNull()
     expect(container.textContent).not.toContain('View full size')
   })

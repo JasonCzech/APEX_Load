@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'node:http'
 import { readFile } from 'node:fs/promises'
-import { test, expect, idOf, json, login, expectDebugOutcome } from './support/workflow'
+import type { Locator } from '@playwright/test'
+import { test, expect, idOf, json, login, expectDebugOutcome, inspectorPanel, inspectorTab, inspectorVerdict, openInspectorTab } from './support/workflow'
 import { createWorkspace, scopeQuery } from './support/workspace'
 
 let target: Server
@@ -90,13 +91,18 @@ test('debugger captures successful evidence, diagnoses runtime failure, repairs 
   await expect(page.getByRole('status').filter({ hasText: 'Paused before: Check order' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await page.getByRole('complementary', { name: 'Actions', exact: true }).getByRole('treeitem', { name: 'Get customer' }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('Body captured')
+  // The inspected step passed and its captured response body is shown on the default Response tab.
+  // A plain line, not a live region: it describes the selection rather than announcing it.
+  await expect(inspectorVerdict(page).locator('.rr-inspector-verdict-line')).toHaveText('Passed · HTTP 200')
+  await expect(inspectorVerdict(page).getByRole('status')).toHaveCount(0)
+  await expect(inspectorTab(page, 'Response')).toHaveAttribute('aria-selected', 'true')
+  await expect(inspectorPanel(page, 'Response').locator('.debugger-snapshot-body')).toContainText('debug-customer')
   // Inspecting a step stops following; follow again before continuing.
   await page.getByLabel('Follow execution', { exact: true }).check()
   await expect(page.getByRole('region', { name: 'Next request' })).toContainText('/order/debug-customer')
   await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled()
   await page.getByRole('button', { name: 'Continue', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   await page.getByRole('tab', { name: /^Problems/ }).click()
   const problems = page.getByRole('tabpanel', { name: 'Problems' })
   await expect(problems).toContainText('1 runtime failures')
@@ -267,35 +273,53 @@ test('request and response code fills the debug pane and follows dock resizing',
   await expect(page.getByRole('region', { name: 'Debug detail', exact: true })).toBeVisible()
   const requestCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Request$/ }) })
   const responseCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-code-block-header .replay-detail-label').filter({ hasText: /^Response$/ }) })
-  await expect(requestCard.locator('.snapshot-code')).toContainText('debug-customer')
+  // The inspector shows one payload at a time: Response (default) or Request ("Sent on the wire" by default).
+  // Inactive views stay mounted (so drafts survive), hidden.
+  const requestView = page.getByRole('group', { name: 'Request view', exact: true })
   await expect(responseCard.locator('.snapshot-code')).toContainText('ready')
+  await expect(responseCard).toBeVisible()
+  await expect(requestCard).toBeHidden()
+  await openInspectorTab(page, 'Request')
+  await expect(requestView.getByRole('button', { name: 'Sent on the wire', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(requestCard.locator('.snapshot-code')).toContainText('debug-customer')
+  await expect(requestCard).toBeVisible()
+  await expect(responseCard).toBeHidden()
   if (await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).isVisible()) {
     await page.getByRole('button', { name: 'Collapse logs and problems', exact: true }).click()
   }
 
-  const geometry = async () => Promise.all([requestCard, responseCard].map(card => card.evaluate(element => {
-    const code = element.querySelector<HTMLElement>('.snapshot-code')!
-    const body = code.closest('.debugger-snapshot-body') || code.parentElement!
-    const buttons = Array.from(body.querySelectorAll<HTMLElement>('.snapshot-body-actions')).at(-1)!
-    const grid = element.closest<HTMLElement>('.replay-event-detail-grid')!
-    const scrollport = element.closest<HTMLElement>('.debugger-center-body')!
-    const codeBounds = code.getBoundingClientRect()
-    const gridBounds = grid.getBoundingClientRect()
-    const scrollBounds = scrollport.getBoundingClientRect()
-    return {
-      codeHeight: codeBounds.height,
-      codeToActionsGap: buttons.getBoundingClientRect().top - codeBounds.bottom,
-      gridBottomGap: scrollBounds.top + scrollport.clientTop + scrollport.clientHeight - parseFloat(getComputedStyle(scrollport).paddingBottom) - gridBounds.bottom,
-      bodyBottomGap: body.getBoundingClientRect().bottom - buttons.getBoundingClientRect().bottom,
+  // Each payload is measured on its own sub-tab, where it is the only payload in the panel.
+  const payloadCards = [['Request', requestCard], ['Response', responseCard]] as const
+  const geometry = async () => {
+    const result = []
+    for (const [tab, card] of payloadCards) {
+      await openInspectorTab(page, tab)
+      result.push(await card.evaluate(element => {
+        const code = element.querySelector<HTMLElement>('.snapshot-code')!
+        const body = code.closest('.debugger-snapshot-body') || code.parentElement!
+        const buttons = Array.from(body.querySelectorAll<HTMLElement>('.snapshot-body-actions')).at(-1)!
+        const scrollport = element.closest<HTMLElement>('.debugger-center-body')!
+        const codeBounds = code.getBoundingClientRect()
+        // The payload card is the last block in its sub-tab panel, so it must reach the pane bottom itself.
+        const cardBounds = element.getBoundingClientRect()
+        const scrollBounds = scrollport.getBoundingClientRect()
+        return {
+          codeHeight: codeBounds.height,
+          codeToActionsGap: buttons.getBoundingClientRect().top - codeBounds.bottom,
+          cardBottomGap: scrollBounds.top + scrollport.clientTop + scrollport.clientHeight - parseFloat(getComputedStyle(scrollport).paddingBottom) - cardBounds.bottom,
+          bodyBottomGap: body.getBoundingClientRect().bottom - buttons.getBoundingClientRect().bottom,
+        }
+      }))
     }
-  })))
+    return result
+  }
   const expectFilledBodies = async () => {
     await expect.poll(async () => (await geometry()).map(bounds => ({
       ...bounds,
-      fillsPane: bounds.codeHeight > 40 && Math.abs(bounds.gridBottomGap) <= 30
+      fillsPane: bounds.codeHeight > 40 && Math.abs(bounds.cardBottomGap) <= 30
         && bounds.codeToActionsGap >= 0 && bounds.codeToActionsGap <= 12
         && Math.abs(bounds.bodyBottomGap) <= 2,
-    })), { message: 'Both payload code areas must stretch to their actions and the remaining debug pane height' }).toMatchObject([{ fillsPane: true }, { fillsPane: true }])
+    })), { message: 'Each payload code area must stretch to its actions and the remaining debug pane height' }).toMatchObject([{ fillsPane: true }, { fillsPane: true }])
     return geometry()
   }
   const collapsed = await expectFilledBodies()
@@ -322,17 +346,8 @@ test('request and response code fills the debug pane and follows dock resizing',
   await actions.getByRole('treeitem', { name: /^Long payload/ }).click()
   await page.setViewportSize({ width: 1400, height: 900 })
   const resolvedBodyCard = detail.locator('.replay-code-block').filter({ has: page.locator('.replay-detail-label').filter({ hasText: /^Resolved Body$/ }) })
-  await expect(resolvedBodyCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
-  await expect(requestCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
-  await expect(responseCard.locator('pre.snapshot-code')).toContainText('last-retained-response-value')
-  const railCardLayout = await Promise.all([resolvedBodyCard, requestCard, responseCard].map(card => card.evaluate((el: HTMLElement) => {
-    const rect = el.getBoundingClientRect()
-    return { top: rect.top, bottom: rect.bottom, width: rect.width }
-  })))
-  expect(railCardLayout[1].width).toBeGreaterThan(220)
-  expect(Math.abs(railCardLayout[2].width - railCardLayout[1].width)).toBeLessThanOrEqual(2)
-  expect(railCardLayout[1].top).toBeGreaterThanOrEqual(railCardLayout[0].bottom - 2)
-  for (const codeBox of [resolvedBodyCard.locator('pre.snapshot-code'), requestCard.locator('pre.snapshot-code'), responseCard.locator('pre.snapshot-code')]) {
+  const cardWidth = (card: Locator) => card.evaluate((el: HTMLElement) => el.getBoundingClientRect().width)
+  const expectScrollableCode = async (codeBox: Locator) => {
     await codeBox.scrollIntoViewIfNeeded()
     const scrollMetrics = await codeBox.evaluate((el: HTMLElement) => {
       const style = getComputedStyle(el)
@@ -348,8 +363,28 @@ test('request and response code fills the debug pane and follows dock resizing',
     expect(scrollMetrics.scrollHeight).toBeGreaterThan(scrollMetrics.clientHeight)
     expect(scrollMetrics.scrollTop).toBeGreaterThan(0)
   }
+  // Request › As scripted shows the resolved body; Sent on the wire replaces it with the wire request.
+  await openInspectorTab(page, 'Request')
+  await requestView.getByRole('button', { name: 'As scripted', exact: true }).click()
+  await expect(requestView.getByRole('button', { name: 'As scripted', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(resolvedBodyCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(requestCard).toHaveCount(0)
+  const resolvedBodyWidth = await cardWidth(resolvedBodyCard)
+  await expectScrollableCode(resolvedBodyCard.locator('pre.snapshot-code'))
+  await requestView.getByRole('button', { name: 'Sent on the wire', exact: true }).click()
+  await expect(requestView.getByRole('button', { name: 'Sent on the wire', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await expect(requestCard.locator('pre.snapshot-code')).toContainText('last-retained-request-value')
+  await expect(resolvedBodyCard).toHaveCount(0)
+  const requestWidth = await cardWidth(requestCard)
+  expect(requestWidth).toBeGreaterThan(220)
+  expect(Math.abs(resolvedBodyWidth - requestWidth)).toBeLessThanOrEqual(2)
+  await expectScrollableCode(requestCard.locator('pre.snapshot-code'))
   await requestCard.scrollIntoViewIfNeeded()
   await page.screenshot({ path: testInfo.outputPath('debugger-right-rail-scrollable.png') })
+  await openInspectorTab(page, 'Response')
+  await expect(responseCard.locator('pre.snapshot-code')).toContainText('last-retained-response-value')
+  expect(Math.abs(await cardWidth(responseCard) - requestWidth)).toBeLessThanOrEqual(2)
+  await expectScrollableCode(responseCard.locator('pre.snapshot-code'))
 
   // Full retained payloads remain reachable through the existing preview control.
   await page.setViewportSize({ width: 900, height: 1000 })
@@ -443,7 +478,10 @@ test('failures-only debugger capture preserves fetched resource evidence', async
     expect(terminal.report.events[0].snapshot.resources[0]).toMatchObject({ request_url: `${targetURL}/capture-resource`, response_status: 200, response_body_state: 'captured' })
     await expect.poll(() => suppressedTerminalMessages).toBeGreaterThan(0)
     await expectDebugOutcome(page, 'failed')
-    const resources = page.getByRole('region', { name: 'Captured resources', exact: true })
+    // Captured resources live on the inspector's Network tab, which carries a count badge.
+    await expect(inspectorTab(page, 'Network')).toHaveAccessibleName(/^Network \d+$/)
+    const network = await openInspectorTab(page, 'Network')
+    const resources = network.getByRole('region', { name: 'Captured resources', exact: true })
     await expect(resources).toContainText('/capture-resource')
     await resources.locator('summary').click()
     await expect(resources).toContainText('diagnostic evidence')
@@ -509,7 +547,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await issuesTable.getByRole('button', { name: /Action/ }).click()
   await expect(issuesTable.getByRole('columnheader', { name: /Action/ })).toHaveAttribute('aria-sort', 'ascending')
   await summary.getByRole('button', { name: 'Inspect Check order' }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   // Periodic session refreshes must not take the selected evidence tab away.
   await page.waitForTimeout(1800)
   await expect(summary).toBeHidden()
@@ -709,7 +747,7 @@ test('summary expands transaction timings, nested pages and debugger evidence', 
   await expect(details).toContainText('Elapsed')
   await expect(details).toContainText('Action time')
   await details.getByRole('button', { name: 'Inspect Check order', exact: true }).click()
-  await expect(page.getByRole('region', { name: 'Response evidence' })).toContainText('expected status 201, got 200')
+  await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   await page.getByRole('tab', { name: 'Summary', exact: true }).click()
   // Returning to Summary restores the transaction tree.
   await expect(row('Check order')).toBeVisible()
