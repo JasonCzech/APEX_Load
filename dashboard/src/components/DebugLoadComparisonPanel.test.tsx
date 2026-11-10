@@ -2,7 +2,7 @@
 import { act, StrictMode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import DebugCompletionSummary from './DebugCompletionSummary'
 import type { DebugLoadComparisonSource } from './DebugLoadComparisonPanel'
 import type { ScriptLoadRunsResponse } from '../types/scriptLoadRuns'
@@ -49,6 +49,11 @@ function choose(select: HTMLSelectElement, value: string) {
 }
 
 describe('Debug vs load sub-tab', () => {
+  // The panel is a lazy chunk (kept off ScriptEditor's): load it once so each render resolves in its act().
+  beforeAll(async () => {
+    await import('./DebugLoadComparisonPanel')
+  })
+
   it('is absent without a load source', () => {
     const node = render(undefined)
     expect(tab(node)).toBeNull()
@@ -58,6 +63,8 @@ describe('Debug vs load sub-tab', () => {
     const listLoadRuns = vi.fn().mockResolvedValue(runs)
     const getLoadReport = vi.fn().mockResolvedValue(amplificationReport())
     const node = render({ listLoadRuns, getLoadReport })
+    // Let the lazy panel mount (still inactive) before the tab opens it.
+    await flush()
     expect(listLoadRuns).not.toHaveBeenCalled()
     act(() => tab(node)!.click())
     expect(tab(node)!.getAttribute('aria-selected')).toBe('true')

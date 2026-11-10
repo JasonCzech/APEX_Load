@@ -3,13 +3,14 @@
 import { act, isValidElement } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ImportedDashboardResult, MetricsHistoryPoint } from '../types'
 import { downloadTextFile } from '../utils/fileUtils'
 import TestExecutionCharts, { BoundedChartTooltipContent, chartTimeAxisPresentation, formatChartTimeMetricValue, formatMetricTableValue } from './TestExecutionCharts'
 import ContinuousStackedArea from './ContinuousStackedArea'
 import { transactionChartSeriesKey } from './transactionChartSeries'
+import { executionChartZoomReducer, initialExecutionChartZoomState, type ExecutionChartZoomAnchor, type ExecutionChartZoomState } from './testExecutionChartZoomModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -32,9 +33,9 @@ vi.mock('recharts', () => {
     children?: ReactNode
     data?: unknown[]
     syncId?: string
-    onMouseDown?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
+    onMouseDown?: (event: { activeLabel?: string; activeTooltipIndex?: number }, domEvent?: unknown) => void
     onMouseMove?: (event: { activeLabel?: string; activeTooltipIndex?: number }) => void
-    onMouseUp?: () => void
+    onMouseUp?: (event?: unknown, domEvent?: unknown) => void
   }) => (
     <svg
       data-testid="mock-chart"
@@ -42,9 +43,9 @@ vi.mock('recharts', () => {
       data-sync-id={syncId ?? ''}
       width="640"
       height="200"
-      onMouseDown={() => onMouseDown?.({ activeLabel: '10:00:00', activeTooltipIndex: 0 })}
+      onMouseDown={domEvent => onMouseDown?.((globalThis as { __mockChartDownState?: unknown }).__mockChartDownState ?? { activeLabel: '10:00:00', activeTooltipIndex: 0 }, domEvent)}
       onMouseMove={() => onMouseMove?.({ activeLabel: '10:00:01', activeTooltipIndex: 1 })}
-      onMouseUp={() => onMouseUp?.()}
+      onMouseUp={domEvent => onMouseUp?.((globalThis as { __mockChartUpState?: unknown }).__mockChartUpState ?? {}, domEvent)}
     >
       {children}
     </svg>
@@ -1599,6 +1600,7 @@ describe('TestExecutionCharts context menu', () => {
       'Show Memory — Fleet total (MB)',
       'Show Network & Disk I/O (KB/s)',
       'Show Network Phase Breakdown — Transaction Traffic (ms)',
+      'Show Live waterfall',
       'Show Generator Impact',
       'Show Route Latency (ms)',
     ])
@@ -2084,7 +2086,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(container.querySelector('.monitor-preset-buttons')).toBeNull()
     expect(container.querySelector('.charts-customize-panel')).toBeNull()
     expect(container.querySelector('.charts-toolbar')?.textContent).toContain('Runtime Graphs')
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('19 graphs')
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('20 graphs')
     expect(container.querySelector('.charts-config-drawer')).toBeNull()
 
     await act(async () => {
@@ -2133,8 +2135,8 @@ describe('TestExecutionCharts context menu', () => {
       errorRateGraphToggle?.click()
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(18)
-    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('18 graphs')
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
+    expect(container.querySelector('.charts-toolbar')?.textContent).toContain('19 graphs')
     expect(window.localStorage.getItem('apexload.execution.hiddenCharts')).toContain('errors')
 
     await act(async () => {
@@ -2194,7 +2196,7 @@ describe('TestExecutionCharts context menu', () => {
     expect(window.localStorage.getItem('apexload.execution.responseTimeNetworkMode')).toBe('application')
     expect(responseChart?.textContent).toContain('82.6ms')
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(18)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
 
     const resetButton = buttonByText('Reset Graphs')
     expect(resetButton?.className).toContain('btn-chip')
@@ -2203,7 +2205,7 @@ describe('TestExecutionCharts context menu', () => {
       resetButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(container.querySelectorAll('.chart-card')).toHaveLength(19)
+    expect(container.querySelectorAll('.chart-card')).toHaveLength(20)
   })
 
   it('traps graph configuration focus, closes on Escape, and restores its trigger', async () => {
@@ -3304,4 +3306,291 @@ describe('TestExecutionCharts context menu', () => {
       )
     })
   }
+})
+
+describe('TestExecutionCharts live exemplars and waterfall', () => {
+  let container: HTMLDivElement
+  let root: Root
+  const T0 = Date.parse('2026-05-12T20:05:00Z')
+  const retention = {
+    firstWindowMs: T0,
+    stable: { phase: 'waiting' as const, steadyWindows: 0, windows: 0, sums: {} },
+    exemplars: [{ tsMs: T0, timestamp: '2026-05-12T20:05:00Z', transactions: [{ name: 'Checkout', exemplars: [{ trace_id: '0af7651916cd43dd8448eb211c80319c', duration_ms: 812, success: true, reason: 'slowest_success', timestamp: '2026-05-12T20:05:00Z' }] }] }],
+  }
+
+  // The live waterfall and the exemplar drawer are lazy chunks (kept off the
+  // route's static bundle): load them once so each render resolves in its act().
+  beforeAll(async () => {
+    await Promise.all([import('./LiveWaterfallPanel'), import('./LiveExemplarDrawer')])
+  })
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(async () => {
+    await act(async () => root.unmount())
+    container.remove()
+    vi.clearAllMocks()
+  })
+
+  // The real zoom reducer behind the chart's callbacks, so a test can see what a click leaves zoomed.
+  let zoom: ExecutionChartZoomState
+  const zoomHandlers = () => ({
+    onChartMouseDown: vi.fn((anchor?: ExecutionChartZoomAnchor) => { zoom = executionChartZoomReducer(zoom, { type: 'beginSelection', anchor }) }),
+    onChartMouseMove: vi.fn((anchor?: ExecutionChartZoomAnchor) => { zoom = executionChartZoomReducer(zoom, { type: 'updateSelection', anchor }) }),
+    onZoom: vi.fn(() => { zoom = executionChartZoomReducer(zoom, { type: 'applySelection' }) }),
+  })
+
+  async function render(overrides: Partial<ComponentProps<typeof TestExecutionCharts>> = {}) {
+    zoom = initialExecutionChartZoomState
+    await act(async () => {
+      root.render(
+        <TestExecutionCharts
+          runId="run-live"
+          filteredData={[
+            { time: '20:05:00', timestampMs: T0, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+            { time: '20:05:01', timestampMs: T0 + 1000, vusers: 2, tps: 1, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135 },
+          ]}
+          expandedChart={null}
+          onExpandedChartChange={vi.fn()}
+          {...zoomHandlers()}
+          onResetZoom={vi.fn()}
+          showRefArea={false}
+          refAreaLeft=""
+          refAreaEnd=""
+          timeRange="all"
+          onTimeRangeChange={vi.fn()}
+          isMultiGroup={false}
+          groupNames={[]}
+          groupColors={['#00a3ff']}
+          showLoadImpact={false}
+          enableGraphGroupTabs
+          liveRetention={retention}
+          latestMetrics={{
+            timestamp: '2026-05-12T20:05:01Z', active_vusers: 2, tps: 1, avg_response_ms: 110, error_pct: 0, total_transactions: 1, total_errors: 0,
+            p50_ms: 85, p90_ms: 105, p95_ms: 120, p99_ms: 135,
+            transactions: { Checkout: { name: 'Checkout', count: 1, errors: 0, avg_ms: 110, p50_ms: 85, p90_ms: 105, p99_ms: 135, avg_server_ms: 90, avg_no_response_ms: 0 } },
+          }}
+          {...overrides}
+        />,
+      )
+    })
+  }
+
+  const latencyChart = () => container.querySelector<SVGElement>('[data-chart-id="latency"] [data-testid="mock-chart"]')!
+  const press = async (downX: number, upX: number) => {
+    await act(async () => {
+      latencyChart().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: downX, clientY: 50 }))
+      latencyChart().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: upX, clientY: 50 }))
+    })
+  }
+
+  // Recharts sets the point under the pointer on a throttled mousemove: a
+  // press in the same frame as the move has none, and the release supplies it.
+  it('opens exemplars when only the release knows the point under the pointer', async () => {
+    const mockState = globalThis as { __mockChartDownState?: unknown; __mockChartUpState?: unknown }
+    mockState.__mockChartDownState = { isTooltipActive: false }
+    mockState.__mockChartUpState = { activeLabel: '20:05:00', activeTooltipIndex: 0 }
+    try {
+      await render()
+      await press(100, 101)
+      expect(document.querySelector('.live-exemplar-drawer')?.textContent).toContain('0af7651916cd43dd8448eb211c80319c')
+    } finally {
+      delete mockState.__mockChartDownState
+      delete mockState.__mockChartUpState
+    }
+  })
+
+  it('opens the window\'s exemplars on a click but not on a zoom drag', async () => {
+    await render()
+    await press(100, 140)
+    expect(document.querySelector('.live-exemplar-drawer')).toBeNull()
+    await press(100, 102)
+    const drawer = document.querySelector('.live-exemplar-drawer')
+    expect(drawer?.textContent).toContain('0af7651916cd43dd8448eb211c80319c')
+    expect(drawer?.textContent).toContain('Slowest success')
+  })
+
+  it('opens the slowest traced window of a time-bucketed point, not only the bucket\'s first window', async () => {
+    // A 10 s granularity: both windows average into the point stamped T0.
+    window.localStorage.setItem('apexload.execution.chartGranularity', '10')
+    const at = (ts: number, traceId: string, ms: number) => ({
+      tsMs: ts, timestamp: new Date(ts).toISOString(),
+      transactions: [{ name: 'Checkout', exemplars: [{ trace_id: traceId, duration_ms: ms, success: true, reason: 'slowest_success', timestamp: new Date(ts).toISOString() }] }],
+    })
+    await render({
+      filteredData: [
+        { time: '20:05:00', timestampMs: T0, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130 },
+        { time: '20:05:07', timestampMs: T0 + 7000, vusers: 2, tps: 1, avgMs: 900, errorPct: 0, p50: 85, p90: 900, p99: 1300 },
+      ],
+      liveRetention: { ...retention, exemplars: [at(T0, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 90), at(T0 + 7000, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 1400)] },
+    })
+    await press(100, 102)
+    const text = document.querySelector('.live-exemplar-drawer')?.textContent ?? ''
+    expect(text).toContain('bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb')
+    expect(text).not.toContain('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+    expect(text).toContain('The clicked point averages every window from')
+  })
+
+  it('does not zoom when a click wobbles across a data point', async () => {
+    await render()
+    await act(async () => {
+      latencyChart().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100, clientY: 50 }))
+      // 2 px of movement that crosses into the next point, applied on its frame.
+      latencyChart().dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 102, clientY: 50 }))
+      await new Promise<void>(resolve => window.requestAnimationFrame(() => resolve()))
+    })
+    expect(zoom.refAreaRight?.timestampMs).toBe(T0 + 1000)
+    await act(async () => {
+      latencyChart().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 102, clientY: 50 }))
+    })
+    expect(document.querySelector('.live-exemplar-drawer')).not.toBeNull()
+    expect(zoom.zoomRange).toBeNull()
+    expect(zoom.refAreaLeft).toBeNull()
+    // A real drag still zooms.
+    await act(async () => document.querySelector<HTMLButtonElement>('.live-exemplar-drawer .modal-header button')!.click())
+    await act(async () => {
+      latencyChart().dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: 100, clientY: 50 }))
+      latencyChart().dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 160, clientY: 50 }))
+      latencyChart().dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: 160, clientY: 50 }))
+    })
+    expect(document.querySelector('.live-exemplar-drawer')).toBeNull()
+    expect(zoom.zoomRange).toEqual({ startTimestampMs: T0, endTimestampMs: T0 + 1000 })
+  })
+
+  it('offers no exemplar click or menu item on a run this page never received live windows for', async () => {
+    // A run that ended before the page loaded: the stream never ran.
+    await render({ liveRetention: { exemplars: [], stable: retention.stable } })
+    await press(100, 101)
+    expect(document.querySelector('.live-exemplar-drawer')).toBeNull()
+    const actions = container.querySelector<HTMLButtonElement>('button[aria-label="Response Time (ms) actions"]')!
+    await act(async () => actions.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(Array.from(container.querySelectorAll('.chart-context-menu [role="menuitem"]')).map(b => b.textContent)).not.toContain('Show Trace Exemplars')
+  })
+
+  it('keeps plain clicks inert on a live run with no exemplars, but explains it from the menu', async () => {
+    await render({ liveRetention: { ...retention, exemplars: [] } })
+    await press(100, 101)
+    expect(document.querySelector('.live-exemplar-drawer')).toBeNull()
+    const actions = container.querySelector<HTMLButtonElement>('button[aria-label="Response Time (ms) actions"]')!
+    await act(async () => actions.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const item = Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu [role="menuitem"]')).find(b => b.textContent === 'Show Trace Exemplars')!
+    await act(async () => item.click())
+    expect(document.querySelector('.live-exemplar-drawer')?.textContent).toContain('No trace exemplars received yet')
+  })
+
+  it('shows every transaction’s exemplars when the Total line is visible', async () => {
+    const twoTx = {
+      ...retention,
+      exemplars: [{ tsMs: T0, timestamp: '2026-05-12T20:05:00Z', transactions: [
+        { name: 'Checkout', exemplars: [{ trace_id: '0af7651916cd43dd8448eb211c80319c', duration_ms: 812, success: true, reason: 'slowest_success', timestamp: '2026-05-12T20:05:00Z' }] },
+        { name: 'Login', exemplars: [{ trace_id: '4bf92f3577b34da6a3ce929d0e0e4736', duration_ms: 20, success: true, reason: 'sample', timestamp: '2026-05-12T20:05:00Z' }] },
+      ] }],
+    }
+    const data: MetricsHistoryPoint[] = [
+      { time: '20:05:00', timestampMs: T0, vusers: 2, tps: 1, avgMs: 100, errorPct: 0, p50: 80, p90: 100, p99: 130, [transactionChartSeriesKey('Login', 'avgMs')]: 20, [transactionChartSeriesKey('Checkout', 'avgMs')]: 800 } as MetricsHistoryPoint,
+      { time: '20:05:01', timestampMs: T0 + 1000, vusers: 2, tps: 1, avgMs: 110, errorPct: 0, p50: 85, p90: 105, p99: 135, [transactionChartSeriesKey('Login', 'avgMs')]: 21, [transactionChartSeriesKey('Checkout', 'avgMs')]: 810 } as MetricsHistoryPoint,
+    ]
+    // Total plus only Login visible.
+    window.localStorage.setItem('apexload.execution.chartMetricFilters', JSON.stringify({ latency: ['avgMs', transactionChartSeriesKey('Login', 'avgMs')] }))
+    await render({ liveRetention: twoTx, filteredData: data })
+    await press(100, 101)
+    const text = document.querySelector('.live-exemplar-drawer')?.textContent ?? ''
+    expect(text).toContain('Login')
+    expect(text).toContain('Checkout')
+  })
+
+  it('offers the exemplars from the graph actions menu for keyboard users and returns focus to Actions', async () => {
+    await render()
+    const actions = container.querySelector<HTMLButtonElement>('button[aria-label="Response Time (ms) actions"]')!
+    await act(async () => actions.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const item = Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu [role="menuitem"]')).find(b => b.textContent === 'Show Trace Exemplars')
+    expect(item).toBeDefined()
+    await act(async () => item!.click())
+    expect(document.querySelector('.live-exemplar-drawer')?.textContent).toContain('Checkout')
+    await act(async () => document.querySelector<HTMLButtonElement>('.live-exemplar-drawer .modal-header button')!.click())
+    expect(document.querySelector('.live-exemplar-drawer')).toBeNull()
+    expect(document.activeElement).toBe(container.querySelector('[data-chart-id="latency"] .chart-actions-button'))
+  })
+
+  it('opens the menu\'s exemplars at the right-clicked time only; the Actions button, a left card and a new run use the newest window', async () => {
+    const win = (ts: number, traceId: string) => ({
+      tsMs: ts, timestamp: new Date(ts).toISOString(),
+      transactions: [{ name: 'Checkout', exemplars: [{ trace_id: traceId, duration_ms: 812, success: true, reason: 'slowest_success', timestamp: new Date(ts).toISOString() }] }],
+    })
+    const OLD = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+    const NEW = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'
+    const ring = { ...retention, exemplars: [win(T0 + 1000, OLD), win(T0 + 60_000, NEW)] }
+    const card = () => container.querySelector<HTMLElement>('[data-chart-id="latency"]')!
+    const hover = async () => act(async () => { latencyChart().dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: 120, clientY: 50 })) })
+    const leave = async () => act(async () => { card().dispatchEvent(new MouseEvent('mouseout', { bubbles: true, relatedTarget: document.body })) })
+    const showFromMenu = async () => {
+      const item = Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu [role="menuitem"]')).find(b => b.textContent === 'Show Trace Exemplars')!
+      await act(async () => item.click())
+      const text = document.querySelector('.live-exemplar-drawer')?.textContent ?? ''
+      await act(async () => document.querySelector<HTMLButtonElement>('.live-exemplar-drawer .modal-header button')!.click())
+      return text
+    }
+    const rightClick = async () => act(async () => { latencyChart().dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 50 })) })
+    const fromActions = async () => act(async () => container.querySelector<HTMLButtonElement>('button[aria-label="Response Time (ms) actions"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    await render({ liveRetention: ring })
+    // A right-click while hovering names that time.
+    await hover()
+    await rightClick()
+    let text = await showFromMenu()
+    expect(text).toContain(OLD)
+    expect(text).not.toContain(NEW)
+    // The Actions button never uses a hover time, even while one is held.
+    await hover()
+    await fromActions()
+    text = await showFromMenu()
+    expect(text).toContain(NEW)
+    // Leaving the card forgets the hover time.
+    await hover()
+    await leave()
+    await rightClick()
+    text = await showFromMenu()
+    expect(text).toContain(NEW)
+    // A new run forgets the previous run's hover time.
+    await hover()
+    await render({ liveRetention: ring, runId: 'run-other' })
+    await rightClick()
+    text = await showFromMenu()
+    expect(text).toContain(NEW)
+  })
+
+  it('renders the live waterfall card in the infrastructure group', async () => {
+    await render()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(b => b.textContent?.includes('Infrastructure'))?.click()
+    })
+    const card = container.querySelector('[data-chart-id="tx_live_waterfall"]')
+    expect(card?.textContent).toContain('Live waterfall')
+    expect(card?.querySelector('[data-node-id="tx:Checkout"]')).not.toBeNull()
+    // Full width from its own rule, not the heatmap's span classes (scoped to the heatmap card).
+    expect(card?.className).toContain('live-waterfall-card')
+    expect(card?.className).not.toContain('load-impact-graph-card-span')
+    // The full-width rule itself is checked in liveWaterfallModel.test.ts (node environment).
+  })
+
+  it('offers no shared Reset Zoom or Expand Graph for the live waterfall, which has its own zoom and full width', async () => {
+    await render()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(b => b.textContent?.includes('Infrastructure'))?.click()
+    })
+    const actions = container.querySelector<HTMLButtonElement>('[data-chart-id="tx_live_waterfall"] .chart-actions-button')!
+    await act(async () => actions.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    const items = Array.from(container.querySelectorAll<HTMLButtonElement>('.chart-context-menu [role="menuitem"]')).map(b => b.textContent)
+    expect(items).not.toContain('Reset Zoom')
+    expect(items).not.toContain('Expand Graph')
+    expect(items).toContain('Hide Graph')
+    // Focus still lands on the first item.
+    expect(document.activeElement?.textContent).toBe(items[0])
+  })
 })
