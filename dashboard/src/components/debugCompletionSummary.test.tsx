@@ -490,3 +490,61 @@ describe('debug summary transaction table', () => {
   })
 })
 
+describe('failures that follow the first failure', () => {
+  function followerFixture(): DebugCompletionSnapshot {
+    const snapshot = fixture()
+    const report = snapshot.report!
+    report.events = [
+      { ...report.events[0], event_id: 'login', success: false, error_message: 'extractor "c_cshc" found no match: no match' },
+      { ...report.events[1], event_id: 'aura-1', status_code: 401, error_message: 'expected status 200, got 401', diagnosis: { category: 'assertion', severity: 'error', cause: 'expected status 200, got 401', follows_failure_event_id: 'login', follows_failure_action: 'Login', follows_reason: 'aura_invalid_session' } },
+      { ...report.events[1], event_id: 'aura-2', event_index: 2, status_code: 401, error_message: 'expected status 200, got 401' },
+    ]
+    report.diagnosis_summary = { failure_count: 3, first_failure_event_id: 'login', first_failure_action: 'Login', following_failure_count: 2 }
+    return snapshot
+  }
+
+  it('says how many failures follow the first one and where it is', () => {
+    const model = debugSummaryModel(followerFixture())
+    expect(model.followingFailures).toEqual({ text: '2 of 3 failures follow the first failure (Login).', eventIndex: 0 })
+    // None linked, none said.
+    const none = followerFixture(); none.report!.diagnosis_summary!.following_failure_count = 0
+    expect(debugSummaryModel(none).followingFailures).toBeNull()
+    delete none.report!.diagnosis_summary
+    expect(debugSummaryModel(none).followingFailures).toBeNull()
+    // An evicted first failure is not offered; unavailable evidence says nothing.
+    const evicted = followerFixture(); evicted.report!.events.shift()
+    expect(debugSummaryModel(evicted).followingFailures).toMatchObject({ eventIndex: null })
+    const unavailable = followerFixture(); unavailable.report!.runtime_evidence_unavailable = true
+    expect(debugSummaryModel(unavailable).followingFailures).toBeNull()
+    // Without an action name the sentence still reads.
+    const unnamed = followerFixture(); delete unnamed.report!.diagnosis_summary!.first_failure_action
+    expect(debugSummaryModel(unnamed).followingFailures?.text).toBe('2 of 3 failures follow the first failure.')
+  })
+
+  it('shows the line near the counts and selects the first failure', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const onSelectEvent = vi.fn()
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    const render = (snapshot: DebugCompletionSnapshot) => act(() => root.render(<Summary snapshot={snapshot} stale={false} unavailable={false} onExportSession={vi.fn()} onSelectEvent={onSelectEvent} onDownloadHAR={vi.fn()} />))
+    try {
+      render(followerFixture())
+      const line = container.querySelector('.debug-summary-following')!
+      expect(line.textContent).toContain('2 of 3 failures follow the first failure (Login).')
+      expect(line.previousElementSibling?.classList.contains('debug-summary-facts')).toBe(true)
+      const go = [...line.querySelectorAll('button')].find(node => node.textContent === 'Go to first failure')!
+      act(() => go.click())
+      expect(onSelectEvent).toHaveBeenCalledWith(0)
+
+      const evicted = followerFixture(); evicted.key = 'run-2'; evicted.report!.events.shift()
+      render(evicted)
+      expect(container.querySelector('.debug-summary-following')?.textContent).toContain('2 of 3 failures follow the first failure (Login).')
+      expect(container.querySelector('.debug-summary-following button')).toBeNull()
+
+      const plain = fixture(); plain.key = 'run-3'
+      render(plain)
+      expect(container.querySelector('.debug-summary-following')).toBeNull()
+    } finally { act(() => root.unmount()); container.remove() }
+  })
+})
+

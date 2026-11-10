@@ -7346,6 +7346,198 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.center-tab-panel.active #debug-summary-tab-recording-diff')?.getAttribute('aria-selected')).toBe('true')
   })
 
+  it('steps between failures from the inspector like the action list, and goes to the first failure from a follower', async () => {
+    const step = (index: number, name: string, overrides: Record<string, unknown>) => ({
+      event_id: `e${index}`, event_index: index, phase: 'action', action_index: index, action_name: name, action_type: 'POST', method: 'POST', target: `/${name.toLowerCase()}`,
+      success: true, status_code: 200, started_at: `2026-05-14T20:00:0${index}Z`, completed_at: `2026-05-14T20:00:0${index}Z`, duration_ms: 1, ...overrides,
+    })
+    const login = step(0, 'Login', { success: false, error_message: 'extractor "c_cshc" found no match: no match',
+      snapshot: { request_method: 'POST', request_url: 'https://api.example.com/login', response_status: 200, response_headers: { 'Content-Type': 'text/html' }, response_body: '<title>Login | Example</title>' } })
+    const search = step(1, 'Search', {})
+    const pay = step(2, 'Pay', { success: false, status_code: 401, error_message: 'expected status 200, got 401',
+      diagnosis: { category: 'assertion', severity: 'error', cause: 'expected status 200, got 401', follows_failure_event_id: 'e0', follows_failure_action: 'Login', follows_reason: 'http_401' },
+      snapshot: { request_method: 'POST', request_url: 'https://api.example.com/pay', response_status: 401, response_body: '{}' } })
+    const threeSteps = { ...initialScript, actions: [
+      { name: 'Login', type: 'POST', target: '/login' }, { name: 'Search', type: 'POST', target: '/search' }, { name: 'Pay', type: 'POST', target: '/pay' },
+    ] } as unknown as ScriptDefinition
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:03Z',
+      success: false, error: 'expected status 200, got 401', events: [login, search, pay],
+    }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={threeSteps} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    if (container.querySelector('.debugger-request-body .rr-inspector-name')?.textContent !== 'Login') {
+      await act(async () => debugOutlineRow(container, 'Login')!.click())
+    }
+    const header = () => container.querySelector<HTMLElement>('.debugger-request-body .rr-inspector-header')!
+    const navButton = (label: string) => Array.from(header().querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Failures"] button')).find(button => button.textContent === label)!
+    expect(header().querySelector('.rr-inspector-name')?.textContent).toBe('Login')
+    expect(navButton('Previous failure').disabled).toBe(true)
+    // The failed extractor opens on Correlation.
+    expect(container.querySelector('.debugger-request-body [role="tab"][aria-selected="true"]')?.firstElementChild?.textContent).toBe('Correlation')
+
+    const scrolled = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrolled.mockClear()
+    await act(async () => navButton('Next failure').click())
+    await flushReact()
+    expect(header().querySelector('.rr-inspector-name')?.textContent).toBe('Pay')
+    expect(navButton('Next failure').disabled).toBe(true)
+    // Selecting from the inspector stops following execution, and the action list marks the step and scrolls it into view.
+    expect(findInputByLabelText(container, 'Follow execution')?.checked).toBe(false)
+    const payRow = container.querySelector('.debugger-rail [role="treeitem"][aria-selected="true"]')
+    expect(payRow?.getAttribute('data-tooltip')).toBe('Pay')
+    expect(scrolled.mock.contexts).toContain(payRow)
+    expect(scrolled.mock.calls[scrolled.mock.contexts.indexOf(payRow!)]).toEqual([{ block: 'nearest' }])
+    scrolled.mockClear()
+    const verdict = container.querySelector('.debugger-request-body [aria-label="Verdict"]')!
+    expect(verdict.textContent).toContain("This request failed after the run's first failure, Login. The server answered 401.")
+
+    await act(async () => Array.from(verdict.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Go to first failure')!.click())
+    await flushReact()
+    expect(header().querySelector('.rr-inspector-name')?.textContent).toBe('Login')
+    const loginRow = container.querySelector('.debugger-rail [role="treeitem"][aria-selected="true"]')
+    expect(loginRow?.getAttribute('data-tooltip')).toBe('Login')
+    expect(scrolled.mock.contexts).toContain(loginRow)
+  })
+
+  it('scrolls the action list back to the step when Next failure stays on it (a later iteration)', async () => {
+    // The outline scrolls a newly selected row itself; only the inspector's
+    // navigation scrolls when the selection stays on the same step, which the
+    // user may have scrolled out of view.
+    const pay = (index: number, iteration: number) => ({
+      event_id: `e${index}`, event_index: index, phase: 'action', action_index: 0, action_name: 'Pay', action_type: 'POST', method: 'POST', target: '/pay', iteration,
+      success: false, status_code: 401, error_message: 'expected status 200, got 401', started_at: `2026-05-14T20:00:0${index}Z`, completed_at: `2026-05-14T20:00:0${index}Z`, duration_ms: 1,
+      snapshot: { request_method: 'POST', request_url: 'https://api.example.com/pay', response_status: 401, response_body: '{}' },
+    })
+    const search = { event_id: 'e1', event_index: 1, phase: 'action', action_index: 1, action_name: 'Search', action_type: 'POST', method: 'POST', target: '/search', iteration: 1,
+      success: true, status_code: 200, started_at: '2026-05-14T20:00:01Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1 }
+    const twoSteps = { ...initialScript, actions: [{ name: 'Pay', type: 'POST', target: '/pay' }, { name: 'Search', type: 'POST', target: '/search' }] } as unknown as ScriptDefinition
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
+      success: false, error: 'expected status 200, got 401', events: [pay(0, 1), search, pay(2, 2)],
+    }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={twoSteps} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    const header = () => container.querySelector<HTMLElement>('.debugger-request-body .rr-inspector-header')!
+    const navButton = (label: string) => Array.from(header().querySelectorAll<HTMLButtonElement>('[role="group"][aria-label="Failures"] button')).find(button => button.textContent === label)!
+    if (container.querySelector('.debugger-request-body .rr-inspector-name')?.textContent !== 'Pay' || navButton('Previous failure').disabled === false) {
+      await act(async () => debugOutlineRow(container, 'Pay')!.click())
+      await flushReact()
+    }
+    const payRow = container.querySelector('.debugger-rail [role="treeitem"][aria-selected="true"]')
+    expect(payRow?.getAttribute('data-tooltip')).toBe('Pay')
+    expect(navButton('Previous failure').disabled).toBe(true)
+
+    const scrolled = vi.mocked(HTMLElement.prototype.scrollIntoView)
+    scrolled.mockClear()
+    await act(async () => navButton('Next failure').click())
+    await flushReact()
+    // The second iteration's failure, on the same (still selected) step.
+    expect(header().querySelector('.rr-inspector-name')?.textContent).toBe('Pay')
+    expect(navButton('Next failure').disabled).toBe(true)
+    expect(navButton('Previous failure').disabled).toBe(false)
+    expect(container.querySelector('.debugger-rail [role="treeitem"][aria-selected="true"]')).toBe(payRow)
+    expect(scrolled.mock.contexts).toContain(payRow)
+    expect(scrolled.mock.calls[scrolled.mock.contexts.indexOf(payRow!)]).toEqual([{ block: 'nearest' }])
+  })
+
+  it("updates the failing extractor in place from the inspector's tester instead of adding a copy", async () => {
+    const login = { event_id: 'e0', event_index: 0, phase: 'action', action_index: 0, action_name: 'Login', action_type: 'POST', method: 'POST', target: '/login',
+      success: false, status_code: 200, error_message: 'extractor "c_cshc" found no match: no match for regex "cshc=(\\w+)"',
+      started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1,
+      snapshot: { request_method: 'POST', request_url: 'https://api.example.com/login', response_status: 200, response_headers: { 'Content-Type': 'text/html' }, response_body: '<p>token cshc: abc123</p>' } }
+    const withExtractor = { ...initialScript, actions: [
+      { name: 'Login', type: 'POST', target: '/login', extractors: [{ name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc=(\\w+)', on_miss: 'fail' }] },
+      { name: 'Pay', type: 'POST', target: '/pay', body: '{"c":"{{var.c_cshc}}"}' },
+    ] } as unknown as ScriptDefinition
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+      success: false, error: login.error_message, events: [login],
+    }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={withExtractor} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    if (container.querySelector('.debugger-request-body .rr-inspector-name')?.textContent !== 'Login') {
+      await act(async () => debugOutlineRow(container, 'Login')!.click())
+    }
+    const inspector = () => container.querySelector<HTMLElement>('.debugger-request-body')!
+    const correlation = () => inspector().querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!
+    expect(Array.from(correlation().querySelectorAll('h4')).some(node => node.textContent === 'Testing the failing extractor c_cshc')).toBe(true)
+    const expression = correlation().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!
+    await act(async () => { changeInputValue(expression, 'cshc: (\\w+)') })
+    expect(correlation().querySelector('.extractor-tester-count')?.textContent).toBe('1 match')
+    const update = Array.from(correlation().querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update extractor c_cshc')!
+    expect(Array.from(correlation().querySelectorAll('button')).some(button => button.textContent === 'Add as extractor')).toBe(false)
+    await act(async () => update.click())
+    await flushReact()
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Updated extractor "c_cshc" on Login.')
+    expect(correlation().querySelector('.extractor-tester-added')?.textContent).toBe('Updated “c_cshc” on this step. Replay to check it.')
+
+    await act(async () => findWorkspaceTab(container, 'Author')!.click())
+    await flushReact()
+    const source = JSON.parse(container.querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!.value) as { script: ScriptDefinition }
+    // One c_cshc, fixed in place: no c_cshc_2 beside a still-broken one, and its other settings kept.
+    expect(source.script.actions[0].extractors).toEqual([{ name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc: (\\w+)', on_miss: 'fail' }])
+  })
+
+  it("refuses the tester's Update while JSON edits are unapplied, and says so rather than that the step changed", async () => {
+    const login = { event_id: 'e0', event_index: 0, phase: 'action', action_index: 0, action_name: 'Login', action_type: 'POST', method: 'POST', target: '/login',
+      success: false, status_code: 200, error_message: 'extractor "c_cshc" found no match: no match for regex "cshc=(\\w+)"',
+      started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1,
+      snapshot: { request_method: 'POST', request_url: 'https://api.example.com/login', response_status: 200, response_headers: { 'Content-Type': 'text/html' }, response_body: '<p>token cshc: abc123</p>' } }
+    const original = { name: 'c_cshc', source: 'body', type: 'regex', expression: 'cshc=(\\w+)', on_miss: 'fail' }
+    const withExtractor = { ...initialScript, actions: [
+      { name: 'Login', type: 'POST', target: '/login', extractors: [original] },
+      { name: 'Pay', type: 'POST', target: '/pay', body: '{"c":"{{var.c_cshc}}"}' },
+    ] } as unknown as ScriptDefinition
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+      success: false, error: login.error_message, events: [login],
+    }))
+    await act(async () => root.render(<ScriptEditor scriptId="script-1" initialScript={withExtractor} projectId="project-1" />))
+    await act(async () => { findDebuggerRunButton(container)!.click(); await Promise.resolve() })
+    await flushReact()
+    await returnToDebugger(container)
+    if (container.querySelector('.debugger-request-body .rr-inspector-name')?.textContent !== 'Login') {
+      await act(async () => debugOutlineRow(container, 'Login')!.click())
+    }
+    const inspector = () => container.querySelector<HTMLElement>('.debugger-request-body')!
+    const correlation = () => inspector().querySelector<HTMLElement>('[role="tabpanel"]:not([hidden])')!
+    expect(Array.from(correlation().querySelectorAll('h4')).some(node => node.textContent === 'Testing the failing extractor c_cshc')).toBe(true)
+    await act(async () => { changeInputValue(correlation().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!, 'cshc: (\\w+)') })
+
+    // Make the script JSON dirty (the steps stay in place) under the mounted,
+    // seeded inspector. The debugger's DSL panel stays mounted while hidden, so
+    // its editor is driven directly: switching tabs would unmount the inspector,
+    // and a remount with dirty JSON starts the tester plain (no Update).
+    const dslPanel = () => container.querySelector<HTMLElement>(`#${findCenterTab(container, 'DSL')!.getAttribute('aria-controls')}`)!
+    const editJson = findButtonByText(dslPanel(), 'Edit JSON')
+    if (editJson) await act(async () => editJson.click())
+    const code = () => dslPanel().querySelector<HTMLTextAreaElement>('.script-code-pane textarea')!
+    const edited = JSON.parse(code().value) as { script: ScriptDefinition }
+    edited.script.name = 'Checkout Flow (edited)'
+    await act(async () => changeTextareaValue(code(), JSON.stringify(edited, null, 2)))
+    await flushReact()
+    expect(findButtonByText(dslPanel(), 'Apply changes')).toBeDefined()
+    expect(Array.from(correlation().querySelectorAll('h4')).some(node => node.textContent === 'Testing the failing extractor c_cshc')).toBe(true)
+    const update = Array.from(correlation().querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update extractor c_cshc')!
+    expect(update).toBeDefined()
+    await act(async () => update.click())
+    await flushReact()
+    expect(correlation().querySelector('.extractor-tester-error')?.textContent).toBe('Could not update “c_cshc”: apply or discard the JSON edits first.')
+    expect(correlation().querySelector('.extractor-tester-added')).toBeNull()
+
+    // Nothing changed underneath the unapplied JSON: the extractor is as authored.
+    const source = JSON.parse(code().value) as { script: ScriptDefinition }
+    expect(source.script.name).toBe('Checkout Flow (edited)')
+    expect(source.script.actions[0].extractors).toEqual([original])
+  })
+
   it('opens the plain Recording diff from a live run\'s empty state and focuses it once per request', async () => {
     const failed = { phase: 'action', action_index: 0, action_name: 'Get Products', action_type: 'GET', method: 'GET', target: '/api/products',
       status_code: 403, success: false, error_message: 'CSRF token rejected', started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z', duration_ms: 1,

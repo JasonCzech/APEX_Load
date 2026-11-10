@@ -303,8 +303,11 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedFileRefs = nil
 	vu.unresolvedParameterRefs = nil
 	vu.unresolvedRunRefs = nil
+	vu.unresolvedVariableRefs = nil
 	vu.bodyResolutionError = nil
 	vu.structuredBodyResolvedAction = nil
+	vu.recordUnresolvedVariables = true
+	defer func() { vu.recordUnresolvedVariables = false }()
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
@@ -314,8 +317,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	var defaultHeaderList protocol.HeaderList
 	resolvedDefaultHeaders := scriptUsesHTTPDefaultHeaders(vu.Script)
 	if resolvedDefaultHeaders {
-		defaultHeaders, _ = vu.interpolateMapWithSecrets(vu.Script.Config.HTTP.DefaultHeaders)
-		defaultHeaderList, _ = vu.interpolateHeaderListWithSecrets(vu.Script.Config.HTTP.DefaultHeaderList)
+		defaultHeaders, defaultHeaderList = vu.resolveScriptHTTPDefaultHeaders(action.Type, headers, headerList)
 	}
 	templateValueEncoding := actionBodyTemplateValueEncoding(action.Metadata)
 	if enc := strings.TrimSpace(action.BodyTemplateEncoding); enc != "" {
@@ -351,6 +353,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 			discardSuccessfulResponseBody = false
 		}
 	}
+	// Metadata, attribution, extractors and assertions are not part of the
+	// request sent, so their unresolved variables are not reported.
+	vu.recordUnresolvedVariables = false
 	resolved := &protocol.Action{
 		Name:                         action.Name,
 		Type:                         action.Type,
@@ -399,7 +404,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		resolved.MessageDetailMaxTotalBytes = normalizedMessageDetailMaxTotalBytes(detailPolicy.MaxTotalBytes)
 	}
 	if action.BodyMultipart != nil {
+		vu.recordUnresolvedVariables = true
 		vu.applyMultipartBody(action.BodyMultipart, resolved)
+		vu.recordUnresolvedVariables = false
 	}
 	// The authored action is the only place the origin of these credentials can
 	// be read; by the time the execution path sees the resolved action,
@@ -885,6 +892,124 @@ func stringAnyMap(value any) (map[string]any, bool) {
 	}
 }
 
+// resolveScriptHTTPDefaultHeaders interpolates the script's default headers.
+// Their unresolved {{var.NAME}} references are recorded only when the request
+// sends them: for an action type the HTTP transport sends with defaults, and
+// only for entries the action's own headers do not shadow under the
+// transport's precedence (EffectiveAuthoredHeaderList). Each value is still
+// interpolated exactly once, so template side effects are unchanged.
+func (vu *VUser) resolveScriptHTTPDefaultHeaders(actionType string, actionHeaders map[string]string, actionHeaderList protocol.HeaderList) (map[string]string, protocol.HeaderList) {
+	config := vu.Script.Config.HTTP
+	recording := vu.recordUnresolvedVariables
+	recorded := vu.unresolvedVariableRefs
+	// capture returns the {{var.NAME}} references one default entry leaves
+	// unresolved, apart from the action's own record.
+	capture := func(resolve func()) map[string]struct{} {
+		vu.unresolvedVariableRefs = nil
+		resolve()
+		refs := vu.unresolvedVariableRefs
+		vu.unresolvedVariableRefs = recorded
+		return refs
+	}
+	var defaults map[string]string
+	var mapRefs map[string]map[string]struct{}
+	if config.DefaultHeaders != nil {
+		defaults = make(map[string]string, len(config.DefaultHeaders))
+		keys := make([]string, 0, len(config.DefaultHeaders))
+		for name := range config.DefaultHeaders {
+			keys = append(keys, name)
+		}
+		sort.Strings(keys)
+		for _, name := range keys {
+			refs := capture(func() { defaults[name], _ = vu.interpolateWithSecrets(config.DefaultHeaders[name]) })
+			if len(refs) > 0 {
+				if mapRefs == nil {
+					mapRefs = make(map[string]map[string]struct{})
+				}
+				mapRefs[name] = refs
+			}
+		}
+	}
+	var defaultList protocol.HeaderList
+	var listRefs map[int]map[string]struct{}
+	if len(config.DefaultHeaderList) > 0 {
+		defaultList = make(protocol.HeaderList, 0, len(config.DefaultHeaderList))
+		for index, header := range config.DefaultHeaderList {
+			var name, value string
+			refs := capture(func() {
+				name, _ = vu.interpolateWithSecrets(header.Name)
+				value, _ = vu.interpolateWithSecrets(header.Value)
+			})
+			defaultList = append(defaultList, protocol.HeaderEntry{Name: name, Value: value, Enabled: header.Enabled})
+			if len(refs) > 0 {
+				if listRefs == nil {
+					listRefs = make(map[int]map[string]struct{})
+				}
+				listRefs[index] = refs
+			}
+		}
+	}
+	if !recording || (len(mapRefs) == 0 && len(listRefs) == 0) || !actionSendsHTTPDefaultHeaders(actionType) {
+		return defaults, defaultList
+	}
+	note := func(refs map[string]struct{}) {
+		for name := range refs {
+			vu.noteUnresolvedVariable(name)
+		}
+	}
+	// A default entry is sent when adding it alone grows the effective list.
+	if len(mapRefs) > 0 {
+		without, _ := httpprotocol.EffectiveAuthoredHeaderList(nil, defaultList, actionHeaders, actionHeaderList)
+		for name, refs := range mapRefs {
+			with, _ := httpprotocol.EffectiveAuthoredHeaderList(map[string]string{name: defaults[name]}, defaultList, actionHeaders, actionHeaderList)
+			if len(with) > len(without) {
+				note(refs)
+			}
+		}
+	}
+	if len(listRefs) > 0 {
+		without, _ := httpprotocol.EffectiveAuthoredHeaderList(nil, nil, actionHeaders, actionHeaderList)
+		for index, refs := range listRefs {
+			with, _ := httpprotocol.EffectiveAuthoredHeaderList(nil, defaultList[index:index+1], actionHeaders, actionHeaderList)
+			if len(with) > len(without) {
+				note(refs)
+			}
+		}
+	}
+	return defaults, defaultList
+}
+
+// actionSendsHTTPDefaultHeaders reports whether the HTTP transport sends the
+// script's default headers with a request of this action type. Engine
+// actions, WebSocket steps, token fetches, request groups and other
+// protocols' actions never do; an uncatalogued type is sent as a request.
+func actionSendsHTTPDefaultHeaders(actionType string) bool {
+	trimmed := strings.TrimSpace(actionType)
+	if httpprotocol.IsWebSocketStep(trimmed) {
+		return false
+	}
+	spec, ok := dsl.SpecForActionType(trimmed)
+	if !ok {
+		spec, ok = dsl.SpecForActionType(strings.ToUpper(trimmed))
+	}
+	if !ok {
+		spec, ok = dsl.SpecForActionType(strings.ToLower(trimmed))
+	}
+	if !ok {
+		return true
+	}
+	if spec.EngineAction() || spec.Type == "http_sequence" || spec.Type == "http_oauth2_token" {
+		return false
+	}
+	for _, family := range spec.Protocols {
+		switch family {
+		case "http", "soap", "java_http":
+			return true
+		}
+	}
+	return false
+}
+
 func scriptUsesHTTPDefaultHeaders(script *dsl.Script) bool {
 	if script == nil {
 		return false
@@ -1099,6 +1224,8 @@ func (vu *VUser) interpolateWithSecretsPolicyBounded(s string, transform func(in
 			vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, expr)
 		} else if strings.HasPrefix(expr, "run.") {
 			vu.unresolvedRunRefs = append(vu.unresolvedRunRefs, expr)
+		} else if vu.recordUnresolvedVariables && strings.HasPrefix(expr, "var.") {
+			vu.noteUnresolvedVariable(strings.TrimSpace(strings.TrimPrefix(expr, "var.")))
 		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true

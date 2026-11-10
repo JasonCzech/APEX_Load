@@ -74748,10 +74748,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -75020,10 +75024,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -75153,6 +75161,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -103957,10 +103966,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -104229,10 +104242,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -104390,6 +104407,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -104754,10 +104772,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -105026,10 +105048,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -105187,6 +105213,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -130075,10 +130102,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -130347,10 +130378,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -130480,6 +130515,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -130931,10 +130967,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -131203,10 +131243,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -131364,6 +131408,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -131733,10 +131778,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -132005,10 +132054,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -132166,6 +132219,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -176281,10 +176335,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -176553,10 +176611,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -176686,6 +176748,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -177137,10 +177200,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -177409,10 +177476,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -177570,6 +177641,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -177939,10 +178011,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -178211,10 +178287,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -178372,6 +178452,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -185080,10 +185161,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -185352,10 +185437,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -185485,6 +185574,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -186693,10 +186783,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -186965,10 +187059,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -187098,6 +187196,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -188481,10 +188580,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -188753,10 +188856,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -188914,6 +189021,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -190212,10 +190320,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -190484,10 +190596,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -190645,6 +190761,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -191939,10 +192056,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -192211,10 +192332,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -192372,6 +192497,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -193670,10 +193796,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -193942,10 +194072,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -194103,6 +194237,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -194592,10 +194727,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -194864,10 +195003,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -195025,6 +195168,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -195403,10 +195547,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -195675,10 +195823,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -195836,6 +195988,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -196205,10 +196358,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -196477,10 +196634,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -196610,6 +196771,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -197105,10 +197267,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -197377,10 +197543,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -197538,6 +197708,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -197902,10 +198073,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -198174,10 +198349,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -198335,6 +198514,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -215691,10 +215871,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -215963,10 +216147,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -216124,6 +216312,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -216502,10 +216691,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -216774,10 +216967,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -216935,6 +217132,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -217313,10 +217511,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -217585,10 +217787,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -217746,6 +217952,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -218124,10 +218331,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -218396,10 +218607,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -218557,6 +218772,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;
@@ -224031,10 +224247,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -224303,10 +224523,14 @@ export interface operations {
                   "category": string;
                   "cause": string;
                   "evidence"?: string;
+                  "follows_failure_action"?: string;
+                  "follows_failure_event_id"?: string;
+                  "follows_reason"?: string;
                   "frame_context"?: string;
                   "severity": string;
                   "signals"?: Array<string>;
                   "suggested_locator"?: string;
+                  "unresolved_variables"?: Array<string>;
                 }) | null;
                 "dom_summary"?: ({
                   "ready_state"?: string;
@@ -224436,6 +224660,7 @@ export interface operations {
                   "first_failure_action"?: string;
                   "first_failure_cause"?: string;
                   "first_failure_event_id"?: string;
+                  "following_failure_count"?: number;
                 }) | null;
                 "dropped_event_count"?: number;
                 "error"?: string;

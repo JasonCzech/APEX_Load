@@ -4,6 +4,8 @@
 // regex, JSON path and LoadRunner-style boundaries. Other types (xpath/css/
 // jmespath/sse_*) are still addable; they're just evaluated at replay.
 
+import { translateGoRegex } from './goRegex'
+
 const MAX_MATCHES = 50
 
 export interface ExtractorMatchResult {
@@ -11,8 +13,10 @@ export interface ExtractorMatchResult {
   matches: string[]
   /** Set when the expression itself is invalid or the source can't be parsed. */
   error?: string
-  /** False when this extractor type has no client-side preview. */
+  /** False when this extractor type (or this expression) has no client-side preview. */
   previewable: boolean
+  /** Why this expression has no preview, when the type otherwise has one. */
+  note?: string
 }
 
 export const PREVIEWABLE_EXTRACTOR_TYPES = new Set(['regex', 'json', 'jsonpath', 'json_path', 'boundary'])
@@ -70,10 +74,18 @@ function evaluateBoundary(expression: string, text: string): ExtractorMatchResul
   return { matches: values.slice(boundary.ordinal - 1), previewable: true }
 }
 
+// The engine's regexes are Go (RE2): translate before evaluating (goRegex.ts).
 function evaluateRegex(expression: string, text: string): ExtractorMatchResult {
+  const translated = translateGoRegex(expression)
+  if (translated.kind === 'untestable') {
+    return { matches: [], previewable: false, note: `This expression uses Go regex syntax the browser can’t test (${translated.reason}). It’s evaluated at replay.` }
+  }
+  if (translated.kind === 'invalid') {
+    return { matches: [], previewable: true, error: `Invalid regular expression for the engine (Go): ${translated.reason}.` }
+  }
   let regex: RegExp
   try {
-    regex = new RegExp(expression, 'g')
+    regex = new RegExp(translated.source, `g${translated.flags}`)
   } catch (error) {
     return { matches: [], previewable: true, error: `Invalid regular expression: ${(error as Error).message}` }
   }

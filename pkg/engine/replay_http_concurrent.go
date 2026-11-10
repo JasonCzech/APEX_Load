@@ -59,7 +59,7 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 			child.result.ProtocolEvidence["concurrent_group_duration_ms"] = float64(group.completed.Sub(group.started).Microseconds()) / 1000
 		}
 		ordinal := index
-		unit := replayUnit{action: child.authored, phase: phase, actionIndex: actionIndex, parentName: action.Name, parentBusinessTransaction: true, stepPath: appendStepPath(stepPath, requestSegment(index)), iterationPath: iterationPath, requestIndex: &ordinal, requestCount: len(group.children), prepared: child, skipDebugBoundary: true}
+		unit := replayUnit{action: child.authored, phase: phase, actionIndex: actionIndex, parentName: action.Name, parentBusinessTransaction: true, stepPath: appendStepPath(stepPath, requestSegment(index)), iterationPath: iterationPath, requestIndex: &ordinal, requestCount: len(group.children), prepared: child, concurrentGroupID: boundary.EventID, skipDebugBoundary: true}
 		event, ok, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, true, globalThinkCfg, report, onProgress, debugger)
 		if !ok {
 			success = false
