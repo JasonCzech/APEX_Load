@@ -108,6 +108,11 @@ func agentSLARuleFindings(runID string, report *RunArchiveReport) []AgentFinding
 		}
 		rule := result.Rule
 		metric, unit := agentSLAMetric(rule.Metric)
+		// A phase rule judges one network phase: its finding, name and id
+		// must not read as (or collide with) the whole-duration rule's.
+		if rule.Phase != "" {
+			metric = rule.Phase + " " + metric
+		}
 		severity := agentSeverityBlocker
 		if result.Status == "warning" {
 			severity = agentSeverityMinor
@@ -127,7 +132,7 @@ func agentSLARuleFindings(runID string, report *RunArchiveReport) []AgentFinding
 			Sources:    []string{"sla_rule"},
 			Evidence:   []AgentEvidenceRef{{Ref: "sla_status", URI: agentTestPath(runID, "/sla-status")}},
 			Next:       []AgentNextStep{agentDrillDown(runID, id, "per-interval series and the rule's evidence")},
-			RuleID:     strings.Join([]string{rule.Group, rule.Transaction, rule.Metric, rule.Comparator}, "|"),
+			RuleID:     agentTransactionRuleID(rule),
 		}
 		findings = append(findings, finding)
 	}
@@ -731,4 +736,14 @@ func rankAgentFindings(findings []AgentFinding) {
 		}
 		return a.ID < b.ID
 	})
+}
+
+// agentTransactionRuleID names a transaction SLA rule; a phase rule adds its
+// phase, so it never shares an id with the whole-duration rule.
+func agentTransactionRuleID(rule TransactionSLARule) string {
+	parts := []string{rule.Group, rule.Transaction, rule.Metric, rule.Comparator}
+	if rule.Phase != "" {
+		parts = append(parts, "phase="+rule.Phase)
+	}
+	return strings.Join(parts, "|")
 }

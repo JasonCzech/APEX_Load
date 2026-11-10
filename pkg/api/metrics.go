@@ -98,6 +98,7 @@ func buildLiveMetricsFromSnapshot(snap engine.MetricsSnapshot, groupVUsers map[s
 		AvgTTFBMs:                  snap.AvgTTFBMs,
 		AvgWaitMs:                  snap.AvgWaitMs,
 		PhaseObserved:              snap.PhaseObserved.Clone(),
+		PhasePercentiles:           snap.PhaseSketches.Percentiles(),
 		ErrorBreakdown:             copyErrorClassCounts(snap.ErrorsByClass),
 		Transactions:               make(map[string]*TxMetrics),
 		DependencyHealth:           make(map[string]*TxMetrics),
@@ -389,6 +390,7 @@ func buildTxMetricsFromAction(name string, am *engine.ActionMetrics, window time
 		AvgTLSMs:         am.AvgTLSMs,
 		AvgTTFBMs:        am.AvgTTFBMs,
 		PhaseObserved:    am.PhaseObserved.Clone(),
+		PhasePercentiles: am.PhaseSketches.Percentiles(),
 		CorrelationIDs:   append([]string(nil), am.CorrelationIDs...),
 		CorrelationCount: am.CorrelationCount,
 		Exemplars:        append([]engine.TraceExemplar(nil), am.Exemplars...),
@@ -1337,7 +1339,19 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	// stop must stamp the p99 alert that triggered it.
 	stopForError := allowStops && tr.shouldStopForEffectiveErrorThreshold(test, live, settings.Thresholds)
 	stopForP99 := allowStops && tr.shouldStopForSustainedP99(test, live, settings.Thresholds)
-	applyThresholdAlertStopActions(alerts, stopForError, stopForP99)
+	// Like the P99 streak, the phase streaks advance only on evaluations that
+	// may stop the run.
+	var phaseRule PhaseLatencyThreshold
+	var phaseValue float64
+	stopForPhase := false
+	if allowStops {
+		phaseRule, phaseValue, stopForPhase = tr.shouldStopForSustainedPhaseLatency(test, live, settings.Thresholds)
+	}
+	stopForPhaseMetric := ""
+	if stopForPhase {
+		stopForPhaseMetric = phaseLatencyMetric(phaseRule)
+	}
+	applyThresholdAlertStopActions(alerts, stopForError, stopForP99, stopForPhaseMetric)
 	if diagnosticsProjectEnabled(test.ProjectID) {
 		alerts = append(alerts, advisoryDiagnosticAlerts(live)...)
 	}
@@ -1358,6 +1372,8 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 			trigger = tr.recordAutoStopTrigger(test, runStopRuleErrorRate, "error rate threshold breached")
 		case stopForP99:
 			trigger = tr.recordAutoStopTrigger(test, runStopRuleSustainedP99, "sustained p99 latency threshold breached")
+		case stopForPhase:
+			trigger = tr.recordAutoStopTrigger(test, runStopRuleSustainedPhaseLatency, phaseLatencyStopReason(phaseRule, phaseValue))
 		case shouldStopForGoalStatus(live):
 			trigger = tr.recordAutoStopTrigger(test, runStopRuleGoal, live.GoalStatus.StopReason)
 		}
@@ -1377,6 +1393,9 @@ func (tr *TestRunner) evaluateThresholdAlertsAndStops(test *ManagedTest, live *L
 	}
 	if stopForP99 {
 		stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "p99 threshold stop failed"))
+	}
+	if stopForPhase {
+		stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "phase latency threshold stop failed"))
 	}
 	if allowStops && shouldStopForGoalStatus(live) {
 		stopErr = errors.Join(stopErr, tr.requestStopIfRunning(test, "goal-oriented stop failed"))

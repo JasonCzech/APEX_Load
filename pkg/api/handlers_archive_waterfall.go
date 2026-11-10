@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"regexp"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/deeplink"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -358,6 +360,9 @@ func (s *Server) handleGetRunArchiveTransactionWaterfall(w http.ResponseWriter, 
 	if err == nil {
 		waterfall, err = s.markArchiveWaterfallJoinMayDiffer(r.Context(), record, waterfall)
 	}
+	if err == nil {
+		waterfall = s.linkArchiveWaterfallTraces(r.PathValue("id"), waterfall)
+	}
 	if err != nil {
 		var budget *archiveScanBudgetError
 		switch {
@@ -431,6 +436,75 @@ func (s *Server) markArchiveWaterfallJoinMayDiffer(ctx context.Context, record *
 	marked := *waterfall
 	marked.JoinMayDiffer, marked.JoinMayDifferReasons = true, reasons
 	return &marked, nil
+}
+
+// linkArchiveWaterfallTraces returns waterfall (a copy when it changes; the
+// cached value is shared) with every row that carries a trace id linked into
+// the run's APM providers, from the test's trace link templates as the
+// exemplar endpoint expands them. Links are secondary: settings that cannot
+// be read leave the rows unlinked and set trace_links_unavailable.
+func (s *Server) linkArchiveWaterfallTraces(testID string, waterfall *archiveWaterfallResult) *archiveWaterfallResult {
+	if waterfall == nil || (waterfall.Root.TraceID == "" && !slices.ContainsFunc(waterfall.Requests, func(row ArchiveWaterfallRow) bool { return row.TraceID != "" })) {
+		return waterfall
+	}
+	test, ok := s.archiveDomainService().GetTestSummary(testID)
+	if !ok || test == nil {
+		return waterfall
+	}
+	targets, err := s.runTraceLinkTargets(test)
+	if err != nil {
+		slog.Warn("drill-down trace links unavailable", "test_id", testID, "error", err)
+		marked := *waterfall
+		marked.TraceLinksUnavailable = true
+		return &marked
+	}
+	return withArchiveWaterfallTraceLinks(waterfall, targets)
+}
+
+// withArchiveWaterfallTraceLinks links each traced row of waterfall to
+// targets, on a copy; waterfall itself is returned when no row gets a link.
+func withArchiveWaterfallTraceLinks(waterfall *archiveWaterfallResult, targets []traceLinkTarget) *archiveWaterfallResult {
+	if len(targets) == 0 {
+		return waterfall
+	}
+	linked := *waterfall
+	changed := false
+	link := func(row ArchiveWaterfallRow) ArchiveWaterfallRow {
+		links := archiveWaterfallTraceLinks(row, targets)
+		if len(links) == 0 {
+			return row
+		}
+		changed = true
+		row.TraceLinks = links
+		return row
+	}
+	linked.Root = link(waterfall.Root)
+	linked.Requests = make([]ArchiveWaterfallRow, len(waterfall.Requests))
+	for index, row := range waterfall.Requests {
+		linked.Requests[index] = link(row)
+	}
+	if !changed {
+		return waterfall
+	}
+	return &linked
+}
+
+// archiveWaterfallTraceLinks expands every target for one row's trace, over
+// the row's own time padded by exemplarLinkWindow on both sides. A row with
+// no trace id, or a template that does not expand, has no link.
+func archiveWaterfallTraceLinks(row ArchiveWaterfallRow, targets []traceLinkTarget) []ExemplarLink {
+	if row.TraceID == "" || row.Timestamp.IsZero() {
+		return nil
+	}
+	span := time.Duration(max(row.DurationMs, row.ElapsedMs, 0) * float64(time.Millisecond))
+	values := deeplink.Values{TraceID: row.TraceID, From: row.Timestamp.Add(-exemplarLinkWindow), To: row.Timestamp.Add(span + exemplarLinkWindow)}
+	var links []ExemplarLink
+	for _, target := range targets {
+		if url, err := target.template.Expand(values); err == nil {
+			links = append(links, ExemplarLink{Provider: target.provider, ConnectionID: target.connectionID, URL: url})
+		}
+	}
+	return links
 }
 
 // cachedArchiveTransactionWaterfall serves a rebuilt drill-down from the

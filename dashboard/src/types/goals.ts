@@ -15,6 +15,8 @@ export interface TransactionSLARule {
   slo_ttft_ms?: number
   slo_tpot_ms?: number
   slo_e2e_ms?: number
+  /** Judge one network phase (duration metrics only) over the samples that spent time in it. */
+  phase?: 'dns' | 'connect' | 'tls' | 'server' | 'download'
 }
 
 export interface TransactionSLARuleResult {

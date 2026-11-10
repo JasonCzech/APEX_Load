@@ -55,7 +55,9 @@ func TestGetMetricsServesStoredNetworkPhasesForEveryInterval(t *testing.T) {
 	}
 
 	api := NewServer(ServerConfig{Store: store})
-	for _, query := range []string{"", "?limit=3"} {
+	// ?limit=10 is a bounded window that still reaches the legacy interval;
+	// ?limit=3 trims it off.
+	for _, query := range []string{"", "?limit=10", "?limit=3"} {
 		recorder := httptest.NewRecorder()
 		api.mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/tests/phase-run/metrics"+query, nil))
 		if recorder.Code != http.StatusOK {
@@ -69,7 +71,7 @@ func TestGetMetricsServesStoredNetworkPhasesForEveryInterval(t *testing.T) {
 			t.Fatal(err)
 		}
 		history := body.History
-		if query == "" {
+		if query != "?limit=3" {
 			if len(history) != phasedPoints+1 {
 				t.Fatalf("history has %d points, want %d: %s", len(history), phasedPoints+1, recorder.Body.String())
 			}
@@ -100,6 +102,53 @@ func TestGetMetricsServesStoredNetworkPhasesForEveryInterval(t *testing.T) {
 		}
 		if body.Metrics["avg_server_ms"] != server(phasedPoints-1) || body.Metrics["phase_observed"] == nil {
 			t.Fatalf("GET metrics%s current point lost its phases: %v", query, body.Metrics)
+		}
+	}
+}
+
+// An interval from a generator that predates phase observations keeps its
+// averages through storage and the API, and its split stays unknown.
+func TestGetMetricsServesStoredPhaseAveragesWithoutObservations(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "older.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	start := time.Date(2026, time.November, 9, 12, 0, 0, 0, time.UTC)
+	end := start.Add(time.Minute)
+	if err := store.SaveTest(&storage.TestRecord{ID: "older-run", ProjectID: storage.DefaultProjectID, Name: "older", Status: "COMPLETE", StartTime: start, EndTime: &end}); err != nil {
+		t.Fatal(err)
+	}
+	for index := 0; index < 2; index++ {
+		at := start.Add(time.Duration(index) * 10 * time.Second)
+		if err := store.SaveHistory("older-run", at, &LiveMetrics{Timestamp: at, AvgResponseMs: 120, TotalTx: 10, AvgConnectMs: 4.5, AvgTTFBMs: 80, AvgWaitMs: 40,
+			// A split without the observations it came from is not restored.
+			AvgServerMs: float64Ptr(70), AvgNoResponseMs: float64Ptr(5)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recorder := httptest.NewRecorder()
+	NewServer(ServerConfig{Store: store}).mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/tests/older-run/metrics", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("GET metrics = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var body struct {
+		History []map[string]any `json:"history"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.History) != 2 {
+		t.Fatalf("history has %d points, want 2", len(body.History))
+	}
+	for index, point := range body.History {
+		if point["avg_connect_ms"] != 4.5 || point["avg_ttfb_ms"] != 80.0 || point["avg_wait_ms"] != 40.0 {
+			t.Fatalf("point %d averages = %v", index, point)
+		}
+		for _, key := range []string{"phase_observed", "avg_server_ms", "avg_no_response_ms"} {
+			if _, ok := point[key]; ok {
+				t.Fatalf("point %d invented %s: %v", index, key, point)
+			}
 		}
 	}
 }

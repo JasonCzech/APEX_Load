@@ -126,6 +126,11 @@ func buildAgentCTRF(brief *AgentBrief) AgentCTRFReport {
 	for _, result := range brief.ctrf.rules {
 		rule := result.Rule
 		metric, unit := agentSLAMetric(rule.Metric)
+		// A phase rule judges one network phase: its finding, name and id
+		// must not read as (or collide with) the whole-duration rule's.
+		if rule.Phase != "" {
+			metric = rule.Phase + " " + metric
+		}
 		subject := agentSafeName(rule.Transaction)
 		if rule.Group != "" {
 			subject = agentSafeName(rule.Group) + "/" + subject

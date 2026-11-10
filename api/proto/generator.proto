@@ -718,6 +718,10 @@ message MetricsBatch {
   // llm_summary_version is 1 when each MetricAggregate in action_metrics
   // populates its typed LLMSummary for LLM actions. Older generators send 0.
   uint32 llm_summary_version = 45;
+  // phase_sketch_version is 1 when the fleet, transaction and action
+  // aggregates carry phase_sketches. Older generators send 0: their
+  // per-phase percentiles are unknown.
+  uint32 phase_sketch_version = 46;
 }
 
 message BrowserAuthoredStep {
@@ -902,6 +906,23 @@ message MetricAggregate {
   // generator that predates it leaves it unset and the controller reports
   // the observations as unknown.
   PhaseObservations phase_observed = 27;
+  // Per-phase duration distributions (nanoseconds) over the samples that
+  // spent time in each phase, by the rules of phase_observed: DNS, connect
+  // and TLS when the phase took measurable time, server (TTFB - setup) and
+  // download (duration - TTFB) when a first byte arrived. Read only from a
+  // batch with phase_sketch_version 1, and only for the fleet, transaction
+  // and action aggregates. Unset there means unknown, never zero.
+  PhaseSketches phase_sketches = 28;
+}
+
+// Version 1 network-phase sketches. An unset phase had no sample in it.
+message PhaseSketches {
+  uint32 version = 1;
+  DurationSketchSnapshot dns = 2;
+  DurationSketchSnapshot connect = 3;
+  DurationSketchSnapshot tls = 4;
+  DurationSketchSnapshot server = 5;
+  DurationSketchSnapshot download = 6;
 }
 
 message PhaseObservations {

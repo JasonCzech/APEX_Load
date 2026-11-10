@@ -1,0 +1,1 @@
+var e={dynatrace:`Dynatrace`,elasticsearch:`Kibana (ELK)`};function t(t){return e[t]??t}export{t};

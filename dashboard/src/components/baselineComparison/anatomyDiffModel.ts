@@ -197,7 +197,7 @@ export function buildAnatomyDiffTree(current: RunArchiveTransactionAnatomy, base
       }
     }
     // Other requests have no meaningful offset, so they start at 0 as in the report.
-    const node = anatomyRequestNode(pair.current, statistic, pair.id, pair.other ? 0 : pos(pair.current.offset_ms?.p50_ms), Boolean(pair.other)) as WaterfallNode<RunArchiveAnatomyRequest>
+    const node = anatomyRequestNode(pair.current, statistic, pair.id, pair.other ? 0 : pos(pair.current.offset_ms?.p50_ms), Boolean(pair.other))
     if (pair.other) node.label = 'Other requests'
     if (pair.baseline) {
       const ghost = anatomyRequestNode(pair.baseline, statistic, `${pair.id}:baseline`, 0)

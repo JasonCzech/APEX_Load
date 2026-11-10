@@ -44,7 +44,7 @@ export interface ImportedStatValue {
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'area-stacked' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap' | 'stat-tile' | 'phase-waterfall'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'area-stacked' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap' | 'stat-tile' | 'phase-waterfall' | 'phase-share-heatmap'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -214,6 +214,8 @@ const LOAD_IMPACT_CHART_ID_PREFIX = 'load_impact_'
 export const LOAD_IMPACT_HEATMAP_CHART_ID = 'load_impact_heatmap'
 /** L1: the latest window's transactions as aggregate phase bars. */
 export const LIVE_WATERFALL_CHART_ID = 'tx_live_waterfall'
+/** L6: each network phase's share of sampled time per interval. */
+export const PHASE_SHARE_HEATMAP_CHART_ID = 'tx_phase_share_heatmap'
 export const LOAD_IMPACT_PERCENTILES_CHART_ID = 'load_impact_percentiles'
 export const LOAD_IMPACT_PERCENTILE_KEYS = ['p50', 'p90', 'p95', 'p99'] as const
 export const ART_STD_DEV_BAND_KEY = 'avgMsStdDevBand'
@@ -316,6 +318,7 @@ export const chartConfigs: ChartConfig[] = [
     domain: [0, 'auto'],
   },
   { id: LIVE_WATERFALL_CHART_ID, title: 'Live waterfall', type: 'phase-waterfall' },
+  { id: PHASE_SHARE_HEATMAP_CHART_ID, title: 'Phase share heatmap', type: 'phase-share-heatmap' },
   {
     id: 'error_taxonomy',
     title: 'Error Taxonomy (stacked)',
@@ -366,6 +369,15 @@ export function isLoadImpactHeatmapChart(chart: ChartConfig) {
 
 export function isLiveWaterfallChart(chart: ChartConfig) {
   return chart.type === 'phase-waterfall' || chart.id === LIVE_WATERFALL_CHART_ID
+}
+
+export function isPhaseShareHeatmapChart(chart: ChartConfig) {
+  return chart.type === 'phase-share-heatmap' || chart.id === PHASE_SHARE_HEATMAP_CHART_ID
+}
+
+/** Cards that draw their own panel, not a time-axis Recharts graph. */
+export function isPanelChart(chart: ChartConfig) {
+  return isLiveWaterfallChart(chart) || isPhaseShareHeatmapChart(chart)
 }
 
 export function isLoadImpactPercentilesChart(chart: ChartConfig) {
@@ -571,7 +583,7 @@ export const overlayMetricMenuLabels: Record<OverlayMetricKey, string> = {
 }
 
 export function isOverlayMetricAvailable(chart: ChartConfig, key: OverlayMetricKey) {
-  if (isPrometheusChart(chart) || isLoadImpactHeatmapChart(chart) || isImportedDashboardChart(chart) || isLiveWaterfallChart(chart)) {
+  if (isPrometheusChart(chart) || isLoadImpactHeatmapChart(chart) || isImportedDashboardChart(chart) || isPanelChart(chart)) {
     return false
   }
   if (isLoadImpactPercentilesChart(chart)) {
@@ -750,7 +762,7 @@ export function presetExemptChartIds(charts: ChartConfig[]): string[] {
 
 export const monitorPresets = [
   { id: 'run_operator', label: 'Run Operator', chartIds: ['vusers', 'tps', 'latency', 'errors', 'error_taxonomy'] },
-  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'latency_p95', 'latency_p99', 'tps', 'errors', 'error_taxonomy', 'tx_network_phases', 'tx_live_waterfall', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
+  { id: 'performance_engineer', label: 'Performance Engineer', chartIds: ['latency', 'latency_p95', 'latency_p99', 'tps', 'errors', 'error_taxonomy', 'tx_network_phases', 'tx_live_waterfall', 'tx_phase_share_heatmap', 'cpu', 'mem', 'io', 'generator_impact', 'network_latency', 'vusers'] },
   { id: 'platform_admin', label: 'Platform Admin', chartIds: ['cpu', 'mem', 'io', 'tx_network_phases', 'tx_live_waterfall', 'generator_impact', 'network_latency', 'vusers', 'tps'] },
   { id: 'release_approver', label: 'Release Approver', chartIds: ['latency', 'latency_p95', 'errors', 'error_taxonomy', 'tps'] },
 ] as const

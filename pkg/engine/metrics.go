@@ -151,6 +151,9 @@ type MetricsSnapshot struct {
 	// PhaseObserved counts the business transactions that spent time in each
 	// connection-setup phase; the averages above divide by all of them.
 	PhaseObserved *PhaseObservations `json:"phase_observed,omitempty"`
+	// PhaseSketches are the business transactions' per-phase distributions
+	// (see PhaseSketches); nil when there were none.
+	PhaseSketches *PhaseSketches `json:"-"`
 	// ErrorsByClass counts failed business transactions by taxonomy class
 	// (timeout/connection/http_4xx/http_5xx/assertion/other).
 	ErrorsByClass      map[string]int64 `json:"errors_by_class,omitempty"`
@@ -389,6 +392,9 @@ type ActionMetrics struct {
 	AvgTLSMs         float64                 `json:"avg_tls_ms,omitempty"`
 	AvgTTFBMs        float64                 `json:"avg_ttfb_ms,omitempty"`
 	PhaseObserved    *PhaseObservations      `json:"phase_observed,omitempty"`
+	// PhaseSketches are kept for ByTransaction and ByAction entries only;
+	// other dimensions leave them nil.
+	PhaseSketches    *PhaseSketches `json:"-"`
 	CorrelationIDs   []string
 	CorrelationCount int64
 	Count            int64
@@ -782,6 +788,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	var totalDuration time.Duration
 	var totalDNSMs, totalConnectMs, totalTLSMs, totalTTFBMs, totalWaitMs float64
 	var phaseObserved PhaseObservations
+	var windowPhases PhaseSketchRecorder
+	transactionPhases := make(map[string]*PhaseSketchRecorder)
+	actionPhases := make(map[string]*PhaseSketchRecorder)
 	// The window's own percentiles and the group shares' are reported but
 	// never sent as distributions, so they need only the sketch.
 	windowSketch := NewDurationSketch()
@@ -857,6 +866,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			totalTLSMs += durationToMilliseconds(r.TLSTime)
 			totalTTFBMs += durationToMilliseconds(r.TTFB)
 			phaseObserved.Observe(r.DNSTime, r.ConnectTime, r.TLSTime, r.TTFB, r.Duration)
+			windowPhases.Observe(r.DNSTime, r.ConnectTime, r.TLSTime, r.TTFB, r.Duration)
 			// Download (duration - TTFB) only exists for a sample that got a
 			// first byte; a timeout's time is no-response, not download.
 			if r.TTFB > 0 {
@@ -878,6 +888,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			mergeActionResult(tm, r)
 			recordTraceExemplar(tm, r)
 			recordDurationSample(transactionDigests, transactionDurationSum, transactionName, r.Duration)
+			recordPhaseSample(transactionPhases, transactionName, r)
 
 			if region := strings.TrimSpace(r.Region); region != "" {
 				region = boundedDimensionKey(region, snap.ByRegion)
@@ -969,6 +980,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 			ObserveLLMAction(&am.LLM, r)
 			recordTraceExemplar(am, r)
 			recordDurationSample(actionDigests, actionDurationSum, actionName, r.Duration)
+			recordPhaseSample(actionPhases, actionName, r)
 
 			if dependencyTarget := strings.TrimSpace(r.DependencyTarget); dependencyTarget != "" {
 				dependencyTarget = boundedDimensionKey(dependencyTarget, snap.ByDependencyTarget)
@@ -1108,6 +1120,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		snap.AvgTTFBMs = totalTTFBMs / attempts
 		snap.AvgWaitMs = totalWaitMs / attempts
 		snap.PhaseObserved = &phaseObserved
+		snap.PhaseSketches = windowPhases.Snapshot()
 
 		snap.P50 = time.Duration(windowSketch.Quantile(0.50))
 		snap.P90 = time.Duration(windowSketch.Quantile(0.90))
@@ -1167,6 +1180,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, am := range snap.ByAction {
 		finalizeActionMetrics(am, actionDurationSum[name], actionDigests[name])
+		am.PhaseSketches = actionPhases[name].Snapshot()
 		if am.LLM != nil {
 			MergeLLMSummary(&mc.llmSummary, am.LLM)
 		}
@@ -1176,7 +1190,9 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 	}
 	for name, am := range snap.ByTransaction {
 		finalizeActionMetrics(am, transactionDurationSum[name], transactionDigests[name])
+		am.PhaseSketches = transactionPhases[name].Snapshot()
 	}
+	applySnapshotPhaseSketchBudget(&snap)
 	if len(snap.ByTransaction) == 0 {
 		snap.ByTransaction = nil
 	}
@@ -1318,6 +1334,34 @@ func recordDurationSample(digests map[string]*durationDistribution, totals map[s
 		digests[key] = newDurationDistribution()
 	}
 	digests[key].Add(float64(duration))
+}
+
+func recordPhaseSample(recorders map[string]*PhaseSketchRecorder, key string, result *protocol.Result) {
+	if key == "" || result == nil {
+		return
+	}
+	recorder := recorders[key]
+	if recorder == nil {
+		recorder = &PhaseSketchRecorder{}
+		recorders[key] = recorder
+	}
+	recorder.Observe(result.DNSTime, result.ConnectTime, result.TLSTime, result.TTFB, result.Duration)
+}
+
+// applySnapshotPhaseSketchBudget bounds the window's phase sketches: the fleet
+// keeps its own first, then the busiest transactions and actions.
+func applySnapshotPhaseSketchBudget(snap *MetricsSnapshot) {
+	if snap == nil {
+		return
+	}
+	entries := make([]PhaseSketchBudgetEntry, 0, len(snap.ByTransaction)+len(snap.ByAction))
+	for name, metrics := range snap.ByTransaction {
+		entries = append(entries, PhaseSketchBudgetEntry{Key: "t:" + name, Count: metrics.Count, Sketches: &metrics.PhaseSketches})
+	}
+	for name, metrics := range snap.ByAction {
+		entries = append(entries, PhaseSketchBudgetEntry{Key: "a:" + name, Count: metrics.Count, Sketches: &metrics.PhaseSketches})
+	}
+	ApplyPhaseSketchBudget(MaxWindowPhaseSketchBins, []PhaseSketchBudgetEntry{{Key: "fleet", Sketches: &snap.PhaseSketches}}, entries)
 }
 
 func finalizeActionMetrics(metrics *ActionMetrics, totalDuration time.Duration, distribution *durationDistribution) {

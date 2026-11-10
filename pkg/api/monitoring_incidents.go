@@ -94,6 +94,11 @@ func thresholdSampleCovered(live *LiveMetrics, policies ThresholdSettings) bool 
 	if live == nil || live.TotalTx <= 0 {
 		return false
 	}
+	// Phase rules have no data when the window's phase percentiles are
+	// unknown (an older load generator): such a tick did not evaluate them.
+	if len(usablePhaseLatencyThresholds(policies.PhaseLatency)) > 0 && live.PhasePercentiles == nil {
+		return false
+	}
 	if policies.MaxAvgServerProcessingMs != nil || policies.MaxAvgTransferMs != nil {
 		for _, tx := range live.Transactions {
 			if tx != nil && tx.ServerTelemetry != nil && tx.ServerTelemetry.Samples > 0 {
@@ -204,6 +209,7 @@ func (s *Server) handleListThresholdIncidents(w http.ResponseWriter, r *http.Req
 			count++
 		}
 	}
+	count += len(usablePhaseLatencyThresholds(policies.PhaseLatency))
 	failure := ""
 	if writer := s.runner.thresholdJournal; writer != nil {
 		writer.mu.Lock()

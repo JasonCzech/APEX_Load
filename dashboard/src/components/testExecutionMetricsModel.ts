@@ -46,6 +46,30 @@ export function serverPhaseMs(metric: Pick<LiveMetrics, 'avg_ttfb_ms' | 'avg_dns
   return Math.max(0, metric.avg_ttfb_ms - setup)
 }
 
+type NetworkPhaseFields = Pick<LiveMetrics, 'avg_dns_ms' | 'avg_connect_ms' | 'avg_tls_ms' | 'avg_ttfb_ms' | 'avg_wait_ms' | 'avg_server_ms' | 'avg_no_response_ms'>
+
+/**
+ * Network-phase breakdown from real VU traffic (kept distinct from the
+ * synthetic route-latency probe), shared by live points and archived interval
+ * summaries. Optional so an absent phase stays a gap.
+ */
+function networkPhaseHistoryValues(metric: NetworkPhaseFields): Partial<MetricsHistoryPoint> {
+  return {
+    txDnsMs: roundedOptional(metric.avg_dns_ms),
+    txConnectMs: roundedOptional(metric.avg_connect_ms),
+    txTlsMs: roundedOptional(metric.avg_tls_ms),
+    txTtfbMs: roundedOptional(metric.avg_ttfb_ms),
+    txServerMs: roundedOptional(serverPhaseMs(metric)),
+    // avg_wait_ms is the download tail (duration - TTFB), not server wait; with
+    // known observations it counts only samples that got a first byte.
+    txDownloadMs: roundedOptional(metric.avg_wait_ms),
+    // Time after setup of samples that never got a first byte (timeouts,
+    // connection failures, protocols without TTFB), so the stack still adds
+    // up to avg_response_ms. Absent from an older generator.
+    txNoResponseMs: roundedOptional(metric.avg_no_response_ms),
+  }
+}
+
 function roundedHistoryValues(values: Partial<MetricsHistoryPoint>) {
   return Object.entries(values).reduce((acc, [key, value]) => {
     if (typeof value === 'number') {
@@ -78,20 +102,7 @@ export function mapExecutionMetricToHistoryPoint(metric: LiveMetrics): MetricsHi
     diskRead: rounded(metric.resources?.disk_read_kbps),
     diskWrite: rounded(metric.resources?.disk_write_kbps),
     cpuProcessMax: roundedOptional(metric.resources?.cpu_process_pct_max),
-    // Network-phase breakdown from real VU traffic (kept distinct from the
-    // synthetic route-latency probe). Optional so an absent phase stays a gap.
-    txDnsMs: roundedOptional(metric.avg_dns_ms),
-    txConnectMs: roundedOptional(metric.avg_connect_ms),
-    txTlsMs: roundedOptional(metric.avg_tls_ms),
-    txTtfbMs: roundedOptional(metric.avg_ttfb_ms),
-    txServerMs: roundedOptional(serverPhaseMs(metric)),
-    // avg_wait_ms is the download tail (duration - TTFB), not server wait; with
-    // known observations it counts only samples that got a first byte.
-    txDownloadMs: roundedOptional(metric.avg_wait_ms),
-    // Time after setup of samples that never got a first byte (timeouts,
-    // connection failures, protocols without TTFB), so the stack still adds
-    // up to avg_response_ms. Absent from an older generator.
-    txNoResponseMs: roundedOptional(metric.avg_no_response_ms),
+    ...networkPhaseHistoryValues(metric),
     // Error taxonomy counts (0 is meaningful for a class, so use rounded()).
     errTimeout: rounded(metric.error_breakdown?.timeout),
     errConnection: rounded(metric.error_breakdown?.connection),
@@ -491,6 +502,7 @@ export function mapArchiveSummarySamples(summaries: IntervalSummaryRecord[] | un
         p90: summary.p90_ms,
         p95: summary.p95_ms,
         p99: summary.p99_ms,
+        ...networkPhaseHistoryValues(summary),
         llmTtftP50Ms: roundedOptional(summary.llm?.summary?.p50_ttft_ms),
         llmTtftP95Ms: roundedOptional(summary.llm?.summary?.p95_ttft_ms),
         llmTtftP99Ms: roundedOptional(summary.llm?.summary?.p99_ttft_ms),

@@ -290,6 +290,9 @@ type ArchiveTransactionWaterfall struct {
 	// the only signal a reader has that the report's instance may be partial.
 	JoinMayDiffer        bool     `json:"join_may_differ,omitempty"`
 	JoinMayDifferReasons []string `json:"join_may_differ_reasons,omitempty"`
+	// TraceLinksUnavailable is set when the run's APM link settings could
+	// not be read, so no row carries trace links.
+	TraceLinksUnavailable bool `json:"trace_links_unavailable,omitempty"`
 }
 
 // ArchiveWaterfallRow is one row of a drill-down waterfall.
@@ -317,9 +320,15 @@ type ArchiveWaterfallRow struct {
 	Retried           bool                 `json:"retried,omitempty"`
 	Connection        string               `json:"connection,omitempty"` // new | reused | unknown
 	TraceID           string               `json:"trace_id,omitempty"`
-	VUserID           int                  `json:"vuser_id,omitempty"`
-	VUserLifetime     uint64               `json:"vuser_lifetime,string,omitempty"`
-	Iteration         int64                `json:"iteration,omitempty"`
+	// TraceLinks open TraceID in the run's APM providers: expanded per
+	// request from the test's validated trace link templates by the
+	// transaction drill-down only (the iteration waterfall, which reuses
+	// this row, leaves it empty), when the row has a trace id and a template
+	// exists.
+	TraceLinks    []ExemplarLink `json:"trace_links,omitempty"`
+	VUserID       int            `json:"vuser_id,omitempty"`
+	VUserLifetime uint64         `json:"vuser_lifetime,string,omitempty"`
+	Iteration     int64          `json:"iteration,omitempty"`
 }
 
 // ArchiveWaterfallRef names a transaction that encloses a request root.

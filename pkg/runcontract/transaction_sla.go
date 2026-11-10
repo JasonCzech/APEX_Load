@@ -42,6 +42,26 @@ var transactionSLAMetrics = map[string]struct{}{
 	"truncation_rate_pct":     {},
 }
 
+// transactionSLAPhases are the network phases a rule may judge; the names
+// match engine.NetworkPhases (runcontract does not import the engine).
+var transactionSLAPhases = map[string]struct{}{
+	"dns":      {},
+	"connect":  {},
+	"tls":      {},
+	"server":   {},
+	"download": {},
+}
+
+// transactionSLAPhaseMetrics are the duration metrics a phase rule may use.
+var transactionSLAPhaseMetrics = map[string]struct{}{
+	"average_duration_ms": {},
+	"min_duration_ms":     {},
+	"max_duration_ms":     {},
+	"p90_duration_ms":     {},
+	"p95_duration_ms":     {},
+	"p99_duration_ms":     {},
+}
+
 var transactionSLAComparators = map[string]struct{}{
 	"lt":  {},
 	"lte": {},
@@ -90,6 +110,14 @@ func ValidateTransactionSLARules(rules []TransactionSLARule) error {
 		} {
 			if ptr != nil && (math.IsNaN(*ptr) || math.IsInf(*ptr, 0) || *ptr <= 0) {
 				return fmt.Errorf("%s.%s must be a finite positive number", path, field)
+			}
+		}
+		if rule.Phase != "" {
+			if _, ok := transactionSLAPhases[rule.Phase]; !ok {
+				return fmt.Errorf("%s.phase must be dns, connect, tls, server or download", path)
+			}
+			if _, ok := transactionSLAPhaseMetrics[rule.Metric]; !ok {
+				return fmt.Errorf("%s.phase applies only to average_duration_ms, min_duration_ms, max_duration_ms, p90_duration_ms, p95_duration_ms or p99_duration_ms", path)
 			}
 		}
 		if rule.Severity != "" && rule.Severity != "fail" && rule.Severity != "warning" {

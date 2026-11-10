@@ -4,8 +4,8 @@ import type { ReportLens } from '../../appRouting'
 import type { IterationReplayTarget } from '../../types/iterationReplay'
 import type { RunArchiveAnatomyRequest, RunArchivePhaseStat, RunArchiveRepresentativeSample, RunArchiveTimeAnatomy, RunArchiveTransactionAnatomy } from '../../types/timeAnatomy'
 import PercentileQualityMark from '../PercentileQualityMark'
+import { Waterfall } from '../waterfall/Waterfall'
 import RepresentativeTransactionDrawer from './RepresentativeTransactionDrawer'
-import ReportPhaseBars from './ReportPhaseBars'
 import TailAttributionChart from './TailAttributionChart'
 import {
   AGGREGATE_STATISTICS,
@@ -26,7 +26,9 @@ import {
   formatCount,
   honestyNote,
   othersRoot,
+  phaseDefinitionsText,
   pickAnatomyTransaction,
+  presentPhaseKeys,
   reportPhaseRowId,
   representativeChipLabel,
   rowsHaveOnlyUnsplit,
@@ -41,6 +43,10 @@ import './TimeAnatomy.css'
 export const ANATOMY_STAT_STORAGE_KEY = 'apexload.report.anatomyStat'
 const PICKER_FILTER_THRESHOLD = 15
 const ROW_ID_PREFIX = 'rr-anatomy-row'
+// Aggregate rows are independent statistics placed at their median offsets: no session timeline, no idle time.
+const AGGREGATE_SCALE_LABELS = { waterfall: 'Median offsets' } as const
+const AGGREGATE_SORT_MODES = ['chronological', 'slowest', 'dominant'] as const
+const NO_SINKS: never[] = []
 
 interface Props {
   testId: string
@@ -183,6 +189,10 @@ export default function TransactionTimeAnatomy({ testId, anatomy, selectedName, 
     const others = othersRoot(entry, statistic)
     return others ? [...rows, others] : rows
   }, [entry, statistic])
+  const legendPhases = useMemo(() => presentPhaseKeys(roots), [roots])
+  // The selection before the click being handled: a click on the selected row clears it.
+  const selectedRowKeyRef = useRef(selectedRowKey)
+  selectedRowKeyRef.current = selectedRowKey
 
   const chooseStatistic = (next: AggregateStatistic) => {
     setStoredStatistic(next)
@@ -270,8 +280,31 @@ export default function TransactionTimeAnatomy({ testId, anatomy, selectedName, 
         </div>
         <p className="rr-anatomy-honesty">{honestyNote(entry, statistic)}</p>
         {rowsHaveOnlyUnsplit(entry) && <p className="rr-anatomy-callout">{UNSPLIT_ONLY_COPY}</p>}
-        <ReportPhaseBars roots={roots} spanMs={aggregateSpanMs(roots)} ariaLabel={`Aggregate waterfall for ${entry.name}`} rowIdPrefix={ROW_ID_PREFIX}
-          selectedId={selectedRowKey} onSelect={key => setSelectedRowKey(current => (current === key ? '' : key))} />
+        {legendPhases.some(key => ANATOMY_PHASE_DEFINITIONS[key]) && <p className="rr-anatomy-definitions">{phaseDefinitionsText(legendPhases, false)}</p>}
+        <Waterfall<RunArchiveAnatomyRequest>
+          // Another transaction compares other rows: start over (sort, zoom, hidden phases).
+          key={entry.name}
+          roots={roots}
+          spanMs={aggregateSpanMs(roots)}
+          ariaLabel={`Aggregate waterfall for ${entry.name}`}
+          rowIdPrefix={ROW_ID_PREFIX}
+          selectedId={selectedRowKey || null}
+          onSelect={node => setSelectedRowKey(node.id)}
+          onRowClick={node => { if (selectedRowKeyRef.current === node.id) setSelectedRowKey('') }}
+          // Enter on the selected row clears it, as a second click does.
+          onActivate={node => setSelectedRowKey(current => (current === node.id ? '' : node.id))}
+          sinks={NO_SINKS}
+          phaseLabels={ANATOMY_PHASE_LABELS}
+          legendPhases={legendPhases}
+          showIdleLegend={false}
+          criticalPath={false}
+          scaleLabels={AGGREGATE_SCALE_LABELS}
+          sortModes={AGGREGATE_SORT_MODES}
+          nameColumnLabel="Request"
+          tooltipClassName="rr-anatomy-tooltip"
+          className="rr-anatomy-waterfall"
+          emptyMessage="No requests were matched to this transaction."
+        />
         {selectedRow && <RowPane row={selectedRow} />}
       </div>}
 

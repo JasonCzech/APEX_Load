@@ -67,6 +67,8 @@ import {
   isLoadImpactGroupSeriesKey,
   isLoadImpactHeatmapChart,
   isLiveWaterfallChart,
+  isPanelChart,
+  isPhaseShareHeatmapChart,
   isLoadImpactPercentilesChart,
   isImportedDashboardChart,
   isOverlayMetricAvailable,
@@ -153,6 +155,7 @@ const LiveLLMChartSignals = lazy(() => import('./LiveLLMSignals').then(module =>
 // drawer load on first use, so they stay off the execution route's static
 // bundle (the 'test-execution' route budget in scripts/check-bundle-budget.mjs).
 const LiveWaterfallPanel = lazy(() => import('./LiveWaterfallPanel'))
+const PhaseShareHeatmap = lazy(() => import('./PhaseShareHeatmap'))
 const LiveExemplarDrawer = lazy(() => import('./LiveExemplarDrawer'))
 
 interface Props {
@@ -247,7 +250,7 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'imported', label: 'Dashboards' },
 ]
 
-const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'tx_live_waterfall', 'generator_impact', 'network_latency'])
+const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'tx_live_waterfall', 'tx_phase_share_heatmap', 'generator_impact', 'network_latency'])
 const llmChartIds = new Set(['llm_ttft', 'llm_tpot', 'llm_tokens'])
 const noTransactionNames: string[] = []
 // The graphs whose rows are the run total, its groups and its transactions.
@@ -1229,7 +1232,7 @@ export default function TestExecutionCharts({
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
   const chartDataFor = (chart: ChartConfig) => {
-    if (isStatTileChart(chart) || isLiveWaterfallChart(chart)) {
+    if (isStatTileChart(chart) || isPanelChart(chart)) {
       return []
     }
     if (isLoadImpactHeatmapChart(chart)) {
@@ -3040,6 +3043,45 @@ export default function TestExecutionCharts({
                 />
               )
             }
+            if (isPhaseShareHeatmapChart(chart)) {
+              const heatmapClassName = `${commandCenterSurface ? 'command-center-chart-card' : ''}`
+              const heatmapCardRef = (element: HTMLElement | null) => {
+                chartCardRefs.current[chart.id] = element
+              }
+              return (
+                <LazyLoadBoundary key={chart.id} className="chart-card lazy-load-error phase-share-card" title="The phase share heatmap could not be loaded.">
+                <Suspense fallback={(
+                  <section ref={heatmapCardRef} className={`chart-card phase-share-card ${heatmapClassName}`} data-chart-id={chart.id} aria-label={chart.title} aria-busy="true">
+                    <div className="chart-card-header"><div className="chart-title-wrap"><h3 className="chart-title">{chart.title}</h3></div></div>
+                    <p className="live-waterfall-copy">Loading the phase share heatmap…</p>
+                  </section>
+                )}>
+                <PhaseShareHeatmap
+                  cardRef={heatmapCardRef}
+                  dataChartId={chart.id}
+                  title={chart.title}
+                  points={granularBaseData}
+                  className={heatmapClassName}
+                  onContextMenu={event => openChartMenu(event, chart.id)}
+                  onMouseEnter={() => setHoveredChartId(chart.id)}
+                  onMouseLeave={() => handleChartMouseLeave(chart.id)}
+                  headerActions={(
+                    <button
+                      className="btn btn-sm btn-ghost chart-actions-button"
+                      type="button"
+                      aria-label={`${chart.title} actions`}
+                      aria-haspopup="menu"
+                      aria-expanded={chartMenu?.chartId === chart.id}
+                      onClick={event => openChartMenuFromButton(event, chart.id)}
+                    >
+                      Actions
+                    </button>
+                  )}
+                />
+                </Suspense>
+                </LazyLoadBoundary>
+              )
+            }
             if (isLiveWaterfallChart(chart)) {
               const liveWaterfallClassName = `${commandCenterSurface ? 'command-center-chart-card' : ''} ${expandedChart === chart.id ? 'expanded' : ''}`
               const liveWaterfallCardRef = (element: HTMLElement | null) => {
@@ -3788,7 +3830,7 @@ export default function TestExecutionCharts({
           <div className="chart-context-menu-title">{displayTitleForChart(contextChart)}</div>
           {/* The live waterfall has its own zoom (toolbar and overview) and is always
               full width: the shared time-axis Reset Zoom and Expand Graph would not act on it. */}
-          {!isLiveWaterfallChart(contextChart) && <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => void runChartAction(onResetZoom)}>Reset Zoom</button>}
+          {!isPanelChart(contextChart) && <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => void runChartAction(onResetZoom)}>Reset Zoom</button>}
           {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
             .filter(key => isOverlayMetricAvailable(contextChart, key))
             .map(key => (
@@ -3801,7 +3843,7 @@ export default function TestExecutionCharts({
               {responseTimeNetworkMode === 'application' ? 'Include Network Latency' : 'Remove Network Latency'}
             </button>
           )}
-          {!isLiveWaterfallChart(contextChart) && <button type="button" role="menuitem" onClick={() => void runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
+          {!isPanelChart(contextChart) && <button type="button" role="menuitem" onClick={() => void runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
             {expandedChart === contextChart.id ? 'Collapse Graph' : 'Expand Graph'}
           </button>}
           {isExemplarChart(contextChart) && (
@@ -3820,12 +3862,12 @@ export default function TestExecutionCharts({
               )
             }}>Show Trace Exemplars</button>
           )}
-          {!isLiveWaterfallChart(contextChart) && <>
+          {!isPanelChart(contextChart) && <>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => downloadChartSvgSnapshot(contextChart), 'Could not save the chart file')}>Download Snapshot</button>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => exportChartCsv(contextChart), 'Could not save the chart file')}>Export Graph Data</button>
           <button type="button" role="menuitem" onClick={() => void runChartAction(() => copyLatestValues(contextChart), 'Could not copy or save the latest chart values')}>Copy Latest Values</button>
           </>}
-          <button ref={isLiveWaterfallChart(contextChart) ? chartMenuFirstItemRef : undefined} type="button" role="menuitem" onClick={() => void runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
+          <button ref={isPanelChart(contextChart) ? chartMenuFirstItemRef : undefined} type="button" role="menuitem" onClick={() => void runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
         </div>
       )}
       {exemplarDrawer && runId && liveRetention && (

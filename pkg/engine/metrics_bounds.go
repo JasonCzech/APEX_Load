@@ -169,7 +169,7 @@ func durationDistributionBytes(digest *TDigestSnapshot, sketch *DurationSketchSn
 }
 
 func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
-	bytes := 1024
+	bytes := 1024 + snapshot.PhaseSketches.Bytes()
 	if documents := snapshot.BrowserDocuments; documents != nil {
 		bytes += 256 + len(documents.Metrics)*4096
 	}
@@ -180,6 +180,7 @@ func estimateMetricsSnapshotBytes(snapshot MetricsSnapshot) int {
 				continue
 			}
 			bytes += durationDistributionBytes(value.DurationDigest, value.DurationSketch)
+			bytes += value.PhaseSketches.Bytes()
 			bytes += len(value.Name) + len(value.DependencyType) + len(value.DependencyTarget) + len(value.LastErrorMessage)
 			for _, id := range value.CorrelationIDs {
 				bytes += len(id) + 16

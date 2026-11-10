@@ -414,6 +414,34 @@ export const TELEMETRY_BUDGET_DEFAULTS: Record<TelemetryBudgetKey, number> = {
   max_telemetry_browser_render_lag_ms: DEFAULT_SETTINGS.thresholds.max_telemetry_browser_render_lag_ms ?? 500,
 }
 
+/** Mirrors validatePhaseLatencyThresholds in pkg/api/phase_thresholds.go. */
+export const MAX_PHASE_LATENCY_RULES = 20
+const PHASE_LATENCY_PHASES = ['dns', 'connect', 'tls', 'server', 'download']
+const PHASE_LATENCY_PERCENTILES = [50, 90, 95, 99]
+
+export function validatePhaseLatencyRules(rules: DashboardSystemSettings['thresholds']['phase_latency']): Array<{ field: string; message: string }> {
+  const issues: Array<{ field: string; message: string }> = []
+  if (!rules?.length) return issues
+  if (rules.length > MAX_PHASE_LATENCY_RULES) {
+    issues.push({ field: 'thresholds.phase_latency', message: `Phase latency rules are limited to ${MAX_PHASE_LATENCY_RULES}.` })
+  }
+  const seen = new Set<string>()
+  rules.forEach((rule, index) => {
+    const field = `thresholds.phase_latency.${index}`
+    const name = `Phase rule ${index + 1}`
+    if (!PHASE_LATENCY_PHASES.includes(rule.phase)) issues.push({ field: `${field}.phase`, message: `${name}: choose a phase.` })
+    if (!PHASE_LATENCY_PERCENTILES.includes(rule.percentile)) issues.push({ field: `${field}.percentile`, message: `${name}: percentile must be P50, P90, P95 or P99.` })
+    if (typeof rule.max_ms !== 'number' || !Number.isFinite(rule.max_ms) || rule.max_ms <= 0) issues.push({ field: `${field}.max_ms`, message: `${name}: max latency must be greater than 0 ms.` })
+    if (rule.stop_consecutive_samples !== undefined && (!Number.isInteger(rule.stop_consecutive_samples) || rule.stop_consecutive_samples < 0)) {
+      issues.push({ field: `${field}.stop_consecutive_samples`, message: `${name}: stop samples must be an integer >= 0.` })
+    }
+    const key = `${rule.phase}:${rule.percentile}`
+    if (seen.has(key)) issues.push({ field: `${field}.phase`, message: `${name}: another rule already judges this phase and percentile.` })
+    seen.add(key)
+  })
+  return issues
+}
+
 export function validateSettings(settings: DashboardSystemSettings): string[] {
   return validateSettingsDetailed(settings).map(issue => issue.message)
 }
@@ -590,6 +618,7 @@ export function validateSettingsDetailed(settings: DashboardSystemSettings): Set
       push('thresholds', undefined, 'thresholds.p99_latency_stop_consecutive_samples', 'P99 stop samples requires Max Response Time (P99) to be set.')
     }
   }
+  validatePhaseLatencyRules(settings.thresholds.phase_latency).forEach(issue => push('thresholds', undefined, issue.field, issue.message))
   if (settings.thresholds.max_avg_server_processing_ms !== undefined && settings.thresholds.max_avg_server_processing_ms <= 0) {
     push('thresholds', undefined, 'thresholds.max_avg_server_processing_ms', 'Max average server processing must be greater than 0 ms.')
   }
