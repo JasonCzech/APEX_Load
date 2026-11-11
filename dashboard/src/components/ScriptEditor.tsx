@@ -1259,21 +1259,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
   const outlineModel = useMemo(() => buildOutlineModel(scriptPhaseActionRows, { showMarkers: outlineShowMarkers }), [outlineShowMarkers, scriptPhaseActionRows])
   const outlineNaturalWidthRef = useRef<(() => number) | null>(null)
+  const [actionListHideMarkers, setActionListHideMarkers] = useState(false)
+  const hasSourceTransactionMarkers = useMemo(
+    () => scriptPhaseActionRows.some(row => row.action.type === 'source_transaction'),
+    [scriptPhaseActionRows],
+  )
+  useEffect(() => {
+    if (!hasSourceTransactionMarkers && actionListHideMarkers) setActionListHideMarkers(false)
+  }, [actionListHideMarkers, hasSourceTransactionMarkers])
+  const effectiveActionListHideMarkers = actionListHideMarkers && hasSourceTransactionMarkers
   // The outline filter narrows the rendered rows by name/type/target, and by the
   // names the outline shows (Class.method, a folded sub-transaction's name), so
   // the action list and the outline find the same steps. It does not mutate the
   // script; rows keep their original actionIndex so every row handler
   // (select/move/breakpoint) stays correct over the filtered view.
   const filteredActionRows = useMemo(() => {
+    const baseRows = effectiveActionListHideMarkers
+      ? scriptPhaseActionRows.filter(row => row.action.type !== 'source_transaction')
+      : scriptPhaseActionRows
     const needle = outlineActionFilter.trim().toLowerCase()
-    if (!needle) return scriptPhaseActionRows
-    const byFields = new Set(filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter))
-    return scriptPhaseActionRows.filter(row => {
+    if (!needle) return baseRows
+    const byFields = new Set(filterScriptPhaseActionRows(baseRows, outlineActionFilter))
+    return baseRows.filter(row => {
       if (byFields.has(row)) return true
       const step = outlineModel.stepsByKey.get(debugSequenceKey(row.phase, row.actionIndex))
       return Boolean(step && [step.label, step.measuredAs?.name].some(text => text?.toLowerCase().includes(needle)))
     })
-  }, [outlineActionFilter, outlineModel, scriptPhaseActionRows])
+  }, [effectiveActionListHideMarkers, outlineActionFilter, outlineModel, scriptPhaseActionRows])
   // Per-row transaction band membership (left rail bracketing a transaction's rows).
   const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
   // Container actions (http_sequence / control_*) the operator has expanded in the
@@ -8217,13 +8229,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         onChange={event => setOutlineActionFilter(event.target.value)}
                         aria-label="Filter the action list by name, type, or target"
                       />
-                      {outlineActionFilter.trim() && (
+                      {hasSourceTransactionMarkers && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          aria-pressed={effectiveActionListHideMarkers}
+                          data-testid="action-list-hide-markers"
+                          onClick={() => setActionListHideMarkers(prev => !prev)}
+                        >
+                          Hide markers
+                        </button>
+                      )}
+                      {(outlineActionFilter.trim() || effectiveActionListHideMarkers) && (
                         <span className="action-list-filter-count" aria-live="polite">{filteredActionRows.length}/{scriptPhaseActionRows.length}</span>
                       )}
                     </div>
                     {filteredActionRows.length === 0 ? (
                       <div className="action-list">
-                        <div className="action-empty">No actions match “{outlineActionFilter.trim()}”.</div>
+                        <div className="action-empty">{outlineActionFilter.trim() ? `No actions match “${outlineActionFilter.trim()}”.` : 'No non-marker actions.'}</div>
                       </div>
                     ) : (
                     <div className="action-table">
@@ -8356,6 +8379,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         const controlAction = isControlAction(a)
                         const rowIssues = actionIssueBuckets[phase]?.[i] || []
                         const rowBlockKey = debugSequenceKey(phase, i)
+                        const outlineStep = outlineModel.stepsByKey.get(rowBlockKey)
+                        const rawStepName = a.name || `${phaseLabel} ${i + 1}`
+                        const rowDisplayLabel = outlineStep?.label && outlineStep.label !== rawStepName
+                          ? `${outlineStep.label} · ${actionRowLabel(a)}`
+                          : actionRowLabel(a)
                         const phaseActionCount = scriptActionsForPhase(script, phase).length
                         const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
                         const rowActive = authorCodeFocus
@@ -8407,22 +8435,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                               <TooltipButton
                                 type="button"
                                 className="action-cell action-name-text action-name-toggle"
-                                title={actionRowLabel(a)}
+                                title={rowDisplayLabel}
                                 aria-label={`${containerExpanded ? 'Collapse' : 'Expand'} ${actionRowLabel(a)}`}
                                 aria-expanded={containerExpanded}
                                 onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
                               >
-                                {actionRowLabel(a)}
+                                {rowDisplayLabel}
                               </TooltipButton>
                             ) : (
-                              <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
+                              <span className="action-cell action-name-text" title={rowDisplayLabel}>{rowDisplayLabel}</span>
                             )}
                             <div className="action-cell action-cell-txn">
-                              {actionTransactionName(a) && (
+                              {actionTransactionName(a) ? (
                                 <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>
                                   ⏱ {actionTransactionName(a)}
                                 </span>
-                              )}
+                              ) : outlineStep?.measuredAs ? (
+                                <span className="action-txn-pill" title={`Sub-transaction: ${outlineStep.measuredAs.name}`}>
+                                  ⏱ {splitMeasureName(outlineStep.measuredAs.name).child || outlineStep.measuredAs.name}
+                                </span>
+                              ) : null}
                               {txnMarker && (
                                 <span
                                   className={`action-txn-marker ${txnMarker.role}`}

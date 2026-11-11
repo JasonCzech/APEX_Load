@@ -12,9 +12,11 @@ import { RuntimeFieldEvidence } from './RuntimeFieldEvidence'
 import { RUNTIME_WORKSPACE_CATEGORIES, RUNTIME_SEARCH_TERMS, runtimeTimingIssues, effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
-import { useState, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 
+import type { TransactionSLARule } from '../types/goals'
 import type { ScriptActionDefinition, ScriptDefinition, ScriptConfig } from '../types/scripts'
+import { validateGoalConfig } from './goalConfigValidation'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import { JavaEnvSettingsFields } from './JavaEnvSettingsFields'
@@ -43,14 +45,22 @@ import {
 import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 import {
   HTTP_TRANSPORT_TAB_OPTIONS,
+  MAX_SCRIPT_TRANSACTION_SLA_RULES,
   SCRIPT_PROTOCOL_OPTIONS,
+  SCRIPT_TRANSACTION_SLA_COMPARATOR_OPTIONS,
+  SCRIPT_TRANSACTION_SLA_DURATION_METRICS,
+  SCRIPT_TRANSACTION_SLA_NON_PHASE_METRICS,
+  SCRIPT_TRANSACTION_SLA_PHASE_OPTIONS,
+  SCRIPT_TRANSACTION_SLA_SEVERITY_OPTIONS,
   buildScriptRuntimeSummary,
+  collectScriptTransactionNames,
   formatBrowserEmulationSummary,
   formatLineList,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
   httpTransportTabIsAvailable,
+  isTransactionSLADurationMetric,
   parseLineList,
   readImportedRuntimeFiles,
   readImportedRuntimeSettingDispositions,
@@ -312,9 +322,48 @@ export function ScriptRuntimeSettingsView({
     }
   }
 
+  const transactionDatalistId = useId()
+  const transactionRules = script.goal_config?.transaction_rules || []
+  const knownTransactionNames = collectScriptTransactionNames(script)
+  const commitTransactionRules = (nextRules: TransactionSLARule[]) => {
+    updateField('goal_config', {
+      ...(script.goal_config || {}),
+      transaction_rules: nextRules.length > 0 ? nextRules : undefined,
+    })
+  }
+  const addTransactionRule = () => {
+    if (transactionRules.length >= MAX_SCRIPT_TRANSACTION_SLA_RULES) return
+    const nextRule: TransactionSLARule = {
+      transaction: knownTransactionNames[0] || 'Checkout',
+      metric: 'p95_duration_ms',
+      comparator: 'lte',
+      threshold: 500,
+      severity: 'fail',
+    }
+    commitTransactionRules([...transactionRules, nextRule])
+  }
+  const updateTransactionRule = (index: number, patch: Partial<TransactionSLARule>) => {
+    const nextRules = transactionRules.map((rule, ruleIndex) => {
+      if (ruleIndex !== index) return rule
+      const next: TransactionSLARule = { ...rule, ...patch }
+      if (Object.prototype.hasOwnProperty.call(patch, 'phase') && !patch.phase) {
+        delete next.phase
+      }
+      return next
+    })
+    commitTransactionRules(nextRules)
+  }
+  const removeTransactionRule = (index: number) => {
+    commitTransactionRules(transactionRules.filter((_, ruleIndex) => ruleIndex !== index))
+  }
+  const transactionSLAValidationError = transactionRules.length > 0
+    ? validateGoalConfig({ ...(script.goal_config || {}), transaction_rules: transactionRules })
+    : null
+
   const categoryModified = (category: typeof RUNTIME_WORKSPACE_CATEGORIES[number]) => category.id === 'imported_source'
     ? ['block_scheduling', 'action_sequence', 'blocks'].some(field => JSON.stringify(script.config.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]) !== JSON.stringify(baselineConfig?.run_logic?.[field as keyof NonNullable<ScriptConfig['run_logic']>]))
     : category.fields.some(field => JSON.stringify(script.config[field]) !== JSON.stringify(baselineConfig?.[field]))
+      || (category.id === 'errors' && transactionRules.length > 0)
   const visibleCategories = RUNTIME_WORKSPACE_CATEGORIES.filter(category => {
     const terms = `${category.label} ${category.group} ${category.fields.join(' ')} ${RUNTIME_SEARCH_TERMS[category.id] || ''}`.toLowerCase()
     return runtimeSettingsSectionIsAvailable(category.id, script.protocol) && (category.id !== 'imported_source' || hasImportedRuntimeFiles || hasPreservedRunOrder) && search.toLowerCase().trim().split(/\s+/).every(term => terms.includes(term)) && (!modifiedOnly || categoryModified(category))
@@ -737,6 +786,127 @@ export function ScriptRuntimeSettingsView({
             </>
           )}
         </div>
+        <fieldset data-testid="script-transaction-sla-rules">
+          <legend>Transaction &amp; phase SLA rules</legend>
+          <p>Attach pass/fail or warning thresholds to named business transactions across all phases or an individual network phase (DNS, Connect, TLS, Server, or Download).</p>
+          <datalist id={transactionDatalistId}>
+            {knownTransactionNames.map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </datalist>
+          {transactionSLAValidationError && (
+            <p className="form-error" role="alert">{transactionSLAValidationError}</p>
+          )}
+          {transactionRules.map((rule, index) => {
+            const standardMetricOptions = rule.phase
+              ? SCRIPT_TRANSACTION_SLA_DURATION_METRICS
+              : [...SCRIPT_TRANSACTION_SLA_DURATION_METRICS, ...SCRIPT_TRANSACTION_SLA_NON_PHASE_METRICS]
+            const hasCustomMetric = Boolean(rule.metric) && !standardMetricOptions.some(option => option.value === rule.metric)
+            return (
+              <div key={index} className="form-grid">
+                <label>
+                  <span>Transaction</span>
+                  <input
+                    aria-label={`Transaction SLA rule ${index + 1} transaction`}
+                    list={transactionDatalistId}
+                    value={rule.transaction}
+                    placeholder="Checkout"
+                    onChange={e => updateTransactionRule(index, { transaction: e.target.value })}
+                  />
+                </label>
+                <label>
+                  <span>Phase</span>
+                  <select
+                    aria-label={`Transaction SLA rule ${index + 1} phase`}
+                    value={rule.phase || ''}
+                    onChange={e => {
+                      const nextPhase = e.target.value as '' | NonNullable<TransactionSLARule['phase']>
+                      const nextMetric = nextPhase && !isTransactionSLADurationMetric(rule.metric)
+                        ? 'p95_duration_ms'
+                        : rule.metric
+                      updateTransactionRule(index, {
+                        phase: nextPhase || undefined,
+                        metric: nextMetric,
+                      })
+                    }}
+                  >
+                    {SCRIPT_TRANSACTION_SLA_PHASE_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Metric</span>
+                  <select
+                    aria-label={`Transaction SLA rule ${index + 1} metric`}
+                    value={rule.metric}
+                    onChange={e => updateTransactionRule(index, { metric: e.target.value as TransactionSLARule['metric'] })}
+                  >
+                    {standardMetricOptions.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                    {hasCustomMetric && <option value={rule.metric}>{rule.metric}</option>}
+                  </select>
+                </label>
+                <label>
+                  <span>Comparator</span>
+                  <select
+                    aria-label={`Transaction SLA rule ${index + 1} comparator`}
+                    value={rule.comparator}
+                    onChange={e => updateTransactionRule(index, { comparator: e.target.value as TransactionSLARule['comparator'] })}
+                  >
+                    {SCRIPT_TRANSACTION_SLA_COMPARATOR_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Threshold</span>
+                  <input
+                    aria-label={`Transaction SLA rule ${index + 1} threshold`}
+                    type="number"
+                    min={0}
+                    step="any"
+                    value={Number.isFinite(rule.threshold) ? rule.threshold : ''}
+                    onChange={e => updateTransactionRule(index, {
+                      threshold: e.target.value.trim() === '' ? Number.NaN : Number(e.target.value),
+                    })}
+                  />
+                </label>
+                <label>
+                  <span>Severity</span>
+                  <select
+                    aria-label={`Transaction SLA rule ${index + 1} severity`}
+                    value={rule.severity || 'fail'}
+                    onChange={e => updateTransactionRule(index, { severity: e.target.value as NonNullable<TransactionSLARule['severity']> })}
+                  >
+                    {SCRIPT_TRANSACTION_SLA_SEVERITY_OPTIONS.map(option => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    aria-label={`Remove transaction SLA rule ${index + 1}`}
+                    onClick={() => removeTransactionRule(index)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={transactionRules.length >= MAX_SCRIPT_TRANSACTION_SLA_RULES}
+            onClick={addTransactionRule}
+          >
+            Add transaction SLA rule
+          </button>
+        </fieldset>
       </div>
     )}
   </div>

@@ -244,20 +244,226 @@ function enumCompletions(context: ActionContext, state: EditorState, key: string
   return field.enum.map(value => ({ label: value, type: 'constant', info: field.doc }))
 }
 
+const GOAL_CONFIG_FIELDS: ReadonlyArray<{ name: string; kind: string; doc?: string }> = [
+  { name: 'transaction_rules', kind: 'array', doc: 'Per-transaction and per-phase SLA rules.' },
+  { name: 'target_average_tps', kind: 'float', doc: 'Target average transactions per second.' },
+  { name: 'p95_latency_ms', kind: 'float', doc: 'Maximum P95 latency in milliseconds.' },
+  { name: 'transaction_response_time_sla_ms', kind: 'float', doc: 'Transaction response-time SLA in milliseconds.' },
+  { name: 'max_error_pct', kind: 'float', doc: 'Maximum error percentage.' },
+  { name: 'max_avg_server_processing_ms', kind: 'float', doc: 'Maximum average server processing time in milliseconds.' },
+  { name: 'max_avg_transfer_ms', kind: 'float', doc: 'Maximum average transfer time in milliseconds.' },
+  { name: 'max_error_count', kind: 'int', doc: 'Maximum error count.' },
+  { name: 'min_vusers', kind: 'int', doc: 'Minimum virtual users.' },
+  { name: 'max_vusers', kind: 'int', doc: 'Maximum virtual users.' },
+  { name: 'stop_on_sla_breach', kind: 'bool', doc: 'Stop the run when an SLA threshold is breached.' },
+  { name: 'stop_on_max_errors', kind: 'bool', doc: 'Stop the run when max_error_count is reached.' },
+  { name: 'sla_breach_window', kind: 'string', doc: 'Sustained breach window duration before stopping.' },
+]
+
+const TRANSACTION_SLA_RULE_FIELDS: ReadonlyArray<{ name: string; kind: string; required?: boolean; doc?: string }> = [
+  { name: 'transaction', kind: 'string', required: true, doc: 'Exact transaction or action name.' },
+  { name: 'phase', kind: 'enum', doc: 'Network phase to judge (dns, connect, tls, server, download).' },
+  { name: 'metric', kind: 'enum', required: true, doc: 'SLA metric evaluated for the transaction or phase.' },
+  { name: 'comparator', kind: 'enum', required: true, doc: 'Comparison operator (lt, lte, gt, gte, eq, neq).' },
+  { name: 'threshold', kind: 'float', required: true, doc: 'Non-negative numeric threshold.' },
+  { name: 'severity', kind: 'enum', doc: 'Breach outcome severity (fail or warning).' },
+  { name: 'population', kind: 'enum', doc: 'Observation population (transaction or action).' },
+  { name: 'protocol', kind: 'string', doc: 'Optional protocol filter.' },
+  { name: 'group', kind: 'string', doc: 'Optional workload group filter.' },
+  { name: 'iterations', kind: 'enum', doc: 'Browser iterations judged (warm, all, cold).' },
+]
+
+const TRANSACTION_SLA_PHASES = ['dns', 'connect', 'tls', 'server', 'download'] as const
+const TRANSACTION_SLA_PHASE_METRICS = [
+  'average_duration_ms',
+  'min_duration_ms',
+  'max_duration_ms',
+  'p90_duration_ms',
+  'p95_duration_ms',
+  'p99_duration_ms',
+] as const
+const TRANSACTION_SLA_METRICS = [
+  'average_duration_ms',
+  'bytes_received',
+  'bytes_sent',
+  'error_count',
+  'error_rate_pct',
+  'goodput_pct',
+  'max_acknowledgement_ms',
+  'max_consumer_lag_ms',
+  'max_consumer_offset_lag',
+  'max_duration_ms',
+  'min_duration_ms',
+  'minimum_count',
+  'output_tokens_per_sec',
+  'p50_ttft_ms',
+  'p90_duration_ms',
+  'p90_tpot_ms',
+  'p90_ttft_ms',
+  'p95_duration_ms',
+  'p95_itl_ms',
+  'p95_tpot_ms',
+  'p95_ttft_ms',
+  'p99_duration_ms',
+  'p99_itl_ms',
+  'p99_tpot_ms',
+  'p99_ttft_ms',
+  'throttle_rate_pct',
+  'tps',
+  'truncation_rate_pct',
+] as const
+const TRANSACTION_SLA_COMPARATORS = ['lt', 'lte', 'gt', 'gte', 'eq', 'neq'] as const
+const TRANSACTION_SLA_SEVERITIES = ['fail', 'warning'] as const
+const TRANSACTION_SLA_POPULATIONS = ['transaction', 'action'] as const
+const TRANSACTION_SLA_ITERATIONS = ['warm', 'all', 'cold'] as const
+
+function scriptRelativePath(state: EditorState, node: SyntaxNode): JsonPathSegment[] {
+  const path = jsonPathForNode(state, node)
+  return path[0] === 'script' ? path.slice(1) : path
+}
+
+function isGoalConfigObject(state: EditorState, objectNode: SyntaxNode): boolean {
+  const path = scriptRelativePath(state, objectNode)
+  return path.length === 1 && path[0] === 'goal_config'
+}
+
+function isTransactionRuleObject(state: EditorState, objectNode: SyntaxNode): boolean {
+  const path = scriptRelativePath(state, objectNode)
+  return path.length === 3 && path[0] === 'goal_config' && path[1] === 'transaction_rules' && typeof path[2] === 'number'
+}
+
+function nearestEnclosingObject(node: SyntaxNode): SyntaxNode | null {
+  for (let current: SyntaxNode | null = node; current; current = current.parent) {
+    if (current.name === 'Object') return current
+  }
+  return null
+}
+
+function goalObjectFieldCompletions(state: EditorState, objectNode: SyntaxNode, asKey: boolean): Completion[] {
+  if (isGoalConfigObject(state, objectNode)) {
+    return GOAL_CONFIG_FIELDS.map(field => ({
+      label: field.name,
+      type: 'property',
+      detail: field.kind,
+      info: field.doc,
+      apply: asKey ? `"${field.name}": ` : field.name,
+    }))
+  }
+  if (isTransactionRuleObject(state, objectNode)) {
+    return TRANSACTION_SLA_RULE_FIELDS.map(field => ({
+      label: field.name,
+      type: 'property',
+      detail: field.required ? `${field.kind}, required` : field.kind,
+      info: field.doc,
+      apply: asKey ? `"${field.name}": ` : field.name,
+      boost: field.required ? 2 : 0,
+    }))
+  }
+  return []
+}
+
+function discoverTransactionNames(state: EditorState): string[] {
+  const root = scriptRootNode(state)
+  if (!root) return []
+  const names = new Set<string>()
+  const addName = (raw: string) => {
+    const trimmed = raw.trim()
+    if (trimmed) names.add(trimmed)
+  }
+  const visit = (node: SyntaxNode) => {
+    if (node.name === 'Object') {
+      const metadataNode = objectPropertyValue(state, node, 'metadata')
+      if (metadataNode?.name === 'Object') {
+        for (const key of ['transaction', 'source_transaction', 'loadrunner_transaction']) {
+          const val = objectPropertyValue(state, metadataNode, key)
+          if (val?.name === 'String') addName(stringContent(state, val))
+        }
+      }
+      const sourceTxProp = objectPropertyValue(state, node, 'source_transaction')
+      if (sourceTxProp?.name === 'String') {
+        addName(stringContent(state, sourceTxProp))
+      }
+      const typeNode = objectPropertyValue(state, node, 'type')
+      const typeName = typeNode?.name === 'String' ? stringContent(state, typeNode).trim().toLowerCase() : ''
+      if (typeName === 'source_transaction' || typeName === 'loadrunner_transaction') {
+        let markerName = ''
+        const paramsNode = objectPropertyValue(state, node, 'params')
+        if (paramsNode?.name === 'Object') {
+          const argsNode = objectPropertyValue(state, paramsNode, 'args')
+          if (argsNode?.name === 'Array') {
+            for (let child = argsNode.firstChild; child; child = child.nextSibling) {
+              if (!isJsonValueNode(child)) continue
+              if (child.name === 'String') markerName = stringContent(state, child).trim()
+              break
+            }
+          }
+          if (!markerName) {
+            for (const key of ['transaction', 'name']) {
+              const val = objectPropertyValue(state, paramsNode, key)
+              if (val?.name === 'String' && stringContent(state, val).trim()) {
+                markerName = stringContent(state, val).trim()
+                break
+              }
+            }
+          }
+        }
+        if (!markerName) {
+          const nameNode = objectPropertyValue(state, node, 'name')
+          if (nameNode?.name === 'String') markerName = stringContent(state, nameNode).trim()
+        }
+        if (markerName) addName(markerName)
+      }
+    }
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      visit(child)
+    }
+  }
+  visit(root)
+  return [...names]
+}
+
+function transactionRuleValueCompletions(state: EditorState, ruleObject: SyntaxNode, key: string): Completion[] {
+  switch (key) {
+    case 'phase':
+      return TRANSACTION_SLA_PHASES.map(value => ({ label: value, type: 'constant' }))
+    case 'metric': {
+      const phaseNode = objectPropertyValue(state, ruleObject, 'phase')
+      const hasPhase = phaseNode?.name === 'String' && stringContent(state, phaseNode).trim() !== ''
+      const metrics = hasPhase ? TRANSACTION_SLA_PHASE_METRICS : TRANSACTION_SLA_METRICS
+      return metrics.map(value => ({ label: value, type: 'constant' }))
+    }
+    case 'comparator':
+      return TRANSACTION_SLA_COMPARATORS.map(value => ({ label: value, type: 'constant' }))
+    case 'severity':
+      return TRANSACTION_SLA_SEVERITIES.map(value => ({ label: value, type: 'constant' }))
+    case 'population':
+      return TRANSACTION_SLA_POPULATIONS.map(value => ({ label: value, type: 'constant' }))
+    case 'iterations':
+      return TRANSACTION_SLA_ITERATIONS.map(value => ({ label: value, type: 'constant' }))
+    case 'transaction':
+      return discoverTransactionNames(state).map(value => ({ label: value, type: 'constant' }))
+    default:
+      return []
+  }
+}
+
 /** Completion source for the script JSON editor. Exported for tests. */
 export function dslCompletionSource(context: CompletionContext): CompletionResult | null {
   const state = context.state
   const node = syntaxTree(state).resolveInner(context.pos, -1)
 
-  // Value position inside a string: "type": "..." / enum fields / root protocol.
+  // Value position inside a string: "type": "..." / enum fields / root protocol / goal_config.transaction_rules.
   if (node.name === 'String' && node.parent?.name === 'Property') {
     const nameNode = node.parent.firstChild
     const valueNode = propertyValueNode(node.parent)
     if (nameNode?.name === 'PropertyName' && valueNode?.from === node.from && valueNode.to === node.to) {
       const key = stringContent(state, nameNode)
       let options: Completion[] = []
+      const objectNode = node.parent.parent
       const actionContext = enclosingActionContext(state, node)
-      if (key === 'type' && actionContext && !actionContext.inParams) {
+      if (objectNode?.name === 'Object' && isTransactionRuleObject(state, objectNode)) {
+        options = transactionRuleValueCompletions(state, objectNode, key)
+      } else if (key === 'type' && actionContext && !actionContext.inParams) {
         options = actionTypeCompletions(state)
       } else if (key === 'protocol' && jsonPathForNode(state, node).filter(segment => segment !== 'script').length === 1) {
         const catalog = getCachedDslActionCatalog()
@@ -270,8 +476,15 @@ export function dslCompletionSource(context: CompletionContext): CompletionResul
     }
   }
 
-  // Key position inside an action (or its params) object.
+  // Key position inside an action (or its params) or goal_config object.
   if (node.name === 'PropertyName') {
+    const objectNode = nearestEnclosingObject(node)
+    if (objectNode) {
+      const goalOptions = goalObjectFieldCompletions(state, objectNode, false)
+      if (goalOptions.length) {
+        return { from: node.from + 1, to: node.to > node.from + 1 && state.sliceDoc(node.to - 1, node.to) === '"' ? node.to - 1 : context.pos, options: goalOptions }
+      }
+    }
     const actionContext = enclosingActionContext(state, node)
     if (!actionContext) return null
     const options = actionFieldCompletions(actionContext, false)
@@ -285,6 +498,10 @@ export function dslCompletionSource(context: CompletionContext): CompletionResul
     if (!objectNode || objectNode.name !== 'Object') return null
     const match = context.matchBefore(/[\w.]*$/)
     if (!match || (match.from === match.to && !context.explicit)) return null
+    const goalOptions = goalObjectFieldCompletions(state, objectNode, true)
+    if (goalOptions.length) {
+      return { from: match.from, options: goalOptions }
+    }
     const actionContext = enclosingActionContext(state, objectNode)
     if (!actionContext) return null
     const options = actionFieldCompletions(actionContext, true)

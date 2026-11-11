@@ -10983,27 +10983,85 @@
       "additionalProperties": false,
       "properties": {
         "comparator": {
+          "enum": [
+            "lt",
+            "lte",
+            "gt",
+            "gte",
+            "eq",
+            "neq"
+          ],
           "type": "string"
         },
         "group": {
           "type": "string"
         },
         "iterations": {
+          "enum": [
+            "warm",
+            "all",
+            "cold"
+          ],
           "type": "string"
         },
         "metric": {
+          "enum": [
+            "average_duration_ms",
+            "bytes_received",
+            "bytes_sent",
+            "error_count",
+            "error_rate_pct",
+            "goodput_pct",
+            "max_acknowledgement_ms",
+            "max_consumer_lag_ms",
+            "max_consumer_offset_lag",
+            "max_duration_ms",
+            "min_duration_ms",
+            "minimum_count",
+            "output_tokens_per_sec",
+            "p50_ttft_ms",
+            "p90_duration_ms",
+            "p90_tpot_ms",
+            "p90_ttft_ms",
+            "p95_duration_ms",
+            "p95_itl_ms",
+            "p95_tpot_ms",
+            "p95_ttft_ms",
+            "p99_duration_ms",
+            "p99_itl_ms",
+            "p99_tpot_ms",
+            "p99_ttft_ms",
+            "throttle_rate_pct",
+            "tps",
+            "truncation_rate_pct"
+          ],
           "type": "string"
         },
         "phase": {
+          "enum": [
+            "dns",
+            "connect",
+            "tls",
+            "server",
+            "download"
+          ],
           "type": "string"
         },
         "population": {
+          "enum": [
+            "transaction",
+            "action"
+          ],
           "type": "string"
         },
         "protocol": {
           "type": "string"
         },
         "severity": {
+          "enum": [
+            "fail",
+            "warning"
+          ],
           "type": "string"
         },
         "threshold": {
@@ -11013,6 +11071,12 @@
           "type": "string"
         }
       },
+      "required": [
+        "transaction",
+        "metric",
+        "comparator",
+        "threshold"
+      ],
       "type": "object"
     },
     "WaitCondition": {

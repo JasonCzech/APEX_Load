@@ -232,6 +232,151 @@ describe('dslCompletionSource', () => {
   it('returns null without a catalog', () => {
     expect(completionAt(browserScript, '"type": "browser_cl')).toBeNull()
   })
+
+  it('completes goal_config keys in PropertyName and bare key positions', () => {
+    const doc = `{
+      "name": "sla-demo",
+      "protocol": "http",
+      "goal_config": {
+        "trans": []
+      },
+      "actions": []
+    }`
+    const propResult = completionAt(doc, '"trans')
+    expect(propResult).not.toBeNull()
+    expect(propResult!.options.map(option => option.label)).toEqual([
+      'transaction_rules',
+      'target_average_tps',
+      'p95_latency_ms',
+      'transaction_response_time_sla_ms',
+      'max_error_pct',
+      'max_avg_server_processing_ms',
+      'max_avg_transfer_ms',
+      'max_error_count',
+      'min_vusers',
+      'max_vusers',
+      'stop_on_sla_breach',
+      'stop_on_max_errors',
+      'sla_breach_window',
+    ])
+
+    const bareDoc = `{"name":"sla-demo","protocol":"http","goal_config":{stop},"actions":[]}`
+    const bareResult = completionAt(bareDoc, '{stop')
+    expect(bareResult).not.toBeNull()
+    expect(bareResult!.options.find(option => option.label === 'stop_on_sla_breach')?.apply).toBe('"stop_on_sla_breach": ')
+  })
+
+  it('completes goal_config.transaction_rules item keys and enum values (including phase-filtered metrics)', () => {
+    const docWithoutPhase = `{
+      "name": "sla-demo",
+      "protocol": "http",
+      "goal_config": {
+        "transaction_rules": [
+          {
+            "transaction": "Checkout",
+            "metric": "p95",
+            "comparator": "lt",
+            "severity": "fa",
+            "population": "tr",
+            "iterations": "wa",
+            "threshold": 250
+          }
+        ]
+      },
+      "actions": []
+    }`
+    const keyResult = completionAt(docWithoutPhase, '"comparator')
+    expect(keyResult?.options.map(option => option.label)).toEqual([
+      'transaction',
+      'phase',
+      'metric',
+      'comparator',
+      'threshold',
+      'severity',
+      'population',
+      'protocol',
+      'group',
+      'iterations',
+    ])
+
+    const allMetrics = completionAt(docWithoutPhase, '"metric": "p95')?.options.map(option => option.label) ?? []
+    expect(allMetrics).toContain('p95_duration_ms')
+    expect(allMetrics).toContain('error_rate_pct')
+    expect(allMetrics).toContain('tps')
+    expect(allMetrics).toHaveLength(28)
+
+    expect(completionAt(docWithoutPhase, '"comparator": "lt')?.options.map(option => option.label)).toEqual([
+      'lt', 'lte', 'gt', 'gte', 'eq', 'neq',
+    ])
+    expect(completionAt(docWithoutPhase, '"severity": "fa')?.options.map(option => option.label)).toEqual([
+      'fail', 'warning',
+    ])
+    expect(completionAt(docWithoutPhase, '"population": "tr')?.options.map(option => option.label)).toEqual([
+      'transaction', 'action',
+    ])
+    expect(completionAt(docWithoutPhase, '"iterations": "wa')?.options.map(option => option.label)).toEqual([
+      'warm', 'all', 'cold',
+    ])
+
+    const docWithPhase = `{
+      "script": {
+        "name": "sla-demo",
+        "protocol": "http",
+        "goal_config": {
+          "transaction_rules": [
+            {
+              "transaction": "Checkout",
+              "phase": "connect",
+              "metric": "p95",
+              "comparator": "lte",
+              "threshold": 150
+            }
+          ]
+        },
+        "actions": []
+      }
+    }`
+    expect(completionAt(docWithPhase, '"phase": "connect')?.options.map(option => option.label)).toEqual([
+      'dns', 'connect', 'tls', 'server', 'download',
+    ])
+    expect(completionAt(docWithPhase, '"metric": "p95')?.options.map(option => option.label)).toEqual([
+      'average_duration_ms',
+      'min_duration_ms',
+      'max_duration_ms',
+      'p90_duration_ms',
+      'p95_duration_ms',
+      'p99_duration_ms',
+    ])
+  })
+
+  it('completes transaction names discovered from metadata.transaction and source_transaction in the current document', () => {
+    const doc = `{
+      "name": "tx-discovery",
+      "protocol": "http",
+      "goal_config": {
+        "transaction_rules": [
+          { "transaction": "Ch", "metric": "p95_duration_ms", "comparator": "lte", "threshold": 500 }
+        ]
+      },
+      "init": [
+        { "name": "Login step", "type": "POST", "target": "/login", "metadata": { "transaction": "Sign In" } }
+      ],
+      "actions": [
+        { "name": "Start Search", "type": "source_transaction", "params": { "function": "lr_start_transaction", "args": ["Catalog Search"] } },
+        { "name": "Browse step", "type": "GET", "target": "/items", "metadata": { "source_transaction": "Browse Items" } },
+        { "name": "End Search", "type": "source_transaction", "params": { "function": "lr_end_transaction", "args": ["Catalog Search", "LR_AUTO"] } },
+        { "name": "Place Order", "type": "source_transaction", "params": { "function": "lr_start_transaction" } }
+      ]
+    }`
+    const result = completionAt(doc, '"transaction": "Ch')
+    expect(result).not.toBeNull()
+    expect(result!.options.map(option => option.label)).toEqual([
+      'Sign In',
+      'Catalog Search',
+      'Browse Items',
+      'Place Order',
+    ])
+  })
 })
 
 const scriptWithRefs = `{

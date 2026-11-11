@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useId, type ReactNode } from 'react'
 import type { DashboardPhaseLatencyThreshold, PhaseLatencyPhase } from '../types/settings'
 import { MAX_PHASE_LATENCY_RULES } from './settingsPageModel'
 import './PhaseLatencyThresholdEditor.css'
@@ -33,6 +33,7 @@ const optionalNumber = (value: string): number | undefined => {
  * the P99 threshold it extends.
  */
 export default function PhaseLatencyThresholdEditor({ rules = [], onChange, fieldAccessibility = () => ({}), renderFieldIssues = () => null }: Props) {
+  const idPrefix = useId()
   const update = (index: number, patch: Partial<DashboardPhaseLatencyThreshold>) => {
     onChange(rules.map((rule, i) => (i === index ? { ...rule, ...patch } : rule)))
   }
@@ -71,23 +72,28 @@ export default function PhaseLatencyThresholdEditor({ rules = [], onChange, fiel
           {rules.map((rule, index) => {
             const field = `thresholds.phase_latency.${index}`
             const name = `Phase rule ${index + 1}`
+            const phaseId = `${idPrefix}-${index}-phase`
+            const percentileId = `${idPrefix}-${index}-percentile`
+            const maxMsId = `${idPrefix}-${index}-max-ms`
+            const stopSamplesId = `${idPrefix}-${index}-stop-samples`
             return (
               <li key={index} className="setting-row phase-latency-rule">
-                <label className="settings-inline-field">
+                <label className="settings-inline-field" htmlFor={phaseId}>
                   <span>Phase</span>
-                  <select {...fieldAccessibility(`${field}.phase`)} aria-label={`${name} phase`} className="settings-input" value={rule.phase} onChange={e => update(index, { phase: e.target.value as PhaseLatencyPhase })}>
+                  <select id={phaseId} {...fieldAccessibility(`${field}.phase`)} aria-label={`${name} phase`} className="settings-input settings-select" value={rule.phase} onChange={e => update(index, { phase: e.target.value as PhaseLatencyPhase })}>
                     {PHASE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                 </label>
-                <label className="settings-inline-field">
+                <label className="settings-inline-field" htmlFor={percentileId}>
                   <span>Percentile</span>
-                  <select {...fieldAccessibility(`${field}.percentile`)} aria-label={`${name} percentile`} className="settings-input" value={rule.percentile} onChange={e => update(index, { percentile: Number(e.target.value) as DashboardPhaseLatencyThreshold['percentile'] })}>
+                  <select id={percentileId} {...fieldAccessibility(`${field}.percentile`)} aria-label={`${name} percentile`} className="settings-input settings-select" value={rule.percentile} onChange={e => update(index, { percentile: Number(e.target.value) as DashboardPhaseLatencyThreshold['percentile'] })}>
                     {PERCENTILE_OPTIONS.map(p => <option key={p} value={p}>P{p}</option>)}
                   </select>
                 </label>
-                <label className="settings-inline-field">
+                <label className="settings-inline-field" htmlFor={maxMsId}>
                   <span>Max (ms)</span>
                   <input
+                    id={maxMsId}
                     {...fieldAccessibility(`${field}.max_ms`)}
                     aria-label={`${name} max (ms)`}
                     className="settings-input settings-input-number"
@@ -98,9 +104,10 @@ export default function PhaseLatencyThresholdEditor({ rules = [], onChange, fiel
                     onChange={e => update(index, { max_ms: optionalNumber(e.target.value) ?? Number.NaN })}
                   />
                 </label>
-                <label className="settings-inline-field">
+                <label className="settings-inline-field" htmlFor={stopSamplesId}>
                   <span>Stop after samples</span>
                   <input
+                    id={stopSamplesId}
                     {...fieldAccessibility(`${field}.stop_consecutive_samples`)}
                     aria-label={`${name} stop after breached samples`}
                     className="settings-input settings-input-number"

@@ -222,13 +222,27 @@ const mib = (value) => value * 1024 * 1024
 // total counts deferred chunks. Move the aggregate CSS gzip total to 208 KiB
 // (~2% headroom); raw total, per-asset and every route and startup guard stay
 // unchanged.
+//
+// 2026-11-11 Script Author & Debug UX Audit (P2.2): outline identity & Hide
+// markers, JSON authoring unlock with schema-backed goal_config/transaction_rules
+// completion and hover docs, and Runtime Settings transaction/phase SLA rule
+// authoring. Main at 2456830f0 measured 10,210,299 B (9.74 MiB) raw /
+// 2,967,448 B (2.8300 MiB) gzip JS — 22 B under the 2.83 MiB aggregate gzip
+// ceiling. The 3 deferred P2.2 slices add 11.5 KiB raw / 3.6 KiB gzip in
+// deferred authoring chunks (ScriptEditor measures 942.31 KiB raw / 258.12 KiB
+// gzip, inside its 955 KiB / 260 KiB ceiling), taking aggregate JS to
+// 10,222,122 B (9.75 MiB) raw / 2,971,155 B (2.8335 MiB) gzip while Initial
+// shell (205.56 KiB gzip), Scripts route (237.06 KiB gzip) and Test execution
+// route (426.82 KiB gzip) remain within their existing route guards. Move only
+// the aggregate JS inventory limits to 9.85 MiB raw / 2.86 MiB gzip (~1%
+// headroom); per-asset, CSS and every route and startup guard stay unchanged.
 export const DEFAULT_BUNDLE_BUDGETS = Object.freeze({
   '.js': Object.freeze({
     label: 'JavaScript',
     maxAssetBytes: kib(955),
     maxAssetGzipBytes: kib(260),
-    maxTotalBytes: mib(9.75),
-    maxTotalGzipBytes: mib(2.83),
+    maxTotalBytes: mib(9.85),
+    maxTotalGzipBytes: mib(2.86),
   }),
   '.css': Object.freeze({
     label: 'CSS',

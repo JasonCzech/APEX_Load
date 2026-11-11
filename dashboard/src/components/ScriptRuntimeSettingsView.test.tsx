@@ -1306,3 +1306,282 @@ describe('ScriptRuntimeSettingsView proxy credential note', () => {
     expect(renderScript(script, 'proxy')).toEqual([browserNote])
   })
 })
+
+describe('ScriptRuntimeSettingsView transaction and phase SLA rules', () => {
+  let container: HTMLDivElement
+  let root: Root
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+  })
+
+  afterEach(() => {
+    act(() => root.unmount())
+    container.remove()
+  })
+
+  const renderErrorsSection = (script: ScriptDefinition, onUpdateField = vi.fn()) => {
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="errors"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    return onUpdateField
+  }
+
+  it('collects transaction names across init, actions, and teardown into the datalist and seeds new rules', () => {
+    const script: ScriptDefinition = {
+      name: 'Order flow',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test' },
+      init: [
+        {
+          name: 'Start Login transaction',
+          type: 'source_transaction',
+          target: '',
+          params: { function: 'lr_start_transaction', args: ['Login'] },
+        },
+      ],
+      actions: [
+        {
+          name: 'Search catalog',
+          type: 'GET',
+          target: '/search',
+          metadata: { source_transaction: 'Browse_Catalog' },
+        },
+        {
+          name: 'Submit order',
+          type: 'POST',
+          target: '/orders',
+          metadata: { transaction: 'Place_Order' },
+        },
+      ],
+      teardown: [
+        {
+          name: 'Logout request',
+          type: 'POST',
+          target: '/logout',
+          metadata: { source_transaction: 'Logout' },
+        },
+      ],
+    }
+
+    const onUpdateField = renderErrorsSection(script)
+    const group = container.querySelector<HTMLElement>('[data-testid="script-transaction-sla-rules"]')
+    expect(group).not.toBeNull()
+    expect(group?.textContent).toContain('Transaction & phase SLA rules')
+
+    const options = Array.from(group!.querySelectorAll<HTMLOptionElement>('datalist option')).map(option => option.value)
+    expect(options).toEqual(['Login', 'Browse_Catalog', 'Place_Order', 'Logout'])
+
+    const addButton = Array.from(group!.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Add transaction SLA rule')
+    expect(addButton).toBeTruthy()
+    act(() => addButton!.click())
+
+    expect(onUpdateField).toHaveBeenCalledWith('goal_config', {
+      transaction_rules: [
+        {
+          transaction: 'Login',
+          metric: 'p95_duration_ms',
+          comparator: 'lte',
+          threshold: 500,
+          severity: 'fail',
+        },
+      ],
+    })
+  })
+
+  it('edits rule fields, coerces non-duration metrics when a phase is chosen, and removes the last rule cleanly', () => {
+    const onUpdateField = vi.fn()
+    const baseScript: ScriptDefinition = {
+      name: 'Checkout SLA script',
+      version: '1.0.0',
+      protocol: 'http',
+      goal_config: {
+        p95_latency_ms: 800,
+        transaction_rules: [
+          {
+            transaction: 'Checkout',
+            metric: 'error_rate_pct',
+            comparator: 'lte',
+            threshold: 2,
+            severity: 'fail',
+          },
+        ],
+      },
+      config: { base_url: 'https://example.test' },
+      actions: [],
+    }
+
+    renderErrorsSection(baseScript, onUpdateField)
+
+    const txInput = container.querySelector<HTMLInputElement>('input[aria-label="Transaction SLA rule 1 transaction"]')!
+    const phaseSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Transaction SLA rule 1 phase"]')!
+    const metricSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Transaction SLA rule 1 metric"]')!
+    const comparatorSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Transaction SLA rule 1 comparator"]')!
+    const thresholdInput = container.querySelector<HTMLInputElement>('input[aria-label="Transaction SLA rule 1 threshold"]')!
+    const severitySelect = container.querySelector<HTMLSelectElement>('select[aria-label="Transaction SLA rule 1 severity"]')!
+
+    expect(txInput.getAttribute('list')).toBeTruthy()
+    expect(metricSelect.value).toBe('error_rate_pct')
+
+    // Selecting a network phase when metric is error_rate_pct auto-switches metric to p95_duration_ms.
+    act(() => {
+      phaseSelect.value = 'tls'
+      phaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('goal_config', {
+      p95_latency_ms: 800,
+      transaction_rules: [
+        {
+          transaction: 'Checkout',
+          phase: 'tls',
+          metric: 'p95_duration_ms',
+          comparator: 'lte',
+          threshold: 2,
+          severity: 'fail',
+        },
+      ],
+    })
+
+    // Re-render with phase='tls' to verify non-duration metrics are omitted from the Metric dropdown.
+    renderErrorsSection({
+      ...baseScript,
+      goal_config: {
+        p95_latency_ms: 800,
+        transaction_rules: [
+          {
+            transaction: 'Checkout',
+            phase: 'tls',
+            metric: 'p95_duration_ms',
+            comparator: 'lte',
+            threshold: 150,
+            severity: 'fail',
+          },
+        ],
+      },
+    }, onUpdateField)
+
+    const phaseMetricValues = Array.from(
+      container.querySelectorAll<HTMLOptionElement>('select[aria-label="Transaction SLA rule 1 metric"] option'),
+    ).map(option => option.value)
+    expect(phaseMetricValues).toEqual([
+      'p95_duration_ms',
+      'p99_duration_ms',
+      'p90_duration_ms',
+      'average_duration_ms',
+      'min_duration_ms',
+      'max_duration_ms',
+    ])
+
+    // Clearing phase back to "" omits phase from the rule.
+    const updatedPhaseSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Transaction SLA rule 1 phase"]')!
+    act(() => {
+      updatedPhaseSelect.value = ''
+      updatedPhaseSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const clearedPhaseCall = onUpdateField.mock.calls[onUpdateField.mock.calls.length - 1][1] as ScriptDefinition['goal_config']
+    expect(clearedPhaseCall?.transaction_rules?.[0]).toEqual({
+      transaction: 'Checkout',
+      metric: 'p95_duration_ms',
+      comparator: 'lte',
+      threshold: 150,
+      severity: 'fail',
+    })
+    expect('phase' in (clearedPhaseCall?.transaction_rules?.[0] || {})).toBe(false)
+
+    // Edit comparator, threshold, and severity.
+    act(() => {
+      comparatorSelect.value = 'lt'
+      comparatorSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('goal_config', expect.objectContaining({
+      transaction_rules: [expect.objectContaining({ comparator: 'lt' })],
+    }))
+
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setter?.call(thresholdInput, '275')
+      thresholdInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('goal_config', expect.objectContaining({
+      transaction_rules: [expect.objectContaining({ threshold: 275 })],
+    }))
+
+    act(() => {
+      severitySelect.value = 'warning'
+      severitySelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(onUpdateField).toHaveBeenLastCalledWith('goal_config', expect.objectContaining({
+      transaction_rules: [expect.objectContaining({ severity: 'warning' })],
+    }))
+
+    // Removing the last rule sets transaction_rules: undefined while preserving p95_latency_ms.
+    const removeButton = container.querySelector<HTMLButtonElement>('button[aria-label="Remove transaction SLA rule 1"]')!
+    act(() => removeButton.click())
+    expect(onUpdateField).toHaveBeenLastCalledWith('goal_config', {
+      p95_latency_ms: 800,
+      transaction_rules: undefined,
+    })
+  })
+
+  it('surfaces validateGoalConfig feedback for invalid rules and disables adding past 128 rules', () => {
+    const invalidScript: ScriptDefinition = {
+      name: 'Invalid SLA script',
+      version: '1.0.0',
+      protocol: 'http',
+      goal_config: {
+        transaction_rules: [
+          {
+            transaction: ' Checkout ',
+            metric: 'p95_duration_ms',
+            comparator: 'lte',
+            threshold: 500,
+            severity: 'fail',
+          },
+        ],
+      },
+      config: { base_url: 'https://example.test' },
+      actions: [],
+    }
+
+    renderErrorsSection(invalidScript)
+    const group = container.querySelector<HTMLElement>('[data-testid="script-transaction-sla-rules"]')!
+    const alert = group.querySelector('[role="alert"]')
+    expect(alert?.textContent).toContain('Transaction SLA rule 1 requires an exact name of at most 256 bytes without surrounding whitespace')
+
+    // Render with 128 rules to verify the Add button is disabled.
+    const maxRulesScript: ScriptDefinition = {
+      ...invalidScript,
+      goal_config: {
+        transaction_rules: Array.from({ length: 128 }, (_, index) => ({
+          transaction: `Tx_${index + 1}`,
+          metric: 'p95_duration_ms' as const,
+          comparator: 'lte' as const,
+          threshold: 500,
+          severity: 'fail' as const,
+        })),
+      },
+    }
+    renderErrorsSection(maxRulesScript)
+    const addButton = Array.from(group.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Add transaction SLA rule')
+    expect(addButton?.disabled).toBe(true)
+  })
+})

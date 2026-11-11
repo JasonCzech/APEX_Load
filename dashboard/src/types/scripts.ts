@@ -909,6 +909,7 @@ export interface ScriptRuntimePolicy {
 export type ScriptGoalConfig = Pick<GoalConfig,
   | 'target_average_tps'
   | 'p95_latency_ms'
+  | 'transaction_response_time_sla_ms'
   | 'max_error_pct'
   | 'max_avg_server_processing_ms'
   | 'max_avg_transfer_ms'
@@ -918,6 +919,7 @@ export type ScriptGoalConfig = Pick<GoalConfig,
   | 'stop_on_sla_breach'
   | 'stop_on_max_errors'
   | 'sla_breach_window'
+  | 'transaction_rules'
 >
 
 export interface ScriptConfig {

@@ -772,13 +772,13 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
       return [
         {
           key: 'jms-publish',
-          label: 'Publish Message',
+          label: 'Publish message',
           description: 'Push a message to a queue or topic.',
           action: { name: `Publish_${sequence}`, type: 'jms_publish', target: 'orders.in', headers: {}, body: '{"event":"created"}', params: {}, metadata: {}, extractors: [], assertions: [{ type: 'message_received' }], think_time_after: true },
         },
         {
           key: 'jms-request-reply',
-          label: 'Request / Reply',
+          label: 'Request / reply',
           description: 'Seed a request-reply exchange with correlation metadata.',
           action: { name: `Request_Reply_${sequence}`, type: 'jms_request_reply', target: 'orders.rpc', headers: {}, body: '{"command":"ping"}', params: {}, metadata: { reply_to: 'orders.reply' }, extractors: [], assertions: [{ type: 'message_received' }], think_time_after: true },
         },
@@ -793,13 +793,13 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
         },
         {
           key: 'websocket-send',
-          label: 'Send Message',
+          label: 'Send message',
           description: 'Send a text message on the open connection.',
           action: { name: `WS_Send_${sequence}`, type: 'ws_send', target: '', body: '{"type":"ping"}', headers: {}, params: { type: 'text' }, extractors: [], assertions: [], think_time_after: true },
         },
         {
           key: 'websocket-receive',
-          label: 'Receive Message',
+          label: 'Receive message',
           description: 'Wait for a message and assert it arrived.',
           action: { name: `WS_Receive_${sequence}`, type: 'ws_receive', target: '', headers: {}, params: { timeout_ms: 30000 }, extractors: [], assertions: [{ type: 'message_received' }], think_time_after: true },
         },
@@ -808,13 +808,13 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
       return [
         {
           key: 'grpc-unary',
-          label: 'Unary Call',
+          label: 'Unary call',
           description: 'Invoke one reflected gRPC method with a JSON protobuf body.',
           action: { name: `gRPC_Unary_${sequence}`, type: 'grpc_unary', target: 'package.Service/Method', body: '{}', headers: {}, params: { timeout_ms: 30000 }, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }], think_time_after: true },
         },
         {
           key: 'grpc-bidi',
-          label: 'Bidirectional Stream',
+          label: 'Bidirectional stream',
           description: 'Seed a bidirectional streaming call with one JSON message.',
           action: { name: `gRPC_Stream_${sequence}`, type: 'grpc_bidi_stream', target: 'package.Service/Stream', body: '', headers: {}, params: { max_messages: 1, messages: ['{}'] }, extractors: [], assertions: [{ type: 'grpc_status', expected: 0 }], think_time_after: true },
         },
@@ -823,19 +823,19 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
       return [
         {
           key: 'database-query',
-          label: 'Query Rows',
+          label: 'Query rows',
           description: 'Run a parameterized SELECT and capture row/scalar evidence.',
           action: { name: `DB_Query_${sequence}`, type: 'db_query', target: 'select id, name from users where id = ?', body: '', headers: {}, params: { binds: ['{{param.user_id}}'], max_rows: 10 }, extractors: [{ name: 'first_name', source: 'body', type: 'jsonpath', expression: '$.rows[0].name' }], assertions: [{ type: 'row_count', expected: 1 }], think_time_after: true },
         },
         {
           key: 'database-transaction',
-          label: 'Transaction Block',
+          label: 'Transaction block',
           description: 'Seed a transaction boundary that can wrap later query/exec actions.',
           action: { name: `DB_Begin_${sequence}`, type: 'db_begin', target: '', headers: {}, params: {}, extractors: [], assertions: [], think_time_after: true },
         },
         {
           key: 'database-exec',
-          label: 'Exec Statement',
+          label: 'Exec statement',
           description: 'Execute a write with bind parameters and affected-row checks.',
           action: { name: `DB_Exec_${sequence}`, type: 'db_exec', target: 'update users set last_seen = current_timestamp where id = ?', body: '', headers: {}, params: { binds: ['{{param.user_id}}'] }, extractors: [], assertions: [{ type: 'rows_affected', expected: 1 }], think_time_after: true },
         },
@@ -850,13 +850,13 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
         },
         {
           key: 'network-tcp',
-          label: 'TCP Request',
+          label: 'TCP request',
           description: 'Send bytes to an endpoint and capture the response transcript.',
           action: { name: `TCP_Request_${sequence}`, type: 'tcp_request', target: 'localhost:8080', body: 'ping', headers: {}, params: { read: true, read_bytes: 4096 }, extractors: [{ name: 'tcp_response', source: 'response', type: 'jsonpath', expression: '$.response' }], assertions: [{ type: 'body_contains', value: 'pong' }], think_time_after: true },
         },
         {
           key: 'network-ftp',
-          label: 'FTP Command',
+          label: 'FTP command',
           description: 'Run a protocol command and preserve command/response evidence.',
           action: { name: `FTP_Command_${sequence}`, type: 'ftp_command', target: 'localhost:21', body: 'NOOP', headers: {}, params: {}, extractors: [], assertions: [{ type: 'body_contains', value: 'ok' }], think_time_after: true },
         },
@@ -867,7 +867,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
       return [
         {
           key: 'http-get',
-          label: 'GET Request',
+          label: 'GET request',
           description: 'Start with a simple resource fetch.',
           action: { name: `GET_${sequence}`, type: 'GET', method: 'GET', target: '/health', headers: {}, body: '', extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true },
         },
@@ -879,7 +879,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
         },
         {
           key: 'http-poll',
-          label: 'Poll Status',
+          label: 'Poll status',
           description: 'Add a follow-up request pattern for eventual consistency.',
           action: { name: `Poll_${sequence}`, type: 'GET', method: 'GET', target: '/orders/{{param.order_id}}', headers: {}, body: '', extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true },
         },

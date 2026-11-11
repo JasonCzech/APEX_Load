@@ -618,3 +618,144 @@ func TestLLMRequestDialectAliasesAndStreamProfileSchemaParity(t *testing.T) {
 		t.Fatalf("expected >= 3 validation issues for invalid conversation config, got %v", badIssues)
 	}
 }
+
+func TestTransactionSLARuleSchemaMirrorsContract(t *testing.T) {
+	raw, err := GenerateSchema()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatal(err)
+	}
+	defs, _ := doc["$defs"].(map[string]any)
+	rule, ok := defs["TransactionSLARule"].(map[string]any)
+	if !ok {
+		t.Fatal("missing TransactionSLARule in $defs")
+	}
+
+	gotRequired := toStringSlice(t, rule["required"])
+	wantRequired := []string{"transaction", "metric", "comparator", "threshold"}
+	if strings.Join(gotRequired, ",") != strings.Join(wantRequired, ",") {
+		t.Fatalf("TransactionSLARule.required = %v, want %v", gotRequired, wantRequired)
+	}
+
+	properties, ok := rule["properties"].(map[string]any)
+	if !ok {
+		t.Fatal("missing TransactionSLARule.properties")
+	}
+	wantEnums := map[string][]string{
+		"phase":      {"dns", "connect", "tls", "server", "download"},
+		"metric":     {"average_duration_ms", "bytes_received", "bytes_sent", "error_count", "error_rate_pct", "goodput_pct", "max_acknowledgement_ms", "max_consumer_lag_ms", "max_consumer_offset_lag", "max_duration_ms", "min_duration_ms", "minimum_count", "output_tokens_per_sec", "p50_ttft_ms", "p90_duration_ms", "p90_tpot_ms", "p90_ttft_ms", "p95_duration_ms", "p95_itl_ms", "p95_tpot_ms", "p95_ttft_ms", "p99_duration_ms", "p99_itl_ms", "p99_tpot_ms", "p99_ttft_ms", "throttle_rate_pct", "tps", "truncation_rate_pct"},
+		"comparator": {"lt", "lte", "gt", "gte", "eq", "neq"},
+		"population": {"transaction", "action"},
+		"severity":   {"fail", "warning"},
+		"iterations": {"warm", "all", "cold"},
+	}
+	for field, want := range wantEnums {
+		prop, ok := properties[field].(map[string]any)
+		if !ok {
+			t.Fatalf("missing property %q on TransactionSLARule", field)
+		}
+		got := toStringSlice(t, prop["enum"])
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Fatalf("TransactionSLARule.properties.%s.enum = %v, want %v", field, got, want)
+		}
+	}
+
+	schema, err := compileGeneratedSchema(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		rule        map[string]any
+		wantInvalid bool
+	}{
+		{
+			name: "valid full rule",
+			rule: map[string]any{
+				"transaction": "Checkout", "phase": "connect", "metric": "p95_duration_ms",
+				"comparator": "lte", "threshold": 250, "severity": "fail",
+				"population": "transaction", "iterations": "warm",
+			},
+		},
+		{
+			name:        "missing required comparator",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "p95_duration_ms", "threshold": 250},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid phase enum",
+			rule:        map[string]any{"transaction": "Checkout", "phase": "ttfb", "metric": "p95_duration_ms", "comparator": "lte", "threshold": 250},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid metric enum",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "median_ms", "comparator": "lte", "threshold": 250},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid comparator enum",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "p95_duration_ms", "comparator": "<=", "threshold": 250},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid population enum",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "p95_duration_ms", "comparator": "lte", "threshold": 250, "population": "step"},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid severity enum",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "p95_duration_ms", "comparator": "lte", "threshold": 250, "severity": "critical"},
+			wantInvalid: true,
+		},
+		{
+			name:        "invalid iterations enum",
+			rule:        map[string]any{"transaction": "Checkout", "metric": "p95_duration_ms", "comparator": "lte", "threshold": 250, "iterations": "first"},
+			wantInvalid: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			scriptDoc := map[string]any{
+				"name":        "sla-rule-test",
+				"protocol":    "http",
+				"goal_config": map[string]any{"transaction_rules": []any{tc.rule}},
+				"actions":     []any{map[string]any{"name": "req", "type": "GET", "target": "https://example.test"}},
+			}
+			encoded, err := json.Marshal(scriptDoc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(encoded))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = schema.Validate(instance)
+			if tc.wantInvalid && err == nil {
+				t.Fatalf("expected schema rejection for %v", tc.rule)
+			}
+			if !tc.wantInvalid && err != nil {
+				t.Fatalf("unexpected schema rejection: %v", err)
+			}
+		})
+	}
+}
+
+func toStringSlice(t *testing.T, raw any) []string {
+	t.Helper()
+	items, ok := raw.([]any)
+	if !ok {
+		t.Fatalf("expected []any, got %T (%#v)", raw, raw)
+	}
+	out := make([]string, len(items))
+	for i, item := range items {
+		str, ok := item.(string)
+		if !ok {
+			t.Fatalf("item %d: expected string, got %T", i, item)
+		}
+		out[i] = str
+	}
+	return out
+}

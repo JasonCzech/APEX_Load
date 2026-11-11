@@ -75,6 +75,16 @@ describe('PhaseLatencyThresholdEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith([...rules, { phase: 'connect', percentile: 95, max_ms: 500 }])
 
     const phase = container.querySelector<HTMLSelectElement>('select[aria-label="Phase rule 1 phase"]')!
+    const percentile = container.querySelector<HTMLSelectElement>('select[aria-label="Phase rule 1 percentile"]')!
+    const maxMs = container.querySelector<HTMLInputElement>('input[aria-label="Phase rule 1 max (ms)"]')!
+    expect(phase.classList.contains('settings-input')).toBe(true)
+    expect(phase.classList.contains('settings-select')).toBe(true)
+    expect(percentile.classList.contains('settings-input')).toBe(true)
+    expect(percentile.classList.contains('settings-select')).toBe(true)
+    for (const control of [phase, percentile, maxMs]) {
+      expect(control.id).toBeTruthy()
+      expect(container.querySelector(`label[for="${control.id}"]`)).toBe(control.closest('label'))
+    }
     await act(async () => {
       phase.value = 'tls'
       phase.dispatchEvent(new Event('change', { bubbles: true }))
@@ -82,6 +92,9 @@ describe('PhaseLatencyThresholdEditor', () => {
     expect(onChange).toHaveBeenLastCalledWith([{ phase: 'tls', percentile: 95, max_ms: 500 }])
 
     const stop = container.querySelector<HTMLInputElement>('input[aria-label="Phase rule 1 stop after breached samples"]')!
+    expect(stop.id).toBeTruthy()
+    expect(container.querySelector(`label[for="${stop.id}"]`)).toBe(stop.closest('label'))
+    expect(stop.min).toBe('0')
     expect(stop.placeholder).toBe('Alert only')
     const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
     await act(async () => {

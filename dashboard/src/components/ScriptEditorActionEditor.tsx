@@ -793,6 +793,9 @@ export function ControlFlowFields({ action, index, onUpdate, depth = 0 }: Contro
 }
 
 function ActionCoreFields({ hideActionType = false, typeOnly = false, action, index, protocol, isBrowserScript, isJmsScript, catalogDriven = false, onUpdate }: ActionCoreFieldsProps) {
+  const transactionFieldId = useId()
+  const transactionLabelId = `${transactionFieldId}-label`
+  const transactionHintId = `${transactionFieldId}-hint`
   const showSelector = isBrowserScript && dslActionUsesSelector(action.type)
   const showValue = isBrowserScript && dslActionUsesValue(action.type)
   const isWebSocketScript = protocol === 'websocket'
@@ -892,13 +895,16 @@ function ActionCoreFields({ hideActionType = false, typeOnly = false, action, in
         </select>
       </label>}
       {/* A transaction marker opens or closes a transaction itself; wrapping it in another is meaningless. */}
-      {action.type !== 'source_transaction' && <label><span>Transaction</span>
+      {action.type !== 'source_transaction' && <label><span id={transactionLabelId}>Transaction</span>
         <input
+          aria-labelledby={transactionLabelId}
+          aria-describedby={transactionHintId}
           value={actionTransactionName(action)}
           placeholder="(none)"
           title="Wrap this action in a named transaction — timed and aggregated (TPS, percentiles, pass/fail); SLAs attach to it."
           onChange={e => onUpdate(index, 'metadata', setActionTransactionName(action, e.target.value).metadata)}
         />
+        <small id={transactionHintId} className="field-hint">Timed and aggregated (TPS, percentiles, pass/fail); transaction and phase SLAs attach to this name.</small>
       </label>}
       {isOAuthTokenAction ? (
         <>

@@ -2476,8 +2476,25 @@ describe('ScriptEditor', () => {
     const filter = container.querySelector<HTMLInputElement>('.actions-sidebar input[aria-label="Find action"]')!
     await act(async () => { changeInputValue(filter, 'HostConfigController.get') })
     expect(Array.from(container.querySelectorAll('.action-item')).map(row => row.textContent?.includes('T02_Login_aura_2'))).toEqual([true])
+    const matchedRow = container.querySelector<HTMLElement>('.action-item')!
+    expect(matchedRow.querySelector('.action-name-text')?.textContent).toBe('HostConfigController.getConfigData · T02_Login_aura_2')
+    expect(matchedRow.querySelector('.action-cell-txn .action-txn-pill')?.textContent).toBe('⏱ HostConfigController/ACTION$getConfigData')
+    expect(matchedRow.querySelector('.action-cell-txn .action-txn-pill')?.getAttribute('title')).toBe('Sub-transaction: T02_Login||HostConfigController/ACTION$getConfigData')
     expect(labels()).toEqual(['Actions', 'T02_Login', 'HostConfigController.getConfigData'])
     await act(async () => { changeInputValue(filter, '') })
+
+    // Overview & bulk offers a Hide markers toggle that filters out source_transaction rows when pressed.
+    const hideMarkersBtn = container.querySelector<HTMLButtonElement>('[data-testid="action-list-hide-markers"]')!
+    expect(hideMarkersBtn).not.toBeNull()
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(5)
+    await act(async () => { hideMarkersBtn.click() })
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(1)
+    expect(container.querySelector('.action-list-filter-count')?.textContent).toBe('1/5')
+    await act(async () => { hideMarkersBtn.click() })
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(5)
 
     await act(async () => { folded.click() })
     await flushReact()
@@ -2503,6 +2520,14 @@ describe('ScriptEditor', () => {
     expect(card()).toBeNull()
     await act(async () => { markers.click() })
     expect(labels()).toEqual(['Actions', 'T02_Login', 'aura_2', 'End T02_Login'])
+
+    // If Hide markers is active and markers are removed from the script, the toggle and filter count reset cleanly.
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="action-list-hide-markers"]')!.click() })
+    expect(container.querySelector('.action-list-filter-count')?.textContent).toBe('1/3')
+    await act(async () => { container.querySelectorAll<HTMLButtonElement>('.action-item-actions button[title="Delete"]')[0]?.click() })
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} />) })
+    expect(container.querySelector('[data-testid="action-list-hide-markers"]')).toBeNull()
+    expect(container.querySelector('.action-list-filter-count')).toBeNull()
   })
 
   it('keeps keyboard focus on a transaction it closes, though the list stops rendering only the rows in view', async () => {
@@ -13377,6 +13402,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Login_Request_2')
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')?.click() })
+    expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent?.includes('GET request'))).toBe(true)
+    expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent?.includes('Poll status'))).toBe(true)
     const starterButton = Array.from(document.querySelectorAll('button')).find(button =>
       button.textContent?.includes('POST JSON'),
     )
