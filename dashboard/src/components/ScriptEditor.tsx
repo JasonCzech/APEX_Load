@@ -3703,7 +3703,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }
       const { stored: savedScript, baseline: savedBaseline, definition: savedDefinition } = persisted
       const adoptedSavedDocument = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
-      adoptPersistedScript({ stored: savedScript, baseline: savedBaseline, definition: savedDefinition, submitted: flushedScript }, adoptedSavedDocument)
+      const editorSubmittedBase = adoptedSavedDocument ? currentScript : flushedScript
+      adoptPersistedScript({ stored: savedScript, baseline: savedBaseline, definition: savedDefinition, submitted: editorSubmittedBase }, adoptedSavedDocument)
       const expectedCurrentDocumentKey = adoptedSavedDocument ? formatScriptJson(savedDefinition) : documentKeyAtSave
       if (!scriptId) {
         savedScriptOpeningRef.current = true
@@ -3724,7 +3725,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       result.laterEdits = hasLaterDraft
       const source = currentAuthoringSourceRef.current
       const lateDraft = hasLaterDraft ? applyPendingParameterDataCellEdits(source.script, Array.from(pendingParameterDataCellEditsRef.current.values())) : !savedBaseline ? currentScript : undefined
-      const retainedDraft = lateDraft && savedBaseline ? reapplyScriptDraft(lateDraft, savedBaseline, flushedScript) : lateDraft
+      const retainedDraft = lateDraft && savedBaseline ? reapplyScriptDraft(lateDraft, savedBaseline, editorSubmittedBase) : lateDraft
       const retainedJsonText = hasLaterDraft && source.jsonDirty ? source.jsonText : undefined
       const retainedCreatedSecretNames = pendingCreatedSecretNamesRef.current.length ? [...pendingCreatedSecretNamesRef.current] : undefined
       // Nothing is awaited after onSave: the page holds back the return that

@@ -2,7 +2,7 @@ import type { BrunoNativeScriptCandidate, SharedValues } from '../types/scriptIm
 
 export function brunoVariableCandidate(shared: SharedValues | undefined, variable: string) {
   return shared?.candidates.find(value => value.kind === 'source_variable'
-    && !value.credential_shaped && (value.source_variable || value.name) === variable)
+    && (value.source_variable || value.name) === variable)
 }
 
 /** How an input is supplied when it is not one value for every user. */

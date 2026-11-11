@@ -274,10 +274,66 @@ describe('DeviceCapturePanel', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
     agent.previewConversion.mockResolvedValue({
       scripts: [script], warnings: [],
-      secret_binding_requirements: [{ label: 'Authorization request header' }, { label: 'Request body' }, { label: 'Request body' }],
+      secret_binding_requirements: [
+        { label: 'Authorization request header', destination_value_preserved: true },
+        { label: 'Request body', destination_value_preserved: true },
+        { label: 'Request body', destination_value_preserved: true },
+      ],
     })
     await act(async () => button('Convert to script').click())
     expect(container.querySelector('[data-testid="device-capture-credentials"]')?.textContent)
       .toContain('3 recorded credentials as recorded (Authorization request header, Request body)')
+  })
+
+  it('forwards scrubSensitive with or without a recording profile and reports scrubbed credentials accurately', async () => {
+    agent.getState.mockResolvedValue({ interfaces: [{ name: 'en0', address: '192.168.1.20' }], capture: null })
+    agent.start.mockResolvedValue({ capture: capture({ status: 'stopped', password: '' }) })
+    await act(async () => root.render(
+      <DeviceCapturePanel connection={connection} commitGenericImportBatch={vi.fn()} scrubSensitive />,
+    ))
+    expect(container.querySelector('[data-testid="device-capture-profile"]')).toBeNull()
+    expect(container.querySelector('[data-testid="device-capture-scrub"]')?.textContent)
+      .toContain('Sensitive credentials and headers will be replaced with project secret placeholders')
+
+    await act(async () => button('Start device capture').click())
+    expect(agent.start).toHaveBeenLastCalledWith({
+      name: 'Device capture',
+      address: '192.168.1.20',
+      include_hosts: [],
+      recording_profile: { id: 'scrub-sensitive', name: 'Scrub credentials', scrub_sensitive: true },
+    })
+
+    agent.previewConversion.mockResolvedValue({
+      scripts: [script],
+      warnings: [],
+      secret_binding_requirements: [
+        { label: 'Authorization request header', destination_value_preserved: false },
+        { label: 'Request body' },
+      ],
+    })
+    await act(async () => button('Convert to script').click())
+    const credentialNotice = container.querySelector('[data-testid="device-capture-credentials"]')?.textContent || ''
+    expect(credentialNotice).toContain('The script replaced 2 recorded credentials with project secret placeholders (Authorization request header, Request body)')
+    expect(credentialNotice).not.toContain('keeps 2 recorded credentials as recorded')
+
+    // Unchecking scrubSensitive overrides a profile that defaulted to scrub_sensitive: true.
+    agent.getState.mockResolvedValue({ interfaces: [{ name: 'en0', address: '192.168.1.20' }], capture: null })
+    const scrubbingProfile = { id: 'strict-mobile', name: 'Strict mobile', scrub_sensitive: true }
+    await act(async () => root.render(
+      <DeviceCapturePanel
+        connection={connection}
+        commitGenericImportBatch={vi.fn()}
+        recordingProfile={scrubbingProfile}
+        scrubSensitive={false}
+      />,
+    ))
+    await act(async () => { await Promise.resolve() })
+    expect(container.querySelector('[data-testid="device-capture-profile"]')?.textContent).toContain('Strict mobile')
+    expect(container.querySelector('[data-testid="device-capture-scrub"]')).toBeNull()
+    agent.start.mockResolvedValue({ capture: capture() })
+    await act(async () => button('Start device capture').click())
+    expect(agent.start).toHaveBeenLastCalledWith(expect.objectContaining({
+      recording_profile: { id: 'strict-mobile', name: 'Strict mobile', scrub_sensitive: false },
+    }))
   })
 })

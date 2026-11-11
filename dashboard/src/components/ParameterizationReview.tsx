@@ -90,8 +90,6 @@ function isAuraSuggestion(suggestion: ParameterizationSuggestion): boolean {
 }
 
 function suggestionDisplayValue(suggestion: ParameterizationSuggestion): string {
-  if (isAuraSuggestion(suggestion)) return 'Captured value hidden'
-  if (suggestion.kind === 'secret' || suggestion.high_risk) return '••••••'
   return suggestion.sample_value || suggestion.literal_value || 'Detected value'
 }
 
@@ -104,15 +102,13 @@ function diffDisplayValue(
   if (!value) return value
   const suggestion = diff.suggestion_id ? suggestionsById.get(diff.suggestion_id) : undefined
   if ((suggestion && isAuraSuggestion(suggestion)) || (!suggestion && [...suggestionsById.values()].some(isAuraSuggestion))) {
-    if (side === 'before') return 'Captured value hidden'
+    if (side === 'before') return suggestion?.sample_value || suggestion?.literal_value || 'Detected value'
     if (diff.kind === 'data_source_added') return 'Data source created'
     if (diff.kind === 'parameter_added') return 'Parameter binding created'
     if (diff.kind === 'extractor_added') return 'Correlation extractor added'
     return suggestion && isAuraSuggestion(suggestion) && diff.kind === 'value_replaced' ? 'Decoded field updated' : 'Change applied'
   }
-  if (!suggestion || (suggestion.kind !== 'secret' && !suggestion.high_risk)) return value
-  if (side === 'after' && value.includes('{{')) return value
-  return '••••••'
+  return value
 }
 
 export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, guided = false, disabled = false, onApplyingChange, applyParameterization, onApplied }: Props) {
@@ -338,7 +334,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
             </label>
             <p className="paramize-rationale">{isAuraSuggestion(suggestion) ? 'Replace the selected decoded field and preserve its encoding.' : suggestion.rationale}</p>
             {isAuraSuggestion(suggestion) && <div className="paramize-aura-locations">
-              <p>{suggestion.locations!.length} occurrence(s). Captured payload values are hidden.</p>
+              <p>{suggestion.locations!.length} occurrence(s).</p>
               <ul>{suggestion.locations!.slice(0, LOCATION_PREVIEW_LIMIT).map((location, index) => <li key={index}>
                 <AuraParameterLocationDetails location={location} />
               </li>)}</ul>

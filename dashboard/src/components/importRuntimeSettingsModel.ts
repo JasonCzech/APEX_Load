@@ -1,4 +1,3 @@
-import { isSensitiveCredentialPreviewKey } from './credentialPreviewPolicy'
 import fieldSchema from '../../../pkg/api/import_settings_fields.json'
 import type { ScriptDefinition } from '../types/scripts'
 import { getImportSummary } from './scriptEditorImportModel'
@@ -111,9 +110,8 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
     if (disposition.parity_id === entry.id && (!path || aliasMatch || (!aliases && destinationMatch))) {
      const value = sourceFiles[file]?.[section]?.[key]
      if (value === undefined) continue
-     const protectedValue = isSensitiveCredentialPreviewKey(key) || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(value)
-     source.push(`${key}: ${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file} / ${section})`)
-     const displayed = protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : field?.type === 'boolean' && ['0', '1', 'true', 'false'].includes(value.toLowerCase()) ? ['1', 'true'].includes(value.toLowerCase()) ? 'Enabled' : 'Disabled' : value
+     source.push(`${key}: ${value === '' ? '(empty)' : value} (${file} / ${section})`)
+     const displayed = value === '' ? '(empty)' : field?.type === 'boolean' && ['0', '1', 'true', 'false'].includes(value.toLowerCase()) ? ['1', 'true'].includes(value.toLowerCase()) ? 'Enabled' : 'Disabled' : value
      // These LoadRunner timeout keys are explicitly seconds; retain raw evidence below.
      values.push(path?.endsWith('_ms') && ['connecttimeout', 'receivetimeout', 'stepdownloadtimeout', 'keepalivetimeout', 'pagedownloadtimeout'].includes(key.toLowerCase()) && /^\d+(\.\d+)?$/.test(value) ? `${Number(value) * 1000} ms` : displayed)
      covered.add(`${file}/${section}/${key}`)
@@ -137,8 +135,7 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
   const disposition = dispositions[file]?.[section]?.[key]
   const parityEntry = parity.find(entry => entry.id === disposition?.parity_id)
   const group = dispositions[file] ? groupForStatus(parityEntry && disposition?.status === 'mapped' ? parityEntry.status : disposition?.status || '') : statuses[2]
-  const protectedValue = isSensitiveCredentialPreviewKey(key) || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(value)
-  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: protectedValue ? 'Protected — manage in Credentials' : value || '(empty)', imported: `${protectedValue ? 'Protected — manage in Credentials' : value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || sourceFallbackNote(file, section, key, group)].filter(Boolean).join(' — ') })
+  groups[group].push({ id: `${file}/${section}/${key}`, category: section, label: key, importedSummary: value || '(empty)', imported: `${value === '' ? '(empty)' : value} (${file})`, note: [disposition?.reason?.replace(/_/g, ' '), disposition?.note || sourceFallbackNote(file, section, key, group)].filter(Boolean).join(' — ') })
  }
  const kafka = metadata?.preserved?.java_kafka_settings as {
   settings?: Array<{ name: string; value: string; source_file: string; start_line?: number; go_support: string; go_fields?: string[]; notes?: string }>
@@ -146,10 +143,9 @@ export function runtimeSettingRows(script: ScriptDefinition): Record<string, Run
  } | undefined
  for (const [index, setting] of (kafka?.settings || []).entries()) {
   const group = setting.go_support === 'non_applicable' ? 'Not applicable' : ['partial', 'unsupported', 'unresolved', 'requires_binding'].includes(setting.go_support) ? 'Requires decision' : 'Preserved only'
-  const protectedValue = isSensitiveCredentialPreviewKey(setting.name) || setting.go_support === 'requires_binding' || /\[REDACTED\]|\[MASKED\]/i.test(setting.value)
   groups[group].push({ id: `java-kafka:${index}:${setting.name}`, category: 'Kafka producer (Java source)', label: setting.name,
-   importedSummary: protectedValue ? 'Protected — manage in Credentials' : setting.value,
-   imported: `${protectedValue ? 'Protected — manage in Credentials' : setting.value} (${setting.source_file}${setting.start_line ? `:${setting.start_line}` : ''})`,
+   importedSummary: setting.value,
+   imported: `${setting.value} (${setting.source_file}${setting.start_line ? `:${setting.start_line}` : ''})`,
    note: [`Go support: ${setting.go_support.replace(/_/g, ' ')}.`, setting.go_fields?.length ? `Equivalent Go fields: ${setting.go_fields.join(', ')}.` : '', setting.notes,
     'The imported draft retains its Java lifecycle. These are migration references; they are not applied to a native Go Kafka script.', ...(kafka?.native_migration_blockers || [])].filter(Boolean).join(' '),
   })

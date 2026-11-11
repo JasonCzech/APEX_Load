@@ -631,7 +631,7 @@ export function ScriptReplayDebuggerView({
                     <p>Applies to the next run. Text bodies are redacted; binary, oversized, or incomplete bodies are omitted. Only observed redirect hops and measured timing phases can be retained. Existing evidence limits still apply.</p>
                   </fieldset>}
                   <label><span>Evidence capture</span><select value={replayOptions.capture || 'diagnostic'} onChange={e => setReplayOptions(prev => ({ ...prev, capture: e.target.value as 'diagnostic' | 'errors' | 'script' }))}><option value="diagnostic">Diagnostic — bounded detailed capture</option><option value="errors">Failures only</option><option value="script">Use saved Runtime Settings (custom)</option></select></label>
-                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention limits. Browser capture uses per-action screenshots. Other protocols retain their native evidence. Debugger sessions and exports can contain unredacted credentials and values.</p>
+                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention limits. Browser capture uses per-action screenshots. Other protocols retain their native evidence. Secrets and credentials are redacted automatically; non-credential runtime values and response evidence can still appear in debugger sessions and exports unless run evidence redaction is enabled.</p>
                   <label>
                     <span>Debugger Group</span>
                     <input
@@ -945,7 +945,7 @@ export function ScriptReplayDebuggerView({
                               </tr>
                               <tr>
                                 <th scope="row">Redact run evidence</th>
-                                <td>{script.config.log?.redact_run_evidence ? 'On' : 'Off (platform secrets always redacted)'}</td>
+                                <td>{script.config.log?.redact_run_evidence ? 'On' : 'Off (secrets and credentials always redacted)'}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Debugger group</th>

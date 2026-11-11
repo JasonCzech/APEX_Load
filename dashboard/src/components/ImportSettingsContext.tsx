@@ -126,8 +126,7 @@ export function SettingValue({ category, path, parameter, value, label, type = '
  const key = settingKey({ path, parameter })
  const editor = context?.editors[category]
  const currentValue = editor?.changes[key] ? editor.changes[key].value : value
- const protectedValue = /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(JSON.stringify(value) || '')
- if (!editor || readOnly || protectedValue) return <span className="import-setting-value">{protectedValue ? 'Protected — manage in Credentials' : formatSettingValue(currentValue)}</span>
+ if (!editor || readOnly) return <span className="import-setting-value">{formatSettingValue(currentValue)}</span>
  const change = (next: unknown) => context?.change(category, { path, parameter, value: next })
  const props = { 'aria-label': label, disabled: context?.disabled || context?.busy, 'aria-invalid': !!editor.errors[key] }
  return <label className="import-setting-input"><span className="sr-only">{label}</span>

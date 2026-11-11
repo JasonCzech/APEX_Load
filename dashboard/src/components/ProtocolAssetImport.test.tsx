@@ -1955,7 +1955,6 @@ describe('ProtocolAssetImport', () => {
       secondary_file: comparisonFile,
       artifact_mode: 'design_har_pair',
       retention_days: 7,
-      redact_sensitive: true,
     }))
     expect(container.textContent).toContain('filtered assets')
     expect(container.textContent).toContain('HAR Artifact Review')
@@ -3052,9 +3051,8 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(container.textContent).toContain('credential-preserving import draft has expired')
-    expect(container.textContent).not.toContain('operator-known-password')
     await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
-    expect(container.textContent).toContain('[protected imported value]')
+    expect(container.textContent).toContain('operator-known-password')
     const saveSelected = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
       .find(button => button.textContent?.includes('Save Selected Script'))!
     const saveAll = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))

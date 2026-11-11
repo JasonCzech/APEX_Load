@@ -10,10 +10,12 @@ describe('Bruno review readiness', () => {
     expect(brunoMissingVariables([], shared, {})).toEqual([])
     expect(brunoMissingVariables([candidate(['env'])], shared, { 'env-id': ' ' })).toEqual(['env'])
   })
-  it('does not treat arbitrary values or optional substitutions as producers', () => {
+  it('does not treat arbitrary values or optional substitutions as producers, while allowing credential-shaped source variables', () => {
     expect(brunoMissingVariables([candidate(['env'])], shared, { env: 'qa' })).toEqual(['env'])
     expect(brunoVariableCandidate({ ...shared, candidates: [{ ...shared.candidates[0], kind: 'repeated_literal' }] }, 'env')).toBeUndefined()
-    expect(brunoVariableCandidate({ ...shared, candidates: [{ ...shared.candidates[0], credential_shaped: true }] }, 'env')).toBeUndefined()
+    expect(brunoVariableCandidate({ ...shared, candidates: [{ ...shared.candidates[0], credential_shaped: true }] }, 'env')).toEqual(
+      expect.objectContaining({ id: 'env-id', credential_shaped: true }),
+    )
   })
   it('distinguishes preserved credentials from missing binding requirements', () => {
     expect(brunoCandidateNeedsSecrets({ ...candidate([]), secret_requirements: [{ destination_value_preserved: true }] } as BrunoNativeScriptCandidate)).toBe(false)

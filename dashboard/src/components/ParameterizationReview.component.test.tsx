@@ -132,7 +132,7 @@ describe('ParameterizationReview', () => {
     expect(container.querySelector('button')).toBeNull()
   })
 
-  it('previews the authoritative nested Aura location without captured values and preserves its route on apply', async () => {
+  it('previews the authoritative nested Aura location with its detected scalar value while keeping encoded wire envelopes compact', async () => {
     const location = {
       section: 'actions', action_index: 987, action_name: 'Captured action label', field: 'body',
       action_path: 'actions[0].control.steps[1].params.requests[2]',
@@ -142,7 +142,7 @@ describe('ParameterizationReview', () => {
       search_text: 'private-search-payload', replace_text: 'private-replace-payload',
     }
     const parameterization = buildParameterization([suggestion({
-      id: 'pz_aura', locations: [location], literal_value: 'private-record-value', sample_value: 'private-record-value',
+      id: 'pz_aura', locations: [location], literal_value: '001D000000IqhSLIAZ', sample_value: '001D000000IqhSLIAZ',
       rationale: 'private-rationale-value', auto_apply: true,
     })])
     applyMock.mockResolvedValue({ script, applied_count: 1, diffs: [
@@ -160,17 +160,18 @@ describe('ParameterizationReview', () => {
     await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Preview parameter changes')!.click() })
     const preview = container.querySelector('[aria-label="Parameter suggestion preview"]')!
     expect(preview.textContent).toContain(location.decoded_field_path)
-    expect(preview.textContent).toContain('Captured value hidden')
+    expect(preview.textContent).toContain('001D000000IqhSLIAZ')
     expect(preview.textContent).toContain('1 selected suggestion.')
     expect(preview.textContent).not.toContain('1 selected suggestions.')
     await act(async () => { [...container.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Apply reviewed parameter changes')!.click() })
     expect(applyMock.mock.calls[0][0].suggestions[0].locations).toEqual([location])
     expect(onApplied).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('001D000000IqhSLIAZ')
     expect(container.textContent).toContain('Decoded field updated')
     expect(container.textContent).toContain('Data source created')
     expect(container.textContent).toContain('Parameter binding created')
     expect([...container.querySelectorAll('.paramize-diffs .paramize-after')].map(item => item.textContent)).toEqual(['Decoded field updated', 'Data source created', 'Parameter binding created'])
-    for (const value of ['private-record-value', 'private-search-payload', 'private-replace-payload', 'private-shape-digest', 'private-rationale-value', 'private-full-body-before', 'private-full-body-after', 'private-unattributed-before', 'private-unattributed-after', 'private-parameter-configuration']) {
+    for (const value of ['private-search-payload', 'private-replace-payload', 'private-shape-digest', 'private-rationale-value', 'private-full-body-before', 'private-full-body-after', 'private-unattributed-before', 'private-unattributed-after', 'private-parameter-configuration']) {
       expect(container.innerHTML).not.toContain(value)
     }
   })
@@ -181,7 +182,7 @@ describe('ParameterizationReview', () => {
     expect(container.textContent).toContain('Decoded field path unavailable')
     expect(container.textContent).toContain('Encoding unavailable')
     expect(container.textContent).not.toContain('actions[987]')
-    expect(container.textContent).not.toContain('12345')
+    expect(container.textContent).toContain('12345')
   })
 
   it('bounds Aura location rendering without dropping occurrences from the selected request', async () => {
@@ -470,16 +471,16 @@ describe('ParameterizationReview', () => {
     }))
   })
 
-  it('masks high-risk sample values in the review list', () => {
+  it('displays literal sample values unmasked in the parameterization review list', () => {
     render(buildParameterization([
       suggestion({ id: 'pz_secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'super-secret', sample_value: 'super-secret', confidence: 0.9, high_risk: true }),
     ]))
 
-    expect(container.textContent).toContain('••••••')
-    expect(container.textContent).not.toContain('super-secret')
+    expect(container.textContent).toContain('super-secret')
+    expect(container.textContent).not.toContain('••••••')
   })
 
-  it('masks secret values in applied diffs', async () => {
+  it('displays literal values unmasked in applied parameterization diffs', async () => {
     applyMock.mockResolvedValue({
       script,
       diffs: [{ kind: 'value_replaced', path: '/actions/0/body', suggestion_id: 'pz_secret', before: 'super-secret', after: '{{secret.PASSWORD}}' }],
@@ -498,9 +499,9 @@ describe('ParameterizationReview', () => {
       applyButton!.click()
     })
 
-    expect(container.textContent).toContain('••••••')
+    expect(container.textContent).toContain('super-secret')
     expect(container.textContent).toContain('{{secret.PASSWORD}}')
-    expect(container.textContent).not.toContain('super-secret')
+    expect(container.textContent).not.toContain('••••••')
   })
 
   it('shows the blocked reason without lifting state', async () => {
@@ -568,11 +569,11 @@ describe('ParameterizationReview', () => {
   })
 })
 
-it('requires a fresh guided preview after selection or draft changes and masks secret values', async () => {
+it('requires a fresh guided preview after selection or draft changes and shows literal values unmasked', async () => {
   const container = document.createElement('div'); const root = createRoot(container)
   const parameterization = buildParameterization([
     suggestion({ id: 'auto', auto_apply: true }),
-    suggestion({ id: 'secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'never-show-this', sample_value: 'never-show-this', high_risk: true }),
+    suggestion({ id: 'secret', kind: 'secret', var_name: 'PASSWORD', literal_value: 'literal-secret-sample', sample_value: 'literal-secret-sample', high_risk: true }),
   ])
   const onApplied = vi.fn()
   const render = (draft = script) => root.render(<ParameterizationReview guided parameterization={parameterization} script={draft} onApplied={onApplied} />)
@@ -586,7 +587,7 @@ it('requires a fresh guided preview after selection or draft changes and masks s
     act(() => container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')[1].click())
     expect(container.querySelector('[aria-label="Parameter suggestion preview"]')).toBeNull()
     act(() => button('Preview parameter changes').click())
-    expect(container.textContent).not.toContain('never-show-this')
+    expect(container.textContent).toContain('literal-secret-sample')
     expect(container.textContent).toContain('High risk: explicitly selected')
     expect(container.querySelector('[aria-label="Parameter suggestion preview"]')!.textContent).toContain('2 selected suggestions.')
     act(() => render({ ...script, name: 'Changed draft' }))

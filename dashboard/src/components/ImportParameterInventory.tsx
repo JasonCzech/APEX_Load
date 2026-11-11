@@ -1,7 +1,6 @@
 import ImportReviewSectionHeader from './ImportReviewSectionHeader'
 import TabList from './ux/TabList'
 import { Fragment, useId, useMemo, useState } from 'react'
-import { isSensitiveCredentialPreviewName, isSensitiveCredentialPreviewKey } from './credentialPreviewPolicy'
 import type { ScriptDefinition, ScriptParameterDefinition } from '../types/scripts'
 import { getImportSummary, findImportedParameterMappingDataSourceIndex, type ImportParameterFileSection } from './scriptEditorImportModel'
 import { inferDelimiter } from './scriptEditorUtils'
@@ -14,15 +13,11 @@ const generatorFields: Record<string, string[]> = {
  random_string: ['length', 'charset', 'seed'], current_iteration: ['pad_width', 'pad_char'], vuser_id: ['pad_width', 'pad_char'],
 }
 const textFields = new Set(['format', 'timezone', 'charset', 'pad_char', 'same_line_as'])
-function parameterValueProtected(parameter: ScriptParameterDefinition) {
- return isSensitiveCredentialPreviewName(parameter.name) || isSensitiveCredentialPreviewName(parameter.column || '') || /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(JSON.stringify(parameter))
-}
 function parameterSourceSections(sections: ImportParameterFileSection[], parameter: ScriptParameterDefinition) {
  return sections.filter(section => section.name.replace(/^parameter[:\s]+/i, '').replace(/["']/g, '').toLowerCase() === parameter.name.toLowerCase())
 }
 function parameterEvidence(section: ImportParameterFileSection): string {
- const protectedSection = isSensitiveCredentialPreviewName(section.name.replace(/^parameter[:\s]+/i, '').replace(/["']/g, ''))
- return Object.entries(section.values).map(([key, value]) => `${key}: ${protectedSection || isSensitiveCredentialPreviewKey(key) ? 'Protected — manage in Credentials' : value}`).join(' · ')
+ return Object.entries(section.values).map(([key, value]) => `${key}: ${value}`).join(' · ')
 }
 export default function ImportParameterInventory({ script }: { script: ScriptDefinition }) {
  const context = useImportSettings()
@@ -55,11 +50,9 @@ function ParameterInventoryWorkspace({ script }: { script: ScriptDefinition }) {
  const pendingTypes = types.filter(type => context?.editors[`parameters:${type}`])
  function field(p: ScriptParameterDefinition, key: string, options?: string[], type?: string) {
   const label = key.replace(/_/g, ' ')
-  if (key === 'values' && parameterValueProtected(script.parameters?.find(parameter => parameter.name === p.name) || p)) return <span key={key}>Protected — manage in Credentials</span>
   return <div key={key}><small>{label}</small><SettingValue category={`parameters:${p.type}`} parameter={p.name} path={key} label={`${p.name}: ${label}`} value={(script.parameters?.find(parameter => parameter.name === p.name) || p)[key as keyof ScriptParameterDefinition] ?? (key === 'start_row' ? 1 : undefined)} type={options ? 'select' : type || (textFields.has(key) ? 'text' : 'signed')} options={options} /></div>
  }
  function valueSummary(p: ScriptParameterDefinition) {
-  if (parameterValueProtected(p)) return 'Protected — manage in Credentials'
   if (p.type === 'file') return `Sample: ${sampleForParameter(script, p)}`
   if (p.type === 'list') return `${(p.values || []).slice(0, 2).join(', ') || '(empty list)'}${(p.values?.length || 0) > 2 ? ` · +${p.values!.length - 2} values` : ''}`
   return (generatorFields[p.type] || []).filter(key => p[key as keyof ScriptParameterDefinition] != null).map(key => `${key.replace(/_/g, ' ')}: ${formatSettingValue(p[key as keyof ScriptParameterDefinition])}`).join(' · ') || `Generated at replay (${p.type.replace(/_/g, ' ')})`
@@ -80,7 +73,7 @@ function ParameterInventoryWorkspace({ script }: { script: ScriptDefinition }) {
      const open = !!editor && editing === p.name
      const changed = Object.values(editor?.changes || {}).some(change => change.parameter === p.name)
      const evidence = parameterSourceSections(sections, p)
-     return <Fragment key={p.name}><tr><th scope="row">{p.name}{changed && <small>Unsaved changes</small>}{needsAttention(p) && <small>Needs attention</small>}</th><td><span className="import-compact-value" title={valueSummary(p)}>{valueSummary(p)}</span>{p.type === 'list' && (p.values?.length || 0) > 2 && !parameterValueProtected(p) && <details className="import-row-details"><summary>All values</summary><p className="import-setting-value">{p.values?.join('\n')}</p></details>}</td><td>{p.type === 'file' ? <>{p.data_source || 'Unmapped'} · {p.column || 'No column'}</> : '—'}{evidence.length > 0 && <details className="import-row-details"><summary>Source evidence</summary>{evidence.map(section => <p key={`${section.file}:${section.name}`}>{section.file} · {section.name}<br />{parameterEvidence(section)}</p>)}</details>}</td><td>{p.selection || 'sequential'}{!p.selection && ' (default)'}<small>{(p.update || 'each_iteration').replace(/_/g, ' ')}{!p.update && ' (default)'}</small></td><td>{allocation(p)}</td><td><button className="btn btn-secondary btn-sm" type="button" id={`${viewId}-edit-${p.name}`} aria-label={`Edit ${p.name}`} aria-expanded={open} disabled={!context || context.disabled || context.busy} onClick={() => { context?.begin(`parameters:${type}`); setEditing(open ? '' : p.name) }}>{open ? 'Close' : 'Edit'}</button></td></tr>
+     return <Fragment key={p.name}><tr><th scope="row">{p.name}{changed && <small>Unsaved changes</small>}{needsAttention(p) && <small>Needs attention</small>}</th><td><span className="import-compact-value" title={valueSummary(p)}>{valueSummary(p)}</span>{p.type === 'list' && (p.values?.length || 0) > 2 && <details className="import-row-details"><summary>All values</summary><p className="import-setting-value">{p.values?.join('\n')}</p></details>}</td><td>{p.type === 'file' ? <>{p.data_source || 'Unmapped'} · {p.column || 'No column'}</> : '—'}{evidence.length > 0 && <details className="import-row-details"><summary>Source evidence</summary>{evidence.map(section => <p key={`${section.file}:${section.name}`}>{section.file} · {section.name}<br />{parameterEvidence(section)}</p>)}</details>}</td><td>{p.selection || 'sequential'}{!p.selection && ' (default)'}<small>{(p.update || 'each_iteration').replace(/_/g, ' ')}{!p.update && ' (default)'}</small></td><td>{allocation(p)}</td><td><button className="btn btn-secondary btn-sm" type="button" id={`${viewId}-edit-${p.name}`} aria-label={`Edit ${p.name}`} aria-expanded={open} disabled={!context || context.disabled || context.busy} onClick={() => { context?.begin(`parameters:${type}`); setEditing(open ? '' : p.name) }}>{open ? 'Close' : 'Edit'}</button></td></tr>
       {open && <tr className="import-parameter-editor"><td colSpan={6}><div className="import-parameter-editor-heading"><strong>Edit {p.name}</strong><span>Apply or cancel {type.replace(/_/g, ' ')} changes above.</span></div><div className="import-parameter-edit-fields">
        {type === 'list' ? field(p, 'values', undefined, 'lines') : type === 'file' ? <>{field(p, 'data_source', sources.map(source => source.name))}{field(p, 'column', columnsForSource(sources.find(source => source.name === p.data_source)))}<p>{summaries.get(p.data_source || '') ?? 'Unknown'} available rows<br />Sample: {sampleForParameter(script, p)}</p></> : generatorFields[type]?.length ? generatorFields[type].map(key => field(p, key)) : <span>Generated at replay ({type.replace(/_/g, ' ')})</span>}
        {field(p, 'selection', ['sequential', 'random', 'unique'])}{field(p, 'update', ['once', 'each_iteration', 'each_occurrence'])}
@@ -127,12 +120,11 @@ function columnsForSource(source?: NonNullable<ScriptDefinition['data_sources']>
  return columns.map(column => column.trim())
 }
 function sampleForParameter(script: ScriptDefinition, parameter: ScriptParameterDefinition): string {
- if (isSensitiveCredentialPreviewName(parameter.name) || isSensitiveCredentialPreviewName(parameter.column || '')) return 'Protected — manage in Credentials'
  const source = script.data_sources?.find(s => s.name === parameter.data_source)
  if (!source) return 'Unavailable'
  const columns = columnsForSource(source)
  const index = columns.indexOf(parameter.column || '')
  if (index < 0) return 'Select a declared column'
  const rows = sourceSampleRows(source).slice(source.first_row_header ? 1 : 0)
- return rows.slice(0, 2).map(row => /\[REDACTED\]|\[MASKED\]|<redacted>/i.test(row[index] || '') ? 'Protected' : row[index]?.trim() || '(empty)').join(', ') || 'Unavailable until loaded'
+ return rows.slice(0, 2).map(row => row[index]?.trim() || '(empty)').join(', ') || 'Unavailable until loaded'
 }

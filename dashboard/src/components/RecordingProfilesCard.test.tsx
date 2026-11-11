@@ -186,4 +186,42 @@ describe('RecordingProfilesCard', () => {
     await flush()
     expect(onSelect).toHaveBeenCalledWith('', undefined)
   })
+
+  it('keeps scrub_sensitive unchecked by default and persists explicit opt-in and opt-out', async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({ profiles: [], rules, updated_at: '2026-10-09T01:00:00Z' })
+    apiMock.saveRecordingProfiles.mockImplementation(async (_project: string, profiles: unknown[]) => ({ profiles, rules, updated_at: '2026-10-09T02:00:00Z' }))
+    await act(async () => root.render(<RecordingProfilesCard projectId="proj-1" selectedId="" onSelect={vi.fn()} />))
+    await flush()
+
+    await act(async () => button(container, 'Manage profiles').click())
+    await act(async () => button(container, 'New profile').click())
+    await act(async () => setValue(container.querySelector('input[aria-label="Profile name"]')!, 'Scrubbed capture'))
+
+    const scrubToggle = Array.from(container.querySelectorAll('label'))
+      .find(label => label.textContent?.includes('Scrub sensitive credentials and headers in recorded script'))
+      ?.querySelector('input') as HTMLInputElement
+    expect(scrubToggle).toBeTruthy()
+    expect(scrubToggle.checked).toBe(false)
+
+    await act(async () => scrubToggle.click())
+    expect(scrubToggle.checked).toBe(true)
+    await act(async () => button(container, 'Save profiles').click())
+    await flush()
+
+    expect(apiMock.saveRecordingProfiles.mock.calls[0][1][0]).toEqual(expect.objectContaining({
+      name: 'Scrubbed capture',
+      scrub_sensitive: true,
+    }))
+
+    await act(async () => button(container, 'Manage profiles').click())
+    const scrubToggleReloaded = Array.from(container.querySelectorAll('label'))
+      .find(label => label.textContent?.includes('Scrub sensitive credentials and headers in recorded script'))
+      ?.querySelector('input') as HTMLInputElement
+    expect(scrubToggleReloaded.checked).toBe(true)
+    await act(async () => scrubToggleReloaded.click())
+    await act(async () => button(container, 'Save profiles').click())
+    await flush()
+
+    expect(apiMock.saveRecordingProfiles.mock.calls[1][1][0].scrub_sensitive).toBeUndefined()
+  })
 })

@@ -444,61 +444,6 @@ export function uniqueActionName(base: string, existing: string[]): string {
   return candidate
 }
 
-const MASKED_VALUE = '[REDACTED]'
-
-// Where a clone lost a masked value, in the words the duplicate notice uses:
-// `body`, `target`, `header Authorization`, `cookie sid`, `assertions`.
-type MaskedValueRemovals = Set<string>
-
-function scrubRedactedStringsInPlace(node: unknown, removals: MaskedValueRemovals, label: string, skipKeys?: ReadonlySet<string>): unknown {
-  if (typeof node === 'string') {
-    if (!node.includes(MASKED_VALUE)) return node
-    removals.add(label)
-    return node.split(MASKED_VALUE).join('')
-  }
-  if (Array.isArray(node)) {
-    for (let i = 0; i < node.length; i++) {
-      node[i] = scrubRedactedStringsInPlace(node[i], removals, label)
-    }
-    return node
-  }
-  if (node && typeof node === 'object') {
-    const record = node as Record<string, unknown>
-    for (const key of Object.keys(record)) {
-      if (skipKeys?.has(key)) continue
-      record[key] = scrubRedactedStringsInPlace(record[key], removals, label)
-    }
-  }
-  return node
-}
-
-// A Cookie header keeps its unmasked cookies: only the pairs whose value was
-// masked go (`sid=[REDACTED]; theme=dark` keeps `theme=dark`).
-function withoutMaskedCookies(value: string, removals: MaskedValueRemovals): string {
-  return value.split(';').map(pair => pair.trim()).filter(pair => {
-    if (!pair.includes(MASKED_VALUE)) return pair !== ''
-    removals.add(`cookie ${pair.split('=')[0].trim() || 'value'}`)
-    return false
-  }).join('; ')
-}
-
-// A header whose value was masked is left out of the clone (an empty
-// credential header only fails differently), except a Cookie header, which
-// keeps the cookies that were not masked.
-function withoutMaskedHeader(name: string, value: string, removals: MaskedValueRemovals): string | null {
-  if (name.includes(MASKED_VALUE)) {
-    removals.add('header')
-    return null
-  }
-  if (!value.includes(MASKED_VALUE)) return value
-  if (name.trim().toLowerCase() === 'cookie') {
-    const kept = withoutMaskedCookies(value, removals)
-    return kept || null
-  }
-  removals.add(`header ${name}`)
-  return null
-}
-
 function forEachNestedStep(action: ScriptActionDefinition, visit: (child: ScriptActionDefinition) => void) {
   const ctrl = action.control as unknown as Record<string, unknown> | undefined
   if (ctrl && typeof ctrl === 'object') {
@@ -526,7 +471,7 @@ function forEachNestedStep(action: ScriptActionDefinition, visit: (child: Script
   }
 }
 
-function stripClonedActionImportProvenance(action: ScriptActionDefinition, removals: MaskedValueRemovals): void {
+function stripClonedActionImportProvenance(action: ScriptActionDefinition): void {
   if (action.metadata && typeof action.metadata === 'object') {
     const meta = action.metadata as Record<string, unknown>
     delete meta.import_action_uid
@@ -535,10 +480,6 @@ function stripClonedActionImportProvenance(action: ScriptActionDefinition, remov
     delete meta.import_header_fidelity
     delete meta.import_multipart_fidelity
     delete meta.restored_body_protected
-    // A read projection's fail-closed gate (ApplyScriptProjectionResponseGate)
-    // belongs to the response copy, not the behavior: the server drops it the
-    // same way (WithoutTransientScriptProjectionGate) — the marker, the
-    // projection's import_review and the import_review_required blocker.
     const review = meta.import_review && typeof meta.import_review === 'object' && !Array.isArray(meta.import_review)
       ? meta.import_review as Record<string, unknown>
       : null
@@ -553,62 +494,15 @@ function stripClonedActionImportProvenance(action: ScriptActionDefinition, remov
         else delete meta.execution_blockers
       }
     }
-    // HAR evidence (har.request.query_string, har.response.cookies) carries the
-    // masked values the disclosure projection put there.
-    for (const key of Object.keys(meta)) {
-      if (key.startsWith('har.')) meta[key] = scrubRedactedStringsInPlace(meta[key], new Set(), '')
-    }
     if (Object.keys(meta).length === 0) {
       delete action.metadata
     }
   }
-  const anyAction = action as unknown as Record<string, unknown>
-  if (Array.isArray(action.headers)) {
-    const rawHeaders = action.headers as Array<{ name?: string; value?: string }>
-    ;(action as unknown as { headers?: unknown }).headers = rawHeaders.flatMap(header => {
-      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
-      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
-    })
-  } else if (action.headers && typeof action.headers === 'object') {
-    const record = action.headers as Record<string, string>
-    for (const key of Object.keys(record)) {
-      const value = withoutMaskedHeader(key, record[key] || '', removals)
-      if (value === null) delete record[key]
-      else record[key] = value
-    }
-  }
-  if (Array.isArray(anyAction.header_list)) {
-    const rawHeaderList = anyAction.header_list as Array<{ name?: string; value?: string }>
-    const filteredHeaderList = rawHeaderList.flatMap(header => {
-      const value = withoutMaskedHeader(header?.name || '', header?.value || '', removals)
-      return value === null ? [] : [value === header?.value ? header : { ...header, value }]
-    })
-    if (filteredHeaderList.length > 0) {
-      anyAction.header_list = filteredHeaderList
-    } else {
-      delete anyAction.header_list
-    }
-  }
-  forEachNestedStep(action, child => stripClonedActionImportProvenance(child, removals))
-  // Nested steps were scrubbed by their own pass, under their own names.
-  const nested = new Set(['metadata', 'control', 'requests', 'request'])
-  for (const key of Object.keys(anyAction)) {
-    if (nested.has(key)) continue
-    if (key === 'params' && anyAction.params && typeof anyAction.params === 'object' && !Array.isArray(anyAction.params)) {
-      scrubRedactedStringsInPlace(anyAction.params, removals, 'params', nested)
-      continue
-    }
-    anyAction[key] = scrubRedactedStringsInPlace(anyAction[key], removals, key)
-  }
+  forEachNestedStep(action, child => stripClonedActionImportProvenance(child))
 }
 
 export interface DuplicatedActionList {
   actions: ScriptActionDefinition[]
-  /**
-   * The masked credential values the copy could not carry (`body`,
-   * `header Authorization`, `cookie sid`), so the author can supply them: a
-   * masked value has no stored value to back it in a new step.
-   */
   removedMaskedValues: string[]
 }
 
@@ -616,10 +510,9 @@ export interface DuplicatedActionList {
  * Insert a deep copy of the action at `index` directly after it, with a unique
  * name. The clone is a full deep copy (all keys, incl. unknown/params.*, and
  * nested control steps) so editing it never mutates the original. Imported
- * single-action provenance IDs (`import_action_uid`) and redacted credential
- * preservation markers are stripped from the clone so saving never rejects the
- * copy as a duplicate provenance UID or unbacked `[REDACTED]` placeholder; the
- * values those placeholders stood for are reported, as the copy runs without them.
+ * single-action provenance IDs (`import_action_uid`) and import provenance
+ * markers are stripped from the clone so saving never rejects the copy as a
+ * duplicate provenance UID while keeping all authored/imported request values.
  */
 export function duplicateActionInListWithReport(
   actions: ScriptActionDefinition[],
@@ -628,12 +521,11 @@ export function duplicateActionInListWithReport(
   const source = actions[index]
   if (!source) return { actions, removedMaskedValues: [] }
   const clone = JSON.parse(JSON.stringify(source)) as ScriptActionDefinition
-  const removals: MaskedValueRemovals = new Set()
-  stripClonedActionImportProvenance(clone, removals)
+  stripClonedActionImportProvenance(clone)
   clone.name = uniqueActionName(source.name || source.type || 'action', actions.map(a => a.name || ''))
   return {
     actions: [...actions.slice(0, index + 1), clone, ...actions.slice(index + 1)],
-    removedMaskedValues: [...removals].sort(),
+    removedMaskedValues: [],
   }
 }
 

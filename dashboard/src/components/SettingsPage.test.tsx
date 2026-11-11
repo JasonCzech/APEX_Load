@@ -1028,9 +1028,7 @@ describe('SettingsPage', () => {
     }))
   })
 
-  it('keeps proxy and TLS edits on imported scripts default-off and saves an explicit system-admin opt-in', async () => {
-    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
-
+  it('does not render an obsolete proxy/TLS edit gate under script imports governance', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
     })
@@ -1042,19 +1040,8 @@ describe('SettingsPage', () => {
     await selectGeneralSubnav(generalSection, 'Governance')
     await selectSettingsSubnav(generalSection, 'Script imports')
 
-    const policyInput = findSettingInput(generalSection, 'Allow proxy and TLS edits on imported scripts')
-    expect(policyInput?.checked).toBe(false)
-    expect(policyInput?.disabled).toBe(false)
-    await act(async () => policyInput?.click())
-
-    const saveButton = findButton('Save pending settings')
-    expect(saveButton?.disabled).toBe(false)
-    await act(async () => saveButton?.click())
-    await flushPromises()
-
-    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
-      script_imports: { allow_source_secret_migration: false, allow_retained_credential_transport_edits: true },
-    }))
+    expect(findSettingInput(generalSection, 'Allow source secret migration')).toBeTruthy()
+    expect(findSettingInput(generalSection, 'Allow proxy and TLS edits on imported scripts')).toBeUndefined()
   })
 
   it('subdivides capacity, project, and integration settings into focused panels', async () => {

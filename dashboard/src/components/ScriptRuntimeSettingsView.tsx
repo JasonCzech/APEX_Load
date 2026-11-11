@@ -2009,7 +2009,7 @@ export function ScriptRuntimeSettingsView({
                 onChange={e => updateField('config.log', { ...script.config.log, redact_run_evidence: e.target.checked })} />
               <span>Redact credentials in run evidence</span>
             </label>
-            <p className="new-test-inline-note">Redacts credential values from run logs, snapshots, reports, archives and debugger evidence. Does not change the script itself.</p>
+            <p className="new-test-inline-note">Redacts additional session and response evidence in run logs, snapshots, reports, archives and debugger evidence; project secrets and DSL credentials are always redacted. Does not change the script itself.</p>
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.log?.extended_options?.includes('parameter_substitution') || false}
                 onChange={e => updateField('config.log', {

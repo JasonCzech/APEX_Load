@@ -403,7 +403,6 @@ describe('SampleScriptImport', () => {
       options: expect.objectContaining({
         include_assertions: true,
         infer_extractors: true,
-        sanitize_sensitive: true,
       }),
     }))
     expect(container.textContent).toContain('Review Generated Script')
@@ -654,7 +653,7 @@ describe('SampleScriptImport', () => {
     expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
-  it('stores sample authentication options as governed secret references', async () => {
+  it('preserves literal sample authentication passwords and also supports explicit {{secret.NAME}} references', async () => {
     await act(async () => {
       root.render(<SampleScriptImport />)
     })
@@ -664,9 +663,11 @@ describe('SampleScriptImport', () => {
     expect(authentication).not.toBeNull()
     await act(async () => setControlValue(authentication!, 'basic'))
 
-    const bindingInput = container.querySelector<HTMLInputElement>('input[placeholder="LOGIN_PASSWORD"]')
-    expect(bindingInput).not.toBeNull()
-    await act(async () => setControlValue(bindingInput!, 'SAMPLE_LOGIN_PASSWORD'))
+    const passwordInput = Array.from(container.querySelectorAll('label'))
+      .find(label => label.querySelector('span')?.textContent === 'Auth password')
+      ?.querySelector('input')
+    expect(passwordInput).not.toBeNull()
+    await act(async () => setControlValue(passwordInput!, 'literal-login-password'))
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
@@ -678,14 +679,29 @@ describe('SampleScriptImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({
         http: expect.objectContaining({
+          auth: expect.objectContaining({ password: 'literal-login-password' }),
+        }),
+      }),
+    }), undefined, null)
+
+    apiMock.createScript.mockClear()
+    await act(async () => setControlValue(passwordInput!, '{{secret.SAMPLE_LOGIN_PASSWORD}}'))
+    await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+    const secondSaveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    await act(async () => secondSaveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        http: expect.objectContaining({
           auth: expect.objectContaining({ password: '{{secret.SAMPLE_LOGIN_PASSWORD}}' }),
         }),
       }),
     }), undefined, null)
-    expect(JSON.stringify(apiMock.createScript.mock.calls[0]?.[0])).not.toContain('"password":"SAMPLE_LOGIN_PASSWORD"')
   })
 
-  it('rejects raw credentials in sensitive default headers', async () => {
+  it('preserves literal credentials in sensitive default headers without blocking conversion', async () => {
     await act(async () => {
       root.render(<SampleScriptImport />)
     })
@@ -695,11 +711,21 @@ describe('SampleScriptImport', () => {
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
 
-    expect(apiMock.importSample).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('Default header Authorization is sensitive')
-    await act(async () => { container.querySelector<HTMLButtonElement>('[role=tab][aria-label="DSL Preview"]')?.click() })
-    expect(container.textContent).toContain('{{secret.NAME}}')
+    expect(apiMock.importSample).toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Default header Authorization is sensitive')
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save draft'))
+    await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
+
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        http: expect.objectContaining({
+          default_headers: { Authorization: 'Bearer pasted-token' },
+        }),
+      }),
+    }), undefined, null)
   })
 
   it('sends the HAR static asset option and surfaces filtered asset counts', async () => {

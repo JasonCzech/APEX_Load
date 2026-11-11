@@ -76,6 +76,7 @@ export type RecorderSession = {
     exclude_hosts?: string[]
     include_hosts?: string[]
     capture_cookies?: boolean
+    scrub_sensitive?: boolean
     recording_profile_id?: string
   }
 }
@@ -109,6 +110,7 @@ type RecorderStartRequest = {
   include_hosts?: string[]
   exclude_hosts?: string[]
   capture_cookies?: boolean
+  scrub_sensitive?: boolean
   // A project recording profile: fills the options left unset here, and
   // conversions of the session apply it.
   recording_profile_id?: string

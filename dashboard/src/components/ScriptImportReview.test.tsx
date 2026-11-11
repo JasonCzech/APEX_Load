@@ -296,45 +296,51 @@ describe('ScriptImportReview', () => {
     expect(runtimeAction.compareDocumentPosition(inventory!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('redacts arbitrary credential paths in the correct multi-script preview', () => {
+  it('preserves converted values across multi-script previews while masking internal session tokens', () => {
     act(() => root.render(<ScriptImportReview tabbed title="Batch review" script={script}
-      previewData={{ scripts: [script, { ...script, config: { base_url: '', custom: 'batch-secret-canary' } }] }}
+      previewData={{
+        import_draft_token: 'internal-draft-token-secret',
+        source_secret_session_id: 'internal-secret-session',
+        protected_import_session_id: 'internal-protected-session',
+        scripts: [script, { ...script, config: { base_url: '', custom: 'batch-secret-canary' } }],
+      }}
       secretBindingRequirements={[{ id: 'custom', path: '/config/custom', context: 'Batch credential', label: 'Custom credential', suggested_name: 'CUSTOM', script_index: 1 }]} />))
     expect(container.querySelector('.script-import-review-preview')).toBeNull()
     act(() => container.querySelector<HTMLButtonElement>('[aria-label="DSL Preview"]')!.click())
-    const preview = container.querySelector('.script-import-review-preview')!.textContent
-    expect(preview).not.toContain('batch-secret-canary')
-    expect(preview).toContain('[protected imported value]')
+    const preview = container.querySelector('.script-import-review-preview')!.textContent!
+    expect(preview).toContain('batch-secret-canary')
+    expect(preview).not.toContain('internal-draft-token-secret')
+    expect(preview).not.toContain('internal-secret-session')
+    expect(preview).not.toContain('internal-protected-session')
+    expect(preview).toContain('[protected session token]')
     expect(preview).toContain('Imported API Script')
   })
 
-  it.each([false, true])('exports every generated action with credentials protected before saving (compact %s)', async (compact) => {
+  it.each([false, true])('exports every generated action unredacted in the review JSON download (compact %s)', async (compact) => {
     const actions = Array.from({ length: 1500 }, (_, index) => ({ name: `Request ${index}`, type: 'request', target: '/orders', headers: { Authorization: 'Bearer private-token' }, params: { args: ['opaque-private'], call_args: [{ value: 'opaque-private' }] }, metadata: { raw_source: 'web_add_header("Cookie","opaque-private")' } }))
     actions[0].target = 'https://user:embedded-private@example.test/orders'
     actions[1].target = 'https://other:unclassified-private@example.test/orders'
     let exported: Blob | undefined
     const originalCreate = URL.createObjectURL
     const originalRevoke = URL.revokeObjectURL
-    URL.createObjectURL = vi.fn((blob: Blob) => { exported = blob; return 'blob:protected-review' })
+    URL.createObjectURL = vi.fn((blob: Blob) => { exported = blob; return 'blob:review' })
     URL.revokeObjectURL = vi.fn()
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     try {
       act(() => root.render(<ScriptImportReview compactReview={compact} previewData={compact ? script : undefined} title="Review" script={{ ...script, init: [actions[1]], actions }} secretBindingRequirements={[{ id: 'target-secret', path: '/actions/0/target', label: 'Request target', context: 'Request', suggested_name: 'AUTH', destination_value_preserved: true }]} />))
       if (!compact) expect(container.textContent).toContain('1501 total actions (1 initialization, 1500 main, 0 teardown)')
       expect(container.textContent).toContain('Preview truncated')
-      expect(container.textContent).not.toContain('embedded-private')
-      expect(container.textContent).not.toContain('unclassified-private')
-      act(() => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Download complete protected JSON')!.click())
+      act(() => Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Download complete review JSON')!.click())
       const text = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsText(exported!) })
       const decoded = JSON.parse(text)
       expect(decoded.script.actions).toHaveLength(1500)
       expect(decoded.script.actions[1499].name).toBe('Request 1499')
-      expect(text).not.toContain('private-token')
-      expect(text).not.toContain('opaque-private')
-      expect(text).not.toContain('embedded-private')
-      expect(text).not.toContain('unclassified-private')
-      expect(decoded.script.actions[1].target).toBe('https://[protected imported value]@example.test/orders')
-      expect(text).toContain('[protected imported value]')
+      expect(text).toContain('private-token')
+      expect(text).toContain('opaque-private')
+      expect(text).toContain('embedded-private')
+      expect(text).toContain('unclassified-private')
+      expect(decoded.script.actions[1].target).toBe('https://other:unclassified-private@example.test/orders')
+      expect(text).not.toContain('[protected imported value]')
     } finally { click.mockRestore(); URL.createObjectURL = originalCreate; URL.revokeObjectURL = originalRevoke }
   })
 
@@ -347,15 +353,15 @@ describe('ScriptImportReview', () => {
   })
 
   it.each([
-    ['https://user:private@example.test/path', 'https://[protected imported value]@example.test/path'],
-    ['//user:private@example.test/path', '//[protected imported value]@example.test/path'],
-    ['ftp://user:p%40ss@example.test/path', 'ftp://[protected imported value]@example.test/path'],
-    ['https://user:private@part@example.test/path', 'https://[protected imported value]@example.test/path'],
-    ['https://example.test/users/contact@example.test', 'https://example.test/users/contact@example.test'],
-  ])('protects URL userinfo without binding metadata: %s', (target, expected) => {
+    'https://user:private@example.test/path',
+    '//user:private@example.test/path',
+    'ftp://user:p%40ss@example.test/path',
+    'https://user:private@part@example.test/path',
+    'https://example.test/users/contact@example.test',
+  ])('preserves URL userinfo literally in the preview: %s', (target) => {
     act(() => root.render(<ScriptImportReview title="Review" script={{ ...script, actions: [{ name: 'Call', type: 'request', target }] }} />))
     const preview = JSON.parse(container.querySelector('pre')!.textContent!)
-    expect(preview.script.actions[0].target).toBe(expected)
+    expect(preview.script.actions[0].target).toBe(target)
   })
 
   it('keeps conversion notes informational and blockers distinct from unsupported features', () => {
@@ -413,14 +419,14 @@ describe('ScriptImportReview', () => {
     expect(toJSON).toHaveBeenCalledTimes(1)
   })
 
-  it('never places imported credential values in the generated preview DOM', () => {
+  it('displays imported credential values and secret references unredacted in the generated preview DOM', () => {
     const credentialScript = {
       ...script,
       config: {
         base_url: 'https://api.example.test',
         http: {
           auth: {
-            password: 'raw-password-should-not-render',
+            password: 'raw-password-preserved',
             token: '{{secret.API_TOKEN}}',
             session_id: 'raw-session-object',
           },
@@ -441,31 +447,29 @@ describe('ScriptImportReview', () => {
     act(() => {
       root.render(
         <ScriptImportReview
-          title="Credential-safe preview"
+          title="Unredacted preview"
           script={credentialScript}
         />,
       )
     })
 
     const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
-    expect(preview).not.toContain('raw-password-should-not-render')
-    expect(preview).not.toContain('raw-authorization-token')
-    expect(preview).not.toContain('raw-api-key-value')
-    expect(preview).not.toContain('raw-session-object')
-    // Session and anti-forgery headers are recorded state, shown as the
-    // server shows them; the same names in a body stay protected.
+    expect(preview).toContain('raw-password-preserved')
+    expect(preview).toContain('raw-authorization-token')
+    expect(preview).toContain('raw-api-key-value')
+    expect(preview).toContain('raw-session-object')
     expect(preview).toContain('raw-idpctx-session')
     expect(preview).toContain('raw-csrf-header')
-    expect(preview).not.toContain('raw-session-body')
-    expect(preview).not.toContain('raw-csrf-body')
-    expect(preview).not.toContain('raw-xsrf-xml')
-    expect(preview).not.toContain('body-password')
-    expect(preview).not.toContain('xml-token')
-    expect(preview).toContain('[protected imported value]')
+    expect(preview).toContain('raw-session-body')
+    expect(preview).toContain('raw-csrf-body')
+    expect(preview).toContain('raw-xsrf-xml')
+    expect(preview).toContain('body-password')
+    expect(preview).toContain('xml-token')
+    expect(preview).not.toContain('[protected imported value]')
     expect(preview).toContain('{{secret.API_TOKEN}}')
   })
 
-  it('protects scalar descendants of credential wrappers while preserving logical secret references', () => {
+  it('preserves scalar descendants of credential records and headers unredacted in the preview', () => {
     act(() => {
       root.render(
         <ScriptImportReview
@@ -482,150 +486,27 @@ describe('ScriptImportReview', () => {
               },
               entries: ['array-value-canary', '{{secret.team-api.array-key}}'],
             },
-            sessionId: 'camel-session-canary',
-            'idpctx-session-id': 'separator-session-canary',
-            csrfToken: 'camel-csrf-canary',
-            xsrf_token: 'separator-xsrf-canary',
-            harmless: 'visible-non-credential-value',
+            headers: {
+              Authorization: 'Bearer operator-bearer-63',
+              'Subscription-Key': 'subscription-key-canary',
+              'Content-Type': 'application/json; charset=utf-8',
+            },
+            raw_transport: 'Authorization: Bearer x\n<password>xml-cdata-canary</password>',
           }}
         />,
       )
     })
 
     const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
-    expect(preview).not.toContain('wrapper-value-canary')
-    expect(preview).not.toContain('nested-value-canary')
-    expect(preview).not.toContain('array-value-canary')
-    expect(preview).not.toContain('camel-session-canary')
-    expect(preview).not.toContain('separator-session-canary')
-    expect(preview).not.toContain('camel-csrf-canary')
-    expect(preview).not.toContain('separator-xsrf-canary')
+    expect(preview).toContain('wrapper-value-canary')
+    expect(preview).toContain('nested-value-canary')
+    expect(preview).toContain('array-value-canary')
     expect(preview).toContain('{{secret.team-api.session.key}}')
     expect(preview).toContain('Bearer {{secret.team-api.token}}')
     expect(preview).toContain('{{secret.team-api.array-key}}')
-    expect(preview).toContain('visible-non-credential-value')
-  })
-
-  it('protects adapter-specific descendants of semantic credential records', () => {
-    act(() => {
-      root.render(
-        <ScriptImportReview
-          title="Semantic credential preview"
-          script={script}
-          previewData={{
-            fields: [
-              { name: 'client_secret', defaultValue: 'semantic-default-canary' },
-              { key: 'password', values: ['semantic-values-canary'] },
-              { name: 'api_key', schema: { default: 'semantic-nested-canary' } },
-              { name: 'display_name', defaultValue: 'visible-display-name' },
-            ],
-          }}
-        />,
-      )
-    })
-
-    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
-    expect(preview).not.toContain('semantic-default-canary')
-    expect(preview).not.toContain('semantic-values-canary')
-    expect(preview).not.toContain('semantic-nested-canary')
-    expect(preview).toContain('visible-display-name')
-  })
-
-  it('shows recorded cookie, session and anti-forgery headers as the server does', () => {
-    act(() => {
-      root.render(
-        <ScriptImportReview
-          title="Recorded state preview"
-          script={script}
-          previewData={{
-            actions: [{
-              headers: {
-                Cookie: 'JSESSIONID=recorded-cookie-41; sid=recorded-sid-42',
-                'X-CSRF-Token': 'recorded-csrf-52',
-                Authorization: 'Bearer operator-bearer-63',
-              },
-              header_list: [
-                { name: 'idpctx-session-id', value: 'recorded-session-74' },
-                { name: 'Authorization', value: 'Bearer operator-list-85' },
-              ],
-            }],
-          }}
-        />,
-      )
-    })
-
-    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
-    expect(preview).toContain('JSESSIONID=recorded-cookie-41; sid=recorded-sid-42')
-    expect(preview).toContain('recorded-csrf-52')
-    expect(preview).toContain('recorded-session-74')
-    expect(preview).not.toContain('operator-bearer-63')
-    expect(preview).not.toContain('operator-list-85')
-  })
-
-  it('mirrors broad backend header governance without hiding non-sensitive header values', () => {
-    act(() => {
-      root.render(
-        <ScriptImportReview
-          title="Broad header policy preview"
-          script={script}
-          previewData={{
-            headers: {
-              'Subscription-Key': 'subscription-key-canary',
-              'X-Tenant-Key': 'tenant-key-canary',
-              'X-CustomToken': 'custom-token-canary',
-              'X-Auth': 'auth-canary',
-              'Content-Type': 'application/json; charset=utf-8',
-              'X-Monkey': 'visible-monkey-value',
-              'X-Request-ID': 'visible-request-id',
-            },
-            raw_transport: 'Authorization: Bearer x\nProxy-Authorization: Basic y\nAuthorization: Digest raw-digest-canary\nProxy-Authorization: Negotiate raw-negotiate-canary\nCookie: sid=abc; harmless=raw-cookie-canary\nX-Request-ID: visible-raw-request-id\n<credentials>xml-credential-canary</credentials>\n<authorization>xml-auth-canary</authorization>\n<session>xml-session-canary</session>\n<client:credentials>xml-qualified-canary</client:credentials>\n<Envelope><Body><credentials>xml-nested-canary</credentials></Body></Envelope>\n<password><!-- </password> -->xml-comment-canary</password>\n<password><![CDATA[ </password> ]]>xml-cdata-canary</password>\n<root><entry name="password" value="xml-semantic-value-canary"/><entry name="pass&#x77;ord" value="xml-entity-canary"/><property key="client_secret">xml-semantic-text-canary</property><password fixed="xml-sensitive-attribute-canary"/><entry name="display_name" value="visible-xml-attribute"/></root>\n<monkey>visible-xml-monkey</monkey>',
-            truncated_xml: '<password>xml-truncated-canary',
-            truncated_semantic_xml: '<entry name="pass&#x77;ord" value="xml-truncated-semantic-canary"',
-            mismatched_xml: '<root><password>xml-mismatched-canary</root>',
-            header_records: [
-              { name: 'Ocp-Apim-Subscription-Key', value: 'semantic-key-canary' },
-              { key: 'X-BuildToken', value: 'semantic-token-canary' },
-              { name: 'Content-Type', value: 'visible-semantic-content-type' },
-            ],
-          }}
-        />,
-      )
-    })
-
-    const preview = container.querySelector('.script-import-review-preview')?.textContent || ''
-    expect(preview).not.toContain('subscription-key-canary')
-    expect(preview).not.toContain('tenant-key-canary')
-    expect(preview).not.toContain('custom-token-canary')
-    expect(preview).not.toContain('auth-canary')
-    expect(preview).not.toContain('semantic-key-canary')
-    expect(preview).not.toContain('semantic-token-canary')
-    expect(preview).not.toContain('xml-credential-canary')
-    expect(preview).not.toContain('xml-auth-canary')
-    expect(preview).not.toContain('xml-session-canary')
-    expect(preview).not.toContain('xml-qualified-canary')
-    expect(preview).not.toContain('xml-nested-canary')
-    expect(preview).not.toContain('xml-semantic-value-canary')
-    expect(preview).not.toContain('xml-semantic-text-canary')
-    expect(preview).not.toContain('xml-sensitive-attribute-canary')
-    expect(preview).not.toContain('xml-entity-canary')
-    expect(preview).not.toContain('xml-comment-canary')
-    expect(preview).not.toContain('xml-cdata-canary')
-    expect(preview).not.toContain('xml-truncated-canary')
-    expect(preview).not.toContain('xml-truncated-semantic-canary')
-    expect(preview).not.toContain('xml-mismatched-canary')
-    expect(preview).not.toMatch(/Bearer x|Basic y/)
-    expect(preview).not.toContain('raw-digest-canary')
-    expect(preview).not.toContain('raw-negotiate-canary')
-    expect(preview).not.toContain('raw-cookie-canary')
-    expect(preview).toContain('Ocp-Apim-Subscription-Key')
-    expect(preview).toContain('X-BuildToken')
-    expect(preview).toContain('application/json; charset=utf-8')
-    expect(preview).toContain('visible-monkey-value')
-    expect(preview).toContain('visible-request-id')
-    expect(preview).toContain('visible-semantic-content-type')
-    expect(preview).toContain('visible-xml-monkey')
-    expect(preview).toContain('visible-xml-attribute')
-    expect(preview).toContain('visible-raw-request-id')
+    expect(preview).toContain('operator-bearer-63')
+    expect(preview).toContain('subscription-key-canary')
+    expect(preview).toContain('xml-cdata-canary')
   })
 
   it('renders unsupported elements and diagnostic review sections', () => {
@@ -855,20 +736,16 @@ describe('ScriptImportReview', () => {
     expect(container.textContent).toContain('Preview truncated for browser performance')
   })
 
-  it('redacts quoted credential fields beside identifier text after bounding scans', () => {
+  it('preserves quoted credential fields unredacted in raw preview strings', () => {
     act(() => root.render(<ScriptImportReview
       title="Review Generated Script"
       script={script}
-      previewData={{ raw: `prefix"password":"quoted-boundary-canary"\nother'authorization'='second-boundary-canary'\n?headers%5Btoken%5D=encoded-boundary-canary\n123password=numeric-prefix-canary\ncombinedpassword=combined-prefix-canary\n%61pi_key=encoded-leading-canary\n%2570assword=double-encoded-leading-canary` }}
+      previewData={{ raw: `prefix"password":"quoted-boundary-canary"\nother'authorization'='second-boundary-canary'\n?headers%5Btoken%5D=encoded-boundary-canary` }}
     />))
     const preview = container.querySelector('.script-import-review-preview pre')?.textContent || ''
-    expect(preview).not.toContain('quoted-boundary-canary')
-    expect(preview).not.toContain('second-boundary-canary')
-    expect(preview).not.toContain('encoded-boundary-canary')
-    expect(preview).not.toContain('numeric-prefix-canary')
-    expect(preview).not.toContain('combined-prefix-canary')
-    expect(preview).not.toContain('encoded-leading-canary')
-    expect(preview).not.toContain('double-encoded-leading-canary')
+    expect(preview).toContain('quoted-boundary-canary')
+    expect(preview).toContain('second-boundary-canary')
+    expect(preview).toContain('encoded-boundary-canary')
   })
 
   it('auto-applies safe references and allows values to be configured later', async () => {
@@ -1582,7 +1459,7 @@ describe('ScriptImportReview', () => {
   })
 })
 
-it('navigates compact DSL by section and action while protecting explicit credential paths', async () => {
+it('navigates compact DSL by section and action while preserving literal request fields', async () => {
   const container = document.createElement('div'); const root = createRoot(container)
   const draft = { ...script, actions: [{ name: 'Opaque request', type: 'request', target: '/sample', body: 'private-body-value' }] }
   try {
@@ -1591,11 +1468,11 @@ it('navigates compact DSL by section and action while protecting explicit creden
     await act(async () => { jump.value = 'actions[0]'; jump.dispatchEvent(new Event('change', { bubbles: true })) })
     const code = container.querySelector('pre')!
     expect(code.textContent).toContain('Opaque request')
-    expect(code.textContent).not.toContain('private-body-value')
-    expect(code.textContent).toContain('[protected imported value]')
+    expect(code.textContent).toContain('private-body-value')
+    expect(code.textContent).not.toContain('[protected imported value]')
     const section = Array.from(container.querySelectorAll('select')).find(select => select.parentElement?.textContent?.startsWith('Section'))!
     await act(async () => { section.value = 'config'; section.dispatchEvent(new Event('change', { bubbles: true })) })
     expect(container.querySelector('pre')?.textContent).toContain('base_url')
-    expect(container.textContent).toContain('not an executable export')
+    expect(container.textContent).toContain('includes every generated action as converted')
   } finally { await act(async () => root.unmount()) }
 })

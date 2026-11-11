@@ -1145,6 +1145,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   // Shared assets › Secrets open over the review, and which of the preflight's
   // missing secrets the project has had since it closed.
   const [secretsOpen, setSecretsOpen] = useState(false)
+  const [secretsReloadSeq, setSecretsReloadSeq] = useState(0)
   const [configuredSecretNames, setConfiguredSecretNames] = useState<{ preflight: ReplayPreflight; names: Set<string> }>()
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
@@ -2428,14 +2429,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
   }
 
   const openSalesforceNativePreviewInEditor = () => {
-    if (!salesforceNativeScript || !onEdit || combinedJavaVuserGate) return
-    // native_preview is currently embedded in summary evidence. The API
-    // disclosure-sanitizes that evidence and does not attach the executable
-    // draft attestation used by top-level candidates. Opening it could put a
-    // literal [REDACTED] value into an otherwise runnable script. Keep the
-    // preview review-only until the backend exposes it as its own attested
-    // top-level candidate; the exact-replay candidate remains available.
-    setError('Salesforce Native Preview is review-only until it is returned as a separately attested import candidate. Open Exact Replay to keep imported credential values runnable without re-entry.')
+    if (!salesforceNativeScript || !onEdit || combinedJavaVuserGate || editorBlocked) return
+    if (!reviewMatchesCurrentOptions) {
+      setError('Conversion options changed after this review was generated. Validate the archive again before opening its draft in the Visual Editor.')
+      return
+    }
+    onEdit(salesforceNativeScript)
   }
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
@@ -5614,6 +5613,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                 {projectId && <button type="button" className="btn btn-secondary btn-sm" onClick={() => setSecretsOpen(true)}>Open Secrets</button>}
                 {secretsOpen && projectId && <SharedAssetsDialog projectId={projectId} section="secrets" onClose={() => {
                   setSecretsOpen(false)
+                  setSecretsReloadSeq(current => current + 1)
                   credentialReviewRef.current?.refreshStatuses()
                   // Back in the review: say which missing names exist now (readiness itself needs a validation).
                   // The marks belong to this preflight; a new validation shows its own list.
@@ -5654,6 +5654,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
             sharedValueScripts={resultScripts}
             onSharedValuesApplied={handleSharedValuesApplied}
             projectId={projectId}
+            secretReloadGeneration={secretsReloadSeq}
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
@@ -5911,7 +5912,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   <div className="lr-salesforce-lane-header">
                     <div>
                       <strong>Salesforce Native Preview</strong>
-                      <span>{salesforceNativeScript ? 'Review Only' : 'Needs Evidence'}</span>
+                      <span>{salesforceNativeScript ? 'Candidate Draft' : 'Needs Evidence'}</span>
                     </div>
                     <small>{salesforceTransactionCount(salesforceReview)} transactions</small>
                   </div>
@@ -5950,8 +5951,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                   {importedEditorAvailable && salesforceNativeScript && renderEditorActionButtons([
                     {
                       key: 'salesforce-native-open',
-                      label: 'Review Native Preview Limitation',
-                      opensEditor: false,
+                      label: 'Open Native Preview',
                       onClick: openSalesforceNativePreviewInEditor,
                     },
                   ], sectionActionStyle)}
@@ -6097,8 +6097,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
                           renderEditorActionButtons([
                             salesforceNativeScript ? {
                               key: `${suggestion.id}:native-preview`,
-                              label: 'Review Native Preview Limitation',
-                              opensEditor: false,
+                              label: 'Open Native Preview',
                               onClick: openSalesforceNativePreviewInEditor,
                             } : null,
                             {

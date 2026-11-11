@@ -19,7 +19,6 @@ import {
   type SharedValues,
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
-import { isRecordedStateHeader, isSensitiveCredentialPreviewKey, normalizeCredentialPreviewName } from './credentialPreviewPolicy'
 import { importActionEntries } from './importReviewIssues'
 import ParameterizationReview from './ParameterizationReview'
 import { ImportTransportPanel } from './ImportTransportPanel'
@@ -57,281 +56,7 @@ const PREVIEW_MAX_ARRAY_ITEMS = 1000
 const PREVIEW_MAX_OBJECT_KEYS = 1000
 const PREVIEW_MAX_DEPTH = 24
 const PREVIEW_MAX_STRING_CHARS = 20000
-const PROTECTED_PREVIEW_VALUE = '[protected imported value]'
-
-const previewSemanticNameKeys = new Set([
-  'key', 'name', 'field', 'fieldname', 'label', 'header', 'headername', 'attributename', 'property',
-])
-function isPreviewSemanticNameKey(key: string): boolean {
-  return previewSemanticNameKeys.has(normalizeCredentialPreviewName(key))
-}
-
-function previewObjectHasSensitiveSemanticName(candidate: Record<string, unknown>, keys: string[]): boolean {
-  for (const key of keys) {
-    if (!isPreviewSemanticNameKey(key)) continue
-    try {
-      const value = candidate[key]
-      if (typeof value === 'string' && isSensitiveCredentialPreviewKey(value)) return true
-    } catch {
-      // A throwing accessor cannot contribute a disclosure-safe semantic name.
-    }
-  }
-  return false
-}
-
-// previewHeaderContainer reports whether the object at path is a header map
-// (headers, default_headers) or one header_list entry.
-function previewHeaderContainer(path: string): 'map' | 'entry' | null {
-  const segments = path.split('/')
-  const last = normalizeCredentialPreviewName(segments[segments.length - 1] || '')
-  if (last === 'headers' || last === 'defaultheaders') return 'map'
-  const parent = normalizeCredentialPreviewName(segments[segments.length - 2] || '')
-  if ((parent === 'headerlist' || parent === 'defaultheaderlist') && /^\d+$/.test(segments[segments.length - 1] || '')) return 'entry'
-  return null
-}
-
-function safeCredentialReference(value: string): boolean {
-  const trimmed = value.trim()
-  return trimmed === ''
-    || /^\[redacted\]$/i.test(trimmed)
-    || trimmed === PROTECTED_PREVIEW_VALUE
-    || /^(?:bearer\s+|basic\s+)?\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}$/i.test(trimmed)
-}
-
-function decodeCredentialXMLName(value: string): string {
-  const predefined: Record<string, string> = {
-    amp: '&', apos: "'", gt: '>', lt: '<', quot: '"',
-  }
-  return value.replace(/&(?:#(x[0-9a-f]+|[0-9]+)|([a-z]+));/gi, (entity, numeric: string | undefined, named: string | undefined) => {
-    if (named) return predefined[named.toLowerCase()] ?? entity
-    if (!numeric) return entity
-    const radix = numeric[0]?.toLowerCase() === 'x' ? 16 : 10
-    const digits = radix === 16 ? numeric.slice(1) : numeric
-    const codePoint = Number.parseInt(digits, radix)
-    if (!Number.isSafeInteger(codePoint) || codePoint <= 0 || codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) {
-      return entity
-    }
-    return String.fromCodePoint(codePoint)
-  })
-}
-
-function redactPreviewHeaderLines(value: string): string {
-  return value.replace(
-    /^([\t ]*)([A-Za-z][A-Za-z0-9_.-]{0,255})([\t ]*:[\t ]*)([^\r\n]*)$/gm,
-    (line: string, indent: string, name: string, delimiter: string, rawValue: string) => {
-      if (!isSensitiveCredentialPreviewKey(name) || safeCredentialReference(rawValue)) return line
-      return `${indent}${name}${delimiter}${PROTECTED_PREVIEW_VALUE}`
-    },
-  )
-}
-
-function neutralizePreviewXMLOpaqueMarkup(value: string): string {
-  const characters = value.split('')
-  const blank = (start: number, end: number) => {
-    for (let index = start; index < end; index += 1) characters[index] = ' '
-  }
-  let cursor = 0
-  while (cursor < value.length) {
-    if (value.startsWith('<!--', cursor)) {
-      const end = value.indexOf('-->', cursor + 4)
-      const boundary = end < 0 ? value.length : end + 3
-      blank(cursor, boundary)
-      cursor = boundary
-      continue
-    }
-    if (value.startsWith('<![CDATA[', cursor)) {
-      const end = value.indexOf(']]>', cursor + 9)
-      const boundary = end < 0 ? value.length : end + 3
-      blank(cursor, boundary)
-      cursor = boundary
-      continue
-    }
-    if (value.startsWith('<?', cursor)) {
-      const end = value.indexOf('?>', cursor + 2)
-      const boundary = end < 0 ? value.length : end + 2
-      blank(cursor, boundary)
-      cursor = boundary
-      continue
-    }
-    if (value.startsWith('<!', cursor)) {
-      let quote = ''
-      let subsetDepth = 0
-      let end = cursor + 2
-      while (end < value.length) {
-        const character = value[end]
-        if (quote) {
-          if (character === quote) quote = ''
-        } else if (character === '"' || character === "'") {
-          quote = character
-        } else if (character === '[') {
-          subsetDepth += 1
-        } else if (character === ']' && subsetDepth > 0) {
-          subsetDepth -= 1
-        } else if (character === '>' && subsetDepth === 0) {
-          end += 1
-          break
-        }
-        end += 1
-      }
-      blank(cursor, end)
-      cursor = end
-      continue
-    }
-    cursor += 1
-  }
-  return characters.join('')
-}
-
-function redactPreviewXMLText(value: string): string {
-  const scanValue = neutralizePreviewXMLOpaqueMarkup(value)
-  const tagPattern = /<\s*(\/?)\s*([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)\b(?:[^>"']|"[^"]*"|'[^']*')*>/g
-  const attributePattern = /\s+([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)\s*=\s*("[^"]*"|'[^']*')/g
-  const semanticNameAttributes = new Set(['name', 'key', 'field', 'property'])
-  const semanticValueAttributes = new Set(['value', 'val', 'default', 'fixed'])
-  const stack: Array<{ name: string; contentStart: number; sensitive: boolean }> = []
-  const protectedRanges: Array<{ start: number; end: number }> = []
-  let match: RegExpExecArray | null
-  while ((match = tagPattern.exec(scanValue)) !== null) {
-    const token = value.slice(match.index, tagPattern.lastIndex)
-    const closing = match[1] === '/'
-    const qualifiedName = match[2]
-    if (!closing) {
-      const localName = qualifiedName.includes(':') ? qualifiedName.slice(qualifiedName.lastIndexOf(':') + 1) : qualifiedName
-      const attributes: Array<{ localName: string; value: string; start: number; end: number }> = []
-      attributePattern.lastIndex = 0
-      let attributeMatch: RegExpExecArray | null
-      while ((attributeMatch = attributePattern.exec(token)) !== null) {
-        const attributeName = attributeMatch[1]
-        const attributeLocalName = attributeName.includes(':') ? attributeName.slice(attributeName.lastIndexOf(':') + 1) : attributeName
-        const quotedValue = attributeMatch[2]
-        const quotedOffset = attributeMatch[0].lastIndexOf(quotedValue)
-        const start = match.index + attributeMatch.index + quotedOffset + 1
-        attributes.push({
-          localName: attributeLocalName,
-          value: quotedValue.slice(1, -1),
-          start,
-          end: start + quotedValue.length - 2,
-        })
-      }
-      const semanticCredential = attributes.some(attribute => (
-        semanticNameAttributes.has(attribute.localName.toLowerCase())
-        && isSensitiveCredentialPreviewKey(decodeCredentialXMLName(attribute.value))
-      ))
-      const elementSensitive = isSensitiveCredentialPreviewKey(localName) || semanticCredential
-      for (const attribute of attributes) {
-        const attributeSensitive = isSensitiveCredentialPreviewKey(attribute.localName)
-          || (elementSensitive && semanticValueAttributes.has(attribute.localName.toLowerCase()))
-        if (attributeSensitive && !safeCredentialReference(attribute.value)) {
-          protectedRanges.push({ start: attribute.start, end: attribute.end })
-        }
-      }
-      if (/\/\s*>$/.test(token)) continue
-      stack.push({
-        name: qualifiedName.toLowerCase(),
-        contentStart: tagPattern.lastIndex,
-        sensitive: elementSensitive,
-      })
-      continue
-    }
-    const normalizedName = qualifiedName.toLowerCase()
-    let openIndex = stack.length - 1
-    while (openIndex >= 0 && stack[openIndex].name !== normalizedName) openIndex -= 1
-    if (openIndex < 0) continue
-    for (let index = openIndex + 1; index < stack.length; index += 1) {
-      const discarded = stack[index]
-      if (discarded.sensitive) {
-        protectedRanges.push({ start: discarded.contentStart, end: value.length })
-      }
-    }
-    const open = stack[openIndex]
-    stack.length = openIndex
-    if (open.sensitive && match.index >= open.contentStart) {
-      protectedRanges.push({ start: open.contentStart, end: match.index })
-    }
-  }
-  for (const open of stack) {
-    if (open.sensitive && open.contentStart <= value.length) {
-      protectedRanges.push({ start: open.contentStart, end: value.length })
-    }
-  }
-  const partialTagStart = scanValue.lastIndexOf('<')
-  if (partialTagStart > scanValue.lastIndexOf('>')) {
-    const partialTag = value.slice(partialTagStart)
-    const nameMatch = /^<\s*([A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?)/.exec(partialTag)
-    if (nameMatch) {
-      const qualifiedName = nameMatch[1]
-      const localName = qualifiedName.includes(':') ? qualifiedName.slice(qualifiedName.lastIndexOf(':') + 1) : qualifiedName
-      const semanticNamePattern = /\b(?:name|key|field|property)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi
-      let semanticCredential = false
-      let semanticMatch: RegExpExecArray | null
-      while ((semanticMatch = semanticNamePattern.exec(partialTag)) !== null) {
-        const semanticName = semanticMatch[1] ?? semanticMatch[2] ?? semanticMatch[3] ?? ''
-        if (isSensitiveCredentialPreviewKey(decodeCredentialXMLName(semanticName))) {
-          semanticCredential = true
-          break
-        }
-      }
-      if (isSensitiveCredentialPreviewKey(localName) || semanticCredential) {
-        protectedRanges.push({ start: partialTagStart, end: value.length })
-      }
-    }
-  }
-  if (protectedRanges.length === 0) return value
-  protectedRanges.sort((left, right) => left.start - right.start || right.end - left.end)
-  const merged: Array<{ start: number; end: number }> = []
-  for (const range of protectedRanges) {
-    const previous = merged[merged.length - 1]
-    if (previous && range.start <= previous.end) {
-      previous.end = Math.max(previous.end, range.end)
-    } else {
-      merged.push({ ...range })
-    }
-  }
-  let redacted = value
-  for (let index = merged.length - 1; index >= 0; index -= 1) {
-    const range = merged[index]
-    const content = redacted.slice(range.start, range.end)
-    if (safeCredentialReference(content)) continue
-    redacted = `${redacted.slice(0, range.start)}${PROTECTED_PREVIEW_VALUE}${redacted.slice(range.end)}`
-  }
-  return redacted
-}
-
-function redactPreviewText(value: string): string {
-  // Inspect XML semantics before generic assignment masking can obscure a
-  // credential-name attribute such as key="client_secret".
-  let safe = redactPreviewHeaderLines(redactPreviewXMLText(value))
-  // URL userinfo has no credential field name. Imports without binding
-  // descriptors still need protection in both the preview and download.
-  safe = safe.replace(
-    /((?:\b[a-z][a-z0-9+.-]*:)?\/\/)[^/\s?#]+@/gi,
-    (_match, scheme: string) => `${scheme}${PROTECTED_PREVIEW_VALUE}@`,
-  )
-  safe = safe.replace(
-    // Only start at a field boundary. Retrying an unbounded identifier from
-    // every character of a long delimiter-free string makes this quadratic.
-    // The boundary follows the optional quote so quoted fields remain matched
-    // even when the preceding text ends in an identifier character.
-    /(["']?)(?<![A-Za-z0-9_.%[\]-])([A-Za-z0-9_.%[\]-]+)\1\s*([:=])\s*(\{\{secret\.[A-Za-z0-9_.-]{1,249}\}\}|"[^"]*"|'[^']*'|(?:bearer|basic)\s+[^\s,}&]+|[^\s,}&]+)/gi,
-    (match: string, quote: string, name: string, delimiter: string, rawValue: string) => {
-      if (!isSensitiveCredentialPreviewKey(name)) return match
-      const unquoted = rawValue.replace(/^(?:"([\s\S]*)"|'([\s\S]*)')$/, (_value, doubleQuoted, singleQuoted) => doubleQuoted ?? singleQuoted ?? '')
-      if (safeCredentialReference(unquoted)) return match
-      return `${quote}${name}${quote}${delimiter}${PROTECTED_PREVIEW_VALUE}`
-    },
-  )
-  safe = safe.replace(
-    // Preserve the fallback's conservative suffix matching (e.g. 123password)
-    // while consuming each complete identifier only once.
-    /(["']?)(?<![A-Za-z0-9_.%[\]-])([A-Za-z0-9_.%[\]-]*(?:authorization|password|passwd|passphrase|secret|client[_-]?secret|token|access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|api[_-]?key|apikey|private[_-]?key|session(?:[_-]?(?:id|token))?|sid|csrf(?:[_-]?token)?|xsrf(?:[_-]?token)?|cookie|dsn))\1\s*[:=]\s*(?!(?:"|')?\{\{secret\.)("[^"]*"|'[^']*'|[^\s,}&]+)/gi,
-    (_match, _quote: string, name: string) => `${name}=${PROTECTED_PREVIEW_VALUE}`,
-  )
-  safe = safe.replace(
-    /\b(bearer|basic)\s+(?!\{\{secret\.)[^\s,}&]+/gi,
-    (_match, scheme: string) => `${scheme} ${PROTECTED_PREVIEW_VALUE}`,
-  )
-  return safe
-}
+const PROTECTED_SESSION_TOKEN_VALUE = '[protected session token]'
 
 type CredentialAction = 'save' | 'edit'
 
@@ -343,9 +68,7 @@ interface CredentialActionRequest {
   phase: 'committing' | 'applying' | 'awaiting-resolution'
 }
 
-function previewJSON(value: unknown, complete = false, protectedPaths: Set<string> = new Set()): { text: string; truncated: boolean } {
-  // The explicit export has a separate, bounded budget. Never export a partial
-  // document as a complete review, and use the same credential projection.
+function previewJSON(value: unknown, complete = false): { text: string; truncated: boolean } {
   const maxNodes = complete ? 2_000_000 : PREVIEW_MAX_NODES
   const maxDepth = complete ? 256 : PREVIEW_MAX_DEPTH
   const maxItems = complete ? 2_000_000 : PREVIEW_MAX_ARRAY_ITEMS
@@ -357,26 +80,18 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
     truncated: false,
     seen: new WeakSet<object>(),
   }
-  // recordedState marks the value of a cookie, session, anti-forgery or tracing
-  // header: state the source recorded, which the server shows as recorded.
-  const visit = (candidate: unknown, depth: number, sensitiveAncestor = false, path = '', recordedState = false): unknown => {
+  const visit = (candidate: unknown, depth: number): unknown => {
     if (state.nodes >= maxNodes || depth > maxDepth) {
       state.truncated = true
       return '… preview limit reached …'
     }
     state.nodes += 1
-    sensitiveAncestor ||= protectedPaths.has(path)
     if (typeof candidate === 'string') {
-      if (sensitiveAncestor && !safeCredentialReference(candidate)) return PROTECTED_PREVIEW_VALUE
-      const truncated = candidate.length > maxString
-      const boundedCandidate = truncated ? candidate.slice(0, maxString) : candidate
-      const safeCandidate = recordedState && !sensitiveAncestor ? boundedCandidate : redactPreviewText(boundedCandidate)
-      if (!truncated && safeCandidate.length <= maxString) return safeCandidate
+      if (candidate.length <= maxString) return candidate
       state.truncated = true
-      return `${safeCandidate.slice(0, maxString)}…`
+      return `${candidate.slice(0, maxString)}…`
     }
-    if (candidate === null) return candidate
-    if (typeof candidate !== 'object') return sensitiveAncestor ? PROTECTED_PREVIEW_VALUE : candidate
+    if (candidate === null || typeof candidate !== 'object') return candidate
     if (state.seen.has(candidate)) {
       state.truncated = true
       return '[Circular]'
@@ -386,14 +101,14 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
       const toJSON = (candidate as { toJSON?: unknown }).toJSON
       if (typeof toJSON === 'function') {
         const projected = toJSON.call(candidate)
-        if (projected !== candidate) return visit(projected, depth + 1, sensitiveAncestor, path)
+        if (projected !== candidate) return visit(projected, depth + 1)
       }
       if (Array.isArray(candidate)) {
         const itemCount = Math.min(candidate.length, maxItems)
         if (itemCount < candidate.length) state.truncated = true
         const result: unknown[] = []
         for (let index = 0; index < itemCount && state.nodes < maxNodes; index += 1) {
-          result.push(visit(candidate[index], depth + 1, sensitiveAncestor, `${path}/${index}`))
+          result.push(visit(candidate[index], depth + 1))
         }
         if (result.length < candidate.length) { state.truncated = true; result.push(`… ${countLabel(candidate.length - result.length, 'more item')} omitted …`) }
         return result
@@ -402,38 +117,12 @@ function previewJSON(value: unknown, complete = false, protectedPaths: Set<strin
       const keyCount = Math.min(keys.length, maxKeys)
       if (keyCount < keys.length) state.truncated = true
       const result: Record<string, unknown> = {}
-      const headerContainer = previewHeaderContainer(path)
-      let recordedEntry = false
-      if (headerContainer === 'entry') {
-        try {
-          const headerName = (candidate as Record<string, unknown>).name
-          recordedEntry = typeof headerName === 'string' && isRecordedStateHeader(headerName)
-        } catch {
-          // A throwing accessor cannot prove the header is recorded state.
-        }
-      }
-      const sensitiveSemanticName = !recordedEntry && previewObjectHasSensitiveSemanticName(candidate as Record<string, unknown>, keys)
       for (let index = 0; index < keyCount && state.nodes < maxNodes; index += 1) {
         const key = keys[index]
-        if (['import_draft_token', 'source_secret_session_id', 'protected_import_session_id'].includes(key)) { result[key] = PROTECTED_PREVIEW_VALUE; continue }
+        if (['import_draft_token', 'source_secret_session_id', 'protected_import_session_id'].includes(key)) { result[key] = PROTECTED_SESSION_TOKEN_VALUE; continue }
         try {
           const child = (candidate as Record<string, unknown>)[key]
-          const semanticNameKey = sensitiveSemanticName && isPreviewSemanticNameKey(key)
-          const childRecordedState = (headerContainer === 'map' && isRecordedStateHeader(key)) ||
-            (recordedEntry && normalizeCredentialPreviewName(key) === 'value')
-          const childSensitive = (
-            sensitiveAncestor
-            // Opaque source snippets and positional arguments cannot be safely
-            // classified by a browser name-based redactor. Preserve their shape
-            // while hiding values in the downloadable review.
-            || (complete && ['metadata', 'args', 'call_args'].includes(key))
-            || (!semanticNameKey && !childRecordedState && isSensitiveCredentialPreviewKey(key))
-            // A semantic credential record can use arbitrary adapter-specific
-            // payload keys such as defaultValue, values, or schema.default. Protect
-            // every non-name descendant instead of relying on a small allowlist.
-            || (sensitiveSemanticName && !semanticNameKey)
-          )
-          result[key] = visit(child, depth + 1, childSensitive, `${path}/${key.replace(/~/g, '~0').replace(/\//g, '~1')}`, childRecordedState)
+          result[key] = visit(child, depth + 1)
         } catch {
           result[key] = '[Unable to preview value]'
         }
@@ -527,6 +216,7 @@ interface Props {
   onSecretBindingsApply?: (bindings: SecretBindingSelection[]) => void | Promise<void>
   onSecretBindingsErrorChange?: (message: string) => void
   projectId?: string
+  secretReloadGeneration?: number
   sourceSecretSessionId?: string
   sourceSecretSessionExpiresAt?: string
   sourceSecretMigrationAllowed?: boolean
@@ -609,6 +299,7 @@ export default function ScriptImportReview({
   onSecretBindingsApply,
   onSecretBindingsErrorChange,
   projectId,
+  secretReloadGeneration = 0,
   sourceSecretSessionId,
   sourceSecretSessionExpiresAt,
   sourceSecretMigrationAllowed = false,
@@ -774,8 +465,12 @@ export default function ScriptImportReview({
     reportInternalReviewBusy({ sharedValues: applying })
   }, [reportInternalReviewBusy])
 
+  const [configuredSecretsSeq, setConfiguredSecretsSeq] = useState(0)
   const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
-    if (names.length > 0) setConfiguredCredentialReviewIdentity(reviewIdentity)
+    if (names.length > 0) {
+      setConfiguredCredentialReviewIdentity(reviewIdentity)
+      setConfiguredSecretsSeq(current => current + 1)
+    }
   }, [reviewIdentity])
 
   useEffect(() => {
@@ -917,44 +612,41 @@ export default function ScriptImportReview({
   const previewEntries = useMemo(() => importActionEntries(script), [script])
   const selectedPreviewAction = previewEntries.find(entry => entry.path === previewAction)
   const filteredPreviewEntries = previewEntries.filter(entry => `${entry.path} ${entry.action.name} ${entry.action.type}`.toLowerCase().includes(previewSearch.toLowerCase()))
-  const credentialPreviewPaths = secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].flatMap(path => [path, `/script${path}`, `/scripts/${requirement.script_index ?? 0}${path}`]))
   const preview = useMemo(() => {
     if (!showPreview) return null
-    const paths = secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])])
     if ((compactReview || (tabbed && !previewData)) && selectedPreviewAction) {
-      const prefix = '/' + selectedPreviewAction.path.replace(/\[(\d+)\]/g, '/$1').replace(/\./g, '/')
-      return previewJSON(selectedPreviewAction.action, false, new Set(paths.filter(path => path === prefix || path.startsWith(`${prefix}/`)).map(path => path.slice(prefix.length))))
+      return previewJSON(selectedPreviewAction.action, false)
     }
-    return previewJSON((compactReview || (tabbed && !previewData)) ? previewSection === 'all' ? { ...script, metadata: undefined } : { [previewSection]: script[previewSection as keyof ScriptDefinition] } : previewData ?? { script }, false, new Set(secretBindingRequirements.flatMap(requirement => [requirement.path, ...(requirement.affected_paths || [])].flatMap(path => [path, `/script${path}`, `/scripts/${requirement.script_index ?? 0}${path}`]))))
-  }, [compactReview, tabbed, previewData, previewSection, script, secretBindingRequirements, selectedPreviewAction, showPreview])
+    return previewJSON((compactReview || (tabbed && !previewData)) ? previewSection === 'all' ? { ...script, metadata: undefined } : { [previewSection]: script[previewSection as keyof ScriptDefinition] } : previewData ?? { script }, false)
+  }, [compactReview, tabbed, previewData, previewSection, script, selectedPreviewAction, showPreview])
   const previewPane = preview ? (
     <details className="script-import-review-preview" open={tabbed || previewInitiallyOpen}>
       <summary>
-        <h4>{previewTitle}{compactReview || tabbed ? ' — redacted, read-only' : ''}</h4>
+        <h4>{previewTitle}{compactReview || tabbed ? ' — read-only' : ''}</h4>
       </summary>
       {(compactReview || (tabbed && !previewData)) && <div className="lr-preview-toolbar import-review-toolbar"><label>Section<select value={previewSection} onChange={e => { setPreviewSection(e.target.value); setPreviewAction('') }}>{['all', 'config', 'parameters', 'data_sources', 'init', 'actions', 'teardown'].map(section => <option key={section} value={section}>{section}</option>)}</select></label><label>Find action<input type="search" autoComplete="off" value={previewSearch} onChange={e => { setPreviewSearch(e.target.value); setPreviewAction('') }} /></label><label>Jump to action<select value={previewAction} onChange={e => { setPreviewAction(e.target.value); if (e.target.value) setPreviewSection(e.target.value.split('[')[0]) }}><option value="">Section overview</option>{filteredPreviewEntries.slice(0, 500).map(entry => <option key={entry.path} value={entry.path}>{entry.path} · {entry.action.name || entry.action.type}</option>)}</select></label><span>{filteredPreviewEntries.length} matching actions{filteredPreviewEntries.length > 500 ? ' · showing first 500, refine search to see more' : ''}</span><CodeLineWrapToggle wrapLines={previewWrap} onChange={setPreviewWrap} /><button type="button" className="btn btn-secondary btn-sm" onClick={() => setPreviewFocus(v => !v)}>{previewFocus ? 'Restore preview' : 'Expand preview'}</button></div>}
       {preview.truncated && (
         <div className="script-import-review-preview-note" role="status">
-          Preview truncated for browser performance. The on-screen view is partial. Select an individual action or download the complete protected review JSON. You can save a blocked draft without reviewing every action.
+          Preview truncated for browser performance. The on-screen view is partial. Select an individual action or download the complete review JSON. You can save a blocked draft without reviewing every action.
         </div>
       )}
       <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
         setPreviewExportError('')
         try {
-          const full = previewJSON(compactReview ? { script } : previewData ?? { script }, true, new Set(credentialPreviewPaths))
+          const full = previewJSON(compactReview ? { script } : previewData ?? { script }, true)
           if (full.truncated) throw new Error('The full review exceeds the export safety limit. No partial file was downloaded.')
           const url = URL.createObjectURL(new Blob([full.text], { type: 'application/json' }))
           const link = document.createElement('a')
           link.href = url
-          link.download = `${(script.name || 'script').replace(/[^a-zA-Z0-9_.-]/g, '_')}.protected-review.json`
+          link.download = `${(script.name || 'script').replace(/[^a-zA-Z0-9_.-]/g, '_')}.review.json`
           link.click()
           const revokeURL = URL.revokeObjectURL.bind(URL)
           setTimeout(() => revokeURL(url), 1000)
         } catch (error) {
-          setPreviewExportError(error instanceof Error ? error.message : 'Unable to export the protected review.')
+          setPreviewExportError(error instanceof Error ? error.message : 'Unable to export the review.')
         }
-      }}>Download complete protected JSON</button>
-      <p>The downloaded review JSON includes every generated action with sensitive values protected. It is not an executable export. The on-screen view shows the selected section or action.</p>
+      }}>Download complete review JSON</button>
+      <p>The downloaded review JSON includes every generated action as converted. The on-screen view shows the selected section or action.</p>
       {previewExportError && <p role="alert">{previewExportError}</p>}
       <LinkedCodePane
         value={preview.text}
@@ -980,14 +672,14 @@ export default function ScriptImportReview({
           id: `${section.key}-blocker-${index}`,
           severity: 'blocker' as const,
           title: section.title,
-          description: redactPreviewText(item),
-          source: redactPreviewText(section.summary || 'Import review'),
+          description: item,
+          source: section.summary || 'Import review',
         }))
       : [{
           id: `${section.key}-blocker`,
           severity: 'blocker' as const,
           title: section.title,
-          description: redactPreviewText(section.summary),
+          description: section.summary,
           source: 'Import review',
         }])
   const warningDetails: IssueDetail[] = [
@@ -998,21 +690,21 @@ export default function ScriptImportReview({
             id: `${section.key}-warning-${index}`,
             severity: 'warning' as const,
             title: section.title,
-            description: redactPreviewText(item),
-            source: redactPreviewText(section.summary || 'Import review'),
+            description: item,
+            source: section.summary || 'Import review',
           }))
         : [{
             id: `${section.key}-warning`,
             severity: 'warning' as const,
             title: section.title,
-            description: redactPreviewText(section.summary),
+            description: section.summary,
             source: 'Import review',
           }]),
     ...warnings.map((warning, index) => ({
       id: `import-warning-${index}`,
       severity: 'warning' as const,
       title: warningsTitle.replace(/\s*\(\d+\)\s*$/, ''),
-      description: redactPreviewText(warning),
+      description: warning,
       source: 'Import conversion',
     })),
   ]
@@ -1023,27 +715,27 @@ export default function ScriptImportReview({
           id: `${section.key}-info-${index}`,
           severity: 'info' as const,
           title: section.title,
-          description: redactPreviewText(item),
-          source: redactPreviewText(section.summary || 'Import review'),
+          description: item,
+          source: section.summary || 'Import review',
         }))
       : [{
           id: `${section.key}-info`,
           severity: 'info' as const,
           title: section.title,
-          description: redactPreviewText(section.summary),
+          description: section.summary,
           source: 'Import review',
         }])
   const diagnosticStrings = diagnostics?.length ? diagnostics.map(item => `${item.element}${item.location ? ` at ${item.location}` : ''} [${item.severity}]: ${item.detail}`) : unsupportedElements
-  const conversionNotes: IssueDetail[] = (reviewSummary && diagnostics != null ? [] : diagnosticStrings).filter(item => /\[info\]/i.test(item)).map((item, index) => ({ id: `conversion-note-${index}`, severity: 'info', title: 'Conversion note', description: redactPreviewText(item), source: 'Import conversion' }))
+  const conversionNotes: IssueDetail[] = (reviewSummary && diagnostics != null ? [] : diagnosticStrings).filter(item => /\[info\]/i.test(item)).map((item, index) => ({ id: `conversion-note-${index}`, severity: 'info', title: 'Conversion note', description: item, source: 'Import conversion' }))
   const unsupportedDetails: IssueDetail[] = diagnosticStrings.filter(item => !/\[(info|blocker)\]/i.test(item)).map((item, index) => ({
     id: `unsupported-${index}`,
     severity: 'warning' as const,
     title: 'Unsupported element',
-    description: redactPreviewText(item),
+    description: item,
     source: 'Import conversion',
   }))
   for (const [index, item] of diagnosticStrings.filter(item => /\[blocker\]/i.test(item)).entries()) {
-    if (!blockerDetails.some(existing => existing.description === redactPreviewText(item))) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: redactPreviewText(item), source: 'Import conversion'})
+    if (!blockerDetails.some(existing => existing.description === item)) blockerDetails.push({id: `conversion-blocker-${index}`, severity: 'blocker', title: 'Blocking conversion failure', description: item, source: 'Import conversion'})
   }
   const normalizedDiagnostics = reviewSummary && diagnostics != null
   const actionableReviewIssues: ImportWorkspaceIssue[] = normalizedDiagnostics
@@ -1055,9 +747,9 @@ export default function ScriptImportReview({
         title: importDiagnosticTitle(item),
         code: item.code,
         location: item.location,
-        ...(item.resolution ? { resolution: redactPreviewText(item.resolution) } : {}),
-        description: redactPreviewText(item.detail),
-        source: redactPreviewText([item.source_ref, item.location].filter(Boolean).join(' · ') || 'Import conversion'),
+        ...(item.resolution ? { resolution: item.resolution } : {}),
+        description: item.detail,
+        source: [item.source_ref, item.location].filter(Boolean).join(' · ') || 'Import conversion',
       }))
     : [...blockerDetails, ...warningDetails, ...infoDetails, ...unsupportedDetails]
   const groupedReviewIssues = normalizedDiagnostics ? [] : groupImportWorkspaceIssues(actionableReviewIssues)
@@ -1072,10 +764,8 @@ export default function ScriptImportReview({
   // Neither kept as a usable value nor replaceable by a project secret.
   const keptAsRecordedCredentialCount = secretBindingRequirements.length - preservedCredentialCount - credentialSetupCount
   const sharedDataCandidates = onSharedValuesApplied ? sharedValues?.candidates || [] : []
-  // Every unset input is supplied in the Data tab, a credential from a project
-  // secret or data pool column; other credential-shaped values are not offered.
   const requiredDataCount = sharedDataCandidates.filter(candidate => candidate.kind === 'source_variable').length
-  const optionalDataCount = sharedDataCandidates.filter(candidate => candidate.kind !== 'source_variable' && !candidate.credential_shaped).length
+  const optionalDataCount = sharedDataCandidates.filter(candidate => candidate.kind !== 'source_variable').length
     + (onParameterizationApplied ? parameterization?.suggestions?.length || 0 : 0)
   const hasParameterizationReview = !!parameterization && (!!parameterization.aura_payload || (!!onParameterizationApplied && (parameterization.suggestions?.length ?? 0) > 0))
   const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
@@ -1232,7 +922,9 @@ export default function ScriptImportReview({
           groupRequirements={tabbed}
           sharedValues={sharedValues}
           scripts={sharedValueScripts && sharedValueScripts.length > 0 ? sharedValueScripts : [script]}
+          projectId={projectId}
           reviewGeneration={reviewGeneration}
+          secretReloadGeneration={secretReloadGeneration + configuredSecretsSeq}
           disabled={credentialEditing || settingsBusy || importDraftExpired || saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleSharedValuesApplyingChange}
           previousInputs={existingScripts?.choices.previousInputs}

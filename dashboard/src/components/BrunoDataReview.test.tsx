@@ -121,3 +121,122 @@ it('keeps autofill off the input search', () => {
   act(() => root.render(<BrunoDataReview candidates={candidates} shared={shared} values={{}} onChange={() => {}} onInspect={() => {}} onCredentials={() => {}} disabled={false} />))
   expect(container.querySelector<HTMLInputElement>('input[type=search]')?.getAttribute('autocomplete')).toBe('off')
 })
+
+it('supplies credential-shaped Bruno inputs as either literal values, environment fills, or optional project secrets', () => {
+  const credentialCandidates = [{ candidate_id: 'a', script: { name: 'AuthAPI' }, missing_variables: ['apiToken'] }] as BrunoNativeScriptCandidate[]
+  const credentialShared = {
+    candidates: [
+      { id: 'tok-id', name: 'apiToken', source_variable: 'apiToken', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+      { id: 'opt-secret', name: 'clientSecret', kind: 'repeated_literal', credential_shaped: true, script_names: ['AuthAPI'], occurrence_count: 2 },
+    ],
+    summary: {},
+  } as SharedValues
+  const valuesChanged = vi.fn()
+  const bindingsChanged = vi.fn()
+  function Harness() {
+    const [values, setValues] = useState<Record<string, string>>({})
+    const [bindings, setBindings] = useState<Record<string, import('./brunoReviewState').BrunoInputBinding>>({})
+    return (
+      <BrunoDataReview
+        candidates={credentialCandidates}
+        shared={credentialShared}
+        values={values}
+        onChange={next => { valuesChanged(next); setValues(next) }}
+        bindings={bindings}
+        onBindingsChange={next => { bindingsChanged(next); setBindings(next) }}
+        environments={[{ name: 'dev', path: '.env', values: { apiToken: 'env-literal-token' } }]}
+        onInspect={() => {}}
+        onCredentials={() => {}}
+        disabled={false}
+      />
+    )
+  }
+  act(() => root.render(<Harness />))
+  expect(container.textContent).toContain('Optional substitutions (1)')
+  const envSelect = container.querySelector<HTMLSelectElement>('.bruno-environment-fill select')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(envSelect, '.env')
+    envSelect.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(valuesChanged).toHaveBeenLastCalledWith({ 'tok-id': 'env-literal-token' })
+
+  const modeSelect = Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith('Supply apiToken'))!.querySelector('select')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(modeSelect, 'secret')
+    modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+  })
+  expect(bindingsChanged).toHaveBeenLastCalledWith({ 'tok-id': { mode: 'secret', secret: 'API_TOKEN' } })
+})
+
+it('avoids existing project secret collisions, honors previous secret bindings, and warns when typing an existing secret name', () => {
+  const credentialCandidates = [{
+    candidate_id: 'a',
+    script: { name: 'AuthAPI' },
+    missing_variables: ['api-token', 'api.token', 'legacyToken'],
+  }] as BrunoNativeScriptCandidate[]
+  const credentialShared = {
+    candidates: [
+      { id: 'tok-1', name: 'api-token', source_variable: 'api-token', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+      { id: 'tok-2', name: 'api.token', source_variable: 'api.token', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+      { id: 'tok-3', name: 'legacyToken', source_variable: 'legacyToken', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+    ],
+    summary: {},
+  } as SharedValues
+  const bindingsChanged = vi.fn()
+  function Harness() {
+    const [values, setValues] = useState<Record<string, string>>({})
+    const [bindings, setBindings] = useState<Record<string, import('./brunoReviewState').BrunoInputBinding>>({})
+    return (
+      <BrunoDataReview
+        candidates={credentialCandidates}
+        shared={credentialShared}
+        values={values}
+        onChange={setValues}
+        bindings={bindings}
+        onBindingsChange={next => { bindingsChanged(next); setBindings(next) }}
+        previous={{ 'tok-3': { mode: 'secret', reference: '{{secret.CUSTOM_LEGACY_SECRET}}' } }}
+        projectSecrets={['API_TOKEN']}
+        onInspect={() => {}}
+        onCredentials={() => {}}
+        disabled={false}
+      />
+    )
+  }
+  act(() => root.render(<Harness />))
+  expect(container.textContent).toContain('or a project secret for credential inputs')
+
+  const chooseSecretMode = (variable: string) => {
+    const select = Array.from(container.querySelectorAll('label'))
+      .find(item => item.textContent?.startsWith(`Supply ${variable}`))!
+      .querySelector('select')!
+    act(() => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'secret')
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+
+  chooseSecretMode('api-token')
+  expect(bindingsChanged).toHaveBeenLastCalledWith({ 'tok-1': { mode: 'secret', secret: 'API_TOKEN_2' } })
+
+  chooseSecretMode('api.token')
+  expect(bindingsChanged).toHaveBeenLastCalledWith({
+    'tok-1': { mode: 'secret', secret: 'API_TOKEN_2' },
+    'tok-2': { mode: 'secret', secret: 'API_TOKEN_3' },
+  })
+
+  chooseSecretMode('legacyToken')
+  expect(bindingsChanged).toHaveBeenLastCalledWith({
+    'tok-1': { mode: 'secret', secret: 'API_TOKEN_2' },
+    'tok-2': { mode: 'secret', secret: 'API_TOKEN_3' },
+    'tok-3': { mode: 'secret', secret: 'CUSTOM_LEGACY_SECRET' },
+  })
+
+  const secretInput = Array.from(container.querySelectorAll('label'))
+    .find(item => item.textContent?.startsWith('Project secret for api-token'))!
+    .querySelector('input')!
+  act(() => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(secretInput, 'API_TOKEN')
+    secretInput.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(container.textContent).toContain('The project already has API_TOKEN: these scripts will send its value.')
+})

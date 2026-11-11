@@ -17,8 +17,8 @@ const labels: Record<string, string> = { restore_body: 'Restored body', add_para
 const CREDENTIAL_BINDINGS = new Set(['bind_kafka_credentials', 'bind_eventhubs_credentials'])
 
 /**
- * A repair preview: the outcome, the changed field paths and the redacted
- * before/after. Apply is offered once a previewed operation is pending.
+ * A repair preview: the outcome, the changed field paths and the before/after
+ * script JSON. Apply is offered once a previewed operation is pending.
  */
 export function RepairPreview({ preview, blockers, apply }: {
   preview: RepairPreviewModel
@@ -33,16 +33,16 @@ export function RepairPreview({ preview, blockers, apply }: {
   // preflight-only refusal, which the caller's grouping counts as blockers:
   // replay checks pass only when both agree.
   const replayReady = preview.readiness.replay_ready && blockers === 0
-  return <section className="lr-repair-preview" aria-label="Redacted repair preview">
+  return <section className="lr-repair-preview" aria-label="Repair preview">
     <header className="lr-repair-preview-heading"><div><span className="script-create-kicker">Repair preview</span><h4>Review this change</h4><p>Check the outcome and changed fields before applying this repair.</p></div><span className="repository-status-pill imported-runtime-file-tag">Preview only</span></header>
     <div className="lr-repair-preview-outcome" role="group" aria-label="Repair outcome">
       <div><span>Replay checks</span><strong className={replayReady ? 'healthy' : 'danger'}>{replayReady ? 'Passed' : 'Blocked'}</strong><small>{replayReady ? 'Target replay is not verified' : 'Execution remains blocked'}</small></div>
       <div><span>Blocking issues</span><strong>{blockers}</strong><small>grouped issues after this change</small></div>
       <div><span>Credential requirements</span><strong>{preview.readiness.unresolved_bindings || 0}</strong><small>unresolved after this change</small></div>
     </div>
-    <div className="lr-repair-preview-fields"><div className="lr-repair-preview-section-heading"><h5>Fields changed</h5><span>{changedPaths.length} shown</span></div>{changedPaths.length ? <ul>{changedPaths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : <p>No field paths changed in this preview.</p>}<p>Only field paths are summarized here. Protected values stay hidden; up to 100 fields are listed.</p></div>
+    <div className="lr-repair-preview-fields"><div className="lr-repair-preview-section-heading"><h5>Fields changed</h5><span>{changedPaths.length} shown</span></div>{changedPaths.length ? <ul>{changedPaths.map(path => <li key={path}><code>{path}</code></li>)}</ul> : <p>No field paths changed in this preview.</p>}<p>Only field paths are summarized here; up to 100 fields are listed.</p></div>
     {preview.allocation && <div className="lr-issue-table"><table><thead><tr><th>Parameter</th><th>Usable rows</th><th>Block per VUser</th><th>VUsers</th></tr></thead><tbody>{preview.allocation.map(p => <tr key={p.name}><td>{p.name}</td><td>{p.rows}</td><td>{p.block_size}</td><td>{p.population}</td></tr>)}</tbody></table></div>}
-    <details className="lr-repair-preview-comparison" onToggle={event => setShowComparison(event.currentTarget.open)}><summary>Redacted before / after</summary>{showComparison && <div className="lr-repair-preview-code-grid"><div><h6>Before repair</h6><SourceCodeViewer ariaLabel="Before repair JSON" sourcePath="before.json" value={JSON.stringify(preview.before, null, 2)} /></div><div><h6>After repair</h6><SourceCodeViewer ariaLabel="After repair JSON" sourcePath="after.json" value={JSON.stringify(preview.script, null, 2)} /></div></div>}</details>
+    <details className="lr-repair-preview-comparison" onToggle={event => setShowComparison(event.currentTarget.open)}><summary>Before / after</summary>{showComparison && <div className="lr-repair-preview-code-grid"><div><h6>Before repair</h6><SourceCodeViewer ariaLabel="Before repair JSON" sourcePath="before.json" value={JSON.stringify(preview.before, null, 2)} /></div><div><h6>After repair</h6><SourceCodeViewer ariaLabel="After repair JSON" sourcePath="after.json" value={JSON.stringify(preview.script, null, 2)} /></div></div>}</details>
     {apply && <div className="lr-repair-preview-footer">{apply.note ?? <p>Preview only. Nothing changes until you apply.</p>}<button className="btn btn-primary" type="button" disabled={apply.disabled} title={apply.title} onClick={apply.onApply}>Apply reviewed repair</button></div>}
   </section>
 }

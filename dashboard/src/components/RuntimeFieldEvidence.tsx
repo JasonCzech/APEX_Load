@@ -64,7 +64,7 @@ export function RuntimeFieldEvidence({ script, baseline, fields, sectionId, sect
         const hasDetails = Boolean(entry.concept || entry.notes || entry.execution_scope)
         return <tr key={`${entry.id}:${path}`}>
           <th scope="row"><span className="runtime-evidence-setting-name">{sectionLabel && fields.length === 1 && path === `config.${fields[0]}` ? sectionLabel : settingLabel(path)}</span><code className="cell-mono runtime-evidence-setting-path">{path.replace(/^config\./, '')}</code></th>
-          <td>{formatRuntimeEvidenceValue(configured ?? readRuntimePath(defaults, path), path)}</td>
+          <td>{formatRuntimeEvidenceValue(configured ?? readRuntimePath(defaults, path))}</td>
           <td><span className="repository-status-pill runtime-evidence-origin">{origin}</span></td>
           <td>{applicable && <span className={`repository-status-pill imported-runtime-disposition runtime-evidence-support ${supportTone(entry.status)}`}>{support}</span>}
             {hasDetails ? <div className="runtime-evidence-row-details">{entry.concept && <p>{entry.concept}</p>}{entry.notes && <p>{entry.notes}</p>}{entry.execution_scope && <p><strong>Execution scope:</strong> {entry.execution_scope}</p>}</div> : !applicable && <span className="runtime-evidence-no-details">—</span>}

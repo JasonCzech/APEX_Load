@@ -3200,17 +3200,18 @@ describe('ScriptEditor', () => {
     expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_B'))).toBe(true)
   })
 
-  it('tells the author which masked credentials a duplicated step goes without', async () => {
-    const maskedScript: ScriptDefinition = {
+  it('preserves literal credentials without a warning toast when duplicating a lifecycle step', async () => {
+    const importedAuthScript: ScriptDefinition = {
       ...initialScript,
-      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=[REDACTED]', header_list: [{ name: 'Authorization', value: 'Bearer [REDACTED]' }] } as unknown as ScriptDefinition['actions'][number]],
+      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=literal-pw', header_list: [{ name: 'Authorization', value: 'Bearer literal-token' }] } as unknown as ScriptDefinition['actions'][number]],
     } as ScriptDefinition
-    await act(async () => { root.render(<ScriptEditor initialScript={maskedScript} />) })
+    await act(async () => { root.render(<ScriptEditor initialScript={importedAuthScript} />) })
     const signIn = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Sign in') && !row.textContent?.includes('(copy)'))
     await act(async () => {
       signIn()?.querySelector<HTMLButtonElement>('[aria-label="Duplicate init action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-toast.warning')?.textContent).toContain('The copy of Sign in has no value for 2 masked credentials (body, header Authorization)')
+    expect(container.querySelector('.editor-toast.warning')).toBeNull()
+    expect(Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).some(row => row.textContent?.includes('Sign in (copy)'))).toBe(true)
   })
 
   it('remaps lifecycle breakpoints when lifecycle actions move and delete', async () => {
@@ -7014,7 +7015,8 @@ describe('ScriptEditor', () => {
     await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!
     await act(async () => { optionsButton.click() })
-    expect(container.textContent).toContain('Debugger sessions and exports can contain unredacted credentials and values.')
+    expect(container.textContent).toContain('Secrets and credentials are redacted automatically; non-credential runtime values and response evidence can still appear in debugger sessions and exports unless run evidence redaction is enabled.')
+    expect(container.textContent).not.toContain('unredacted credentials')
     const afterFailure = container.querySelector<HTMLSelectElement>('select[aria-label="After a failure"]')!
     // The default names what a test run of this script does (it opts out of continue-on-error).
     expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
@@ -15428,6 +15430,181 @@ describe('ScriptEditor', () => {
       await flushReact()
       expect(countField.value).toBe('100')
       expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
+    })
+
+    it('saves proxy_mode system -> none alongside synthesized source_mapping_review across consecutive and in-flight saves', async () => {
+      const importedScript: ScriptDefinition = {
+        ...initialScript,
+        config: {
+          ...initialScript.config,
+          http: {
+            ...initialScript.config.http,
+            proxy_mode: 'system',
+          },
+        },
+        actions: [
+          {
+            name: 'Login',
+            type: 'POST',
+            method: 'POST',
+            target: '/login',
+            headers: { Authorization: 'Bearer literal-imported-token' },
+            body: 'username=alice&password=literal-imported-password',
+          },
+        ],
+        metadata: {
+          import: {
+            source: 'enterprise_script_archive',
+            preserved: {
+              source_review: {
+                source_files: [{ path: 'Action.c', content: 'web_submit_data("Login", "Action=https://api.example.test/login", LAST);' }],
+                mappings: [
+                  {
+                    id: 'map-1',
+                    source_file: 'Action.c',
+                    start_line: 1,
+                    end_line: 1,
+                    target_path: 'actions[0]',
+                    target_kind: 'action',
+                    confidence: 1,
+                    disposition: 'executed',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }
+      const pair = authoringFixture(importedScript, 'script-1', 'project-1')
+      let saveAttempt = 0
+      let resolvePendingSave: ((value: ReturnType<typeof savedAuthoringFixture>) => void) | null = null
+      apiMock.updateScript.mockImplementation((id: string, draft: ScriptDefinition) => {
+        saveAttempt += 1
+        const saved = savedAuthoringFixture(draft, id, 'project-1', saveAttempt === 1 ? 'b' : 'c')
+        if (saveAttempt === 1) {
+          return new Promise(resolve => {
+            resolvePendingSave = resolve
+          })
+        }
+        return Promise.resolve(saved)
+      })
+
+      let latestRetainedDraft: ScriptDefinition | undefined
+      function Host() {
+        const [authoring, setAuthoring] = useState(pair)
+        const [retainedDraft, setRetainedDraft] = useState<ScriptDefinition | undefined>(undefined)
+        return (
+          <ScriptEditor
+            scriptId="script-1"
+            initialScript={authoring.projection.script}
+            initialAuthoring={authoring}
+            initialRetainedDraft={retainedDraft}
+            projectId="project-1"
+            onSave={(saved, options) => {
+              latestRetainedDraft = options?.retainedDraft
+              setRetainedDraft(options?.retainedDraft)
+              if (saved.authoring_projection) {
+                setAuthoring({
+                  projection: saved.authoring_projection,
+                  etag: `"script-authoring-v1:${saved.content_revision}"`,
+                })
+              }
+            }}
+          />
+        )
+      }
+
+      await act(async () => {
+        root.render(<Host />)
+      })
+      await flushReact()
+
+      await act(async () => {
+        findCenterTab(container, 'Settings')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushReact()
+
+      const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
+        button.textContent?.includes('Web HTTP/HTML Compatibility'),
+      )
+      if (compatibilityToggle) {
+        await act(async () => {
+          compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+      }
+
+      const proxyModeSelect = () => Array.from(container.querySelectorAll('select')).find(select =>
+        Array.from(select.options).some(option => option.value === 'system' && option.textContent?.includes('environment proxy')),
+      ) as HTMLSelectElement
+      expect(proxyModeSelect()).toBeTruthy()
+      expect(proxyModeSelect().value).toBe('system')
+
+      await act(async () => {
+        proxyModeSelect().value = 'none'
+        proxyModeSelect().dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flushReact()
+
+      const saveButton = () => container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+      expect(saveButton().disabled).toBe(false)
+
+      // Start Save #1 (synthesizes source_mapping_review via preserveMappingBindings),
+      // then mutate proxy_mode again while Save #1 is in flight (adoptedSavedDocument === false).
+      await act(async () => {
+        saveButton().click()
+      })
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+
+      const firstSavedDraft = apiMock.updateScript.mock.calls[0][1] as ScriptDefinition
+      expect(firstSavedDraft.config.http?.proxy_mode).toBe('none')
+      expect(firstSavedDraft.actions[0].headers).toEqual({ Authorization: 'Bearer literal-imported-token' })
+      expect(firstSavedDraft.actions[0].body).toBe('username=alice&password=literal-imported-password')
+      expect((firstSavedDraft.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+
+      const nameInput = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
+      await act(async () => {
+        changeInputValue(nameInput(), 'Edited while saving')
+      })
+      await flushReact()
+
+      await act(async () => {
+        resolvePendingSave?.(savedAuthoringFixture(firstSavedDraft, 'script-1', 'project-1', 'b'))
+      })
+      await flushReact()
+      await flushReact()
+
+      // Both the retainedDraft emitted to onSave and Save #2 must keep the synthesized source_mapping_review.
+      expect(latestRetainedDraft?.name).toBe('Edited while saving')
+      expect(latestRetainedDraft?.config.http?.proxy_mode).toBe('none')
+      expect((latestRetainedDraft?.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+      expect(saveButton().disabled).toBe(false)
+
+      await act(async () => {
+        saveButton().click()
+      })
+      await flushReact()
+      await flushReact()
+
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(2)
+      const secondSavedDraft = apiMock.updateScript.mock.calls[1][1] as ScriptDefinition
+      expect(secondSavedDraft.name).toBe('Edited while saving')
+      expect(secondSavedDraft.config.http?.proxy_mode).toBe('none')
+      expect((secondSavedDraft.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+      expect(saveButton().disabled).toBe(true)
+      expect(container.textContent).not.toContain('server baseline loaded after')
     })
   })
 
