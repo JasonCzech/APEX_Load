@@ -110,7 +110,7 @@ func syntheticAgentforceReferenceSource() (*dsl.Script, []byte) {
 	// A record-id shape: correlation detection skips digit-free word values
 	// as names, not server state.
 	const recordID = "a0B5g00000SyNtHQAA"
-	script := &dsl.Script{Name: "synthetic", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: base}, Init: []dsl.Action{{Type: "GET", Target: base + "/bootstrap"}}, Actions: []dsl.Action{{Type: "POST", Target: base + "/einstein/ai-agent/v1/agents/SYNTHETIC/sessions", Headers: map[string]string{"Authorization": "Bearer synthetic-recorded-token", "Content-Type": "application/json"}, Body: `{"externalSessionKey":"` + recordID + `"}`}}}
+	script := &dsl.Script{Name: "synthetic", Protocol: "http", Config: dsl.ScriptConfig{BaseURL: base}, Init: []dsl.Action{{Type: "GET", Target: base + "/bootstrap"}}, Actions: []dsl.Action{{Type: "POST", Target: base + "/einstein/ai-agent/v1/agents/SYNTHETIC/sessions", Headers: map[string]string{"Content-Type": "application/json"}, Body: `{"externalSessionKey":"` + recordID + `"}`}}}
 	capture := map[string]any{"log": map[string]any{"entries": []any{
 		map[string]any{"request": map[string]any{"method": "GET", "url": base + "/bootstrap"}, "response": map[string]any{"content": map[string]any{"text": `{"recordId":"` + recordID + `"}`}}},
 		map[string]any{"request": map[string]any{"method": "POST", "url": script.Actions[0].Target, "postData": map[string]any{"text": script.Actions[0].Body}}, "response": map[string]any{"content": map[string]any{"text": "{}"}}},

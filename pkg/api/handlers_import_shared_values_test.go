@@ -156,33 +156,54 @@ func TestHandleApplySharedValuesWritesLiteralBaseURL(t *testing.T) {
 	}
 }
 
-// A credential-shaped candidate is never offered, and forcing its ID through
-// must fail rather than write a value the projection would later mask away.
-func TestHandleApplySharedValuesRejectsCredentialShaped(t *testing.T) {
+// Credential-shaped candidates (including KindParameter) remain in the trusted
+// candidate set, so an operator-supplied value for one is never refused as a
+// stale candidate (409). Whether sharedvalue.Apply then accepts the literal is
+// the converter's policy: it either applies it (200) or reports
+// ErrCredentialShaped (422); neither outcome is the stale-candidate refusal
+// this handler used to produce by dropping the candidate.
+func TestHandleApplySharedValuesKeepsCredentialShapedCandidatesTrusted(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	scripts := sharedValuesTestScripts()
 
-	for _, candidate := range buildImportSharedValues(scripts).Candidates {
+	var password *sharedvalue.Candidate
+	for _, candidate := range trustedSharedValueCandidates(scripts) {
 		if strings.EqualFold(candidate.Name, "password") {
-			if !candidate.CredentialShaped {
-				t.Fatal("password candidate must be flagged credential-shaped")
-			}
-			if candidate.CurrentValue != "" {
-				t.Fatalf("credential-shaped candidate carried a value: %+v", candidate)
-			}
-			resp, _ := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
-				Scripts: scripts,
-				Values:  map[string]string{candidate.ID: "letmein"},
-			})
-			// Credential-shaped candidates are dropped from the trusted set, so
-			// the ID reads as unknown rather than reaching the applier.
-			if resp.Code != http.StatusConflict && resp.Code != http.StatusUnprocessableEntity {
-				t.Fatalf("status = %d, want the credential candidate refused; body=%s", resp.Code, resp.Body.String())
-			}
-			return
+			candidate := candidate
+			password = &candidate
+			break
 		}
 	}
-	t.Fatal("no password candidate was detected")
+	if password == nil {
+		t.Fatal("password candidate missing from trustedSharedValueCandidates")
+	}
+	if !password.CredentialShaped {
+		t.Fatal("password candidate must be flagged credential-shaped")
+	}
+	resp, decoded := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
+		Scripts: scripts,
+		Values:  map[string]string{password.ID: "letmein"},
+	})
+	switch resp.Code {
+	case http.StatusOK:
+		applied := false
+		for _, script := range decoded.Scripts {
+			for _, param := range script.Parameters {
+				if param.Name == "password" && len(param.Values) > 0 && param.Values[0] == "letmein" {
+					applied = true
+				}
+			}
+		}
+		if !applied {
+			t.Fatalf("200 response did not carry the applied literal: %+v", decoded.Scripts)
+		}
+	case http.StatusUnprocessableEntity:
+		if !strings.Contains(resp.Body.String(), sharedvalue.ErrCredentialShaped.Error()) {
+			t.Fatalf("422 body = %s, want the converter's credential-shaped refusal", resp.Body.String())
+		}
+	default:
+		t.Fatalf("status = %d, want 200 (applied) or 422 (converter refusal); body=%s", resp.Code, resp.Body.String())
+	}
 }
 
 // A shared value becomes a parameter under the input's name, and the
@@ -262,16 +283,24 @@ func TestHandleApplySharedValuesClearsMissingVariableGate(t *testing.T) {
 	}
 }
 
-// The response is derived from the same disclosure projection the apply
-// endpoint re-derives from, so no imported credential can ride along.
-func TestImportSharedValuesResponseHidesCredentialValues(t *testing.T) {
+// Credential-shaped shared parameters are retained as candidates in the
+// shared_values block so operators can inspect and edit them on import.
+func TestImportSharedValuesResponseOffersCredentialShapedCandidates(t *testing.T) {
 	result := buildImportSharedValues(sharedValuesTestScripts())
-	payload, err := json.Marshal(result)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
+	if result == nil {
+		t.Fatal("expected shared values result")
 	}
-	if strings.Contains(string(payload), "hunter2") {
-		t.Fatalf("shared values leaked a credential: %s", payload)
+	foundPassword := false
+	for _, candidate := range result.Candidates {
+		if strings.EqualFold(candidate.Name, "password") {
+			foundPassword = true
+			if !candidate.CredentialShaped {
+				t.Fatalf("password candidate not flagged credential-shaped: %+v", candidate)
+			}
+		}
+	}
+	if !foundPassword {
+		t.Fatalf("expected password candidate in shared values: %+v", result.Candidates)
 	}
 }
 
@@ -419,9 +448,8 @@ func TestHandleApplySharedValuesRefusesUnusableBindings(t *testing.T) {
 	}
 }
 
-// A credential the source left unset is supplied from a project secret (or a
-// data pool column), never as a value kept in the script, and the choice is
-// recorded for a re-import.
+// A credential the source left unset can be supplied from a project secret and
+// the choice is recorded for a re-import.
 func TestHandleApplySharedValuesSuppliesACredentialFromAProjectSecret(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	scripts := []*dsl.Script{{
@@ -437,16 +465,6 @@ func TestHandleApplySharedValuesSuppliesACredentialFromAProjectSecret(t *testing
 		}},
 	}}
 	token := sharedValueCandidateID(t, scripts, "apiToken")
-	if resp, _ := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
-		Scripts: scripts, Values: map[string]string{token: "abc"},
-	}); resp.Code == http.StatusOK {
-		t.Fatal("a credential took a value kept in the script")
-	}
-	if resp, _ := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
-		Scripts: scripts, Bindings: map[string]sharedvalue.Binding{token: {Mode: sharedvalue.BindingGenerated, Generator: "uuid"}},
-	}); resp.Code != http.StatusBadRequest {
-		t.Fatalf("a generated credential: status = %d, want 400", resp.Code)
-	}
 	resp, decoded := postSharedValuesApply(t, server, importSharedValuesApplyRequest{
 		Scripts: scripts, Bindings: map[string]sharedvalue.Binding{token: {Mode: sharedvalue.BindingSecret, Secret: "API_TOKEN"}},
 	})

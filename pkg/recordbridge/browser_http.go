@@ -310,7 +310,7 @@ func (s *Service) HandleStartBrowserRecording(w http.ResponseWriter, r *http.Req
 
 	s.audit(r, "browser_recording.start", "success", "browser_recording", session.ID, session.ProjectID,
 		map[string]any{"name": session.Name, "start_url": scrub.ValueURL(session.StartURL, scrub.Policy{}), "capture_har": session.CaptureHAR})
-	writeJSON(w, http.StatusCreated, map[string]any{"session": session})
+	writeJSON(w, http.StatusCreated, map[string]any{"session": s.sanitizeBrowserRecordingSessionIfNeeded(r, session)})
 }
 
 func (s *Service) HandleGetBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -338,13 +338,23 @@ func (s *Service) HandleGetBrowserRecording(w http.ResponseWriter, r *http.Reque
 func (s *Service) HandleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := s.authorizedProject(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
 	sessions := s.Recording.List(projectID)
-	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
 	for index := range sessions {
-		if sessions[index] != nil && (scrubRequested || sessions[index].ScrubSensitive || !s.canExportRaw(r, sessions[index].ProjectID)) {
-			sessions[index] = SanitizeBrowserRecordingSessionForResponse(sessions[index])
-		}
+		sessions[index] = s.sanitizeBrowserRecordingSessionIfNeeded(r, sessions[index])
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
+}
+
+func (s *Service) sanitizeBrowserRecordingSessionIfNeeded(r *http.Request, session *BrowserRecordingSession) *BrowserRecordingSession {
+	if session == nil {
+		return nil
+	}
+	raw := r != nil && rawRecordingExportRequested(r)
+	scrubRequested := r != nil && strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
+	canExport := r == nil || s.canExportRaw(r, session.ProjectID)
+	if !canExport || scrubRequested || (!raw && session.ScrubSensitive) {
+		return SanitizeBrowserRecordingSessionForResponse(session)
+	}
+	return session
 }
 
 func (s *Service) HandleDeleteBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -360,7 +370,7 @@ func (s *Service) HandleDeleteBrowserRecording(w http.ResponseWriter, r *http.Re
 	}
 	s.audit(r, "browser_recording.delete", "success", "browser_recording", session.ID, session.ProjectID,
 		map[string]any{"status": session.Status, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": id, "session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"deleted": id, "session": s.sanitizeBrowserRecordingSessionIfNeeded(r, session)})
 }
 
 func (s *Service) HandleStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -372,7 +382,7 @@ func (s *Service) HandleStopBrowserRecording(w http.ResponseWriter, r *http.Requ
 	}
 	s.audit(r, "browser_recording.stop", "success", "browser_recording", session.ID, session.ProjectID,
 		map[string]any{"stop_reason": session.StopReason, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"session": s.sanitizeBrowserRecordingSessionIfNeeded(r, session)})
 }
 
 func (s *Service) HandleForceStopBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -388,17 +398,17 @@ func (s *Service) HandleForceStopBrowserRecording(w http.ResponseWriter, r *http
 	}
 	s.audit(r, "browser_recording.force_stop", "success", "browser_recording", session.ID, session.ProjectID,
 		map[string]any{"stop_reason": session.StopReason, "step_count": session.StepCount})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, map[string]any{"session": s.sanitizeBrowserRecordingSessionIfNeeded(r, session)})
 }
 
 func (s *Service) HandlePauseBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.Recording.Pause(r.PathValue("id"))
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleResumeBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.Recording.Resume(r.PathValue("id"))
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleNavigateBrowserRecording(w http.ResponseWriter, r *http.Request) {
@@ -420,12 +430,12 @@ func (s *Service) HandleNavigateBrowserRecording(w http.ResponseWriter, r *http.
 		s.audit(r, "browser_recording.navigate", "success", "browser_recording", id, session.ProjectID,
 			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
 	}
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleFocusBrowserRecording(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.Recording.Focus(r.PathValue("id"))
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleOpenBrowserRecordingControlPanel(w http.ResponseWriter, r *http.Request) {
@@ -469,7 +479,7 @@ func (s *Service) HandleOpenBrowserRecordingControlPanel(w http.ResponseWriter, 
 		s.audit(r, "browser_recording.control_panel", "success", "browser_recording", id, session.ProjectID,
 			map[string]any{"url": scrub.ValueURL(req.URL, scrub.Policy{})})
 	}
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (b *BrowserRecordingBridgeConnectionSeed) localStorageEntry(panelURL string) (string, string, error) {
@@ -545,7 +555,7 @@ func (s *Service) HandleBrowserRecordingMarker(w http.ResponseWriter, r *http.Re
 		s.writeError(w, status, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session, "marker": marker})
+	writeJSON(w, http.StatusOK, map[string]any{"session": s.sanitizeBrowserRecordingSessionIfNeeded(r, session), "marker": marker})
 }
 
 func (s *Service) WriteBrowserRecordingControlResult(w http.ResponseWriter, session *BrowserRecordingSession, ok bool, err error) {
@@ -567,6 +577,10 @@ func (s *Service) WriteBrowserRecordingControlResult(w http.ResponseWriter, sess
 		s.writeError(w, http.StatusBadGateway, err.Error())
 		return
 	}
+	// Callers project the session through sanitizeBrowserRecordingSessionIfNeeded
+	// first, so an explicit ?raw=true or ?scrub=true is honored the same way
+	// as the GET, marker, stop and delete responses; scrubbing again here would
+	// override that decision.
 	writeJSON(w, http.StatusOK, map[string]any{"session": session})
 }
 
@@ -578,7 +592,7 @@ func (s *Service) HandleSetBrowserRecordingSection(w http.ResponseWriter, r *htt
 		return
 	}
 	session, ok, err := s.Recording.SetSection(r.PathValue("id"), req.Section)
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleSetBrowserRecordingPickMode(w http.ResponseWriter, r *http.Request) {
@@ -589,12 +603,12 @@ func (s *Service) HandleSetBrowserRecordingPickMode(w http.ResponseWriter, r *ht
 		return
 	}
 	session, ok, err := s.Recording.SetAssertMode(r.PathValue("id"), req.On)
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleDeleteLastBrowserRecordingStep(w http.ResponseWriter, r *http.Request) {
 	session, ok, err := s.Recording.DeleteLastStep(r.PathValue("id"))
-	s.WriteBrowserRecordingControlResult(w, session, ok, err)
+	s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 }
 
 func (s *Service) HandleUpdateBrowserRecordingStep(w http.ResponseWriter, r *http.Request) {
@@ -615,12 +629,12 @@ func (s *Service) HandleUpdateBrowserRecordingStep(w http.ResponseWriter, r *htt
 	id := r.PathValue("id")
 	if req.Excluded != nil {
 		session, ok, err := s.Recording.SetStepExcluded(id, seq, *req.Excluded)
-		s.WriteBrowserRecordingControlResult(w, session, ok, err)
+		s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 		return
 	}
 	if req.Secret != nil || req.Param != nil {
 		session, ok, err := s.Recording.PatchStepMark(id, seq, req.Secret, req.Param)
-		s.WriteBrowserRecordingControlResult(w, session, ok, err)
+		s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 		return
 	}
 	if req.PromoteSelector != nil {
@@ -630,7 +644,7 @@ func (s *Service) HandleUpdateBrowserRecordingStep(w http.ResponseWriter, r *htt
 			return
 		}
 		session, ok, err := s.Recording.PromoteStepSelector(id, seq, selector)
-		s.WriteBrowserRecordingControlResult(w, session, ok, err)
+		s.WriteBrowserRecordingControlResult(w, s.sanitizeBrowserRecordingSessionIfNeeded(r, session), ok, err)
 		return
 	}
 	s.writeError(w, http.StatusBadRequest, "no step update provided (excluded, mark_secret, mark_param, or promote_selector)")
@@ -771,8 +785,9 @@ func (s *Service) HandleExportBrowserRecording(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
 	sensitivity := scrub.SensitivityRaw
-	if !raw {
+	if scrubRequested || (!raw && (info.ScrubSensitive || !s.canExportRaw(r, info.ProjectID))) {
 		scrubbed, err := scrub.HAR(data, scrub.Policy{})
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())

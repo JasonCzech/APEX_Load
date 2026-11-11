@@ -403,23 +403,24 @@ func (s *Server) libraryScriptBundleItem(id string) (LibraryBundleItem, error) {
 	// break as a masked export — the transferred script could not run. Only the
 	// Name below stays a disclosure-safe label.
 	//
-	// ContentHash is deliberately NOT a hash of these bytes: hashLibraryScript
-	// masks internally, so the hash stays stable when only an inline credential
-	// differs. That portability is the point — two instances holding the same
-	// script with different credential values must still recognise it as the
-	// same script, and both ends compute the hash the same way, so shipping the
-	// executable body does not disturb link identity or drift detection.
+	// ContentHash is computed over the canonical unmasked script definition via
+	// hashLibraryScript (excluding instance-local identifiers and timestamps),
+	// and ContentHashVersion marks the item so the importer takes the payload
+	// verbatim. Unversioned items are legacy exports whose hash covered the
+	// maskScriptSecrets projection; libraryScriptHashMatches still accepts that
+	// hash and the importer reconciles such payloads against the local prior.
 	script := stored.Script
 	return LibraryBundleItem{
-		Kind:             "script",
-		SourceInstanceID: s.controllerID,
-		SourceItemID:     stored.ID,
-		ProjectID:        stored.ProjectID,
-		Name:             disclosureSafeScriptName(stored.Name, stored.Script),
-		ContentHash:      hashLibraryScript(script),
-		CreatedAt:        stored.CreatedAt,
-		UpdatedAt:        stored.CreatedAt,
-		Script:           script,
+		Kind:               "script",
+		SourceInstanceID:   s.controllerID,
+		SourceItemID:       stored.ID,
+		ProjectID:          stored.ProjectID,
+		Name:               disclosureSafeScriptName(stored.Name, stored.Script),
+		ContentHash:        hashLibraryScript(script),
+		ContentHashVersion: libraryScriptHashVersionUnmasked,
+		CreatedAt:          stored.CreatedAt,
+		UpdatedAt:          stored.CreatedAt,
+		Script:             script,
 	}, nil
 }
 
@@ -798,9 +799,8 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 			conflict(item, "script payload has inconsistent source project ownership")
 			continue
 		}
-		if strings.TrimSpace(item.ContentHash) == "" ||
-			!libraryScriptHashMatches(item.Script, item.ContentHash) {
-			conflict(item, "declared content hash does not match script payload")
+		if reason := libraryScriptBundleItemHashConflict(item); reason != "" {
+			conflict(item, reason)
 			continue
 		}
 		link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
@@ -832,9 +832,11 @@ func (s *Server) preflightLibraryImport(req LibraryImportRequest, remoteID strin
 			}
 		}
 		projected := cloneScriptForLibrary(item.Script)
-		if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
-			conflict(item, err.Error())
-			continue
+		if shouldReconcileLegacyMaskedLibraryBundleItem(item) {
+			if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
+				conflict(item, err.Error())
+				continue
+			}
 		}
 		projected.ProjectID = projectID
 		projected.ID = localID
@@ -1008,9 +1010,8 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 	if item.Script == nil || (strings.TrimSpace(item.ProjectID) != "" && normalizeProjectID(item.Script.ProjectID) != normalizeProjectID(item.ProjectID)) {
 		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "script payload has inconsistent source project ownership"}
 	}
-	if strings.TrimSpace(item.ContentHash) == "" ||
-		!libraryScriptHashMatches(item.Script, item.ContentHash) {
-		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: "declared content hash does not match script payload"}
+	if reason := libraryScriptBundleItemHashConflict(item); reason != "" {
+		return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, Reason: reason}
 	}
 	link := s.libraryLink(remoteID, projectID, item.Kind, item.SourceInstanceID, item.SourceItemID)
 	localID := ""
@@ -1034,6 +1035,15 @@ func (s *Server) importLibraryScript(item LibraryBundleItem, projectID string, r
 		action = "updated"
 	}
 	script := cloneScriptForLibrary(item.Script)
+	var priorScript *dsl.Script
+	if prior != nil {
+		priorScript = prior.Script
+	}
+	if shouldReconcileLegacyMaskedLibraryBundleItem(item) {
+		if err := reconcileMaskedScriptSecrets(script, priorScript); err != nil {
+			return "", "", &LibraryConflict{Kind: "script", SourceInstanceID: item.SourceInstanceID, SourceItemID: item.SourceItemID, LocalItemID: localID, Reason: err.Error()}
+		}
+	}
 	script.ProjectID = projectID
 	// These fields identify the destination workspace, not portable content.
 	// Updates restore them from the conditionally-observed local row below;

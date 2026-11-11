@@ -17,6 +17,13 @@ import (
 const libraryBundleSchemaVersion = "apexload.library_bundle.v1"
 const libraryResultHashVersionCurrent = "apexload.library_result_hash.v2"
 const libraryResultHashVersionLegacyV1 = "apexload.library_result_hash.v1"
+
+// libraryScriptHashVersionUnmasked marks a script bundle item whose payload is
+// the verbatim stored definition and whose content_hash is hashLibraryScript
+// over those exact bytes. An item without a version is a legacy export: its
+// hash was computed over the maskScriptSecrets projection and its payload may
+// carry [REDACTED] projections, so it is always reconciled on import.
+const libraryScriptHashVersionUnmasked = "apexload.library_script_hash.unmasked.v1"
 const libraryRemotesSettingKey = "library.remotes.v1"
 const librarySyncLinksSettingKey = "library.sync_links.v1"
 

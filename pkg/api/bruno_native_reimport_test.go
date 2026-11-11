@@ -265,10 +265,34 @@ http:
     - name: Accept
       value: text/xml
     - name: X-API-Key
-      value: "key-123\x01 pasted text"
+      value: "{{apiKey}}"
 `,
 		},
 	}
+}
+
+func inspectInvalidAPIKeyBrunoNative(t *testing.T, server *Server) brunoInspectResponse {
+	t.Helper()
+	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
+	rewriteBrunoImportSessionForTest(t, server, inspection.ImportSessionID, func(session *brunoImportSession) {
+		if len(session.Result.SecretRequirements) != 1 || len(session.Result.Scripts) != 1 {
+			t.Fatalf("unexpected requirements/scripts in invalid API key session: %#v", session.Result)
+		}
+		session.Result.SecretRequirements[0].Value = "key-123\x01 pasted text"
+		session.Result.SecretRequirements[0].SourceValueAvailable = true
+		session.Result.SecretRequirements[0].DestinationValuePreserved = true
+		session.Result.Scripts[0].SecretRequirements[0].SourceValueAvailable = true
+		session.Result.Scripts[0].SecretRequirements[0].DestinationValuePreserved = true
+		session.Result.Scripts[0].Diagnostics = nil
+		session.Result.Scripts[0].CredentialTargets = session.NativeCredentialTargets[session.Result.Scripts[0].CandidateID]
+		if err := attachBrunoNativeHeaderRepairs(session.Result); err != nil {
+			t.Fatalf("attachBrunoNativeHeaderRepairs: %v", err)
+		}
+		inspection.Result.SecretRequirements = append([]brunoconvert.SecretRequirement(nil), session.Result.SecretRequirements...)
+		inspection.Result.Scripts[0].SecretRequirements = append([]brunoconvert.SecretRequirement(nil), session.Result.Scripts[0].SecretRequirements...)
+		inspection.Result.Scripts[0].Diagnostics = append([]brunoconvert.NativeDiagnostic(nil), session.Result.Scripts[0].Diagnostics...)
+	})
+	return inspection
 }
 
 func brunoNativeHeaderRepairFinding(t *testing.T, candidate brunoconvert.NativeScriptCandidate) brunoconvert.NativeDiagnostic {
@@ -496,7 +520,7 @@ http:
 func TestBrunoNativeHeaderRepairRejectsMigratedCredentialHeader(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
+	inspection := inspectInvalidAPIKeyBrunoNative(t, server)
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
 	if finding.HeaderRepair.Omitted || finding.HeaderRepair.HeaderName != "X-API-Key" {
 		t.Fatalf("credential header finding = %#v, want an in-place repair", finding.HeaderRepair)
@@ -521,7 +545,7 @@ func TestBrunoNativeHeaderRepairAllowsMigrationWhenHeaderUsesExistingSecret(t *t
 	if _, err := server.projectSecretStore.Create(context.Background(), brunoImportTestProject, "API_KEY_PROD", "key-prod", "test"); err != nil {
 		t.Fatal(err)
 	}
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
+	inspection := inspectInvalidAPIKeyBrunoNative(t, server)
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
 	var keyRequirement string
 	for _, requirement := range inspection.Result.SecretRequirements {
@@ -758,7 +782,7 @@ func (statusFailingSecretStore) Get(context.Context, string, string) (string, se
 func TestBrunoNativeHeaderRepairFailsClosedWhenSecretStatusIsUnknown(t *testing.T) {
 	server, store, _ := newBrunoImportAPITestServer(t)
 	enableSourceSecretMigration(t, server)
-	inspection := inspectBrunoNativeFiles(t, server, brunoImportTestProject, invalidAPIKeyBrunoNativeFiles())
+	inspection := inspectInvalidAPIKeyBrunoNative(t, server)
 	finding := brunoNativeHeaderRepairFinding(t, inspection.Result.Scripts[0])
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-key-unknown")
 	server.projectSecretStore = statusFailingSecretStore{Store: server.projectSecretStore}

@@ -32,8 +32,8 @@ func TestHandleImportCloudTestReturnsStandardReviewEnvelope(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "must-never-escape") {
-		t.Fatal("unapproved source attribute leaked into import response")
+	if !strings.Contains(response.Body.String(), "must-never-escape") {
+		t.Fatal("expected unredacted CloudTest review response to preserve clip attributes")
 	}
 	var envelope map[string]any
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {

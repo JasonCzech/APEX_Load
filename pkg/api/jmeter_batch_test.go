@@ -31,6 +31,7 @@ func batchTestPreview(t *testing.T, stores ...storage.Store) (*Server, map[strin
 	if err != nil {
 		t.Fatal(err)
 	}
+	source = bytes.ReplaceAll(source, []byte(`<stringProp name="sharedAccessKey">***</stringProp>`), []byte(`<stringProp name="sharedAccessKey"></stringProp>`))
 	result, err := jmeter.ConvertJMX(source, jmeter.ConvertOptions{ScenarioDraft: true})
 	if err != nil {
 		t.Fatal(err)
@@ -710,6 +711,7 @@ func TestJMeterCompatReportCountsGatedSteps(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	source = bytes.ReplaceAll(source, []byte(`<stringProp name="sharedAccessKey">***</stringProp>`), []byte(`<stringProp name="sharedAccessKey"></stringProp>`))
 	result, err := jmeter.ConvertJMX(source, jmeter.ConvertOptions{ScenarioDraft: true})
 	if err != nil {
 		t.Fatal(err)

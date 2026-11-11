@@ -1294,6 +1294,205 @@ func TestLibraryImportKeepsScriptImportProvenance(t *testing.T) {
 	}
 }
 
+func TestLibraryImportAcceptsUnmaskedRedactedTextAndReconcilesLegacyMaskedBundle(t *testing.T) {
+	// 1. Modern unmasked bundle whose script legitimately contains the literal
+	// text "[REDACTED]" must import cleanly without orphan-sentinel rejection.
+	target := NewServer(ServerConfig{})
+	modernDef := libraryTestScript("modern-redacted", "Modern Redacted Text", "project-a", "/status")
+	modernDef.Actions[0].Body = `{"note":"expected [REDACTED] placeholder"}`
+	modernItem := LibraryBundleItem{
+		Kind:               "script",
+		SourceInstanceID:   "source-1",
+		SourceItemID:       modernDef.ID,
+		ProjectID:          "project-a",
+		Name:               modernDef.Name,
+		ContentHash:        hashLibraryScript(modernDef),
+		ContentHashVersion: libraryScriptHashVersionUnmasked,
+		Script:             modernDef,
+	}
+	modernResp := httptest.NewRecorder()
+	target.mux.ServeHTTP(modernResp, httptest.NewRequest(http.MethodPost, "/api/v1/library/import", bytes.NewReader(marshalLibraryTestJSON(t, LibraryImportRequest{
+		Bundle:    LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{modernItem}},
+		ProjectID: "project-b",
+	}))))
+	if modernResp.Code != http.StatusCreated {
+		t.Fatalf("modern import with literal [REDACTED] status = %d body=%s", modernResp.Code, modernResp.Body.String())
+	}
+	importedModern := target.runner.ListScriptsFiltered("project-b", nil)
+	if len(importedModern) != 1 || importedModern[0].Script.Actions[0].Body != modernDef.Actions[0].Body {
+		t.Fatalf("imported modern script = %#v", importedModern)
+	}
+
+	// 2. Legacy masked bundle updating a linked script must reconcile against
+	// the stored prior script so stored credentials are not overwritten with
+	// "[REDACTED]".
+	localDef := libraryTestScript("linked-local", "Linked Script", "project-b", "/v1")
+	localDef.Actions[0].Headers = map[string]string{"Authorization": "Bearer stored-secret-token"}
+	storedLocal, err := target.runner.CreateScriptDurable(localDef)
+	if err != nil {
+		t.Fatalf("CreateScriptDurable: %v", err)
+	}
+	if err := target.rememberLibraryLink("remote-1", "project-b", "script", "source-1", "remote-linked", storedLocal.ID, "remote-linked", legacyMaskedHashLibraryScript(storedLocal.Script), legacyMaskedHashLibraryScript(storedLocal.Script)); err != nil {
+		t.Fatalf("rememberLibraryLink: %v", err)
+	}
+
+	updatedRaw := cloneScriptForLibrary(storedLocal.Script)
+	updatedRaw.Actions[0].Name = "Updated step name"
+	maskedIncoming := maskScriptSecrets(updatedRaw)
+	legacyItem := LibraryBundleItem{
+		Kind:             "script",
+		SourceInstanceID: "source-1",
+		SourceItemID:     "remote-linked",
+		ProjectID:        "project-b",
+		Name:             maskedIncoming.Name,
+		ContentHash:      legacyMaskedHashLibraryScript(updatedRaw),
+		Script:           maskedIncoming,
+	}
+	importedResult, err := target.importLibraryBundle(LibraryImportRequest{
+		ProjectID: "project-b",
+		Bundle:    LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{legacyItem}},
+	}, "remote-1")
+	if err != nil || len(importedResult.Conflicts) != 0 {
+		t.Fatalf("legacy masked bundle import = %#v, err=%v", importedResult, err)
+	}
+	reloaded, ok := target.runner.GetScript(storedLocal.ID)
+	if !ok || reloaded == nil || reloaded.Script == nil {
+		t.Fatalf("reloaded linked script missing: %#v", reloaded)
+	}
+	if got := reloaded.Script.Actions[0].Name; got != "Updated step name" {
+		t.Fatalf("updated action name = %q, want Updated step name", got)
+	}
+	if got := reloaded.Script.Actions[0].Headers["Authorization"]; got != "Bearer stored-secret-token" {
+		t.Fatalf("stored Authorization header after legacy masked bundle update = %q, want preserved Bearer stored-secret-token", got)
+	}
+
+	// 3. A versioned modern bundle updating a linked script that holds an
+	// inline credential is taken verbatim: the remote's secret reference and
+	// its literal "[REDACTED]" body text both land, with no orphan rejection
+	// and no restoration of the prior credential.
+	modernLinkedDef := libraryTestScript("modern-linked-local", "Modern Linked", "project-b", "/v1")
+	modernLinkedDef.Actions[0].Headers = map[string]string{"Authorization": "Bearer local-inline-token"}
+	storedModernLinked, err := target.runner.CreateScriptDurable(modernLinkedDef)
+	if err != nil {
+		t.Fatalf("CreateScriptDurable modern linked: %v", err)
+	}
+	if err := target.rememberLibraryLink("remote-1", "project-b", "script", "source-1", "remote-modern-linked", storedModernLinked.ID, "remote-modern-linked", hashLibraryScript(storedModernLinked.Script), hashLibraryScript(storedModernLinked.Script)); err != nil {
+		t.Fatalf("rememberLibraryLink modern: %v", err)
+	}
+	modernUpdate := cloneScriptForLibrary(storedModernLinked.Script)
+	modernUpdate.Actions[0].Headers = map[string]string{"Authorization": "Bearer {{secret.REMOTE_TOKEN}}"}
+	modernUpdate.Actions[0].Body = `{"note":"literal [REDACTED] marker"}`
+	modernUpdateItem := LibraryBundleItem{
+		Kind:               "script",
+		SourceInstanceID:   "source-1",
+		SourceItemID:       "remote-modern-linked",
+		ProjectID:          "project-b",
+		Name:               modernUpdate.Name,
+		ContentHash:        hashLibraryScript(modernUpdate),
+		ContentHashVersion: libraryScriptHashVersionUnmasked,
+		Script:             modernUpdate,
+	}
+	modernUpdateResult, err := target.importLibraryBundle(LibraryImportRequest{
+		ProjectID: "project-b",
+		Bundle:    LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{modernUpdateItem}},
+	}, "remote-1")
+	if err != nil || len(modernUpdateResult.Conflicts) != 0 {
+		t.Fatalf("modern linked bundle update = %#v, err=%v", modernUpdateResult, err)
+	}
+	reloadedModern, ok := target.runner.GetScript(storedModernLinked.ID)
+	if !ok || reloadedModern == nil || reloadedModern.Script == nil {
+		t.Fatalf("reloaded modern linked script missing: %#v", reloadedModern)
+	}
+	if got := reloadedModern.Script.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.REMOTE_TOKEN}}" {
+		t.Fatalf("modern linked Authorization = %q, want the remote secret reference", got)
+	}
+	if got := reloadedModern.Script.Actions[0].Body; got != modernUpdate.Actions[0].Body {
+		t.Fatalf("modern linked body = %q, want verbatim %q", got, modernUpdate.Actions[0].Body)
+	}
+
+	// 4. An unversioned (legacy) fully masked bundle creating a new script is
+	// rejected: with no prior to reconcile against, its [REDACTED] placeholder
+	// would otherwise be stored and executed as a credential.
+	legacyCreate := libraryTestScript("legacy-create", "Legacy Create", "project-a", "/legacy")
+	legacyCreate.Actions[0].Headers = map[string]string{"Authorization": "Bearer source-only-token"}
+	maskedCreate := maskScriptSecrets(legacyCreate)
+	if got := maskedCreate.Actions[0].Headers["Authorization"]; !strings.Contains(got, "[REDACTED]") {
+		t.Fatalf("test precondition: masked Authorization = %q, want a [REDACTED] projection", got)
+	}
+	legacyCreateItem := LibraryBundleItem{
+		Kind:             "script",
+		SourceInstanceID: "source-1",
+		SourceItemID:     legacyCreate.ID,
+		ProjectID:        "project-a",
+		Name:             maskedCreate.Name,
+		ContentHash:      legacyMaskedHashLibraryScript(legacyCreate),
+		Script:           maskedCreate,
+	}
+	before := len(target.runner.ListScriptsFiltered("project-b", nil))
+	legacyCreateResult, err := target.importLibraryBundle(LibraryImportRequest{
+		ProjectID: "project-b",
+		Bundle:    LibraryBundle{SchemaVersion: libraryBundleSchemaVersion, Items: []LibraryBundleItem{legacyCreateItem}},
+	}, "remote-1")
+	if err != nil {
+		t.Fatalf("legacy masked create err = %v", err)
+	}
+	if len(legacyCreateResult.Conflicts) != 1 || !strings.Contains(legacyCreateResult.Conflicts[0].Reason, "orphan") {
+		t.Fatalf("legacy masked create = %#v, want one orphan-sentinel conflict", legacyCreateResult)
+	}
+	if after := len(target.runner.ListScriptsFiltered("project-b", nil)); after != before {
+		t.Fatalf("legacy masked create stored a script: before=%d after=%d", before, after)
+	}
+
+	// 5. A versioned item must carry the exact unmasked hash, and an unknown
+	// version is refused rather than guessed at.
+	mismatched := LibraryBundleItem{
+		Kind:               "script",
+		SourceInstanceID:   "source-1",
+		SourceItemID:       "mismatched-version",
+		ProjectID:          "project-b",
+		Name:               storedLocal.Name,
+		ContentHash:        legacyMaskedHashLibraryScript(storedLocal.Script),
+		ContentHashVersion: libraryScriptHashVersionUnmasked,
+		Script:             storedLocal.Script,
+	}
+	if reason := libraryScriptBundleItemHashConflict(mismatched); reason == "" {
+		t.Fatal("versioned item with a legacy masked hash was accepted")
+	}
+	unknown := modernItem
+	unknown.ContentHashVersion = "apexload.library_script_hash.future"
+	if reason := libraryScriptBundleItemHashConflict(unknown); !strings.Contains(reason, "unsupported") {
+		t.Fatalf("unknown version reason = %q, want unsupported", reason)
+	}
+}
+
+// Exports stamp the unmasked hash version so a receiving instance imports the
+// payload verbatim instead of reconciling it as a legacy masked export.
+func TestLibraryScriptBundleItemStampsUnmaskedHashVersion(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	def := libraryTestScript("stamp-version", "Stamp Version", "project-a", "/stamp")
+	def.Actions[0].Headers = map[string]string{"Authorization": "Bearer exported-inline-token"}
+	stored, err := server.runner.CreateScriptDurable(def)
+	if err != nil {
+		t.Fatalf("CreateScriptDurable: %v", err)
+	}
+	item, err := server.libraryScriptBundleItem(stored.ID)
+	if err != nil {
+		t.Fatalf("libraryScriptBundleItem: %v", err)
+	}
+	if item.ContentHashVersion != libraryScriptHashVersionUnmasked {
+		t.Fatalf("content_hash_version = %q, want %q", item.ContentHashVersion, libraryScriptHashVersionUnmasked)
+	}
+	if item.ContentHash != hashLibraryScript(item.Script) {
+		t.Fatal("exported content_hash is not the unmasked script hash")
+	}
+	if got := item.Script.Actions[0].Headers["Authorization"]; got != "Bearer exported-inline-token" {
+		t.Fatalf("exported Authorization = %q, want verbatim", got)
+	}
+	if shouldReconcileLegacyMaskedLibraryBundleItem(item) {
+		t.Fatal("a versioned export must not be reconciled as a legacy masked bundle")
+	}
+}
+
 // The archive route reaches the library import, which can add scripts, but
 // refuses every bundle item other than a result: a script bundle adds nothing.
 func TestLibraryArchiveImportRefusesScriptItems(t *testing.T) {

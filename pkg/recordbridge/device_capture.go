@@ -201,6 +201,9 @@ func (s *Service) HandleStartDeviceCapture(w http.ResponseWriter, r *http.Reques
 		Port         int      `json:"port,omitempty"`
 		IncludeHosts []string `json:"include_hosts,omitempty"`
 		ExcludeHosts []string `json:"exclude_hosts,omitempty"`
+		// ScrubSensitive opts into redacting sensitive request/response fields
+		// during capture and live session views. Off by default.
+		ScrubSensitive *bool `json:"scrub_sensitive,omitempty"`
 		// RecordingProfile is the project recording profile selected in
 		// Recording Studio: its host filters, capture limit and cookie
 		// capture apply to the recording, and its code generation settings
@@ -222,6 +225,7 @@ func (s *Service) HandleStartDeviceCapture(w http.ResponseWriter, r *http.Reques
 		ExcludeHosts:     req.ExcludeHosts,
 		ExcludeStatic:    true,
 		ExcludeStaticSet: true,
+		ScrubSensitive:   recorderScrubSensitive(req.ScrubSensitive, profile),
 	}
 	if profile != nil {
 		// As a proxy recording on the controller applies its profile.

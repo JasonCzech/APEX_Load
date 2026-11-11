@@ -21,6 +21,7 @@ import (
 	recbrowser "github.com/jasonczech/apexload/pkg/recorder/browser"
 	"github.com/jasonczech/apexload/pkg/recorder/marker"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"net/http"
 	"strconv"
 	"strings"
@@ -490,6 +491,8 @@ func ComposeRecordingSessionConversion(
 		profileID = strings.TrimSpace(req.ProfileID)
 	}
 
+	sessionScrub := ProxySessionScrubSensitive(session) && (profile == nil || session == nil || strings.EqualFold(profile.ID, session.Filters.RecordingProfileID))
+	scrubSensitive := sessionScrub || (profile != nil && profile.ScrubSensitive)
 	hasSelectedIDs := len(paramize.SelectedIDsForScript(req.ParameterizationSelections, 0)) > 0
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{
 		ConversionPolicy:    strings.TrimSpace(req.ConversionPolicy),
@@ -507,6 +510,7 @@ func ComposeRecordingSessionConversion(
 		SalesforceNative:    req.SalesforceNative,
 		AgentforceTransform: req.AgentforceTransform,
 		Profile:             profile,
+		ScrubSensitive:      scrubSensitive,
 		HTTPVersionMode:     strings.TrimSpace(req.HTTPVersionMode),
 	})
 	protectedRequirements := result.ProtectedRequirements.Take()
@@ -599,7 +603,7 @@ func ComposeRecordingSessionConversion(
 					if result.EffectiveSettings.ConversionPolicy == sample.ConversionPolicyUnifiedV1 {
 						paramWarnings = importreview.ApplyAutoParameterizationToScript(s)
 					} else {
-						paramWarnings = recorder.ParameterizeRecordingInputs(s, sessionName)
+						paramWarnings = recorder.ParameterizeRecordingInputsWithScrub(s, sessionName, scrubSensitive)
 					}
 					result.Warnings = append(result.Warnings, paramWarnings...)
 					*warnings = result.Warnings
@@ -870,9 +874,13 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	if _, err := sample.ValidateResourceMode(scriptOptions.ResourceMode); err != nil {
 		return BrowserHTTPScript{}, err
 	}
-	profile, err := s.Conversion.ProjectRecordingProfile(importreview.NormalizeProjectID(info.ProjectID), scriptOptions.RecordingProfileID)
-	if err != nil {
-		return BrowserHTTPScript{}, err
+	var profile *recordingprofile.Profile
+	if s.Conversion.ProjectRecordingProfile != nil {
+		var err error
+		profile, err = s.Conversion.ProjectRecordingProfile(importreview.NormalizeProjectID(info.ProjectID), scriptOptions.RecordingProfileID)
+		if err != nil {
+			return BrowserHTTPScript{}, err
+		}
 	}
 	if strings.TrimSpace(level) == "" && profile != nil {
 		level = profile.HTTPScriptLevel
@@ -911,15 +919,25 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	for _, note := range marker.Notes(artifact.Markers) {
 		options.Notes = append(options.Notes, sample.TimedNote(note))
 	}
+	harData := artifact.HAR
+	if (info != nil && info.ScrubSensitive) || (profile != nil && profile.ScrubSensitive) {
+		scrubSensitive := true
+		options.SanitizeSensitive = &scrubSensitive
+		scrubbedHAR, err := scrub.HAR(harData, scrub.Policy{})
+		if err != nil {
+			return BrowserHTTPScript{}, fmt.Errorf("failed to scrub HAR for companion HTTP script: %w", err)
+		}
+		harData = scrubbedHAR
+	}
 	var levelNotes []string
 	switch strings.ToLower(strings.TrimSpace(level)) {
 	case "", recbrowser.HTTPScriptLevelURL:
 	case recbrowser.HTTPScriptLevelHTML:
-		options.HTMLSteps, levelNotes = recbrowser.HTMLLevelSteps(artifact.Steps, artifact.HAR)
+		options.HTMLSteps, levelNotes = recbrowser.HTMLLevelSteps(artifact.Steps, harData)
 	default:
 		return BrowserHTTPScript{}, fmt.Errorf("http_script_level must be url or html")
 	}
-	result, err := har.Convert(artifact.HAR, options)
+	result, err := har.Convert(harData, options)
 	if err != nil {
 		return BrowserHTTPScript{}, err
 	}
@@ -948,7 +966,7 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 	if !disableSalesforce {
 		salesforceDraft := importreview.AugmentHARImportWithSalesforceProfile(
 			result,
-			artifact.HAR,
+			harData,
 			importreview.NormalizeProjectID(info.ProjectID),
 			httpName,
 			"browser_recording_har",
@@ -985,8 +1003,8 @@ func (s *Service) CreateHTTPScriptFromHARAtLevel(artifact *recbrowser.Session, i
 		Sections:         sections,
 		Warnings:         result.Warnings,
 		BeforeFinalize: func(s *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error {
-			importreview.ApplyClientGeneratedUUIDs(s, artifact.HAR, result)
-			importreview.ApplyClientTimestamps(s, artifact.HAR, result)
+			importreview.ApplyClientGeneratedUUIDs(s, harData, result)
+			importreview.ApplyClientTimestamps(s, harData, result)
 			if result.EffectiveSettings != nil && result.EffectiveSettings.Parameterize && !scriptOptions.HasParameterizationSelections {
 				result.Warnings = append(result.Warnings, importreview.ApplyAutoParameterizationToScript(s)...)
 			}

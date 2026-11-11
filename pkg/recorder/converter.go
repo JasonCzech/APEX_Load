@@ -609,6 +609,10 @@ func ParameterizeRecordingInputs(script *dsl.Script, sourceName string) []string
 	return parameterizeInputs(script, sourceName)
 }
 
+func ParameterizeRecordingInputsWithScrub(script *dsl.Script, sourceName string, scrubSensitive bool) []string {
+	return parameterizeInputsForOptions(script, sourceName, scrubSensitive)
+}
+
 func parameterizeInputs(script *dsl.Script, sourceName string) []string {
 	return parameterizeInputsForOptions(script, sourceName, false)
 }
