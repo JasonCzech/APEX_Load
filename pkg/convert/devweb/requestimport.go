@@ -2,12 +2,10 @@ package devweb
 
 import (
 	"bytes"
-	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"mime"
 	"net/url"
-	filepath "path"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,7 +15,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // finalizeDevWebHTTPRequest is the source-adapter boundary: DevWeb's static
@@ -432,190 +429,11 @@ func devWebActionContentType(action dsl.Action) string {
 	return ""
 }
 
-// redactDevWebCredentialDataFile masks only credential-bound CSV columns in a
-// detached source-review copy. If the file cannot be parsed deterministically,
-// the complete review file is replaced rather than risk disclosing a row.
-func redactDevWebCredentialDataFile(
-	name string,
-	content string,
-	bindings map[string]map[string]struct{},
-) (string, bool) {
-	if len(bindings) == 0 {
-		return content, false
-	}
-	sourceName := strings.ToLower(sanitizeName(
-		strings.TrimSuffix(filepath.Base(name), filepath.Ext(name)),
-	))
-	columns := bindings[sourceName]
-	if len(columns) == 0 {
-		return content, false
-	}
-	reader := csv.NewReader(strings.NewReader(content))
-	reader.FieldsPerRecord = -1
-	records, err := reader.ReadAll()
-	if err != nil || len(records) == 0 {
-		return credential.Redacted, content != credential.Redacted
-	}
-	var indexes []int
-	for index, column := range records[0] {
-		if _, sensitive := columns[strings.ToLower(strings.TrimSpace(column))]; sensitive {
-			indexes = append(indexes, index)
-		}
-	}
-	if len(indexes) == 0 {
-		// A declared data binding without the expected header is ambiguous.
-		return credential.Redacted, content != credential.Redacted
-	}
-	changed := false
-	for row := 1; row < len(records); row++ {
-		for _, column := range indexes {
-			if column >= len(records[row]) {
-				return credential.Redacted, content != credential.Redacted
-			}
-			if records[row][column] != credential.Redacted {
-				records[row][column] = credential.Redacted
-				changed = true
-			}
-		}
-	}
-	if !changed {
-		return content, false
-	}
-	var output strings.Builder
-	writer := csv.NewWriter(&output)
-	writer.WriteAll(records)
-	if err := writer.Error(); err != nil {
-		return credential.Redacted, content != credential.Redacted
-	}
-	return output.String(), true
-}
-
-// redactDevWebCredentialValues removes discovered credential values from the
-// source text that rides in the public source review.
-//
-// Preserve mode intentionally emits no binding requirements, so values are
-// also collected from the finalized executable actions. Longest-first keeps a
-// value containing another from leaving a suffix behind.
-func redactDevWebCredentialValues(
-	content string,
-	requirements []credentialpolicy.Requirement,
-	actions []dsl.Action,
-) (string, bool) {
-	return redactDevWebCredentialValuesWithAdditional(
-		content,
-		requirements,
-		actions,
-		nil,
-	)
-}
-
-func redactDevWebCredentialValuesWithAdditional(
-	content string,
-	requirements []credentialpolicy.Requirement,
-	actions []dsl.Action,
-	additionalValues []string,
-) (string, bool) {
-	return redactDevWebCredentialValuesWithBudgetAndAdditional(
-		content,
-		requirements,
-		actions,
-		additionalValues,
-		maxDevWebCredentialSourceRedactionWork,
-	)
-}
-
-const maxDevWebCredentialSourceRedactionWork = 256 << 20
-
 func redactDevWebCredentialValuesWithBudget(
 	content string,
-	requirements []credentialpolicy.Requirement,
-	actions []dsl.Action,
-	maxWork int64,
+	_ []credentialpolicy.Requirement,
+	_ []dsl.Action,
+	_ int64,
 ) (string, bool) {
-	return redactDevWebCredentialValuesWithBudgetAndAdditional(
-		content,
-		requirements,
-		actions,
-		nil,
-		maxWork,
-	)
-}
-
-func redactDevWebCredentialValuesWithBudgetAndAdditional(
-	content string,
-	requirements []credentialpolicy.Requirement,
-	actions []dsl.Action,
-	additionalValues []string,
-	maxWork int64,
-) (string, bool) {
-	values := make([]string, 0, len(requirements)+len(actions)*2+len(additionalValues))
-	values = append(values, additionalValues...)
-	for _, requirement := range requirements {
-		if value := strings.TrimSpace(requirement.Value); value != "" {
-			values = append(values, value)
-		}
-	}
-	for _, action := range actions {
-		if action.Target != "" && scrub.ValueURL(action.Target, scrub.Policy{}) != action.Target {
-			// Preserve-mode projection deliberately keeps the executable URL
-			// byte-exact. Source review is a different disclosure boundary:
-			// remove the complete authored URL scalar when it contains userinfo
-			// or a credential-shaped query value. RedactQuotedValues below also
-			// finds the corresponding escaped JavaScript string literal.
-			values = append(values, action.Target)
-		}
-		for name, value := range action.Headers {
-			if credential.SensitiveHeader(name) && value != "" {
-				values = append(values, value)
-			}
-		}
-		if action.Body != "" && scrub.Value(action.Body, scrub.Policy{}) != action.Body {
-			values = append(values, action.Body)
-		}
-	}
-	seen := make(map[string]struct{}, len(values))
-	unique := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			continue
-		}
-		if _, duplicate := seen[value]; duplicate {
-			continue
-		}
-		seen[value] = struct{}{}
-		unique = append(unique, value)
-	}
-	values = unique
-	sort.SliceStable(values, func(i, j int) bool {
-		if len(values[i]) == len(values[j]) {
-			return values[i] < values[j]
-		}
-		return len(values[i]) > len(values[j])
-	})
-	if !devWebCredentialRedactionWithinBudget(len(content), len(values), maxWork) {
-		return "// [DEVWEB SOURCE OMITTED: CREDENTIAL REDACTION WORK LIMIT EXCEEDED]" +
-			strings.Repeat("\n", strings.Count(content, "\n")), true
-	}
-	changed := false
-	for _, value := range values {
-		next := strings.ReplaceAll(content, value, credential.Redacted)
-		changed = changed || next != content
-		content = next
-	}
-	content, quotedChanged := scrub.RedactQuotedValues(content, values)
-	return content, changed || quotedChanged
-}
-
-func devWebCredentialRedactionWithinBudget(
-	sourceBytes int,
-	valueCount int,
-	maxWork int64,
-) bool {
-	if valueCount <= 0 {
-		return true
-	}
-	if maxWork < 0 {
-		return false
-	}
-	return int64(sourceBytes) <= maxWork/int64(valueCount)
+	return content, false
 }

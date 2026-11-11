@@ -125,3 +125,22 @@ func TestAnalyzeIgnoresNonAgentScripts(t *testing.T) {
 		t.Fatalf("review = %#v, want not detected", review)
 	}
 }
+
+func TestAnalyzeAllowsLiteralAuthorizationWithoutMissingTokenBlocker(t *testing.T) {
+	script := &dsl.Script{
+		Actions: []dsl.Action{{
+			Name:    "Start",
+			Type:    "POST",
+			Method:  "POST",
+			Target:  "https://api.salesforce.com/einstein/ai-agent/v1/agents/0Xx/sessions",
+			Headers: map[string]string{"Authorization": "Bearer 00Dxx!LITERAL"},
+		}},
+	}
+	review := Analyze(script)
+	if !review.Detected {
+		t.Fatalf("review = %#v, want detected", review)
+	}
+	if len(review.Blockers) != 0 {
+		t.Fatalf("blockers = %#v, want no missing-token blocker when literal Authorization is present", review.Blockers)
+	}
+}

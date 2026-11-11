@@ -97,4 +97,26 @@ func TestConvertPutsTheSalesforceSignInInInit(t *testing.T) {
 	if len(spanned.Script.Init) != 0 || !strings.Contains(strings.Join(spanned.Warnings, "\n"), `transaction "Open app" starts during it`) {
 		t.Fatalf("spanning transaction: init %+v, warnings %v", spanned.Script.Init, spanned.Warnings)
 	}
+
+	// Default unmasked Salesforce sign-in keeps literal password and OTP values in init,
+	// and ScrubSensitive=true rewrites them to {{env.*}}.
+	unmasked := &Session{
+		StartURL: login,
+		Steps: []Step{
+			{Seq: 1, Kind: StepFill, Value: "perf.user@acme.test", URL: login, Timestamp: ts(1000), Candidates: candidate("#username")},
+			{Seq: 2, Kind: StepFill, Value: "LiteralPass#1", Masked: false, URL: login, Timestamp: ts(2000), Candidates: candidate("#password"), Element: &selector.ElementMetadata{Tag: "input", ID: "password", Type: "password"}},
+			{Seq: 3, Kind: StepClick, URL: login, Timestamp: ts(3000), Candidates: candidate("#Login")},
+			{Seq: 4, Kind: StepFill, Value: "918273", Masked: false, URL: verify, Timestamp: ts(9000), Candidates: candidate("#smc"), Element: &selector.ElementMetadata{Tag: "input", ID: "smc", Attributes: map[string]string{"autocomplete": "one-time-code"}}},
+			{Seq: 5, Kind: StepClick, URL: verify, Timestamp: ts(10000), Candidates: candidate("#save")},
+			{Seq: 6, Kind: StepClick, URL: app, Timestamp: ts(20000), Candidates: candidate("a[title=Accounts]")},
+		},
+	}
+	unmaskedRes := Convert(unmasked, ConvertOptions{})
+	if unmaskedRes.Script.Init[2].Value != "LiteralPass#1" || unmaskedRes.Script.Init[4].Value != "918273" {
+		t.Fatalf("default unmasked Salesforce sign-in values = pw:%q otp:%q, want literal values", unmaskedRes.Script.Init[2].Value, unmaskedRes.Script.Init[4].Value)
+	}
+	scrubbedRes := Convert(unmasked, ConvertOptions{ScrubSensitive: true})
+	if !strings.HasPrefix(scrubbedRes.Script.Init[2].Value, "{{env.") || !strings.HasPrefix(scrubbedRes.Script.Init[4].Value, "{{env.") {
+		t.Fatalf("scrubSensitive Salesforce sign-in values = pw:%q otp:%q, want {{env.*}}", scrubbedRes.Script.Init[2].Value, scrubbedRes.Script.Init[4].Value)
+	}
 }

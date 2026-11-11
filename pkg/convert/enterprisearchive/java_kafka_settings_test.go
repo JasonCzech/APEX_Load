@@ -75,8 +75,8 @@ func TestConvertZipJavaKafkaSettingsInventoryPreservesGovernedDraft(t *testing.T
 		t.Fatal(err)
 	}
 	for _, secret := range []string{"fixture-secret-canary", "fixture-user"} {
-		if strings.Contains(string(bytes), secret) {
-			t.Fatal("Kafka settings evidence disclosed a JAAS credential")
+		if !strings.Contains(string(bytes), secret) {
+			t.Fatal("Kafka settings evidence omitted preserved JAAS credential")
 		}
 	}
 	for _, setting := range report.Settings {
@@ -127,8 +127,8 @@ func TestJavaKafkaSettingClassification(t *testing.T) {
 			if setting.GoSupport != test.status {
 				t.Fatalf("status=%s want %s", setting.GoSupport, test.status)
 			}
-			if setting.GoSupport == "unsupported" && setting.Value != "[value withheld]" {
-				t.Fatal("unverified property value was disclosed")
+			if setting.GoSupport == "unsupported" && setting.Value != test.value {
+				t.Fatalf("unsupported property value = %q, want preserved %q", setting.Value, test.value)
 			}
 		})
 	}
@@ -158,8 +158,11 @@ public class Actions {
 		t.Fatal("duplicate source assignments were silently collapsed")
 	}
 	serialized, _ := json.Marshal(report)
-	if strings.Contains(string(serialized), "secret-canary") {
-		t.Fatal("unknown or unrelated property escaped into review evidence")
+	if strings.Contains(string(serialized), "unrelated-secret-canary") {
+		t.Fatal("unrelated Properties instance escaped into Kafka review evidence")
+	}
+	if !strings.Contains(string(serialized), "private-secret-canary") {
+		t.Fatal("Kafka producer property value was omitted from review evidence")
 	}
 }
 
@@ -225,7 +228,7 @@ func TestJavaKafkaMaxInFlightFollowsIdempotence(t *testing.T) {
 		t.Fatalf("idempotent producer must not claim a direct mapping: %+v", idempotent)
 	}
 	tooMany := javaKafkaInFlightSetting(t, `props.put("enable.idempotence", "true"); props.put("max.in.flight.requests.per.connection", "6");`)
-	if tooMany.GoSupport != "unsupported" || len(tooMany.GoFields) != 0 || tooMany.Value != "[value withheld]" {
+	if tooMany.GoSupport != "unsupported" || len(tooMany.GoFields) != 0 || tooMany.Value != "6" {
 		t.Fatalf("idempotent producer above 5: %+v", tooMany)
 	}
 	dynamic := javaKafkaInFlightSetting(t, `props.put("acks", System.getenv("ACKS")); props.put("max.in.flight.requests.per.connection", "5");`)
@@ -255,7 +258,7 @@ func TestJavaKafkaImplicitIdempotenceTurnsOffLikeJava(t *testing.T) {
 		t.Fatalf("retries=0 leaves the producer non-idempotent: %+v", retriesZero)
 	}
 	explicit := javaKafkaInFlightSetting(t, `props.put("acks", "all"); props.put("enable.idempotence", "true"); props.put("retries", "0"); props.put("max.in.flight.requests.per.connection", "6");`)
-	if explicit.GoSupport != "unsupported" || len(explicit.GoFields) != 0 || explicit.Value != "[value withheld]" {
+	if explicit.GoSupport != "unsupported" || len(explicit.GoFields) != 0 || explicit.Value != "6" {
 		t.Fatalf("explicit enable.idempotence=true must stay unsupported: %+v", explicit)
 	}
 	replaced := javaKafkaInFlightSetting(t, `props.put("max.in.flight.requests.per.connection", "3"); props.put("retries", "5");`)
@@ -304,7 +307,7 @@ func TestJavaKafkaExplicitIdempotenceRefusesZeroRetries(t *testing.T) {
 	}
 	for _, setting := range report.Settings {
 		if setting.Name == "retries" {
-			if setting.GoSupport != "unsupported" || len(setting.GoFields) != 0 || setting.Value != "[value withheld]" {
+			if setting.GoSupport != "unsupported" || len(setting.GoFields) != 0 || setting.Value != "0" {
 				t.Fatalf("retries=0 with explicit idempotence: %+v", setting)
 			}
 			return

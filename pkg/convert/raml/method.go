@@ -177,13 +177,14 @@ func ramlReview(action *dsl.Action, result *ConvertResult, element, detail strin
 
 func ramlDeclaredValue(raw any) (any, bool) {
 	declaration := mapValue(raw)
-	for _, key := range []string{"example", "default"} {
-		if value, ok := declaration[key]; ok && value != nil {
-			if wrapper := mapValue(value); wrapper != nil && wrapper["value"] != nil {
-				value = wrapper["value"]
-			}
-			return value, true
+	if value, ok := ramlExample(declaration); ok {
+		return value, true
+	}
+	if value, ok := declaration["default"]; ok && value != nil {
+		if wrapper := mapValue(value); wrapper != nil && wrapper["value"] != nil {
+			value = wrapper["value"]
 		}
+		return value, true
 	}
 	if values, ok := declaration["enum"].([]any); ok && len(values) > 0 {
 		return values[0], true
@@ -191,7 +192,7 @@ func ramlDeclaredValue(raw any) (any, bool) {
 	return nil, false
 }
 
-func bindRAMLRequestParameters(action *dsl.Action, method map[string]any, result *ConvertResult) {
+func bindRAMLRequestParameters(action *dsl.Action, method map[string]any, apply applyOptions, schemeClientIDApplies bool, result *ConvertResult) {
 	if issues, ok := method["__raml_issues"].([]string); ok {
 		for _, issue := range issues {
 			ramlReview(action, result, "RAML inheritance", issue)
@@ -200,34 +201,46 @@ func bindRAMLRequestParameters(action *dsl.Action, method map[string]any, result
 	for _, kind := range []string{"headers", "queryParameters"} {
 		declarations := mapValue(method[kind])
 		for _, authoredName := range sortedMapKeys(declarations) {
-			name := strings.TrimSuffix(authoredName, "?")
+			name := strings.TrimSpace(strings.TrimSuffix(authoredName, "?"))
 			declaration := mapValue(declarations[authoredName])
-			required := !strings.HasSuffix(authoredName, "?") && declaration["required"] != false
+			required := !strings.HasSuffix(strings.TrimSpace(authoredName), "?") && declaration["required"] != false
 			value, bound := ramlDeclaredValue(declaration)
-			text := ""
 			if bound {
-				text = stringValue(value)
-			}
-			normalized := credential.NormalizeName(name)
-			switch normalized {
-			case "clientid":
-				text = "{{env.RAML_CLIENT_ID}}"
-				bound = true
-			case "clientsecret":
-				text = "{{secret.RAML_CLIENT_SECRET}}"
-				bound = true
-			default:
-				if kind == "headers" && credential.ImportCredentialHeader(name) ||
-					kind != "headers" && credential.SensitiveName(name) {
-					text = "{{secret.RAML_" + credential.EnvKey(name) + "}}"
-					bound = true
-				}
-			}
-			if bound && !strings.HasPrefix(text, "{{") {
 				switch value.(type) {
 				case map[string]any, map[any]any, []any:
 					ramlReview(action, result, "RAML "+kind, fmt.Sprintf("field %q has a structured example; select its wire serialization before replay", name))
 					continue
+				}
+			}
+			text := ""
+			if bound {
+				text = stringValue(value)
+			}
+			if !bound && required {
+				switch ramlClientFieldKind(name) {
+				case "clientid":
+					if schemeClientIDApplies && strings.TrimSpace(apply.clientIDValue) != "" {
+						text = apply.clientIDValue
+					} else {
+						text = "{{env.RAML_CLIENT_ID}}"
+					}
+					bound = true
+				case "clientsecret":
+					if schemeClientIDApplies && strings.TrimSpace(apply.clientSecretValue) != "" {
+						text = apply.clientSecretValue
+					} else {
+						text = "{{secret.RAML_CLIENT_SECRET}}"
+					}
+					bound = true
+				default:
+					if kind == "headers" && credential.ImportCredentialHeader(name) ||
+						kind != "headers" && credential.SensitiveName(name) {
+						if kind == "headers" && ramlActionHasNonEmptyHeader(action, name) {
+							continue
+						}
+						text = "{{secret.RAML_" + credential.EnvKey(name) + "}}"
+						bound = true
+					}
 				}
 			}
 			if !bound {
@@ -237,19 +250,36 @@ func bindRAMLRequestParameters(action *dsl.Action, method map[string]any, result
 				continue
 			}
 			if kind == "headers" {
+				for existing := range action.Headers {
+					if existing != name && strings.EqualFold(existing, name) {
+						delete(action.Headers, existing)
+					}
+				}
 				action.Headers[name] = text
 			} else {
 				separator := "?"
 				if strings.Contains(action.Target, "?") {
 					separator = "&"
 				}
-				if !strings.HasPrefix(text, "{{") {
+				if !isSingleWholeDSLTemplate(text) {
 					text = url.QueryEscape(text)
 				}
 				action.Target += separator + url.QueryEscape(name) + "=" + text
 			}
 		}
 	}
+}
+
+func ramlActionHasNonEmptyHeader(action *dsl.Action, name string) bool {
+	if action == nil {
+		return false
+	}
+	for existing, value := range action.Headers {
+		if strings.EqualFold(existing, name) && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func ramlResolvedMethodBody(method, doc map[string]any, action *dsl.Action, result *ConvertResult) (string, string, bool) {

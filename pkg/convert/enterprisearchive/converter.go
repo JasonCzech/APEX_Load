@@ -1238,6 +1238,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			[]*dsl.Script{result.Script},
 			archiveFinalizationContext{},
 		)
+		sanitizeEnterpriseArchiveScriptsDSLTemplates(result, []*dsl.Script{result.Script})
 	}
 	if overrideMissedTargets > 0 {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("%d recorded request(s) use absolute URLs on another host; the Base URL override applies only to relative targets, so these still go to the recorded host. Edit their targets to repoint them.", overrideMissedTargets))

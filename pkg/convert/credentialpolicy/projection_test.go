@@ -186,7 +186,7 @@ func TestPreserveModeAddsRuntimeLocatorForAdapterTrustedTemplate(t *testing.T) {
 	}
 }
 
-func TestPreserveModeRetainsOverLimitPayloadsAsBlockedDrafts(t *testing.T) {
+func TestPreserveModeRetainsOverLimitPayloadsAsExecutableExact(t *testing.T) {
 	t.Parallel()
 	base := projectionOptions()
 	base.Mode = Preserve
@@ -261,8 +261,8 @@ func TestPreserveModeRetainsOverLimitPayloadsAsBlockedDrafts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("projection: %v", err)
 			}
-			if !bytes.Equal(output, test.payload) || result.Disposition != BlockedDraft {
-				t.Fatalf("projection = %q / %#v, want exact blocked draft", output, result)
+			if !bytes.Equal(output, test.payload) || result.Disposition != ExecutableExact {
+				t.Fatalf("projection = %q / %#v, want exact executable payload", output, result)
 			}
 			if !resultHasFinding(result, "import_credential_review_incomplete") {
 				t.Fatalf("findings = %#v, want import_credential_review_incomplete", result.Findings)
@@ -281,10 +281,10 @@ func TestPreserveModeRetainsOverLimitPayloadsAsBlockedDrafts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ProjectMultipart: %v", err)
 	}
-	if result.Disposition != BlockedDraft || len(output.Parts) != 2 ||
+	if result.Disposition != ExecutableExact || len(output.Parts) != 2 ||
 		string(output.Parts[0].Body) != "one" || string(output.Parts[1].Body) != "two" ||
 		!resultHasFinding(result, "import_credential_review_incomplete") {
-		t.Fatalf("structured multipart = %#v / %#v, want exact blocked clone", output, result)
+		t.Fatalf("structured multipart = %#v / %#v, want exact executable clone", output, result)
 	}
 
 	scanLimits := projectionOptions()
@@ -323,9 +323,9 @@ func TestPreserveModeRetainsOverLimitPayloadsAsBlockedDrafts(t *testing.T) {
 			if err != nil {
 				t.Fatalf("projection: %v", err)
 			}
-			if !bytes.Equal(output, test.payload) || result.Disposition != BlockedDraft ||
+			if !bytes.Equal(output, test.payload) || result.Disposition != ExecutableExact ||
 				!resultHasFinding(result, "import_credential_review_incomplete") {
-				t.Fatalf("bounded scan = %q / %#v, want exact blocked draft", output, result)
+				t.Fatalf("bounded scan = %q / %#v, want exact executable payload", output, result)
 			}
 		})
 	}
@@ -360,7 +360,7 @@ func TestProjectRawURLPreserveFailsClosedWhenExactReviewIsImpossible(t *testing.
 		}
 	})
 
-	t.Run("bounded review retains bytes but blocks execution", func(t *testing.T) {
+	t.Run("bounded review retains bytes as executable exact", func(t *testing.T) {
 		options := projectionOptions()
 		options.Mode = Preserve
 		options.Limits = DefaultLimits()
@@ -370,10 +370,10 @@ func TestProjectRawURLPreserveFailsClosedWhenExactReviewIsImpossible(t *testing.
 		if err != nil {
 			t.Fatalf("ProjectRawURL: %v", err)
 		}
-		if output != raw || result.Disposition != BlockedDraft ||
+		if output != raw || result.Disposition != ExecutableExact ||
 			len(result.Findings) != 1 ||
 			result.Findings[0].Code != "import_credential_review_incomplete" {
-			t.Fatalf("bounded URL projection = %q / %#v, want byte-exact blocked draft", output, result)
+			t.Fatalf("bounded URL projection = %q / %#v, want byte-exact executable result", output, result)
 		}
 	})
 
@@ -1227,10 +1227,10 @@ func TestPreserveFallbacksAlwaysEmitOpaqueExecutableBodyLocator(t *testing.T) {
 
 	assertOpaque := func(t *testing.T, result Result, field string) {
 		t.Helper()
-		if result.Disposition != BlockedDraft ||
+		if result.Disposition != ExecutableExact ||
 			len(result.PreservedTargets) != 1 ||
 			result.PreservedTargets[0].Field != field {
-			t.Fatalf("fallback result = %#v, want blocked %q locator", result, field)
+			t.Fatalf("fallback result = %#v, want executable_exact %q locator", result, field)
 		}
 	}
 

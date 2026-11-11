@@ -30,6 +30,11 @@ archive:pkg/convert/bruno/bundle.go
 # file up one level. It applies the shared policy via
 # archiveingest.ValidateFilePath instead of adopting the normalizing reader.
 archive:pkg/api/handlers_import_enterprise.go
+# stripVuGenReplayArchiveEntries copies retained raw ZIP entries without
+# decompressing non-source VuGen replay outputs (result1/**, replay.har when
+# .usr/.c sources exist), then delegates all extraction, path validation, and
+# decompression-bomb enforcement to archiveingest.ReadZIP.
+archive:pkg/convert/enterprisearchive/zip.go
 
 # pkg/convert/bruno/inspect.go
 # Bruno's {{...}} template grammar, its secret-expression canonicalization, and
@@ -100,7 +105,6 @@ policy:pkg/convert/bruno/native_sanitize.go:rewriteNativeComposedCredential
 policy:pkg/convert/bruno/native_sanitize.go:validateNoUnprojectedNativeCredentialTemplates
 policy:pkg/convert/bruno/native_shape.go:validateNativeAuthShape
 policy:pkg/convert/bruno/native_shape.go:validateNativeHeaderShape
-policy:pkg/convert/bruno/native_shape.go:validateNativeStructuredJSONCredentials
 
 # pkg/convert/bruno/native_url_sanitize.go
 # Bruno-native source sanitization. These rewrite the retained source artifact
@@ -178,7 +182,6 @@ policy:pkg/convert/jmeter/requestimport.go:unresolvedJMeterCredentialBindings
 # pkg/convert/devweb/requestimport.go
 # Adapter boundary -- see jmeter/requestimport.go.
 policy:pkg/convert/devweb/requestimport.go:publicDevWebCredentialRequirements
-policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValues
 
 # pkg/convert/k6/requestimport.go
 # Adapter boundary -- see jmeter/requestimport.go.
@@ -243,7 +246,6 @@ policy:pkg/convert/sample/correlate_redact.go:redactSensitiveHeaderValues
 policy:pkg/convert/sample/correlate_redact.go:redactSourceReviewSecrets
 policy:pkg/convert/sample/rawhttp.go:filterHeaderList
 policy:pkg/convert/sample/request_pipeline.go:sampleEffectiveAuth
-policy:pkg/convert/wsdl/credential_projection.go:redactWSDLProjectedSecrets
 
 # Untriaged: detections that landed while earlier steps of the same CI lane
 # were failing, so this guard never ran on them. They are recorded so the guard
@@ -306,16 +308,11 @@ policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialBodyDataRefere
 policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialBodyDataReferencesWithBudget
 policy:pkg/convert/devweb/requestimport.go:collectDevWebCredentialURLDataReferences
 policy:pkg/convert/devweb/requestimport.go:devWebCredentialDataBindings
-policy:pkg/convert/devweb/requestimport.go:devWebCredentialRedactionWithinBudget
 policy:pkg/convert/devweb/requestimport.go:markDevWebCredentialDataBindings
 policy:pkg/convert/devweb/requestimport.go:markDevWebCredentialPreservingImport
-policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialDataFile
-policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithAdditional
 policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithBudget
-policy:pkg/convert/devweb/requestimport.go:redactDevWebCredentialValuesWithBudgetAndAdditional
 
 # pkg/convert/devweb/runtime_credentials.go
-policy:pkg/convert/devweb/runtime_credentials.go:devWebRuntimeCredentialReviewValues
 policy:pkg/convert/devweb/runtime_credentials.go:projectDevWebRuntimeCredentials
 
 # pkg/convert/enterprisearchive/action_convert.go
@@ -331,7 +328,6 @@ policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseOpaqueConf
 policy:pkg/convert/enterprisearchive/runtime_credentials.go:enterpriseUnavailableRuntimeCredentialPresentation
 policy:pkg/convert/enterprisearchive/runtime_credentials.go:markEnterpriseCredentialPreservingImport
 policy:pkg/convert/enterprisearchive/runtime_credentials.go:mergeEnterpriseScriptCredentialTargets
-policy:pkg/convert/enterprisearchive/runtime_credentials.go:redactEnterpriseJNDICredentialArguments
 
 # pkg/convert/enterprisearchive/sap_gui_import.go
 policy:pkg/convert/enterprisearchive/sap_gui_import.go:sapGUILogonPassword
@@ -348,7 +344,6 @@ policy:pkg/convert/jmeter/converter_native_samplers.go:hasJDBCInlineCredentials
 policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCCredentialPropertyName
 policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCCredentialValues
 policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCSensitivePropertyName
-policy:pkg/convert/jmeter/converter_native_samplers.go:jmeterJDBCUnavailableCredential
 policy:pkg/convert/jmeter/converter_native_samplers.go:mergeJMeterMySQLCredentials
 policy:pkg/convert/jmeter/converter_native_samplers.go:projectJMeterJDBCUnavailableCredential
 
@@ -405,6 +400,3 @@ policy:pkg/convert/sample/multipart_body.go:bodyHasCredentialTarget
 
 # pkg/convert/sharedvalue/names.go
 policy:pkg/convert/sharedvalue/names.go:CredentialShaped
-
-# pkg/convert/wsdl/credential_projection.go
-policy:pkg/convert/wsdl/credential_projection.go:wsdlXMLContainsSensitiveURL

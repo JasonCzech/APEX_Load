@@ -50,6 +50,10 @@ func TestProjectRequestBodyIdentifiesXMLDeclaredAsJSON(t *testing.T) {
 				if len(blockers) != 0 || result.Disposition != ExecutableExact {
 					t.Fatalf("unexpected blocker: %#v", result)
 				}
+			} else if test.wantCode == "import_credential_review_incomplete" {
+				if len(blockers) != 0 || result.Disposition != ExecutableExact || !resultHasFinding(result, test.wantCode) {
+					t.Fatalf("diagnostic = %#v, want executable_exact %s at Action.c:7", result, test.wantCode)
+				}
 			} else if len(blockers) != 1 || blockers[0].Code != test.wantCode || blockers[0].Source != source || result.Disposition != BlockedDraft {
 				t.Fatalf("diagnostic = %#v, want %s at Action.c:7", result, test.wantCode)
 			}

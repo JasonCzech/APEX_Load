@@ -331,6 +331,7 @@ func convertPlaywright(content string, opts ConvertOptions) (*ConvertResult, err
 		return nil, fmt.Errorf("no convertible Playwright statements found")
 	}
 	result.Script = script
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	result.Stats.ConvertedActions = len(script.Actions)
 	result.Unsupported = unsupported.Items()
 	for _, item := range result.Unsupported {

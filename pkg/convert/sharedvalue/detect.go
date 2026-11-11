@@ -298,15 +298,6 @@ func (b *candidateBuilder) candidates() []Candidate {
 		if candidate.Kind == "" {
 			continue
 		}
-		if candidate.CredentialShaped {
-			// Never let a credential-shaped value leave this pass.
-			candidate.CurrentValue = ""
-			if candidate.Kind == KindSourceVariable {
-				candidate.Rationale = "Looks like a credential: supply it from a project secret or a data pool column, never a value kept in the script."
-			} else {
-				candidate.Rationale = "Looks like a credential, so it is not offered as a shared value; credential review handles it."
-			}
-		}
 		out = append(out, *candidate)
 	}
 	sortCandidates(out)

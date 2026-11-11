@@ -215,7 +215,7 @@ func buildJavaKafkaSettingsReport(program javaProgram) *JavaKafkaSettingsReport 
 }
 
 func classifyJavaKafkaSetting(name, value string, resolved bool) JavaKafkaSetting {
-	setting := JavaKafkaSetting{Name: boundedRuntimeReviewEvidence(name), Value: "[value withheld]", GoSupport: "unsupported", Notes: "No verified typed Go mapping; the setting remains in the preserved Java source."}
+	setting := JavaKafkaSetting{Name: boundedRuntimeReviewEvidence(name), Value: boundedRuntimeReviewEvidence(value), GoSupport: "unsupported", Notes: "No verified typed Go mapping; the setting remains in the preserved Java source."}
 	if !resolved || strings.Contains(name, "{{") || strings.Contains(value, "{{") {
 		setting.GoSupport = "unresolved"
 		setting.Notes = "Dynamic or conditional source setting; the effective value requires source review."
@@ -242,8 +242,7 @@ func classifyJavaKafkaSetting(name, value string, resolved bool) JavaKafkaSettin
 	case "sasl.jaas.config":
 		setting.GoSupport = "requires_binding"
 		setting.GoFields = []string{"config.kafka.sasl_username", "config.kafka.sasl_password_secret"}
-		setting.Value = "[credential options withheld]"
-		setting.Notes = "JAAS stays in protected Java source. A reviewed PLAIN login module can use Go SASL username and a managed secret binding; arbitrary JAAS modules/options are not executed by Go."
+		setting.Notes = "JAAS stays in preserved Java source. A reviewed PLAIN login module can use Go SASL username and password configuration; arbitrary JAAS modules/options are not executed by Go."
 	case "security.protocol":
 		if oneOfFold(value, "PLAINTEXT", "SSL", "SASL_SSL", "SASL_PLAINTEXT") {
 			field("config.kafka.security_protocol")
@@ -292,11 +291,6 @@ func classifyJavaKafkaSetting(name, value string, resolved bool) JavaKafkaSettin
 	}
 	if setting.GoSupport == "supported" && setting.Notes == "No verified typed Go mapping; the setting remains in the preserved Java source." {
 		setting.Notes = "A typed Go setting supports this explicit value; the importer retains the Java source rather than selecting a native execution lane."
-	}
-	// Only known transport/tuning values are exposed. Unknown properties and all
-	// credential composites remain withheld even if their names look harmless.
-	if setting.GoSupport == "supported" || setting.GoSupport == "partial" || setting.GoSupport == "non_applicable" {
-		setting.Value = boundedRuntimeReviewEvidence(value)
 	}
 	return setting
 }
@@ -384,8 +378,7 @@ func refineJavaKafkaInFlightSettings(settings []JavaKafkaSetting, counts map[str
 				setting.Notes += " A later assignment replaces this value, so the Java client's refusal of retries=0 for an explicitly idempotent producer does not apply."
 				continue
 			}
-			// Unsupported rows never disclose their value.
-			setting.GoSupport, setting.GoFields, setting.Value = "unsupported", nil, "[value withheld]"
+			setting.GoSupport, setting.GoFields = "unsupported", nil
 			setting.Notes = "enable.idempotence=true is set explicitly, and the Java client refuses retries=0 for an idempotent producer. Set enable.idempotence=false to keep the value."
 			if counts["supported"]--; counts["supported"] <= 0 {
 				delete(counts, "supported")
@@ -410,10 +403,7 @@ func refineJavaKafkaInFlightSettings(settings []JavaKafkaSetting, counts map[str
 				setting.Notes = "The value maps to config.kafka.producer.max_in_flight_requests as Java applies it." + implicitNote
 			}
 		} else if value, err := strconv.Atoi(setting.Value); err == nil && value > kafkacontract.MaxIdempotentInFlightRequests {
-			// The effective producer stays idempotent: enable.idempotence=true is
-			// explicit, or a later assignment replaced this value. Unsupported
-			// rows never disclose their value (see classifyJavaKafkaSetting).
-			setting.GoSupport, setting.GoFields, setting.Value = "unsupported", nil, "[value withheld]"
+			setting.GoSupport, setting.GoFields = "unsupported", nil
 			setting.Notes = "The effective producer is idempotent (enable.idempotence=true set explicitly, or this value is replaced by a later assignment), and both the Java client and Go refuse more than 5 requests in flight for an idempotent producer. Set enable.idempotence=false to keep the value."
 		}
 		if setting.GoSupport != previous {

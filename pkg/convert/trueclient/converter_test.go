@@ -1475,3 +1475,56 @@ func assertBrowserClickAction(t *testing.T, action dsl.Action, selector string, 
 		}
 	}
 }
+
+func TestConvertArchiveDialogAndReviewStepsPassDSLValidationOnForeignTemplates(t *testing.T) {
+	result, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="dialog" action="Dialog - Authenticate" index="1" customAttr="{{run.id}}:{{run.name}}" arguments="{&quot;Username&quot;:{&quot;value&quot;:&quot;\&quot;{{file.user_tpl}}\&quot;&quot;},&quot;Password&quot;:{&quot;value&quot;:&quot;\&quot;{{run.name}}\&quot;&quot;}}" />
+    <step type="dialog" action="Dialog - Prompt Password" index="2" arguments="{&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;{{file.pwd_tpl}}\&quot;&quot;}}" />
+    <step type="dialog" action="Dialog - Prompt Password" index="3" arguments="{&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;{{run.name}}\&quot;&quot;}}" />
+    <step type="dialog" action="Dialog - Prompt Password" index="4" arguments="{&quot;Value&quot;:{&quot;value&quot;:&quot;\&quot;LiteralDialogSecret!42\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "TruClient Template Safety"})
+	if err != nil {
+		t.Fatalf("ConvertArchive returned error: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues, got %v (actions=%#v)", issues, result.Script.Actions)
+	}
+	if len(result.Script.Actions) != 4 {
+		t.Fatalf("actions len = %d, want 4", len(result.Script.Actions))
+	}
+	for _, idx := range []int{0, 1, 2} {
+		if result.Script.Actions[idx].Type != "source_review" {
+			t.Fatalf("action[%d].Type = %q, want source_review", idx, result.Script.Actions[idx].Type)
+		}
+	}
+	if literalDialog := result.Script.Actions[3]; literalDialog.Type != "browser_handle_dialog" || literalDialog.Params["prompt_text"] != "LiteralDialogSecret!42" {
+		t.Fatalf("action[3] = %#v, want browser_handle_dialog with preserved literal prompt_text", literalDialog)
+	}
+
+	navRes, err := ConvertArchive(map[string]string{
+		"default.xml": encodeUTF16LE(`<?xml version="1.0" encoding="utf-16"?>
+<truScript>
+  <step type="block" action="action" actionName="Action">
+    <step type="testObject" action="Navigate" index="1" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://app.example.test/{{run.name}}\&quot;&quot;}}" />
+    <step type="testObject" action="Navigate" index="2" arguments="{&quot;Location&quot;:{&quot;value&quot;:&quot;\&quot;https://app.example.test/ok\&quot;&quot;}}" />
+  </step>
+</truScript>`),
+	}, ConvertOptions{ScriptName: "TruClient {{run.id}} {{run.name}}"})
+	if err != nil {
+		t.Fatalf("ConvertArchive navRes: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(navRes.Script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on navRes, got %v", issues)
+	}
+	if navRes.Script.Actions[0].Type != "source_review" {
+		t.Fatalf("navRes.Script.Actions[0].Type = %q, want source_review", navRes.Script.Actions[0].Type)
+	}
+	if navRes.Script.Actions[1].Type != "browser_navigate" {
+		t.Fatalf("navRes.Script.Actions[1].Type = %q, want browser_navigate", navRes.Script.Actions[1].Type)
+	}
+}

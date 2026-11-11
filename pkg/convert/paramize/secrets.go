@@ -3,6 +3,7 @@ package paramize
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -23,7 +24,7 @@ var (
 	// multipart or XML body — the replacement drops the matched value, so every
 	// unrelated byte after the credential is deleted from the sanitized body and
 	// from the literal an accepted suggestion rewrites.
-	formSecretPattern = regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)=)([^&\s;#"']+)`)
+	formSecretPattern = regexp.MustCompile(`(?i)((?:^|[&;\s])(` + secretFieldNames + `)=)((?:\{\{[^{}\r\n]*\}\}|[^&\s;#"'])+)`)
 	// Quoted pairs — XML/SOAP attributes and quoted form pairs — end at the
 	// closing quote, which formSecretPattern's value class deliberately excludes,
 	// so without these the credential would be left in the body untouched. RE2 has
@@ -31,12 +32,14 @@ var (
 	// pkg/scrub uses for xmlNamespaceDouble/SingleAttr) rather than one ["']
 	// class, which would end `token="it's"` at the apostrophe and corrupt the tail.
 	quotedSecretRules = []quotedSecretRule{
-		{quote: `"`, pattern: regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)\s*=\s*")([^"\r\n]+)(")`)},
-		{quote: `'`, pattern: regexp.MustCompile(`(?i)((?:^|[&\s])(` + secretFieldNames + `)\s*=\s*')([^'\r\n]+)(')`)},
+		{quote: `"`, pattern: regexp.MustCompile(`(?i)((?:^|[&;\s])(` + secretFieldNames + `)\s*=\s*")([^"\r\n]+)(")`)},
+		{quote: `'`, pattern: regexp.MustCompile(`(?i)((?:^|[&;\s])(` + secretFieldNames + `)\s*=\s*')([^'\r\n]+)(')`)},
 	}
-	secretTemplateEnvelope    = regexp.MustCompile(`^\{\{\s*([^{}\r\n]{1,256}?)\s*\}\}$`)
-	secretTemplateReference   = regexp.MustCompile(`^(?:var|param|data|env|secret|file)\.[A-Za-z0-9_.-]+$`)
-	authorizationSchemeSyntax = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._~+-]*$`)
+	formNamedFieldTokenPattern  = regexp.MustCompile(`((?:^|[&;\s?])([^=&;\s?#"']+)=)((?:\{\{[^{}\r\n]*\}\}|[^&\s;#"'])+)`)
+	queryNamedFieldTokenPattern = regexp.MustCompile(`((?:^|[&;])([^=&;]+)=)([^&;]+)`)
+	secretTemplateEnvelope      = regexp.MustCompile(`^\{\{\s*([^{}\r\n]{1,256}?)\s*\}\}$`)
+	secretTemplateReference     = regexp.MustCompile(`^(?:var|param|data|env|secret|file)\.[A-Za-z0-9_.-]+$`)
+	authorizationSchemeSyntax   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._~+-]*$`)
 )
 
 // quotedSecretRule pairs a quoted-pair pattern with the quote byte that gates
@@ -504,4 +507,196 @@ func (c *secretCollector) suggestions() []Suggestion {
 		out = append(out, *c.grouped[key])
 	}
 	return out
+}
+
+// SanitizeBodySecretsForFields runs SanitizeBodySecrets and additionally
+// masks any caller-supplied field names (for example DOM-discovered password
+// or one-time-code inputs whose HTML name is non-standard) in JSON or
+// form-urlencoded bodies.
+func SanitizeBodySecretsForFields(body string, fieldNames []string) string {
+	sanitized := SanitizeBodySecrets(body)
+	trimmed := strings.TrimSpace(sanitized)
+	if trimmed == "" || len(fieldNames) == 0 {
+		return sanitized
+	}
+	out := sanitized
+	for _, field := range fieldNames {
+		f := strings.TrimSpace(field)
+		if f == "" {
+			continue
+		}
+		quoted := regexp.QuoteMeta(f)
+		reStr := regexp.MustCompile(`(?i)("` + quoted + `"\s*:\s*")((?:[^"\\]|\\.)+)(")`)
+		out = reStr.ReplaceAllStringFunc(out, func(segment string) string {
+			m := reStr.FindStringSubmatch(segment)
+			if len(m) < 4 {
+				return segment
+			}
+			val := m[2]
+			var unquoted string
+			if json.Unmarshal([]byte(`"`+val+`"`), &unquoted) == nil {
+				val = unquoted
+			}
+			if shouldSkipFieldRedactionValue(val) {
+				return segment
+			}
+			return m[1] + "{{secret.redacted}}" + m[3]
+		})
+		reNum := regexp.MustCompile(`(?i)("` + quoted + `"\s*:\s*)(-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)(\s*(?:[,}\]]|$))`)
+		out = reNum.ReplaceAllString(out, `${1}"{{secret.redacted}}"${3}`)
+	}
+	if bodyLooksJSON(trimmed) {
+		return out
+	}
+	out = formNamedFieldTokenPattern.ReplaceAllStringFunc(out, func(segment string) string {
+		m := formNamedFieldTokenPattern.FindStringSubmatch(segment)
+		if len(m) < 4 {
+			return segment
+		}
+		key, val := m[2], m[3]
+		if !matchesNamedField(key, fieldNames) || shouldSkipFieldRedactionValue(val) {
+			return segment
+		}
+		return m[1] + "{{secret.redacted}}"
+	})
+	for _, field := range fieldNames {
+		f := strings.TrimSpace(field)
+		if f == "" {
+			continue
+		}
+		quoted := regexp.QuoteMeta(f)
+		for _, q := range []struct {
+			quote string
+			re    *regexp.Regexp
+		}{
+			{quote: `"`, re: regexp.MustCompile(`(?i)((?:^|[&;\s])` + quoted + `\s*=\s*")([^"\r\n]+)(")`)},
+			{quote: `'`, re: regexp.MustCompile(`(?i)((?:^|[&;\s])` + quoted + `\s*=\s*')([^'\r\n]+)(')`)},
+		} {
+			if !strings.Contains(out, q.quote) {
+				continue
+			}
+			pattern := q.re
+			out = pattern.ReplaceAllStringFunc(out, func(segment string) string {
+				m := pattern.FindStringSubmatch(segment)
+				if len(m) < 4 || shouldSkipFieldRedactionValue(m[2]) {
+					return segment
+				}
+				return m[1] + "{{secret.redacted}}" + m[3]
+			})
+		}
+	}
+	return out
+}
+
+// SanitizeURLQueryFields masks caller-supplied query parameter names in rawURL
+// with [REDACTED].
+func SanitizeURLQueryFields(rawURL string, fieldNames []string) string {
+	before, query, ok := strings.Cut(rawURL, "?")
+	if !ok || query == "" || len(fieldNames) == 0 {
+		return rawURL
+	}
+	queryPart, fragment, hasFrag := strings.Cut(query, "#")
+	changed := false
+	rebuiltQuery := queryNamedFieldTokenPattern.ReplaceAllStringFunc(queryPart, func(segment string) string {
+		m := queryNamedFieldTokenPattern.FindStringSubmatch(segment)
+		if len(m) < 4 {
+			return segment
+		}
+		key, val := m[2], m[3]
+		if !matchesNamedField(key, fieldNames) || shouldSkipFieldRedactionValue(val) {
+			return segment
+		}
+		changed = true
+		return m[1] + "[REDACTED]"
+	})
+	if !changed {
+		return rawURL
+	}
+	rebuilt := before + "?" + rebuiltQuery
+	if hasFrag {
+		rebuilt += "#" + fragment
+	}
+	return rebuilt
+}
+
+var (
+	harNamedParamObjectPattern      = regexp.MustCompile(`("name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"\s*,\s*"value"\s*:\s*")([^"\\]*(?:\\.[^"\\]*)*)(")`)
+	harValueBeforeNameObjectPattern = regexp.MustCompile(`("value"\s*:\s*")([^"\\]*(?:\\.[^"\\]*)*)("\s*,\s*"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)")`)
+)
+
+// SanitizeHARParamFields masks HAR postData.params and request.queryString
+// JSON objects whose "name" matches fieldNames without touching unrelated JSON
+// keys or numbers.
+func SanitizeHARParamFields(content string, fieldNames []string) string {
+	if len(fieldNames) == 0 || !strings.Contains(content, `"name"`) {
+		return content
+	}
+	content = harNamedParamObjectPattern.ReplaceAllStringFunc(content, func(segment string) string {
+		m := harNamedParamObjectPattern.FindStringSubmatch(segment)
+		if len(m) < 5 {
+			return segment
+		}
+		name := m[2]
+		var unquotedName string
+		if json.Unmarshal([]byte(`"`+name+`"`), &unquotedName) == nil {
+			name = unquotedName
+		}
+		val := m[3]
+		var unquotedVal string
+		if json.Unmarshal([]byte(`"`+val+`"`), &unquotedVal) == nil {
+			val = unquotedVal
+		}
+		if !matchesNamedField(name, fieldNames) || shouldSkipFieldRedactionValue(val) {
+			return segment
+		}
+		return m[1] + "[REDACTED]" + m[4]
+	})
+	return harValueBeforeNameObjectPattern.ReplaceAllStringFunc(content, func(segment string) string {
+		m := harValueBeforeNameObjectPattern.FindStringSubmatch(segment)
+		if len(m) < 5 {
+			return segment
+		}
+		name := m[4]
+		var unquotedName string
+		if json.Unmarshal([]byte(`"`+name+`"`), &unquotedName) == nil {
+			name = unquotedName
+		}
+		val := m[2]
+		var unquotedVal string
+		if json.Unmarshal([]byte(`"`+val+`"`), &unquotedVal) == nil {
+			val = unquotedVal
+		}
+		if !matchesNamedField(name, fieldNames) || shouldSkipFieldRedactionValue(val) {
+			return segment
+		}
+		return m[1] + "[REDACTED]" + m[3]
+	})
+}
+
+func shouldSkipFieldRedactionValue(raw string) bool {
+	if raw == "" || raw == "[REDACTED]" || raw == "{{secret.redacted}}" || isWholeSecretTemplate(raw) {
+		return true
+	}
+	if decoded, err := url.QueryUnescape(raw); err == nil && decoded != raw {
+		if decoded == "[REDACTED]" || decoded == "{{secret.redacted}}" || isWholeSecretTemplate(decoded) {
+			return true
+		}
+	}
+	return false
+}
+
+func matchesNamedField(rawKey string, fieldNames []string) bool {
+	trimmed := strings.TrimSpace(rawKey)
+	if decoded, err := url.QueryUnescape(rawKey); err == nil {
+		trimmed = strings.TrimSpace(decoded)
+	}
+	if trimmed == "" {
+		return false
+	}
+	for _, field := range fieldNames {
+		if strings.EqualFold(trimmed, strings.TrimSpace(field)) {
+			return true
+		}
+	}
+	return false
 }

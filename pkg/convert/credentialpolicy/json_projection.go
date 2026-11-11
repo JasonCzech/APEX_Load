@@ -46,6 +46,8 @@ type projectedJSON struct {
 	spans []replacement
 }
 
+var errJSONProjectionLimitExceeded = errors.New("JSON projection limit exceeded")
+
 func projectJSONDocument(payload []byte, options Options) (*projectedJSON, Result, []string, error) {
 	unchanged := func() *projectedJSON { return &projectedJSON{bytes: append([]byte(nil), payload...)} }
 	options, err := normalizeOptions(options)
@@ -87,6 +89,15 @@ func projectJSONDocument(payload []byte, options Options) (*projectedJSON, Resul
 		return unchanged(), blocked(options.Source, "credential_json_empty"), nil, nil
 	}
 	if err := parser.parseValue("", "", options.jsonDepthBase, false); err != nil {
+		if options.Mode == Preserve && errors.Is(err, errJSONProjectionLimitExceeded) {
+			result := parser.result
+			result.Merge(preservedOpaquePayloadResult(
+				payload,
+				options,
+				"import_credential_review_incomplete",
+			))
+			return unchanged(), result, nil, nil
+		}
 		if options.Mode == Preserve {
 			result := parser.result
 			result.Merge(preservedOpaquePayloadResult(
@@ -189,7 +200,7 @@ func (parser *jsonProjectionParser) parseValue(
 		} else {
 			parser.result.Merge(rejected(parser.options.Source, "credential_json_depth_limit_exceeded"))
 		}
-		return errors.New("JSON depth limit exceeded")
+		return errJSONProjectionLimitExceeded
 	}
 	if !reserveStructuredRedactionValues(parser.options, 1) {
 		parser.result.Merge(rejected(parser.options.Source, "credential_structured_value_limit_exceeded"))
@@ -203,7 +214,7 @@ func (parser *jsonProjectionParser) parseValue(
 		} else {
 			parser.result.Merge(rejected(parser.options.Source, "credential_json_value_limit_exceeded"))
 		}
-		return errors.New("JSON value limit exceeded")
+		return errJSONProjectionLimitExceeded
 	}
 	parser.skipSpace()
 	if parser.index >= len(parser.payload) {

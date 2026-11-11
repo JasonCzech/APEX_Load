@@ -264,10 +264,10 @@ var stepScopes = []StepScope{
 	},
 	{
 		CanonicalName: "handle_dialog",
-		DisplayName:   "Dialog (Confirm / Prompt)",
+		DisplayName:   "Dialog (Confirm / Prompt / Prompt Password)",
 		Status:        ScopeSupported,
 		APEXLoadShape: "browser_handle_dialog",
-		Notes:         "Dialog - Confirm and Dialog - Prompt map to browser_handle_dialog (accept/dismiss + prompt text). Dialog - Authenticate and Dialog - Prompt Password carry credentials and remain review_only with preserved parameter references.",
+		Notes:         "Dialog - Confirm, Dialog - Prompt, and Dialog - Prompt Password map to browser_handle_dialog (accept/dismiss + prompt text/password). Dialog - Authenticate targets HTTP authentication challenges outside standard JS dialog events and remains review_only with raw arguments preserved.",
 	},
 	{
 		CanonicalName: "rendezvous",
@@ -293,10 +293,10 @@ var stepScopes = []StepScope{
 	// --- published toolbox steps with no browser-replay equivalent → honest review_only ---
 	{
 		CanonicalName: "dialog_secure",
-		DisplayName:   "Dialog (Authenticate / Prompt Password)",
+		DisplayName:   "Dialog (Authenticate)",
 		Status:        ScopeReviewOnly,
 		APEXLoadShape: "source_review",
-		Notes:         "Authentication and password dialogs carry credentials; they are preserved for review with parameter references intact rather than baking secrets into a replayed dialog.",
+		Notes:         "Dialog - Authenticate targets HTTP authentication challenges outside Playwright JS dialog events; preserved as a review-gated placeholder with raw arguments and parameter references intact.",
 	},
 	{
 		CanonicalName: "evaluate_c",
@@ -562,10 +562,10 @@ func LookupStepScope(stepName string) (StepScope, bool) {
 		normalized = "drag_and_drop"
 	case "multi_select":
 		normalized = "multi_select"
-	case "dialog_confirm", "dialog_prompt", "dialog":
+	case "dialog_confirm", "dialog_prompt", "dialog_prompt_password", "dialog":
 		normalized = "handle_dialog"
-	case "dialog_authenticate", "dialog_prompt_password":
-		// Credential-bearing dialogs stay review_only (handled below as their own scope).
+	case "dialog_authenticate":
+		// HTTP auth challenge dialogs have no JS dialog event equivalent and stay review_only.
 		normalized = "dialog_secure"
 	case "add_tab", "close_tab", "activate_tab", "activate":
 		normalized = "switch_tab"

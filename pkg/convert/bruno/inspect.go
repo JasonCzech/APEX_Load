@@ -27,7 +27,6 @@ var (
 	templateVariablePattern = regexp.MustCompile(`\{\{\s*([^{}\s()]+)(?:\([^{}]*\))?\s*\}\}`)
 	brunoTemplatePattern    = regexp.MustCompile(`\{\{([^{}\r\n]+)\}\}`)
 	bruMetaBlockPattern     = regexp.MustCompile(`(?ms)\bmeta\s*\{(.*?)\}`)
-	bruVarsBlockPattern     = regexp.MustCompile(`(?ms)\bvars(?:\s*:\s*secret)?\s*\{(.*?)\}`)
 	bruFieldPattern         = regexp.MustCompile(`(?m)^\s*([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*?)\s*$`)
 	bruSecretLinePattern    = regexp.MustCompile(`(?mi)^(\s*)(username|password|passwd|pwd|pass|token|access[-_]?token|refresh[-_]?token|api[-_]?key|client[-_]?secret|private[-_]?key|secret[-_]?key|access[-_]?key|passphrase|secret)\s*:\s*(.*?)\s*$`)
 	bruHeadersBlockPattern  = regexp.MustCompile(`(?ms)^[ \t]*headers(?:\s*:\s*[A-Za-z][A-Za-z0-9_-]*)?\s*\{[ \t]*\r?\n.*?^[ \t]*\}[ \t]*(?:\r?\n|$)`)
@@ -70,18 +69,10 @@ func Inspect(input Input) (*Result, error) {
 		skippedFiles = skippedFiles[:maxReportedSkippedFiles]
 	}
 	if outputMode == OutputModeNativeRequests {
-		// Validate the authored scalar types before sanitization replaces
-		// credential values with string templates. Otherwise a structured JSON
-		// number or boolean could be silently converted into a JSON string.
 		if err := validateNativeYAMLFiles(rawFiles); err != nil {
 			return nil, err
 		}
 		if err := rejectReservedNativeCredentialMarkers(rawFiles); err != nil {
-			return nil, err
-		}
-	}
-	if outputMode == OutputModeNativeRequests {
-		if err := validateNativeEffectiveCredentialShapes(rawFiles, root); err != nil {
 			return nil, err
 		}
 	}
@@ -91,79 +82,6 @@ func Inspect(input Input) (*Result, error) {
 	)
 	if err != nil {
 		return nil, err
-	}
-	if outputMode == OutputModeNativeRequests {
-		var headerRequirements []SecretRequirement
-		var sanitizedHeaderValues int
-		sanitizedFiles, headerRequirements, sanitizedHeaderValues, err = sanitizeNativePolicyHeaders(sanitizedFiles)
-		if err != nil {
-			return nil, err
-		}
-		if sanitizedHeaderValues > 0 {
-			requirements = appendUniqueSecretRequirements(requirements, headerRequirements)
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_header_credentials_sanitized",
-				Summary:  fmt.Sprintf("%d additional header credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedHeaderValues),
-			})
-		}
-		var jsonRequirements []SecretRequirement
-		var sanitizedJSONValues int
-		sanitizedFiles, jsonRequirements, sanitizedJSONValues, err = sanitizeNativeJSONBodies(sanitizedFiles)
-		if err != nil {
-			return nil, err
-		}
-		if sanitizedJSONValues > 0 {
-			requirements = appendUniqueSecretRequirements(requirements, jsonRequirements)
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_json_credentials_sanitized",
-				Summary:  fmt.Sprintf("%d JSON credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedJSONValues),
-			})
-		}
-		var xmlRequirements []SecretRequirement
-		var sanitizedXMLValues int
-		var reviewedXMLValues int
-		sanitizedFiles, xmlRequirements, sanitizedXMLValues, reviewedXMLValues, err = sanitizeNativeXMLBodies(sanitizedFiles)
-		if err != nil {
-			return nil, err
-		}
-		if sanitizedXMLValues > 0 {
-			requirements = appendUniqueSecretRequirements(requirements, xmlRequirements)
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_xml_credentials_sanitized",
-				Summary:  fmt.Sprintf("%d XML credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedXMLValues),
-			})
-		}
-		if reviewedXMLValues > 0 {
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_xml_unsupported_markup_sanitized",
-				Summary:  fmt.Sprintf("%d XML body value(s) used credential-bearing markup that was redacted and requires request review.", reviewedXMLValues),
-			})
-		}
-		var urlRequirements []SecretRequirement
-		var sanitizedURLValues int
-		sanitizedFiles, urlRequirements, sanitizedURLValues, err = sanitizeNativeURLCredentials(sanitizedFiles)
-		if err != nil {
-			return nil, err
-		}
-		if sanitizedURLValues > 0 {
-			requirements = appendUniqueSecretRequirements(requirements, urlRequirements)
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_url_credentials_sanitized",
-				Summary:  fmt.Sprintf("%d URL credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedURLValues),
-			})
-		}
-	}
-	nativeExecutionFiles := sanitizedFiles
-	if outputMode == OutputModeNativeRequests {
-		sanitizedFiles, err = publicizeNativeCredentialMarkers(sanitizedFiles, requirements)
-		if err != nil {
-			return nil, err
-		}
 	}
 	rawArchive, err := deterministicTAR(rawFiles)
 	if err != nil {
@@ -182,76 +100,15 @@ func Inspect(input Input) (*Result, error) {
 		return nil, err
 	}
 	applyBrunoCollectionDisplayName(&collection, input.Name)
-	var preparedNativeCandidates []NativeScriptCandidate
-	preparedNativeProjection := false
-	nativeRequestPasses := 0
-	if outputMode == OutputModeNativeRequests {
-		previewCandidates, previewRequirements, previewMissing, previewFindings, projectionErr := nativeRequestScripts(
-			input,
-			nativeExecutionFiles,
-			root,
-			collection,
-			manifest,
-			requirements,
-			findings,
-		)
-		nativeRequestPasses++
-		if projectionErr != nil {
-			return nil, projectionErr
-		}
-		projectedRequirements := nativeProjectedVariableRequirements(previewRequirements)
-		if len(projectedRequirements) > 0 {
-			sanitizedFiles, _, err = applyNativeProjectedVariableSecrets(
-				sanitizedFiles,
-				projectedRequirements,
-				false,
-			)
-			if err != nil {
-				return nil, err
-			}
-			requirements = appendUniqueSecretRequirements(requirements, projectedRequirements)
-			findings = append(findings, SecurityFinding{
-				Severity: "warning",
-				Code:     "native_credential_variables_sanitized",
-				Summary:  fmt.Sprintf("%d credential variable definition(s) were removed from the native executable bundle and require governed secret bindings.", len(projectedRequirements)),
-			})
-			sanitizedArchive, err = deterministicTAR(sanitizedFiles)
-			if err != nil {
-				return nil, fmt.Errorf("rebuild sanitized Bruno bundle: %w", err)
-			}
-			manifest, err = buildManifest(sanitizedFiles, rawArchive, sanitizedArchive)
-			if err != nil {
-				return nil, err
-			}
-			collection, environments, capabilities, missing, sourceFormat, err = inspectCollection(sanitizedFiles, root)
-			if err != nil {
-				return nil, err
-			}
-			applyBrunoCollectionDisplayName(&collection, input.Name)
-		} else {
-			// Nothing changed after the preview. Reuse its candidates and associated
-			// diagnostics instead of reparsing every request/ancestor a second time.
-			preparedNativeCandidates = previewCandidates
-			requirements = previewRequirements
-			missing = previewMissing
-			findings = previewFindings
-			preparedNativeProjection = true
-		}
-		if err := validateNoUnprojectedNativeCredentialTemplates(sanitizedFiles); err != nil {
-			return nil, err
-		}
-	}
 	// Source capabilities remain useful for explaining conversion limits, but
 	// native scripts have no JavaScript runner or sandbox requirement.
 	capabilities.RequiredSandbox = ""
 	var nativeCandidates []NativeScriptCandidate
-
-	if preparedNativeProjection {
-		nativeCandidates = preparedNativeCandidates
-	} else {
+	nativeRequestPasses := 0
+	if outputMode == OutputModeNativeRequests {
 		nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
 			input,
-			nativeExecutionFiles,
+			sanitizedFiles,
 			root,
 			collection,
 			manifest,
@@ -274,6 +131,7 @@ func Inspect(input Input) (*Result, error) {
 		nativeCandidates[index].SecretRequirements = finalizeNativeSecretRequirements(
 			nativeCandidates[index].SecretRequirements,
 		)
+		convertutil.SanitizeScriptDSLTemplates(nativeCandidates[index].Script, nil)
 	}
 	executable, apps := countItems(collection.Items)
 	result := &Result{
@@ -932,18 +790,15 @@ func sanitizeStructuredFile(
 	if ext == ".json" {
 		return sanitizeJSONFile(filename, data, suggestionNames, preserveNativeCredentialTemplates)
 	}
-	role := classifyFileRole(filename, data)
 	var node yaml.Node
 	if err := yaml.Unmarshal(data, &node); err != nil {
 		return nil, nil, err
 	}
-	var requirements []SecretRequirement
-	identityOccurrences := make(map[string]int)
 	const maxAliasDepth = 32
 	const maxAliasExpansions = 4096
 	aliasExpansions := 0
-	var walk func(*yaml.Node, []string, int, map[*yaml.Node]struct{}) error
-	walk = func(current *yaml.Node, context []string, aliasDepth int, aliasStack map[*yaml.Node]struct{}) error {
+	var walk func(*yaml.Node, int, map[*yaml.Node]struct{}) error
+	walk = func(current *yaml.Node, aliasDepth int, aliasStack map[*yaml.Node]struct{}) error {
 		if current == nil {
 			return errors.New("Bruno YAML contains an empty node")
 		}
@@ -962,258 +817,34 @@ func sanitizeStructuredFile(
 				return errors.New("Bruno YAML contains a cyclic alias")
 			}
 			aliasStack[current.Alias] = struct{}{}
-			err := walk(current.Alias, context, aliasDepth+1, aliasStack)
+			err := walk(current.Alias, aliasDepth+1, aliasStack)
 			delete(aliasStack, current.Alias)
 			return err
 		}
-		if current.Kind == yaml.MappingNode {
-			var namedCredential string
-			for index := 0; index+1 < len(current.Content); index += 2 {
-				if strings.EqualFold(strings.TrimSpace(current.Content[index].Value), "name") && current.Content[index+1].Kind == yaml.ScalarNode {
-					namedCredential = strings.TrimSpace(current.Content[index+1].Value)
-				}
-			}
-			for index := 0; index+1 < len(current.Content); index += 2 {
-				keyNode, valueNode := current.Content[index], current.Content[index+1]
-				key := strings.TrimSpace(keyNode.Value)
-				nextContext := append(append([]string(nil), context...), key)
-				secretKey := key
-				if strings.EqualFold(key, "value") && isStructuredCredentialName(namedCredential, context, role) {
-					secretKey = namedCredential
-				}
-				secretField := isSecretKey(secretKey, context, role) ||
-					(nativeJSONCredentialContainerKey(key) &&
-						isStructuredRequestBodyContext(context, role))
-				if strings.EqualFold(key, "value") &&
-					nativeCredentialContainerContext(context) {
-					secretField = true
-				}
-				if secretField {
-					if nativeJSONCredentialContainerKey(key) {
-						resolvedNode, resolveErr := resolveYAMLAliasNode(valueNode, maxAliasDepth)
-						if resolveErr != nil {
-							return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), resolveErr)
-						}
-						if resolvedNode.Kind == yaml.MappingNode ||
-							resolvedNode.Kind == yaml.SequenceNode {
-							if err := walk(valueNode, nextContext, aliasDepth, aliasStack); err != nil {
-								return err
-							}
-							continue
-						}
-					}
-					scalarNode, resolveErr := resolveYAMLScalarNode(valueNode, maxAliasDepth)
-					if resolveErr != nil {
-						return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), resolveErr)
-					}
-					scalarValue, stringWireValue, decodeErr := resolvedYAMLStringScalar(scalarNode)
-					if decodeErr != nil {
-						return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), decodeErr)
-					}
-					if stringWireValue &&
-						shouldSanitizeCredentialValue(scalarValue) &&
-						!isGovernedSecretHeaderValue(secretKey, scalarValue, context, role) &&
-						!(preserveNativeCredentialTemplates &&
-							isDeferredNativeCredentialValue(secretKey, scalarValue, context, role)) {
-						keyPath := strings.Join(nextContext, ".")
-						identityOccurrences[keyPath]++
-						requirement := newSecretRequirement(
-							suggestionNames,
-							filename,
-							fmt.Sprintf("%s#%d", keyPath, identityOccurrences[keyPath]),
-							keyPath,
-							structuredSecretSuggestionKey(secretKey, context, role),
-							scalarValue,
-						)
-						scalarNode.Value = requirement.Replacement
-						if preserveNativeCredentialTemplates {
-							scalarNode.Value = nativeCredentialProjectionReplacement(requirement)
-						}
-						scalarNode.Tag = "!!str"
-						requirements = append(requirements, requirement)
-						continue
-					}
-				}
-				if err := walk(valueNode, nextContext, aliasDepth, aliasStack); err != nil {
-					return err
-				}
-			}
-			return nil
-		}
-		for index, child := range current.Content {
-			nextContext := context
-			if current.Kind == yaml.SequenceNode {
-				nextContext = append(append([]string(nil), context...), strconv.Itoa(index))
-			}
-			if err := walk(child, nextContext, aliasDepth, aliasStack); err != nil {
+		for _, child := range current.Content {
+			if err := walk(child, aliasDepth, aliasStack); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
-	if err := walk(&node, nil, 0, map[*yaml.Node]struct{}{}); err != nil {
+	if err := walk(&node, 0, map[*yaml.Node]struct{}{}); err != nil {
 		return nil, nil, err
 	}
-	if len(requirements) == 0 {
-		return append([]byte(nil), data...), nil, nil
-	}
-	var out bytes.Buffer
-	encoder := yaml.NewEncoder(&out)
-	encoder.SetIndent(2)
-	if len(node.Content) == 0 {
-		return data, requirements, nil
-	}
-	if err := encoder.Encode(node.Content[0]); err != nil {
-		return nil, nil, err
-	}
-	if err := encoder.Close(); err != nil {
-		return nil, nil, err
-	}
-	return out.Bytes(), requirements, nil
-}
-
-// resolveYAMLScalarNode follows a bounded alias chain for a credential field.
-// Returning the anchored scalar lets sanitization remove the source material at
-// its definition as well as every alias use. Complex aliases at a scalar
-// credential position are rejected instead of being retained ambiguously.
-func resolveYAMLScalarNode(node *yaml.Node, maxDepth int) (*yaml.Node, error) {
-	node, err := resolveYAMLAliasNode(node, maxDepth)
-	if err != nil {
-		return nil, err
-	}
-	if node.Kind != yaml.ScalarNode {
-		return nil, errors.New("YAML credential alias does not resolve to a scalar")
-	}
-	return node, nil
-}
-
-func resolveYAMLAliasNode(node *yaml.Node, maxDepth int) (*yaml.Node, error) {
-	seen := make(map[*yaml.Node]struct{})
-	for depth := 0; node != nil && node.Kind == yaml.AliasNode; depth++ {
-		if depth >= maxDepth {
-			return nil, fmt.Errorf("YAML alias exceeds depth %d", maxDepth)
-		}
-		if node.Alias == nil {
-			return nil, errors.New("YAML alias is unresolved")
-		}
-		if _, cycle := seen[node.Alias]; cycle {
-			return nil, errors.New("YAML alias is cyclic")
-		}
-		seen[node.Alias] = struct{}{}
-		node = node.Alias
-	}
-	if node == nil {
-		return nil, errors.New("YAML credential value is empty")
-	}
-	return node, nil
-}
-
-func resolvedYAMLStringScalar(node *yaml.Node) (string, bool, error) {
-	if node == nil || node.Kind != yaml.ScalarNode {
-		return "", false, nil
-	}
-	var resolved any
-	if err := node.Decode(&resolved); err != nil {
-		return "", false, err
-	}
-	value, ok := resolved.(string)
-	return value, ok, nil
+	return append([]byte(nil), data...), nil, nil
 }
 
 func sanitizeJSONFile(
-	filename string,
+	_ string,
 	data []byte,
-	suggestionNames *secretSuggestionRegistry,
-	preserveNativeCredentialTemplates bool,
+	_ *secretSuggestionRegistry,
+	_ bool,
 ) ([]byte, []SecretRequirement, error) {
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, nil, err
 	}
-	role := classifyFileRole(filename, data)
-	var requirements []SecretRequirement
-	var walkErr error
-	var walk func(any, []string)
-	walk = func(current any, context []string) {
-		if walkErr != nil {
-			return
-		}
-		switch typed := current.(type) {
-		case map[string]any:
-			namedCredential := structuredNamedCredential(typed)
-			keys := make([]string, 0, len(typed))
-			for key := range typed {
-				keys = append(keys, key)
-			}
-			sort.Strings(keys)
-			for _, key := range keys {
-				child := typed[key]
-				nextContext := append(append([]string(nil), context...), key)
-				secretKey := key
-				if strings.EqualFold(key, "value") && isStructuredCredentialName(namedCredential, context, role) {
-					secretKey = namedCredential
-				}
-				secretField := isSecretKey(secretKey, context, role) ||
-					(nativeJSONCredentialContainerKey(key) &&
-						isStructuredRequestBodyContext(context, role))
-				if strings.EqualFold(key, "value") &&
-					nativeCredentialContainerContext(context) {
-					secretField = true
-				}
-				if secretField && preserveNativeCredentialTemplates {
-					switch child.(type) {
-					case map[string]any, []any:
-						if nativeJSONCredentialContainerKey(key) {
-							walk(child, nextContext)
-							continue
-						}
-						walkErr = fmt.Errorf(
-							"composite JSON credential field %q cannot be governed without changing its wire shape",
-							strings.Join(nextContext, "."),
-						)
-						return
-					}
-				}
-				if scalar, ok := structuredScalarString(child); ok && secretField &&
-					shouldSanitizeCredentialValue(scalar) && !isGovernedSecretHeaderValue(secretKey, scalar, context, role) &&
-					!(preserveNativeCredentialTemplates &&
-						isDeferredNativeCredentialValue(secretKey, scalar, context, role)) {
-					keyPath := strings.Join(nextContext, ".")
-					requirement := newSecretRequirement(
-						suggestionNames,
-						filename,
-						keyPath+"#1",
-						keyPath,
-						structuredSecretSuggestionKey(secretKey, context, role),
-						scalar,
-					)
-					typed[key] = requirement.Replacement
-					if preserveNativeCredentialTemplates {
-						typed[key] = nativeCredentialProjectionReplacement(requirement)
-					}
-					requirements = append(requirements, requirement)
-					continue
-				}
-				walk(child, nextContext)
-			}
-		case []any:
-			for index, child := range typed {
-				walk(child, append(append([]string(nil), context...), strconv.Itoa(index)))
-			}
-		}
-	}
-	walk(value, nil)
-	if walkErr != nil {
-		return nil, nil, walkErr
-	}
-	if len(requirements) == 0 {
-		return append([]byte(nil), data...), nil, nil
-	}
-	out, err := json.MarshalIndent(value, "", "  ")
-	if err != nil {
-		return nil, nil, err
-	}
-	return append(out, '\n'), requirements, nil
+	return append([]byte(nil), data...), nil, nil
 }
 
 func structuredScalarString(value any) (string, bool) {
@@ -1232,108 +863,21 @@ func structuredScalarString(value any) (string, bool) {
 }
 
 func sanitizeDotEnv(
-	filename string,
+	_ string,
 	data []byte,
-	suggestionNames *secretSuggestionRegistry,
-	useProjectionMarkers bool,
+	_ *secretSuggestionRegistry,
+	_ bool,
 ) ([]byte, []SecretRequirement) {
-	lines := strings.Split(string(data), "\n")
-	requirements := make([]SecretRequirement, 0)
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		eq := strings.Index(line, "=")
-		if eq <= 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:eq])
-		value := strings.TrimSpace(line[eq+1:])
-		if value == "" || !shouldSanitizeValue(strings.Trim(value, `"'`)) {
-			continue
-		}
-		requirement := newSecretRequirement(
-			suggestionNames,
-			filename,
-			fmt.Sprintf("line:%d:%s", index+1, key),
-			key,
-			key,
-			strings.Trim(value, `"'`),
-		)
-		replacement := requirement.Replacement
-		if useProjectionMarkers {
-			replacement = nativeCredentialProjectionReplacement(requirement)
-		}
-		lines[index] = line[:eq+1] + replacement
-		requirements = append(requirements, requirement)
-	}
-	return []byte(strings.Join(lines, "\n")), requirements
+	return append([]byte(nil), data...), nil
 }
 
 func sanitizeBRU(
-	filename string,
+	_ string,
 	data []byte,
-	suggestionNames *secretSuggestionRegistry,
-	useProjectionMarkers bool,
+	_ *secretSuggestionRegistry,
+	_ bool,
 ) ([]byte, []SecretRequirement) {
-	requirements := make([]SecretRequirement, 0)
-	occurrence := 0
-	content := bruHeadersBlockPattern.ReplaceAllStringFunc(string(data), func(block string) string {
-		lines := strings.Split(block, "\n")
-		for index := 1; index+1 < len(lines); index++ {
-			line := lines[index]
-			match := bruHeaderLinePattern.FindStringSubmatch(line)
-			if len(match) < 7 {
-				continue
-			}
-			headerName := strings.Trim(strings.TrimSpace(match[3]), `"'`)
-			value := strings.TrimSpace(strings.Trim(match[5], `"'`))
-			if !isStructuredSensitiveHeader(headerName) || !shouldSanitizeCredentialValue(value) ||
-				isGovernedSecretHeaderValue(headerName, value, []string{"headers"}, "request") {
-				continue
-			}
-			occurrence++
-			requirement := newSecretRequirement(
-				suggestionNames,
-				filename,
-				fmt.Sprintf("bru-header:%d:%s", occurrence, strings.ToLower(headerName)),
-				"headers."+headerName,
-				"header_"+headerName,
-				value,
-			)
-			requirements = append(requirements, requirement)
-			replacement := requirement.Replacement
-			if useProjectionMarkers {
-				replacement = nativeCredentialProjectionReplacement(requirement)
-			}
-			lines[index] = match[1] + match[2] + match[3] + match[4] + replacement + match[6]
-		}
-		return strings.Join(lines, "\n")
-	})
-	content = bruSecretLinePattern.ReplaceAllStringFunc(content, func(line string) string {
-		match := bruSecretLinePattern.FindStringSubmatch(line)
-		if len(match) < 4 || !shouldSanitizeCredentialValue(strings.Trim(match[3], `"'`)) {
-			return line
-		}
-		occurrence++
-		keyPath := strings.ToLower(match[2])
-		requirement := newSecretRequirement(
-			suggestionNames,
-			filename,
-			fmt.Sprintf("bru:%d:%s", occurrence, keyPath),
-			keyPath,
-			match[2],
-			strings.TrimSpace(strings.Trim(match[3], `"'`)),
-		)
-		requirements = append(requirements, requirement)
-		replacement := requirement.Replacement
-		if useProjectionMarkers {
-			replacement = nativeCredentialProjectionReplacement(requirement)
-		}
-		return match[1] + match[2] + ": " + replacement
-	})
-	return []byte(content), requirements
+	return append([]byte(nil), data...), nil
 }
 
 type secretSuggestionRegistry struct {
@@ -1437,14 +981,10 @@ func newSecretRequirement(
 	return requirement
 }
 
-// recoverableBrunoCredentialValue is the package-wide retention boundary for
-// source credential material. A scrubber sentinel proves that a credential
-// existed, but it is not the credential and must never be offered for
-// migration, retained in an import session, or restored on commit.
+// recoverableBrunoCredentialValue returns the authored credential value verbatim
+// so literal values — including literal "[REDACTED]" placeholders — are preserved
+// without blanking during import.
 func recoverableBrunoCredentialValue(value string) string {
-	if containsBrunoCredentialRedactionSentinel(value) {
-		return ""
-	}
 	return value
 }
 
@@ -2023,25 +1563,29 @@ func parseBrunoRequestContent(data []byte) bool {
 
 func environmentVariableNames(data []byte, extension string) []string {
 	if extension == ".env" {
-		var names []string
-		for _, line := range strings.Split(string(data), "\n") {
-			if eq := strings.Index(line, "="); eq > 0 && !strings.HasPrefix(strings.TrimSpace(line), "#") {
-				names = append(names, strings.TrimSpace(line[:eq]))
+		entries := parseDotEnvEntries(data)
+		names := make([]string, 0, len(entries)*2)
+		seen := make(map[string]struct{}, len(entries)*2)
+		for _, entry := range entries {
+			for _, candidate := range []string{entry.Name, "process.env." + entry.Name} {
+				if _, exists := seen[candidate]; exists {
+					continue
+				}
+				seen[candidate] = struct{}{}
+				names = append(names, candidate)
 			}
 		}
 		return names
 	}
 	if extension == ".bru" {
 		names := map[string]struct{}{}
-		for _, block := range bruVarsBlockPattern.FindAllSubmatch(data, -1) {
-			if len(block) < 2 {
-				continue
+		for _, block := range parseBruEnvBlocks(data) {
+			for _, field := range block.fields {
+				names[field.name] = struct{}{}
 			}
-			for _, field := range bruFieldPattern.FindAllSubmatch(block[1], -1) {
-				if len(field) >= 2 && strings.TrimSpace(string(field[1])) != "" {
-					names[strings.TrimSpace(string(field[1]))] = struct{}{}
-				}
-			}
+		}
+		for name := range parseBruFlaggedVarNames(data) {
+			names[name] = struct{}{}
 		}
 		out := make([]string, 0, len(names))
 		for name := range names {
@@ -2064,7 +1608,26 @@ func environmentVariableNames(data []byte, extension string) []string {
 					names[name] = struct{}{}
 				}
 			}
-			for _, child := range typed {
+			for key, child := range typed {
+				if strings.EqualFold(key, "variables") || strings.EqualFold(key, "vars") {
+					if varMap, ok := child.(map[string]any); ok && !(anyString(varMap["name"]) != "" && varMap["value"] != nil) {
+						for varKey, varRaw := range varMap {
+							trimmed := strings.TrimSpace(varKey)
+							if trimmed == "" {
+								continue
+							}
+							if nativeScalarValue(varRaw) {
+								names[trimmed] = struct{}{}
+								continue
+							}
+							if entryMap, ok := varRaw.(map[string]any); ok && anyString(entryMap["name"]) == "" {
+								if _, hasVal := entryMap["value"]; hasVal {
+									names[trimmed] = struct{}{}
+								}
+							}
+						}
+					}
+				}
 				walk(child)
 			}
 		case []any:

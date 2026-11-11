@@ -72,10 +72,14 @@ type Profile struct {
 	// DefaultBackgroundRequests; an empty list keeps every request in line.
 	BackgroundRequests *[]string `json:"background_requests,omitempty"`
 
-	// Capture: the per-request body capture limit and whether recorded
-	// Cookie headers are kept (the cookie jar sends them otherwise).
+	// Capture: the per-request body capture limit, whether recorded Cookie
+	// headers are kept (the cookie jar sends them otherwise), and whether
+	// sensitive headers, cookies, browser password/one-time-code inputs,
+	// WebSocket payloads, and correlation sample values are scrubbed during
+	// recording and conversion (off by default).
 	BodyCaptureLimitBytes int   `json:"body_capture_limit_bytes,omitempty"`
 	CaptureCookies        *bool `json:"capture_cookies,omitempty"`
+	ScrubSensitive        bool  `json:"scrub_sensitive,omitempty"`
 
 	Correlation CorrelationSettings `json:"correlation,omitempty"`
 }
@@ -319,6 +323,60 @@ func Find(profiles []Profile, id string) (Profile, bool) {
 		}
 	}
 	return Profile{}, false
+}
+
+// Clone returns a deep copy of p so slices and optional pointer fields are
+// detached from the original.
+func (p Profile) Clone() Profile {
+	out := p
+	out.RecordHeaders = slices.Clone(p.RecordHeaders)
+	out.DropHeaders = slices.Clone(p.DropHeaders)
+	out.IncludeHosts = slices.Clone(p.IncludeHosts)
+	out.ExcludeHosts = slices.Clone(p.ExcludeHosts)
+	out.ExcludeContentTypes = slices.Clone(p.ExcludeContentTypes)
+	out.ExcludedAuraDescriptors = slices.Clone(p.ExcludedAuraDescriptors)
+	out.PageTitleChecks = cloneBoolPtr(p.PageTitleChecks)
+	out.AsyncScan = cloneBoolPtr(p.AsyncScan)
+	out.CaptureCookies = cloneBoolPtr(p.CaptureCookies)
+	if p.BackgroundRequests != nil {
+		bg := slices.Clone(*p.BackgroundRequests)
+		out.BackgroundRequests = &bg
+	}
+	out.Correlation.DisabledRules = slices.Clone(p.Correlation.DisabledRules)
+	out.Correlation.ExcludedValues = slices.Clone(p.Correlation.ExcludedValues)
+	out.Correlation.ExcludedContentTypes = slices.Clone(p.Correlation.ExcludedContentTypes)
+	if p.Correlation.UserRules != nil {
+		out.Correlation.UserRules = make([]UserRule, len(p.Correlation.UserRules))
+		for i, rule := range p.Correlation.UserRules {
+			ruleCopy := rule
+			ruleCopy.Hosts = slices.Clone(rule.Hosts)
+			ruleCopy.ContentTypes = slices.Clone(rule.ContentTypes)
+			out.Correlation.UserRules[i] = ruleCopy
+		}
+	}
+	return out
+}
+
+// Normalize trims surrounding whitespace on string fields and canonicalizes
+// enum casing in place while preserving boolean and pointer options such as
+// ScrubSensitive.
+func (p *Profile) Normalize() {
+	if p == nil {
+		return
+	}
+	p.ID = strings.TrimSpace(p.ID)
+	p.Name = strings.TrimSpace(p.Name)
+	p.Description = strings.TrimSpace(p.Description)
+	p.HTTPScriptLevel = strings.ToLower(strings.TrimSpace(p.HTTPScriptLevel))
+	p.ResourceMode = strings.ToLower(strings.TrimSpace(p.ResourceMode))
+}
+
+func cloneBoolPtr(v *bool) *bool {
+	if v == nil {
+		return nil
+	}
+	copyVal := *v
+	return &copyVal
 }
 
 // ThinkTimeThreshold is the smallest recorded pause kept as think time.

@@ -102,7 +102,7 @@ func TestNestedScopedEndpointPreserved(t *testing.T) {
 	}
 }
 
-func TestSplitPayBindingRepairKeepsCredentialAndTimezoneGates(t *testing.T) {
+func TestSplitPayBindingRepairKeepsTimezoneGateWithoutMaskedHeaderGate(t *testing.T) {
 	r, err := ConvertJMX(splitPayFixture(t, "original"), ConvertOptions{VariableBindings: map[string]string{"client_id": "cid", "client_secret": "cs"}})
 	if err != nil {
 		t.Fatal(err)
@@ -110,18 +110,21 @@ func TestSplitPayBindingRepairKeepsCredentialAndTimezoneGates(t *testing.T) {
 	if !hasJMeterReviewReason(r.Scripts[0].Actions, "jmeter_timestamp_timezone_required") {
 		t.Fatal("binding repair cleared timezone gate")
 	}
-	if r.Scripts[0].Actions[0].Metadata["execution_blocker"] == nil {
-		t.Fatal("masked credentials became runnable")
+	if hasJMeterReviewReason(r.Scripts[0].Actions, "jmeter_masked_source_value") {
+		t.Fatal("asterisk header value emitted jmeter_masked_source_value gate")
 	}
 }
 
-func TestMaskedCredentialsRemainBlockedAfterTimezoneRepair(t *testing.T) {
+func TestMaskedHeadersDoNotEmitJMeterMaskedSourceValueGate(t *testing.T) {
 	r, err := ConvertJMX(splitPayFixture(t, "original"), ConvertOptions{TimeMode: "utc", VariableBindings: map[string]string{"client_id": "cid", "client_secret": "cs"}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Scripts[0].Actions[0].Metadata["execution_blocker"] == nil {
-		t.Fatalf("masked source runnable: %+v", r.Scripts[0].Actions[0])
+	if hasJMeterReviewReason(r.Scripts[0].Actions, "jmeter_masked_source_value") {
+		t.Fatalf("masked header value emitted jmeter_masked_source_value: %+v", r.Scripts[0].Actions[0])
+	}
+	if got := r.Scripts[0].Config.HTTP.DefaultHeaders["client_id"]; got != "****" {
+		t.Fatalf("DefaultHeaders[client_id] = %q, want literal ****", got)
 	}
 }
 

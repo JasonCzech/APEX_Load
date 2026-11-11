@@ -225,6 +225,7 @@ func TestConvertJNDISelectsCorrectConnectionAndVPN(t *testing.T) {
 	jndi := `connectionFactory.names = cf1
 connectionFactory.cf1 = amqps://real.broker:5671
 java.naming.security.principal = messagevpn-admin
+java.naming.security.credentials = s3cr3t:p=w!
 solace.messageVPN = prod-vpn
 queue.OrderQueue = ORDER.QUEUE
 `
@@ -237,6 +238,15 @@ queue.OrderQueue = ORDER.QUEUE
 	}
 	if got := res.Script.Config.JMS.MessageVPN; got != "prod-vpn" {
 		t.Fatalf("message_vpn = %q, want prod-vpn (key must end in messageVPN)", got)
+	}
+	if got := res.Script.Config.JMS.Username; got != "messagevpn-admin" {
+		t.Fatalf("username = %q, want messagevpn-admin", got)
+	}
+	if got := res.Script.Config.JMS.Password; got != "s3cr3t:p=w!" {
+		t.Fatalf("password = %q, want s3cr3t:p=w!", got)
+	}
+	if issues := dsl.ValidateScriptIssues(res.Script); len(issues) > 0 {
+		t.Fatalf("generated JNDI script with credentials has validation issues: %v", issues)
 	}
 }
 

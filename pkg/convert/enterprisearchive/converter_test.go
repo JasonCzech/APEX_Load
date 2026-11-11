@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 const sampleActionC = `
@@ -1598,22 +1600,8 @@ Type=DevWeb
 
 	directRequirements := directResult.ProtectedRequirements.Take()
 	delegatedRequirements := delegatedResult.ProtectedRequirements.Take()
-	if len(delegatedRequirements) != 1 || !reflect.DeepEqual(delegatedRequirements, directRequirements) {
-		t.Fatalf("delegated requirements = %#v, want exact match with direct DevWeb requirements %#v", delegatedRequirements, directRequirements)
-	}
-	req := delegatedRequirements[0]
-	if req.Source.Format != "devweb" || req.Source.Path != "Checkout/rts.yml" || req.Source.Pointer != "/proxy/proxyPassword" {
-		t.Fatalf("requirement source = %#v, want Checkout/rts.yml#/proxy/proxyPassword", req.Source)
-	}
-	if req.SourceValueAvailable || req.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
-		t.Fatalf("requirement availability/status = (%t, %q), want unavailable redacted placeholder", req.SourceValueAvailable, req.SourceValueStatus)
-	}
-	wantTargets := []credentialpolicy.TargetRef{{
-		RequestKey: "devweb_runtime",
-		Field:      "config.http.proxy.password",
-	}}
-	if !reflect.DeepEqual(req.Targets, wantTargets) || strings.TrimSpace(req.Context) == "" {
-		t.Fatalf("requirement targets/context = (%#v, %q), want %#v and non-empty context", req.Targets, req.Context, wantTargets)
+	if len(delegatedRequirements) != 0 || !reflect.DeepEqual(delegatedRequirements, directRequirements) {
+		t.Fatalf("delegated requirements = %#v, want empty match with direct DevWeb requirements %#v", delegatedRequirements, directRequirements)
 	}
 	if again := delegatedResult.ProtectedRequirements.Take(); again != nil {
 		t.Fatalf("second Take() = %#v, want nil one-shot consumption", again)
@@ -1629,11 +1617,11 @@ Type=DevWeb
 	if got := delegatedResult.Script.Config.HTTP.Proxy.Username; got != "operator" {
 		t.Fatalf("proxy username = %q, want preserved operator username", got)
 	}
-	if got := delegatedResult.Script.Config.HTTP.Proxy.Password; got != "{{secret.DEVWEB_PROXY_PASSWORD}}" {
-		t.Fatalf("proxy password = %q, want governed secret placeholder", got)
+	if got := delegatedResult.Script.Config.HTTP.Proxy.Password; got != "%255BReDaCtEd%255D" {
+		t.Fatalf("proxy password = %q, want preserved literal proxy password", got)
 	}
-	if got := action.Metadata["execution_blocker"]; got != "import_review_required" {
-		t.Fatalf("execution_blocker = %#v, want import_review_required", got)
+	if got, exists := action.Metadata["execution_blocker"]; exists {
+		t.Fatalf("execution_blocker = %#v, want no blocker for literal proxy settings", got)
 	}
 	if delegatedResult.Script.Metadata == nil || delegatedResult.Script.Metadata.Import == nil || directResult.Script.Metadata == nil || directResult.Script.Metadata.Import == nil {
 		t.Fatalf("missing import metadata on delegated (%#v) or direct (%#v) script", delegatedResult.Script.Metadata, directResult.Script.Metadata)
@@ -5346,4 +5334,178 @@ GenerateNewVal="EachOccurrence"
 	if strings.Contains(reqAction.Target, "fn.uuid") || strings.Contains(reqAction.Target, "fn.timestamp") || strings.Contains(reqAction.Body, "fn.uuid") || strings.Contains(reqAction.Body, "fn.timestamp") {
 		t.Fatalf("LoadRunner import must never overwrite fixed UUIDs/timestamps with capture heuristics: target=%q body=%q", reqAction.Target, reqAction.Body)
 	}
+}
+
+func TestConvertZipSkipsVuGenOversizedReplayHARAndResultDirs(t *testing.T) {
+	oversizedReplayHAR := make([]byte, maxEnterpriseArchiveEntryBytes+(2<<20)) // 66 MiB > 64 MiB cap
+	copy(oversizedReplayHAR, `{"log":{"version":"1.2","entries":[]}}`)
+
+	for _, prefix := range []string{"", "vugen_script_folder/"} {
+		name := "flat"
+		if prefix != "" {
+			name = "wrapped"
+		}
+		t.Run(name, func(t *testing.T) {
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			writeStored := func(entryName string, payload []byte) {
+				hdr := &zip.FileHeader{
+					Name:   entryName,
+					Method: zip.Store,
+				}
+				w, err := zw.CreateHeader(hdr)
+				if err != nil {
+					t.Fatalf("CreateHeader(%q): %v", entryName, err)
+				}
+				if _, err := w.Write(payload); err != nil {
+					t.Fatalf("Write(%q): %v", entryName, err)
+				}
+			}
+			writeStored(prefix+"buyflow.usr", []byte("[General]\nType=Multi\nActiveTypes=QTWeb\n[Actions]\nAction=Action.c\n"))
+			writeStored(prefix+"Action.c", []byte(`Action() { web_url("home", "URL=https://shop.example.test/home", LAST); return 0; }`))
+			writeStored(prefix+"replay.har", oversizedReplayHAR)
+			writeStored(prefix+"result1/Results.xml", []byte("<Report/>"))
+			writeStored(prefix+"result1/Iteration1/t1.inf", []byte("[t1]"))
+			if err := zw.Close(); err != nil {
+				t.Fatalf("Close zip: %v", err)
+			}
+
+			res, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip failed when VuGen replay.har exceeded 64 MiB: %v", err)
+			}
+			if res.Script == nil || len(res.Script.Actions) != 1 {
+				t.Fatalf("expected 1 converted HTTP action, got %#v", res.Script)
+			}
+			for _, sf := range res.SourceReview.SourceFiles {
+				if strings.EqualFold(sf.Path, "replay.har") || strings.HasPrefix(strings.ToLower(sf.Path), "result1/") {
+					t.Fatalf("expected VuGen replay artifact %q to be excluded from source review", sf.Path)
+				}
+			}
+		})
+	}
+
+	// Non-replay oversized entries must still fail with ErrLimitExceeded.
+	var badBuf bytes.Buffer
+	badZW := zip.NewWriter(&badBuf)
+	for _, entry := range []struct {
+		name string
+		body []byte
+	}{
+		{"buyflow.usr", []byte("[General]\nType=Multi\nActiveTypes=QTWeb\n[Actions]\nAction=Action.c\n")},
+		{"Action.c", oversizedReplayHAR},
+	} {
+		w, err := badZW.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(entry.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := badZW.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConvertZip(badBuf.Bytes(), ConvertOptions{}); !errors.Is(err, archiveingest.ErrLimitExceeded) {
+		t.Fatalf("expected ErrLimitExceeded for oversized Action.c, got %v", err)
+	}
+
+	// Deep result1/** paths (>33 segments) and 32-deep wrapped archives (33 segments before StripFirstComponent) succeed.
+	var deepBuf bytes.Buffer
+	deepZW := zip.NewWriter(&deepBuf)
+	deepPrefix := "Wrapper/" + strings.Repeat("d/", 31) // Wrapper + 31 dirs + file = 33 segments (32 after StripFirstComponent)
+	deepResultPath := deepPrefix + "result1/" + strings.Repeat("sub/", 40) + "trace.log"
+	for _, entry := range []struct {
+		name string
+		body []byte
+	}{
+		{deepPrefix + "buyflow.usr", []byte("[General]\nType=Multi\nActiveTypes=QTWeb\n[Actions]\nAction=Action.c\n")},
+		{deepPrefix + "Action.c", []byte(`Action() { web_url("home", "URL=https://shop.example.test/home", LAST); return 0; }`)},
+		{deepResultPath, oversizedReplayHAR},
+	} {
+		w, err := deepZW.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(entry.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := deepZW.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ConvertZip(deepBuf.Bytes(), ConvertOptions{}); err != nil {
+		t.Fatalf("expected deep wrapped archive with deep result1/** artifact to succeed, got %v", err)
+	}
+
+	// Overlapping central-directory headers pointing to a single 1 MiB payload (600 * 1 MiB > 512 MiB)
+	// must bail out without raw buffer amplification and fail with ErrLimitExceeded.
+	overlapZip := buildOverlappingCentralDirectoryTestZip(t, 600, 1<<20)
+	if got := stripVuGenReplayArchiveEntries(overlapZip); &got[0] != &overlapZip[0] {
+		t.Fatalf("expected stripVuGenReplayArchiveEntries to abort without rewriting overlapping central-directory archive")
+	}
+	if _, err := ConvertZip(overlapZip, ConvertOptions{}); !errors.Is(err, archiveingest.ErrLimitExceeded) {
+		t.Fatalf("expected ErrLimitExceeded on overlapping central-directory archive, got %v", err)
+	}
+}
+
+func buildOverlappingCentralDirectoryTestZip(t *testing.T, duplicateCount int, payloadBytes int) []byte {
+	t.Helper()
+	var base bytes.Buffer
+	zw := zip.NewWriter(&base)
+	for _, entry := range []struct {
+		name string
+		body []byte
+	}{
+		{"buyflow.usr", []byte("[General]\nType=Multi\nActiveTypes=QTWeb\n[Actions]\nAction=Action.c\n")},
+		{"Action.c", []byte(`Action() { web_url("home", "URL=https://shop.example.test/home", LAST); return 0; }`)},
+		{"replay.har", []byte(`{"log":{"version":"1.2","entries":[]}}`)},
+		{"payload_000.bin", make([]byte, payloadBytes)},
+	} {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: entry.name, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(entry.body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	raw := base.Bytes()
+	eocdIdx := bytes.LastIndex(raw, []byte{0x50, 0x4b, 0x05, 0x06})
+	if eocdIdx < 0 {
+		t.Fatal("missing EOCD")
+	}
+	cdOffset := int(uint32(raw[eocdIdx+16]) | uint32(raw[eocdIdx+17])<<8 | uint32(raw[eocdIdx+18])<<16 | uint32(raw[eocdIdx+19])<<24)
+	cdBytes := raw[cdOffset:eocdIdx]
+	lastHeaderIdx := bytes.LastIndex(cdBytes, []byte{0x50, 0x4b, 0x01, 0x02})
+	if lastHeaderIdx < 0 {
+		t.Fatal("missing central directory header")
+	}
+	templateHeader := append([]byte(nil), cdBytes[lastHeaderIdx:]...)
+	namePos := bytes.Index(templateHeader, []byte("payload_000.bin"))
+	if namePos < 0 {
+		t.Fatal("missing payload_000.bin in central directory header")
+	}
+
+	var out bytes.Buffer
+	out.Write(raw[:cdOffset])
+	newCDStart := out.Len()
+	out.Write(cdBytes[:lastHeaderIdx])
+	for i := 0; i < duplicateCount; i++ {
+		hdr := append([]byte(nil), templateHeader...)
+		copy(hdr[namePos:], []byte(fmt.Sprintf("payload_%03d.bin", i)))
+		out.Write(hdr)
+	}
+	newCDSize := out.Len() - newCDStart
+	totalRecords := uint16(3 + duplicateCount)
+	eocd := append([]byte(nil), raw[eocdIdx:]...)
+	eocd[8], eocd[9] = byte(totalRecords), byte(totalRecords>>8)
+	eocd[10], eocd[11] = byte(totalRecords), byte(totalRecords>>8)
+	eocd[12], eocd[13], eocd[14], eocd[15] = byte(newCDSize), byte(newCDSize>>8), byte(newCDSize>>16), byte(newCDSize>>24)
+	eocd[16], eocd[17], eocd[18], eocd[19] = byte(newCDStart), byte(newCDStart>>8), byte(newCDStart>>16), byte(newCDStart>>24)
+	out.Write(eocd)
+	return out.Bytes()
 }

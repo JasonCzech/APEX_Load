@@ -573,7 +573,6 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 				return nil
 			})
 		}
-		gateJMeterMaskedValues(script, &diagnostics, sourceFileName)
 		reconcileJMeterReviewMappings(script, sourceMappings[mappingStart:])
 		if script.Config.JMeter != nil {
 			script.Config.JMeter.Timezone = opts.Timezone
@@ -729,12 +728,11 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			break
 		}
 	}
-	sourceContent, sourceRedacted := redactMessagingSource(root, string(data))
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: sourceContent}, sourceMappings)
-	if sourceRedacted {
-		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
-	}
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
 	result.NormalizeReviewEvidence()
+	for _, script := range result.Scripts {
+		convertutil.SanitizeScriptDSLTemplates(script, nil)
+	}
 	return result, nil
 }
 
@@ -1406,9 +1404,9 @@ func applyJMeterScopeConfig(
 			// re-importing or re-entering a password.
 			preserveJMeterJDBCSource(script, element)
 			if credentialUnavailable {
-				diagnostics.Add(diag.Blocker, "JMeter JDBCDataSource", jmeterElementLocation(element), "the JDBC source contains a disclosure placeholder instead of a recoverable credential; configure the generated database connection-string secret before replay")
+				diagnostics.Add(diag.Blocker, "JMeter JDBCDataSource", jmeterElementLocation(element), "the JDBC source is missing a database connection URL; configure the generated database connection-string secret before replay")
 			} else if credentialRetained {
-				diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(element), "database credentials were retained in the durable destination and will be masked on ordinary reads; review the imported connection before replay")
+				diagnostics.Add(diag.Warning, "JMeter JDBCDataSource", jmeterElementLocation(element), "database credentials were retained in the imported connection; review the connection settings before replay")
 			}
 		}
 	default:

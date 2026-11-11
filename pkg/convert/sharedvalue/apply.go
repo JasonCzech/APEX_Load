@@ -11,10 +11,9 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// ErrCredentialShaped is returned when a caller tries to bind a
-// credential-shaped value to a script parameter. Such values must go through
-// the guided secret-binding flow; see CredentialShaped for why a parameter
-// would silently destroy the value.
+// ErrCredentialShaped is retained for API compatibility. Apply now preserves
+// literal shared values across credential-shaped and ordinary parameters alike
+// without rejecting credential-shaped candidates.
 var ErrCredentialShaped = errors.New("credential-shaped shared value must use a secret binding")
 
 // Apply writes the operator's values into every affected script, in place.
@@ -39,9 +38,6 @@ func Apply(scripts []*dsl.Script, candidates []Candidate, values map[string]stri
 		value := strings.TrimSpace(raw)
 		if value == "" {
 			continue
-		}
-		if candidate.CredentialShaped {
-			return nil, fmt.Errorf("%w: %s", ErrCredentialShaped, candidate.Name)
 		}
 		if !ValidName(candidate.Name) {
 			return nil, fmt.Errorf("shared value %q is not a valid parameter name", candidate.Name)

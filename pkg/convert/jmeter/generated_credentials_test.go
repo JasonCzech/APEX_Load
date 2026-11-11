@@ -1,16 +1,17 @@
 package jmeter
 
 import (
-	"encoding/json"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 )
 
-func TestJDBCDisclosurePlaceholdersBecomeConfigurableWholeDSNBindings(t *testing.T) {
+func TestJDBCLiteralAndPlaceholderValuesRemainInConfiguredDSN(t *testing.T) {
 	for _, value := range []string{
 		"[REDACTED]",
+		"***",
 		"%5BREDACTED%5D",
 		"W1JFREFDVEVEXQ==",
 		"WwBSAEUARABBAEMAVABFAEQAXQA=",
@@ -36,32 +37,54 @@ func TestJDBCDisclosurePlaceholdersBecomeConfigurableWholeDSNBindings(t *testing
 			if err != nil {
 				t.Fatalf("ConvertJMX returned error: %v", err)
 			}
-			if len(result.Scripts) != 1 || len(result.SecretRequirements) != 1 {
-				t.Fatalf("scripts/requirements = %d/%#v", len(result.Scripts), result.SecretRequirements)
+			if len(result.Scripts) != 1 || len(result.SecretRequirements) != 0 {
+				t.Fatalf("scripts/requirements = %d/%#v, want literal DSN without synthetic secret requirement", len(result.Scripts), result.SecretRequirements)
 			}
 			script := result.Scripts[0]
-			requirement := result.SecretRequirements[0]
-			if !strings.HasPrefix(script.Config.Database.DSN, "{{secret.JMETER_") ||
-				script.Config.Database.DSN != requirement.Replacement ||
-				requirement.Value != "" || requirement.SourceValueAvailable ||
-				requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-				requirement.Source.Format != "jmeter" || requirement.Source.Path != "orders.jmx" ||
-				len(requirement.Targets) != 1 || requirement.Targets[0].Field != "config.database.dsn" ||
-				!strings.Contains(requirement.Context, "complete destination connection string") {
-				t.Fatalf("JDBC requirement lacks safe descriptive provenance: %#v / DSN %q", requirement, script.Config.Database.DSN)
-			}
-			payload, marshalErr := json.Marshal([]any{script.Config, script.Actions})
-			if marshalErr != nil {
-				t.Fatal(marshalErr)
-			}
-			if strings.Contains(string(payload), value) {
-				t.Fatalf("unavailable JDBC credential remained executable: %s", payload)
+			if strings.HasPrefix(script.Config.Database.DSN, "{{secret.") || !strings.HasPrefix(script.Config.Database.DSN, "postgres://orders:") {
+				t.Fatalf("DSN = %q, want literal postgres DSN", script.Config.Database.DSN)
 			}
 		})
 	}
 }
 
-func TestJDBCSensitiveConnectionPropertyPlaceholderCannotBypassProjection(t *testing.T) {
+func TestJDBCMissingDBURLSynthesizesWholeDSNBinding(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
+  <TestPlan testname="DB plan" enabled="true"/><hashTree>
+    <ThreadGroup testname="Orders DB" enabled="true"/><hashTree>
+      <JDBCDataSource testname="Orders Pool" enabled="true">
+        <stringProp name="dbUrl"></stringProp>
+        <stringProp name="username">orders</stringProp>
+        <stringProp name="password">real-password</stringProp>
+      </JDBCDataSource><hashTree/>
+      <JDBCSampler testname="Select orders" enabled="true">
+        <stringProp name="query">SELECT 1</stringProp>
+        <stringProp name="queryType">Select Statement</stringProp>
+      </JDBCSampler><hashTree/>
+    </hashTree>
+  </hashTree>
+</hashTree></jmeterTestPlan>`
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "missing-url.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 1 {
+		t.Fatalf("scripts/requirements = %d/%#v", len(result.Scripts), result.SecretRequirements)
+	}
+	script := result.Scripts[0]
+	requirement := result.SecretRequirements[0]
+	if !strings.HasPrefix(script.Config.Database.DSN, "{{secret.JMETER_") ||
+		script.Config.Database.DSN != requirement.Replacement ||
+		requirement.SourceValueAvailable ||
+		requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueMissing ||
+		requirement.Source.Format != "jmeter" || requirement.Source.Path != "missing-url.jmx" ||
+		len(requirement.Targets) != 1 || requirement.Targets[0].Field != "config.database.dsn" {
+		t.Fatalf("missing-URL JDBC requirement unexpected: %#v / DSN %q", requirement, script.Config.Database.DSN)
+	}
+}
+
+func TestJDBCSensitiveConnectionPropertyPreservesLiteralDSN(t *testing.T) {
 	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
   <TestPlan testname="DB plan" enabled="true"/><hashTree>
@@ -83,63 +106,30 @@ func TestJDBCSensitiveConnectionPropertyPlaceholderCannotBypassProjection(t *tes
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
-	if len(result.SecretRequirements) != 1 ||
-		result.SecretRequirements[0].SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-		!strings.HasPrefix(result.Script.Config.Database.DSN, "{{secret.JMETER_") {
-		t.Fatalf("sensitive JDBC property bypassed projection: %#v / %#v", result.SecretRequirements, result.Script.Config.Database)
+	if len(result.SecretRequirements) != 0 ||
+		strings.HasPrefix(result.Script.Config.Database.DSN, "{{secret.JMETER_") ||
+		!strings.Contains(result.Script.Config.Database.DSN, "sslpassword=%255BREDACTED%255D") {
+		t.Fatalf("sensitive JDBC property was rewritten unexpectedly: %#v / %#v", result.SecretRequirements, result.Script.Config.Database)
 	}
 }
 
-func TestJDBCAuthoredCredentialPlaceholdersCannotDisappearDuringDSNTranslation(t *testing.T) {
-	tests := []struct {
-		name       string
-		username   string
-		password   string
-		properties string
-	}{
-		{
-			name:     "redacted username",
-			username: "%5BREDACTED%5D",
-			password: "real-password",
+func TestUnresolvedJMeterCredentialBindingsIgnoresPreservedSourceValues(t *testing.T) {
+	reports := []requestimport.Report{{
+		Requirements: []credentialpolicy.Requirement{
+			{Key: "preserved", Value: "literal-secret", SourceValueAvailable: true},
+			{Key: "existing_ref", ExistingReference: true},
 		},
-		{
-			name:     "standalone password omitted by JMeter runtime precedence",
-			password: "W1JFREFDVEVEXQ==",
-		},
-		{
-			name:       "connection property username",
-			properties: "user=%5BREDACTED%5D;sslmode=require",
-		},
+	}}
+	if got := unresolvedJMeterCredentialBindings(reports); got != 0 {
+		t.Fatalf("unresolvedJMeterCredentialBindings(preserved) = %d, want 0", got)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			jmx := `<?xml version="1.0" encoding="UTF-8"?>
-<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
-  <TestPlan testname="DB plan" enabled="true"/><hashTree>
-    <ThreadGroup testname="Orders DB" enabled="true"/><hashTree>
-      <JDBCDataSource testname="Orders Pool" enabled="true">
-        <stringProp name="dbUrl">jdbc:postgresql://db.example.test/orders</stringProp>
-        <stringProp name="username">` + test.username + `</stringProp>
-        <stringProp name="password">` + test.password + `</stringProp>
-        <stringProp name="connectionProperties">` + test.properties + `</stringProp>
-      </JDBCDataSource><hashTree/>
-      <JDBCSampler testname="Select orders" enabled="true">
-        <stringProp name="query">SELECT 1</stringProp>
-        <stringProp name="queryType">Select Statement</stringProp>
-      </JDBCSampler><hashTree/>
-    </hashTree>
-  </hashTree>
-</hashTree></jmeterTestPlan>`
-			result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "authored-fields.jmx"})
-			if err != nil {
-				t.Fatalf("ConvertJMX returned error: %v", err)
-			}
-			if len(result.SecretRequirements) != 1 ||
-				result.SecretRequirements[0].SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-				!strings.HasPrefix(result.Script.Config.Database.DSN, "{{secret.JMETER_") {
-				t.Fatalf("authored placeholder was lost during DSN translation: requirements=%#v config=%#v", result.SecretRequirements, result.Script.Config.Database)
-			}
-		})
+	reports[0].Requirements = append(reports[0].Requirements, credentialpolicy.Requirement{
+		Key:                  "missing_source",
+		SourceValueAvailable: false,
+		SourceValueStatus:    credentialpolicy.SourceCredentialValueMissing,
+	})
+	if got := unresolvedJMeterCredentialBindings(reports); got != 1 {
+		t.Fatalf("unresolvedJMeterCredentialBindings(missing) = %d, want 1", got)
 	}
 }
 
@@ -148,16 +138,16 @@ func TestJMeterBatchCredentialBindingsUseDistinctLogicalNames(t *testing.T) {
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
   <TestPlan testname="Batch" enabled="true"/><hashTree>
     <ThreadGroup testname="Users" enabled="true"/><hashTree>
-      <HeaderManager testname="Auth" enabled="true"><collectionProp name="HeaderManager.headers">
-        <elementProp name="" elementType="Header"><stringProp name="Header.name">X-API-Key</stringProp><stringProp name="Header.value">[REDACTED]</stringProp></elementProp>
-      </collectionProp></HeaderManager><hashTree/>
-      <HTTPSamplerProxy testname="First" enabled="true"><stringProp name="HTTPSampler.domain">first.example.test</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+      <JDBCDataSource testname="Pool A" enabled="true">
+        <stringProp name="dbUrl"></stringProp>
+      </JDBCDataSource><hashTree/>
+      <JDBCSampler testname="First" enabled="true"><stringProp name="query">SELECT 1</stringProp><stringProp name="queryType">Select Statement</stringProp></JDBCSampler><hashTree/>
     </hashTree>
     <ThreadGroup testname="Users" enabled="true"/><hashTree>
-      <HeaderManager testname="Auth" enabled="true"><collectionProp name="HeaderManager.headers">
-        <elementProp name="" elementType="Header"><stringProp name="Header.name">X-API-Key</stringProp><stringProp name="Header.value">[REDACTED]</stringProp></elementProp>
-      </collectionProp></HeaderManager><hashTree/>
-      <HTTPSamplerProxy testname="Second" enabled="true"><stringProp name="HTTPSampler.domain">second.example.test</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
+      <JDBCDataSource testname="Pool B" enabled="true">
+        <stringProp name="dbUrl"></stringProp>
+      </JDBCDataSource><hashTree/>
+      <JDBCSampler testname="Second" enabled="true"><stringProp name="query">SELECT 1</stringProp><stringProp name="queryType">Select Statement</stringProp></JDBCSampler><hashTree/>
     </hashTree>
   </hashTree>
 </hashTree></jmeterTestPlan>`
@@ -168,8 +158,8 @@ func TestJMeterBatchCredentialBindingsUseDistinctLogicalNames(t *testing.T) {
 	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 2 {
 		t.Fatalf("scripts/requirements = %d/%#v", len(result.Scripts), result.SecretRequirements)
 	}
-	first := result.Scripts[0].Config.HTTP.DefaultHeaders["X-API-Key"]
-	second := result.Scripts[1].Config.HTTP.DefaultHeaders["X-API-Key"]
+	first := result.Scripts[0].Config.Database.DSN
+	second := result.Scripts[1].Config.Database.DSN
 	if first == second {
 		t.Fatalf("batch requirements share an ambiguous replacement: %q", first)
 	}
@@ -193,37 +183,30 @@ func TestJMeterBatchCredentialBindingsUseDistinctLogicalNames(t *testing.T) {
 }
 
 func TestJMeterDuplicateSamplerNamesKeepCredentialTargetsAndBatchPathsUnambiguous(t *testing.T) {
-	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+	const httpJMX = `<?xml version="1.0" encoding="UTF-8"?>
 <jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
   <TestPlan testname="Plan" enabled="true"/><hashTree>
     <ThreadGroup testname="Users" enabled="true"/><hashTree>
-      <HeaderManager testname="Auth" enabled="true"><collectionProp name="HeaderManager.headers">
-        <elementProp name="" elementType="Header"><stringProp name="Header.name">X-API-Key</stringProp><stringProp name="Header.value">[REDACTED]</stringProp></elementProp>
-      </collectionProp></HeaderManager><hashTree/>
       <HTTPSamplerProxy testname="Request" enabled="true"><stringProp name="HTTPSampler.domain">first.example.test</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
       <HTTPSamplerProxy testname="request" enabled="true"><stringProp name="HTTPSampler.domain">second.example.test</stringProp><stringProp name="HTTPSampler.path">/</stringProp><stringProp name="HTTPSampler.method">GET</stringProp></HTTPSamplerProxy><hashTree/>
     </hashTree>
   </hashTree>
 </hashTree></jmeterTestPlan>`
-	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "duplicates.jmx"})
+	httpResult, err := ConvertJMX([]byte(httpJMX), ConvertOptions{FileName: "duplicates.jmx"})
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
-	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 2 {
-		t.Fatalf("scripts/actions = %#v", result.Scripts)
+	if len(httpResult.Scripts) != 1 || len(httpResult.Scripts[0].Actions) != 2 {
+		t.Fatalf("scripts/actions = %#v", httpResult.Scripts)
 	}
-	if result.Scripts[0].Actions[0].Name != "Request" || result.Scripts[0].Actions[1].Name != "request_2" {
-		t.Fatalf("action names = %q / %q, want deterministic case-fold-safe names", result.Scripts[0].Actions[0].Name, result.Scripts[0].Actions[1].Name)
-	}
-	if len(result.SecretRequirements) != 2 ||
-		result.SecretRequirements[0].Targets[0].RequestKey == result.SecretRequirements[1].Targets[0].RequestKey {
-		t.Fatalf("credential targets remain ambiguous: %#v", result.SecretRequirements)
+	if httpResult.Scripts[0].Actions[0].Name != "Request" || httpResult.Scripts[0].Actions[1].Name != "request_2" {
+		t.Fatalf("action names = %q / %q, want deterministic case-fold-safe names", httpResult.Scripts[0].Actions[0].Name, httpResult.Scripts[0].Actions[1].Name)
 	}
 	wantPaths := map[string]string{
 		"actions[0]": "Request",
 		"actions[1]": "request_2",
 	}
-	for _, mapping := range result.SourceReview.Mappings {
+	for _, mapping := range httpResult.SourceReview.Mappings {
 		if wantName, exists := wantPaths[mapping.TargetPath]; exists {
 			if mapping.TargetName != wantName {
 				t.Fatalf("mapping %q target name = %q, want %q", mapping.TargetPath, mapping.TargetName, wantName)
@@ -233,5 +216,35 @@ func TestJMeterDuplicateSamplerNamesKeepCredentialTargetsAndBatchPathsUnambiguou
 	}
 	if len(wantPaths) != 0 {
 		t.Fatalf("source review lacks unambiguous action paths: %v", wantPaths)
+	}
+
+	const ehJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3"><hashTree>
+  <TestPlan testname="Plan" enabled="true"/><hashTree>
+    <ThreadGroup testname="Users" enabled="true"/><hashTree>
+      <jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler testname="Request" enabled="true">
+        <stringProp name="namespaceName">first.servicebus.windows.net</stringProp>
+        <stringProp name="eventHubName">orders</stringProp>
+        <stringProp name="authType">Shared access signature</stringProp>
+        <stringProp name="sharedAccessKeyName">write</stringProp>
+        <stringProp name="sharedAccessKey"></stringProp>
+      </jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler><hashTree/>
+      <jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler testname="request" enabled="true">
+        <stringProp name="namespaceName">second.servicebus.windows.net</stringProp>
+        <stringProp name="eventHubName">orders</stringProp>
+        <stringProp name="authType">Shared access signature</stringProp>
+        <stringProp name="sharedAccessKeyName">write</stringProp>
+        <stringProp name="sharedAccessKey"></stringProp>
+      </jp.co.pnop.jmeter.protocol.azureeventhubs.sampler.AzEventHubsSampler><hashTree/>
+    </hashTree>
+  </hashTree>
+</hashTree></jmeterTestPlan>`
+	ehResult, err := ConvertJMX([]byte(ehJMX), ConvertOptions{FileName: "eh-duplicates.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(ehResult.SecretRequirements) != 2 ||
+		ehResult.SecretRequirements[0].Targets[0].RequestKey == ehResult.SecretRequirements[1].Targets[0].RequestKey {
+		t.Fatalf("credential targets remain ambiguous: %#v", ehResult.SecretRequirements)
 	}
 }

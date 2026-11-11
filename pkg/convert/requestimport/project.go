@@ -11,6 +11,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
@@ -1020,6 +1021,7 @@ func (draft *Draft) Finalize(options FinalizeOptions) (*Result, error) {
 	if err := importreview.ApplyToScript(draft.Script, draft.Findings); err != nil {
 		return nil, err
 	}
+	convertutil.SanitizeScriptDSLTemplates(draft.Script, nil)
 	issues := dsl.ValidateScriptIssues(draft.Script)
 	readiness, err := importreview.EvaluateScript(draft.Script, importreview.EvaluationInput{
 		ValidationIssues:   issues,

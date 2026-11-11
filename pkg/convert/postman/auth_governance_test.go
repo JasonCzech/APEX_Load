@@ -138,7 +138,7 @@ func TestConvertPostmanMissingAuthFieldsNeverUseSharedEnvironmentPlaceholders(t 
 	}
 }
 
-func TestConvertPostmanRedactionSentinelsAreNeverPreservableCredentials(t *testing.T) {
+func TestConvertPostmanPreservesLiteralRedactionSentinelValues(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -161,15 +161,14 @@ func TestConvertPostmanRedactionSentinelsAreNeverPreservableCredentials(t *testi
 			if err != nil {
 				t.Fatalf("Convert returned error: %v", err)
 			}
-			if got := result.Script.Actions[0].Headers["X-Api-Key"]; !strings.HasPrefix(got, "{{secret.") {
-				t.Fatalf("sentinel destination = %q, want unconfigured secret reference", got)
+			if got := result.Script.Actions[0].Headers["X-Api-Key"]; got != test.value {
+				t.Fatalf("sentinel destination = %q, want literal %q preserved", got, test.value)
 			}
-			requirements := result.ProtectedRequirements.Take()
-			if len(requirements) != 1 {
-				t.Fatalf("requirements = %#v", requirements)
+			if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+				t.Fatalf("requirements = %#v, want zero secret requirements for literal input", requirements)
 			}
-			if requirements[0].SourceValueAvailable || requirements[0].Value != "" {
-				t.Fatalf("sentinel was presented as a recoverable imported value: %#v", requirements[0])
+			if blocker := result.Script.Actions[0].Metadata["execution_blocker"]; blocker != nil {
+				t.Fatalf("unexpected execution_blocker = %#v", blocker)
 			}
 		})
 	}

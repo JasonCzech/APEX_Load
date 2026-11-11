@@ -296,3 +296,79 @@ func TestExportHARIncludesWebSocketMessages(t *testing.T) {
 		t.Fatalf("second websocket HAR message = %#v", messages[1])
 	}
 }
+
+func TestExportHARAndReloadedSessionPreserveUnredactedHeadersByDefault(t *testing.T) {
+	rec := New(":0")
+	session, err := rec.StartSession("reload-unredacted", "Reload Unredacted", SessionFilters{CaptureCookies: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req1, _ := http.NewRequest(http.MethodPost, "https://api.example.test/login", strings.NewReader(`{"user":"ada"}`))
+	req1.Header.Set("Content-Type", "application/json")
+	req1.Header.Set("X-Api-Key", "api-key-literal-123456")
+	resp1 := &http.Response{
+		StatusCode: http.StatusOK,
+		Header: http.Header{
+			"Content-Type": {"application/json"},
+			"Set-Cookie":   {"sid=cookie-literal-789; Path=/; HttpOnly"},
+		},
+	}
+	rec.recordRequest(session, req1, []byte(`{"user":"ada"}`), resp1, []byte(`{"status":"ok"}`), 12*time.Millisecond)
+
+	req2, _ := http.NewRequest(http.MethodGet, "https://api.example.test/orders", nil)
+	req2.Header.Set("Authorization", "Bearer static-bearer-abcdef")
+	req2.Header.Set("X-Api-Key", "api-key-literal-123456")
+	req2.Header.Set("Cookie", "sid=cookie-literal-789; pref=compact")
+	resp2 := &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{"Content-Type": {"application/json"}},
+	}
+	rec.recordRequest(session, req2, nil, resp2, []byte(`{"orders":[]}`), 8*time.Millisecond)
+
+	// Simulate persisting and reloading the session via JSON (RawHeaders* are json:"-").
+	persisted, err := json.Marshal(session)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var reloaded Session
+	if err := json.Unmarshal(persisted, &reloaded); err != nil {
+		t.Fatal(err)
+	}
+	if len(reloaded.Requests[1].RawHeaders) != 0 {
+		t.Fatalf("expected RawHeaders omitted after JSON round-trip, got %#v", reloaded.Requests[1].RawHeaders)
+	}
+
+	harBytes, err := ExportHAR(&reloaded, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	harText := string(harBytes)
+	for _, want := range []string{
+		"Bearer static-bearer-abcdef",
+		"api-key-literal-123456",
+		"cookie-literal-789",
+		"pref=compact",
+	} {
+		if !strings.Contains(harText, want) {
+			t.Fatalf("ExportHAR missing %q:\n%s", want, harText)
+		}
+	}
+	if strings.Contains(harText, "[redacted]") {
+		t.Fatalf("ExportHAR unexpectedly scrubbed values by default:\n%s", harText)
+	}
+
+	converted := ConvertSession(&reloaded, "Reloaded Script")
+	if len(converted.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(converted.Script.Actions))
+	}
+	secondHeaders := converted.Script.Actions[1].Headers
+	if got := secondHeaders["Authorization"]; got != "Bearer static-bearer-abcdef" {
+		t.Fatalf("reloaded conversion Authorization = %q, want literal bearer token", got)
+	}
+	if got := secondHeaders["X-Api-Key"]; got != "api-key-literal-123456" {
+		t.Fatalf("reloaded conversion X-Api-Key = %q, want literal API key", got)
+	}
+	if got := secondHeaders["Cookie"]; got != "pref=compact" {
+		t.Fatalf("reloaded conversion Cookie = %q, want non-jar cookie pref=compact", got)
+	}
+}

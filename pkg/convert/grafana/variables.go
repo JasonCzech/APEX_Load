@@ -165,7 +165,7 @@ func variableOptions(v rawVariable, variableName string, col *diag.Collector) []
 		options = options[:MaxOptionsPerVar]
 	}
 	for _, opt := range options {
-		if len(opt.Value) > MaxVariableValueBytes*4 {
+		if len(opt.Value) > MaxExprBytes*8 {
 			col.Add(diag.Warning, "variable", variableName, "oversized variable option omitted from the review")
 			continue
 		}
@@ -174,7 +174,7 @@ func variableOptions(v rawVariable, variableName string, col *diag.Collector) []
 			if value == "" || value == "$__all" {
 				continue
 			}
-			if len(value) > MaxVariableValueBytes {
+			if len(value) > MaxExprBytes {
 				col.Add(diag.Warning, "variable", variableName, "oversized variable option omitted from the review")
 				continue
 			}
@@ -192,15 +192,18 @@ func variableOptions(v rawVariable, variableName string, col *diag.Collector) []
 }
 
 func boundedVariableValue(raw json.RawMessage, variableName, field string, col *diag.Collector) (string, bool) {
-	// A scalar JSON string adds only small quoting overhead. Refuse a large raw value
-	// before unmarshalling so one array-valued current selection cannot amplify into
-	// an unbounded temporary []string.
-	if len(raw) > MaxVariableValueBytes*4 {
+	if len(raw) == 0 {
+		return "", false
+	}
+	// Refuse oversized raw JSON before unmarshalling so an array-valued pick
+	// cannot amplify into an unbounded temporary []string, while matching
+	// ValidateBindingValue's MaxExprBytes ceiling on the decoded value.
+	if len(raw) > MaxExprBytes*8 {
 		col.Add(diag.Warning, "variable", variableName, "oversized "+field+" omitted from the review")
 		return "", true
 	}
 	value := decodeStringValue(raw)
-	if len(value) > MaxVariableValueBytes {
+	if len(value) > MaxExprBytes {
 		col.Add(diag.Warning, "variable", variableName, "oversized "+field+" omitted from the review")
 		return "", true
 	}
@@ -231,12 +234,12 @@ const (
 // backslashes, whitespace and control characters — every character a value would need
 // to escape a label matcher or inject a second selector. Validated at commit AND
 // again at query time (defense in depth).
-var BindingValuePattern = regexp.MustCompile(`^[A-Za-z0-9_.:/=+-]{1,128}$`)
+var BindingValuePattern = regexp.MustCompile(`^[A-Za-z0-9_.:/=+-]+$`)
 var BindingNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,127}$`)
 
 // ValidateBindingValue reports whether v is a safe PromQL binding value.
 func ValidateBindingValue(v string) bool {
-	return BindingValuePattern.MatchString(v)
+	return len(v) <= MaxExprBytes && BindingValuePattern.MatchString(v)
 }
 
 // ValidateBindingName reports whether name is a syntactically valid user-variable

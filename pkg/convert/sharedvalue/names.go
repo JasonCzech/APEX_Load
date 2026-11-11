@@ -36,31 +36,39 @@ func ValidName(name string) bool {
 	return parameterNamePattern.MatchString(name)
 }
 
-// CredentialShaped reports whether binding this name to a plain list parameter
-// would be destructive.
-//
-// pkg/api's disclosure-safe projection masks any map that carries a "type"
-// field alongside a credential-ish "name" (scriptMapHasCredentialValue). A
-// dsl.Parameter map has exactly that shape, so a parameter named "password"
-// projects its values as [REDACTED] on every read, and the real value is lost
-// on the next read-modify-write save. Such values must use {{secret.NAME}} and
-// the guided credential-binding flow instead.
+// CredentialShaped reports whether a shared-value candidate name matches a
+// credential-like field or parameter identifier. Literal candidate values are
+// preserved during discovery and Apply; callers may use CredentialShaped as an
+// advisory classification signal (for example when offering optional secret
+// bindings).
 func CredentialShaped(name string) bool {
+	normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(name))
+	if normalized == "tokenurl" || normalized == "persistsessionacrossiterations" ||
+		normalized == "credentialpolicy" || credential.NonCredentialName(name) {
+		return false
+	}
 	if credential.SensitiveName(name) {
 		return true
 	}
-	normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "", ".", "", " ", "").Replace(name))
-	for _, marker := range []string{
-		"password", "passwd", "passphrase", "secret", "token",
-		"credential", "authorization", "cookie", "apikey",
-	} {
-		if strings.Contains(normalized, marker) {
-			return true
-		}
+	switch normalized {
+	case "authorization", "proxyauthorization", "password", "passwd", "passphrase",
+		"pwd", "pass",
+		"token", "accesstoken", "refreshtoken", "idtoken", "authtoken",
+		"apikey", "accesskey", "accesskeyid", "secretkey", "secretaccesskey",
+		"awsaccesskeyid", "awssecretaccesskey", "clientsecret", "privatekey",
+		"credential", "credentials", "connectionstring", "dsn", "saslpassword",
+		"cookie", "setcookie", "session", "sessionid", "csrftoken", "xsrftoken":
+		return true
 	}
-	// The name endings the parameter projection masks (isSensitiveScriptKey),
-	// such as jsessionid or userSessionId, which SensitiveName does not split.
-	for _, suffix := range []string{"sessionid", "privatekey", "accesskey", "accesskeyid"} {
+	// The name endings the parameter projection masks (IsSensitiveScriptKey),
+	// such as jsessionid, userSessionId, myApiToken, or sessionCookie, which
+	// SensitiveName does not split on camelCase while avoiding non-credential
+	// prefixes like tokenType, maxTokens, tokenExpiry, or cookieDomain.
+	for _, suffix := range []string{
+		"authorization", "password", "passwd", "passphrase", "token", "secret",
+		"apikey", "credential", "cookie", "sessionid", "privatekey", "accesskey",
+		"accesskeyid", "secretaccesskey",
+	} {
 		if strings.HasSuffix(normalized, suffix) {
 			return true
 		}

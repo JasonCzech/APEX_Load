@@ -37,7 +37,7 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 		result.Script = emptyRecordingScript(session, name)
 		return
 	}
-	sanitize := false
+	sanitize := opts.ScrubSensitive
 	highConfidenceOnly := opts.HighConfidenceOnly == nil || *opts.HighConfidenceOnly
 	converted, err := sample.Convert(sample.ImportRequest{
 		Name:    name,
@@ -148,7 +148,11 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 	if skipped := countUnappliedRecorderCorrelations(correlations); skipped > 0 {
 		result.Warnings = append(result.Warnings, fmt.Sprintf("Detected %d correlation candidate(s) left for review because confidence or encoding semantics did not permit an automatic rewrite.", skipped))
 	}
-	result.Correlations = disclosureSafeCorrelations(correlations)
+	if opts.ScrubSensitive {
+		result.Correlations = disclosureSafeCorrelations(correlations)
+	} else {
+		result.Correlations = correlations
+	}
 	result.SampleCorrelations = converted.Correlations
 	result.Baseline = converted.Baseline
 	result.Document = converted.Document
@@ -157,8 +161,10 @@ func convertThroughSharedPipeline(session *Session, name string, opts ConvertOpt
 	result.EffectiveSettings = converted.EffectiveSettings
 	protectedRequirements := converted.ProtectedRequirements.Take()
 	result.ProtectedRequirements.Store(protectedRequirements)
-	for index := range protectedRequirements {
-		protectedRequirements[index].Value = ""
+	if opts.ScrubSensitive {
+		for index := range protectedRequirements {
+			protectedRequirements[index].Value = ""
+		}
 	}
 	result.Script = script
 }

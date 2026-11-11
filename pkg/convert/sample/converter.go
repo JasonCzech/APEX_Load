@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
+	"sort"
 	"strings"
 	"time"
+
+	nethtml "golang.org/x/net/html"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
@@ -18,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/recordedshape"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 	"github.com/jasonczech/apexload/pkg/recordingprofile"
@@ -244,6 +249,10 @@ type exchange struct {
 	// projected request surface (for example cURL -u input or arguments of an
 	// unsupported option). It is consumed only by source-review redaction.
 	SourceSecrets []string
+	// ProtectedInputs names form/query controls discovered from protected HTML
+	// inputs (<input type="password">, one-time-code, or Salesforce identity
+	// verification) so source-review redaction scrubs their values when enabled.
+	ProtectedInputs []string
 	// StepName names the generated action (the recorder's step name), and
 	// RecordedThinkTimeMs is the pause the recorder measured, or the tester
 	// edited, before this request (HasRecordedThinkTime).
@@ -433,8 +442,18 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	exchanges, normalizationWarnings := normalizeRecordedExchanges(exchanges, format)
-	if format == "har" && len(req.Options.HTMLSteps) > 0 {
-		forgetHTMLStepRequestValues(exchanges, req.Options.HTMLSteps)
+	defaultRedactSourceReview := convertutil.BoolOption(req.Options.SanitizeSensitive, req.Options.Profile != nil && req.Options.Profile.ScrubSensitive)
+	redactSourceReview := convertutil.BoolOption(req.Options.SanitizeSensitive, false) || convertutil.BoolOption(req.Options.RedactSourceReview, defaultRedactSourceReview)
+	htmlSteps := req.Options.HTMLSteps
+	if format == "har" {
+		if redactSourceReview {
+			var htmlStepWarnings []string
+			htmlSteps, htmlStepWarnings = retainHTMLStepsForConversion(exchanges, htmlSteps)
+			warnings = append(warnings, htmlStepWarnings...)
+		}
+		if len(htmlSteps) > 0 {
+			forgetHTMLStepRequestValues(exchanges, htmlSteps)
+		}
 	}
 	warnings = append(warnings, normalizationWarnings...)
 	if len(exchanges) == 0 {
@@ -687,7 +706,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			action.Metadata["note"] = note
 		}
-		if htmlStep := req.Options.HTMLSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
+		if htmlStep := htmlSteps[ex.SourceEntryID]; htmlStep != nil && format == "har" {
 			// The page decides the URL, body and encoding at replay.
 			if action.Params == nil {
 				action.Params = map[string]any{}
@@ -961,7 +980,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if !req.Options.OmitSourceReview {
 		var redactedFiles map[string]bool
 		var originalLengths map[string]int
-		if convertutil.BoolOption(req.Options.RedactSourceReview, convertutil.BoolOption(req.Options.SanitizeSensitive, false)) {
+		if redactSourceReview {
 			redactedFiles, originalLengths = redactSourceReviewSecrets(sourceFiles, exchanges)
 		}
 		result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
@@ -987,6 +1006,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	result.EffectiveSettings = effectiveSettings
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result, nil
 }
 
@@ -1400,6 +1420,314 @@ func forgetHTMLStepRequestValues(exchanges []exchange, steps map[int]map[string]
 		if parsed, err := url.Parse(exchanges[i].URL); err == nil {
 			parsed.RawQuery = ""
 			exchanges[i].URL = parsed.String()
+		}
+	}
+}
+
+func isSalesforceVerificationExchangeURL(rawURL string) bool {
+	return strings.Contains(strings.ToLower(urlPath(rawURL)), "/_ui/identity/verification/")
+}
+
+func appendProtectedInputName(fields []string, name string) []string {
+	name = strings.TrimSpace(name)
+	if name == "" || slices.Contains(fields, name) {
+		return fields
+	}
+	return append(fields, name)
+}
+
+func appendSalesforceVerificationInputs(fields []string, ex exchange) []string {
+	for _, vField := range []string{"smc", "emc"} {
+		fields = appendProtectedInputName(fields, vField)
+	}
+	for _, rawSurface := range []string{ex.Body, urlQuery(ex.URL)} {
+		if rawSurface == "" || strings.HasPrefix(strings.TrimSpace(rawSurface), "{") {
+			continue
+		}
+		for _, part := range strings.Split(rawSurface, "&") {
+			key, val, ok := strings.Cut(part, "=")
+			if !ok || val == "" {
+				continue
+			}
+			if decoded, err := url.QueryUnescape(key); err == nil {
+				key = decoded
+			}
+			key = strings.TrimSpace(key)
+			switch strings.ToLower(key) {
+			case "", "save", "cancel", "returl", "starturl", "_confirmationtoken":
+				continue
+			}
+			fields = appendProtectedInputName(fields, key)
+		}
+	}
+	return fields
+}
+
+func urlQuery(rawURL string) string {
+	_, q, ok := strings.Cut(rawURL, "?")
+	if !ok {
+		return ""
+	}
+	q, _, _ = strings.Cut(q, "#")
+	return q
+}
+
+func exchangeMentionsInputControl(ex exchange, control string) bool {
+	lowerControl := strings.ToLower(strings.TrimSpace(control))
+	if lowerControl == "" {
+		return false
+	}
+	if strings.Contains(strings.ToLower(ex.Body), lowerControl) ||
+		strings.Contains(strings.ToLower(ex.URL), lowerControl) {
+		return true
+	}
+	return encodedPairsMentionControl(urlQuery(ex.URL), lowerControl) ||
+		encodedPairsMentionControl(ex.Body, lowerControl)
+}
+
+func encodedPairsMentionControl(text, lowerControl string) bool {
+	if strings.TrimSpace(text) == "" || lowerControl == "" {
+		return false
+	}
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSuffix(line, "\r")
+		for _, part := range strings.FieldsFunc(line, func(r rune) bool { return r == '&' || r == ';' }) {
+			key, _, hasEq := strings.Cut(strings.TrimSpace(part), "=")
+			if !hasEq {
+				continue
+			}
+			key = strings.Trim(strings.TrimSpace(key), `"'`)
+			if decoded, err := url.QueryUnescape(key); err == nil {
+				key = decoded
+			} else if decoded, err := url.PathUnescape(key); err == nil {
+				key = decoded
+			}
+			if strings.ToLower(strings.TrimSpace(key)) == lowerControl {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func retainHTMLStepsForConversion(exchanges []exchange, steps map[int]map[string]any) (map[int]map[string]any, []string) {
+	kept := make(map[int]map[string]any, len(steps))
+	for entryID, step := range steps {
+		kept[entryID] = step
+	}
+	var notes []string
+	visited := make(map[int]bool, len(steps))
+	protectedControls := make(map[string]bool)
+	var sortedControls []string
+	type htmlPageKey struct {
+		body         string
+		verification bool
+	}
+	seenHTMLPages := make(map[htmlPageKey]bool)
+	for i := range exchanges {
+		ex := &exchanges[i]
+		isVerification := isSalesforceVerificationExchangeURL(ex.URL)
+		if isVerification {
+			ex.ProtectedInputs = appendSalesforceVerificationInputs(ex.ProtectedInputs, *ex)
+		}
+		for _, control := range sortedControls {
+			if exchangeMentionsInputControl(*ex, control) {
+				ex.ProtectedInputs = appendProtectedInputName(ex.ProtectedInputs, control)
+			}
+		}
+		if step := kept[ex.SourceEntryID]; step != nil {
+			visited[ex.SourceEntryID] = true
+			if strings.EqualFold(strings.TrimSpace(fmt.Sprint(step["kind"])), "form") {
+				fieldNames := stepFieldNames(step["fields"])
+				downgraded := false
+				for _, fieldName := range fieldNames {
+					if fieldRequiresPlainRequest(fieldName, protectedControls) {
+						if !downgraded {
+							delete(kept, ex.SourceEntryID)
+							notes = append(notes, fmt.Sprintf("HTML form step for HAR entry %d stays a URL request because field %q is sensitive", ex.SourceEntryID, fieldName))
+							downgraded = true
+						}
+						ex.ProtectedInputs = appendProtectedInputName(ex.ProtectedInputs, fieldName)
+					}
+				}
+				if !downgraded && isVerification && len(fieldNames) > 0 {
+					delete(kept, ex.SourceEntryID)
+					notes = append(notes, fmt.Sprintf("HTML form step for HAR entry %d stays a URL request because field %q is sensitive", ex.SourceEntryID, fieldNames[0]))
+					for _, fieldName := range fieldNames {
+						if !strings.EqualFold(fieldName, "save") && !strings.EqualFold(fieldName, "cancel") {
+							ex.ProtectedInputs = appendProtectedInputName(ex.ProtectedInputs, fieldName)
+						}
+					}
+				}
+			}
+		}
+		if ex.Response != nil && ex.Response.Body != "" {
+			ct := strings.ToLower(headerLookup(ex.Response.Headers, "Content-Type"))
+			if strings.Contains(ct, "html") || strings.Contains(strings.ToLower(ex.Response.Body), "<input") || strings.Contains(strings.ToLower(ex.Response.Body), "<form") {
+				key := htmlPageKey{body: ex.Response.Body, verification: isVerification}
+				if !seenHTMLPages[key] {
+					seenHTMLPages[key] = true
+					added := false
+					for name := range htmlInputProtectedControlsForPage(ex.Response.Body, isVerification) {
+						if !protectedControls[name] {
+							protectedControls[name] = true
+							sortedControls = append(sortedControls, name)
+							added = true
+						}
+					}
+					if added {
+						sort.Strings(sortedControls)
+					}
+				}
+			}
+		}
+	}
+	if len(visited) < len(steps) {
+		remaining := make([]int, 0, len(steps)-len(visited))
+		for entryID := range kept {
+			if !visited[entryID] {
+				remaining = append(remaining, entryID)
+			}
+		}
+		sort.Ints(remaining)
+		for _, entryID := range remaining {
+			step := kept[entryID]
+			if step == nil || !strings.EqualFold(strings.TrimSpace(fmt.Sprint(step["kind"])), "form") {
+				continue
+			}
+			for _, fieldName := range stepFieldNames(step["fields"]) {
+				if fieldRequiresPlainRequest(fieldName, protectedControls) {
+					delete(kept, entryID)
+					notes = append(notes, fmt.Sprintf("HTML form step for HAR entry %d stays a URL request because field %q is sensitive", entryID, fieldName))
+					break
+				}
+			}
+		}
+	}
+	return kept, notes
+}
+
+func stepFieldNames(raw any) []string {
+	var names []string
+	switch items := raw.(type) {
+	case []any:
+		for _, item := range items {
+			switch entry := item.(type) {
+			case map[string]any:
+				if name, _ := entry["name"].(string); strings.TrimSpace(name) != "" {
+					names = append(names, strings.TrimSpace(name))
+				}
+			case map[string]string:
+				if name := strings.TrimSpace(entry["name"]); name != "" {
+					names = append(names, name)
+				}
+			}
+		}
+	case []map[string]any:
+		for _, entry := range items {
+			if name, _ := entry["name"].(string); strings.TrimSpace(name) != "" {
+				names = append(names, strings.TrimSpace(name))
+			}
+		}
+	case []map[string]string:
+		for _, entry := range items {
+			if name := strings.TrimSpace(entry["name"]); name != "" {
+				names = append(names, name)
+			}
+		}
+	}
+	return names
+}
+
+func fieldRequiresPlainRequest(fieldName string, protectedControls map[string]bool) bool {
+	if credential.SensitiveName(fieldName) {
+		return true
+	}
+	switch credential.NormalizeName(fieldName) {
+	case "pw", "otp", "totp", "mfa", "passcode", "onetimecode", "verificationcode":
+		return true
+	}
+	return protectedControls[fieldName]
+}
+
+func htmlInputProtectedControls(pageHTML string) map[string]bool {
+	return htmlInputProtectedControlsForPage(pageHTML, false)
+}
+
+func htmlInputIsTextEntry(typeVal string) bool {
+	switch strings.ToLower(strings.TrimSpace(typeVal)) {
+	case "hidden", "submit", "button", "reset", "image", "checkbox", "radio", "file", "range", "color":
+		return false
+	default:
+		return true
+	}
+}
+
+func htmlInputProtectedControlsForPage(pageHTML string, isSalesforceVerificationPage bool) map[string]bool {
+	if pageHTML == "" {
+		return nil
+	}
+	var protected map[string]bool
+	tok := nethtml.NewTokenizer(strings.NewReader(pageHTML))
+	for {
+		tt := tok.Next()
+		if tt == nethtml.ErrorToken {
+			return protected
+		}
+		if tt != nethtml.StartTagToken && tt != nethtml.SelfClosingTagToken {
+			continue
+		}
+		token := tok.Token()
+		if !strings.EqualFold(token.Data, "input") || len(token.Attr) == 0 {
+			continue
+		}
+		var nameVal, typeVal, autoVal string
+		var seenName, seenType, seenAuto bool
+		for _, attr := range token.Attr {
+			if attr.Namespace != "" {
+				continue
+			}
+			switch strings.ToLower(attr.Key) {
+			case "name":
+				if !seenName {
+					seenName = true
+					nameVal = strings.TrimSpace(attr.Val)
+				}
+			case "type":
+				if !seenType {
+					seenType = true
+					typeVal = attr.Val
+				}
+			case "autocomplete":
+				if !seenAuto {
+					seenAuto = true
+					autoVal = attr.Val
+				}
+			}
+		}
+		if nameVal == "" {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(typeVal), "password") {
+			if protected == nil {
+				protected = make(map[string]bool)
+			}
+			protected[nameVal] = true
+			continue
+		}
+		autoTokens := strings.Fields(strings.ToLower(autoVal))
+		if slices.Contains(autoTokens, "one-time-code") || slices.Contains(autoTokens, "current-password") || slices.Contains(autoTokens, "new-password") {
+			if protected == nil {
+				protected = make(map[string]bool)
+			}
+			protected[nameVal] = true
+			continue
+		}
+		if isSalesforceVerificationPage && htmlInputIsTextEntry(typeVal) {
+			if protected == nil {
+				protected = make(map[string]bool)
+			}
+			protected[nameVal] = true
 		}
 	}
 }

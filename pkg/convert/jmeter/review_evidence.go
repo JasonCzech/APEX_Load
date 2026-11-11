@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -345,5 +346,5 @@ func (r *ConvertResult) preserveReviewEvidence() {
 		r.Scripts[0].Metadata.Import.Preserved = p
 	}
 	p["jmeter_review_summary"] = r.ReviewSummary
-	p["jmeter_review_diagnostics"] = r.Diagnostics
+	p["jmeter_review_diagnostics"] = convertutil.NeutralizeScriptMetadataDeep(r.Diagnostics)
 }

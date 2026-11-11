@@ -416,15 +416,6 @@ func ProjectScriptCredentials(
 		)
 		return nil
 	})
-	if walkErr != nil {
-		// No unvisited source-controlled request values may be returned after a
-		// bounded-walker failure. Replace the script with a valid review draft;
-		// source evidence remains available through the redacted SourceReview.
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile, fallbackSnapshot)
-		result.AdditionalURLs = nil
-		result.FallbackDraft = true
-		return result, fmt.Errorf("HTTP credential review exceeded the bounded action traversal limit")
-	}
 	if requirementConflict {
 		// The request tree itself is intact and valid here; only the credential
 		// bookkeeping is ambiguous. Keep every authored action, base URL, and
@@ -440,20 +431,66 @@ func ProjectScriptCredentials(
 		result.FallbackDraft = true
 		return result, fmt.Errorf("HTTP credential review found conflicting requirement provenance")
 	}
+	if walkErr != nil {
+		retainCredentialTraversalSnapshot(script, fallbackSnapshot)
+		sourceProfile := firstNonEmpty(strings.TrimSpace(options.SourceProfile), "import")
+		incomplete := importreview.Finding{
+			Code:       "import_credential_review_incomplete",
+			Severity:   diag.Warning,
+			Element:    "imported HTTP requests",
+			Detail:     "the imported request tree exceeded the bounded credential traversal limit; imported requests were retained as authored",
+			Source:     sourceProfile,
+			ReasonCode: "import_credential_review_incomplete",
+			Resolution: "review_preserved_credential",
+			Gate:       importreview.GateNone,
+		}
+		topLevelFindings := []importreview.Finding{incomplete}
+		for _, finding := range findings {
+			if finding.Gate == importreview.GateExecution {
+				topLevelFindings = append(topLevelFindings, finding)
+			}
+		}
+		for _, actions := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+			for index := range actions {
+				if strings.EqualFold(strings.TrimSpace(actions[index].Type), "http_sequence") && actions[index].Target == "" {
+					if target := enterpriseFirstSequenceTarget(&actions[index]); target != "" {
+						actions[index].Target = target
+					} else {
+						actions[index].Target = "/"
+					}
+				}
+				importreview.ApplyToAction(&actions[index], topLevelFindings)
+			}
+		}
+		findings = append(findings, incomplete)
+		result.Findings = importreview.NormalizeFindings(findings)
+		return result, nil
+	}
 	synchronizeEnterpriseSequenceProvenance(script)
 	if err := importreview.ApplyToScript(script, findings); err != nil {
-		gateScriptWithCredentialReviewFailure(
-			script,
-			options.SourceProfile,
-			fallbackSnapshot,
-			"credential_request_review_unattachable",
-			"the HTTP credential review could not be attached to every imported request",
-		)
-		result.FallbackDraft = true
-		return result, fmt.Errorf("attach durable HTTP credential review: %w", err)
+		if findingsContainExecutionGate(findings) {
+			gateScriptWithCredentialReviewFailure(
+				script,
+				options.SourceProfile,
+				fallbackSnapshot,
+				"credential_request_review_unattachable",
+				"the HTTP credential review could not be attached to every imported request",
+			)
+			result.FallbackDraft = true
+			return result, fmt.Errorf("attach durable HTTP credential review: %w", err)
+		}
 	}
 	result.Findings = importreview.NormalizeFindings(findings)
 	return result, nil
+}
+
+func findingsContainExecutionGate(findings []importreview.Finding) bool {
+	for _, finding := range findings {
+		if finding.Gate == importreview.GateExecution {
+			return true
+		}
+	}
+	return false
 }
 
 func compatibleCredentialRequirements(left, right credentialpolicy.Requirement) bool {
@@ -1512,41 +1549,4 @@ func retainCredentialTraversalSnapshot(script *dsl.Script, snapshot string) {
 		script.Metadata.Import.Preserved = map[string]any{}
 	}
 	script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"] = snapshot
-}
-
-// replaceScriptWithCredentialTraversalReviewDraft is the last-resort fallback
-// for a request tree the bounded walker cannot traverse. Such a tree exceeds
-// dsl.MaxScriptActionDefinitions, so it can never be stored as a valid script;
-// the exact source is retained verbatim in the preserved snapshot instead. The
-// authored base URL is deliberately kept: it is an executable value in its own
-// right and nothing about the traversal failure makes it unusable.
-func replaceScriptWithCredentialTraversalReviewDraft(script *dsl.Script, sourceProfile, snapshot string) {
-	if script == nil {
-		return
-	}
-	action := dsl.Action{
-		Name:   "Import_request_review",
-		Type:   "source_review",
-		Target: "",
-		Params: map[string]any{
-			"function":     "request_import",
-			"support_mode": "review_only",
-		},
-		Metadata: map[string]any{},
-	}
-	sourceProfile = firstNonEmpty(strings.TrimSpace(sourceProfile), "import")
-	importreview.ApplyToAction(&action, []importreview.Finding{{
-		Code:       "credential_request_traversal_failed",
-		Severity:   diag.Blocker,
-		Element:    "imported HTTP requests",
-		Detail:     "the imported request tree could not be reviewed within the bounded traversal contract",
-		Source:     sourceProfile,
-		ReasonCode: "credential_request_traversal_failed",
-		Resolution: "reduce_or_replace_the_request_tree_and_remove_gate",
-		Gate:       importreview.GateExecution,
-	}})
-	retainCredentialTraversalSnapshot(script, snapshot)
-	script.Init = nil
-	script.Actions = []dsl.Action{action}
-	script.Teardown = nil
 }

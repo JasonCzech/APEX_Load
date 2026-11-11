@@ -69,7 +69,7 @@ settings: {maxRedirects: 51}
 	if err != nil {
 		t.Fatal(err)
 	}
-	const want = `{"candidate_id":"7bf2ee1c8d2adfc33e5b446e81c42db9","planned_script_id":"\u003cgenerated-script-id\u003e","diagnostics":[{"id":"bruno-native-db075f7ca29fce4a2cebb442","finding_id":"bruno-native-db075f7ca29fce4a2cebb442","code":"bruno_max_redirects_clamped"}],"requirement_ids":["e44b2e871bb51ba79d7cc721"]}`
+	const want = `{"candidate_id":"7bf2ee1c8d2adfc33e5b446e81c42db9","planned_script_id":"\u003cgenerated-script-id\u003e","diagnostics":[{"id":"bruno-native-db075f7ca29fce4a2cebb442","finding_id":"bruno-native-db075f7ca29fce4a2cebb442","code":"bruno_max_redirects_clamped"}],"requirement_ids":[]}`
 	if string(got) != want {
 		t.Fatalf("stable identity snapshot changed:\n got: %s\nwant: %s", got, want)
 	}

@@ -401,15 +401,21 @@
     state.timer = setTimeout(() => flushScroll(el, state), 250);
   }
 
-  // Password values never leave the page: the fill is recorded with an empty
-  // value and masked=true so conversion emits a {{env.*}} placeholder instead.
+  // Sensitive input masking is off by default so captured recordings retain
+  // literal password and one-time-code values unless scrub_sensitive is enabled.
+  function scrubSensitiveEnabled() {
+    if (window.__apexloadScrubSensitive === true) return true;
+    const cfg = window.__apexloadRecorderConfig;
+    return !!(cfg && cfg.scrubSensitive === true);
+  }
+
   function isPasswordInput(el) {
     return el.tagName && el.tagName.toLowerCase() === 'input' &&
       (el.getAttribute('type') || 'text').toLowerCase() === 'password';
   }
 
-  // A one-time verification code (Salesforce identity verification) never
-  // leaves the page either: it cannot replay.
+  // A one-time verification code (Salesforce identity verification) is masked
+  // alongside passwords when scrub_sensitive is enabled.
   function isOneTimeCodeInput(el) {
     if (!el.tagName || el.tagName.toLowerCase() !== 'input') return false;
     if ((el.getAttribute('autocomplete') || '').toLowerCase() === 'one-time-code') return true;
@@ -450,11 +456,12 @@
   }
 
   function fillSnapshot(el) {
-    const masked = isPasswordInput(el) || isOneTimeCodeInput(el);
     if (isEditableContent(el)) {
       return { value: String(el.innerText || el.textContent || ''), masked: false };
     }
-    return { value: masked ? '' : String(el.value || ''), masked: masked };
+    const rawValue = String(el.value || '');
+    const masked = scrubSensitiveEnabled() && (isPasswordInput(el) || isOneTimeCodeInput(el));
+    return { value: masked ? '' : rawValue, masked: masked };
   }
 
   function elementFingerprint(el) {

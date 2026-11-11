@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
@@ -270,7 +271,7 @@ func convertStep(step truXMLStep, descriptors []ObjectDescriptor) ([]dsl.Action,
 		return []dsl.Action{action}, []string{reviewGatedStepWarning(step, action.Metadata)}, false, nil
 	case "Multi Select", "MultiSelect":
 		return convertMultiSelectStep(step, descriptors)
-	case "Dialog - Confirm", "Dialog Confirm", "Dialog - Prompt", "Dialog Prompt", "Dialog":
+	case "Dialog - Confirm", "Dialog Confirm", "Dialog - Prompt", "Dialog Prompt", "Dialog - Prompt Password", "Dialog Prompt Password", "Dialog":
 		return convertDialogStep(step)
 	case "Rendezvous":
 		name, err := parseFirstArgumentValue(step.Arguments, "Rendezvous Name", "Name", "name", "Value", "value")
@@ -699,19 +700,19 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 		action.Metadata["source"] = "truclient_" + stableActionToken(step.Action)
 	}
 	if value := strings.TrimSpace(step.StepID); value != "" {
-		action.Metadata["source_step_id"] = value
+		action.Metadata["source_step_id"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 	if value := strings.TrimSpace(step.Index); value != "" {
-		action.Metadata["source_step_index"] = value
+		action.Metadata["source_step_index"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 	if value := strings.TrimSpace(step.Action); value != "" {
-		action.Metadata["source_action"] = value
+		action.Metadata["source_action"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 	if value := strings.TrimSpace(step.ActionName); value != "" {
-		action.Metadata["source_action_name"] = value
+		action.Metadata["source_action_name"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 	if value := stepObjectDescriptorID(step); value != "" {
-		action.Metadata["source_object_descriptor_id"] = value
+		action.Metadata["source_object_descriptor_id"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 	if candidates, _ := rankedSelectorCandidates(step, descriptors); len(candidates) > 0 {
 		action.Metadata["source_selector_candidates"] = candidates
@@ -722,20 +723,20 @@ func attachSourceStepMetadata(action *dsl.Action, step truXMLStep, transaction s
 	}
 	if values, err := parseArgumentValues(step.Arguments); err == nil {
 		if value := trimArgumentValue(values, "Frame", "Frame ID", "FrameContext", "Iframe", "Iframe ID"); value != "" {
-			action.Metadata["source_frame_context"] = value
+			action.Metadata["source_frame_context"] = convertutil.NeutralizeActionMetadataString(value)
 		}
 		if value := trimArgumentValue(values, "Window", "Window ID", "WindowContext", "Tab", "Browser Window"); value != "" {
-			action.Metadata["source_window_context"] = value
+			action.Metadata["source_window_context"] = convertutil.NeutralizeActionMetadataString(value)
 		}
 		if refs := parameterReferences(values); len(refs) > 0 {
-			action.Metadata["source_parameter_refs"] = refs
+			action.Metadata["source_parameter_refs"] = convertutil.NeutralizeActionMetadataValue(refs)
 		}
 		if refs := snapshotReferences(values); len(refs) > 0 {
-			action.Metadata["source_snapshot_refs"] = refs
+			action.Metadata["source_snapshot_refs"] = convertutil.NeutralizeActionMetadataValue(refs)
 		}
 	}
 	if value := strings.TrimSpace(transaction); value != "" {
-		action.Metadata["source_transaction"] = value
+		action.Metadata["source_transaction"] = convertutil.NeutralizeActionMetadataString(value)
 	}
 }
 
@@ -870,12 +871,12 @@ func sanitizeTransactionActionName(transaction, name string) string {
 
 func stepDisplayName(step truXMLStep, fallback string) string {
 	if name := strings.TrimSpace(step.ActionName); name != "" {
-		return name
+		return convertutil.NeutralizeScriptMetadataString(name)
 	}
 	if action := strings.TrimSpace(step.Action); action != "" {
-		return action
+		return convertutil.NeutralizeScriptMetadataString(action)
 	}
-	return fallback
+	return convertutil.NeutralizeScriptMetadataString(fallback)
 }
 
 // reviewOnlyStepAction preserves a published-but-unexecutable TruClient toolbox
@@ -887,16 +888,16 @@ func reviewOnlyStepAction(step truXMLStep, scope StepScope) dsl.Action {
 		Name: stepDisplayName(step, scope.DisplayName),
 		Type: "source_review",
 		Params: map[string]any{
-			"function": actionName,
-			"args":     []any{step.Arguments},
+			"function": convertutil.NeutralizeActionSurfaceString(actionName, nil),
+			"args":     []any{convertutil.NeutralizeActionSurfaceString(step.Arguments, nil)},
 		},
 		Metadata: map[string]any{
 			"source":            "truclient_" + stableActionToken(actionName),
 			"review_required":   true,
 			"promotion_blocker": true,
-			"review_reason":     scope.Notes,
-			"scope_name":        scope.CanonicalName,
-			"apexload_shape":    scope.APEXLoadShape,
+			"review_reason":     convertutil.NeutralizeActionMetadataString(scope.Notes),
+			"scope_name":        convertutil.NeutralizeActionMetadataString(scope.CanonicalName),
+			"apexload_shape":    convertutil.NeutralizeActionMetadataString(scope.APEXLoadShape),
 		},
 	}
 }
@@ -985,7 +986,7 @@ func splitMultiSelectOptions(value string) []string {
 	return out
 }
 
-// convertDialogStep maps Dialog - Confirm / Dialog - Prompt to browser_handle_dialog.
+// convertDialogStep maps Dialog - Confirm / Dialog - Prompt / Dialog - Prompt Password to browser_handle_dialog.
 func convertDialogStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 	actionName := strings.TrimSpace(step.Action)
 	response, err := parseFirstArgumentValue(step.Arguments, "Action", "action", "Response", "response", "Button", "button", "Answer", "answer")
@@ -1006,8 +1007,24 @@ func convertDialogStep(step truXMLStep) ([]dsl.Action, []string, bool, error) {
 		"action":      dialogAction,
 		"dialog_type": dialogType,
 	}
-	if promptText, err := parseFirstArgumentValue(step.Arguments, "Text", "text", "Value", "value", "Prompt", "prompt", "Input", "input"); err == nil {
+	if promptText, err := parseFirstArgumentValue(step.Arguments, "Password", "password", "Text", "text", "Value", "value", "Prompt", "prompt", "Input", "input"); err == nil {
 		if promptText = trimQuotedValue(promptText); promptText != "" {
+			if convertutil.HasUndeclaredFileTemplateRef(promptText, nil) || convertutil.HasUnsupportedRunTemplate(promptText) {
+				scope, ok := LookupStepScope(actionName)
+				if !ok {
+					scope = StepScope{
+						CanonicalName: stableActionToken(actionName),
+						DisplayName:   firstNonEmptyString(actionName, "Dialog"),
+						Status:        ScopeReviewOnly,
+						APEXLoadShape: "source_review",
+						Notes:         "Dialog prompt contains foreign template syntax requiring manual replacement before replay.",
+					}
+				}
+				action := reviewOnlyStepAction(step, scope)
+				action.Metadata["source_prompt_text"] = convertutil.NeutralizeActionMetadataString(promptText)
+				applyTruClientSemanticGate(&action, "truclient_dialog_template_requires_review", "Dialog prompt contains foreign template syntax requiring explicit native replacement before replay.")
+				return []dsl.Action{action}, []string{fmt.Sprintf("TruClient Dialog step %q prompt contains foreign template syntax and was preserved for manual review", stepDisplayName(step, "Dialog"))}, false, nil
+			}
 			params["prompt_text"] = promptText
 		}
 	}

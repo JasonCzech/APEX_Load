@@ -14,8 +14,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const maxRuntimeReviewEvidenceBytes = 256
@@ -24,7 +22,7 @@ const maxRuntimeReviewEvidenceBytes = 256
 // parity finding into a multi-megabyte response. It truncates on a UTF-8
 // boundary so the resulting metadata remains valid JSON text.
 func boundedRuntimeReviewEvidence(value string) string {
-	value = strings.TrimSpace(scrub.Value(value, scrub.Policy{}))
+	value = strings.TrimSpace(value)
 	if len(value) <= maxRuntimeReviewEvidenceBytes {
 		return value
 	}

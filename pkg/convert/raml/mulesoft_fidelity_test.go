@@ -45,7 +45,7 @@ traits:
     headers:
       source: {example: shared}
       client_id: {example: example-client}
-      client_secret: {example: DO-NOT-EMBED}
+      client_secret: {example: example-secret}
       x-transaction-id: {example: trace-example}
   create:
     body:
@@ -82,8 +82,8 @@ types:
 	if action.Target != "/records?count=0&mode=reset&search=a+%26+b" {
 		t.Fatalf("target = %q", action.Target)
 	}
-	if action.Headers["source"] != "override" || action.Headers["x-transaction-id"] != "trace-example" || action.Headers["client_id"] != "{{env.RAML_CLIENT_ID}}" || action.Headers["client_secret"] != "{{secret.RAML_CLIENT_SECRET}}" {
-		t.Fatal("trait headers lost or credential not governed")
+	if action.Headers["source"] != "override" || action.Headers["x-transaction-id"] != "trace-example" || action.Headers["client_id"] != "example-client" || action.Headers["client_secret"] != "example-secret" {
+		t.Fatalf("trait headers lost or authored credentials rewritten: %#v", action.Headers)
 	}
 	if action.Assertions[0].Expected != 201 {
 		t.Fatalf("status = %#v", action.Assertions)
@@ -95,12 +95,8 @@ types:
 	if body["enabled"] != false || len(body["items"].([]any)) != 1 {
 		t.Fatalf("typed example body shape = %#v", body)
 	}
-	if action.Metadata["execution_blocker"] != nil || len(result.SecretRequirements) != 1 || len(result.Summary.Policies) != 1 {
-		t.Fatalf("review/accounting = %#v", result.Accounting())
-	}
-	raw, _ := json.Marshal(result)
-	if strings.Contains(string(raw), "DO-NOT-EMBED") {
-		t.Fatal("source credential example leaked")
+	if action.Metadata["execution_blocker"] != nil || len(result.SecretRequirements) != 0 || len(result.Summary.Policies) != 1 {
+		t.Fatalf("review/accounting = %#v requirements=%#v policies=%#v", result.Accounting(), result.SecretRequirements, result.Summary.Policies)
 	}
 }
 
@@ -189,26 +185,53 @@ resourceTypes:
 }
 
 func TestRAMLCredentialQueryAndHeaderRequirements(t *testing.T) {
-	result, err := Convert(ImportRequest{Content: `#%RAML 1.0
-title: Credentials
+	t.Run("authored values preserved literally without secret requirements", func(t *testing.T) {
+		result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Authored Credentials
 /items:
   get:
     headers:
-      api_key: {example: never-embed-this}
+      api_key: {example: authored-api-key}
+    queryParameters:
+      client_id: {default: authored-client-id}
+      client_secret: {enum: [authored-client-secret, alt-secret]}
+`})
+		if err != nil {
+			t.Fatal(err)
+		}
+		action := result.Script.Actions[0]
+		if action.Headers["api_key"] != "authored-api-key" {
+			t.Fatalf("api_key header = %q, want literal authored value", action.Headers["api_key"])
+		}
+		if action.Target != "/items?client_id=authored-client-id&client_secret=authored-client-secret" {
+			t.Fatalf("target = %q, want literal authored query credentials", action.Target)
+		}
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("secret requirements = %#v, want none when credentials are authored", result.SecretRequirements)
+		}
+	})
+
+	t.Run("unauthored credentials synthesize placeholders and secret requirements", func(t *testing.T) {
+		result, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Unauthored Credentials
+/items:
+  get:
+    headers:
+      api_key: {type: string}
     queryParameters:
       client_id: {type: string}
-      client_secret: {example: never-embed-this-either}
+      client_secret: {type: string}
 `})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.SecretRequirements) != 2 || !strings.Contains(result.Script.Actions[0].Target, "client_secret={{secret.RAML_CLIENT_SECRET}}") {
-		t.Fatal("query credentials not bound")
-	}
-	raw, _ := json.Marshal(result)
-	if strings.Contains(string(raw), "never-embed") {
-		t.Fatal("credential example leaked")
-	}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.SecretRequirements) != 2 ||
+			result.Script.Actions[0].Headers["api_key"] != "{{secret.RAML_API_KEY}}" ||
+			!strings.Contains(result.Script.Actions[0].Target, "client_id={{env.RAML_CLIENT_ID}}") ||
+			!strings.Contains(result.Script.Actions[0].Target, "client_secret={{secret.RAML_CLIENT_SECRET}}") {
+			t.Fatalf("unauthored credentials not bound to placeholders: action=%#v reqs=%#v", result.Script.Actions[0], result.SecretRequirements)
+		}
+	})
 }
 
 // The private customer archives are evaluated locally without checking their
@@ -291,7 +314,7 @@ func TestCustomerRAMLArchiveFidelity(t *testing.T) {
 						t.Fatalf("request example fields lost for %s", action.Target)
 					}
 				}
-				if action.Headers["client_secret"] == "{{secret.RAML_CLIENT_SECRET}}" {
+				if action.Headers["client_secret"] != "" {
 					credentials++
 				}
 				if action.Body == "{}" || action.Body == "null" {
@@ -412,4 +435,171 @@ resourceTypes:
 	if len(result.Script.Actions) != 2 || result.Script.Actions[0].Headers["source"] != "parent" || result.Script.Actions[1].Headers["source"] != "child" {
 		t.Fatal("resource traits did not respect method scopes")
 	}
+}
+
+func TestRAMLStructuredOAuth2SettingsAndHyphenatedTraitPlaceholders(t *testing.T) {
+	authoredRes, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Structured OAuth
+baseUri: https://api.example.test
+securitySchemes:
+  oauth_2_0:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://auth.example.test/oauth/token
+      client_id:
+        type: string
+        example: structured-client-id
+      client_secret:
+        type: string
+        example: structured-client-secret
+      scope:
+        type: string
+        default: orders:read
+/orders:
+  get: {}
+`})
+	if err != nil {
+		t.Fatalf("Convert structured authored OAuth2: %v", err)
+	}
+	if len(authoredRes.Script.Init) != 1 {
+		t.Fatalf("Init = %#v, want 1 OAuth2 init action", authoredRes.Script.Init)
+	}
+	params := authoredRes.Script.Init[0].Params
+	if params["client_id"] != "structured-client-id" || params["client_secret"] != "structured-client-secret" || params["scope"] != "orders:read" {
+		t.Fatalf("structured OAuth2 settings resolved to %#v", params)
+	}
+
+	unauthoredRes, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Unauthored Structured OAuth And Hyphenated Trait
+baseUri: https://api.example.test
+securitySchemes:
+  oauth_2_0:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://auth.example.test/oauth/token
+      client_id:
+        type: string
+      client_secret:
+        type: string
+traits:
+  client-creds:
+    headers:
+      client-id:
+        type: string
+      client-secret:
+        type: string
+/orders:
+  is: [client-creds]
+  get: {}
+`})
+	if err != nil {
+		t.Fatalf("Convert unauthored structured OAuth2 + trait: %v", err)
+	}
+	unauthParams := unauthoredRes.Script.Init[0].Params
+	if unauthParams["client_id"] != "{{env.RAML_CLIENT_ID}}" || unauthParams["client_secret"] != "{{secret.RAML_CLIENT_SECRET}}" {
+		t.Fatalf("unauthored structured OAuth2 settings baked map string: %#v", unauthParams)
+	}
+	if len(unauthoredRes.Summary.Policies) != 1 || !strings.Contains(unauthoredRes.Summary.Policies[0].Detail, "bind env/secret placeholders") {
+		t.Fatalf("hyphenated client-secret trait misreported policy detail: %#v", unauthoredRes.Summary.Policies)
+	}
+	foundWarning := false
+	for _, w := range unauthoredRes.Warnings {
+		if strings.Contains(w, "bind RAML_CLIENT_SECRET before replay") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("expected replay warning for hyphenated client-secret trait placeholder, got %v", unauthoredRes.Warnings)
+	}
+}
+
+func TestRAMLClientIDEnforcementSchemeAndTraitPrecedence(t *testing.T) {
+	t.Run("authored_scheme_preserved_when_trait_redeclares_unauthored_headers", func(t *testing.T) {
+		res, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Authored Scheme With Unauthored Trait
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_required:
+    type: Pass Through
+    describedBy:
+      headers:
+        client_id:
+          type: string
+          example: scheme-authored-id
+        client_secret:
+          type: string
+          example: scheme-authored-secret
+traits:
+  client_id_required:
+    headers:
+      client_id:
+        type: string
+      client_secret:
+        type: string
+/orders:
+  is: [client_id_required]
+  get: {}
+`})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		headers := res.Script.Actions[0].Headers
+		if headers["client_id"] != "scheme-authored-id" || headers["client_secret"] != "scheme-authored-secret" {
+			t.Fatalf("authored scheme credentials overwritten by unauthored trait headers: %#v", headers)
+		}
+		if len(res.SecretRequirements) != 0 || len(res.Warnings) != 0 {
+			t.Fatalf("unexpected requirements=%#v warnings=%#v", res.SecretRequirements, res.Warnings)
+		}
+		if len(res.Summary.Policies) != 1 || !strings.Contains(res.Summary.Policies[0].Detail, "authored client credentials preserved") {
+			t.Fatalf("unexpected policy summary: %#v", res.Summary.Policies)
+		}
+	})
+
+	t.Run("unauthored_scheme_with_authored_hyphenated_trait_avoids_duplicates_and_warnings", func(t *testing.T) {
+		res, err := Convert(ImportRequest{Content: `#%RAML 1.0
+title: Unauthored Scheme With Authored Hyphenated Trait
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_required:
+    type: Pass Through
+    describedBy:
+      headers:
+        client_id:
+          type: string
+        client_secret:
+          type: string
+traits:
+  hyphen_creds:
+    headers:
+      client-id:
+        type: string
+        example: trait-authored-id
+      client-secret:
+        type: string
+        example: trait-authored-secret
+/orders:
+  is: [hyphen_creds]
+  get: {}
+`})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		headers := res.Script.Actions[0].Headers
+		if headers["client-id"] != "trait-authored-id" || headers["client-secret"] != "trait-authored-secret" {
+			t.Fatalf("hyphenated trait credentials missing: %#v", headers)
+		}
+		if _, dupID := headers["client_id"]; dupID {
+			t.Fatalf("injected duplicate client_id header alongside client-id: %#v", headers)
+		}
+		if _, dupSec := headers["client_secret"]; dupSec {
+			t.Fatalf("injected duplicate client_secret header alongside client-secret: %#v", headers)
+		}
+		if len(res.SecretRequirements) != 0 || len(res.Warnings) != 0 {
+			t.Fatalf("unexpected requirements=%#v warnings=%#v", res.SecretRequirements, res.Warnings)
+		}
+		if len(res.Summary.Policies) != 1 || !strings.Contains(res.Summary.Policies[0].Detail, "authored client credentials preserved") {
+			t.Fatalf("contradictory policy summary: %#v", res.Summary.Policies)
+		}
+	})
 }

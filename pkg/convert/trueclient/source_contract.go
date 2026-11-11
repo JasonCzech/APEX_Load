@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -49,7 +50,7 @@ func applyTruClientStepContract(action *dsl.Action, step truXMLStep) {
 		applyTruClientSemanticGate(action, "truclient_unfinalized_step_requires_review", "The source step was not finalized for replay.")
 	}
 	if event := strings.TrimSpace(step.EndEvent); event != "" {
-		action.Metadata["source_end_event"] = event
+		action.Metadata["source_end_event"] = convertutil.NeutralizeActionMetadataString(event)
 		switch event {
 		case "Action completed", "Object Exists", "Document Loaded", "DOM content loaded", "Step network completed":
 		default:
@@ -57,24 +58,24 @@ func applyTruClientStepContract(action *dsl.Action, step truXMLStep) {
 		}
 	}
 	if step.EndEventArgs != "" {
-		action.Metadata["source_end_event_arguments"] = step.EndEventArgs
+		action.Metadata["source_end_event_arguments"] = convertutil.NeutralizeActionMetadataString(step.EndEventArgs)
 	}
 	if step.ObjectTimeout != "" {
-		action.Metadata["source_object_timeout_seconds"] = step.ObjectTimeout
+		action.Metadata["source_object_timeout_seconds"] = convertutil.NeutralizeActionMetadataString(step.ObjectTimeout)
 	}
 	if step.ManualDuration != "" {
-		action.Metadata["source_manual_duration"] = step.ManualDuration
+		action.Metadata["source_manual_duration"] = convertutil.NeutralizeActionMetadataString(step.ManualDuration)
 		if step.ManualDuration != "0" {
 			applyTruClientSemanticGate(action, "truclient_manual_duration_requires_review", "The explicit source minimum step duration requires review.")
 		}
 	}
 	if step.RecordedDuration != "" {
-		action.Metadata["source_recorded_duration"] = step.RecordedDuration
+		action.Metadata["source_recorded_duration"] = convertutil.NeutralizeActionMetadataString(step.RecordedDuration)
 	}
 	if len(step.AdditionalAttributes) > 0 {
-		attributes := map[string]string{}
+		attributes := map[string]any{}
 		for _, attr := range step.AdditionalAttributes {
-			attributes[attr.Name.Local] = attr.Value
+			attributes[convertutil.NeutralizeScriptMetadataString(attr.Name.Local)] = convertutil.NeutralizeActionMetadataString(attr.Value)
 		}
 		action.Metadata["source_step_attributes"] = attributes
 	}

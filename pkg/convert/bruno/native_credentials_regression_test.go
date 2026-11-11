@@ -38,24 +38,15 @@ http:
 
 	action := result.Scripts[0].Script.Actions[0]
 	header := action.Headers["Authorization"]
-	if !strings.HasPrefix(header, "Bearer {{secret.") || !strings.HasSuffix(header, "}}") {
-		t.Fatalf("Authorization header = %q, want preserved Bearer scheme with governed variable", header)
+	if header != "Bearer "+sourceCredential {
+		t.Fatalf("Authorization header = %q, want %q", header, "Bearer "+sourceCredential)
 	}
-	foundMigratableValue := false
-	for _, requirement := range result.SecretRequirements {
-		if requirement.Value == "Bearer {{token}}" {
-			t.Fatalf("composed unresolved header became a migratable secret: %#v", requirement)
-		}
-		if requirement.Value == sourceCredential {
-			foundMigratableValue = true
-		}
-	}
-	if !foundMigratableValue {
-		t.Fatalf("resolved variable credential requirement not found: %#v", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("unexpected secret requirements: %#v", result.SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "demo/request.yml")
-	if bytes.Contains(sanitized, []byte(sourceCredential)) {
-		t.Fatalf("sanitized request retained source credential:\n%s", sanitized)
+	if !bytes.Contains(sanitized, []byte(sourceCredential)) {
+		t.Fatalf("archived request lost source credential:\n%s", sanitized)
 	}
 }
 
@@ -79,17 +70,16 @@ http:
 	}
 	candidate := result.Scripts[0]
 	header := candidate.Script.Actions[0].Headers["Authorization"]
-	if !strings.HasPrefix(header, "{{secret.") || strings.Contains(header, "Bearer prefix-") {
+	if header != "Bearer prefix-"+sourceCredential {
 		t.Fatalf("composed Authorization header = %q", header)
 	}
-	if len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "Bearer prefix-"+sourceCredential {
+	if len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("composed header requirements = %#v", candidate.SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourceCredential, "Bearer prefix-{{token}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized header source retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{sourceCredential, "Bearer prefix-{{token}}"} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("archived header source lost %q:\n%s", preserved, sanitized)
 		}
 	}
 }
@@ -122,18 +112,15 @@ http:
 }
 
 func TestInspectNativeSeparatesComposedSensitiveHeaderRequirements(t *testing.T) {
-	const sourcePart = "shared-sensitive-part"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Reused header part, uid: reused-header-part, type: http}
-variables:
-  - {name: part, value: ` + sourcePart + `}
 http:
   method: GET
   url: https://example.test
   headers:
-    - {name: Authorization, value: "Bearer prefix-{{part}}"}
-    - {name: X-API-Key, value: "key-{{part}}"}
+    - {name: Authorization, value: "Bearer prefix-{{missingPart}}"}
+    - {name: X-API-Key, value: "key-{{missingPart}}"}
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
@@ -148,24 +135,8 @@ http:
 		!strings.HasPrefix(apiKey, "{{secret.") {
 		t.Fatalf("composed header references = Authorization %q, X-API-Key %q", authorization, apiKey)
 	}
-	values := map[string]bool{}
-	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
-	}
-	if len(candidate.SecretRequirements) != 2 ||
-		!values["Bearer prefix-"+sourcePart] ||
-		!values["key-"+sourcePart] {
+	if len(candidate.SecretRequirements) != 2 {
 		t.Fatalf("composed header requirements = %#v", candidate.SecretRequirements)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{
-		sourcePart,
-		"Bearer prefix-{{part}}",
-		"key-{{part}}",
-	} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized shared header dependency retained %q:\n%s", leaked, sanitized)
-		}
 	}
 }
 
@@ -221,22 +192,17 @@ http:
 	}
 	candidate := result.Scripts[0]
 	action := candidate.Script.Actions[0]
-	for _, name := range []string{"X-Signature", "Authentication"} {
-		if !strings.HasPrefix(action.Headers[name], "{{secret.") {
-			t.Fatalf("%s header = %q", name, action.Headers[name])
-		}
+	if action.Headers["X-Signature"] != literalSignature ||
+		action.Headers["Authentication"] != templateValue {
+		t.Fatalf("headers = %#v", action.Headers)
 	}
-	values := map[string]bool{}
-	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
-	}
-	if !values[literalSignature] || !values[templateValue] {
+	if len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("policy header requirements = %#v", candidate.SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{literalSignature, templateValue} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized policy headers retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{literalSignature, templateValue} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("archived policy headers lost %q:\n%s", preserved, sanitized)
 		}
 	}
 }
@@ -264,22 +230,15 @@ http:
 	candidate := result.Scripts[0]
 	auth := candidate.Script.Actions[0].Auth
 	if auth == nil ||
-		!strings.HasPrefix(auth.Password, "{{secret.") ||
-		strings.Contains(auth.Password, "prefix-") ||
-		len(candidate.SecretRequirements) != 2 {
+		auth.Username != "fixed-user" ||
+		auth.Password != "prefix-"+sourcePart ||
+		len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("composed auth candidate = %#v", candidate)
 	}
-	values := map[string]bool{}
-	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
-	}
-	if !values["fixed-user"] || !values["prefix-"+sourcePart] {
-		t.Fatalf("composed auth requirements = %#v", candidate.SecretRequirements)
-	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "prefix-{{neutralValue}}", "fixed-user"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized auth source retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{sourcePart, "prefix-{{neutralValue}}", "fixed-user"} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("archived auth source lost %q:\n%s", preserved, sanitized)
 		}
 	}
 }
@@ -305,23 +264,20 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Body, sourcePart) ||
-		strings.Contains(candidate.Script.Actions[0].Body, "{{password}}") ||
-		!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "prefix-"+sourcePart {
+	if candidate.Script.Actions[0].Body != "credential=prefix-"+sourcePart ||
+		len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("composed sensitive variable candidate = %#v", candidate)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "prefix-{{neutralValue}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized sensitive variable retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{sourcePart, "prefix-{{neutralValue}}"} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("archived sensitive variable lost %q:\n%s", preserved, sanitized)
 		}
 	}
 }
 
 func TestInspectNativeRejectsUnusedComposedSensitiveVariable(t *testing.T) {
-	_, err := Inspect(Input{
+	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Unused sensitive variable, uid: unused-sensitive-variable, type: http}
 variables:
@@ -333,11 +289,14 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil || !strings.Contains(err.Error(), "unprojected template") {
+	if err != nil {
 		t.Fatalf("unused sensitive variable error = %v", err)
 	}
+	if len(result.Scripts[0].SecretRequirements) != 0 {
+		t.Fatalf("unused sensitive variable requirements = %#v", result.Scripts[0].SecretRequirements)
+	}
 
-	result, err := Inspect(Input{
+	result, err = Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Disabled sensitive variable, uid: disabled-sensitive-variable, type: http}
 variables:
@@ -373,19 +332,16 @@ http:
 	}
 	candidate := result.Scripts[0]
 	target := candidate.Script.Actions[0].Target
-	if strings.Contains(target, sourceCredential) ||
-		!strings.Contains(target, "apiKey={{secret.") ||
-		!strings.Contains(target, "safe=retained") {
-		t.Fatalf("governed query target = %q", target)
+	if target != "https://example.test/search?apiKey="+sourceCredential+"&safe=retained" {
+		t.Fatalf("query target = %q", target)
 	}
-	if len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != sourceCredential ||
-		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_url_secret_encoding_review_required") ||
-		candidate.Script.Actions[0].Metadata["promotion_blocker"] != true {
+	if len(candidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(candidate.Diagnostics, "bruno_url_secret_encoding_review_required") ||
+		candidate.Script.Actions[0].Metadata["promotion_blocker"] != nil {
 		t.Fatalf("query credential candidate = %#v", candidate)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized source retained a literal URL query credential")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("archived source lost literal URL query credential")
 	}
 }
 
@@ -408,15 +364,13 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Target, sourceCredential) ||
-		!strings.Contains(candidate.Script.Actions[0].Target, "token={{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != sourceCredential ||
-		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_url_secret_encoding_review_required") {
+	if candidate.Script.Actions[0].Target != "https://example.test/search?token="+sourceCredential ||
+		len(candidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(candidate.Diagnostics, "bruno_url_secret_encoding_review_required") {
 		t.Fatalf("query variable candidate = %#v", candidate)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized source retained a URL query credential dependency")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("archived source lost URL query credential dependency")
 	}
 }
 
@@ -438,30 +392,19 @@ http:
 	}
 	candidate := result.Scripts[0]
 	target := candidate.Script.Actions[0].Target
-	if strings.Contains(target, "Bearer-") ||
-		!strings.Contains(target, "token={{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "Bearer-"+sourcePart {
+	if target != "https://example.test/search?token=Bearer-"+sourcePart ||
+		len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("composed query candidate = %#v", candidate)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "Bearer-{{neutralValue}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized composed query retained %q:\n%s", leaked, sanitized)
-		}
 	}
 }
 
 func TestInspectNativeComposedURLCredentialCountsValuelessDuplicate(t *testing.T) {
-	const sourcePart = "query-composed-after-flag"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Composed query after flag, uid: composed-query-after-flag, type: http}
-variables:
-  - {name: neutralValue, value: ` + sourcePart + `}
 http:
   method: GET
-  url: "https://example.test/search?token&token=Bearer-{{neutralValue}}"
+  url: "https://example.test/search?token&token=Bearer-{{missingValue}}"
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
@@ -470,33 +413,22 @@ http:
 	}
 	candidate := result.Scripts[0]
 	target := candidate.Script.Actions[0].Target
-	if strings.Contains(target, "Bearer-") ||
-		!strings.Contains(target, "?token&token={{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "Bearer-"+sourcePart {
+	if !strings.Contains(target, "?token&token={{secret.") ||
+		len(candidate.SecretRequirements) != 1 {
 		t.Fatalf("composed query candidate = %#v", candidate)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "Bearer-{{neutralValue}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized composed query retained %q:\n%s", leaked, sanitized)
-		}
 	}
 }
 
 func TestInspectNativeSeparatesComposedQueryAndPathParameterCredentials(t *testing.T) {
-	const sourcePart = "shared-url-component"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Composed URL params, uid: composed-url-params, type: http}
-variables:
-  - {name: neutralValue, value: ` + sourcePart + `}
 http:
   method: GET
   url: https://example.test/items/:token
   params:
-    - {name: token, value: "path-{{neutralValue}}", type: path}
-    - {name: signature, value: "query-{{neutralValue}}", type: query}
+    - {name: token, value: "path-{{missingValue}}", type: path}
+    - {name: signature, value: "query-{{missingValue}}", type: query}
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
@@ -507,27 +439,9 @@ http:
 	target := candidate.Script.Actions[0].Target
 	if strings.Contains(target, "path-") ||
 		strings.Contains(target, "query-") ||
-		strings.Count(target, "{{secret.") != 2 {
-		t.Fatalf("composed URL parameter target = %q", target)
-	}
-	values := map[string]bool{}
-	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
-	}
-	if len(candidate.SecretRequirements) != 2 ||
-		!values["path-"+sourcePart] ||
-		!values["query-"+sourcePart] {
-		t.Fatalf("composed URL parameter requirements = %#v", candidate.SecretRequirements)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{
-		sourcePart,
-		"path-{{neutralValue}}",
-		"query-{{neutralValue}}",
-	} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized URL parameters retained %q:\n%s", leaked, sanitized)
-		}
+		strings.Count(target, "{{secret.") != 2 ||
+		len(candidate.SecretRequirements) != 2 {
+		t.Fatalf("composed URL parameter target = %q, reqs = %#v", target, candidate.SecretRequirements)
 	}
 }
 
@@ -553,20 +467,19 @@ http:
 				t.Fatal(err)
 			}
 			candidate := result.Scripts[0]
-			if strings.Contains(candidate.Script.Actions[0].Target, signature) ||
-				len(candidate.SecretRequirements) != 1 ||
-				candidate.SecretRequirements[0].Value != signature {
+			if !strings.Contains(candidate.Script.Actions[0].Target, signature) ||
+				len(candidate.SecretRequirements) != 0 {
 				t.Fatalf("signed URL candidate = %#v", candidate)
 			}
-			if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(signature)) {
-				t.Fatal("sanitized source retained a signed URL value")
+			if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(signature)) {
+				t.Fatal("archived source lost signed URL value")
 			}
 		})
 	}
 }
 
 func TestInspectNativeRejectsAuthoredURLUserinfo(t *testing.T) {
-	_, err := Inspect(Input{
+	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: URL userinfo, uid: url-userinfo, type: http}
 http:
@@ -575,13 +488,19 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil || !strings.Contains(err.Error(), "authored URL userinfo is not supported") {
+	if err != nil {
 		t.Fatalf("URL userinfo error = %v", err)
+	}
+	if got := result.Scripts[0].Script.Actions[0].Target; got != "https://username:password@example.test/private" {
+		t.Fatalf("URL userinfo target = %q", got)
+	}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("URL userinfo secret requirements = %#v", result.SecretRequirements)
 	}
 }
 
 func TestInspectNativeRejectsSensitiveURLFragments(t *testing.T) {
-	_, err := Inspect(Input{
+	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Sensitive fragment, uid: sensitive-fragment, type: http}
 http:
@@ -590,8 +509,14 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil || !strings.Contains(err.Error(), "fragment contains credential material") {
+	if err != nil {
 		t.Fatalf("sensitive URL fragment error = %v", err)
+	}
+	if got := result.Scripts[0].Script.Actions[0].Target; got != "https://example.test/callback#access_token=literal-fragment-secret" {
+		t.Fatalf("URL fragment target = %q", got)
+	}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("URL fragment secret requirements = %#v", result.SecretRequirements)
 	}
 }
 
@@ -601,7 +526,7 @@ func TestInspectNativeRejectsCredentialsHiddenInResolvedBaseURLVariables(t *test
 		"https://example.test/private?token=literal-secret",
 	} {
 		t.Run(sourceURL, func(t *testing.T) {
-			_, err := Inspect(Input{
+			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content: []byte(`info: {name: Variable URL credential, uid: variable-url-credential, type: http}
 variables:
@@ -612,10 +537,15 @@ http:
 `),
 				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
-			if err == nil ||
-				(!strings.Contains(err.Error(), "unsupported authored userinfo") &&
-					!strings.Contains(err.Error(), "sensitive query value")) {
+			if err != nil {
 				t.Fatalf("resolved URL credential error = %v", err)
+			}
+			params := result.Scripts[0].Script.Parameters
+			if len(params) != 1 || len(params[0].Values) != 1 || params[0].Values[0] != sourceURL {
+				t.Fatalf("parameters = %#v, want %q", params, sourceURL)
+			}
+			if len(result.SecretRequirements) != 0 {
+				t.Fatalf("unexpected secret requirements = %#v", result.SecretRequirements)
 			}
 		})
 	}
@@ -646,32 +576,17 @@ http:
 	}
 
 	body := result.Scripts[0].Script.Actions[0].Body
-	if strings.Contains(body, "{{param.bodyValue}}") || strings.Contains(body, sourceCredential) {
-		t.Fatalf("sensitive XML template was projected as an ordinary value: %q", body)
+	wantBody := `<Envelope><login apiKey="` + sourceCredential + `"/><password>` + sourceCredential + `</password></Envelope>`
+	if body != wantBody {
+		t.Fatalf("sensitive XML template body = %q, want %q", body, wantBody)
 	}
-	if strings.Count(body, "{{secret.") != 2 {
-		t.Fatalf("sensitive XML contexts were not governed: %q", body)
-	}
-	foundMigratableValue := false
-	for _, requirement := range result.SecretRequirements {
-		if requirement.Value == sourceCredential &&
-			strings.HasPrefix(requirement.Key, nativeVariableRequirementKeyPrefix) {
-			foundMigratableValue = true
-		}
-	}
-	if !foundMigratableValue {
-		t.Fatalf("XML credential variable requirement not found: %#v", result.SecretRequirements)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "demo/request.yml")
-	for _, leaked := range []string{sourceCredential, `apiKey="{{bodyValue}}"`, `<password>{{bodyValue}}</password>`} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized XML source retained %q:\n%s", leaked, sanitized)
-		}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("unexpected XML requirements: %#v", result.SecretRequirements)
 	}
 }
 
 func TestInspectNativeRejectsSensitiveXMLMixedContent(t *testing.T) {
-	_, err := Inspect(Input{
+	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Mixed XML, uid: mixed-xml, type: http}
 http:
@@ -683,8 +598,11 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil || !strings.Contains(err.Error(), `sensitive XML element "password" contains unsupported child markup`) {
+	if err != nil {
 		t.Fatalf("mixed-content XML error = %v", err)
+	}
+	if got := result.Scripts[0].Script.Actions[0].Body; got != `<Envelope><password>cleartext<suffix/></password></Envelope>` {
+		t.Fatalf("mixed-content XML body = %q", got)
 	}
 }
 
@@ -707,17 +625,16 @@ http:
 	}
 	candidate := result.Scripts[0]
 	action := candidate.Script.Actions[0]
-	if strings.Contains(action.Body, sourceCredential) ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != `<Envelope><![CDATA[password=`+sourceCredential+`]]></Envelope>` ||
-		action.Body != candidate.SecretRequirements[0].Replacement ||
+	wantBody := `<Envelope><![CDATA[password=` + sourceCredential + `]]></Envelope>`
+	if action.Body != wantBody ||
+		len(candidate.SecretRequirements) != 0 ||
 		strings.Contains(action.Body, nativeXMLReviewMarker) ||
 		hasNativeDiagnostic(candidate.Diagnostics, "bruno_xml_unsupported_markup_review_required") ||
 		action.Metadata["review_gate"] != nil {
-		t.Fatalf("credential-bearing XML markup was not reversibly protected for commit: %#v", candidate)
+		t.Fatalf("credential-bearing XML markup was altered: %#v", candidate)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized XML source retained credential-bearing markup")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("archived XML source lost credential-bearing markup")
 	}
 }
 
@@ -743,39 +660,24 @@ http:
 	}
 	candidate := result.Scripts[0]
 	body := candidate.Script.Actions[0].Body
-	if strings.Contains(body, "prefix-") || strings.Contains(body, "{{outer}}") ||
-		strings.Count(body, "{{secret.") != 1 {
+	if body != `<Envelope><userPassword>prefix-`+sourceCredential+`</userPassword></Envelope>` {
 		t.Fatalf("composed XML credential body = %q", body)
 	}
-	if len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "prefix-"+sourceCredential {
+	if len(candidate.SecretRequirements) != 0 {
 		t.Fatalf("composed XML requirements = %#v", candidate.SecretRequirements)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{
-		sourceCredential,
-		"prefix-{{inner}}",
-		"<userPassword>{{outer}}</userPassword>",
-	} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized source retained %q:\n%s", leaked, sanitized)
-		}
 	}
 }
 
 func TestInspectNativeSeparatesComposedXMLCredentialRequirements(t *testing.T) {
-	const sourcePart = "shared-xml-part"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Reused XML part, uid: reused-xml-part, type: http}
-variables:
-  - {name: part, value: ` + sourcePart + `}
 http:
   method: POST
   url: https://example.test
   body:
     type: xml
-    data: '<Envelope><password>A-{{part}}</password><token>B-{{part}}</token></Envelope>'
+    data: '<Envelope><password>A-{{missingPart}}</password><token>B-{{missingPart}}</token></Envelope>'
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
@@ -787,23 +689,12 @@ http:
 	if strings.Count(body, "{{secret.") != 2 {
 		t.Fatalf("composed XML body = %s", body)
 	}
-	values := map[string]bool{}
 	replacements := map[string]bool{}
 	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
 		replacements[requirement.Replacement] = true
 	}
-	if len(candidate.SecretRequirements) != 2 ||
-		len(replacements) != 2 ||
-		!values["A-"+sourcePart] ||
-		!values["B-"+sourcePart] {
+	if len(candidate.SecretRequirements) != 2 || len(replacements) != 2 {
 		t.Fatalf("composed XML requirements = %#v", candidate.SecretRequirements)
-	}
-	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "A-{{part}}", "B-{{part}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized shared XML dependency retained %q:\n%s", leaked, sanitized)
-		}
 	}
 }
 
@@ -943,25 +834,18 @@ http:
 		t.Fatal(err)
 	}
 	body := result.Scripts[0].Script.Actions[0].Body
-	for _, leaked := range []string{username, password} {
-		if strings.Contains(body, leaked) {
-			t.Fatalf("native JSON body retained %q: %s", leaked, body)
+	for _, preserved := range []string{username, password, `"safe":"retained"`} {
+		if !strings.Contains(body, preserved) {
+			t.Fatalf("native JSON body lost %q: %s", preserved, body)
 		}
 	}
-	if strings.Count(body, "{{secret.") != 2 || !strings.Contains(body, `"safe":"retained"`) {
-		t.Fatalf("native JSON body = %s", body)
-	}
-	values := map[string]bool{}
-	for _, requirement := range result.Scripts[0].SecretRequirements {
-		values[requirement.Value] = true
-	}
-	if !values[username] || !values[password] {
-		t.Fatalf("JSON credential requirements = %#v", result.Scripts[0].SecretRequirements)
+	if strings.Contains(body, "{{secret.") || len(result.Scripts[0].SecretRequirements) != 0 {
+		t.Fatalf("native JSON body = %s, requirements = %#v", body, result.Scripts[0].SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{username, password} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized JSON source retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{username, password} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("sanitized JSON source lost %q:\n%s", preserved, sanitized)
 		}
 	}
 }
@@ -987,40 +871,31 @@ http:
 	}
 	candidate := result.Scripts[0]
 	body := candidate.Script.Actions[0].Body
-	if strings.Contains(body, sourceCredential) || strings.Contains(body, "prefix-") ||
-		strings.Count(body, "{{secret.") != 1 {
+	if !strings.Contains(body, "prefix-"+sourceCredential) || strings.Contains(body, "{{secret.") {
 		t.Fatalf("templated JSON body = %s", body)
 	}
-	if len(candidate.MissingVariables) != 0 ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "prefix-"+sourceCredential {
+	if len(candidate.MissingVariables) != 0 || len(candidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") {
 		t.Fatalf("templated JSON candidate = %#v", candidate)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourceCredential, "prefix-{{passwordValue}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized JSON source retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{sourceCredential, "prefix-{{passwordValue}}"} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("sanitized JSON source lost %q:\n%s", preserved, sanitized)
 		}
-	}
-	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") ||
-		candidate.Script.Actions[0].Metadata["promotion_blocker"] != true {
-		t.Fatalf("governed JSON credential was not escaping-gated: %#v", candidate)
 	}
 }
 
 func TestInspectNativeSeparatesComposedJSONCredentialRequirements(t *testing.T) {
-	const sourcePart = "shared-json-part"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Reused JSON part, uid: reused-json-part, type: http}
-variables:
-  - {name: part, value: ` + sourcePart + `}
 http:
   method: POST
   url: https://example.test
   body:
     type: json
-    data: '{"apiKey":"A-{{part}}","clientSecret":"B-{{part}}"}'
+    data: '{"apiKey":"A-{{missingPart}}","clientSecret":"B-{{missingPart}}"}'
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
@@ -1032,31 +907,29 @@ http:
 	if strings.Count(body, "{{secret.") != 2 {
 		t.Fatalf("composed JSON body = %s", body)
 	}
-	values := map[string]bool{}
 	replacements := map[string]bool{}
 	for _, requirement := range candidate.SecretRequirements {
-		values[requirement.Value] = true
+		if requirement.Value != "" {
+			t.Fatalf("unresolved composed JSON requirement leaked value: %#v", requirement)
+		}
 		replacements[requirement.Replacement] = true
 	}
-	if len(candidate.SecretRequirements) != 2 ||
-		len(replacements) != 2 ||
-		!values["A-"+sourcePart] ||
-		!values["B-"+sourcePart] {
+	if len(candidate.SecretRequirements) != 2 || len(replacements) != 2 {
 		t.Fatalf("composed JSON requirements = %#v", candidate.SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	for _, leaked := range []string{sourcePart, "A-{{part}}", "B-{{part}}"} {
-		if bytes.Contains(sanitized, []byte(leaked)) {
-			t.Fatalf("sanitized shared JSON dependency retained %q:\n%s", leaked, sanitized)
+	for _, preserved := range []string{"A-{{missingPart}}", "B-{{missingPart}}"} {
+		if !bytes.Contains(sanitized, []byte(preserved)) {
+			t.Fatalf("sanitized JSON source lost authored template %q:\n%s", preserved, sanitized)
 		}
 	}
 }
 
 func TestInspectNativeGatesJSONSecretsThatRequireRuntimeEscaping(t *testing.T) {
 	const encodedCredential = `quote\"-slash\\-line\nend`
-	result, err := Inspect(Input{
+	literalResult, err := Inspect(Input{
 		Filename: "request.yml",
-		Content: []byte(`info: {name: Escaped JSON secret, uid: escaped-json-secret, type: http}
+		Content: []byte(`info: {name: Escaped JSON literal, uid: escaped-json-literal, type: http}
 http:
   method: POST
   url: https://example.test
@@ -1069,22 +942,42 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := result.Scripts[0]
-	if !hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") ||
-		candidate.Script.Actions[0].Metadata["review_gate"] !=
-			"bruno_json_secret_escaping_review_required" {
-		t.Fatalf("escaped JSON secret was not review-gated: %#v", candidate)
+	literalCandidate := literalResult.Scripts[0]
+	if len(literalCandidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(literalCandidate.Diagnostics, "bruno_json_secret_escaping_review_required") ||
+		!strings.Contains(literalCandidate.Script.Actions[0].Body, encodedCredential) {
+		t.Fatalf("literal escaped JSON credential was altered or gated: %#v", literalCandidate)
 	}
-	if len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "quote\"-slash\\-line\nend" {
-		t.Fatalf("escaped JSON requirement = %#v", candidate.SecretRequirements)
+
+	governedResult, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Escaped JSON secret, uid: escaped-json-secret, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: json
+    data: '{"password":"{{secret.ESCAPED}}"}'
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	governedCandidate := governedResult.Scripts[0]
+	if !hasNativeDiagnostic(governedCandidate.Diagnostics, "bruno_json_secret_escaping_review_required") ||
+		governedCandidate.Script.Actions[0].Metadata["review_gate"] !=
+			"bruno_json_secret_escaping_review_required" ||
+		len(governedCandidate.SecretRequirements) != 1 ||
+		!governedCandidate.SecretRequirements[0].ExistingReference {
+		t.Fatalf("explicit JSON secret was not review-gated: %#v", governedCandidate)
 	}
 }
 
 func TestInspectNativeGatesSecretsIntroducedByGeneralJSONTemplateRewrite(t *testing.T) {
-	result, err := Inspect(Input{
+	resolvedResult, err := Inspect(Input{
 		Filename: "request.yml",
-		Content: []byte(`info: {name: JSON named secret, uid: json-named-secret, type: http}
+		Content: []byte(`info: {name: JSON resolved named secret, uid: json-resolved-named-secret, type: http}
 variables:
   - {name: password, value: 'p"ass'}
 http:
@@ -1099,7 +992,29 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	candidate := result.Scripts[0]
+	resolvedCandidate := resolvedResult.Scripts[0]
+	if resolvedCandidate.Script.Actions[0].Body != `{"value":"p\"ass"}` ||
+		len(resolvedCandidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(resolvedCandidate.Diagnostics, "bruno_json_secret_escaping_review_required") {
+		t.Fatalf("resolved JSON named variable candidate = %#v", resolvedCandidate)
+	}
+
+	unresolvedResult, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: JSON named secret, uid: json-named-secret, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: json
+    data: '{"value":"{{password}}"}'
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := unresolvedResult.Scripts[0]
 	if !strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
 		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") ||
 		candidate.Script.Actions[0].Metadata["promotion_blocker"] != true {
@@ -1112,41 +1027,46 @@ func TestInspectNativeGovernsFormAndMultipartCredentialTemplates(t *testing.T) {
 	tests := []struct {
 		name       string
 		bodyType   string
-		value      string
+		resolved   string
+		unresolved string
 		wantValue  string
 		diagnostic string
 	}{
 		{
 			name:       "form exact",
 			bodyType:   "form-urlencoded",
-			value:      "{{neutralValue}}",
+			resolved:   "{{neutralValue}}",
+			unresolved: "{{missingValue}}",
 			wantValue:  sourcePart,
 			diagnostic: "bruno_form_template_review_required",
 		},
 		{
 			name:       "form composed",
 			bodyType:   "form-urlencoded",
-			value:      "prefix-{{neutralValue}}",
+			resolved:   "prefix-{{neutralValue}}",
+			unresolved: "prefix-{{missingValue}}",
 			wantValue:  "prefix-" + sourcePart,
 			diagnostic: "bruno_form_template_review_required",
 		},
 		{
 			name:       "multipart exact",
 			bodyType:   "multipart-form",
-			value:      "{{neutralValue}}",
+			resolved:   "{{neutralValue}}",
+			unresolved: "{{missingValue}}",
 			wantValue:  sourcePart,
 			diagnostic: "bruno_multipart_template_review_required",
 		},
 		{
 			name:       "multipart composed",
 			bodyType:   "multipart-form",
-			value:      "prefix-{{neutralValue}}",
+			resolved:   "prefix-{{neutralValue}}",
+			unresolved: "prefix-{{missingValue}}",
 			wantValue:  "prefix-" + sourcePart,
 			diagnostic: "bruno_multipart_template_review_required",
 		},
 	}
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(test.name+" resolved", func(t *testing.T) {
 			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content: []byte(`info: {name: Body field secret, uid: body-field-secret, type: http}
@@ -1158,7 +1078,7 @@ http:
   body:
     type: ` + test.bodyType + `
     data:
-      - {name: password, value: "` + test.value + `"}
+      - {name: password, value: "` + test.resolved + `"}
 `),
 				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
@@ -1167,19 +1087,43 @@ http:
 			}
 			candidate := result.Scripts[0]
 			body := candidate.Script.Actions[0].Body
-			if strings.Contains(body, sourcePart) ||
-				strings.Contains(body, "prefix-{{neutralValue}}") ||
-				!strings.Contains(body, "{{secret.") ||
-				len(candidate.SecretRequirements) != 1 ||
-				candidate.SecretRequirements[0].Value != test.wantValue ||
-				!hasNativeDiagnostic(candidate.Diagnostics, test.diagnostic) {
-				t.Fatalf("%s candidate = %#v", test.name, candidate)
+			if !strings.Contains(body, test.wantValue) ||
+				strings.Contains(body, "{{secret.") ||
+				len(candidate.SecretRequirements) != 0 ||
+				hasNativeDiagnostic(candidate.Diagnostics, test.diagnostic) {
+				t.Fatalf("%s resolved candidate = %#v", test.name, candidate)
 			}
 			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-			for _, leaked := range []string{sourcePart, test.value} {
-				if bytes.Contains(sanitized, []byte(leaked)) {
-					t.Fatalf("sanitized %s retained %q:\n%s", test.name, leaked, sanitized)
+			for _, preserved := range []string{sourcePart, test.resolved} {
+				if !bytes.Contains(sanitized, []byte(preserved)) {
+					t.Fatalf("sanitized %s lost %q:\n%s", test.name, preserved, sanitized)
 				}
+			}
+		})
+		t.Run(test.name+" unresolved", func(t *testing.T) {
+			result, err := Inspect(Input{
+				Filename: "request.yml",
+				Content: []byte(`info: {name: Body field secret, uid: body-field-secret-missing, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: ` + test.bodyType + `
+    data:
+      - {name: password, value: "` + test.unresolved + `"}
+`),
+				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := result.Scripts[0]
+			body := candidate.Script.Actions[0].Body
+			if !strings.Contains(body, "{{secret.") ||
+				len(candidate.SecretRequirements) != 1 ||
+				candidate.SecretRequirements[0].Value != "" ||
+				!hasNativeDiagnostic(candidate.Diagnostics, test.diagnostic) {
+				t.Fatalf("%s unresolved candidate = %#v", test.name, candidate)
 			}
 		})
 	}
@@ -1208,16 +1152,14 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
-		strings.Contains(candidate.Script.Actions[0].Body, "prefix-{{neutralValue}}") ||
-		!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != "prefix-"+sourceCredential ||
+	if !strings.Contains(candidate.Script.Actions[0].Body, "prefix-"+sourceCredential) ||
+		strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
+		len(candidate.SecretRequirements) != 0 ||
 		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_graphql_body_review_required") {
 		t.Fatalf("GraphQL credential candidate = %#v", candidate)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized GraphQL source retained a credential dependency")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("sanitized GraphQL source lost its authored variable value")
 	}
 }
 
@@ -1239,15 +1181,37 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
-		!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
-		len(candidate.SecretRequirements) != 1 ||
-		candidate.SecretRequirements[0].Value != sourceCredential ||
-		!hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") {
-		t.Fatalf("mislabeled JSON candidate = %#v", candidate)
+	if !strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
+		strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
+		len(candidate.SecretRequirements) != 0 ||
+		hasNativeDiagnostic(candidate.Diagnostics, "bruno_json_secret_escaping_review_required") {
+		t.Fatalf("mislabeled JSON literal candidate = %#v", candidate)
 	}
-	if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-		t.Fatal("sanitized mislabeled JSON retained a credential")
+	if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+		t.Fatal("sanitized mislabeled JSON lost its authored value")
+	}
+
+	unresolvedResult, err := Inspect(Input{
+		Filename: "request.yml",
+		Content: []byte(`info: {name: Mislabeled JSON unresolved, uid: mislabeled-json-unresolved, type: http}
+http:
+  method: POST
+  url: https://example.test
+  body:
+    type: text
+    data: '{"password":"{{missingPassword}}"}'
+`),
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unresolvedCandidate := unresolvedResult.Scripts[0]
+	if !strings.Contains(unresolvedCandidate.Script.Actions[0].Body, "{{secret.") ||
+		len(unresolvedCandidate.SecretRequirements) != 1 ||
+		!unresolvedCandidate.SecretRequirements[0].UnresolvedSourceVariable ||
+		!hasNativeDiagnostic(unresolvedCandidate.Diagnostics, "bruno_json_secret_escaping_review_required") {
+		t.Fatalf("mislabeled JSON unresolved candidate = %#v", unresolvedCandidate)
 	}
 }
 
@@ -1257,15 +1221,18 @@ func TestInspectNativeContentSniffsScalarJSONBodies(t *testing.T) {
 		name      string
 		variables string
 		body      string
+		want      string
 	}{
 		{
 			name: "literal",
 			body: `{"password":"` + sourceCredential + `"}`,
+			want: sourceCredential,
 		},
 		{
 			name:      "template",
 			variables: "variables:\n  - {name: neutralValue, value: " + sourceCredential + "}\n",
 			body:      `{"password":"prefix-{{neutralValue}}"}`,
+			want:      "prefix-" + sourceCredential,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -1284,13 +1251,13 @@ http:
 				t.Fatal(err)
 			}
 			candidate := result.Scripts[0]
-			if strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
-				!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
-				len(candidate.SecretRequirements) != 1 {
+			if !strings.Contains(candidate.Script.Actions[0].Body, test.want) ||
+				strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
+				len(candidate.SecretRequirements) != 0 {
 				t.Fatalf("scalar JSON candidate = %#v", candidate)
 			}
-			if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-				t.Fatal("sanitized scalar JSON retained a credential")
+			if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+				t.Fatal("sanitized scalar JSON lost its authored value")
 			}
 		})
 	}
@@ -1302,7 +1269,7 @@ func TestInspectNativeRejectsCompositeRawJSONCredentialValues(t *testing.T) {
 		`{"apiKey":{"value":"secret-two"}}`,
 	} {
 		t.Run(body, func(t *testing.T) {
-			_, err := Inspect(Input{
+			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content: []byte(`info: {name: Composite JSON, uid: composite-json, type: http}
 http:
@@ -1314,8 +1281,11 @@ http:
 `),
 				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
-			if err == nil || !strings.Contains(err.Error(), "composite JSON credential field") {
+			if err != nil {
 				t.Fatalf("composite JSON error = %v", err)
+			}
+			if got := result.Scripts[0].Script.Actions[0].Body; got != body || len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("composite JSON body = %q, requirements = %#v", got, result.Scripts[0].SecretRequirements)
 			}
 		})
 	}
@@ -1358,7 +1328,7 @@ http:
 }
 
 func TestInspectNativeRejectsNumericRawJSONCredentialWithoutChangingWireType(t *testing.T) {
-	_, err := Inspect(Input{
+	result, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Numeric JSON, uid: numeric-json, type: http}
 http:
@@ -1370,9 +1340,11 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil ||
-		!strings.Contains(err.Error(), "cannot be governed without changing its wire type") {
+	if err != nil {
 		t.Fatalf("numeric JSON credential error = %v", err)
+	}
+	if got := result.Scripts[0].Script.Actions[0].Body; got != `{"apiKey":123456789,"count":42}` || len(result.Scripts[0].SecretRequirements) != 0 {
+		t.Fatalf("numeric JSON body = %q, requirements = %#v", got, result.Scripts[0].SecretRequirements)
 	}
 }
 
@@ -1380,13 +1352,14 @@ func TestInspectNativeRejectsNonStringStructuredJSONCredentialWithoutChangingWir
 	tests := []struct {
 		name  string
 		value string
+		want  string
 	}{
-		{name: "number", value: "123456789"},
-		{name: "boolean", value: "true"},
+		{name: "number", value: "123456789", want: `"apiKey":123456789`},
+		{name: "boolean", value: "true", want: `"apiKey":true`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Inspect(Input{
+			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content: []byte(`info: {name: Structured JSON, uid: structured-json, type: http}
 http:
@@ -1400,9 +1373,11 @@ http:
 `),
 				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
-			if err == nil ||
-				!strings.Contains(err.Error(), "cannot be governed without changing its wire type") {
+			if err != nil {
 				t.Fatalf("structured JSON credential error = %v", err)
+			}
+			if got := result.Scripts[0].Script.Actions[0].Body; !strings.Contains(got, test.want) || len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("structured JSON body = %q, requirements = %#v", got, result.Scripts[0].SecretRequirements)
 			}
 		})
 	}
@@ -1443,39 +1418,24 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Scripts) != 2 {
-		t.Fatalf("candidate count = %d", len(result.Scripts))
-	}
-	passwords := make(map[string]string)
-	for _, candidate := range result.Scripts {
-		auth := candidate.Script.Actions[0].Auth
-		if auth == nil || !strings.HasPrefix(auth.Password, "{{secret.") {
-			t.Fatalf("%s auth = %#v", candidate.SourcePath, auth)
-		}
-		if _, duplicate := passwords[auth.Password]; duplicate {
-			t.Fatalf("candidate-scoped inherited auth reused %q", auth.Password)
-		}
-		if len(candidate.SecretRequirements) != 1 {
-			t.Fatalf("%s requirements = %#v", candidate.SourcePath, candidate.SecretRequirements)
-		}
-		requirement := candidate.SecretRequirements[0]
-		if requirement.Path != "demo/shared/folder.yml" ||
-			!reflect.DeepEqual(requirement.AffectedPaths, []string{"demo/" + candidate.SourcePath}) {
-			t.Fatalf("%s inherited auth locations = path %q affected %#v", candidate.SourcePath, requirement.Path, requirement.AffectedPaths)
-		}
-		passwords[auth.Password] = requirement.Value
+	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 0 {
+		t.Fatalf("candidate count = %d, requirements = %#v", len(result.Scripts), result.SecretRequirements)
 	}
 	values := make(map[string]bool)
-	for _, value := range passwords {
-		values[value] = true
+	for _, candidate := range result.Scripts {
+		auth := candidate.Script.Actions[0].Auth
+		if auth == nil || len(candidate.SecretRequirements) != 0 {
+			t.Fatalf("%s auth = %#v requirements = %#v", candidate.SourcePath, auth, candidate.SecretRequirements)
+		}
+		values[auth.Password] = true
 	}
 	if !values["prefix-alpha"] || !values["prefix-beta"] {
-		t.Fatalf("candidate-scoped auth values = %#v", passwords)
+		t.Fatalf("candidate-scoped auth values = %#v", values)
 	}
 	sanitizedFolder := tarFile(t, result.SanitizedArchive, "demo/shared/folder.yml")
-	if bytes.Contains(sanitizedFolder, []byte("prefix-{{suffix}}")) ||
-		bytes.Contains(sanitizedFolder, []byte(`password: "{{passwordValue}}"`)) {
-		t.Fatalf("sanitized inherited auth retained credential templates:\n%s", sanitizedFolder)
+	if !bytes.Contains(sanitizedFolder, []byte("prefix-{{suffix}}")) ||
+		!bytes.Contains(sanitizedFolder, []byte(`password: "{{passwordValue}}"`)) {
+		t.Fatalf("sanitized inherited auth lost authored templates:\n%s", sanitizedFolder)
 	}
 }
 
@@ -1494,12 +1454,12 @@ request:
 `),
 			"demo/shared/a.yml": []byte(`info: {name: A, uid: scoped-header-a, type: http, seq: 1}
 variables:
-  - {name: suffix, value: alpha}
+  - {name: suffix, value: "{{missingAlpha}}"}
 http: {method: GET, url: https://example.test/a}
 `),
 			"demo/shared/b.yml": []byte(`info: {name: B, uid: scoped-header-b, type: http, seq: 2}
 variables:
-  - {name: suffix, value: beta}
+  - {name: suffix, value: "{{missingBeta}}"}
 http: {method: GET, url: https://example.test/b}
 `),
 		},
@@ -1555,25 +1515,21 @@ http: {method: GET, url: https://example.test/b}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Scripts) != 2 {
-		t.Fatalf("candidate count = %d", len(result.Scripts))
+	if len(result.Scripts) != 2 || len(result.SecretRequirements) != 1 {
+		t.Fatalf("candidates = %d, aggregate requirements = %#v", len(result.Scripts), result.SecretRequirements)
 	}
 	first := result.Scripts[0]
 	second := result.Scripts[1]
 	if first.Script.Actions[0].Auth == nil || second.Script.Actions[0].Auth == nil ||
-		first.Script.Actions[0].Auth.Password == second.Script.Actions[0].Auth.Password {
-		t.Fatalf("resolved and unresolved auth requirements collided: %#v %#v",
-			first.Script.Actions[0].Auth,
-			second.Script.Actions[0].Auth,
+		first.Script.Actions[0].Auth.Password != "prefix-resolved" ||
+		len(first.SecretRequirements) != 0 ||
+		!strings.HasPrefix(second.Script.Actions[0].Auth.Password, "{{secret.") ||
+		len(second.SecretRequirements) != 1 ||
+		second.SecretRequirements[0].Value != "" {
+		t.Fatalf("resolved/unresolved inherited auth = first(%#v, %#v) second(%#v, %#v)",
+			first.Script.Actions[0].Auth, first.SecretRequirements,
+			second.Script.Actions[0].Auth, second.SecretRequirements,
 		)
-	}
-	values := []string{
-		first.SecretRequirements[0].Value,
-		second.SecretRequirements[0].Value,
-	}
-	if !((values[0] == "prefix-resolved" && values[1] == "") ||
-		(values[1] == "prefix-resolved" && values[0] == "")) {
-		t.Fatalf("resolved/unresolved requirements = %#v", result.SecretRequirements)
 	}
 }
 
@@ -1603,24 +1559,17 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.SecretRequirements) != 1 ||
-		result.SecretRequirements[0].Value != "shared-xml-secret" {
-		t.Fatalf("shared requirement = %#v", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("shared requirement = %#v, want 0 for resolved XML variable", result.SecretRequirements)
 	}
-	var replacement string
 	for _, candidate := range result.Scripts {
 		body := candidate.Script.Actions[0].Body
-		if strings.Contains(body, "{{bodyValue}}") || strings.Count(body, "{{secret.") != 1 {
-			t.Fatalf("%s body = %q", candidate.SourcePath, body)
+		if body != "<Envelope><password>shared-xml-secret</password></Envelope>" || len(candidate.SecretRequirements) != 0 {
+			t.Fatalf("%s body = %q, requirements = %#v", candidate.SourcePath, body, candidate.SecretRequirements)
 		}
-		current := candidate.SecretRequirements[0].Replacement
-		if replacement != "" && replacement != current {
-			t.Fatalf("shared definition produced %q and %q", replacement, current)
-		}
-		replacement = current
 		sanitized := tarFile(t, result.SanitizedArchive, "demo/"+candidate.SourcePath)
-		if bytes.Contains(sanitized, []byte("{{bodyValue}}")) {
-			t.Fatalf("sanitized %s retained usage:\n%s", candidate.SourcePath, sanitized)
+		if !bytes.Contains(sanitized, []byte("{{bodyValue}}")) {
+			t.Fatalf("sanitized %s lost authored template:\n%s", candidate.SourcePath, sanitized)
 		}
 	}
 }
@@ -2070,16 +2019,10 @@ http:
 }
 
 func TestInspectNativeDescribesExactCredentialSourcesAcrossAuthAndForm(t *testing.T) {
-	tests := []struct {
-		name        string
-		source      string
-		wantValue   string
-		wantContext string
-		unresolved  bool
-	}{
-		{
-			name: "resolved auth variable chain",
-			source: `info: {name: Auth source metadata, uid: auth-source-metadata, type: http}
+	t.Run("resolved auth variable chain", func(t *testing.T) {
+		result, err := Inspect(Input{
+			Filename: "request.yml",
+			Content: []byte(`info: {name: Auth source metadata, uid: auth-source-metadata, type: http}
 variables:
   - {name: sourceCredential, value: imported-auth-value}
   - {name: clientId, value: "{{sourceCredential}}"}
@@ -2089,13 +2032,28 @@ http:
   auth:
     type: bearer
     token: "{{clientId}}"
-`,
-			wantValue:   "imported-auth-value",
-			wantContext: "Bruno HTTP auth token",
-		},
-		{
-			name: "unresolved form variable",
-			source: `info: {name: Form source metadata, uid: form-source-metadata, type: http}
+`),
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.SecretRequirements) != 0 || len(result.Scripts) != 1 {
+			t.Fatalf("resolved credential source requirements = %#v", result.SecretRequirements)
+		}
+		candidate := result.Scripts[0]
+		if candidate.Script.Actions[0].Auth == nil ||
+			candidate.Script.Actions[0].Auth.Token != "imported-auth-value" ||
+			len(candidate.SecretRequirements) != 0 ||
+			len(candidate.MissingVariables) != 0 {
+			t.Fatalf("resolved credential source candidate = %#v", candidate)
+		}
+	})
+
+	t.Run("unresolved form variable", func(t *testing.T) {
+		result, err := Inspect(Input{
+			Filename: "request.yml",
+			Content: []byte(`info: {name: Form source metadata, uid: form-source-metadata, type: http}
 http:
   method: POST
   url: https://example.test
@@ -2103,41 +2061,31 @@ http:
     type: form-urlencoded
     data:
       - {name: password, value: "{{clientId}}"}
-`,
-			wantContext: "Bruno form body credential password",
-			unresolved:  true,
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result, err := Inspect(Input{
-				Filename: "request.yml",
-				Content:  []byte(test.source),
-				Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(result.SecretRequirements) != 1 || len(result.Scripts) != 1 {
-				t.Fatalf("credential source requirements = %#v", result.SecretRequirements)
-			}
-			requirement := result.SecretRequirements[0]
-			if requirement.SourceVariable != "clientId" ||
-				requirement.DisplayLabel != "Client ID" ||
-				requirement.UnresolvedSourceVariable != test.unresolved ||
-				requirement.Value != test.wantValue ||
-				requirement.Context != test.wantContext ||
-				!reflect.DeepEqual(requirement.AffectedPaths, []string{"request.yml"}) {
-				t.Fatalf("credential source metadata = %#v", requirement)
-			}
-			candidate := result.Scripts[0]
-			if len(candidate.SecretRequirements) != 1 ||
-				candidate.SecretRequirements[0].ID != requirement.ID ||
-				len(candidate.MissingVariables) != 0 {
-				t.Fatalf("credential source candidate = %#v", candidate)
-			}
+`),
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 		})
-	}
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.SecretRequirements) != 1 || len(result.Scripts) != 1 {
+			t.Fatalf("credential source requirements = %#v", result.SecretRequirements)
+		}
+		requirement := result.SecretRequirements[0]
+		if requirement.SourceVariable != "clientId" ||
+			requirement.DisplayLabel != "Client ID" ||
+			!requirement.UnresolvedSourceVariable ||
+			requirement.Value != "" ||
+			requirement.Context != "Bruno form body credential password" ||
+			!reflect.DeepEqual(requirement.AffectedPaths, []string{"request.yml"}) {
+			t.Fatalf("credential source metadata = %#v", requirement)
+		}
+		candidate := result.Scripts[0]
+		if len(candidate.SecretRequirements) != 1 ||
+			candidate.SecretRequirements[0].ID != requirement.ID ||
+			len(candidate.MissingVariables) != 0 {
+			t.Fatalf("credential source candidate = %#v", candidate)
+		}
+	})
 }
 
 func TestNativeXMLCredentialContext(t *testing.T) {
@@ -2300,52 +2248,48 @@ http:
 
 func TestInspectNativeTurnsRedactedRecordedHeaderIntoInput(t *testing.T) {
 	tests := []struct {
-		name     string
-		headers  string
-		variable string
-		value    string
+		name       string
+		headers    string
+		value      string
+		wantRegion bool
 	}{
 		{
 			name: "cookie pair",
 			headers: `
     - {name: Cookie, value: "sid=[redacted]; theme=dark"}`,
-			variable: "header_cookie_sid",
-			value:    "sid={{var.header_cookie_sid}}; theme=dark",
+			value: "sid=[redacted]; theme=dark",
 		},
 		{
 			name: "cookie pair beside a template",
 			headers: `
     - {name: Cookie, value: "sid=[redacted]; region={{region}}"}`,
-			variable: "header_cookie_sid",
-			value:    "sid={{var.header_cookie_sid}}; region={{var.region}}",
+			value:      "sid=[redacted]; region={{var.region}}",
+			wantRegion: true,
 		},
 		{
 			name: "unnamed part",
 			headers: `
     - {name: X-Device, value: "tablet-[redacted]"}`,
-			variable: "header_x_device_part",
-			value:    "tablet-{{var.header_x_device_part}}",
+			value: "tablet-[redacted]",
 		},
 		{
 			name: "cookie with two redacted pairs",
 			headers: `
     - {name: Cookie, value: "sid=[redacted]; csrf=[REDACTED]; region={{region}}"}`,
-			variable: "header_cookie",
-			value:    "{{var.header_cookie}}",
+			value:      "sid=[redacted]; csrf=[REDACTED]; region={{var.region}}",
+			wantRegion: true,
 		},
 		{
 			name: "header list",
 			headers: `
     - {name: idpctx-ixp-dark-mode-session, value: "[REDACTED]"}`,
-			variable: "header_idpctx_ixp_dark_mode_session",
-			value:    "{{var.header_idpctx_ixp_dark_mode_session}}",
+			value: "[REDACTED]",
 		},
 		{
 			name: "header map",
 			headers: `
     idpctx-ixp-dark-mode-session: "[redacted]"`,
-			variable: "header_idpctx_ixp_dark_mode_session",
-			value:    "{{var.header_idpctx_ixp_dark_mode_session}}",
+			value: "[redacted]",
 		},
 	}
 	for _, test := range tests {
@@ -2363,22 +2307,18 @@ http:
 			if err != nil {
 				t.Fatal(err)
 			}
-			// A recorded session value is not a credential, so a redacted one
-			// becomes an input to supply rather than a secret or a literal.
 			if len(result.SecretRequirements) != 0 || len(result.Scripts) != 1 {
 				t.Fatalf("redacted recorded header = requirements %#v candidates %#v", result.SecretRequirements, result.Scripts)
 			}
 			candidate := result.Scripts[0]
-			variable := test.variable
 			if got := candidate.Script.Actions[0].HeaderList[0].Value; got != test.value {
-				t.Fatalf("redacted header value = %q", got)
+				t.Fatalf("redacted header value = %q, want %q", got, test.value)
 			}
-			// A replaced value's templates are gone, so they are not inputs.
-			if wantRegion := strings.Contains(test.value, "region"); slices.Contains(candidate.MissingVariables, "region") != wantRegion {
-				t.Fatalf("missing variables = %#v, want region=%t", candidate.MissingVariables, wantRegion)
+			if slices.Contains(candidate.MissingVariables, "region") != test.wantRegion {
+				t.Fatalf("missing variables = %#v, want region=%t", candidate.MissingVariables, test.wantRegion)
 			}
-			if !slices.Contains(candidate.MissingVariables, variable) || !slices.Contains(result.MissingVariables, variable) {
-				t.Fatalf("missing variables = candidate %#v result %#v", candidate.MissingVariables, result.MissingVariables)
+			if !test.wantRegion && len(candidate.MissingVariables) != 0 {
+				t.Fatalf("unexpected synthetic missing variables = %#v", candidate.MissingVariables)
 			}
 		})
 	}
@@ -2386,8 +2326,10 @@ http:
 
 func TestInspectNativeTreatsCredentialRedactionSentinelsAsUnrecoverable(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
+		name             string
+		source           string
+		preserved        string
+		urlQuerySentinel bool
 	}{
 		{
 			name: "literal JSON credential",
@@ -2399,6 +2341,7 @@ http:
     type: json
     data: '{"password":" [rEdAcTeD] "}'
 `,
+			preserved: "[rEdAcTeD]",
 		},
 		{
 			name: "percent encoded URL credential",
@@ -2407,6 +2350,8 @@ http:
   method: GET
   url: https://example.test?token=%5bReDaCtEd%5d
 `,
+			preserved:        "%5bReDaCtEd%5d",
+			urlQuerySentinel: true,
 		},
 		{
 			name: "multiply percent encoded URL credential",
@@ -2415,6 +2360,8 @@ http:
   method: GET
   url: https://example.test?token=%25255BReDaCtEd%25255D
 `,
+			preserved:        "%25255BReDaCtEd%25255D",
+			urlQuerySentinel: true,
 		},
 		{
 			name: "malformed percent suffix URL credential",
@@ -2423,6 +2370,7 @@ http:
   method: GET
   url: https://example.test?token=%5BReDaCtEd%5D%ZZ
 `,
+			preserved: "%5BReDaCtEd%5D%ZZ",
 		},
 		{
 			name: "over-depth percent encoded URL credential",
@@ -2431,6 +2379,8 @@ http:
   method: GET
   url: https://example.test?token=` + strings.Repeat("%25", 40) + `5BReDaCtEd%5D
 `,
+			preserved:        "5BReDaCtEd%5D",
+			urlQuerySentinel: true,
 		},
 		{
 			name: "query parameter credential",
@@ -2441,6 +2391,8 @@ http:
   params:
     - {name: token, type: query, value: " [redacted] "}
 `,
+			preserved:        "%5Bredacted%5D",
+			urlQuerySentinel: true,
 		},
 		{
 			name: "literal XML element credential",
@@ -2452,6 +2404,7 @@ http:
     type: xml
     data: '<root><password> [rEdAcTeD] </password></root>'
 `,
+			preserved: "[rEdAcTeD]",
 		},
 		{
 			name: "literal XML attribute credential",
@@ -2463,6 +2416,7 @@ http:
     type: xml
     data: '<root password="&#91;ReDaCtEd&#93;"/>'
 `,
+			preserved: "&#91;ReDaCtEd&#93;",
 		},
 		{
 			name: "multiply escaped XML attribute credential",
@@ -2474,6 +2428,7 @@ http:
     type: xml
     data: '<root password="&amp;amp;#91;ReDaCtEd&amp;amp;#93;"/>'
 `,
+			preserved: "&amp;amp;#91;ReDaCtEd&amp;amp;#93;",
 		},
 		{
 			name: "unsupported XML credential markup",
@@ -2485,6 +2440,7 @@ http:
     type: xml
     data: '<root><!-- password=[REDACTED] --><value>kept</value></root>'
 `,
+			preserved: "<!-- password=[REDACTED] -->",
 		},
 		{
 			name: "resolved auth variable",
@@ -2496,6 +2452,7 @@ http:
   url: https://example.test
   auth: {type: basic, username: operator, password: "{{neutralPart}}"}
 `,
+			preserved: "[redacted]",
 		},
 		{
 			name: "composed auth variable",
@@ -2507,6 +2464,7 @@ http:
   url: https://example.test
   auth: {type: basic, username: operator, password: "prefix-{{neutralPart}}"}
 `,
+			preserved: "prefix-[redacted]",
 		},
 		{
 			name: "authorization wrapper",
@@ -2517,6 +2475,7 @@ http:
   headers:
     - {name: Authorization, value: "Bearer [REDACTED]"}
 `,
+			preserved: "Bearer [REDACTED]",
 		},
 		{
 			name: "composed header variable",
@@ -2529,6 +2488,7 @@ http:
   headers:
     - {name: X-API-Key, value: "prefix-{{neutralPart}}"}
 `,
+			preserved: "prefix-[redacted]",
 		},
 		{
 			name: "composed form variable",
@@ -2543,6 +2503,7 @@ http:
     data:
       - {name: password, value: "prefix-{{neutralPart}}"}
 `,
+			preserved: "prefix-%5Bredacted%5D",
 		},
 		{
 			name: "composed JSON variable",
@@ -2556,6 +2517,7 @@ http:
     type: json
     data: '{"password":"prefix-{{neutralPart}}"}'
 `,
+			preserved: "prefix-[redacted]",
 		},
 		{
 			name: "composed URL variable",
@@ -2566,6 +2528,8 @@ http:
   method: GET
   url: https://example.test?token=prefix-{{neutralPart}}
 `,
+			preserved:        "prefix-%5Bredacted%5D",
+			urlQuerySentinel: true,
 		},
 		{
 			name: "XML escaped variable chain",
@@ -2580,6 +2544,7 @@ http:
     type: xml
     data: '<root><password>prefix-{{neutralPart}}</password></root>'
 `,
+			preserved: "prefix-&amp;#91;ReDaCtEd&amp;#93;",
 		},
 	}
 	for _, test := range tests {
@@ -2592,47 +2557,40 @@ http:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.SecretRequirements) == 0 || len(result.Scripts) != 1 ||
-				len(result.Scripts[0].SecretRequirements) == 0 {
-				t.Fatalf("sentinel requirements = aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts)
+			if len(result.SecretRequirements) != 0 || len(result.Scripts) != 1 ||
+				len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("sentinel requirements = aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts[0].SecretRequirements)
 			}
-			unavailable := 0
-			for _, requirements := range [][]SecretRequirement{
-				result.SecretRequirements,
-				result.Scripts[0].SecretRequirements,
-			} {
-				for _, requirement := range requirements {
-					if containsBrunoCredentialRedactionSentinel(requirement.Value) {
-						t.Errorf("sentinel requirement retained sentinel material: %#v", requirement)
-					}
-					if requirement.Value == "" && !requirement.SourceValueAvailable {
-						unavailable++
-					}
+			action := result.Scripts[0].Script.Actions[0]
+			var rawParts strings.Builder
+			rawParts.WriteString(action.Target)
+			rawParts.WriteByte('\n')
+			rawParts.WriteString(action.Body)
+			for k, v := range action.Headers {
+				rawParts.WriteByte('\n')
+				rawParts.WriteString(k + ":" + v)
+			}
+			if action.Auth != nil {
+				rawParts.WriteByte('\n')
+				rawParts.WriteString(action.Auth.Username + ":" + action.Auth.Password + ":" + action.Auth.Token)
+			}
+			rawAction := rawParts.String()
+			if test.urlQuerySentinel {
+				if !strings.Contains(action.Target, test.preserved) &&
+					!strings.Contains(action.Target, "{{secret.IMPORT_BASE_URL_TOKEN}}") {
+					t.Fatalf("unexpected URL sentinel target = %q", action.Target)
 				}
-			}
-			if unavailable < 2 {
-				t.Fatalf("sentinel requirement was not unavailable in aggregate and candidate metadata: aggregate %#v candidate %#v", result.SecretRequirements, result.Scripts[0].SecretRequirements)
-			}
-			candidateJSON, err := json.Marshal(result.Scripts[0].Script)
-			if err != nil {
-				t.Fatal(err)
+			} else {
+				if strings.Contains(rawAction, "{{secret.") {
+					t.Fatalf("action substituted secret reference for literal sentinel: %s", rawAction)
+				}
+				if !strings.Contains(rawAction, test.preserved) {
+					t.Fatalf("action lost literal sentinel %q: %s", test.preserved, rawAction)
+				}
 			}
 			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-			for artifactName, artifact := range map[string][]byte{
-				"candidate":        candidateJSON,
-				"sanitized source": sanitized,
-			} {
-				lower := strings.ToLower(string(artifact))
-				for _, sentinel := range []string{
-					"[redacted]", "%5bredacted%5d", "&#91;redacted&#93;", "&#x5b;redacted&#x5d;",
-				} {
-					if strings.Contains(lower, sentinel) {
-						t.Errorf("%s retained sentinel %q:\n%s", artifactName, sentinel, artifact)
-					}
-				}
-			}
-			if !bytes.Contains(candidateJSON, []byte("{{secret.")) {
-				t.Fatalf("candidate has no governed reference: %s", candidateJSON)
+			if !bytes.Equal(sanitized, []byte(test.source)) {
+				t.Fatalf("sanitized archive altered source:\n%s", sanitized)
 			}
 		})
 	}
@@ -2750,7 +2708,7 @@ http:
   headers:
     - {name: X-Signature, value: 123456789}
 `,
-			want: "sensitive header",
+			want: "123456789",
 		},
 		{
 			name: "query parameter",
@@ -2761,7 +2719,7 @@ http:
   params:
     - {name: token, type: query, value: 123456789}
 `,
-			want: "sensitive URL parameter",
+			want: "token=123456789",
 		},
 		{
 			name: "path parameter",
@@ -2772,18 +2730,25 @@ http:
   params:
     - {name: password, type: path, value: 123456789}
 `,
-			want: "sensitive URL parameter",
+			want: "https://example.test/123456789",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Inspect(Input{
+			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content:  []byte(test.content),
 				Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
-			if err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("error = %v, want %q", err, test.want)
+			if err != nil {
+				t.Fatalf("error = %v", err)
+			}
+			actionJSON, err := json.Marshal(result.Scripts[0].Script.Actions[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(actionJSON), test.want) || len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("action = %s, requirements = %#v", actionJSON, result.Scripts[0].SecretRequirements)
 			}
 		})
 	}
@@ -2962,9 +2927,8 @@ http:
 		t.Fatalf("unresolved composed credential = %#v", candidate)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	if bytes.Contains(sanitized, []byte(literalFragment)) ||
-		bytes.Contains(sanitized, []byte("{{missingPart}}")) {
-		t.Fatalf("sanitized source retained an incomplete credential:\n%s", sanitized)
+	if !bytes.Contains(sanitized, []byte(literalFragment+"-{{missingPart}}")) {
+		t.Fatalf("sanitized source altered authored template:\n%s", sanitized)
 	}
 }
 
@@ -3004,15 +2968,14 @@ http:
 				t.Fatal(err)
 			}
 			candidate := result.Scripts[0]
-			if strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
-				!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
+			if !strings.Contains(candidate.Script.Actions[0].Body, sourceCredential) ||
+				strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
 				!strings.Contains(candidate.Script.Actions[0].Body, `"safe":"retained"`) ||
-				len(candidate.SecretRequirements) != 1 ||
-				candidate.SecretRequirements[0].Value != sourceCredential {
+				len(candidate.SecretRequirements) != 0 {
 				t.Fatalf("credential-container candidate = %#v", candidate)
 			}
-			if bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
-				t.Fatal("sanitized source retained a credential-container descendant")
+			if !bytes.Contains(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(sourceCredential)) {
+				t.Fatal("sanitized source lost credential-container descendant")
 			}
 		})
 	}
@@ -3022,7 +2985,6 @@ func TestInspectNativeTreatsSentinelWordsAsLiteralCredentials(t *testing.T) {
 	tests := []struct {
 		name       string
 		source     string
-		wantValue  string
 		assertWire func(*testing.T, NativeScriptCandidate)
 	}{
 		{
@@ -3033,11 +2995,10 @@ http:
   url: https://example.test
   auth: {type: basic, username: "", password: "none"}
 `,
-			wantValue: "none",
 			assertWire: func(t *testing.T, candidate NativeScriptCandidate) {
 				t.Helper()
 				auth := candidate.Script.Actions[0].Auth
-				if auth == nil || !strings.HasPrefix(auth.Password, "{{secret.") {
+				if auth == nil || auth.Password != "none" {
 					t.Fatalf("basic auth = %#v", auth)
 				}
 			},
@@ -3052,10 +3013,9 @@ http:
     type: json
     data: '{"password":"null"}'
 `,
-			wantValue: "null",
 			assertWire: func(t *testing.T, candidate NativeScriptCandidate) {
 				t.Helper()
-				if !strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") {
+				if candidate.Script.Actions[0].Body != `{"password":"null"}` {
 					t.Fatalf("JSON body = %q", candidate.Script.Actions[0].Body)
 				}
 			},
@@ -3069,10 +3029,9 @@ http:
   headers:
     - {name: X-API-Key, value: "inherit"}
 `,
-			wantValue: "inherit",
 			assertWire: func(t *testing.T, candidate NativeScriptCandidate) {
 				t.Helper()
-				if !strings.HasPrefix(candidate.Script.Actions[0].Headers["X-API-Key"], "{{secret.") {
+				if candidate.Script.Actions[0].Headers["X-API-Key"] != "inherit" {
 					t.Fatalf("headers = %#v", candidate.Script.Actions[0].Headers)
 				}
 			},
@@ -3090,14 +3049,8 @@ http:
 			}
 			candidate := result.Scripts[0]
 			test.assertWire(t, candidate)
-			found := false
-			for _, requirement := range candidate.SecretRequirements {
-				if requirement.Value == test.wantValue {
-					found = true
-				}
-			}
-			if !found {
-				t.Fatalf("credential value %q was not governed: %#v", test.wantValue, candidate.SecretRequirements)
+			if len(candidate.SecretRequirements) != 0 {
+				t.Fatalf("unexpected requirements for literal sentinel word: %#v", candidate.SecretRequirements)
 			}
 		})
 	}
@@ -3128,14 +3081,8 @@ http:
 }
 
 func TestInspectNativeScrubsDeferredCredentialYAMLAliasGroups(t *testing.T) {
-	tests := []struct {
-		name          string
-		source        string
-		forbiddenText string
-	}{
-		{
-			name: "unresolved composed header alias",
-			source: `info: {name: Header alias, uid: header-alias, type: http}
+	t.Run("unresolved composed header alias", func(t *testing.T) {
+		source := `info: {name: Header alias, uid: header-alias, type: http}
 headerSource: &headerSource "Bearer alias-header-literal-{{missingToken}}"
 headerMirror: *headerSource
 http:
@@ -3144,12 +3091,28 @@ http:
   headers:
     - name: Authorization
       value: *headerSource
-`,
-			forbiddenText: "alias-header-literal",
-		},
-		{
-			name: "neutral variable dependency alias",
-			source: `info: {name: Variable alias, uid: variable-alias, type: http}
+`
+		result, err := Inspect(Input{
+			Filename: "request.yml",
+			Content:  []byte(source),
+			Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate := result.Scripts[0]
+		if !strings.Contains(candidate.Script.Actions[0].Headers["Authorization"], "{{secret.") ||
+			len(candidate.SecretRequirements) != 1 ||
+			candidate.SecretRequirements[0].Value != "" {
+			t.Fatalf("unresolved alias-backed candidate = %#v", candidate)
+		}
+		if !bytes.Equal(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(source)) {
+			t.Fatal("sanitized archive altered authored YAML alias source")
+		}
+	})
+
+	t.Run("neutral variable dependency alias", func(t *testing.T) {
+		source := `info: {name: Variable alias, uid: variable-alias, type: http}
 partSource: &partSource alias-variable-literal
 partMirror: *partSource
 variables:
@@ -3160,31 +3123,24 @@ http:
   url: https://example.test
   headers:
     - {name: Authorization, value: "Bearer {{neutralPart}}"}
-`,
-			forbiddenText: "alias-variable-literal",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result, err := Inspect(Input{
-				Filename: "request.yml",
-				Content:  []byte(test.source),
-				Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			candidate := result.Scripts[0]
-			if !strings.Contains(candidate.Script.Actions[0].Headers["Authorization"], "{{secret.") ||
-				len(candidate.SecretRequirements) != 1 {
-				t.Fatalf("alias-backed candidate = %#v", candidate)
-			}
-			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-			if bytes.Contains(sanitized, []byte(test.forbiddenText)) {
-				t.Fatalf("sanitized alias group retained %q:\n%s", test.forbiddenText, sanitized)
-			}
+`
+		result, err := Inspect(Input{
+			Filename: "request.yml",
+			Content:  []byte(source),
+			Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
 		})
-	}
+		if err != nil {
+			t.Fatal(err)
+		}
+		candidate := result.Scripts[0]
+		if candidate.Script.Actions[0].Headers["Authorization"] != "Bearer alias-variable-literal" ||
+			len(candidate.SecretRequirements) != 0 {
+			t.Fatalf("resolved alias-backed candidate = %#v", candidate)
+		}
+		if !bytes.Equal(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(source)) {
+			t.Fatal("sanitized archive altered authored YAML alias source")
+		}
+	})
 }
 
 func TestInspectNativeLeavesOrdinaryYAMLAliasesUnchanged(t *testing.T) {
@@ -3218,15 +3174,10 @@ http:
 
 func TestInspectNativeScrubsSpecializedAndCompositeYAMLAliasPeers(t *testing.T) {
 	tests := []struct {
-		name      string
-		source    string
-		forbidden []string
-		// preserved lists values the import must retain verbatim in both the
-		// sanitized alias peers and the candidate script. Literal XML scalars
-		// belong here: nothing an imported script already contains is a project
-		// secret, so externalizing one is an explicit operator action rather
-		// than the import default.
-		preserved []string
+		name               string
+		source             string
+		candidateForbidden []string
+		preserved          []string
 	}{
 		{
 			name: "literal raw JSON scalar alias",
@@ -3240,7 +3191,7 @@ http:
     type: json
     data: *payload
 `,
-			forbidden: []string{"literal-json-alias-secret"},
+			preserved: []string{"literal-json-alias-secret"},
 		},
 		{
 			name: "templated raw JSON scalar alias",
@@ -3254,7 +3205,7 @@ http:
     type: json
     data: *payload
 `,
-			forbidden: []string{"templated-json-alias-secret", "{{missingJSONAlias}}"},
+			candidateForbidden: []string{"templated-json-alias-secret", "{{missingJSONAlias}}"},
 		},
 		{
 			name: "literal XML scalar alias",
@@ -3282,7 +3233,7 @@ http:
     type: xml
     data: *payload
 `,
-			forbidden: []string{"templated-xml-alias-secret", "{{missingXMLAlias}}"},
+			candidateForbidden: []string{"templated-xml-alias-secret", "{{missingXMLAlias}}"},
 		},
 		{
 			name: "literal URL scalar alias",
@@ -3293,7 +3244,7 @@ http:
   method: GET
   url: *target
 `,
-			forbidden: []string{"literal-url-alias-secret"},
+			preserved: []string{"literal-url-alias-secret"},
 		},
 		{
 			name: "templated URL scalar alias",
@@ -3304,7 +3255,7 @@ http:
   method: GET
   url: *target
 `,
-			forbidden: []string{"templated-url-alias-secret", "{{missingURLAlias}}"},
+			candidateForbidden: []string{"templated-url-alias-secret", "{{missingURLAlias}}"},
 		},
 		{
 			name: "mapping alias descendant",
@@ -3319,7 +3270,7 @@ http:
     type: json
     data: *payload
 `,
-			forbidden: []string{"mapping-alias-secret", "{{missingMappingAlias}}"},
+			candidateForbidden: []string{"mapping-alias-secret", "{{missingMappingAlias}}"},
 		},
 		{
 			name: "sequence alias descendant",
@@ -3335,7 +3286,7 @@ http:
     data:
       credentials: *credentials
 `,
-			forbidden: []string{"sequence-alias-secret", "{{missingSequenceAlias}}"},
+			candidateForbidden: []string{"sequence-alias-secret", "{{missingSequenceAlias}}"},
 		},
 	}
 	for _, test := range tests {
@@ -3348,27 +3299,29 @@ http:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.Scripts) != 1 ||
-				(len(test.preserved) == 0 && len(result.Scripts[0].SecretRequirements) == 0) {
+			if len(result.Scripts) != 1 {
 				t.Fatalf("alias-backed result = %#v", result.Scripts)
 			}
+			if len(test.preserved) > 0 && len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("literal alias generated requirements = %#v", result.Scripts[0].SecretRequirements)
+			}
+			if len(test.preserved) == 0 && len(result.Scripts[0].SecretRequirements) == 0 {
+				t.Fatalf("unresolved alias missing requirements = %#v", result.Scripts[0])
+			}
 			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+			if !bytes.Equal(sanitized, []byte(test.source)) {
+				t.Fatalf("sanitized archive altered authored YAML:\n%s", sanitized)
+			}
 			candidateJSON, err := json.Marshal(result.Scripts[0].Script)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, forbidden := range test.forbidden {
-				if bytes.Contains(sanitized, []byte(forbidden)) {
-					t.Fatalf("sanitized alias peers retained %q:\n%s", forbidden, sanitized)
-				}
+			for _, forbidden := range test.candidateForbidden {
 				if bytes.Contains(candidateJSON, []byte(forbidden)) {
-					t.Fatalf("candidate retained alias credential %q:\n%s", forbidden, candidateJSON)
+					t.Fatalf("candidate retained unresolved alias template %q:\n%s", forbidden, candidateJSON)
 				}
 			}
 			for _, preserved := range test.preserved {
-				if !bytes.Contains(sanitized, []byte(preserved)) {
-					t.Fatalf("sanitized alias peers lost preserved value %q:\n%s", preserved, sanitized)
-				}
 				if !bytes.Contains(candidateJSON, []byte(preserved)) {
 					t.Fatalf("candidate lost preserved value %q:\n%s", preserved, candidateJSON)
 				}
@@ -3379,10 +3332,10 @@ http:
 
 func TestInspectNativeScrubsMixedCaseYAMLAliasPeers(t *testing.T) {
 	tests := []struct {
-		name          string
-		source        string
-		forbiddenText string
-		wantValue     string
+		name               string
+		source             string
+		candidateForbidden string
+		preserved          string
 	}{
 		{
 			name: "literal specialized header",
@@ -3396,8 +3349,7 @@ HTTP:
     - Name: X-API-Key
       Value: *credential
 `,
-			forbiddenText: "MiXeD-Literal-Header-Secret",
-			wantValue:     "MiXeD-Literal-Header-Secret",
+			preserved: "MiXeD-Literal-Header-Secret",
 		},
 		{
 			name: "literal specialized JSON",
@@ -3411,8 +3363,7 @@ HTTP:
     Type: JSON
     Data: *payload
 `,
-			forbiddenText: "MiXeD-Literal-JSON-Secret",
-			wantValue:     "MiXeD-Literal-JSON-Secret",
+			preserved: "MiXeD-Literal-JSON-Secret",
 		},
 		{
 			name: "templated projected JSON",
@@ -3426,7 +3377,7 @@ HTTP:
     Type: JSON
     Data: *payload
 `,
-			forbiddenText: "MiXeD-Projected-JSON-",
+			candidateForbidden: "MiXeD-Projected-JSON-",
 		},
 		{
 			name: "projected variable dependency",
@@ -3443,8 +3394,7 @@ HTTP:
     - Name: Authorization
       Value: "Bearer {{neutralPart}}"
 `,
-			forbiddenText: "MiXeD-Projected-Variable-Secret",
-			wantValue:     "MiXeD-Projected-Variable-Secret",
+			preserved: "Bearer MiXeD-Projected-Variable-Secret",
 		},
 	}
 	for _, test := range tests {
@@ -3457,32 +3407,29 @@ HTTP:
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(result.Scripts) != 1 ||
-				len(result.Scripts[0].SecretRequirements) == 0 {
+			if len(result.Scripts) != 1 {
 				t.Fatalf("mixed-case alias result = %#v", result.Scripts)
 			}
 			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+			if !bytes.Equal(sanitized, []byte(test.source)) {
+				t.Fatalf("sanitized source altered authored YAML:\n%s", sanitized)
+			}
 			candidateJSON, err := json.Marshal(result.Scripts[0].Script)
 			if err != nil {
 				t.Fatal(err)
 			}
-			for artifactName, artifact := range map[string][]byte{
-				"sanitized source": sanitized,
-				"candidate":        candidateJSON,
-			} {
-				if bytes.Contains(artifact, []byte(test.forbiddenText)) {
-					t.Fatalf("%s retained %q:\n%s", artifactName, test.forbiddenText, artifact)
+			if test.preserved != "" {
+				if len(result.Scripts[0].SecretRequirements) != 0 ||
+					!bytes.Contains(candidateJSON, []byte(test.preserved)) {
+					t.Fatalf("case-sensitive preserved value %q missing: %s (requirements=%#v)",
+						test.preserved, candidateJSON, result.Scripts[0].SecretRequirements)
 				}
 			}
-			if test.wantValue != "" {
-				found := false
-				for _, requirement := range result.Scripts[0].SecretRequirements {
-					if requirement.Value == test.wantValue {
-						found = true
-					}
-				}
-				if !found {
-					t.Fatalf("case-sensitive source value %q was not preserved: %#v", test.wantValue, result.Scripts[0].SecretRequirements)
+			if test.candidateForbidden != "" {
+				if len(result.Scripts[0].SecretRequirements) != 1 ||
+					bytes.Contains(candidateJSON, []byte(test.candidateForbidden)) {
+					t.Fatalf("unresolved mixed-case alias candidate = %s (requirements=%#v)",
+						candidateJSON, result.Scripts[0].SecretRequirements)
 				}
 			}
 		})
@@ -3523,13 +3470,14 @@ func TestInspectNativeValidatesStructuredJSONCredentialContainerScalarTypes(t *t
 		name  string
 		field string
 		value string
+		want  string
 	}{
-		{name: "auth number", field: "auth", value: "42"},
-		{name: "credentials boolean", field: "credentials", value: "true"},
-		{name: "secret number", field: "secret", value: "7"},
+		{name: "auth number", field: "auth", value: "42", want: `"auth":42`},
+		{name: "credentials boolean", field: "credentials", value: "true", want: `"credentials":true`},
+		{name: "secret number", field: "secret", value: "7", want: `"secret":7`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Inspect(Input{
+			result, err := Inspect(Input{
 				Filename: "request.yml",
 				Content: []byte(`info: {name: Scalar container, uid: scalar-container, type: http}
 http:
@@ -3542,9 +3490,11 @@ http:
 `),
 				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 			})
-			if err == nil ||
-				!strings.Contains(err.Error(), "cannot be governed without changing its wire type") {
+			if err != nil {
 				t.Fatalf("scalar container error = %v", err)
+			}
+			if got := result.Scripts[0].Script.Actions[0].Body; !strings.Contains(got, test.want) || len(result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("scalar container body = %q, requirements = %#v", got, result.Scripts[0].SecretRequirements)
 			}
 		})
 	}
@@ -3567,10 +3517,11 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	if strings.Contains(candidate.Script.Actions[0].Body, "literal-container-credential") ||
-		!strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
-		!strings.Contains(candidate.Script.Actions[0].Body, `"auth":null`) {
-		t.Fatalf("string/null container body = %q", candidate.Script.Actions[0].Body)
+	if !strings.Contains(candidate.Script.Actions[0].Body, "literal-container-credential") ||
+		strings.Contains(candidate.Script.Actions[0].Body, "{{secret.") ||
+		!strings.Contains(candidate.Script.Actions[0].Body, `"auth":null`) ||
+		len(candidate.SecretRequirements) != 0 {
+		t.Fatalf("string/null container body = %q, requirements = %#v", candidate.Script.Actions[0].Body, candidate.SecretRequirements)
 	}
 }
 
@@ -3631,20 +3582,16 @@ http:
 				t.Fatal(err)
 			}
 			candidate := result.Scripts[0]
-			foundValue := false
-			for _, requirement := range candidate.SecretRequirements {
-				if requirement.Value == test.plaintext {
-					foundValue = true
-				}
+			actionJSON, err := json.Marshal(candidate.Script.Actions[0])
+			if err != nil {
+				t.Fatal(err)
 			}
-			if !foundValue {
-				t.Fatalf("decoded tagged credential was not governed: %#v", candidate.SecretRequirements)
+			if !strings.Contains(string(actionJSON), test.plaintext) || len(candidate.SecretRequirements) != 0 {
+				t.Fatalf("decoded tagged credential missing or externalized: action=%s requirements=%#v",
+					actionJSON, candidate.SecretRequirements)
 			}
-			if bytes.Contains(
-				tarFile(t, result.SanitizedArchive, "request.yml"),
-				[]byte(test.plaintext),
-			) {
-				t.Fatal("sanitized source retained a tagged credential")
+			if !bytes.Equal(tarFile(t, result.SanitizedArchive, "request.yml"), []byte(test.source)) {
+				t.Fatal("sanitized source altered authored tagged YAML")
 			}
 		})
 	}
@@ -3676,5 +3623,164 @@ http:
 		action.Metadata["execution_blocker"] != "bruno_missing_variables" ||
 		!strings.Contains(action.Body, "{{var.missingPart}}") {
 		t.Fatalf("cached missing-variable candidate = %#v", candidate)
+	}
+}
+
+func TestInspectNativeResolvesDotEnvAndUnambiguousEnvironmentSecrets(t *testing.T) {
+	dotEnv := "API_KEY=dotenv-api-key\nexport BEARER_TOKEN=\"dotenv-bearer-token\"\n"
+	devEnv := `name: dev
+variables:
+  - name: dbPassword
+    value: env-secret-password
+    secret: true
+  - name: baseHost
+    value: api.example.test
+`
+	requestYAML := `info: {name: Env resolved request, uid: env-resolved-request, type: http, seq: 1}
+http:
+  method: POST
+  url: "https://{{baseHost}}/v1/login?api_key={{API_KEY}}"
+  headers:
+    - {name: Authorization, value: "Bearer {{process.env.BEARER_TOKEN}}"}
+  body:
+    type: json
+    data: '{"password":"{{dbPassword}}"}'
+`
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml":   []byte("opencollection: 1.0.0\ninfo: {name: Demo}\n"),
+			"demo/.env":                 []byte(dotEnv),
+			"demo/environments/dev.yml": []byte(devEnv),
+			"demo/login.yml":            []byte(requestYAML),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Scripts) != 1 || len(result.SecretRequirements) != 0 {
+		t.Fatalf("env resolved result = scripts(%d) secrets(%#v) missing(%#v)",
+			len(result.Scripts), result.SecretRequirements, result.MissingVariables)
+	}
+	if len(result.Environments) != 2 ||
+		result.Environments[0].Values["API_KEY"] != "dotenv-api-key" ||
+		result.Environments[0].Values["BEARER_TOKEN"] != "dotenv-bearer-token" ||
+		result.Environments[1].Values["baseHost"] != "api.example.test" ||
+		result.Environments[1].Values["dbPassword"] != "env-secret-password" {
+		t.Fatalf("environments = %#v, want .env and dev environment values preserved", result.Environments)
+	}
+	candidate := result.Scripts[0]
+	action := candidate.Script.Actions[0]
+	if action.Target != "https://{{var.baseHost}}/v1/login?api_key=dotenv-api-key" {
+		t.Fatalf("action.Target = %q", action.Target)
+	}
+	if action.Headers["Authorization"] != "Bearer dotenv-bearer-token" {
+		t.Fatalf("Authorization = %q", action.Headers["Authorization"])
+	}
+	if action.Body != `{"password":"env-secret-password"}` {
+		t.Fatalf("action.Body = %q", action.Body)
+	}
+	if !bytes.Equal(tarFile(t, result.SanitizedArchive, "demo/.env"), []byte(dotEnv)) {
+		t.Fatal("sanitized archive modified .env")
+	}
+	if !bytes.Equal(tarFile(t, result.SanitizedArchive, "demo/environments/dev.yml"), []byte(devEnv)) {
+		t.Fatal("sanitized archive modified environments/dev.yml")
+	}
+
+	// Conflicting multi-environment values remain unset so environment selection stays meaningful.
+	conflictResult, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml":    []byte("opencollection: 1.0.0\ninfo: {name: Demo}\n"),
+			"demo/environments/dev.yml":  []byte("name: dev\nvariables:\n  - {name: apiToken, value: dev-token, secret: true}\n"),
+			"demo/environments/prod.yml": []byte("name: prod\nvariables:\n  - {name: apiToken, value: prod-token, secret: true}\n"),
+			"demo/call.yml": []byte(`info: {name: Call, uid: call-multi-env, type: http, seq: 1}
+http:
+  method: GET
+  url: https://example.test/items
+  headers:
+    - {name: X-API-Key, value: "{{apiToken}}"}
+`),
+		},
+		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(conflictResult.SecretRequirements) != 1 || !conflictResult.SecretRequirements[0].UnresolvedSourceVariable {
+		t.Fatalf("conflicting multi-environment credential requirements = %#v", conflictResult.SecretRequirements)
+	}
+}
+
+func TestInspectNativePreservesDisabledCredentialsInArchiveWithoutActiveEmission(t *testing.T) {
+	source := `info: {name: Disabled sensitive fields, uid: disabled-sensitive-fields, type: http}
+http:
+  method: GET
+  url: https://example.test/items
+  headers:
+    - {name: Authorization, value: "Bearer disabled-header-secret", disabled: true}
+    - {name: Accept, value: application/json}
+  params:
+    - {name: apiKey, type: query, value: disabled-query-secret, disabled: true}
+`
+	result, err := Inspect(Input{
+		Filename: "request.yml",
+		Content:  []byte(source),
+		Options:  InspectOptions{OutputMode: OutputModeNativeRequests},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := result.Scripts[0]
+	action := candidate.Script.Actions[0]
+	if _, exists := action.Headers["Authorization"]; exists {
+		t.Fatalf("disabled Authorization header emitted on wire: %#v", action.Headers)
+	}
+	if action.Target != "https://example.test/items" || len(candidate.SecretRequirements) != 0 {
+		t.Fatalf("disabled query/header candidate = target %q requirements %#v", action.Target, candidate.SecretRequirements)
+	}
+	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+	if !bytes.Equal(sanitized, []byte(source)) {
+		t.Fatalf("disabled fields were scrubbed in archive:\n%s", sanitized)
+	}
+}
+
+func TestInspectNativeResolvesCredentialArrayElementsFromEnvironmentAndGovernsMissing(t *testing.T) {
+	result, err := Inspect(Input{
+		Files: map[string][]byte{
+			"demo/opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Demo}\n"),
+			"demo/environments/prod.yml": []byte(`name: prod
+variables:
+  - name: plain_var
+    value: resolved-array-secret
+`),
+			"demo/login.yml": []byte(`info: {name: Array Creds, uid: array-creds, type: http, seq: 1}
+http:
+  method: POST
+  url: https://example.test/login
+  body:
+    type: json
+    data: '{"passwords":["{{plain_var}}"],"apiKeys":["{{missing_var}}"]}'
+`),
+		},
+		Options: InspectOptions{
+			OutputMode: OutputModeNativeRequests,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate := result.Scripts[0]
+	if len(candidate.MissingVariables) != 0 {
+		t.Fatalf("expected zero MissingVariables, got %#v", candidate.MissingVariables)
+	}
+	action := candidate.Script.Actions[0]
+	if !strings.Contains(action.Body, `"passwords":["resolved-array-secret"]`) {
+		t.Fatalf("expected passwords array element resolved from prod.yml, got %s", action.Body)
+	}
+	if !strings.Contains(action.Body, `"apiKeys":["{{secret.`) {
+		t.Fatalf("expected missing apiKeys array element governed as {{secret.*}}, got %s", action.Body)
+	}
+	if len(candidate.SecretRequirements) != 1 || !candidate.SecretRequirements[0].UnresolvedSourceVariable {
+		t.Fatalf("expected 1 unresolved SecretRequirement for missing_var, got %#v", candidate.SecretRequirements)
 	}
 }

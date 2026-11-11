@@ -1107,20 +1107,22 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	} else if rc.ProxyMode != "" {
 		cfg.ProxyMode = rc.ProxyMode
 	}
-	if cfg.Proxy.Username == "" && rc.proxyReviewUser != "" {
-		cfg.Proxy.Username = credential.DraftReference(
-			rc.proxyReviewUser,
-			enterpriseProxyUsernameSecretName,
-		)
-	}
-	if cfg.Proxy.Password == "" && rc.proxyReviewPass != "" {
-		cfg.Proxy.Password = credential.DraftReference(
-			rc.proxyReviewPass,
-			enterpriseProxyPasswordSecretName,
-		)
-	}
-	if len(rc.ProxyNoProxy) > 0 {
-		cfg.Proxy.NoProxy = append([]string(nil), rc.ProxyNoProxy...)
+	if cfg.ProxyMode != "none" {
+		if cfg.Proxy.Username == "" && rc.proxyReviewUser != "" {
+			cfg.Proxy.Username = credential.DraftReference(
+				rc.proxyReviewUser,
+				enterpriseProxyUsernameSecretName,
+			)
+		}
+		if cfg.Proxy.Password == "" && rc.proxyReviewPass != "" {
+			cfg.Proxy.Password = credential.DraftReference(
+				rc.proxyReviewPass,
+				enterpriseProxyPasswordSecretName,
+			)
+		}
+		if len(rc.ProxyNoProxy) > 0 {
+			cfg.Proxy.NoProxy = append([]string(nil), rc.ProxyNoProxy...)
+		}
 	}
 
 	// When browser emulation resolves a mode, the User-Agent lives in
@@ -3773,11 +3775,7 @@ func splitSourceFilterHosts(rc *RuntimeConfig, value string) []string {
 		if rc == nil || len(unsupportedEvidence) >= maxUnsupportedEvidence {
 			return
 		}
-		safeEntry := scrub.Value(entry, scrub.Policy{})
-		if strings.Contains(entry, "://") {
-			safeEntry = scrub.ValueURL(entry, scrub.Policy{})
-		}
-		unsupportedEvidence = append(unsupportedEvidence, fmt.Sprintf("%q %s", boundedRuntimeReviewEvidence(safeEntry), reason))
+		unsupportedEvidence = append(unsupportedEvidence, fmt.Sprintf("%q %s", boundedRuntimeReviewEvidence(entry), reason))
 	}
 	for _, part := range parts {
 		entry := strings.TrimSpace(strings.Trim(strings.TrimSpace(part), `"'`))
@@ -4268,28 +4266,7 @@ func disableRuntimeProxyForReview(rc *RuntimeConfig) {
 	if rc == nil {
 		return
 	}
-	_, username, password := splitEnterpriseProxyUserinfo(
-		rc.ProxyURL,
-		rc.ProxyUser,
-		rc.ProxyPass,
-	)
-	if rc.proxyReviewUser != "" {
-		username = rc.proxyReviewUser
-	}
-	if rc.proxyReviewPass != "" {
-		password = rc.proxyReviewPass
-	}
-	if rc.ProxyPasswordEncrypted && password == encryptedRuntimeProxyPasswordPlaceholder {
-		// An encrypted source password is never recoverable: the parsed value
-		// is only a secret-name placeholder, not operator-owned material.
-		// Beside proxy_mode=none that placeholder preserves nothing, yet it
-		// left a dangling project-secret reference and an execution gate
-		// demanding a credential for a proxy that never routes traffic.
-		password = ""
-	}
 	disableRuntimeProxy(rc)
-	rc.proxyReviewUser = username
-	rc.proxyReviewPass = password
 }
 
 func resolveRuntimeProxyEndpoints(sections []map[string]string) (string, string) {
@@ -4559,13 +4536,7 @@ func appendNativeLogClassOption(rc *RuntimeConfig, section map[string]string, so
 	}
 }
 
-func runtimeSettingEvidenceValue(key, value string) string {
-	normalizedKey := strings.ToLower(strings.TrimSpace(key))
-	for _, sensitive := range []string{"password", "passwd", "secret", "token", "credential"} {
-		if strings.Contains(normalizedKey, sensitive) {
-			return "<redacted>"
-		}
-	}
+func runtimeSettingEvidenceValue(_, value string) string {
 	return strings.TrimSpace(value)
 }
 

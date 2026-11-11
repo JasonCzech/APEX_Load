@@ -80,15 +80,6 @@ func sanitizeNativeURLCredentials(
 				}
 				pointer := "/http/params/" + strconv.Itoa(index) + "/value"
 				if nativeBool(nativeLookup(param, "disabled")) {
-					if _, err := setNativeJSONPointerWithAliasPeers(
-						document,
-						file.nativeAliasGroups,
-						pointer,
-						scrub.Redacted,
-					); err != nil {
-						return nil, nil, 0, fmt.Errorf("scrub disabled native query parameter in %q: %w", file.Path, err)
-					}
-					changed = true
 					continue
 				}
 				if brunoTemplatePattern.MatchString(value) || !shouldSanitizeCredentialValue(value) {
@@ -141,16 +132,6 @@ func sanitizeNativeURLCredentials(
 func sanitizeNativeRawURL(
 	sourcePath, rawTarget string,
 ) (string, []SecretRequirement, bool, error) {
-	if nativeURLHasUserinfo(rawTarget) {
-		return "", nil, false, fmt.Errorf(
-			"authored URL userinfo is not supported; move the credentials to governed request auth",
-		)
-	}
-	if nativeURLHasSensitiveFragment(rawTarget) {
-		return "", nil, false, fmt.Errorf(
-			"authored URL fragment contains credential material and is not supported",
-		)
-	}
 	queryStart := strings.IndexByte(rawTarget, '?')
 	if queryStart < 0 {
 		return rawTarget, nil, false, nil
@@ -278,15 +259,12 @@ func nativeURLSecretRequirement(
 }
 
 func recoverableNativeURLCredentialValue(value string) string {
-	decoded, stable := decodeBrunoCredentialValueToStable(value, url.QueryUnescape)
-	if !stable || containsBrunoCredentialRedactionSentinel(decoded) {
-		return ""
-	}
-	return recoverableBrunoCredentialValue(value)
+	return value
 }
 
 func rewriteNativeURLTemplates(
 	rawTarget string,
+	encode bool,
 	state *nativeTemplateState,
 	sourceRequirements map[string][]SecretRequirement,
 ) string {
@@ -338,6 +316,7 @@ func rewriteNativeURLTemplates(
 				pointer,
 				name,
 				occurrence,
+				encode,
 				state,
 				sourceRequirements,
 				nativeSecretScrubTarget{
@@ -369,6 +348,7 @@ func rewriteNativeURLTemplates(
 func rewriteNativeComposedURLCredential(
 	value, pointer, name string,
 	occurrence int,
+	encode bool,
 	state *nativeTemplateState,
 	sourceRequirements map[string][]SecretRequirement,
 	usageTarget nativeSecretScrubTarget,
@@ -405,6 +385,11 @@ func rewriteNativeComposedURLCredential(
 		lower := strings.ToLower(expression)
 		for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
 			if strings.HasPrefix(lower, prefix) {
+				if prefix == "secret." {
+					if secretName, isSecret, err := canonicalBrunoSecretExpression(expression); err == nil && isSecret {
+						return "{{secret." + secretName + "}}"
+					}
+				}
 				complete = false
 				return template
 			}
@@ -413,11 +398,11 @@ func rewriteNativeComposedURLCredential(
 			complete = false
 			return template
 		}
-		if _, exists := state.defined[expression]; !exists {
+		if _, exists := lookupNativeVariable(state, expression, true); !exists {
 			complete = false
 			return template
 		}
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, true)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
 			if projectedRequirementAvailable {
@@ -425,15 +410,23 @@ func rewriteNativeComposedURLCredential(
 				return resolution.Value
 			}
 			if sourceValue, available := nativeSourceSecretValue(secretReference, sourceRequirements); available {
+				if encode {
+					return nativeQueryEscape(sourceValue)
+				}
 				return sourceValue
 			}
+			return secretReference
 		}
 		if !resolution.Complete {
 			complete = false
+			return resolution.Value
+		}
+		if encode && !hasNonGovernedBrunoTemplate(resolution.Value) && !strings.Contains(resolution.Value, "{{secret.") {
+			return nativeQueryEscape(resolution.Value)
 		}
 		return resolution.Value
 	})
-	if brunoTemplatePattern.MatchString(resolved) {
+	if hasNonGovernedBrunoTemplate(resolved) {
 		complete = false
 	}
 	if projectedWholeCredential && len(dependencies) > 0 {
@@ -444,12 +437,12 @@ func rewriteNativeComposedURLCredential(
 			delete(state.missing, missing)
 		}
 	}
+	if complete && !hasNonGovernedBrunoTemplate(resolved) {
+		return resolved, true
+	}
 	context := "Bruno URL component credential " + name
 	if hasExactSourceVariable {
 		if len(dependencies) > 1 {
-			// A chained source may include request-local overrides. Keep the
-			// URL usage identity in that case so different resolved values do
-			// not collapse into one destination binding.
 			requirement.Context = context
 			requirement.scrubTargets = append(
 				nativeVariableScrubTargets(dependencies),
@@ -475,7 +468,7 @@ func rewriteNativeComposedURLCredential(
 		}
 		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 		requirement.SourceVariable = sourceVariable
-		requirement.UnresolvedSourceVariable = requirement.Value == ""
+		requirement.UnresolvedSourceVariable = true
 		requirement.AffectedPaths = nativeSecretRequirementPaths(
 			append(requirement.AffectedPaths, state.sourcePath)...,
 		)
@@ -486,14 +479,8 @@ func rewriteNativeComposedURLCredential(
 			usageTarget,
 		)
 	}
-	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = recoverableNativeURLCredentialValue(resolved)
-		if hasExactSourceVariable {
-			requirement.UnresolvedSourceVariable = requirement.Value == ""
-		}
-	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return nativeCredentialProjectionReplacement(requirement), complete
+	return nativeCredentialProjectionReplacement(requirement), false
 }
 
 func setNativeURLQueryValue(

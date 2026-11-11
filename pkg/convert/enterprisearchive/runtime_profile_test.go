@@ -1663,13 +1663,8 @@ ProxyPassword=stale-password
 			if ok != test.wantIssue {
 				t.Fatalf("proxy issue = %#v, want issue %v", issue, test.wantIssue)
 			}
-			if test.wantIssue {
-				if httpConfig.Proxy.Username != "{{secret.ENTERPRISE_PROXY_USERNAME}}" ||
-					httpConfig.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
-					t.Fatalf("unsupported proxy lost inert credential record: %#v", httpConfig.Proxy)
-				}
-			} else if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
-				t.Fatalf("explicitly dormant proxy retained credentials: %#v", httpConfig.Proxy)
+			if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
+				t.Fatalf("disabled proxy retained stale credentials: %#v", httpConfig.Proxy)
 			}
 			if test.wantIssue && (len(issue.RuntimeFiles) != 1 ||
 				issue.RuntimeFiles[0] != "profiles/proxy.cfg" ||
@@ -1706,12 +1701,7 @@ func TestRuntimeCfgProxyWithoutEnableFlagsFinalizesSelectedMode(t *testing.T) {
 			if ok != test.wantIssue {
 				t.Fatalf("proxy issue = %#v, want issue %v", issue, test.wantIssue)
 			}
-			if test.wantIssue {
-				if httpConfig.Proxy.Username != "{{secret.ENTERPRISE_PROXY_USERNAME}}" ||
-					httpConfig.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
-					t.Fatalf("review-only proxy lost inert credential record: %#v", httpConfig.Proxy)
-				}
-			} else if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
+			if httpConfig.Proxy.Username != "" || httpConfig.Proxy.Password != "" {
 				t.Fatalf("inactive proxy retained dormant credentials: %#v", httpConfig.Proxy)
 			}
 			if test.wantIssue && (len(issue.RuntimeFiles) != 1 ||

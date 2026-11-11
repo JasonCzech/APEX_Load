@@ -45,13 +45,16 @@ func attachImportFidelityReport(result *ConvertResult, files map[string]string, 
 		return
 	}
 	result.FidelityReport = BuildImportFidelityReport(result, files, projectConfig, actions)
-	if result.Script == nil || result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
-		return
+	for _, script := range result.effectiveScripts() {
+		if script == nil || script.Metadata == nil || script.Metadata.Import == nil {
+			continue
+		}
+		if script.Metadata.Import.Preserved == nil {
+			script.Metadata.Import.Preserved = make(map[string]any)
+		}
+		script.Metadata.Import.Preserved["fidelity_report"] = convertutil.NeutralizeScriptMetadataDeep(result.FidelityReport)
+		script.Metadata = convertutil.NeutralizeScriptMetadataDeep(script.Metadata).(*dsl.ScriptMetadata)
 	}
-	if result.Script.Metadata.Import.Preserved == nil {
-		result.Script.Metadata.Import.Preserved = make(map[string]any)
-	}
-	result.Script.Metadata.Import.Preserved["fidelity_report"] = result.FidelityReport
 }
 
 func BuildImportFidelityReport(result *ConvertResult, files map[string]string, projectConfig *ProjectConfig, actions []*ParsedAction) *ImportFidelityReport {

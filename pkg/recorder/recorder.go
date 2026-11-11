@@ -29,6 +29,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/contentdecode"
 	"github.com/jasonczech/apexload/pkg/internal/hostpattern"
 	"github.com/jasonczech/apexload/pkg/recorder/marker"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 const defaultBodyCaptureLimitBytes = 512 * 1024
@@ -161,9 +162,41 @@ type SessionFilters struct {
 	BodyCaptureLimitBytes int      `json:"body_capture_limit_bytes,omitempty"`
 	RedactHeaders         []string `json:"redact_headers,omitempty"`
 	CaptureCookies        bool     `json:"capture_cookies,omitempty"`
+	// ScrubSensitive opts into redacting sensitive headers and cookies to
+	// "[redacted]" in captured sessions and HAR exports. Off by default.
+	ScrubSensitive bool `json:"scrub_sensitive,omitempty"`
 	// RecordingProfileID names the project recording profile the session was
 	// started with; conversions apply it unless they name another.
 	RecordingProfileID string `json:"recording_profile_id,omitempty"`
+}
+
+// FilterConfig aliases SessionFilters for callers referring to recorder filter options.
+type FilterConfig = SessionFilters
+
+// ApplyProfile copies recording-time filter settings (including ScrubSensitive)
+// from a recording profile into f when unset.
+func (f *SessionFilters) ApplyProfile(profile *recordingprofile.Profile) {
+	if f == nil || profile == nil {
+		return
+	}
+	if f.RecordingProfileID == "" {
+		f.RecordingProfileID = profile.ID
+	}
+	if len(f.IncludeHosts) == 0 && len(profile.IncludeHosts) > 0 {
+		f.IncludeHosts = append([]string(nil), profile.IncludeHosts...)
+	}
+	if len(f.ExcludeHosts) == 0 && len(profile.ExcludeHosts) > 0 {
+		f.ExcludeHosts = append([]string(nil), profile.ExcludeHosts...)
+	}
+	if f.BodyCaptureLimitBytes <= 0 && profile.BodyCaptureLimitBytes > 0 {
+		f.BodyCaptureLimitBytes = profile.BodyCaptureLimitBytes
+	}
+	if !f.CaptureCookies && profile.CaptureCookies != nil {
+		f.CaptureCookies = *profile.CaptureCookies
+	}
+	if profile.ScrubSensitive {
+		f.ScrubSensitive = true
+	}
 }
 
 type SessionEvent struct {
@@ -1543,13 +1576,13 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	}
 	responseEndedAt := opts.requestStartedAt.Add(elapsed)
 
-	rawHeadersMulti := correlationHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
+	rawHeadersMulti := correlationHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies, s.Filters.ScrubSensitive)
 	rawHeaders := firstHeaderValues(rawHeadersMulti)
-	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
+	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies, s.Filters.ScrubSensitive)
 	headers := firstHeaderValues(headersMulti)
-	rawRespHeadersMulti := correlationHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
+	rawRespHeadersMulti := correlationHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies, s.Filters.ScrubSensitive)
 	rawRespHeaders := firstHeaderValues(rawRespHeadersMulti)
-	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
+	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies, s.Filters.ScrubSensitive)
 
 	ct := resp.Header.Get("Content-Type")
 	respHeaders := firstHeaderValues(respHeadersMulti)
@@ -1866,14 +1899,16 @@ func recordingEventRequest(request RecordedRequest) RecordedRequest {
 	return request
 }
 
-func correlationHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
+func correlationHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool, scrubSensitive bool) map[string][]string {
 	redact := map[string]bool{}
-	if !captureCookies {
+	if scrubSensitive && !captureCookies {
 		redact["cookie"] = true
 		redact["set-cookie"] = true
 	}
 	for _, h := range extraRedact {
-		redact[strings.ToLower(strings.TrimSpace(h))] = true
+		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
+			redact[trimmed] = true
+		}
 	}
 
 	result := make(map[string][]string)
@@ -1898,23 +1933,27 @@ func correlationHeaders(headers http.Header, extraRedact []string, skipProxy boo
 	return result
 }
 
-func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
+func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool, scrubSensitive bool) map[string][]string {
 	redact := map[string]bool{}
-	for key := range headers {
-		lower := strings.ToLower(strings.TrimSpace(key))
-		if captureCookies && (lower == "cookie" || lower == "set-cookie") {
-			continue
+	if scrubSensitive {
+		for key := range headers {
+			lower := strings.ToLower(strings.TrimSpace(key))
+			if captureCookies && (lower == "cookie" || lower == "set-cookie") {
+				continue
+			}
+			if paramize.SensitiveHeaderKey(key) {
+				redact[lower] = true
+			}
 		}
-		if paramize.SensitiveHeaderKey(key) {
-			redact[lower] = true
+		if !captureCookies {
+			redact["cookie"] = true
+			redact["set-cookie"] = true
 		}
-	}
-	if !captureCookies {
-		redact["cookie"] = true
-		redact["set-cookie"] = true
 	}
 	for _, h := range extraRedact {
-		redact[strings.ToLower(strings.TrimSpace(h))] = true
+		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
+			redact[trimmed] = true
+		}
 	}
 
 	result := make(map[string][]string)

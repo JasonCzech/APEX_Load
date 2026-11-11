@@ -40,6 +40,18 @@ func nativeProjectedVariableRequirements(requirements []SecretRequirement) []Sec
 	return projected
 }
 
+func hasNonGovernedBrunoTemplate(value string) bool {
+	for _, match := range brunoTemplatePattern.FindAllStringSubmatch(value, -1) {
+		if len(match) < 2 {
+			return true
+		}
+		if _, isSecret, err := canonicalBrunoSecretExpression(match[1]); err != nil || !isSecret {
+			return true
+		}
+	}
+	return false
+}
+
 func rewriteNativeComposedCredential(
 	value string,
 	requirement SecretRequirement,
@@ -72,6 +84,11 @@ func rewriteNativeComposedCredential(
 		lower := strings.ToLower(expression)
 		for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
 			if strings.HasPrefix(lower, prefix) {
+				if prefix == "secret." {
+					if name, isSecret, err := canonicalBrunoSecretExpression(expression); err == nil && isSecret {
+						return "{{secret." + name + "}}"
+					}
+				}
 				complete = false
 				return template
 			}
@@ -80,11 +97,11 @@ func rewriteNativeComposedCredential(
 			complete = false
 			return template
 		}
-		if _, exists := state.defined[expression]; !exists {
+		if _, exists := lookupNativeVariable(state, expression, true); !exists {
 			complete = false
 			return template
 		}
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, true)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
 			if projectedRequirementAvailable {
@@ -100,7 +117,7 @@ func rewriteNativeComposedCredential(
 		}
 		return resolution.Value
 	})
-	if brunoTemplatePattern.MatchString(resolved) {
+	if hasNonGovernedBrunoTemplate(resolved) {
 		complete = false
 	}
 	if projectedWholeCredential && len(dependencies) > 0 {
@@ -111,12 +128,12 @@ func rewriteNativeComposedCredential(
 			delete(state.missing, missing)
 		}
 	}
+	if complete && !hasNonGovernedBrunoTemplate(resolved) {
+		return resolved, true
+	}
 	context := requirement.Context
 	if hasExactSourceVariable {
 		if len(dependencies) > 1 {
-			// A chain may resolve through request-local overrides even when its
-			// outer definition is inherited. Retain the usage requirement's
-			// candidate scope so distinct resolved values cannot share a binding.
 			requirement.Context = context
 			requirement.scrubTargets = append(
 				nativeVariableScrubTargets(dependencies),
@@ -142,7 +159,7 @@ func rewriteNativeComposedCredential(
 		}
 		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 		requirement.SourceVariable = sourceVariable
-		requirement.UnresolvedSourceVariable = requirement.Value == ""
+		requirement.UnresolvedSourceVariable = true
 		requirement.AffectedPaths = nativeSecretRequirementPaths(
 			append(requirement.AffectedPaths, state.sourcePath)...,
 		)
@@ -152,14 +169,8 @@ func rewriteNativeComposedCredential(
 			usageTarget,
 		)
 	}
-	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = recoverableBrunoCredentialValue(resolved)
-		if hasExactSourceVariable {
-			requirement.UnresolvedSourceVariable = requirement.Value == ""
-		}
-	}
 	registerNativeGeneratedRequirement(state, requirement)
-	return nativeCredentialProjectionReplacement(requirement), complete
+	return nativeCredentialProjectionReplacement(requirement), false
 }
 
 func applyNativeProjectedVariableSecrets(

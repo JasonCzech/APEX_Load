@@ -38,6 +38,12 @@ type harDocument struct {
 // the steps by 1-based HAR entry index and a note for each DOM step that
 // stays a URL-level request.
 func HTMLLevelSteps(steps []Step, har []byte) (map[int]map[string]any, []string) {
+	return HTMLLevelStepsWithOptions(steps, har, false)
+}
+
+// HTMLLevelStepsWithOptions behaves like HTMLLevelSteps and additionally gates
+// password and one-time-code form fields when scrubSensitive is true.
+func HTMLLevelStepsWithOptions(steps []Step, har []byte, scrubSensitive bool) (map[int]map[string]any, []string) {
 	documents, err := harDocuments(har)
 	if err != nil || len(documents) == 0 {
 		return nil, nil
@@ -60,7 +66,7 @@ func HTMLLevelSteps(steps []Step, har []byte) (map[int]map[string]any, []string)
 			continue // the step did not navigate
 		}
 		used[document.index] = true
-		htmlStep, reason := htmlStepForDOMStep(step, ordered[:index], document, previous)
+		htmlStep, reason := htmlStepForDOMStep(step, ordered[:index], document, previous, scrubSensitive)
 		if reason != "" {
 			notes = append(notes, fmt.Sprintf("step %d stays a URL request: %s", step.Seq, reason))
 			continue
@@ -89,7 +95,7 @@ func documentAfter(documents []harDocument, at, next time.Time, used map[int]boo
 	return nil, nil
 }
 
-func htmlStepForDOMStep(step Step, earlier []Step, document, previous *harDocument) (map[string]any, string) {
+func htmlStepForDOMStep(step Step, earlier []Step, document, previous *harDocument, scrubSensitive bool) (map[string]any, string) {
 	if previous == nil || previous.html == "" {
 		return nil, "the page it was taken on was not recorded"
 	}
@@ -132,7 +138,7 @@ func htmlStepForDOMStep(step Step, earlier []Step, document, previous *harDocume
 			return found.Href, err
 		}, target)
 	case tag == "button" || tag == "input" || step.Kind == StepPressKey:
-		return formStep(step, earlier, element, page, document, previous.started)
+		return formStep(step, earlier, element, page, document, previous.started, scrubSensitive)
 	default:
 		return nil, fmt.Sprintf("a click on <%s> is not a link, image or form submit", tag)
 	}
@@ -158,7 +164,7 @@ func ordinalStep(htmlStep map[string]any, find func(int) (string, error), target
 
 // formStep describes a form submission with the fields the user typed
 // after the page loaded and the button used to submit it.
-func formStep(step Step, earlier []Step, submit *selector.ElementMetadata, page *pagecontext.Page, document *harDocument, pageLoaded time.Time) (map[string]any, string) {
+func formStep(step Step, earlier []Step, submit *selector.ElementMetadata, page *pagecontext.Page, document *harDocument, pageLoaded time.Time, scrubSensitive bool) (map[string]any, string) {
 	var fields []any
 	var names []string
 	for _, fill := range earlier {
@@ -172,7 +178,7 @@ func formStep(step Step, earlier []Step, submit *selector.ElementMetadata, page 
 		if element == nil || element.Name == "" {
 			continue
 		}
-		if fill.Masked {
+		if shouldMaskFillStep(fill, ConvertOptions{ScrubSensitive: scrubSensitive}) {
 			return nil, fmt.Sprintf("field %q holds a masked value", element.Name)
 		}
 		value := fill.Value

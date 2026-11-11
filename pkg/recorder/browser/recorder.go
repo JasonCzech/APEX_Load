@@ -26,6 +26,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
 	"github.com/jasonczech/apexload/pkg/recorder/marker"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	playwright "github.com/mxschmitt/playwright-go"
 )
 
@@ -73,8 +74,9 @@ type Options struct {
 	// StorageStatePath, when set, seeds the context with a saved Playwright
 	// storage state (cookies/localStorage) so authenticated flows skip login.
 	StorageStatePath string
-	// CaptureWSPayloads opts into recording size-capped, scrubbed WebSocket
-	// frame payloads (default off — only counts are kept).
+	// CaptureWSPayloads opts into recording size-capped WebSocket frame payloads
+	// (default off — only counts are kept; payloads are scrubbed only when
+	// ScrubSensitive is true).
 	CaptureWSPayloads bool
 	// WSPayloadLimitBytes caps a captured frame payload (0 = default).
 	WSPayloadLimitBytes int
@@ -90,9 +92,16 @@ type Options struct {
 	// DisableQUIC launches the recorded Chromium with --disable-quic, so the
 	// recording captures no HTTP/3 traffic.
 	DisableQUIC bool
-	// Scrubber redacts WebSocket frame payloads before storage. Injected by the
-	// API layer (which owns pkg/scrub); nil disables payload redaction.
+	// Scrubber redacts WebSocket frame payloads before storage when
+	// ScrubSensitive is enabled. Injected by the API layer (which owns
+	// pkg/scrub); nil disables payload redaction.
 	Scrubber func(string) string
+	// Profile, when set, supplies saved recording options such as ScrubSensitive
+	// and host filters.
+	Profile *recordingprofile.Profile `json:"profile,omitempty"`
+	// ScrubSensitive opts into masking password/one-time-code inputs in the page
+	// and scrubbing captured WebSocket frame payloads. Off by default.
+	ScrubSensitive bool `json:"scrub_sensitive,omitempty"`
 	// Sidebar enables the in-page advanced control sidebar (the panel behind
 	// the in-page bar's expand button). When false the page shows only the
 	// minimal REC/Pause/Assert bar. The API manager defaults this on.
@@ -109,6 +118,9 @@ type Options struct {
 	// window.
 	followWindowHeadless bool
 }
+
+// RecorderOptions aliases Options for callers referring to browser recorder options.
+type RecorderOptions = Options
 
 // BrowserRecorderBridgeStoragePrefix is the dashboard localStorage key prefix
 // used for local recording bridge pairings.
@@ -336,6 +348,19 @@ func New(opts Options) *Recorder {
 		device := *opts.Device
 		opts.Device = &device
 	}
+	if opts.Profile != nil {
+		prof := opts.Profile.Clone()
+		opts.Profile = &prof
+		if prof.ScrubSensitive {
+			opts.ScrubSensitive = true
+		}
+		if len(opts.HARFilters.IncludeHosts) == 0 && len(prof.IncludeHosts) > 0 {
+			opts.HARFilters.IncludeHosts = append([]string(nil), prof.IncludeHosts...)
+		}
+		if len(opts.HARFilters.ExcludeHosts) == 0 && len(prof.ExcludeHosts) > 0 {
+			opts.HARFilters.ExcludeHosts = append([]string(nil), prof.ExcludeHosts...)
+		}
+	}
 	device := ""
 	if opts.Device != nil {
 		device = boundedtext.TruncateUTF8(opts.Device.Name, maxBrowserNativeTitleBytes)
@@ -346,10 +371,11 @@ func New(opts Options) *Recorder {
 		sidebarLayout:  defaultSidebarLayout(),
 		controlNonce:   newControlNonce(),
 		session: &Session{
-			ID:            fmt.Sprintf("rec_%d", time.Now().UnixNano()),
-			StartURL:      strings.TrimSpace(opts.StartURL),
-			StartedAt:     time.Now(),
-			DeviceProfile: device,
+			ID:             fmt.Sprintf("rec_%d", time.Now().UnixNano()),
+			StartURL:       strings.TrimSpace(opts.StartURL),
+			StartedAt:      time.Now(),
+			DeviceProfile:  device,
+			ScrubSensitive: opts.ScrubSensitive,
 		},
 		done:              make(chan struct{}),
 		controlPages:      make(map[playwright.Page]struct{}),
@@ -1816,17 +1842,22 @@ func (r *Recorder) configScript() string {
 	// then carries any position the user chose (sidebarLayout).
 	layout := defaultSidebarLayout()
 	config := map[string]any{
-		"sidebar": r.opts.Sidebar,
-		"hovers":  r.opts.CaptureHovers,
-		"open":    layout.Expanded,
-		"edge":    layout.Edge,
-		"offset":  layout.Offset,
+		"sidebar":        r.opts.Sidebar,
+		"hovers":         r.opts.CaptureHovers,
+		"scrubSensitive": r.opts.ScrubSensitive,
+		"open":           layout.Expanded,
+		"edge":           layout.Edge,
+		"offset":         layout.Offset,
 	}
 	encoded, err := json.Marshal(config)
 	if err != nil {
 		encoded = []byte("{}")
 	}
-	return "window.__apexloadRecorderConfig = " + string(encoded) + ";"
+	scrubFlag := "false"
+	if r.opts.ScrubSensitive {
+		scrubFlag = "true"
+	}
+	return "window.__apexloadScrubSensitive = " + scrubFlag + "; window.__apexloadRecorderConfig = " + string(encoded) + ";"
 }
 
 // ValidateControlPanelURL checks that a browser-recorder companion tab points
@@ -2191,11 +2222,11 @@ func (r *Recorder) recordWSFrame(index int, direction string, payload []byte) {
 		body = body[:limit]
 		frame.Truncated = true
 	}
-	// Scrub BEFORE choosing the encoding so a frame that fails the strict
-	// printable check still has known secret patterns redacted rather than
-	// being base64-encoded verbatim.
+	// When ScrubSensitive is enabled, scrub BEFORE choosing the encoding so a
+	// frame that fails the strict printable check still has known secret
+	// patterns redacted rather than being base64-encoded verbatim.
 	text := string(body)
-	if r.opts.Scrubber != nil {
+	if r.opts.ScrubSensitive && r.opts.Scrubber != nil {
 		text = r.opts.Scrubber(text)
 	}
 	if isPrintableUTF8(text) {

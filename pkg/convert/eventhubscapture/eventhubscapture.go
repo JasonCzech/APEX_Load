@@ -17,6 +17,7 @@ import (
 
 	"github.com/iskorotkov/avro/v2"
 	"github.com/iskorotkov/avro/v2/ocf"
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -188,6 +189,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		Actions:   actions,
 	}
 	script.Config.EventHubs = dsl.EventHubsConfig{Mock: true, EventHub: eventHub}
+	convertutil.SanitizeScriptDSLTemplates(script, nil)
 
 	summary := fmt.Sprintf("Imported %d of %d captured Event Hubs events into produce actions for event hub %q (mock mode).", len(actions), stats.RecordsRead, eventHub)
 	if !capture {

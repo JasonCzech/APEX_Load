@@ -84,25 +84,36 @@ func TestClassifySourceCredentialValueFailsClosedOnExcessEncodedCandidates(t *te
 	}
 }
 
-func TestPreserveProjectionReplacesRedactionPlaceholderWithUnconfiguredReference(t *testing.T) {
+func TestPreserveProjectionRetainsLiteralRedactionPlaceholder(t *testing.T) {
 	projected, result, err := ProjectHeaders(
 		[]HeaderOccurrence{{Name: "Authorization", Value: "Bearer %255Bredacted%255D"}},
-		Options{Mode: Preserve, Source: SourceRef{Format: "fixture", Path: "request.json"}},
+		Options{Mode: Preserve, Source: SourceRef{Format: "fixture", Path: "request.json"}, RequestKey: "req-1"},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Requirements) != 1 {
-		t.Fatalf("requirements = %#v, want one unavailable credential", result.Requirements)
+	if result.Disposition != ExecutableExact || len(result.Requirements) != 0 {
+		t.Fatalf("preserve result = %#v, want executable exact with zero requirements", result)
 	}
-	requirement := result.Requirements[0]
-	if requirement.SourceValueAvailable || requirement.Value != "" ||
-		requirement.SourceValueStatus != SourceCredentialValueRedactedPlaceholder {
-		t.Fatalf("requirement = %#v, want unavailable redaction source", requirement)
+	if len(projected) != 1 || projected[0].Value != "Bearer %255Bredacted%255D" {
+		t.Fatalf("projected headers = %#v, want literal header preserved", projected)
 	}
-	if len(projected) != 1 || projected[0].Value != requirement.Replacement ||
-		!strings.HasPrefix(requirement.Replacement, "{{secret.") {
-		t.Fatalf("projected headers = %#v requirement = %#v", projected, requirement)
+	if len(result.PreservedTargets) != 1 {
+		t.Fatalf("preserved targets = %#v, want runtime redaction locator", result.PreservedTargets)
+	}
+
+	secretProjected, secretResult, err := ProjectHeaders(
+		[]HeaderOccurrence{{Name: "Authorization", Value: "Bearer %255Bredacted%255D"}},
+		Options{Mode: SecretReference, Source: SourceRef{Format: "fixture", Path: "request.json"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(secretResult.Requirements) != 1 || secretResult.Requirements[0].SourceValueAvailable ||
+		secretResult.Requirements[0].Value != "" ||
+		secretResult.Requirements[0].SourceValueStatus != SourceCredentialValueRedactedPlaceholder ||
+		len(secretProjected) != 1 || !strings.HasPrefix(secretProjected[0].Value, "{{secret.") {
+		t.Fatalf("secret reference projection = %#v / %#v", secretProjected, secretResult)
 	}
 }
 

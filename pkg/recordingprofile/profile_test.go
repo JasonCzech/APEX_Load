@@ -1,6 +1,7 @@
 package recordingprofile
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -192,5 +193,85 @@ func TestExcludedAuraDescriptorMatchNamesThePattern(t *testing.T) {
 		if got := profile.ExcludesAuraDescriptor(descriptor); got != (want != "") {
 			t.Errorf("ExcludesAuraDescriptor(%q) = %v", descriptor, got)
 		}
+	}
+}
+
+func TestScrubSensitiveDefaultsFalseAndPreservesAcrossHelpers(t *testing.T) {
+	var zero Profile
+	if zero.ScrubSensitive {
+		t.Fatal("default Profile.ScrubSensitive = true, want false")
+	}
+
+	rawDefault, err := json.Marshal(Profile{ID: "default", Name: "Default"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(rawDefault), "scrub_sensitive") {
+		t.Fatalf("default JSON = %s, want scrub_sensitive omitted when false", rawDefault)
+	}
+	var decodedDefault Profile
+	if err := json.Unmarshal(rawDefault, &decodedDefault); err != nil {
+		t.Fatal(err)
+	}
+	if decodedDefault.ScrubSensitive {
+		t.Fatal("unmarshaled default Profile.ScrubSensitive = true, want false")
+	}
+
+	on := true
+	bg := []string{"nebulaLogger"}
+	scrubbed := Profile{
+		ID:                 "  strict  ",
+		Name:               "  Strict Scrub  ",
+		HTTPScriptLevel:    " HTML ",
+		ResourceMode:       " IN_STEP ",
+		RecordHeaders:      []string{"X-Trace"},
+		CaptureCookies:     &on,
+		BackgroundRequests: &bg,
+		ScrubSensitive:     true,
+		Correlation: CorrelationSettings{
+			UserRules: []UserRule{{Name: "Token", Type: "regex", Regex: `tok=(\w+)`, Hosts: []string{"api.example.test"}}},
+		},
+	}
+	scrubbed.Normalize()
+	if !scrubbed.ScrubSensitive || scrubbed.ID != "strict" || scrubbed.Name != "Strict Scrub" || scrubbed.HTTPScriptLevel != "html" || scrubbed.ResourceMode != "in_step" {
+		t.Fatalf("normalized scrubbed profile = %+v", scrubbed)
+	}
+	if err := Validate([]Profile{decodedDefault, scrubbed}); err != nil {
+		t.Fatalf("Validate failed: %v", err)
+	}
+
+	rawScrubbed, err := json.Marshal(scrubbed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawScrubbed), `"scrub_sensitive":true`) {
+		t.Fatalf("scrubbed JSON = %s, want scrub_sensitive:true", rawScrubbed)
+	}
+	var decodedScrubbed Profile
+	if err := json.Unmarshal(rawScrubbed, &decodedScrubbed); err != nil {
+		t.Fatal(err)
+	}
+	if !decodedScrubbed.ScrubSensitive {
+		t.Fatal("unmarshaled ScrubSensitive = false, want true")
+	}
+
+	clonedFalse := decodedDefault.Clone()
+	if clonedFalse.ScrubSensitive {
+		t.Fatal("Clone() of default profile set ScrubSensitive = true")
+	}
+	clonedTrue := scrubbed.Clone()
+	if !clonedTrue.ScrubSensitive {
+		t.Fatal("Clone() dropped ScrubSensitive = true")
+	}
+	clonedTrue.RecordHeaders[0] = "Mutated"
+	*clonedTrue.CaptureCookies = false
+	(*clonedTrue.BackgroundRequests)[0] = "other"
+	clonedTrue.Correlation.UserRules[0].Hosts[0] = "mutated.example.test"
+	if scrubbed.RecordHeaders[0] != "X-Trace" || !*scrubbed.CaptureCookies || (*scrubbed.BackgroundRequests)[0] != "nebulaLogger" || scrubbed.Correlation.UserRules[0].Hosts[0] != "api.example.test" {
+		t.Fatalf("Clone() aliased original slices or pointers: %+v", scrubbed)
+	}
+
+	if found, ok := Find([]Profile{decodedDefault, scrubbed}, "STRICT"); !ok || !found.ScrubSensitive {
+		t.Fatalf("Find(STRICT) = %+v, %v; want ScrubSensitive=true", found, ok)
 	}
 }
