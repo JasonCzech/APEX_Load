@@ -22,7 +22,10 @@ const (
 	MaxFullTextBytes = 16 << 20
 )
 
-var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
+var (
+	mappingIDUnsafeChars   = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
+	replayResultDirPattern = regexp.MustCompile(`^result\d+$`)
+)
 
 // Review contains imported source files and source-to-DSL mappings produced by
 // import converters for side-by-side review.
@@ -376,12 +379,44 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 	if fileReferenced(name, referenced) {
 		return true
 	}
+	if isUnreferencedIDEOrReplayArtifact(lower) {
+		return false
+	}
 	switch archiveingest.LogicalExt(lower) {
 	case ".c", ".h", ".usr", ".cfg", ".usp", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".java", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
 		return true
 	default:
 		return len(referenced) == 0
 	}
+}
+
+func isUnreferencedIDEOrReplayArtifact(lower string) bool {
+	normalized := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(lower)), "\\", "/")
+	segments := strings.Split(normalized, "/")
+	for _, segment := range segments[:len(segments)-1] {
+		if replayResultDirPattern.MatchString(segment) {
+			return true
+		}
+	}
+	base := strings.ToLower(archiveingest.LogicalBase(lower))
+	switch base {
+	case "bookmarks.xml",
+		"compilerlogmetadata.xml",
+		"replaysummaryreport.xml",
+		"scriptuploadmetadata.xml",
+		"usertasks.xml",
+		"thumbnailscache.tmp",
+		"mdrv.log",
+		"mdrv_cmd.txt",
+		"options.txt",
+		"output.bak",
+		"output.txt",
+		"logfile.log",
+		"debug.inf":
+		return true
+	}
+	return (strings.HasPrefix(base, "combined_") && strings.HasSuffix(base, ".c")) ||
+		strings.HasSuffix(base, "_old.c")
 }
 
 func stableMappingID(mapping Mapping) string {
