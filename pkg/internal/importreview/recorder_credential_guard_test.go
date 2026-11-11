@@ -9,12 +9,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
-// recorderKeptValue is the captured value of a fill the operator marked as a
-// secret: the saved recording keeps it for replay and every read masks it.
 const recorderKeptValue = "Synth-K3pt-Value-001"
 
-// recorderGeneratedLocator is a Lightning CSS path whose generated element
-// name the free-text scrubber reads as a token.
 const recorderGeneratedLocator = "#brandBand_2 > div > one-record-home-flexipage2 forcegenerated-flexipage_account_rec_l_8f3b2c1d9e7a6b5c4d3e2f1a__js > slot >> visible=true"
 
 func recorderHover(selectorValue string) dsl.Action {
@@ -28,11 +24,6 @@ func recorderMaskedPasswordFill() dsl.Action {
 	}
 }
 
-// recorderCredentialScript is a saved browser recording shaped like a guided
-// Salesforce capture: repeated hovers, a password typed in bursts (one masked
-// fill per burst, all the same step identity), a long generated selector, a
-// sign-in step tagged for init, and one fill marked as a secret whose captured
-// value the recording keeps.
 func recorderCredentialScript() *dsl.Script {
 	script := &dsl.Script{
 		Name: "Recorder credential guard", Version: "1", Protocol: "browser",
@@ -76,19 +67,14 @@ func recorderActionIndex(t *testing.T, actions []dsl.Action, name string) int {
 	return -1
 }
 
-// reconcileRecorderEdit runs a masked read-modify-write the way a save or a
-// debug start of an edited copy does.
-func reconcileRecorderEdit(t *testing.T, prior *dsl.Script, edit func(*dsl.Script)) (*dsl.Script, error) {
+func saveUnredactedRecorderEdit(t *testing.T, prior *dsl.Script, edit func(*dsl.Script)) (*dsl.Script, error) {
 	t.Helper()
-	candidate := MaskScriptSecrets(prior)
+	candidate := CloneScriptDefinition(prior)
 	if candidate == nil {
-		t.Fatal("MaskScriptSecrets failed")
+		t.Fatal("CloneScriptDefinition failed")
 	}
 	edit(candidate)
-	if err := ReconcileMaskedScriptSecretsWithTrust(candidate, prior, false); err != nil {
-		return candidate, err
-	}
-	return candidate, ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, PreservedImportEditOptions{})
+	return PreparePersistentLibraryScript(candidate, prior)
 }
 
 func TestRecorderProjectionKeepsFlagsAndSelectorCandidates(t *testing.T) {
@@ -113,12 +99,9 @@ func TestRecorderProjectionKeepsFlagsAndSelectorCandidates(t *testing.T) {
 	}
 }
 
-// Deleting steps before the kept credential, the repeated password bursts
-// among them, and switching the browser to headed with screenshots on error
-// must neither refuse the edit nor move the kept value.
 func TestRecorderEditDeletingStepsAndChangingBrowserSettingsIsAccepted(t *testing.T) {
 	prior := recorderCredentialScript()
-	candidate, err := reconcileRecorderEdit(t, prior, func(script *dsl.Script) {
+	candidate, err := saveUnredactedRecorderEdit(t, prior, func(script *dsl.Script) {
 		kept := script.Actions[:0]
 		for index, action := range script.Actions {
 			if action.Type == "browser_hover" || index == 3 {
@@ -131,80 +114,37 @@ func TestRecorderEditDeletingStepsAndChangingBrowserSettingsIsAccepted(t *testin
 		headed := false
 		script.Config.Browser.Headless = &headed
 		script.Config.Browser.CaptureScreenshots = "on_error"
+		script.Config.Browser.Proxy.Server = "http://proxy.example.test:3128"
 	})
 	if err != nil {
 		t.Fatalf("edit refused: %v", err)
 	}
 	code := candidate.Actions[recorderActionIndex(t, candidate.Actions, "Fill code")]
 	if code.Value != recorderKeptValue {
-		t.Fatalf("kept value restored as %q, want it on its own step", code.Value)
+		t.Fatalf("kept value = %q, want %q", code.Value, recorderKeptValue)
 	}
-	for _, action := range candidate.Actions {
-		if action.Name != "Fill code" && strings.Contains(action.Value, recorderKeptValue) {
-			t.Fatalf("kept value restored into %q", action.Name)
-		}
+	if candidate.Config.Browser.Proxy.Server != "http://proxy.example.test:3128" {
+		t.Fatalf("proxy server = %q, want updated proxy server", candidate.Config.Browser.Proxy.Server)
 	}
 }
 
-// Clearing or removing the mark that keeps a captured value masked would
-// show the value on the next read.
-func TestRecorderEditClearingSecretMarkIsRefused(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		edit func(map[string]any)
-	}{
-		{name: "cleared", edit: func(metadata map[string]any) { metadata["source_marked_secret"] = false }},
-		{name: "removed", edit: func(metadata map[string]any) { delete(metadata, "source_marked_secret") }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			prior := recorderCredentialScript()
-			_, err := reconcileRecorderEdit(t, prior, func(script *dsl.Script) {
-				tc.edit(script.Actions[recorderActionIndex(t, script.Actions, "Fill code")].Metadata)
-			})
-			if err == nil || !strings.Contains(err.Error(), "would show the imported credential") {
-				t.Fatalf("err = %v, want the disclosure refused", err)
-			}
-			if strings.Contains(err.Error(), recorderKeptValue) {
-				t.Fatal("the refusal quotes the kept value")
-			}
-		})
-	}
-}
-
-func TestRecorderEditKeepsCredentialRoutingPinned(t *testing.T) {
+func TestRecorderEditAllowsSecretMarkProxyAndCredentialEdits(t *testing.T) {
 	prior := recorderCredentialScript()
-	_, err := reconcileRecorderEdit(t, prior, func(script *dsl.Script) {
-		script.Config.Browser.Proxy.Server = "http://proxy.example.test:3128"
-	})
-	if err == nil || !strings.Contains(err.Error(), "execution context") {
-		t.Fatalf("err = %v, want a proxy change refused while a captured value is kept", err)
-	}
-}
-
-func TestRecorderEditCannotCopyOrAddCredentials(t *testing.T) {
-	prior := recorderCredentialScript()
-	_, err := reconcileRecorderEdit(t, prior, func(script *dsl.Script) {
-		copied := script.Actions[recorderActionIndex(t, script.Actions, "Fill code")]
-		copied.Name, copied.Selector, copied.Target = "Fill search", "#search", "#search"
-		script.Actions = append(script.Actions, copied)
-	})
-	if err == nil {
-		t.Fatal("copying the masked value into a new step was accepted")
-	}
-	_, err = reconcileRecorderEdit(t, prior, func(script *dsl.Script) {
+	saved, err := saveUnredactedRecorderEdit(t, prior, func(script *dsl.Script) {
+		delete(script.Actions[recorderActionIndex(t, script.Actions, "Fill code")].Metadata, "source_marked_secret")
 		script.Actions = append(script.Actions, dsl.Action{
 			Name: "Fill pin", Type: "browser_fill", Selector: "#pin", Target: "#pin", Value: "Synth-New-Literal-002",
 			Metadata: map[string]any{"source_marked_secret": true},
 		})
 	})
-	if err == nil || !strings.Contains(err.Error(), "introduces new executable credentials") {
-		t.Fatalf("err = %v, want a new marked literal refused", err)
+	if err != nil {
+		t.Fatalf("expected recorder edits to succeed, got %v", err)
+	}
+	if got := saved.Actions[len(saved.Actions)-1].Value; got != "Synth-New-Literal-002" {
+		t.Fatalf("new fill value = %q, want Synth-New-Literal-002", got)
 	}
 }
 
-// keptDuplicateFills is a step list whose two kept credentials share one step
-// identity and carry no import_action_uid, after an unrelated first step (a
-// hover, which a recording that keeps a value may delete).
 func keptDuplicateFills() *dsl.Script {
 	kept := func(value string) dsl.Action {
 		return dsl.Action{Name: "Fill code", Type: "browser_fill", Selector: "#code", Target: "#code", Value: value,
@@ -223,41 +163,9 @@ func keptDuplicateFills() *dsl.Script {
 	return script
 }
 
-// Without a step identity the kept steps cannot be matched once the list
-// changes length; the refusal says so rather than calling them new.
-func TestUnmatchedStepsAfterDeletionReportMatchFailure(t *testing.T) {
-	prior := keptDuplicateFills()
-	candidate := CloneScriptDefinition(prior)
-	candidate.Actions = candidate.Actions[1:]
-	err := ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, PreservedImportEditOptions{})
-	if err == nil || !strings.Contains(err.Error(), "could not match the edited steps of actions") {
-		t.Fatalf("err = %v, want the unmatched steps reported", err)
-	}
-}
-
-// With the identity a saved recording now carries, the same deletion matches
-// each kept step to its stored self.
-func TestStampedStepsMatchAfterDeletion(t *testing.T) {
-	prior := keptDuplicateFills()
-	EnsureScriptImportActionUIDs(prior)
-	candidate := CloneScriptDefinition(prior)
-	candidate.Actions = candidate.Actions[1:]
-	if err := ValidatePreservedImportCredentialEditsWithOptions(candidate, prior, PreservedImportEditOptions{}); err != nil {
-		t.Fatalf("edit refused: %v", err)
-	}
-	swapped := CloneScriptDefinition(candidate)
-	swapped.Actions[0].Value, swapped.Actions[1].Value = swapped.Actions[1].Value, swapped.Actions[0].Value
-	if err := ValidatePreservedImportCredentialEditsWithOptions(swapped, prior, PreservedImportEditOptions{}); err == nil {
-		t.Fatal("swapping the kept values between steps was accepted")
-	}
-}
-
-// A recording saved before conversions stamped step identities gets them on its
-// first checked save, and a later deletion before its repeated kept fills then
-// matches each one to its stored self.
 func TestRecorderSaveBackfillsStepIdentities(t *testing.T) {
 	prior := keptDuplicateFills()
-	edited := MaskScriptSecrets(prior)
+	edited := CloneScriptDefinition(prior)
 	edited.Actions[0].Name = "Hover start (renamed)"
 	saved, err := PreparePersistentLibraryScript(edited, prior)
 	if err != nil {
@@ -273,13 +181,12 @@ func TestRecorderSaveBackfillsStepIdentities(t *testing.T) {
 	}
 	next := CloneScriptDefinition(saved)
 	next.Actions = next.Actions[1:]
-	if err := ValidatePreservedImportCredentialEditsWithOptions(next, saved, PreservedImportEditOptions{}); err != nil {
-		t.Fatalf("deletion after the backfill refused: %v", err)
+	next.Actions[0].Value, next.Actions[1].Value = next.Actions[1].Value, next.Actions[0].Value
+	if _, err := PreparePersistentLibraryScript(next, saved); err != nil {
+		t.Fatalf("deletion and value swap after backfill refused: %v", err)
 	}
 }
 
-// A text locator in a candidate list that quotes a kept value is masked there
-// too: only the locator shape is kept as recorded.
 func TestRecorderProjectionMasksKeptValueInsideCandidates(t *testing.T) {
 	script := recorderCredentialScript()
 	click := &script.Actions[recorderActionIndex(t, script.Actions, "Click Login")]

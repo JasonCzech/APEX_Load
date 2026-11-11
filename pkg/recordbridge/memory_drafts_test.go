@@ -47,13 +47,18 @@ func TestMemoryDraftPortsBatchFailureRollsBackAndWritesRetryableResponse(t *test
 	owner := importreview.NewMemoryDraftOwner(importreview.MemoryDraftOptions{Capacity: 1})
 	ports := NewMemoryDraftPorts(owner, nil)
 	first, second := portableDraft("first"), portableDraft("second")
-	response := ports.Response(httptest.NewRequest(http.MethodPost, "/import", nil), importreview.ScriptImportResponseOptions{Scripts: []*dsl.Script{first, second}})
+	req := httptest.NewRequest(http.MethodPost, "/import", nil)
+	response := ports.Response(req, importreview.ScriptImportResponseOptions{Scripts: []*dsl.Script{first, second}})
 	if owner.Len() != 0 || importreview.ImportDraftAttestationToken(first) != "" || importreview.ImportDraftAttestationToken(second) != "" {
 		t.Fatal("failed batch kept partial capabilities")
 	}
 	out := httptest.NewRecorder()
 	WriteMemoryDraftResponse(out, http.StatusOK, response)
-	if out.Code != http.StatusServiceUnavailable || out.Header().Get("Retry-After") == "" || out.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("failure response = %d %#v %s", out.Code, out.Header(), out.Body)
+	if out.Code != http.StatusOK || out.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("degraded batch response = %d %#v %s", out.Code, out.Header(), out.Body)
+	}
+	// Tokenless degraded drafts still pass ports.Claim without failing.
+	if claim, err := ports.Claim(req, first); err != nil || claim != nil {
+		t.Fatalf("tokenless degraded draft claim = %#v %v, want nil, nil", claim, err)
 	}
 }

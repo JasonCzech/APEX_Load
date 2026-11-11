@@ -174,12 +174,8 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 
 		profile := enterpriseArchiveSaveProfile
 		var claim *importDraftAttestationClaim
-		fingerprint, err := fingerprintImportDraftCredentials(&draft)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to validate enterprise archive credential state")
-			return
-		}
-		if fingerprint.HasRawCredentials || importDraftAttestationToken(&draft) != "" {
+		if importDraftAttestationToken(&draft) != "" {
+			var err error
 			claim, err = s.claimImportDraftAttestation(r, &draft)
 			if err != nil {
 				if claim != nil {
@@ -190,28 +186,26 @@ func (s *Server) handleSaveEnterpriseArchiveImport(w http.ResponseWriter, r *htt
 				}
 				writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
 				return
+			} else {
+				profile = strings.TrimSpace(claim.Profile)
+				if !enterpriseArchiveSourceProfile(profile) {
+					s.releaseImportDraftAttestation(claim)
+					writeError(w, http.StatusConflict, "import draft does not belong to an enterprise archive conversion")
+					return
+				}
+				if claim.Script == nil {
+					s.releaseImportDraftAttestation(claim)
+					writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
+					return
+				}
+				claims[index] = claim
+				restored, replaceErr := replaceUnavailableImportCredentialValues(claim.Script)
+				if replaceErr != nil {
+					writeError(w, http.StatusBadRequest, replaceErr.Error())
+					return
+				}
+				draft = *restored
 			}
-			profile = strings.TrimSpace(claim.Profile)
-			if !enterpriseArchiveSourceProfile(profile) {
-				s.releaseImportDraftAttestation(claim)
-				writeError(w, http.StatusConflict, "import draft does not belong to an enterprise archive conversion")
-				return
-			}
-			if claim.Script == nil {
-				s.releaseImportDraftAttestation(claim)
-				writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is invalid or expired; run the conversion again")
-				return
-			}
-			// Record the claim before any subsequent validation so every error path
-			// releases its lease. Keeping this positional also makes completion line
-			// up with the corresponding stored script in a mixed attested/plain batch.
-			claims[index] = claim
-			restored, replaceErr := replaceUnavailableImportCredentialValues(claim.Script)
-			if replaceErr != nil {
-				writeError(w, http.StatusBadRequest, replaceErr.Error())
-				return
-			}
-			draft = *restored
 		} else if scriptHasUnavailableImportCredentialValues(&draft) {
 			writeEnterpriseArchiveDraftInvalid(w, "enterprise archive import draft is missing its server capability; run the conversion again")
 			return

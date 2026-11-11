@@ -9782,6 +9782,9 @@
         "client_id": {
           "type": "string"
         },
+        "client_secret": {
+          "type": "string"
+        },
         "client_secret_ref": {
           "type": "string"
         },

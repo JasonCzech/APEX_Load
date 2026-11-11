@@ -560,47 +560,25 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateJavaVMParameterSafety(
-		script,
-		isCredentialPreservingImport(script) || isCredentialPreservingImport(stored.Script),
-	); err != nil {
+	if err := validateJavaVMParameterSafety(script, true); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if isCredentialPreservingImport(script) || isCredentialPreservingImport(stored.Script) {
+	if !isCredentialPreservingImport(script) && !isCredentialPreservingImport(stored.Script) {
+		if err := removeSubmittedDependencyCodes(script, stored.Script); err != nil {
+			writeError(w, http.StatusBadRequest, errSavedImportEvaluation.Error())
+			return
+		}
+	}
+	{
 		var err error
 		script, err = s.runner.prepareLibraryScript(script, stored.Script)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-	} else {
-		// The write rebuilds an evaluated import's dependency codes from the
-		// saved script, so the copy the editor read, whose long variable names
-		// disclosure may mask, is dropped before the gate reads the script.
-		if err := removeSubmittedDependencyCodes(script, stored.Script); err != nil {
-			writeError(w, http.StatusBadRequest, errSavedImportEvaluation.Error())
-			return
-		}
-		// Updates must pass the same disclosure-safe binding gate as creates. In
-		// particular, a PUT must not become a back door for introducing a new raw
-		// password, token, or executable [REDACTED] sentinel into durable storage.
-		projected := maskScriptSecrets(script)
-		if projected == nil {
-			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-			return
-		}
-		if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-			writeSecretBindingsRequired(w, unresolved)
-			return
-		}
-		// Keep the caller's executable object. Non-executable import/review
-		// metadata is scrubbed by sanitizePersistentImportReviewSurfaces inside
-		// the durable write, so an update never has to trade runnability for it.
-		if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+	}
+	if !isCredentialPreservingImport(script) && !isCredentialPreservingImport(stored.Script) {
 		if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
 			delete(script.Metadata.Import.Preserved, "effective_settings")
 		}

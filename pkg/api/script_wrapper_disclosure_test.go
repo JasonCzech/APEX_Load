@@ -39,9 +39,12 @@ func TestScriptAndAuthoringWrappersProjectCredentialEquivalentNames(t *testing.T
 		"stored wrapper": maskedStored.Name,
 		"nested script":  maskedStored.Script.Name,
 	} {
-		if strings.Contains(value, credentialValue) {
-			t.Fatalf("%s name disclosed credential: %q", label, value)
+		if value != script.Name {
+			t.Fatalf("%s name = %q, want unredacted %q", label, value, script.Name)
 		}
+	}
+	if safeName := disclosureSafeScriptName(script.Name, script); strings.Contains(safeName, credentialValue) {
+		t.Fatalf("disclosureSafeScriptName leaked credential: %q", safeName)
 	}
 
 	session := &storage.AuthoringSession{
@@ -58,8 +61,8 @@ func TestScriptAndAuthoringWrappersProjectCredentialEquivalentNames(t *testing.T
 		"authoring wrapper": maskedSession.Name,
 		"authoring draft":   maskedSession.Draft.Name,
 	} {
-		if strings.Contains(value, credentialValue) {
-			t.Fatalf("%s name disclosed credential: %q", label, value)
+		if value != script.Name {
+			t.Fatalf("%s name = %q, want unredacted %q", label, value, script.Name)
 		}
 	}
 }

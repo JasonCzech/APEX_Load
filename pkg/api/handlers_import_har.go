@@ -676,9 +676,14 @@ func readHARImportUpload(w http.ResponseWriter, r *http.Request, policy harImpor
 	// A capture may arrive zipped; everything after this sees the HAR itself.
 	// The comparison HAR is unwrapped and checked with its conversion
 	// (prepareHARComparison), where a bad one costs only the comparison.
-	if !unwrapHARImportArchives(w, req) {
+	pairedFromArchive, ok := unwrapHARImportArchives(w, req, policy.keepComparison && len(req.SecondaryData) == 0)
+	if !ok {
 		return nil, false, false
 	}
+	if pairedFromArchive {
+		comparisonSent = true
+	}
+	req.Opts.ArtifactMode = normalizeHARArtifactMode(req.Opts.ArtifactMode, len(req.SecondaryData) > 0)
 	// A truncated capture is imported only on explicit request; otherwise the
 	// error says how many complete entries it holds and how to keep them.
 	if salvaged, report, truncated := har.SalvageTruncated(req.Data); truncated {
@@ -801,7 +806,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 			importUploadTooLarge(w, "the comparison HAR content", harImportMaxFileBytes)
 			return nil, false, false
 		}
-		req.Options.ArtifactMode = normalizeHARArtifactMode(req.Options.ArtifactMode, secondary != "")
+		req.Options.ArtifactMode = strings.TrimSpace(firstNonEmpty(req.Options.ArtifactMode, upload.Value("artifact_mode")))
 		validateOnly := false
 		if v := firstNonNilBool(req.ValidateOnly, parseOptionalBool(upload.Value("validate_only"))); v != nil {
 			validateOnly = *v
@@ -838,7 +843,7 @@ func decodeHARImportRequest(w http.ResponseWriter, r *http.Request, policy harIm
 		ConversionPolicy:      strings.TrimSpace(upload.Value("conversion_policy")),
 		CorrelationMode:       strings.TrimSpace(upload.Value("correlation_mode")),
 		ResourceMode:          strings.TrimSpace(upload.Value("resource_mode")),
-		ArtifactMode:          normalizeHARArtifactMode(upload.Value("artifact_mode"), len(secondaryData) > 0),
+		ArtifactMode:          strings.TrimSpace(upload.Value("artifact_mode")),
 		RetentionDays:         parseOptionalIntDefault(upload.Value("retention_days"), 0),
 		RedactSensitive:       parseOptionalBool(upload.Value("redact_sensitive")),
 		IncludeAssertions:     parseOptionalBool(upload.Value("include_assertions")),

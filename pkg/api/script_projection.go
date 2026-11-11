@@ -194,28 +194,14 @@ func maskStoredScript(stored *StoredScript) *StoredScript {
 	if stored == nil {
 		return nil
 	}
-	view := cloneStoredScriptForReadLocked(stored)
-	if isCredentialPreservingImport(stored.Script) {
-		return view
-	}
-	view.Script = maskScriptSecrets(view.Script)
-	view.Name = disclosureSafeScriptName(stored.Name, stored.Script)
-	return view
+	return cloneStoredScriptForReadLocked(stored)
 }
 
-// viewStoredScript is the authenticated stored-script authoring projection.
-// Unlike import receipts and recorder conversion responses, this is the
-// surface used by the data-file editor after a script has been saved. Keep the
-// exact authored CSV/DAT bytes visible so an operator can verify the values
-// that will be supplied to a run. Runtime evidence has its own redaction
-// boundary and remains unaffected.
+// viewStoredScript returns an isolated deep copy of stored for authenticated
+// script read and authoring responses without masking DSL values. Runtime and
+// replay evidence retain their own redaction boundaries.
 func viewStoredScript(stored *StoredScript) *StoredScript {
-	view := maskStoredScript(stored)
-	if view == nil || isCredentialPreservingImport(stored.Script) {
-		return view
-	}
-	restoreStoredScriptDataFileContents(view.Script, stored.Script)
-	return view
+	return maskStoredScript(stored)
 }
 
 func restoreStoredScriptDataFileContents(view, stored *dsl.Script) {
@@ -258,10 +244,6 @@ func maskAuthoringSession(session *storage.AuthoringSession) *storage.AuthoringS
 		return nil
 	}
 	masked := cloneAuthoringSession(session)
-	if !isCredentialPreservingImport(session.Draft) {
-		masked.Draft = maskScriptSecrets(masked.Draft)
-		masked.Name = disclosureSafeScriptName(session.Name, session.Draft)
-	}
 	masked.ReviewState = projectAuthoringReviewState(masked.ReviewState)
 	delete(masked.ReviewState, authoringSessionIdempotencyReviewKey)
 	return masked

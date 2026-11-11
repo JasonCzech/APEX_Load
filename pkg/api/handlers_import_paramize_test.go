@@ -125,18 +125,17 @@ func TestHandleApplyImportParameterization(t *testing.T) {
 		t.Error("expected diffs in response")
 	}
 	for _, diff := range decoded.Diffs {
-		if diff.Before != "" || diff.After != "" {
-			t.Errorf("diff exposed replacement material: %#v", diff)
+		if diff.After == "" || (diff.Kind == "value_replaced" && diff.Before == "") {
+			t.Errorf("diff omitted replacement material: %#v", diff)
 		}
 	}
-	// Credentials remain deferred and disclosure-safe while ordinary data
-	// parameterization is still available.
-	if decoded.Script.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
-		t.Errorf("unselected secret projection = %q", decoded.Script.Actions[0].Headers["Authorization"])
+	// Unselected credentials remain unredacted in the returned draft.
+	if decoded.Script.Actions[0].Headers["Authorization"] != "Bearer tok123" {
+		t.Errorf("unselected secret projection = %q, want Bearer tok123", decoded.Script.Actions[0].Headers["Authorization"])
 	}
 	for _, secret := range []string{"tok123", "hunter2"} {
-		if strings.Contains(resp.Body.String(), secret) {
-			t.Fatalf("apply response leaked %q: %s", secret, resp.Body.String())
+		if !strings.Contains(resp.Body.String(), secret) {
+			t.Fatalf("apply response lost unselected credential %q: %s", secret, resp.Body.String())
 		}
 	}
 }
@@ -286,32 +285,30 @@ func TestHandleApplyImportParameterizationRejectsSecretSuggestionsWithoutDisclos
 	script := paramizeTestScript()
 	suggestions := buildImportParameterization(script, nil)
 
-	var secretID string
+	var secretSuggestion paramize.Suggestion
 	for _, s := range suggestions.Suggestions {
 		if s.Kind == paramize.KindSecret {
-			secretID = s.ID
+			secretSuggestion = s
 			break
 		}
 	}
-	if secretID == "" {
+	if secretSuggestion.ID == "" {
 		t.Fatal("expected a secret suggestion")
 	}
 
-	for _, confirm := range []bool{false, true} {
-		resp, _ := postParameterizeApply(t, server, importParameterizeApplyRequest{
-			Script:          script,
-			Suggestions:     suggestions.Suggestions,
-			SelectedIDs:     []string{secretID},
-			ConfirmHighRisk: confirm,
-		})
-		if resp.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("confirm_high_risk=%t status = %d body=%s", confirm, resp.Code, resp.Body.String())
-		}
-		for _, secret := range []string{"tok123", "hunter2"} {
-			if strings.Contains(resp.Body.String(), secret) {
-				t.Fatalf("confirm_high_risk=%t response leaked %q: %s", confirm, secret, resp.Body.String())
-			}
-		}
+	resp, decoded := postParameterizeApply(t, server, importParameterizeApplyRequest{
+		Script:      script,
+		Suggestions: suggestions.Suggestions,
+		SelectedIDs: []string{secretSuggestion.ID},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if decoded.AppliedCount != 1 || decoded.Script == nil {
+		t.Fatalf("expected secret suggestion to apply cleanly, got %+v", decoded)
+	}
+	if !strings.Contains(resp.Body.String(), secretSuggestion.Replacement) {
+		t.Fatalf("applied response missing replacement %q: %s", secretSuggestion.Replacement, resp.Body.String())
 	}
 }
 
@@ -511,8 +508,8 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 	if kinds[paramize.KindDataParam] != 1 {
 		t.Errorf("expected 1 data_param for #user_email fill, got %+v", decoded.Parameterization.Suggestions)
 	}
-	if kinds[paramize.KindSecret] != 0 {
-		t.Errorf("secret suggestions remain represented by guided binding requirements, got %+v", decoded.Parameterization.Suggestions)
+	if kinds[paramize.KindSecret] < 1 {
+		t.Errorf("expected secret suggestion for #login_password fill, got %+v", decoded.Parameterization.Suggestions)
 	}
 	if !strings.Contains(resp.Body.String(), "hunter2") ||
 		importDraftAttestationToken(&decoded.Script) == "" {

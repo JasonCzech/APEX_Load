@@ -177,8 +177,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			return
 		}
 		requestedName := draft.Name
-		fingerprint, fingerprintErr := fingerprintImportDraftCredentials(draft)
-		if fingerprintErr != nil {
+		if _, fingerprintErr := fingerprintImportDraftCredentials(draft); fingerprintErr != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d credential state is invalid", index+1))
 			return
 		}
@@ -197,7 +196,7 @@ func (s *Server) handleCommitAsyncAPIImportBatch(w http.ResponseWriter, r *http.
 			}
 			claims[index] = claim
 			draft = claim.Script
-		} else if fingerprint.HasRawCredentials || scriptHasUnavailableImportCredentialValues(draft) {
+		} else if scriptHasUnavailableImportCredentialValues(draft) {
 			writeError(w, http.StatusConflict, fmt.Sprintf("AsyncAPI script %d is missing its server capability; run the conversion again", index+1))
 			return
 		}

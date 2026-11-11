@@ -3,16 +3,14 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// Only a number under secret_gated is the fidelity count. Text under that key
-// in params or a JSON body is a credential to a save: it is refused with a
-// binding requirement at each place, never stored raw, while a count saves.
+// Both string values and numeric counts under secret_gated save directly in
+// authored scripts without requiring secret bindings or redacting the DSL.
 func TestCreateScriptRequiresBindingsForSecretGatedText(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	gated := func(params, body any) *dsl.Script {
@@ -28,29 +26,14 @@ func TestCreateScriptRequiresBindingsForSecretGatedText(t *testing.T) {
 	}
 
 	create := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": gated("syntheticgatedparam", "syntheticgatedbody")})
-	if create.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 body=%s", create.Code, create.Body.String())
+	if create.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 body=%s", create.Code, create.Body.String())
 	}
-	var blocked struct {
-		Code         string                     `json:"code"`
-		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	if body := create.Body.String(); !strings.Contains(body, "syntheticgatedparam") || !strings.Contains(body, "syntheticgatedbody") || strings.Contains(body, "[REDACTED]") {
+		t.Fatalf("saved script response redacted text held under secret_gated: %s", body)
 	}
-	if err := json.Unmarshal(create.Body.Bytes(), &blocked); err != nil {
-		t.Fatal(err)
-	}
-	var paths []string
-	for _, requirement := range blocked.Requirements {
-		paths = append(paths, requirement.Path)
-	}
-	slices.Sort(paths)
-	if want := []string{"/actions/0/params/secret_gated", "/actions/1/body"}; blocked.Code != secretBindingsRequiredCode || !slices.Equal(paths, want) {
-		t.Fatalf("blocked = %s at %q, want %s at %q", blocked.Code, paths, secretBindingsRequiredCode, want)
-	}
-	if body := create.Body.String(); strings.Contains(body, "syntheticgatedparam") || strings.Contains(body, "syntheticgatedbody") {
-		t.Fatalf("binding response disclosed text held under secret_gated: %s", body)
-	}
-	if got := server.runner.ListScripts(); len(got) != 0 {
-		t.Fatalf("a script with raw text under secret_gated was stored: %d", len(got))
+	if got := server.runner.ListScripts(); len(got) != 1 {
+		t.Fatalf("stored scripts = %d, want 1", len(got))
 	}
 
 	counted := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": gated(3, 2)})

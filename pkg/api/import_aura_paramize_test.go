@@ -76,10 +76,17 @@ func TestApplyAuraParameterizationRegeneratesTrustedExactRoute(t *testing.T) {
 	if strings.Contains(resp.Body.String(), "injected-client-value") {
 		t.Fatal("client mutation instruction accepted")
 	}
+	hasPopulatedDiff := false
 	for _, diff := range decoded.Diffs {
 		if diff.Before != "" || diff.After != "" {
-			t.Fatal("raw payload diff exposed")
+			hasPopulatedDiff = true
 		}
+		if strings.Contains(diff.Before, "[REDACTED]") || strings.Contains(diff.After, "[REDACTED]") {
+			t.Fatalf("payload diff unexpectedly redacted: %+v", diff)
+		}
+	}
+	if !hasPopulatedDiff {
+		t.Fatalf("expected unredacted parameterization apply diffs, got %+v", decoded.Diffs)
 	}
 	if decoded.Script.Actions[0].Metadata[dsl.ImportURLFormTemplateValueEncodingMetadataKey] != dsl.ImportAuraJSONTemplateValueEncoding {
 		t.Fatal("runtime escaping metadata missing")

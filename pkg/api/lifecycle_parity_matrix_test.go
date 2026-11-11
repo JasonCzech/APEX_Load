@@ -85,7 +85,7 @@ func lifecycleFixtures() []lifecycleFixture {
 		{Name: "templates_secrets", Class: "Templates and secrets", Clean: true, Script: script("http", base, dsl.Action{Name: "orders", Type: "request", Method: "GET", Target: "/orders/{{param.order}}",
 			Headers: map[string]string{"Authorization": "Bearer {{secret.api_token}}"}})},
 		{Name: "java_credential_vm_argument", Class: "Java VM arguments", Unstorable: true, ImportTrust: true, Script: func() *dsl.Script {
-			script := javaVMDraft([]string{"-Ddatabase.password=lifecycle-matrix"})
+			script := javaVMDraft([]string{"-javaagent:/tmp/untrusted-lifecycle-matrix.jar"})
 			script.Actions[0].Target = "Actions"
 			return script
 		}},
@@ -264,15 +264,18 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 	for _, fixture := range lifecycleFixtures() {
 		t.Run(fixture.Name, func(t *testing.T) {
 			expected := append([]string{}, validateScript(fixture.Script())...)
-			if fixture.ImportTrust {
-				expected = []string{}
-			}
-			persistent, err := preparePersistentImportedLibraryScript(fixture.Script(), nil, "har")
-			if err != nil {
-				t.Fatalf("import save refused to prepare: %v", err)
-			}
-			if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
-				t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+			persistent, prepErr := preparePersistentImportedLibraryScript(fixture.Script(), nil, "har")
+			if prepErr != nil {
+				if !fixture.Unstorable || !strings.HasPrefix(prepErr.Error(), strings.Join(expected, "; ")) {
+					t.Fatalf("import save refused to prepare: %v (want prefix %q)", prepErr, expected)
+				}
+			} else {
+				if fixture.ImportTrust {
+					expected = []string{}
+				}
+				if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
+					t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+				}
 			}
 			for _, save := range []struct {
 				name, path, profile string
@@ -287,7 +290,7 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 				draft.Name = fmt.Sprintf("Lifecycle %s %s", save.name, fixture.Name)
 				ensureScriptImportPreserved(draft, save.profile)
 				var payloadScript any = draft
-				if fixture.ImportTrust {
+				if fixture.ImportTrust && prepErr == nil {
 					preview := server.newScriptImportResponseWithSourceSecrets(
 						httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
 						scriptImportResponseOptions{Script: draft, Scripts: []*dsl.Script{draft}},
@@ -332,12 +335,19 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 				if err := json.Unmarshal(rec.Body.Bytes(), &errPayload); err != nil {
 					t.Fatal(err)
 				}
-				if got, _ := errPayload["error"].(string); got != wantMsg {
+				got, _ := errPayload["error"].(string)
+				if prepErr != nil {
+					if !strings.Contains(got, strings.Join(expected, "; ")) {
+						t.Fatalf("%s: error %q, want substring %q", save.name, got, strings.Join(expected, "; "))
+					}
+				} else if got != wantMsg {
 					t.Fatalf("%s: error %q, want %q", save.name, got, wantMsg)
 				}
 			}
 			if fixture.ImportTrust {
-				attested := fixture.Script()
+				attested := javaVMDraft([]string{"-Ddatabase.password=lifecycle-matrix"})
+				attested.Actions[0].Target = "Actions"
+				ensureScriptImportPreserved(attested, enterpriseArchiveSaveProfile)
 				ensureScriptImportPreserved(attested, enterpriseArchiveSaveProfile)
 				_ = server.newScriptImportResponseWithSourceSecrets(
 					httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),

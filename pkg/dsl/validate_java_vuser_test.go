@@ -159,7 +159,6 @@ func TestValidateJavaVuserVMParametersUsesValueFreeStructuralErrors(t *testing.T
 	for _, category := range []string{
 		"reserved_property",
 		"template_forbidden",
-		"sensitive_property",
 		"agent_hook",
 		"classpath_override",
 		"argument_file",
@@ -167,6 +166,9 @@ func TestValidateJavaVuserVMParametersUsesValueFreeStructuralErrors(t *testing.T
 		if !strings.Contains(joined, category) {
 			t.Fatalf("issues = %v, want category %q", issues, category)
 		}
+	}
+	if strings.Contains(joined, "sensitive_property") {
+		t.Fatalf("issues = %v, literal -D properties should be permitted in DSL", issues)
 	}
 	if strings.Contains(joined, secret) || strings.Contains(joined, "literal-sensitive-value") ||
 		strings.Contains(joined, "java_service_password") {
@@ -185,9 +187,8 @@ func TestTrustedImportValidationAllowsOnlySensitiveJavaVMArguments(t *testing.T)
 			Params: map[string]any{"method": "action"},
 		}},
 	}
-	if issues := ValidateScriptIssues(script); len(issues) == 0 ||
-		!strings.Contains(strings.Join(issues, "\n"), "sensitive_property") {
-		t.Fatalf("ordinary validation issues = %v", issues)
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("ordinary validation issues = %v, want none for literal -D property", issues)
 	}
 	if issues := ValidateScriptIssuesWithPreservedImportCredentials(script); len(issues) != 0 {
 		t.Fatalf("trusted import validation issues = %v", issues)
@@ -195,6 +196,10 @@ func TestTrustedImportValidationAllowsOnlySensitiveJavaVMArguments(t *testing.T)
 
 	script.Config.JavaVuser.AdditionalVMParameters =
 		append(script.Config.JavaVuser.AdditionalVMParameters, "-javaagent:/tmp/agent.jar")
+	if issues := ValidateScriptIssues(script); len(issues) == 0 ||
+		!strings.Contains(strings.Join(issues, "\n"), "agent_hook") {
+		t.Fatalf("ordinary structural validation issues = %v", issues)
+	}
 	if issues := ValidateScriptIssuesWithPreservedImportCredentials(script); len(issues) == 0 ||
 		!strings.Contains(strings.Join(issues, "\n"), "agent_hook") {
 		t.Fatalf("trusted structural validation issues = %v", issues)

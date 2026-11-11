@@ -14,7 +14,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
-func TestBrowserRecordingSessionSnapshotsRedactCredentialURLs(t *testing.T) {
+func TestBrowserRecordingSessionSnapshotsPreserveByDefaultAndRedactWhenScrubSensitive(t *testing.T) {
 	session := &BrowserRecordingSession{
 		StartURL:   "https://user:start-password@app.example/login?access_token=start-secret",
 		CurrentURL: "https://app.example/callback?session_id=current-secret",
@@ -24,13 +24,28 @@ func TestBrowserRecordingSessionSnapshotsRedactCredentialURLs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, leaked := range []string{"start-password", "start-secret", "current-secret"} {
-		if strings.Contains(string(encoded), leaked) {
-			t.Fatalf("browser recording snapshot leaked %q: %s", leaked, encoded)
+	for _, preserved := range []string{"start-password", "start-secret", "current-secret"} {
+		if !strings.Contains(string(encoded), preserved) {
+			t.Fatalf("default browser recording snapshot scrubbed %q: %s", preserved, encoded)
 		}
 	}
-	if !strings.Contains(string(encoded), scrub.Redacted) {
-		t.Fatalf("browser recording snapshot has no redaction marker: %s", encoded)
+	if strings.Contains(string(encoded), scrub.Redacted) {
+		t.Fatalf("default browser recording snapshot unexpectedly redacted: %s", encoded)
+	}
+
+	session.ScrubSensitive = true
+	scrubbedSnapshot := session.summary()
+	scrubbedEncoded, err := json.Marshal(scrubbedSnapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"start-password", "start-secret", "current-secret"} {
+		if strings.Contains(string(scrubbedEncoded), leaked) {
+			t.Fatalf("scrub_sensitive browser recording snapshot leaked %q: %s", leaked, scrubbedEncoded)
+		}
+	}
+	if !strings.Contains(string(scrubbedEncoded), scrub.Redacted) {
+		t.Fatalf("scrub_sensitive browser recording snapshot has no redaction marker: %s", scrubbedEncoded)
 	}
 	if !strings.Contains(session.StartURL, "start-password") || !strings.Contains(session.CurrentURL, "current-secret") {
 		t.Fatal("snapshot redaction mutated the live browser navigation state")
@@ -82,7 +97,7 @@ func TestReconcileBrowserRecordingArtifactCountsUsesFinalArtifact(t *testing.T) 
 	}
 }
 
-func TestBrowserRecordingBroadcastScrubsSensitiveStepAndCarriesScope(t *testing.T) {
+func TestBrowserRecordingSnapshotPreservesByDefaultWhileSharedBroadcastScrubs(t *testing.T) {
 	hub := newTestEventSink()
 	manager := NewBrowserRecordingManager(hub)
 	session := &BrowserRecordingSession{
@@ -99,6 +114,15 @@ func TestBrowserRecordingBroadcastScrubsSensitiveStepAndCarriesScope(t *testing.
 		Thumbnail: "data:image/jpeg;base64,sensitive-screen-pixels",
 		Element:   &selector.ElementMetadata{Name: "password", Type: "password"},
 	}
+	session.final = &recbrowser.Session{Steps: []recbrowser.Step{*step}}
+
+	snapshot := session.fullSnapshot()
+	if !strings.Contains(snapshot.StartURL, "password@app.example") || !strings.Contains(snapshot.StartURL, "start-token") {
+		t.Fatalf("default browser snapshot scrubbed StartURL: %q", snapshot.StartURL)
+	}
+	if len(snapshot.Steps) != 1 || snapshot.Steps[0].Value != "short-password" || !strings.Contains(snapshot.Steps[0].URL, "step-token") {
+		t.Fatalf("default browser snapshot scrubbed step: %+v", snapshot.Steps)
+	}
 
 	manager.broadcast("browser_recording_step", session, map[string]any{"step": step})
 	select {
@@ -109,14 +133,20 @@ func TestBrowserRecordingBroadcastScrubsSensitiveStepAndCarriesScope(t *testing.
 		encoded := string(message.payload)
 		for _, leaked := range []string{"password@app.example", "start-token", "short-password", "step-token", "sensitive-screen-pixels"} {
 			if strings.Contains(encoded, leaked) {
-				t.Fatalf("browser broadcast leaked %q: %s", leaked, encoded)
+				t.Fatalf("shared browser broadcast leaked %q: %s", leaked, encoded)
 			}
 		}
 		if !strings.Contains(encoded, scrub.Redacted) {
-			t.Fatalf("browser broadcast has no redaction marker: %s", encoded)
+			t.Fatalf("shared browser broadcast has no redaction marker: %s", encoded)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for browser recording broadcast")
+	}
+
+	session.ScrubSensitive = true
+	scrubbedResponse := SanitizeBrowserRecordingSessionForResponse(session.fullSnapshot())
+	if strings.Contains(scrubbedResponse.StartURL, "start-token") || strings.Contains(scrubbedResponse.Steps[0].Value, "short-password") {
+		t.Fatalf("scrub_sensitive browser response leaked credentials: %+v", scrubbedResponse)
 	}
 }
 

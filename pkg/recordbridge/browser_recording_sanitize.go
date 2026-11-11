@@ -26,6 +26,7 @@ func SanitizeBrowserRecordingSessionForResponse(session *BrowserRecordingSession
 		StartURL:             scrub.ValueURL(session.StartURL, policy),
 		CaptureHAR:           session.CaptureHAR,
 		CaptureHovers:        session.CaptureHovers,
+		ScrubSensitive:       session.ScrubSensitive,
 		StartedAt:            session.StartedAt,
 		StopReason:           session.StopReason,
 		Error:                scrub.Value(session.Error, policy),

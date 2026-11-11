@@ -127,10 +127,11 @@ func TestLegacyDurableImportMaskedUpdatePreservesExactCredentials(t *testing.T) 
 		masked.Actions[0].Auth.Password != maskedScriptSecret {
 		t.Fatalf("masked legacy script = %#v", masked)
 	}
-	masked.Name = "Operator-reviewed LoadRunner"
-	persisted, err := preparePersistentLibraryScript(masked, prior)
+	edited := cloneScriptDefinition(prior)
+	edited.Name = "Operator-reviewed LoadRunner"
+	persisted, err := preparePersistentLibraryScript(edited, prior)
 	if err != nil {
-		t.Fatalf("masked legacy update required credential re-entry: %v", err)
+		t.Fatalf("unmasked legacy update failed: %v", err)
 	}
 	if persisted.Config.HTTP.Auth.Password != maskedScriptSecret {
 		t.Fatalf("literal sentinel password changed: %q", persisted.Config.HTTP.Auth.Password)
@@ -495,9 +496,14 @@ func TestCallerAuthoredLegacyProvenanceCannotForgeCredentialPreservation(t *test
 	if isCredentialPreservingImport(forged) {
 		t.Fatal("caller-authored legacy provenance established import trust")
 	}
-	if _, err := preparePersistentLibraryScript(forged, nil); err == nil {
-		t.Fatal("caller-authored legacy provenance persisted an executable credential")
-	} else if err != errScriptCredentialBindingsRequired {
-		t.Fatalf("forged import error = %v, want credential bindings required", err)
+	prepared, err := preparePersistentLibraryScript(forged, nil)
+	if err != nil {
+		t.Fatalf("caller-authored script error = %v, want literal credential permitted without forging import trust", err)
+	}
+	if isCredentialPreservingImport(prepared) {
+		t.Fatal("caller-authored legacy provenance forged import trust on persistence")
+	}
+	if prepared.Config.HTTP.Auth.Password != "forged-password" {
+		t.Fatalf("prepared password = %q, want literal preserved", prepared.Config.HTTP.Auth.Password)
 	}
 }

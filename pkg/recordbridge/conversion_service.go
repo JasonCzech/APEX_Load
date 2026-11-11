@@ -1106,7 +1106,7 @@ func (s *Service) HandlePreviewBrowserRecordingConversion(w http.ResponseWriter,
 		if responseScripts, ok := response["scripts"].([]any); ok && httpScriptIndex < len(responseScripts) {
 			response["http_script"] = responseScripts[httpScriptIndex]
 		} else {
-			response["http_script"] = importreview.MaskScriptSecrets(httpScript)
+			response["http_script"] = importreview.ImportResponseRawScriptValue(httpScript)
 		}
 		response["http_parameterization"] = importreview.FilterTrustedImportParameterization(httpParam, []*dsl.Script{httpScript})
 		if generated.Preflight != nil {

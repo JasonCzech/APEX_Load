@@ -1907,3 +1907,86 @@ func secretAPIRequestAsSubject(t *testing.T, server *Server, method, path, subje
 	server.mux.ServeHTTP(response, req)
 	return response
 }
+
+func TestCloneDraftSourceMigrationSkipsPlaceholdersAndMigratesRecoverableSecret(t *testing.T) {
+	server, records, managed, projectID := newProjectSecretAPIServer(t)
+	enableSourceSecretMigration(t, server)
+
+	mixed := &dsl.Script{
+		ID:        "mixed-real-and-placeholder-script",
+		Name:      "Mixed Real And Placeholder Script",
+		Version:   "1.0.0",
+		Protocol:  "http",
+		ProjectID: projectID,
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.synthetic.example.test"},
+		Actions: []dsl.Action{{
+			Name:   "CallMixed",
+			Type:   "request",
+			Method: http.MethodPost,
+			Target: "/auth",
+			Headers: map[string]string{
+				"Authorization": "Bearer RealToken12345",
+				"X-Api-Key":     "***",
+			},
+			Auth: &dsl.AuthConfig{
+				Type:     "basic",
+				Username: "svc-user",
+				Password: "[redacted]",
+			},
+		}},
+	}
+	if err := records.SaveScript(mixed); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.runner.reloadStoredScripts(); err != nil {
+		t.Fatal(err)
+	}
+
+	clone := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/"+mixed.ID+"/clone-draft", map[string]any{
+		"import_detected_credential_values": true,
+	})
+	if clone.Code != http.StatusOK || strings.Contains(clone.Body.String(), "RealToken12345") {
+		t.Fatalf("clone-draft with mixed real+placeholder = %d body=%s", clone.Code, clone.Body.String())
+	}
+	var payload struct {
+		SessionID        string                     `json:"source_secret_session_id"`
+		SourceAvailable  []string                   `json:"source_value_requirement_ids"`
+		Requirements     []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(clone.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.SessionID == "" || len(payload.SourceAvailable) != 1 {
+		t.Fatalf("clone payload = %+v body=%s, want 1 recoverable requirement in session", payload, clone.Body.String())
+	}
+	var authReqID string
+	for _, req := range payload.Requirements {
+		if req.Path == "/actions/0/headers/Authorization" {
+			if !req.SourceValueAvailable {
+				t.Fatalf("Authorization requirement SourceValueAvailable = false, want true: %+v", req)
+			}
+			authReqID = req.ID
+		} else if req.SourceValueAvailable {
+			t.Fatalf("placeholder requirement %s unexpectedly marked SourceValueAvailable: %+v", req.Path, req)
+		}
+	}
+	if authReqID == "" {
+		t.Fatalf("missing Authorization requirement in %+v", payload.Requirements)
+	}
+
+	migrate := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{
+		"project_id":               projectID,
+		"source_secret_session_id": payload.SessionID,
+		"secrets": []map[string]string{{
+			"requirement_id": authReqID,
+			"secret_name":    "MIGRATED_BEARER_TOKEN",
+		}},
+	})
+	if migrate.Code != http.StatusCreated {
+		t.Fatalf("migrate = %d body=%s, want 201", migrate.Code, migrate.Body.String())
+	}
+	got, _, err := managed.Get(context.Background(), projectID, "MIGRATED_BEARER_TOKEN")
+	if err != nil || got != "RealToken12345" {
+		t.Fatalf("migrated secret = %q, err=%v, want RealToken12345", got, err)
+	}
+}

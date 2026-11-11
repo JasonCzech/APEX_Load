@@ -325,7 +325,8 @@ func (s *Service) HandleGetBrowserRecording(w http.ResponseWriter, r *http.Reque
 		s.writeError(w, http.StatusForbidden, "raw browser recording view requires editor, project_admin, or system_admin access")
 		return
 	}
-	if !raw {
+	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
+	if scrubRequested || (!raw && (session.ScrubSensitive || !s.canExportRaw(r, session.ProjectID))) {
 		session = SanitizeBrowserRecordingSessionForResponse(session)
 		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
 	} else {
@@ -337,8 +338,11 @@ func (s *Service) HandleGetBrowserRecording(w http.ResponseWriter, r *http.Reque
 func (s *Service) HandleListBrowserRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := s.authorizedProject(r, strings.TrimSpace(r.URL.Query().Get("project_id")))
 	sessions := s.Recording.List(projectID)
+	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
 	for index := range sessions {
-		sessions[index] = SanitizeBrowserRecordingSessionForResponse(sessions[index])
+		if sessions[index] != nil && (scrubRequested || sessions[index].ScrubSensitive || !s.canExportRaw(r, sessions[index].ProjectID)) {
+			sessions[index] = SanitizeBrowserRecordingSessionForResponse(sessions[index])
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "count": len(sessions)})
 }

@@ -974,19 +974,17 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateJavaVMParameterSafety(script, isCredentialPreservingImport(script)); err != nil {
+	if err := validateJavaVMParameterSafety(script, true); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	var importAttestationClaim *importDraftAttestationClaim
 	if isCredentialPreservingImport(script) {
-		fingerprint, err := fingerprintImportDraftCredentials(script)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to validate credential-preserving import draft")
-			return
-		}
-		if fingerprint.HasRawCredentials ||
-			importDraftAttestationToken(script) != "" {
+		if importDraftAttestationToken(script) != "" {
+			requestedName := script.Name
+			requestedFolder := cloneStringPtr(script.FolderID)
+			requestedProject := script.ProjectID
+			var err error
 			importAttestationClaim, err = s.claimImportDraftAttestation(r, script)
 			if err != nil {
 				if writeImportDraftBusy(w, err) {
@@ -994,66 +992,63 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 				}
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
-			}
-			defer func() {
-				if importAttestationClaim != nil {
-					s.releaseImportDraftAttestation(importAttestationClaim)
+			} else {
+				defer func() {
+					if importAttestationClaim != nil {
+						s.releaseImportDraftAttestation(importAttestationClaim)
+					}
+				}()
+				if importAttestationClaim.Script == nil {
+					writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+					return
 				}
-			}()
-			if importAttestationClaim.Script == nil {
-				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
-				return
-			}
-			script = importAttestationClaim.Script
-			script, err = replaceUnavailableImportCredentialValues(script)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			script, err = preparePersistentImportedLibraryScript(
-				script,
-				nil,
-				importAttestationClaim.Profile,
-			)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			if strings.TrimSpace(script.ID) == "" {
-				script.ID = protectedImportCreateScriptID(
+				script = importAttestationClaim.Script
+				if strings.TrimSpace(requestedName) != "" {
+					script.Name = requestedName
+				}
+				script.FolderID = requestedFolder
+				script.ProjectID = requestedProject
+				script, err = replaceUnavailableImportCredentialValues(script)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				script, err = preparePersistentImportedLibraryScript(
+					script,
+					nil,
 					importAttestationClaim.Profile,
-					importAttestationClaim.Token,
 				)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, err.Error())
+					return
+				}
+				if strings.TrimSpace(script.ID) == "" {
+					script.ID = protectedImportCreateScriptID(
+						importAttestationClaim.Profile,
+						importAttestationClaim.Token,
+					)
+				}
 			}
+		} else if scriptHasUnavailableImportCredentialValues(script) {
+			writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+			return
 		} else {
 			s.discardImportDraftAttestation(r, script)
-			script, err = preparePersistentLibraryScript(script, nil)
+			sourceProfile := ""
+			if script.Metadata != nil && script.Metadata.Import != nil {
+				sourceProfile = script.Metadata.Import.Source
+			}
+			var err error
+			script, err = preparePersistentImportedLibraryScript(script, nil, sourceProfile)
 			if err != nil {
 				writeError(w, http.StatusBadRequest, err.Error())
 				return
 			}
 		}
 	} else {
-		// Always inspect the disclosure-safe projection. A draft that contains
-		// only an inline credential (and no literal sentinel) must receive the
-		// same guided binding response as a previously redacted import.
-		projected := maskScriptSecrets(script)
-		if projected == nil {
-			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-			return
-		}
-		if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-			// Requirements and opaque IDs describe the exact safe representation
-			// consumed by the binding endpoint; plaintext never appears in the error.
-			writeSecretBindingsRequired(w, unresolved)
-			return
-		}
-		// Save the caller's executable object, not the disclosure projection: a
-		// stored script must always be runnable. Non-executable source-review
-		// evidence is still scrubbed before the durable write by
-		// sanitizePersistentImportReviewSurfaces, which every persistence path
-		// applies independently of masking.
-		if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+		var err error
+		script, err = s.runner.prepareLibraryScript(script, nil)
+		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1164,8 +1159,7 @@ func credentialPreservingImportClaimsAttestation(script *dsl.Script) bool {
 	if importDraftAttestationToken(script) != "" {
 		return true
 	}
-	fingerprint, err := fingerprintImportDraftCredentials(script)
-	return err == nil && fingerprint.HasRawCredentials
+	return scriptHasUnavailableImportCredentialValues(script)
 }
 
 func (s *Server) handleListScripts(w http.ResponseWriter, r *http.Request) {

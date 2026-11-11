@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
@@ -576,22 +578,50 @@ func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) 
 	if !decodeOptionalJSONBodyAllowingUnknownFields(w, r, &req) {
 		return
 	}
-	rawDraft := cloneScriptDefinition(stored.Script)
-	rawDraft.ID = ""
-	rawDraft.RefKey = ""
-	rawDraft.CreatedAt = time.Time{}
-	rawDraft.UpdatedAt = time.Time{}
-	rawDraft.Name = "Copy of " + strings.TrimSpace(rawDraft.Name)
-	masked := maskScriptSecrets(rawDraft)
+	baseDraft := cloneScriptDefinition(stored.Script)
+	if baseDraft == nil {
+		writeError(w, http.StatusInternalServerError, "failed to create safe script draft")
+		return
+	}
+	stripImportDraftAttestation(baseDraft)
+	baseDraft.ID = ""
+	baseDraft.RefKey = ""
+	baseDraft.CreatedAt = time.Time{}
+	baseDraft.UpdatedAt = time.Time{}
+	baseDraft.Name = "Copy of " + strings.TrimSpace(baseDraft.Name)
+	masked := maskScriptSecrets(baseDraft)
 	if masked == nil {
 		writeError(w, http.StatusInternalServerError, "failed to create safe script draft")
 		return
 	}
 	requirements := discoverSecretBindingRequirements(masked, 0)
+	if !req.ImportDetectedCredentialValues {
+		if len(requirements) > 0 {
+			rawRoot, rawErr := importreview.ScriptAsJSONValue(baseDraft)
+			projRoot, projErr := importreview.ScriptAsJSONValue(masked)
+			if rawErr == nil && projErr == nil {
+				requirements = annotateSingleScriptSecretBindingRequirements(requirements, 0, rawRoot, projRoot, true)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"script":                       baseDraft,
+			"secret_binding_requirements":  requirements,
+			"source_secret_session_id":     "",
+			"source_value_requirement_ids": []string{},
+			"secret_provider_capabilities": s.projectSecretCapabilities(stored.ProjectID),
+		})
+		return
+	}
 	sessionID := ""
 	sourceAvailable := []string{}
-	if req.ImportDetectedCredentialValues && len(requirements) > 0 {
-		values := sourceValuesForMaskedRequirements(rawDraft, masked, requirements)
+	editable := baseDraft
+	if len(requirements) > 0 {
+		rawRoot, rawErr := importreview.ScriptAsJSONValue(baseDraft)
+		projRoot, projErr := importreview.ScriptAsJSONValue(masked)
+		if rawErr == nil && projErr == nil {
+			requirements = annotateSingleScriptSecretBindingRequirements(requirements, 0, rawRoot, projRoot, true)
+		}
+		values := sourceValuesForMaskedRequirements(baseDraft, masked, requirements)
 		for requirementID := range values {
 			sourceAvailable = append(sourceAvailable, requirementID)
 		}
@@ -613,18 +643,69 @@ func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) 
 				_, requirements[index].SourceValueAvailable = available[requirements[index].ID]
 			}
 		}
-	}
-	bindings := make([]secretBindingSelection, 0, len(requirements))
-	for _, requirement := range requirements {
-		bindings = append(bindings, secretBindingSelection{
-			RequirementID: requirement.ID,
-			SecretName:    requirement.SuggestedName,
-		})
-	}
-	editable, remaining, err := applySecretBindings(masked, 0, bindings)
-	if err != nil || len(remaining) != 0 {
-		writeError(w, http.StatusInternalServerError, "failed to apply safe secret references to cloned script")
-		return
+		var linearBindings []secretBindingSelection
+		var nonLinearBindings []SecretBindingRequirement
+		for _, requirement := range requirements {
+			if requirement.RebindUnavailableReason == "" {
+				linearBindings = append(linearBindings, secretBindingSelection{
+					RequirementID: requirement.ID,
+					SecretName:    requirement.SuggestedName,
+				})
+			} else {
+				nonLinearBindings = append(nonLinearBindings, requirement)
+			}
+		}
+		if len(linearBindings) > 0 {
+			resolved, _, bindErr := applyPreservedRedactedSecretBindings(editable, 0, linearBindings)
+			if bindErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to apply safe secret references to cloned script")
+				return
+			}
+			editable = resolved
+		}
+		if len(nonLinearBindings) > 0 && rawErr == nil && projErr == nil {
+			editRoot, editErr := importreview.ScriptAsJSONValue(editable)
+			if editErr != nil {
+				writeError(w, http.StatusInternalServerError, "failed to apply safe secret references to cloned script")
+				return
+			}
+			replacements := map[string]map[int]string{}
+			for _, requirement := range nonLinearBindings {
+				if replacements[requirement.Path] == nil {
+					replacements[requirement.Path] = map[int]string{}
+				}
+				replacements[requirement.Path][requirement.Occurrence] = "{{secret." + requirement.SuggestedName + "}}"
+			}
+			modified := false
+			for ptr, byOccurrence := range replacements {
+				rawVal, rawOK := importreview.JsonPointerString(rawRoot, ptr)
+				projVal, projOK := importreview.JsonPointerString(projRoot, ptr)
+				if !rawOK || !projOK {
+					continue
+				}
+				if vals, ok := importreview.ExtractStructurallyProjectedJSONRedactions(rawVal, projVal); !ok || len(vals) == 0 {
+					continue
+				}
+				alignedProj := importreview.ProjectedMessageIDsAsRecorded(rawVal, projVal)
+				replaced, _ := applySecretBindingReplacements(alignedProj, "", map[string]map[int]string{"": byOccurrence}).(string)
+				if importreview.SetJSONPointerStringValue(editRoot, ptr, replaced) {
+					modified = true
+				}
+			}
+			if modified {
+				encoded, marshalErr := json.Marshal(editRoot)
+				if marshalErr != nil {
+					writeError(w, http.StatusInternalServerError, "failed to apply safe secret references to cloned script")
+					return
+				}
+				var decoded dsl.Script
+				if err := json.Unmarshal(encoded, &decoded); err != nil {
+					writeError(w, http.StatusInternalServerError, "failed to apply safe secret references to cloned script")
+					return
+				}
+				editable = &decoded
+			}
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script":                       editable,
@@ -1426,22 +1507,28 @@ func sourceValuesForMaskedRequirements(rawScript, maskedScript *dsl.Script, requ
 	segmentsByPath := make(map[string][]string)
 	result := make(map[string]string)
 	for _, requirement := range requirements {
-		raw, rawOK := jsonPointerStringValue(rawValue, requirement.Path)
-		masked, maskedOK := jsonPointerStringValue(maskedValue, requirement.Path)
-		if !rawOK || !maskedOK {
-			continue
-		}
 		segments, cached := segmentsByPath[requirement.Path]
 		if !cached {
-			segments, _ = extractProjectedRedactions(raw, masked)
+			raw, rawOK := jsonPointerStringValue(rawValue, requirement.Path)
+			masked, maskedOK := jsonPointerStringValue(maskedValue, requirement.Path)
+			if rawOK && maskedOK {
+				segments, _ = extractProjectedRedactions(raw, masked)
+			} else if matched, scalarValues := importreview.NonStringScalarProjectedRedaction(rawValue, maskedValue, requirement.Path); matched {
+				segments = scalarValues
+			}
 			segmentsByPath[requirement.Path] = segments
 		}
 		if requirement.Occurrence < 0 || requirement.Occurrence >= len(segments) {
 			continue
 		}
-		if value := segments[requirement.Occurrence]; value != "" && value != maskedScriptSecret {
-			result[requirement.ID] = value
+		value := segments[requirement.Occurrence]
+		if _, recoverable := credentialpolicy.RecoverableSourceCredentialValue(value); !recoverable {
+			continue
 		}
+		if len(value) > projectSecretMaxValueBytes {
+			continue
+		}
+		result[requirement.ID] = value
 	}
 	return result
 }

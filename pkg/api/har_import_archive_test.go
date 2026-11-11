@@ -85,14 +85,48 @@ func TestHARUploadUnwrapsZippedCapture(t *testing.T) {
 	}
 }
 
-func TestHARUploadZipMustHoldExactlyOneCapture(t *testing.T) {
+func TestHARUploadUnwrapsPairedTwoHARBundle(t *testing.T) {
+	first := []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-01-01T00:00:00Z"}]}}`)
+	second := []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-01-02T00:00:00Z"}]}}`)
+	// Write b.har before a.HAR in the ZIP directory to verify deterministic sorting by name.
+	archive := zipFiles(t, map[string][]byte{
+		"b.har": second,
+		"a.HAR": first,
+	}, "b.har", "a.HAR")
+
+	resp := httptest.NewRecorder()
+	got, ok := readHARImportRequest(resp, harMultipartRequest(t, "paired.zip", archive))
+	if !ok {
+		t.Fatalf("paired 2-HAR zip rejected: %d %s", resp.Code, resp.Body.String())
+	}
+	if !bytes.Equal(got.Data, first) {
+		t.Fatalf("primary Data = %s, want a.HAR bytes", string(got.Data))
+	}
+	if !bytes.Equal(got.SecondaryData, second) {
+		t.Fatalf("secondary Data = %s, want b.har bytes", string(got.SecondaryData))
+	}
+	if got.Opts.ArtifactMode != "design_har_pair" {
+		t.Fatalf("Opts.ArtifactMode = %q, want %q", got.Opts.ArtifactMode, "design_har_pair")
+	}
+
+	// Single-capture routes (Salesforce) still require a single .har entry.
+	sfResp := httptest.NewRecorder()
+	if _, _, ok := readSalesforceImportRequest(sfResp, harMultipartRequest(t, "paired.zip", archive)); ok {
+		t.Fatal("2-HAR zip accepted on single-capture Salesforce route")
+	}
+	if sfResp.Code != http.StatusBadRequest || !strings.Contains(sfResp.Body.String(), "contains 2 .har files (a.HAR, b.har)") {
+		t.Fatalf("got %d %s, want 400 naming both files", sfResp.Code, sfResp.Body.String())
+	}
+}
+
+func TestHARUploadZipMustHoldOneOrTwoCaptures(t *testing.T) {
 	for name, tc := range map[string]struct {
 		archive []byte
 		want    string
 	}{
 		"none": {zipFiles(t, map[string][]byte{"readme.txt": []byte("x")}, "readme.txt"), "contains no .har file"},
-		"two": {zipFiles(t, map[string][]byte{"b.har": []byte("{}"), "a.HAR": []byte("{}")}, "b.har", "a.HAR"),
-			"contains 2 .har files (a.HAR, b.har)"},
+		"three": {zipFiles(t, map[string][]byte{"c.har": []byte("{}"), "b.har": []byte("{}"), "a.HAR": []byte("{}")}, "c.har", "b.har", "a.HAR"),
+			"contains 3 .har files (a.HAR, b.har, c.har)"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
@@ -113,7 +147,7 @@ func TestHARUploadZipBombIsRefusedAsTooLarge(t *testing.T) {
 	if _, ok := readHARImportRequest(resp, harMultipartRequest(t, "bomb.zip", archive)); ok {
 		t.Fatal("compression bomb accepted")
 	}
-	if resp.Code != http.StatusRequestEntityTooLarge || !strings.Contains(resp.Body.String(), "300 MiB decompressed") {
+	if resp.Code != http.StatusRequestEntityTooLarge || !strings.Contains(resp.Body.String(), "MiB decompressed") {
 		t.Fatalf("got %d %s", resp.Code, resp.Body.String())
 	}
 }

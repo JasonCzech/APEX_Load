@@ -45485,6 +45485,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: scrub
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Browser Recorder
       x-handler: handleListBrowserRecordings
@@ -45524,6 +45530,8 @@ paths:
                   type: string
                 quic_mode:
                   type: string
+                scrub_sensitive:
+                  type: boolean
                 section:
                   type: string
                 sidebar:
@@ -45710,6 +45718,12 @@ paths:
           required: true
           schema:
             type: string
+        - name: scrub
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Browser Recorder
       x-handler: handleGetBrowserRecording
@@ -66833,6 +66847,8 @@ paths:
                                 type: string
                               client_id:
                                 type: string
+                              client_secret:
+                                type: string
                               client_secret_ref:
                                 type: string
                               mode:
@@ -66843,7 +66859,6 @@ paths:
                                 type: string
                             required:
                               - client_id
-                              - client_secret_ref
                               - mode
                               - token_url
                             nullable: true
@@ -246598,6 +246613,8 @@ paths:
                                   type: string
                                 client_id:
                                   type: string
+                                client_secret:
+                                  type: string
                                 client_secret_ref:
                                   type: string
                                 mode:
@@ -257338,6 +257355,8 @@ paths:
                                 authentication_method:
                                   type: string
                                 client_id:
+                                  type: string
+                                client_secret:
                                   type: string
                                 client_secret_ref:
                                   type: string
@@ -375293,12 +375312,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
@@ -389820,12 +389833,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
-        "503":
-          description: Service Unavailable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
@@ -396987,6 +396994,8 @@ paths:
                                   type: string
                                 client_id:
                                   type: string
+                                client_secret:
+                                  type: string
                                 client_secret_ref:
                                   type: string
                                 mode:
@@ -399685,6 +399694,8 @@ paths:
                                 authentication_method:
                                   type: string
                                 client_id:
+                                  type: string
+                                client_secret:
                                   type: string
                                 client_secret_ref:
                                   type: string

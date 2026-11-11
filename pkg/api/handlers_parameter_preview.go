@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
@@ -131,10 +130,5 @@ func (s *Server) handlePreviewParameter(w http.ResponseWriter, r *http.Request) 
 	for occurrence := 0; occurrence < req.Occurrence; occurrence++ {
 		value, resolved = runtime.ResolveNamed(req.Name)
 	}
-	selected := byName[strings.ToLower(strings.TrimSpace(req.Name))]
-	masked := credential.SensitiveName(selected.Name) || credential.SensitiveName(selected.Column)
-	if masked {
-		value = credential.Redacted
-	}
-	writeJSON(w, http.StatusOK, parameterPreviewResponse{Value: value, Resolved: resolved, Masked: masked, Note: "Engine preview for one isolated virtual user in an unsharded dataset. Time and unseeded random values vary; concurrent row reservations and earlier each-occurrence references are not simulated."})
+	writeJSON(w, http.StatusOK, parameterPreviewResponse{Value: value, Resolved: resolved, Masked: false, Note: "Engine preview for one isolated virtual user in an unsharded dataset. Time and unseeded random values vary; concurrent row reservations and earlier each-occurrence references are not simulated."})
 }

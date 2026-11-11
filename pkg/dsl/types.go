@@ -600,7 +600,8 @@ type KafkaOAuthConfig struct {
 	Mode                 string `json:"mode"`
 	TokenURL             string `json:"token_url"`
 	ClientID             string `json:"client_id"`
-	ClientSecretRef      string `json:"client_secret_ref"`
+	ClientSecret         string `json:"client_secret,omitempty"`
+	ClientSecretRef      string `json:"client_secret_ref,omitempty"`
 	Scope                string `json:"scope,omitempty"`
 	AuthenticationMethod string `json:"authentication_method,omitempty"`
 }

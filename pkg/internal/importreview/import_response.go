@@ -1075,13 +1075,13 @@ func FilterTrustedImportParameterization(input *paramize.Result, scriptValues ..
 			found := *suggestion.FoundInAction
 			cloned.FoundInAction = &found
 		}
-
+		cloned.Extractor = nil
+		cloned.Parameter = nil
 		for index := range cloned.Locations {
 			if len(cloned.Locations[index].AuraRoute) > 0 {
 				cloned.Locations[index].SearchText = ""
 				cloned.LiteralValue = ""
 				cloned.SampleValue = ""
-				cloned.Parameter = nil
 				cloned.Rationale = SafeParameterizationRationale(cloned)
 			}
 		}
@@ -1126,7 +1126,7 @@ func ImportParameterizationScripts(values ...any) []*dsl.Script {
 		if preProjected, ok := value.(ProjectedImportScripts); ok {
 			projected = preProjected.Value
 		} else {
-			projected = MaskScriptResponseValue(value)
+			projected = ImportResponseRawScriptValue(value)
 		}
 		nodes := make([]map[string]any, 0)
 		CollectScriptJSONNodes(projected, &nodes)

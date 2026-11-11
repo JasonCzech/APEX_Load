@@ -93,8 +93,7 @@ func prepareAuthoringSessionDraftWithImportTrust(
 	trustedImport bool,
 	options importreview.PreservedImportEditOptions,
 ) (*dsl.Script, bool) {
-	preserveImportedCredentials := trustedImport || isCredentialPreservingImport(prior)
-	if err := validateJavaVMParameterSafety(draft, preserveImportedCredentials); err != nil {
+	if err := validateJavaVMParameterSafety(draft, true); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, false
 	}
@@ -122,16 +121,8 @@ func prepareAuthoringSessionDraftWithImportTrust(
 		}
 		return projected, true
 	}
-	projected := maskScriptSecrets(draft)
-	if projected == nil {
-		writeError(w, http.StatusBadRequest, "failed to project authoring draft for secret binding")
-		return nil, false
-	}
-	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		writeSecretBindingsRequired(w, unresolved)
-		return nil, false
-	}
-	if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
+	projected, err := importreview.PreparePersistentLibraryScriptWithOptions(draft, prior, options)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return nil, false
 	}
@@ -167,12 +158,7 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 	}
 	var importAttestationClaim *importDraftAttestationClaim
 	if isCredentialPreservingImport(&req.Draft) {
-		fingerprint, err := fingerprintImportDraftCredentials(&req.Draft)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "failed to validate credential-preserving import draft")
-			return
-		}
-		if fingerprint.HasRawCredentials {
+		if importDraftAttestationToken(&req.Draft) != "" {
 			if req.IdempotencyKey != "" {
 				replayed, replayErr := s.replayCredentialPreservingAuthoringSessionCreate(
 					w,
@@ -187,27 +173,32 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 					return
 				}
 			}
+			var err error
 			importAttestationClaim, err = s.claimImportDraftAttestationWithJavaReview(r, &req.Draft, true)
 			if err != nil {
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
-			}
-			defer func() {
-				if importAttestationClaim != nil {
-					s.releaseImportDraftAttestation(importAttestationClaim)
+			} else {
+				defer func() {
+					if importAttestationClaim != nil {
+						s.releaseImportDraftAttestation(importAttestationClaim)
+					}
+				}()
+				if importAttestationClaim.Script == nil {
+					writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+					return
 				}
-			}()
-			if importAttestationClaim.Script == nil {
-				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
-				return
+				req.Draft = *importAttestationClaim.Script
+				safeCandidate, replaceErr := replaceUnavailableImportCredentialValues(&req.Draft)
+				if replaceErr != nil {
+					writeError(w, http.StatusBadRequest, replaceErr.Error())
+					return
+				}
+				req.Draft = *safeCandidate
 			}
-			req.Draft = *importAttestationClaim.Script
-			safeCandidate, replaceErr := replaceUnavailableImportCredentialValues(&req.Draft)
-			if replaceErr != nil {
-				writeError(w, http.StatusBadRequest, replaceErr.Error())
-				return
-			}
-			req.Draft = *safeCandidate
+		} else if scriptHasUnavailableImportCredentialValues(&req.Draft) {
+			writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+			return
 		} else {
 			s.discardImportDraftAttestation(r, &req.Draft)
 		}
@@ -238,7 +229,7 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		Name:           authoringSessionName(req.Name, &req.Draft),
 		Status:         normalizeAuthoringSessionStatus(req.Status),
 		Draft:          &req.Draft,
-		ReviewState:    cloneReviewState(req.ReviewState),
+		ReviewState:    projectAuthoringReviewState(req.ReviewState),
 		CreatedAt:      now,
 		UpdatedAt:      now,
 		LastAccessedAt: now,
@@ -331,7 +322,7 @@ func (s *Server) replayCredentialPreservingAuthoringSessionCreate(
 	}
 	sessionSource := normalizeAuthoringSessionSource(req.Source)
 	markImportedJavaVuserAuthoringDraft(safeDraft, sessionSource)
-	reviewState := cloneReviewState(req.ReviewState)
+	reviewState := projectAuthoringReviewState(req.ReviewState)
 	delete(reviewState, authoringSessionIdempotencyReviewKey)
 	candidate := &storage.AuthoringSession{
 		ID:          authoringSessionIdempotentID(safeDraft.ProjectID, req.IdempotencyKey),
@@ -458,7 +449,7 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 	existing.Name = authoringSessionName(firstNonEmpty(req.Name, existing.Name), &req.Draft)
 	existing.Status = normalizeAuthoringSessionStatus(firstNonEmpty(req.Status, existing.Status))
 	existing.Draft = &req.Draft
-	existing.ReviewState = preserveAuthoringSessionCreateIdempotency(existing.ReviewState, cloneReviewState(req.ReviewState))
+	existing.ReviewState = preserveAuthoringSessionCreateIdempotency(existing.ReviewState, projectAuthoringReviewState(req.ReviewState))
 	existing.UpdatedAt = time.Now()
 	existing.LastAccessedAt = existing.UpdatedAt
 	saved, err := s.compareAndSwapAuthoringSession(existing, expectedUpdatedAt, expectedStatus)
@@ -871,7 +862,10 @@ func prepareAuthoringSessionForPersistence(session *storage.AuthoringSession) er
 	if session == nil {
 		return nil
 	}
-	session.ReviewState = projectAuthoringReviewState(session.ReviewState)
+	session.ReviewState = preserveAuthoringSessionCreateIdempotency(
+		session.ReviewState,
+		projectAuthoringReviewState(session.ReviewState),
+	)
 	if session.Draft == nil {
 		return nil
 	}

@@ -5617,12 +5617,12 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 	if len(preview.Changes) != 3 {
 		t.Fatalf("changes = %#v, want extractor plus target/header diffs", preview.Changes)
 	}
-	if strings.Contains(previewResp.Body.String(), "abc12345") {
-		t.Fatalf("correlation preview disclosed sample value: %s", previewResp.Body.String())
+	if !strings.Contains(previewResp.Body.String(), "abc12345") {
+		t.Fatalf("correlation preview omitted sample value: %s", previewResp.Body.String())
 	}
 	for _, change := range preview.Changes {
-		if change.Before != "" || change.After != "" {
-			t.Fatalf("correlation preview disclosed diff values: %#v", preview.Changes)
+		if change.After == "" {
+			t.Fatalf("correlation preview omitted diff after value: %#v", preview.Changes)
 		}
 	}
 

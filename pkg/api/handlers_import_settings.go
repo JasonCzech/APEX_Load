@@ -66,13 +66,17 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 400, "Supply a draft and between 1 and 256 setting changes")
 		return
 	}
-	claim, err := s.claimImportDraftMutation(r, req.Script)
-	if err != nil {
-		if writeImportDraftBusy(w, err) {
+	var claim *importDraftAttestationClaim
+	if importDraftAttestationToken(req.Script) != "" || isJMeterBatchChildDraft(req.Script) {
+		var err error
+		claim, err = s.claimImportDraftMutation(r, req.Script)
+		if err != nil {
+			if writeImportDraftBusy(w, err) {
+				return
+			}
+			writeError(w, 409, "Import draft is stale or expired; re-import to continue")
 			return
 		}
-		writeError(w, 409, "Import draft is stale or expired; re-import to continue")
-		return
 	}
 	defer func() {
 		if claim != nil {
@@ -127,14 +131,14 @@ func (s *Server) handleImportSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	var expiry *time.Time
 	if claim != nil {
-		expires, err := s.completeImportDraftMutation(r, claim, draft)
-		if err != nil {
-			writeError(w, 503, "Could not secure the updated draft; retry")
-			return
-		}
-		claim = nil
-		if !expires.IsZero() {
-			expiry = &expires
+		expires, rotateErr := s.completeImportDraftMutation(r, claim, draft)
+		if rotateErr == nil {
+			claim = nil
+			if !expires.IsZero() {
+				expiry = &expires
+			}
+		} else {
+			stripImportDraftAttestation(draft)
 		}
 	}
 	s.recordAuditEvent(r, "script.import.settings", "success", "script", draft.Name, draft.ProjectID, map[string]any{"category": req.Category, "changes": len(req.Changes)})

@@ -215,8 +215,18 @@ func TestProxyExclusionRetainsSourceProtection(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				if strings.Contains(string(public), username) {
-					t.Fatal("excluding the executable proxy disclosed its source username")
+				if script.Config.HTTP.Proxy.Username != "" {
+					t.Fatalf("executable proxy username = %q, want cleared", script.Config.HTTP.Proxy.Username)
+				}
+				if !strings.Contains(string(public), username) {
+					t.Fatal("repair disclosure scrubbed source_review username")
+				}
+				maskedPublic, err := json.Marshal(maskScriptSecrets(script))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(maskedPublic), username) {
+					t.Fatal("runtime disclosure projection leaked excluded proxy source username")
 				}
 				private, _ := json.Marshal(script.Metadata.Import.Preserved["source_review"])
 				if !strings.Contains(string(private), username) {

@@ -72,18 +72,18 @@ func TestHandleSuggestScriptParameterization(t *testing.T) {
 		t.Error("expected a note explaining the correlation limitation")
 	}
 	for _, suggestion := range got.Suggestions {
-		if suggestion.LiteralValue != "" || suggestion.SampleValue != "" {
-			t.Fatalf("parameterization response included a raw value: %#v", suggestion)
+		if suggestion.LiteralValue == "" || suggestion.SampleValue == "" {
+			t.Fatalf("parameterization response omitted value on %#v", suggestion)
 		}
 		for _, location := range suggestion.Locations {
-			if location.SearchText != "" {
-				t.Fatalf("parameterization response included search text: %#v", suggestion)
+			if location.SearchText == "" {
+				t.Fatalf("parameterization response omitted search text on %#v", suggestion)
 			}
 		}
 	}
 	for _, field := range []string{`"literal_value"`, `"sample_value"`, `"search_text"`} {
-		if strings.Contains(resp.Body.String(), field) {
-			t.Fatalf("parameterization response serialized %s: %s", field, resp.Body.String())
+		if !strings.Contains(resp.Body.String(), field) {
+			t.Fatalf("parameterization response omitted %s: %s", field, resp.Body.String())
 		}
 	}
 }

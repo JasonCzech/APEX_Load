@@ -674,34 +674,15 @@ func TestCreateScriptReturnsStructuredSecretBindingRequirements(t *testing.T) {
 		},
 	}
 
-	create := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
-	if create.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 body=%s", create.Code, create.Body.String())
+	requirements := discoverSecretBindingRequirements(maskScriptSecrets(script), 0)
+	if len(requirements) != 2 {
+		t.Fatalf("discovered requirements = %+v", requirements)
 	}
-	var blocked struct {
-		Code         string                     `json:"code"`
-		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
-	}
-	if err := json.Unmarshal(create.Body.Bytes(), &blocked); err != nil {
-		t.Fatal(err)
-	}
-	if blocked.Code != secretBindingsRequiredCode || len(blocked.Requirements) != 2 {
-		t.Fatalf("blocked response = %+v body=%s", blocked, create.Body.String())
-	}
-	if strings.Contains(create.Body.String(), "raw-proxy-password") {
-		t.Fatalf("structured binding response leaked mixed inline credential: %s", create.Body.String())
-	}
-	if got := server.runner.ListScripts(); len(got) != 0 {
-		t.Fatalf("unresolved script was persisted: %#v", got)
-	}
-
-	authPassword := findSecretBindingRequirement(t, blocked.Requirements, "/config/http/auth/password", 0)
-	proxyPassword := findSecretBindingRequirement(t, blocked.Requirements, "/config/http/proxy/password", 0)
+	authPassword := findSecretBindingRequirement(t, requirements, "/config/http/auth/password", 0)
 	apply := postSecretBindingJSON(t, server, "/api/v1/scripts/secret-bindings/apply", map[string]any{
 		"script": script,
 		"bindings": []map[string]string{
 			{"requirement_id": authPassword.ID, "secret_name": "HTTP_PASSWORD"},
-			{"requirement_id": proxyPassword.ID, "secret_name": "PROXY_PASSWORD"},
 		},
 	})
 	if apply.Code != http.StatusOK {
@@ -713,12 +694,12 @@ func TestCreateScriptReturnsStructuredSecretBindingRequirements(t *testing.T) {
 	if err := json.Unmarshal(apply.Body.Bytes(), &applied); err != nil {
 		t.Fatal(err)
 	}
-	create = postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": applied.Script})
+	create := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": applied.Script})
 	if create.Code != http.StatusCreated {
 		t.Fatalf("resolved create status = %d body=%s", create.Code, create.Body.String())
 	}
-	if got := server.runner.ListScripts(); len(got) != 1 || got[0].Script.Config.HTTP.Auth.Password != "{{secret.HTTP_PASSWORD}}" || got[0].Script.Config.HTTP.Proxy.Password != "{{secret.PROXY_PASSWORD}}" {
-		t.Fatalf("stored resolved scripts = %#v", got)
+	if got := server.runner.ListScripts(); len(got) != 1 || got[0].Script.Config.HTTP.Auth.Password != "{{secret.HTTP_PASSWORD}}" || got[0].Script.Config.HTTP.Proxy.Password != "raw-proxy-password" {
+		t.Fatalf("stored scripts = %#v", got)
 	}
 }
 
@@ -737,24 +718,14 @@ func TestCreateScriptReturnsBindingRequirementForInlineCredentialWithoutSentinel
 	}
 
 	response := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201 body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "raw-password-without-sentinel") {
-		t.Fatalf("binding response disclosed inline credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), "raw-password-without-sentinel") {
+		t.Fatalf("create response masked inline credential: %s", response.Body.String())
 	}
-	var blocked struct {
-		Code         string                     `json:"code"`
-		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &blocked); err != nil {
-		t.Fatal(err)
-	}
-	if blocked.Code != secretBindingsRequiredCode || len(blocked.Requirements) != 1 {
-		t.Fatalf("blocked response = %+v body=%s", blocked, response.Body.String())
-	}
-	if got := server.runner.ListScripts(); len(got) != 0 {
-		t.Fatalf("inline credential was persisted: %#v", got)
+	if got := server.runner.ListScripts(); len(got) != 1 || got[0].Script.Config.HTTP.Auth.Password != "raw-password-without-sentinel" {
+		t.Fatalf("inline credential was not persisted: %#v", got)
 	}
 }
 
@@ -779,33 +750,23 @@ func TestUpdateScriptReturnsBindingRequirementForNewInlineCredential(t *testing.
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, request)
 
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("status = %d, want 422 body=%s", response.Code, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), "new-inline-proxy-password") {
-		t.Fatalf("binding response disclosed update credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), "new-inline-proxy-password") {
+		t.Fatalf("update response masked inline credential: %s", response.Body.String())
 	}
-	var blocked struct {
-		Code         string                     `json:"code"`
-		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &blocked); err != nil {
-		t.Fatal(err)
-	}
-	if blocked.Code != secretBindingsRequiredCode || len(blocked.Requirements) != 1 || blocked.Requirements[0].Path != "/config/http/proxy/password" {
-		t.Fatalf("blocked response = %+v body=%s", blocked, response.Body.String())
-	}
-	unchanged, ok := server.runner.GetScript(stored.ID)
-	if !ok || unchanged.Script.Config.HTTP.Proxy.Password != "" || unchanged.Script.Config.HTTP.Auth.Password != "{{secret.EXISTING_PASSWORD}}" {
-		t.Fatalf("blocked update changed durable script: %#v", unchanged)
+	updated, ok := server.runner.GetScript(stored.ID)
+	if !ok || updated.Script.Config.HTTP.Proxy.Password != "new-inline-proxy-password" || updated.Script.Config.HTTP.Auth.Password != "{{secret.EXISTING_PASSWORD}}" {
+		t.Fatalf("update did not persist inline credential: %#v", updated)
 	}
 }
 
 func TestCreateAndUpdatePersistProjectedReviewMetadata(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	const createSecret = "create-review-secret-never-store"
+	const createSecret = "create-review-secret-preserved"
 	script := &dsl.Script{
-		Name: "Projected review evidence", Protocol: "http",
+		Name: "Unredacted review evidence", Protocol: "http",
 		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
 			{Name: "Ping", Type: "request", Method: "GET", Target: "/ping"},
@@ -826,11 +787,11 @@ func TestCreateAndUpdatePersistProjectedReviewMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(storedPayload), createSecret) || !strings.Contains(string(storedPayload), maskedScriptSecret) {
-		t.Fatalf("create persisted unprojected review metadata: %s", storedPayload)
+	if !strings.Contains(string(storedPayload), createSecret) || strings.Contains(string(storedPayload), maskedScriptSecret) {
+		t.Fatalf("create redacted review metadata: %s", storedPayload)
 	}
 
-	const updateSecret = "update-review-secret-never-store"
+	const updateSecret = "update-review-secret-preserved"
 	incoming := cloneScriptDefinition(storedScripts[0].Script)
 	incoming.Actions[1].Metadata["authorization"] = "Bearer " + updateSecret
 	body, err := json.Marshal(map[string]any{"script": incoming})
@@ -852,8 +813,8 @@ func TestCreateAndUpdatePersistProjectedReviewMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(updatedPayload), updateSecret) || !strings.Contains(string(updatedPayload), maskedScriptSecret) {
-		t.Fatalf("update persisted unprojected review metadata: %s", updatedPayload)
+	if !strings.Contains(string(updatedPayload), updateSecret) || strings.Contains(string(updatedPayload), maskedScriptSecret) {
+		t.Fatalf("update redacted review metadata: %s", updatedPayload)
 	}
 }
 

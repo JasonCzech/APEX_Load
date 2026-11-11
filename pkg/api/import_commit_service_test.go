@@ -434,9 +434,10 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 					BodyEncoding: "base64",
 				}},
 			}
-			// Encoded or typed credentials require the same authenticated
-			// inspection capability as directly locatable string credentials.
-			unattestedPayload, err := json.Marshal(map[string]any{"script": script})
+			// Direct unattested commit preserves exact base64 bytes cleanly.
+			unattestedScript := cloneScriptDefinition(script)
+			unattestedScript.ID = scriptID + "-direct"
+			unattestedPayload, err := json.Marshal(map[string]any{"script": unattestedScript})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -444,11 +445,11 @@ func TestSharedImportCommitProjectsDecodedBase64JSONAcrossLegacyRoutes(t *testin
 			unattestedRequest := httptest.NewRequest(http.MethodPost, route.path, bytes.NewReader(unattestedPayload))
 			unattestedRequest.Header.Set("Content-Type", "application/json")
 			server.mux.ServeHTTP(unattested, unattestedRequest)
-			if unattested.Code != http.StatusConflict {
-				t.Fatalf("unattested credential commit status = %d, want 409", unattested.Code)
+			if unattested.Code != http.StatusCreated {
+				t.Fatalf("direct credential commit status = %d, want 201 body=%s", unattested.Code, unattested.Body.String())
 			}
-			if _, persisted := server.runner.GetScript(scriptID); persisted {
-				t.Fatal("unattested credential draft was persisted")
+			if directPersisted, ok := server.runner.GetScript(unattestedScript.ID); !ok || directPersisted == nil || directPersisted.Script.Actions[0].Body != encodedBody {
+				t.Fatalf("direct credential draft was not persisted verbatim: %#v", directPersisted)
 			}
 			submitted := attestedImportCommitDraft(t, server, route.path, script)
 			payload, err := json.Marshal(map[string]any{"script": submitted})
@@ -571,9 +572,10 @@ func TestSharedImportCommitPreservesSensitiveTypedJSONAcrossLegacyRoutes(t *test
 					Body:    body,
 				}},
 			}
-			// Encoded or typed credentials require the same authenticated
-			// inspection capability as directly locatable string credentials.
-			unattestedPayload, err := json.Marshal(map[string]any{"script": script})
+			// Direct unattested commit preserves exact base64 bytes cleanly.
+			unattestedScript := cloneScriptDefinition(script)
+			unattestedScript.ID = scriptID + "-direct"
+			unattestedPayload, err := json.Marshal(map[string]any{"script": unattestedScript})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -581,11 +583,11 @@ func TestSharedImportCommitPreservesSensitiveTypedJSONAcrossLegacyRoutes(t *test
 			unattestedRequest := httptest.NewRequest(http.MethodPost, route.path, bytes.NewReader(unattestedPayload))
 			unattestedRequest.Header.Set("Content-Type", "application/json")
 			server.mux.ServeHTTP(unattested, unattestedRequest)
-			if unattested.Code != http.StatusConflict {
-				t.Fatalf("unattested credential commit status = %d, want 409", unattested.Code)
+			if unattested.Code != http.StatusCreated {
+				t.Fatalf("direct credential commit status = %d, want 201 body=%s", unattested.Code, unattested.Body.String())
 			}
-			if _, persisted := server.runner.GetScript(scriptID); persisted {
-				t.Fatal("unattested credential draft was persisted")
+			if directPersisted, ok := server.runner.GetScript(unattestedScript.ID); !ok || directPersisted == nil || directPersisted.Script.Actions[0].Body != body {
+				t.Fatalf("direct credential draft was not persisted verbatim: %#v", directPersisted)
 			}
 			submitted := attestedImportCommitDraft(t, server, route.path, script)
 			payload, err := json.Marshal(map[string]any{"script": submitted})

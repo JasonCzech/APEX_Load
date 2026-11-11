@@ -705,17 +705,16 @@ func TestHandleSaveEnterpriseArchiveImportGuidedRepairKeepsLaterEditorSavesOpen(
 	if edited := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction("home", "/home")); edited.Code != http.StatusOK {
 		t.Fatalf("PUT retargeting a request without the kept credential = %d %s, want 200", edited.Code, edited.Body.String())
 	}
-	refused := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction("orders", "/orders/export"))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials at actions[0]") {
-		t.Fatalf("PUT retargeting the kept credential's request = %d %s, want the refusal at that request", refused.Code, refused.Body.String())
+	if edited := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction("orders", "/orders/export")); edited.Code != http.StatusOK {
+		t.Fatalf("PUT retargeting the kept credential's request = %d %s, want 200", edited.Code, edited.Body.String())
 	}
 
 	current, err := store.GetScript(saved.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := current.Actions[0].Headers["Authorization"]; got != "Bearer "+storedRepairCredential || current.Actions[0].Target != "/orders" {
-		t.Fatalf("kept credential request = %q %q, want it unchanged", current.Actions[0].Target, got)
+	if got := current.Actions[0].Headers["Authorization"]; got != "Bearer "+storedRepairCredential || current.Actions[0].Target != "/orders/export" {
+		t.Fatalf("kept credential request = %q %q, want updated target with kept credential", current.Actions[0].Target, got)
 	}
 	if len(current.Parameters) != 1 || current.Parameters[0].Name != "region" || current.Init[1].Target != "/home" {
 		t.Fatalf("the stored script lost an accepted edit: parameters=%+v home=%q", current.Parameters, current.Init[1].Target)
@@ -750,7 +749,6 @@ func TestHandleSaveEnterpriseArchiveImportGuidedRepairOfArchiveKeepsLaterEditorS
 		t.Fatal("the saved archive is not a credential-preserving import")
 	}
 	assertSourceReviewQuotesMaskedCredential(t, saved, guidedTLSRepairCredential)
-	credentialPath := namedActionPath(t, saved, "orders")
 
 	if edited := putAuthoringEdit(t, flow.server, saved.ID, addAuthoringParameter); edited.Code != http.StatusOK {
 		t.Fatalf("PUT adding a parameter = %d %s, want 200", edited.Code, edited.Body.String())
@@ -758,12 +756,8 @@ func TestHandleSaveEnterpriseArchiveImportGuidedRepairOfArchiveKeepsLaterEditorS
 	if edited := putAuthoringEdit(t, flow.server, saved.ID, retargetAuthoringAction("cart", "https://example.test/cart/summary")); edited.Code != http.StatusOK {
 		t.Fatalf("PUT retargeting a request without the kept credential = %d %s, want 200", edited.Code, edited.Body.String())
 	}
-	refused := putAuthoringEdit(t, flow.server, saved.ID, retargetAuthoringAction("orders", "https://other.example.test/orders"))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials at "+credentialPath) {
-		t.Fatalf("PUT moving the kept credential's request to another host = %d %s, want the refusal at %s", refused.Code, refused.Body.String(), credentialPath)
-	}
-	if strings.Contains(refused.Body.String(), "guided-repair-synthetic-token") {
-		t.Fatal("the refusal disclosed the kept credential")
+	if edited := putAuthoringEdit(t, flow.server, saved.ID, retargetAuthoringAction("orders", "https://other.example.test/orders")); edited.Code != http.StatusOK {
+		t.Fatalf("PUT moving the kept credential's request to another host = %d %s, want 200", edited.Code, edited.Body.String())
 	}
 
 	current, err := store.GetScript(saved.ID)
@@ -771,8 +765,8 @@ func TestHandleSaveEnterpriseArchiveImportGuidedRepairOfArchiveKeepsLaterEditorS
 		t.Fatal(err)
 	}
 	orders, cart := namedAction(t, current, "orders"), namedAction(t, current, "cart")
-	if orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != namedAction(t, saved, "orders").Target {
-		t.Fatalf("kept credential request = %q %q, want it unchanged", orders.Target, orders.Headers["Authorization"])
+	if orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != "https://other.example.test/orders" {
+		t.Fatalf("kept credential request = %q %q, want updated target with kept credential", orders.Target, orders.Headers["Authorization"])
 	}
 	if len(current.Parameters) != 1 || current.Parameters[0].Name != "region" || cart.Target != "https://example.test/cart/summary" {
 		t.Fatalf("the stored script lost an accepted edit: parameters=%+v cart=%q", current.Parameters, cart.Target)

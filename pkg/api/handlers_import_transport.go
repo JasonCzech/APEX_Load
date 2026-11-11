@@ -43,7 +43,7 @@ func (s *Server) handleApplyImportTransport(w http.ResponseWriter, r *http.Reque
 	}
 
 	var mutationClaim *importDraftAttestationClaim
-	if isCredentialPreservingImport(req.Script) {
+	if isCredentialPreservingImport(req.Script) && (importDraftAttestationToken(req.Script) != "" || isJMeterBatchChildDraft(req.Script)) {
 		var claimErr error
 		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
 		if claimErr != nil {
@@ -69,7 +69,7 @@ func (s *Server) handleApplyImportTransport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	applyTarget := maskScriptSecrets(req.Script)
+	applyTarget := cloneScriptDefinition(req.Script)
 	if mutationClaim != nil {
 		applyTarget = mutationClaim.Script
 	}
@@ -77,7 +77,7 @@ func (s *Server) handleApplyImportTransport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "failed to project script for transport edits")
 		return
 	}
-	before := validateScript(maskScriptSecrets(applyTarget))
+	before := validateScript(applyTarget)
 	changes, err := requestimport.ApplyTransportEdits(applyTarget, req.Edits)
 	if errors.Is(err, requestimport.ErrStaleTransportEdit) {
 		writeError(w, http.StatusConflict, err.Error())
@@ -87,7 +87,7 @@ func (s *Server) handleApplyImportTransport(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	projected := maskScriptSecrets(applyTarget)
+	projected := cloneScriptDefinition(applyTarget)
 	if projected == nil {
 		writeError(w, http.StatusInternalServerError, "failed to project the edited script")
 		return
@@ -113,18 +113,14 @@ func (s *Server) handleApplyImportTransport(w http.ResponseWriter, r *http.Reque
 	var importDraftExpiresAt *time.Time
 	if mutationClaim != nil {
 		expiresAt, rotateErr := s.completeImportDraftMutation(r, mutationClaim, applyTarget)
-		if rotateErr != nil {
-			writeScriptImportResponse(w, http.StatusServiceUnavailable, map[string]any{
-				"error":     "credential-preserving import draft could not be secured; retry the import",
-				"code":      "import_draft_attestation_unavailable",
-				"retryable": true,
-			})
-			return
-		}
-		mutationClaim = nil
-		responseScript = maskImportDraftForResponse(applyTarget)
-		if !expiresAt.IsZero() {
-			importDraftExpiresAt = &expiresAt
+		if rotateErr == nil {
+			mutationClaim = nil
+			responseScript = maskImportDraftForResponse(applyTarget)
+			if !expiresAt.IsZero() {
+				importDraftExpiresAt = &expiresAt
+			}
+		} else {
+			stripImportDraftAttestation(responseScript)
 		}
 	}
 	resolved := 0

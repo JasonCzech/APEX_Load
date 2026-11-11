@@ -4,43 +4,27 @@ import (
 	"fmt"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
-// disclosureSafeImportBatchReceiptScripts builds the immutable evidence copy
-// stored with an import receipt. Live script rows remain the exact executable
-// import. Ordinary governed imports retain their historical exact receipt
-// snapshots; credential-preserving imports use the shared field-aware
-// disclosure projection so retries retain every nonsecret script semantic.
+// disclosureSafeImportBatchReceiptScripts builds the immutable snapshot copy
+// stored with an import receipt, retaining exact unredacted script semantics.
 func disclosureSafeImportBatchReceiptScripts(scripts []*dsl.Script) ([]*dsl.Script, error) {
 	snapshots := make([]*dsl.Script, len(scripts))
 	for index, script := range scripts {
 		if script == nil {
 			return nil, fmt.Errorf("import batch receipt script %d is nil", index+1)
 		}
-		if !importBatchPreservesExecutableCredentials(script) {
-			snapshot := cloneBrunoScript(script)
-			if snapshot == nil {
-				return nil, fmt.Errorf("clone import batch receipt script %d", index+1)
-			}
-			snapshots[index] = snapshot
-			continue
-		}
-		snapshot, err := scriptdisclosure.Project(script)
-		if err != nil {
-			return nil, fmt.Errorf("project import batch receipt script %d: %w", index+1, err)
-		}
+		snapshot := cloneBrunoScript(script)
 		if snapshot == nil {
-			return nil, fmt.Errorf("project import batch receipt script %d", index+1)
+			return nil, fmt.Errorf("clone import batch receipt script %d", index+1)
 		}
 		snapshots[index] = snapshot
 	}
 	return snapshots, nil
 }
 
-// ImportBatchReceiptSnapshot is script as an import batch receipt keeps it
-// (disclosure-safe where the receipt is), so a current script can be compared
-// with a receipt's snapshot.
+// ImportBatchReceiptSnapshot returns an independent snapshot clone of script as
+// stored in an import batch receipt.
 func ImportBatchReceiptSnapshot(script *dsl.Script) (*dsl.Script, error) {
 	snapshots, err := disclosureSafeImportBatchReceiptScripts([]*dsl.Script{script})
 	if err != nil {

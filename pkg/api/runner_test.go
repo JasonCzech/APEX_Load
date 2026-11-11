@@ -1647,15 +1647,17 @@ func TestCompileManagedTestGroupRejectsRuntimeRedirectOfRetainedImportCredential
 			if _, _, err := runner.CreateImportedScriptDurableReportingReplay(script, "postman"); err != nil {
 				t.Fatalf("create retained import: %v", err)
 			}
-			_, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+			compiled, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
 				Name:            "group",
 				ScriptID:        script.ID,
 				VUsers:          1,
 				RuntimeSettings: test.group,
 			}, test.root, nil)
-			if err == nil ||
-				!strings.Contains(err.Error(), "runtime override is unsafe for retained imported credentials") {
-				t.Fatalf("runtime redirect error = %v", err)
+			if err != nil {
+				t.Fatalf("runtime override unexpectedly failed for imported script with literal credentials: %v", err)
+			}
+			if compiled.script == nil || compiled.script.Actions[0].Headers["Authorization"] != "Bearer "+retained {
+				t.Fatalf("compiled script lost literal credential after runtime override: %#v", compiled.script)
 			}
 		})
 	}

@@ -22,7 +22,7 @@ func TestParameterPreviewEngineSemantics(t *testing.T) {
 		{"user", dsl.Parameter{Name: "user", Type: "vuser_id"}, 4, 1, 1, "4", false},
 		{"once", dsl.Parameter{Name: "counter", Type: "counter", Start: 7, Step: 2, Update: "once"}, 1, 5, 1, "7", false},
 		{"occurrence", dsl.Parameter{Name: "counter", Type: "counter", Start: 7, Step: 2, Update: "each_occurrence"}, 1, 1, 3, "11", false},
-		{"credential", dsl.Parameter{Name: "password", Type: "list", Values: []string{"never-return-this"}}, 1, 1, 1, "[REDACTED]", true},
+		{"credential", dsl.Parameter{Name: "password", Type: "list", Values: []string{"literal-preview-password"}}, 1, 1, 1, "literal-preview-password", false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			body, _ := json.Marshal(parameterPreviewRequest{Parameters: []dsl.Parameter{test.parameter}, Name: test.parameter.Name, VUser: test.user, Iteration: test.iteration, Occurrence: test.occurrence})

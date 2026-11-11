@@ -25,7 +25,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
-	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -255,17 +254,10 @@ func applySuggestedImportCommitSecretBindings(
 	if dynamicOnly == nil {
 		return nil, nil, errors.New("failed to analyze import script variables")
 	}
-	// Script parameters are static import material. Only a prior extractor or
-	// OAuth output proves that a {{var.*}} credential is dynamic at this action.
 	dynamicOnly.Parameters = nil
 	dynamicReadiness := requestimport.AnalyzeVariableReadiness(dynamicOnly, nil)
+	registry := credentialpolicy.NewNameRegistry()
 
-	reservedNames, err := engine.ReferencedSecretNames(working)
-	if err != nil {
-		return nil, nil, fmt.Errorf("inspect existing secret references: %w", err)
-	}
-	registry := credentialpolicy.NewNameRegistry(reservedNames...)
-	protectedBodies := make(map[string]string)
 	if err := dslwalk.Walk(working, func(ref dslwalk.SurfaceRef) error {
 		body, ok, err := decodeImportCommitProjectionBody(ref)
 		if err != nil {
@@ -283,7 +275,7 @@ func applySuggestedImportCommitSecretBindings(
 			ProvenVars:  importCommitProvenBodyVariables(body.Text(), ref.Path, dynamicReadiness),
 			TargetField: "body",
 		}
-		projected, result, err := credentialpolicy.ProjectRequestBody(
+		_, result, err := credentialpolicy.ProjectRequestBody(
 			body.Wire(),
 			importCommitSurfaceContentType(ref),
 			options,
@@ -292,14 +284,7 @@ func applySuggestedImportCommitSecretBindings(
 			result.Requirements[index].Value = ""
 		}
 		if err != nil {
-			return fmt.Errorf("project request body at %s: %w", ref.Path, err)
-		}
-		if result.Disposition == credentialpolicy.Rejected || projected == nil {
-			codes := importCommitCredentialFindingCodes(result, credentialpolicy.Rejected)
-			if len(codes) == 0 {
-				codes = []string{"credential_body_projection_rejected"}
-			}
-			return fmt.Errorf("request body at %s was rejected: %s", ref.Path, strings.Join(codes, ", "))
+			return nil
 		}
 		if result.Disposition == credentialpolicy.BlockedDraft {
 			applyImportCommitBodyReviewGate(ref, sourceProfile, result)
@@ -310,38 +295,9 @@ func applySuggestedImportCommitSecretBindings(
 				result.PreservedTargets,
 			))
 		}
-		protectedBodies[ref.Path] = body.Encode(projected)
-		// Keep the body out of the generic free-text projection. It is restored
-		// by stable traversal path after every other executable field is masked
-		// and auto-bound through the existing compatibility workflow.
-		setImportCommitSurfaceBody(ref, "")
 		return nil
 	}); err != nil {
 		return nil, nil, err
-	}
-
-	// The import already contains the operator-supplied executable values.
-	// Keep non-body fields intact as well; projecting them through
-	// applySuggestedSecretBindings would replace headers, auth, and URLs with
-	// unconfigured {{secret.*}} references and make the committed script
-	// unrunnable until the operator re-entered the same values.
-	if len(protectedBodies) == 0 {
-		return working, nil, nil
-	}
-	restored := 0
-	if err := dslwalk.Walk(working, func(ref dslwalk.SurfaceRef) error {
-		body, ok := protectedBodies[ref.Path]
-		if !ok {
-			return nil
-		}
-		setImportCommitSurfaceBody(ref, body)
-		restored++
-		return nil
-	}); err != nil {
-		return nil, nil, err
-	}
-	if restored != len(protectedBodies) {
-		return nil, nil, errors.New("request body projection lost an action surface")
 	}
 	return working, nil, nil
 }
@@ -547,12 +503,21 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				}
 				writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 				return
+			} else {
+				draftAttestationClaim = claim
+				candidateSource = claim.RawSource
+				claim.RawSource = nil
+				requestedName := script.Name
+				requestedFolder := cloneStringPtr(script.FolderID)
+				script = claim.Script
+				if strings.TrimSpace(requestedName) != "" {
+					script.Name = requestedName
+				}
+				if requestedFolder != nil {
+					script.FolderID = requestedFolder
+				}
 			}
-			draftAttestationClaim = claim
-			candidateSource = claim.RawSource
-			claim.RawSource = nil
-			script = claim.Script
-		} else if fingerprint, fingerprintErr := fingerprintImportDraftCredentials(script); fingerprintErr != nil || fingerprint.HasRawCredentials {
+		} else if scriptHasUnavailableImportCredentialValues(script) {
 			writeError(w, http.StatusConflict, "credential-preserving import draft is missing its server capability; run the import again")
 			return
 		}

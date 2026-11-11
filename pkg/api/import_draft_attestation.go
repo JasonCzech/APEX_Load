@@ -273,10 +273,6 @@ func (s *Server) attachImportDraftAttestationProjectingWithBaseline(
 			return expiresAt, projection, nil
 		}
 	}
-	if s.haExecution {
-		return time.Time{}, nil, errors.New("credential-preserving legacy import saves require shared protected sessions in HA mode")
-	}
-
 	expiresAt, err := s.memoryImportDraftOwner().AttachPrepared(script, record)
 	return expiresAt, projection, err
 }
@@ -291,11 +287,7 @@ func (s *Server) claimImportDraftMutation(
 	if !isCredentialPreservingImport(script) {
 		return nil, nil
 	}
-	fingerprint, err := fingerprintImportDraftCredentials(script)
-	if err != nil {
-		return nil, err
-	}
-	if !fingerprint.HasRawCredentials && importDraftAttestationToken(script) == "" {
+	if importDraftAttestationToken(script) == "" && !isJMeterBatchChildDraft(script) {
 		return nil, nil
 	}
 	return s.claimImportDraftAttestation(r, script)
@@ -513,9 +505,11 @@ func (s *Server) claimProtectedImportDraftAttestationWithJavaReview(
 		FullDigest:                     attestedFingerprint.FullDigest,
 		HasUnavailableCredentialValues: hasUnavailableCredentials,
 	}
+	allRawBound := !submittedFingerprint.HasRawCredentials && submittedFingerprint.FullDigest == "" &&
+		(len(record.CredentialDigests) > 0 || record.FullDigest != "") && !record.HasUnavailableCredentialValues
 	credentialAllowed := (attestedFingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
-		(submittedFingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
-		importDraftFingerprintAllowed(record, submittedFingerprint)
+		(allRawBound || ((submittedFingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) &&
+			importDraftFingerprintAllowed(record, submittedFingerprint)))
 	if record.HasUnavailableCredentialValues && !attestedFingerprint.HasRawCredentials &&
 		!submittedFingerprint.HasRawCredentials {
 		credentialAllowed = submittedFingerprint.FullDigest != "" &&

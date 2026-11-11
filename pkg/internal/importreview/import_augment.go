@@ -53,8 +53,8 @@ type ImportDraft struct {
 	// Stage 2 domain/protocol augmentation (Salesforce, MuleSoft, Agentforce)
 	// and before Stage 4 reference finalization, validation, and preflight.
 	BeforeFinalize func(primary *dsl.Script, warnings *[]string, unsupported *diag.Diagnostics) error
-	// LLMTransform upgrades detected LLM HTTP calls to llm_request actions and
-	// scrubs captured credentials into {{secret.llm_api_key}}.
+	// LLMTransform upgrades detected LLM HTTP calls to llm_request actions
+	// while preserving literal authored credentials in the DSL.
 	LLMTransform bool
 }
 
