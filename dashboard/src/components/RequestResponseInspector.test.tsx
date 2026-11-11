@@ -76,8 +76,7 @@ const occurrences = (text: string) => (container.textContent ?? '').split(text).
 /** A header or form-field table by its accessible name, in the shown view. */
 const namedTable = (label: string, scope: ParentNode = panel()) => scope.querySelector<HTMLTableElement>(`table[aria-label="${label}"]`)
 /** Each body row's cells as text. */
-/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
-const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const cellText = (cell: Element) => cell.textContent ?? ''
 const rowCells = (table: Element | null) => Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => Array.from(row.children).map(cellText))
 /** The cells of the first body row whose header cell (or, without one, first cell) is name. */
 const rowNamed = (table: Element | null, name: string) => rowCells(table).find(cells => cells.includes(name))
@@ -1190,6 +1189,7 @@ describe('RequestResponseInspector tables', () => {
     />)
     const correlation = panel().querySelector('.rr-correlation-table')!
     expect(correlation.querySelector('caption')?.textContent).toBe('Values this action extracts, reads and changes')
+    expect(correlation.querySelector('tbody th[scope="row"]')?.textContent).toBe('token')
     const extracted = rowNamed(correlation, 'token')!
     expect(extracted.slice(0, 4)).toEqual(['Extracts', 'token', 'body · regex', 'abc'])
     expect(extracted[4]).toContain('Extracted')
@@ -1246,6 +1246,134 @@ describe('RequestResponseInspector tables', () => {
     expect(detail.textContent).toContain('Response body · Kept')
     expect(detail.textContent).toContain('body{}')
   })
+
+  it('enables Add as extractor across init, teardown, and nested step paths and forwards the resolved step reference', () => {
+    const addExtractorDefinition = vi.fn(() => ({ applied: true }) as never)
+    const onAddExtractor = vi.fn()
+    const nestedInitEvent = loginEvent({
+      phase: 'init',
+      action_index: 0,
+      step_path: ['then[0]', 'requests[1]'],
+      repair_suggestions: [{
+        id: 'init-ext',
+        title: 'Extract token from init',
+        description: 'Capture token',
+        draft_patch_type: 'add_extractor',
+        fields: { name: 'c_init_token', source: 'body', type: 'regex', expression: 'cshc ([a-z]+)' },
+      }],
+    })
+    render(
+      <Harness
+        event={nestedInitEvent}
+        script={loginScript}
+        addExtractorDefinition={addExtractorDefinition}
+        onAddExtractor={onAddExtractor}
+      />,
+    )
+    // Verdict repair suggestion offers Add as extractor on init nested step.
+    const verdict = container.querySelector('[aria-label="Verdict"]')!
+    const diagnosisAddBtn = button('Add as extractor', verdict)
+    expect(diagnosisAddBtn).toBeDefined()
+    act(() => diagnosisAddBtn!.click())
+    expect(onAddExtractor).toHaveBeenCalledWith(
+      0,
+      { name: 'c_init_token', source: 'body', type: 'regex', expression: 'cshc ([a-z]+)' },
+      { phase: 'init', actionIndex: 0, stepPath: ['then[0]', 'requests[1]'] },
+    )
+    expect(addExtractorDefinition).toHaveBeenCalledWith(
+      0,
+      { name: 'c_init_token', source: 'body', type: 'regex', expression: 'cshc ([a-z]+)' },
+      undefined,
+      { phase: 'init', actionIndex: 0, stepPath: ['then[0]', 'requests[1]'] },
+    )
+
+    // ExtractorTester also enables Add as extractor on teardown step_id and resolves failing extractors on nested step_id.
+    const teardownNestedScript: ScriptDefinition = {
+      ...script,
+      teardown: [{
+        name: 'Cleanup sequence',
+        type: 'http_sequence',
+        target: '/cleanup',
+        params: {
+          requests: [
+            { name: 'Step 1', type: 'GET', target: '/cleanup/1' },
+            { name: 'Step 2', type: 'GET', target: '/cleanup/2' },
+            {
+              name: 'Step 3',
+              type: 'POST',
+              target: '/cleanup/3',
+              extractors: [{ name: 'c_cleanup_token', source: 'body', type: 'jsonpath', expression: '$.missing' }],
+            },
+          ],
+        },
+      }],
+    }
+    const teardownEvent = event({
+      phase: 'teardown',
+      action_index: 0,
+      step_id: 'teardown:0#requests[2]',
+      snapshot: wireSnapshot,
+    } as Partial<BrowserReplayEvent>)
+    render(
+      <Harness
+        event={teardownEvent}
+        script={teardownNestedScript}
+        initialTab="correlation"
+        addExtractorDefinition={addExtractorDefinition}
+        onAddExtractor={onAddExtractor}
+      />,
+    )
+    act(() => tab('Correlation')!.click())
+    typeInto(panel().querySelector<HTMLInputElement>('[aria-label="Extractor expression"]')!, 'cshc ([a-z]+)')
+    const testerAddBtn = button('Add as extractor', panel())!
+    expect(testerAddBtn.disabled).toBe(false)
+    act(() => testerAddBtn.click())
+    expect(onAddExtractor).toHaveBeenLastCalledWith(
+      0,
+      expect.objectContaining({ expression: 'cshc ([a-z]+)' }),
+      { phase: 'teardown', actionIndex: 0, stepPath: ['requests[2]'] },
+    )
+
+    // Withholds Add as extractor when runtime_evidence_unavailable is true.
+    render(
+      <Harness
+        event={{ ...teardownEvent, runtime_evidence_unavailable: true } as BrowserReplayEvent}
+        script={teardownNestedScript}
+        initialTab="correlation"
+        addExtractorDefinition={addExtractorDefinition}
+        onAddExtractor={onAddExtractor}
+      />,
+    )
+    expect(button('Add as extractor', panel())?.disabled).toBe(true)
+  })
+
+  it('renders single-step Download HAR and safe external APM trace_links in the header tools when runtime evidence is available', () => {
+    const header = () => container.querySelector('.rr-inspector-header')!
+    // Base event without wire URL/headers omits Download HAR.
+    render(<Harness event={event()} />)
+    expect(button('Download HAR', header())).toBeUndefined()
+
+    const traced = event({
+      snapshot: wireSnapshot,
+      trace_links: [
+        { provider: 'dynatrace', label: 'Open in Dynatrace', url: 'https://dt.example.test/ui/traces/1' },
+        { provider: 'elasticsearch', label: '', url: 'https://elastic.example.test/app/apm/traces/2' },
+        { provider: 'unsafe', label: 'Bad scheme', url: 'javascript:alert(1)' },
+      ],
+    } as Partial<BrowserReplayEvent>)
+    render(<Harness event={traced} />)
+    expect(button('Download HAR', header())).toBeDefined()
+    const links = Array.from(header().querySelectorAll<HTMLAnchorElement>('a.rr-inspector-trace-link'))
+    expect(links.map(a => [a.textContent, a.getAttribute('href'), a.getAttribute('target'), a.getAttribute('rel')])).toEqual([
+      ['Open in Dynatrace', 'https://dt.example.test/ui/traces/1', '_blank', 'noopener noreferrer'],
+      ['Open trace in Kibana (ELK)', 'https://elastic.example.test/app/apm/traces/2', '_blank', 'noopener noreferrer'],
+    ])
+
+    // Hidden when runtime_evidence_unavailable is set.
+    render(<Harness event={{ ...traced, runtime_evidence_unavailable: true } as BrowserReplayEvent} />)
+    expect(button('Download HAR', header())).toBeUndefined()
+    expect(header().querySelectorAll('a.rr-inspector-trace-link')).toHaveLength(0)
+  })
 })
 
 describe('RequestResponseInspector header layout', () => {
@@ -1270,5 +1398,9 @@ describe('RequestResponseInspector header layout', () => {
     expect(tools).toMatch(/\bmin-width: 0;/)
     expect(tools).toMatch(/\bmax-width: 100%;/)
     expect(rule(css, '.rr-inspector-failure-nav')).toMatch(/\bflex-wrap: wrap;/)
+    const segmented = rule(css, '.rr-inspector-segmented')
+    expect(segmented).toMatch(/\bflex-wrap: wrap;/)
+    expect(segmented).toMatch(/\bmax-width: 100%;/)
+    expect(rule(css, '.rr-inspector-segmented button + button')).toBe('')
   })
 })

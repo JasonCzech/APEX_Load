@@ -3,14 +3,24 @@ import type {
   RuntimeSettingsReview,
 } from '../types/runtimeSettings'
 import type {
+  TransactionSLARule,
+} from '../types/goals'
+import type {
   BrowserEmulationCatalog,
   BrowserEmulationConfig,
   ContentCheckConfig,
   DFETransform,
+  ScriptActionDefinition,
   ScriptConfig,
   ScriptDefinition,
 } from '../types/scripts'
 import { jmsConfigForProtocol, jmsProviderForProtocol } from './scriptEditorHelpers'
+import {
+  actionTransactionMarker,
+  actionTransactionName,
+  containerChildSteps,
+  debugContainerKind,
+} from './scriptEditorWorkbench'
 import { formatMillisecondsAsSecondsLabel } from './runtimeTiming'
 import {
   EMPTY_ACTION,
@@ -742,4 +752,102 @@ export function transitionScriptProtocol(script: ScriptDefinition, protocol: str
   }
 
   return { script: next, selectedFirstAction }
+}
+
+export const MAX_SCRIPT_TRANSACTION_SLA_RULES = 128
+
+export const SCRIPT_TRANSACTION_SLA_PHASE_OPTIONS: ReadonlyArray<{
+  value: '' | NonNullable<TransactionSLARule['phase']>
+  label: string
+}> = [
+  { value: '', label: 'All phases (total duration)' },
+  { value: 'dns', label: 'DNS' },
+  { value: 'connect', label: 'Connect' },
+  { value: 'tls', label: 'TLS' },
+  { value: 'server', label: 'Server (TTFB − setup)' },
+  { value: 'download', label: 'Download' },
+]
+
+export const SCRIPT_TRANSACTION_SLA_DURATION_METRICS: ReadonlyArray<{
+  value: TransactionSLARule['metric']
+  label: string
+}> = [
+  { value: 'p95_duration_ms', label: 'P95 duration (ms)' },
+  { value: 'p99_duration_ms', label: 'P99 duration (ms)' },
+  { value: 'p90_duration_ms', label: 'P90 duration (ms)' },
+  { value: 'average_duration_ms', label: 'Average duration (ms)' },
+  { value: 'min_duration_ms', label: 'Min duration (ms)' },
+  { value: 'max_duration_ms', label: 'Max duration (ms)' },
+]
+
+export const SCRIPT_TRANSACTION_SLA_NON_PHASE_METRICS: ReadonlyArray<{
+  value: TransactionSLARule['metric']
+  label: string
+}> = [
+  { value: 'error_rate_pct', label: 'Error rate (%)' },
+  { value: 'error_count', label: 'Error count' },
+  { value: 'tps', label: 'Throughput (TPS)' },
+  { value: 'minimum_count', label: 'Minimum count' },
+]
+
+export const SCRIPT_TRANSACTION_SLA_COMPARATOR_OPTIONS: ReadonlyArray<{
+  value: TransactionSLARule['comparator']
+  label: string
+}> = [
+  { value: 'lte', label: '<=' },
+  { value: 'lt', label: '<' },
+  { value: 'gte', label: '>=' },
+  { value: 'gt', label: '>' },
+  { value: 'eq', label: '=' },
+  { value: 'neq', label: '!=' },
+]
+
+export const SCRIPT_TRANSACTION_SLA_SEVERITY_OPTIONS: ReadonlyArray<{
+  value: NonNullable<TransactionSLARule['severity']>
+  label: string
+}> = [
+  { value: 'fail', label: 'Fail run' },
+  { value: 'warning', label: 'Warning' },
+]
+
+export function isTransactionSLADurationMetric(metric: string): boolean {
+  return SCRIPT_TRANSACTION_SLA_DURATION_METRICS.some(option => option.value === metric)
+}
+
+export function collectScriptTransactionNames(
+  script: Pick<ScriptDefinition, 'init' | 'actions' | 'teardown'>,
+): string[] {
+  const seen = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return
+    const trimmed = value.trim()
+    if (trimmed) seen.add(trimmed)
+  }
+  const visit = (actions?: ScriptActionDefinition[]) => {
+    for (const action of actions || []) {
+      add(actionTransactionName(action))
+      add(action.metadata?.transaction)
+      const marker = actionTransactionMarker(action)
+      if (marker?.role === 'start') {
+        add(marker.name)
+      } else if ((action.type || '').toLowerCase() === 'source_transaction') {
+        const fn = String(action.params?.function || action.metadata?.source_function || '').toLowerCase()
+        if (fn.includes('start')) {
+          const args = Array.isArray(action.params?.args) ? action.params.args : []
+          add(typeof args[0] === 'string' && args[0].trim() ? args[0] : action.name)
+        }
+      }
+      const kind = debugContainerKind(action)
+      if (kind) {
+        visit(containerChildSteps(action, kind).map(step => step.action))
+      } else {
+        visit(action.control?.steps)
+        visit(action.control?.else)
+      }
+    }
+  }
+  visit(script.init)
+  visit(script.actions)
+  visit(script.teardown)
+  return [...seen]
 }

@@ -197,38 +197,43 @@ describe('HttpRequestDefaultsEditor', () => {
     })
   })
 
-  it('preserves a masked pinned-cookie sentinel when another row is added', () => {
+  it('preserves a literal pinned cookie and Keeps {{secret.*}} guidance non-blocking when another row is added', () => {
     const { onChange } = render({
-      default_header_list: [{ name: 'Cookie', value: '[REDACTED]' }],
+      default_header_list: [{ name: 'Cookie', value: 'sid=literal-cookie-1' }],
     }, 'session')
 
     expect(countPinnedCookieErrors({
-      default_header_list: [{ name: 'Cookie', value: '[REDACTED]' }],
+      default_header_list: [{ name: 'Cookie', value: 'sid=literal-cookie-1' }],
     })).toBe(0)
+    expect(container.textContent).toContain('Prefer a {{secret.*}} reference.')
+    const valueInput = container.querySelector<HTMLInputElement>('input[aria-label="Pinned cookie 1 value"]')
+    expect(valueInput?.disabled).toBe(false)
+    expect(valueInput?.value).toBe('literal-cookie-1')
+
     act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Add cookie')) || null))
 
     expect(onChange).toHaveBeenLastCalledWith({
       default_header_list: [
-        { name: 'Cookie', value: '[REDACTED]', enabled: true },
+        { name: 'Cookie', value: 'sid=literal-cookie-1', enabled: true },
         { name: 'Cookie', value: '=', enabled: true },
       ],
       default_headers: undefined,
     })
   })
 
-  it('preserves a structured masked cookie by name when another row is added', () => {
+  it('preserves a structured cookie by name when another row is added', () => {
     const { onChange } = render({
-      default_header_list: [{ name: 'Cookie', value: 'dark-route=[REDACTED]' }],
+      default_header_list: [{ name: 'Cookie', value: 'dark-route=prod-a' }],
     }, 'session')
 
     expect(countPinnedCookies({
-      default_header_list: [{ name: 'Cookie', value: 'dark-route=[REDACTED]' }],
+      default_header_list: [{ name: 'Cookie', value: 'dark-route=prod-a' }],
     })).toBe(1)
     act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Add cookie')) || null))
 
     expect(onChange).toHaveBeenLastCalledWith({
       default_header_list: [
-        { name: 'Cookie', value: 'dark-route=[REDACTED]', enabled: true },
+        { name: 'Cookie', value: 'dark-route=prod-a', enabled: true },
         { name: 'Cookie', value: '=', enabled: true },
       ],
       default_headers: undefined,
@@ -244,7 +249,7 @@ describe('HttpRequestDefaultsEditor', () => {
     })).toBe(0)
   })
 
-  it('masks sensitive values in the effective request preview', () => {
+  it('displays authored header values directly in the effective request preview', () => {
     const secret = 'super-secret-bearer'
     render({
       default_header_list: [
@@ -254,12 +259,12 @@ describe('HttpRequestDefaultsEditor', () => {
     })
 
     act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show preview') || null))
-    expect(container.textContent).toContain('••••••••')
+    expect(container.textContent).toContain(`Bearer ${secret}`)
     expect(container.textContent).toContain('application/json')
-    expect(container.textContent).not.toContain(secret)
+    expect(container.textContent).not.toContain('••••••••')
   })
 
-  it('shows recorded session and anti-forgery headers without a credential warning', () => {
+  it('shows recorded session and anti-forgery headers without a credential warning while keeping all header values readable', () => {
     render({
       default_header_list: [
         { name: 'X-CSRF-Token', value: 'recorded-csrf-52' },
@@ -268,12 +273,12 @@ describe('HttpRequestDefaultsEditor', () => {
     })
 
     expect(container.querySelector<HTMLInputElement>('input[aria-label="Header 1 value"]')?.type).toBe('text')
-    expect(container.querySelector<HTMLInputElement>('input[aria-label="Header 2 value"]')?.type).toBe('password')
+    expect(container.querySelector<HTMLInputElement>('input[aria-label="Header 2 value"]')?.type).toBe('text')
     expect(container.textContent).not.toContain('X-CSRF-Token may contain a credential')
     expect(container.textContent).toContain('X-Auth-Token may contain a credential')
     act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show preview') || null))
     expect(container.textContent).toContain('recorded-csrf-52')
-    expect(container.textContent).not.toContain('operator-token-63')
+    expect(container.textContent).toContain('operator-token-63')
   })
 
   it('shows only the winning authored default when it overrides a typed header', () => {
@@ -292,16 +297,16 @@ describe('HttpRequestDefaultsEditor', () => {
     expect(container.querySelector('.http-preview-suppressed')?.textContent).toContain('Script default')
   })
 
-  it('includes masked typed authentication in the effective preview', () => {
+  it('includes typed authentication in the effective preview', () => {
     render({
-      auth: { type: 'bearer', token: '[REDACTED]' },
+      auth: { type: 'bearer', token: 'authored-bearer-token' },
     })
 
     act(() => click(Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Show preview') || null))
     const authorizationRow = Array.from(container.querySelectorAll('.http-effective-preview-list [role="listitem"]'))
       .find(row => row.querySelector('code')?.textContent === 'Authorization')
-    expect(authorizationRow?.textContent).toContain('••••••••')
-    expect(authorizationRow?.textContent).not.toContain('generated from typed authentication')
+    expect(authorizationRow?.textContent).toContain('(generated from typed authentication)')
+    expect(authorizationRow?.textContent).not.toContain('••••••••')
   })
 
   it('labels each effective preview header with its winning origin', () => {

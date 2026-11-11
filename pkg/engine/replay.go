@@ -478,6 +478,7 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
+	redactionConfig = ensureDynamicSecretRegistry(redactionConfig)
 	// Inline sandbox contents are executable data, not evidence. Reject managed
 	// secrets in values, schema and identities before initializing them; redacting
 	// any of these strings would change the input. Imported literals keep their policy.
@@ -823,7 +824,7 @@ func replayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions, d
 		}
 	}
 	report.FinalVariables = vu.replayFinalVariables()
-	if vu.runtimeCredentialRedactionErr != nil && !vu.unredactedDebug {
+	if vu.runtimePublicationUnavailable() && !vu.unredactedDebug {
 		OmitUnavailableReplayReport(report)
 	} else {
 		setReplayReportSnapshots(report)
@@ -1551,7 +1552,7 @@ func runReplayUnit(
 	if !vu.unredactedDebug {
 		scrubReplayDebugAction(&debugAction, vu.resultPublicationRedactionConfig())
 	}
-	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug && vu.runtimePublicationUnavailable() {
 		omitUnredactableReplayDebugAction(&debugAction)
 	}
 	if !vu.unredactedDebug && vu.resultPublicationUnavailable() {
@@ -1606,7 +1607,7 @@ func runReplayUnit(
 	}
 	event.AuthoredStep = vu.browserReplayAuthoredStep(unit).Clone()
 	applyReplayUnitIdentityEvent(&event, unit)
-	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug && vu.runtimePublicationUnavailable() {
 		omitUnredactableReplayActionEvent(&event)
 		omitUnredactableReplayDebugAction(&debugAction)
 	}
@@ -3062,7 +3063,7 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
 	}
-	if config != nil && config.runtimePublicationUnavailable {
+	if config.publicationUnavailable() {
 		omitUnredactableReplayActionEvent(event)
 		return
 	}
@@ -3082,10 +3083,10 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.Selector = scrubSensitiveTextWithConfig(event.Selector, config)
 	event.Value = scrubSensitiveTextWithConfig(event.Value, config)
 	event.Headers = scrubSensitiveHeaders(event.Headers, config)
-	event.Body = scrubSensitiveTextWithConfig(event.Body, config)
+	event.Body = scrubSensitiveBodyTextWithConfig(event.Body, config)
 	event.PageURL = scrubSensitiveTextWithConfig(event.PageURL, config)
 	event.PageTitle = scrubSensitiveTextWithConfig(event.PageTitle, config)
-	event.HTML = scrubSensitiveTextWithConfig(event.HTML, config)
+	event.HTML = scrubSensitiveBodyTextWithConfig(event.HTML, config)
 	if config.HasRuntimeSecretMaterial() {
 		event.Screenshot = ""
 		event.ScreenshotOmitted = false
@@ -3136,7 +3137,7 @@ func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) 
 	if action == nil {
 		return
 	}
-	if config != nil && config.runtimePublicationUnavailable {
+	if config.publicationUnavailable() {
 		omitUnredactableReplayDebugAction(action)
 		return
 	}
@@ -3191,7 +3192,7 @@ func scrubReplayBody(action *protocol.Action, config *RedactionConfig) string {
 	if len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
-	return scrubSensitiveTextWithConfig(body, config)
+	return scrubSensitiveBodyTextWithConfig(body, config)
 }
 
 func applyReplaySourceMetadata(event *ReplayActionEvent, metadata map[string]any) {
@@ -3296,7 +3297,7 @@ func (vu *VUser) replayFinalVariables() map[string]string {
 	if vu.unredactedDebug {
 		return cloneStringMap(vu.Variables)
 	}
-	if vu.runtimeCredentialRedactionErr != nil {
+	if vu.runtimePublicationUnavailable() {
 		return nil
 	}
 	return scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
@@ -3348,7 +3349,7 @@ func OmitUnavailableReplayReport(report *ReplayReport) {
 
 func (vu *VUser) guardedReplayProgress(report *ReplayReport, callback func(ReplayProgressEvent)) func(ReplayProgressEvent) {
 	return func(event ReplayProgressEvent) {
-		if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
+		if !vu.unredactedDebug && vu.runtimePublicationUnavailable() {
 			if !report.RuntimeEvidenceUnavailable {
 				OmitUnavailableReplayReport(report)
 			}

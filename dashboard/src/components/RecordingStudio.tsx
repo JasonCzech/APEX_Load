@@ -670,6 +670,7 @@ export default function RecordingStudio({
   const [includeHosts, setIncludeHosts] = useState("");
   const [excludeHosts, setExcludeHosts] = useState("");
   const [captureCookies, setCaptureCookies] = useState(false);
+  const [scrubSensitive, setScrubSensitive] = useState(false);
   // The project recording profile recordings started here apply.
   const [recordingProfileId, setRecordingProfileId] = useState("");
   const [recordingProfileLevel, setRecordingProfileLevel] = useState<
@@ -684,8 +685,9 @@ export default function RecordingStudio({
       setRecordingProfileId(id);
       setRecordingProfile(id ? profile : undefined);
       setRecordingProfileLevel(profile?.http_script_level || undefined);
-      // Show the profile's cookie capture; the session records what is shown.
+      // Show the profile's cookie capture and scrubbing; the session records what is shown.
       setCaptureCookies(profile?.capture_cookies === true);
+      setScrubSensitive(profile?.scrub_sensitive === true);
     },
     [],
   );
@@ -1725,6 +1727,7 @@ export default function RecordingStudio({
         device_preset: browserDevice || undefined,
         capture_screenshots: browserScreenshots,
         capture_ws_payloads: browserWSPayloads,
+        ...(scrubSensitive ? { scrub_sensitive: true } : {}),
         quic_mode: browserDisableQUIC ? "off" : undefined,
         storage_state_path: browserStorageState.trim() || undefined,
         sidebar: browserSidebar,
@@ -1846,6 +1849,9 @@ export default function RecordingStudio({
         project_id: activeProject?.id,
         exclude_static: true,
         capture_cookies: captureCookies,
+        ...(scrubSensitive || recordingProfile?.scrub_sensitive === true
+          ? { scrub_sensitive: scrubSensitive }
+          : {}),
       };
       if (recordingProfileId) data.recording_profile_id = recordingProfileId;
       if (includeHosts.trim()) {
@@ -3336,7 +3342,19 @@ export default function RecordingStudio({
                       checked={browserWSPayloads}
                       onChange={(e) => setBrowserWSPayloads(e.target.checked)}
                     />
-                    <span>Capture WebSocket frame payloads (scrubbed)</span>
+                    <span>
+                      {scrubSensitive
+                        ? "Capture WebSocket frame payloads (scrubbed)"
+                        : "Capture WebSocket frame payloads"}
+                    </span>
+                  </label>
+                  <label className="rec-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={scrubSensitive}
+                      onChange={(e) => setScrubSensitive(e.target.checked)}
+                    />
+                    <span>Scrub sensitive credentials and headers</span>
                   </label>
                   <label className="rec-checkbox-row">
                     <input
@@ -3456,6 +3474,7 @@ export default function RecordingStudio({
             commitGenericImportBatch={api.commitGenericImportBatch}
             onImported={onImported}
             recordingProfile={recordingProfile}
+            scrubSensitive={scrubSensitive}
           />
         ) : browserAvailability && (
           <div className="rec-controls-card rec-device-capture" data-testid="device-capture-setup">
@@ -3936,6 +3955,14 @@ export default function RecordingStudio({
                     onChange={(e) => setCaptureCookies(e.target.checked)}
                   />
                   <span>Capture cookies (may include secrets)</span>
+                </label>
+                <label className="rec-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={scrubSensitive}
+                    onChange={(e) => setScrubSensitive(e.target.checked)}
+                  />
+                  <span>Scrub sensitive credentials and headers</span>
                 </label>
                 <button
                   className="btn btn-primary rec-start-btn"

@@ -291,22 +291,27 @@ describe('SharedImportValues', () => {
     expect(onApplied).toHaveBeenCalledWith(scripts, [], undefined, [null, '2026-08-19T20:00:00Z'])
   })
 
-  // A parameter named like a credential is masked out of every later read, so
-  // the panel must not offer to store one: a credential reads a project secret
-  // or a data pool column, and only once the operator chooses one.
-  it('supplies a credential-shaped input from a project secret the operator chooses, never a value', async () => {
+  it('supplies a credential-shaped input as either a literal value or an optional project secret', async () => {
     applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 1 })
     render(buildSharedValues([candidate({
       id: 'sv_token', name: 'apiToken', kind: 'source_variable',
       credential_shaped: true, current_value: undefined,
     })]))
-    expect(container.querySelector('#shared-value-sv_token')).toBeNull()
+    expect(container.querySelector('#shared-value-sv_token')).not.toBeNull()
     const supply = container.querySelector<HTMLSelectElement>('.import-input-supply select')!
-    expect(Array.from(supply.options).map(option => option.value)).toEqual(['value', 'secret', 'data'])
+    expect(Array.from(supply.options).map(option => option.value)).toEqual(['value', 'secret', 'data', 'generated'])
     expect(supply.value).toBe('value')
     const button = () => container.querySelector<HTMLButtonElement>('.shared-values-actions button')!
     expect(button().disabled).toBe(true)
 
+    type(inputFor('sv_token'), 'literal-token-value')
+    expect(button().disabled).toBe(false)
+    await act(async () => {
+      button().dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(applyMock).toHaveBeenCalledWith({ scripts, values: { sv_token: 'literal-token-value' } })
+
+    applyMock.mockClear()
     select('Supply apiToken', 'secret')
     expect(container.textContent).toContain('{{secret.API_TOKEN}}')
     await act(async () => {
@@ -370,15 +375,89 @@ describe('SharedImportValues', () => {
     expect(container.textContent).not.toContain('The project already has')
   })
 
-  // A collect-only panel has no supply control; it says where a credential is
-  // set.
-  it('points a credential-shaped candidate to the Credentials tab without a supply control', () => {
+  it('falls back to SECRET_VALUE and numbers collisions when a credential input name has no ASCII letters or digits', async () => {
+    listProjectSecretsMock.mockResolvedValue({ secrets: [{ name: 'SECRET_VALUE' }] })
+    act(() => {
+      root.render(
+        <SharedImportValues
+          sharedValues={buildSharedValues([
+            candidate({ id: 'sv_jp', name: 'パスワード', kind: 'source_variable', credential_shaped: true, current_value: undefined }),
+            candidate({ id: 'sv_punct', name: '__', kind: 'source_variable', credential_shaped: false, current_value: undefined }),
+          ])}
+          previousInputs={{ __: { mode: 'secret', reference: '' } }}
+          scripts={[{ ...script('get-users'), project_id: 'project-1' }]}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    await act(async () => { await Promise.resolve() })
+    const supplySelect = (label: string) => Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith(label))!.querySelector('select')!
+    expect(supplySelect('Supply __').value).toBe('secret')
+    expect(fieldIn('Project secret for __').value).toBe('SECRET_VALUE_2')
+    select('Supply パスワード', 'secret')
+    expect(fieldIn('Project secret for パスワード').value).toBe('SECRET_VALUE_3')
+    expect(container.querySelector('.import-input-supply-warning')).toBeNull()
+    expect(container.querySelector('.import-input-supply-error')).toBeNull()
+  })
+
+  it('reloads project secrets on secretReloadGeneration and clears stale secrets when switching to an unloaded project', async () => {
+    applyMock.mockResolvedValue({ scripts, diffs: [], applied_count: 1 })
+    let secrets = [{ name: 'API_TOKEN' }]
+    listProjectSecretsMock.mockImplementation(async (projectId: string) => {
+      if (projectId === 'project-fail') throw new Error('secrets unavailable')
+      return { secrets }
+    })
+    const renderPanel = (projectId: string, secretReloadGeneration: number) => act(() => {
+      root.render(
+        <SharedImportValues
+          sharedValues={buildSharedValues([
+            candidate({ id: 'sv_tok', name: 'apiToken', kind: 'source_variable', credential_shaped: false, current_value: undefined }),
+          ])}
+          previousInputs={{ apiToken: { mode: 'secret', reference: '' } }}
+          scripts={[{ ...script('get-users'), project_id: projectId }]}
+          secretReloadGeneration={secretReloadGeneration}
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+    renderPanel('project-1', 0)
+    await act(async () => { await Promise.resolve() })
+    const supplySelect = () => Array.from(container.querySelectorAll('label')).find(item => item.textContent?.startsWith('Supply apiToken'))!.querySelector('select')!
+    expect(supplySelect().value).toBe('secret')
+    expect(fieldIn('Project secret for apiToken').value).toBe('API_TOKEN_2')
+
+    // Adding API_TOKEN_2 in review and bumping secretReloadGeneration advances the untouched fallback to API_TOKEN_3.
+    secrets = [{ name: 'API_TOKEN' }, { name: 'API_TOKEN_2' }]
+    renderPanel('project-1', 1)
+    await act(async () => { await Promise.resolve() })
+    expect(fieldIn('Project secret for apiToken').value).toBe('API_TOKEN_3')
+
+    // Switching to another project whose secret lookup rejects clears project-1's stale list.
+    renderPanel('project-fail', 1)
+    await act(async () => { await Promise.resolve() })
+    expect(fieldIn('Project secret for apiToken').value).toBe('API_TOKEN')
+
+    // Switching directly from 'secret' to 'value' on a non-credential_shaped input switches to literal input and applies cleanly.
+    select('Supply apiToken', 'value')
+    expect(supplySelect().value).toBe('value')
+    type(inputFor('sv_tok'), 'literal-token-val')
+    const applyButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.startsWith('Apply to'))!
+    await act(async () => { applyButton.click() })
+    expect(applyMock).toHaveBeenLastCalledWith({
+      scripts: [{ ...script('get-users'), project_id: 'project-fail' }],
+      values: { sv_tok: 'literal-token-val' },
+    })
+  })
+
+  it('allows literal values on credential-shaped candidates in collect mode', () => {
+    const onValuesChange = vi.fn()
     render(buildSharedValues([candidate({
       id: 'sv_pw', name: 'password', kind: 'source_variable',
       credential_shaped: true, current_value: undefined,
-    })]), { collectOnly: true })
-    expect(container.querySelector('#shared-value-sv_pw')).toBeNull()
-    expect(container.textContent).toContain('Credentials tab')
+    })]), { collectOnly: true, onValuesChange })
+    expect(container.querySelector('#shared-value-sv_pw')).not.toBeNull()
+    type(inputFor('sv_pw'), 'literal-secret-pw')
+    expect(onValuesChange).toHaveBeenLastCalledWith({ sv_pw: 'literal-secret-pw' })
   })
 
   it('collect mode reports values instead of calling the endpoint', () => {

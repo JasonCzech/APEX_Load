@@ -962,52 +962,31 @@ func replaySessionLeaseOperationTimeout(ttl time.Duration) time.Duration {
 	return timeout
 }
 
-// prepareTransientExecutableScript applies the same disclosure-safe binding
-// boundary used by durable script writes to replay, debugger, and browser
-// drafts. Caller-supplied overrides are executable even though they are not
-// persisted, so plaintext credentials and executable sentinels must be
-// converted through the Credentials flow before any session or progress event
-// can observe them.
+// prepareTransientExecutableScript clones and sanitizes a replay, debugger, or
+// browser draft before execution while preserving literal DSL credentials so
+// runtime redaction can scrub them from outputs, traces, HARs, and logs without
+// forcing pre-execution secret bindings.
 func prepareTransientExecutableScript(
 	w http.ResponseWriter,
 	script *dsl.Script,
 	trustedPreservedImport ...bool,
 ) (*dsl.Script, bool) {
 	trusted := len(trustedPreservedImport) > 0 && trustedPreservedImport[0]
-	if trusted {
-		// This path is restricted to a server-owned durable import snapshot:
-		// either the unchanged snapshot itself, or an operator edit already
-		// reconciled against it by resolveStoredReplayImportScript. Preserve
-		// its exact executable values, including JVM argv,
-		// including credentials whose literal bytes resemble a disclosure
-		// sentinel, while stripping non-executable review material before it
-		// enters a runtime session.
-		candidate := cloneScriptDefinition(script)
-		if candidate == nil {
-			writeError(w, http.StatusBadRequest, "failed to prepare imported script for replay")
-			return nil, false
-		}
-		stripImportDraftAttestation(candidate)
-		if err := sanitizePersistentImportReviewSurfaces(candidate); err != nil {
-			writeError(w, http.StatusBadRequest, "failed to sanitize imported script review evidence")
-			return nil, false
-		}
-		if err := reconcileMaskedScriptSecretsWithTrust(candidate, nil, true); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return nil, false
-		}
-		return candidate, true
-	}
-	projected := maskScriptSecrets(script)
-	if projected == nil {
-		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+	candidate := cloneScriptDefinition(script)
+	if candidate == nil {
+		writeError(w, http.StatusBadRequest, "failed to prepare script for replay")
 		return nil, false
 	}
-	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-		writeSecretBindingsRequired(w, unresolved)
+	stripImportDraftAttestation(candidate)
+	if err := sanitizePersistentImportReviewSurfaces(candidate); err != nil {
+		writeError(w, http.StatusBadRequest, "failed to sanitize imported script review evidence")
 		return nil, false
 	}
-	return projected, true
+	if err := reconcileMaskedScriptSecretsWithTrust(candidate, nil, trusted); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	return candidate, true
 }
 
 func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, projectID string, event engine.ReplayProgressEvent) {

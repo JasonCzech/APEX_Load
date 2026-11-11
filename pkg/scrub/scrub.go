@@ -152,10 +152,13 @@ func (p Policy) compile() (compiledPolicy, []error) {
 // SensitiveHeader reports whether a header is always scrubbed under the policy.
 func (p Policy) SensitiveHeader(name string) bool {
 	lower := strings.ToLower(strings.TrimSpace(name))
-	if credential.AlwaysSensitiveHeader(lower) {
+	if credential.AlwaysSensitiveHeader(name) {
 		return true
 	}
-	if !p.KeepCookies && credential.CookieHeader(lower) {
+	if credential.CookieHeader(lower) {
+		return !p.KeepCookies
+	}
+	if SensitiveName(name) {
 		return true
 	}
 	for _, extra := range p.ExtraHeaders {
@@ -253,7 +256,7 @@ func (cp compiledPolicy) valueWithBareTokenHeuristics(value string, redactBare b
 	// attributes otherwise let the generic matcher consume structural `/>`
 	// bytes along with the value. The marker guards below keep the already
 	// classified XML span and its surrounding syntax intact.
-	value = redactXMLFields(value, credential.SensitiveXMLName)
+	value = redactXMLFields(value, SensitiveXMLName)
 	value = sensitiveParamPattern.ReplaceAllStringFunc(value, func(parameter string) string {
 		matches := sensitiveParamPattern.FindStringSubmatch(parameter)
 		if len(matches) != 3 || strings.HasPrefix(matches[2], Redacted) {
@@ -1454,7 +1457,7 @@ func redactSensitiveJSON(value string) (string, bool, bool) {
 }
 
 func redactSensitiveJSONFallback(value string) string {
-	return redactJSONFallbackFields(value, credential.SensitiveName)
+	return redactJSONFallbackFields(value, SensitiveName)
 }
 
 func redactJSONFallbackFields(value string, sensitiveName func(string) bool) string {

@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { captureScript, compareRuns, eventIdentity, executionLabel, readProfiles, safeProfile, variablesAt } from './debuggerExperience'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { DebugRunHistory, DebugVariableWatches } from './DebuggerSessionTools'
+import { DebugRunHistory, DebugVariableWatches, HistoricalEvidence } from './DebuggerSessionTools'
 import { DebugWaterfallPanel } from './DebugWaterfallPanel'
 import { DebugParameterInspector } from './DebugParameterInspector'
 import { RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE } from './runtimeVariableEvidence'
@@ -280,6 +280,64 @@ describe('debugger operator experience', () => {
       expect(container.querySelector('.wf-row.selected')).toBeNull()
       expect(container.querySelector('.wf-kind-hop')).toBeNull()
       expect(container.textContent).toContain('Select a row to see its timing')
+    } finally {
+      act(() => root.unmount())
+      container.remove()
+    }
+  })
+
+  it('masks sensitive request and response headers in HistoricalEvidence with InspectorHeaderTable and falls back to pre on unparseable raw text', () => {
+    ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      const replayWithSecrets = report([
+        event({
+          snapshot: {
+            request_method: 'POST',
+            request_url: 'https://example.test/auth',
+            request_headers: {
+              Authorization: 'Bearer secret-history-jwt-token',
+              Origin: 'https://portal.example.test',
+            },
+            response_headers: {
+              'Set-Cookie': 'sid=secret-cookie-value; HttpOnly',
+              'Content-Type': 'application/json',
+            },
+          },
+        }),
+      ])
+      act(() => root.render(<HistoricalEvidence report={replayWithSecrets} />))
+      expect(container.textContent).toContain('https://portal.example.test')
+      expect(container.textContent).toContain('application/json')
+      expect(container.textContent).not.toContain('secret-history-jwt-token')
+      expect(container.textContent).not.toContain('secret-cookie-value')
+      expect(container.textContent).toContain('••••••••')
+
+      const showAuthBtn = container.querySelector<HTMLButtonElement>('button[aria-label="Show Authorization value"]')!
+      expect(showAuthBtn).not.toBeNull()
+      act(() => showAuthBtn.click())
+      expect(container.textContent).toContain('Bearer secret-history-jwt-token')
+
+      const showCookieBtn = container.querySelector<HTMLButtonElement>('button[aria-label="Show Set-Cookie value"]')!
+      expect(showCookieBtn).not.toBeNull()
+      act(() => showCookieBtn.click())
+      expect(container.textContent).toContain('sid=secret-cookie-value; HttpOnly')
+
+      // Fallback to <pre> when a non-standard header string has no colon-delimited rows
+      const rawFallbackReport = report([
+        event({
+          snapshot: {
+            request_method: 'GET',
+            request_url: 'https://example.test/raw',
+            request_headers: '<<malformed raw header block without colons>>' as unknown as Record<string, string>,
+          },
+        }),
+      ])
+      act(() => root.render(<HistoricalEvidence report={rawFallbackReport} />))
+      const allPreText = Array.from(container.querySelectorAll('pre')).map(el => el.textContent || '').join('\n')
+      expect(allPreText).toContain('<<malformed raw header block without colons>>')
     } finally {
       act(() => root.unmount())
       container.remove()

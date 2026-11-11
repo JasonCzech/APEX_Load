@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react'
 import type { SharedDataPool } from '../types/dataPools'
 import type { BrunoNativeScriptCandidate, SharedValues } from '../types/scriptImports'
-import { brunoInputBindingComplete, brunoVariableCandidate, type BrunoInputBinding } from './brunoReviewState'
+import { brunoInputBindingComplete, brunoVariableCandidate, suggestedInputSecretName, unusedSecretName, type BrunoInputBinding } from './brunoReviewState'
 import ImportInputSupply, { type PreviousInput, type SupplyMode } from './ImportInputSupply'
+
+function secretNameFromReference(reference: string | undefined): string {
+  return /^\{\{secret\.([A-Z0-9_]{1,249})\}\}$/.exec(reference?.trim() ?? '')?.[1] ?? ''
+}
 
 interface Props {
   candidates: BrunoNativeScriptCandidate[]
   shared?: SharedValues
   values: Record<string, string>
   onChange: (values: Record<string, string>) => void
-  /** Inputs read from a data pool or generated, by shared-value candidate ID. */
+  /** Inputs read from a data pool, generated, or bound to a project secret, by shared-value candidate ID. */
   bindings?: Record<string, BrunoInputBinding>
   onBindingsChange?: (bindings: Record<string, BrunoInputBinding>) => void
   /** How the scripts a re-import updates supplied each input. */
   previous?: Record<string, PreviousInput>
   /** The project's data pools, offered to fill an alias and column. */
   loadDataPools?: () => Promise<SharedDataPool[]>
+  /** The project's secret names, to avoid collisions and warn when reading an existing secret. */
+  projectSecrets?: readonly string[]
   /** The collection's environments, with values for the inputs they define. */
   environments?: Array<{ name: string; path: string; values?: Record<string, string> }>
   onInspect: (id: string) => void
@@ -24,7 +30,7 @@ interface Props {
 }
 
 
-export default function BrunoDataReview({ candidates, shared, values, onChange, bindings = {}, onBindingsChange, previous = {}, loadDataPools, environments = [], onInspect, onCredentials, disabled }: Props) {
+export default function BrunoDataReview({ candidates, shared, values, onChange, bindings = {}, onBindingsChange, previous = {}, loadDataPools, projectSecrets = [], environments = [], onInspect, onCredentials, disabled }: Props) {
   const [search, setSearch] = useState('')
   const [unresolvedOnly, setUnresolvedOnly] = useState(false)
   const [pools, setPools] = useState<SharedDataPool[]>([])
@@ -40,7 +46,7 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
     return () => { current = false }
   }, [loadDataPools, needsInputs, onBindingsChange])
   const names = new Set(candidates.map(candidate => candidate.script.name))
-  const optional = (shared?.candidates || []).filter(value => value.kind !== 'source_variable' && !value.credential_shaped
+  const optional = (shared?.candidates || []).filter(value => value.kind !== 'source_variable'
     && (!value.script_names?.length || value.script_names.some(name => names.has(name))))
   const update = (id: string, value: string) => {
     const next = { ...values }
@@ -54,14 +60,30 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
     else delete next[id]
     onBindingsChange?.(next)
   }
-  const setMode = (id: string, mode: SupplyMode) => {
+  const setMode = (id: string, variable: string, mode: SupplyMode) => {
     if (mode === 'value') {
       setBinding(id, undefined)
       return
     }
     // A binding replaces the value for every user.
     if (values[id]) update(id, '')
-    setBinding(id, mode === 'data' ? { mode: 'data', alias: '', column: '' } : { mode: 'generated', generator: 'uuid' })
+    if (mode === 'secret') {
+      const earlier = previous[id]
+      const chosen = Object.entries(bindings)
+        .flatMap(([otherId, binding]) => otherId !== id && binding.mode === 'secret' && binding.secret ? [binding.secret] : [])
+      setBinding(id, {
+        mode: 'secret',
+        secret: (earlier?.mode === 'secret' && secretNameFromReference(earlier.reference))
+          || unusedSecretName(suggestedInputSecretName(variable) || 'SECRET_VALUE', [...projectSecrets, ...chosen]),
+      })
+      return
+    }
+    setBinding(
+      id,
+      mode === 'data'
+        ? { mode: 'data', alias: '', column: '' }
+        : { mode: 'generated', generator: 'uuid' },
+    )
   }
   const supplied = (id: string) => Boolean(values[id]?.trim()) || brunoInputBindingComplete(bindings[id])
   // What each environment can supply: the inputs it defines a value for.
@@ -90,7 +112,7 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
   }
   return <section className="bruno-card bruno-data-review">
     <h3>Required runtime inputs</h3>
-    <p>Supply each input the collection leaves unset: one value for every virtual user, a column of a data pool so each virtual user reads its own row, or a value generated each iteration. Inputs are applied when drafts are saved. Conversion review gates remain separate.</p>
+    <p>Supply each input the collection leaves unset: one value for every virtual user, a column of a data pool so each virtual user reads its own row, a value generated each iteration, or a project secret for credential inputs. Inputs are applied when drafts are saved. Conversion review gates remain separate.</p>
     <div className="bruno-review-toolbar">
       <label>Find input<input type="search" autoComplete="off" value={search} onChange={event => setSearch(event.target.value)} /></label>
       <label><input type="checkbox" checked={unresolvedOnly} onChange={event => setUnresolvedOnly(event.target.checked)} /> Unresolved only</label>
@@ -117,9 +139,9 @@ export default function BrunoDataReview({ candidates, shared, values, onChange, 
         const affected = candidates.filter(candidate => candidate.missing_variables?.includes(variable))
         return <li key={variable}>
           <strong>{variable}</strong><span>{affected.length} selected API{affected.length === 1 ? '' : 's'}</span>
-          {item ? <ImportInputSupply variable={variable} value={values[item.id] || ''} binding={bindings[item.id]} previous={previous[item.id]}
+          {item ? <ImportInputSupply variable={variable} credential={Boolean(item.credential_shaped)} projectSecrets={projectSecrets} value={values[item.id] || ''} binding={bindings[item.id]} previous={previous[item.id]}
             pools={pools} canBind={Boolean(onBindingsChange)} disabled={disabled}
-            onValue={value => update(item.id, value)} onMode={mode => setMode(item.id, mode)} onBinding={binding => setBinding(item.id, binding)} />
+            onValue={value => update(item.id, value)} onMode={mode => setMode(item.id, variable, mode)} onBinding={binding => setBinding(item.id, binding)} />
             : <p role="note">This source expression cannot be supplied through the literal-value editor. Inspect the affected source, then replace it with a verified supported APEX parameter or action in the saved draft. Replay remains blocked until the requirement is resolved. Dynamic expressions must not be replaced with an invented static value.</p>}
           <details><summary>View affected APIs</summary>{affected.map(candidate => <button className="btn btn-secondary" type="button" key={candidate.candidate_id} onClick={() => onInspect(candidate.candidate_id)}>{candidate.script.name}</button>)}</details>
         </li>

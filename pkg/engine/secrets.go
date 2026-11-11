@@ -796,12 +796,20 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 			}
 			if text, ok := item.(string); ok && isDedicatedProtoConfigSecretKey(key) {
 				if key == "kafka_oauth_client_secret" && !strings.Contains(text, "{{") {
-					// This field is always a reference, never a literal fallback.
 					name := strings.TrimSpace(text)
-					resolved[key] = "{{secret." + name + "}}"
-					if resolver != nil && ValidLogicalSecretName(name) {
-						if secret, ok := resolver.Resolve(name); ok {
-							resolved[key] = secret
+					switch {
+					case name == "":
+						resolved[key] = ""
+					case !ValidLogicalSecretName(name):
+						// Non-logical-name values (e.g. imported JAAS OAuth client secrets)
+						// are literal credentials rather than logical secret names.
+						resolved[key] = text
+					default:
+						resolved[key] = "{{secret." + name + "}}"
+						if resolver != nil {
+							if secret, ok := resolver.Resolve(name); ok {
+								resolved[key] = secret
+							}
 						}
 					}
 				} else {
@@ -810,6 +818,12 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 				continue
 			}
 			resolved[key] = resolveProtoConfigSecrets(item, resolver)
+		}
+		if literal, ok := resolved["kafka_oauth_client_secret_literal"].(string); ok {
+			delete(resolved, "kafka_oauth_client_secret_literal")
+			if existing, _ := resolved["kafka_oauth_client_secret"].(string); strings.TrimSpace(existing) == "" {
+				resolved["kafka_oauth_client_secret"] = literal
+			}
 		}
 		return resolved
 	default:

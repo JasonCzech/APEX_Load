@@ -5,19 +5,33 @@ import type {
   CorrelationDiagnoseResponse,
   CorrelationRepairSuggestion,
   CorrelationStep,
+  ScriptDefinition,
   ScriptExtractorDefinition,
   ScriptReplayActionEvent,
 } from '../types/scripts'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import { ApiError } from '../hooks/apiClient'
 import { useCorrelationRulesetApi } from '../hooks/api/useCorrelationRulesetApi'
-import { duplicateCorrelationStepIds, HarToStepsLimitError, harToSteps, nestedCorrelationStepIds, replayEventsToSteps } from './correlationDiagnose'
+import {
+  diagnoseCorrelations,
+  duplicateCorrelationStepIds,
+  formatStepLocation,
+  HarToStepsLimitError,
+  harToSteps,
+  nestedCorrelationStepIds,
+  resolveStepTarget,
+  stepRefForCorrelationStep,
+  replayEventsToSteps,
+  type ScriptStepRef,
+  type SuggestedExtractorFix,
+} from './correlationDiagnose'
 import {
   repairLocationsFromSuggestion,
   type CorrelationApplyResult,
   type CorrelationExtractorRepair,
 } from './scriptCorrelationRepair'
 
+export type { CorrelationDiffRow, ScriptStepPhase, ScriptStepRef, SuggestedExtractorFix } from './correlationDiagnose'
 export type RecordingStatusState = 'idle' | 'loading' | 'ready' | 'error'
 
 // Keep uploaded evidence within the same envelope as the 2 MiB correlation
@@ -27,14 +41,15 @@ const CORRELATION_HAR_MAX_FILE_BYTES = 2 * 1024 * 1024
 const CORRELATION_HAR_MAX_ENTRIES = 4096
 const CORRELATION_HAR_MAX_DECODED_CHARS = 2 * 1024 * 1024
 
-interface CorrelationDiagnosePanelProps {
-  scriptId: string | null
+export interface CorrelationDiagnosePanelProps {
+  script?: Pick<ScriptDefinition, 'init' | 'actions' | 'teardown'> | null
+  scriptId?: string | null
   replaySessionId?: string
   replayTerminal?: boolean
   replayMatchesCurrentScript?: boolean
   projectId?: string
   events: ScriptReplayActionEvent[] | undefined
-  recordingStatus: ScriptRecordingStatus | null
+  recordingStatus?: ScriptRecordingStatus | null
   recordingStatusState?: RecordingStatusState
   onRetryRecordingStatus?: () => void
   diagnosisKey?: string
@@ -46,10 +61,17 @@ interface CorrelationDiagnosePanelProps {
    * remaining automatic applies).
    */
   currentEditableActionsKey?: string | null
-  actionCount: number
-  diagnoseWithBaseline: (scriptId: string, replay: CorrelationStep[], replaySessionId?: string) => Promise<CorrelationDiagnoseResponse>
-  diagnoseWithUpload: (recorded: CorrelationStep[], replay: CorrelationStep[]) => Promise<CorrelationDiagnoseResponse>
-  onAddExtractor: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
+  actionCount?: number
+  diagnoseWithBaseline?: (scriptId: string, replay: CorrelationStep[], replaySessionId?: string) => Promise<CorrelationDiagnoseResponse>
+  diagnoseWithUpload?: (recorded: CorrelationStep[], replay: CorrelationStep[]) => Promise<CorrelationDiagnoseResponse>
+  onAddExtractor?: (
+    actionIndex: number,
+    extractor: ScriptExtractorDefinition,
+    repair?: CorrelationExtractorRepair,
+    step?: ScriptStepRef | null,
+  ) => CorrelationApplyResult
+  onApplyExtractor?: (actionIndex: number, extractor: ScriptExtractorDefinition, step?: ScriptStepRef) => void
+  onSelectAction?: (actionIndex: number, step?: ScriptStepRef) => void
 }
 
 function baselineUnavailableMessage(reason?: string): string {
@@ -79,23 +101,42 @@ function suggestionIdentity(suggestion: CorrelationRepairSuggestion): string {
   ].join('\u0000')
 }
 
+function localFixIdentity(rowLocation: string, fix: SuggestedExtractorFix): string {
+  const fixLocation = fix.stepLocationLabel || `#${fix.actionIndex + 1}`
+  return [
+    rowLocation,
+    fixLocation,
+    fix.variableName,
+    fix.extractor.name ?? '',
+    fix.extractor.source ?? '',
+    fix.extractor.type ?? '',
+    fix.extractor.expression ?? '',
+  ].join('\u0000')
+}
+
 function boundedDiagnosisError(error: unknown, fallback: string): string {
   if (!(error instanceof ApiError)) return fallback
   const message = error.message.replace(/\s+/g, ' ').trim().slice(0, 240)
   return message ? `Diagnosis failed: ${message}` : fallback
 }
 
+function isFlatActionStep(step?: ScriptStepRef | null): boolean {
+  if (!step) return true
+  return step.phase === 'action' && (!step.stepPath || step.stepPath.length === 0)
+}
+
 // Record-vs-replay correlation diagnosis: diff the current replay against the
 // recorded baseline (stored server-side, or an uploaded HAR) and surface ranked
 // extractor fixes for values that rotated on replay.
 export function CorrelationDiagnosePanel({
-  scriptId,
+  script,
+  scriptId = null,
   replaySessionId,
   replayTerminal = false,
   replayMatchesCurrentScript = false,
   projectId,
   events,
-  recordingStatus,
+  recordingStatus = null,
   recordingStatusState = 'ready',
   onRetryRecordingStatus,
   diagnosisKey,
@@ -104,6 +145,8 @@ export function CorrelationDiagnosePanel({
   diagnoseWithBaseline,
   diagnoseWithUpload,
   onAddExtractor,
+  onApplyExtractor,
+  onSelectAction,
 }: CorrelationDiagnosePanelProps) {
   const rulesetApi = useCorrelationRulesetApi()
   const [suggestions, setSuggestions] = useState<CorrelationRepairSuggestion[] | null>(null)
@@ -113,6 +156,8 @@ export function CorrelationDiagnosePanel({
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [applicationResults, setApplicationResults] = useState<Map<string, CorrelationApplyResult>>(new Map())
+  const [appliedLocalFixKeys, setAppliedLocalFixKeys] = useState<Set<string>>(new Set())
+  const [appliedLocalFixes, setAppliedLocalFixes] = useState<Map<string, { rowLocation: string; fix: SuggestedExtractorFix }>>(new Map())
   const [savedRuleset, setSavedRuleset] = useState(false)
   const [savingRuleset, setSavingRuleset] = useState(false)
   // True once the editable draft changed in a way this panel did not cause
@@ -124,22 +169,37 @@ export function CorrelationDiagnosePanel({
   const rulesetSaveRequestRef = useRef(0)
   const rulesetSaveInFlightKeysRef = useRef<Set<string>>(new Set())
   const appliedSuggestionKeysRef = useRef<Set<string>>(new Set())
+  const appliedLocalFixKeysRef = useRef<Set<string>>(new Set())
   // The editable-actions key this diagnosis currently trusts: seeded at
   // diagnosis time and advanced whenever the key change was produced by one of
   // this panel's own applies.
   const trustedEditableActionsKeyRef = useRef<string | null | undefined>(undefined)
   const panelMutationPendingRef = useRef(false)
-  // Failing actions already rewritten by an apply. Any later suggestion whose
-  // offsets target the same action falls back to extractor-only, because those
+  // Failing steps already rewritten by an apply. Any later suggestion whose
+  // offsets target the same step falls back to extractor-only, because those
   // offsets were computed against the pre-repair request content.
   const repairedActionIndexesRef = useRef<Set<number>>(new Set())
-	const harUploadInputRef = useRef<HTMLInputElement>(null)
+  const harUploadInputRef = useRef<HTMLInputElement>(null)
+
+  const effectiveActionCount = actionCount ?? (script?.actions?.length ?? 0)
 
   // These scans are O(replay size); memoize them so replay-progress renders and
   // debug-tab keystrokes do not rescan the whole event list.
   const replaySteps = useMemo(() => replayEventsToSteps(events), [events])
+  const replayStepById = useMemo(() => {
+    const map = new Map<number, CorrelationStep>()
+    for (const step of replaySteps) {
+      if (!map.has(step.id)) map.set(step.id, step)
+    }
+    return map
+  }, [replaySteps])
   const ambiguousStepIds = useMemo(() => duplicateCorrelationStepIds(replaySteps), [replaySteps])
   const nestedStepIds = useMemo(() => nestedCorrelationStepIds(replaySteps), [replaySteps])
+  const localDiffRows = useMemo(
+    () => (script ? diagnoseCorrelations(script, events) : []),
+    [script, events],
+  )
+
   // The key identifies the diagnosis inputs (replay identity). The live draft
   // and replayMatchesCurrentScript are deliberately excluded: applying one
   // suggestion edits the draft, and that must not wipe the presented diagnosis
@@ -153,33 +213,38 @@ export function CorrelationDiagnosePanel({
     projectId: projectId ?? null,
     scriptId,
     replaySessionId: replaySessionId ?? null,
-    actionCount,
+    actionCount: effectiveActionCount,
     eventCount: events?.length ?? 0,
     replayTerminal,
-  }), [diagnosisKey, projectId, scriptId, replaySessionId, actionCount, events, replayTerminal])
+  }), [diagnosisKey, projectId, scriptId, replaySessionId, effectiveActionCount, events, replayTerminal])
   const activeDiagnosisKeyRef = useRef(effectiveDiagnosisKey)
   activeDiagnosisKeyRef.current = effectiveDiagnosisKey
   const currentSuggestions = presentedDiagnosisKey === effectiveDiagnosisKey ? suggestions : null
   const currentDiagnosisCoverage = presentedDiagnosisKey === effectiveDiagnosisKey ? diagnosisCoverage : null
 
-  useEffect(() => {
+  const clearDiagnosisState = () => {
     diagnosisRequestRef.current += 1
+    rulesetSaveRequestRef.current += 1
     setSuggestions(null)
     setPresentedDiagnosisKey(null)
     setDiagnosisCoverage(null)
     setAutomaticRepairSupported(false)
     setRunning(false)
     setError(null)
-    setApplicationResults(new Map())
     setSavedRuleset(false)
     setSavingRuleset(false)
-    rulesetSaveRequestRef.current += 1
+    setApplicationResults(new Map())
+    setAppliedLocalFixKeys(new Set())
+    setAppliedLocalFixes(new Map())
     setExternallyEdited(false)
     trustedEditableActionsKeyRef.current = undefined
     panelMutationPendingRef.current = false
     repairedActionIndexesRef.current = new Set()
     appliedSuggestionKeysRef.current = new Set()
-  }, [effectiveDiagnosisKey])
+    appliedLocalFixKeysRef.current = new Set()
+  }
+
+  useEffect(clearDiagnosisState, [effectiveDiagnosisKey])
 
   useEffect(() => {
     // Distinguish this panel's own applies from external draft edits. An apply
@@ -194,6 +259,24 @@ export function CorrelationDiagnosePanel({
     }
     setExternallyEdited(true)
   }, [currentEditableActionsKey, presentedDiagnosisKey])
+
+  const resolveStepForObservationId = (stepId: number): ScriptStepRef => {
+    const matched = replayStepById.get(stepId)
+    const fromStep = matched ? stepRefForCorrelationStep(matched) : null
+    if (fromStep) return fromStep
+    return { phase: 'action', actionIndex: stepId }
+  }
+
+  const isStepEditable = (step: ScriptStepRef): boolean => {
+    if (step.actionIndex < 0) return false
+    if (script) {
+      return resolveStepTarget(script, step) !== null
+    }
+    if (step.phase === 'action') {
+      return step.actionIndex < effectiveActionCount
+    }
+    return true
+  }
 
   const saveAsRuleset = async () => {
     if (!projectId || !currentSuggestions) return
@@ -282,7 +365,7 @@ export function CorrelationDiagnosePanel({
   }
 
   const runBaseline = async () => {
-    if (!scriptId || !trustedServerReplay || !diagnosisReady) return
+    if (!scriptId || !trustedServerReplay || !diagnosisReady || !diagnoseWithBaseline) return
     const requestId = ++diagnosisRequestRef.current
     const requestDiagnosisKey = effectiveDiagnosisKey
     setRunning(true)
@@ -300,7 +383,7 @@ export function CorrelationDiagnosePanel({
   }
 
   const runUpload = async (file: File) => {
-    if (!diagnosisReady) return
+    if (!diagnosisReady || !diagnoseWithUpload) return
     const requestId = ++diagnosisRequestRef.current
     const requestDiagnosisKey = effectiveDiagnosisKey
     setRunning(true)
@@ -350,21 +433,25 @@ export function CorrelationDiagnosePanel({
     if (presentedDiagnosisKey !== effectiveDiagnosisKey || !suggestion.extractor || externallyEdited) return
     const suggestionKey = suggestionIdentity(suggestion)
     if (appliedSuggestionKeysRef.current.has(suggestionKey)) return
-    const actionIndex = suggestion.source_step_id
-    if (actionIndex < 0 || actionIndex >= actionCount) return
+    const sourceStep = resolveStepForObservationId(suggestion.source_step_id)
+    if (!isStepEditable(sourceStep)) return
+    const failingStep = typeof suggestion.failing_step_id === 'number'
+      ? resolveStepForObservationId(suggestion.failing_step_id)
+      : undefined
     const requestLocations = repairLocationsFromSuggestion(suggestion, replaySteps)
     const repair = automaticRepairSupported && suggestion.review_action !== 'manual_value_replacement_required' &&
       typeof suggestion.failing_step_id === 'number' &&
-      suggestion.failing_step_id >= 0 &&
-      suggestion.failing_step_id < actionCount &&
-      // A previous apply already rewrote this failing action; these offsets
+      failingStep !== undefined &&
+      isFlatActionStep(failingStep) &&
+      isStepEditable(failingStep) &&
+      // A previous apply already rewrote this failing step; these offsets
       // were computed against its pre-repair content, so fall back to
       // extractor-only rather than risking a misplaced replacement.
       !repairedActionIndexesRef.current.has(suggestion.failing_step_id) &&
       requestLocations.length > 0 &&
       suggestion.extractor.name
       ? {
-        failingActionIndex: suggestion.failing_step_id,
+        failingActionIndex: failingStep.actionIndex,
         requestLocations,
         replacement: `{{var.${suggestion.extractor.name}}}`,
       }
@@ -385,15 +472,22 @@ export function CorrelationDiagnosePanel({
     // synchronous callback as well so two clicks in the same turn cannot add
     // the same extractor twice.
     appliedSuggestionKeysRef.current.add(suggestionKey)
-    const result = onAddExtractor(actionIndex, extractor, repair)
+    onApplyExtractor?.(sourceStep.actionIndex, extractor, sourceStep)
+    const result = onAddExtractor
+      ? isFlatActionStep(sourceStep) && isFlatActionStep(failingStep)
+        ? onAddExtractor(sourceStep.actionIndex, extractor, repair)
+        : onAddExtractor(sourceStep.actionIndex, extractor, repair, sourceStep)
+      : onApplyExtractor
+        ? { extractorAdded: true, extractorAvailable: true, requestRepaired: false }
+        : undefined
     if (result) {
       if (result.extractorAdded || result.requestRepaired) {
         // The draft will change; the next editable-actions key is this panel's
         // own doing, not an external edit.
         panelMutationPendingRef.current = true
       }
-      if (result.requestRepaired && repair) {
-        repairedActionIndexesRef.current.add(repair.failingActionIndex)
+      if (result.requestRepaired && typeof suggestion.failing_step_id === 'number') {
+        repairedActionIndexesRef.current.add(suggestion.failing_step_id)
       }
       setApplicationResults(previous => new Map(previous).set(suggestionKey, result))
     } else {
@@ -401,24 +495,27 @@ export function CorrelationDiagnosePanel({
     }
   }
 
-  const resetDiagnosis = () => {
-    diagnosisRequestRef.current += 1
-    rulesetSaveRequestRef.current += 1
-    setSuggestions(null)
-    setPresentedDiagnosisKey(null)
-    setDiagnosisCoverage(null)
-    setAutomaticRepairSupported(false)
-    setRunning(false)
-    setError(null)
-    setSavedRuleset(false)
-    setSavingRuleset(false)
-    setApplicationResults(new Map())
-    setExternallyEdited(false)
-    trustedEditableActionsKeyRef.current = undefined
-    panelMutationPendingRef.current = false
-    repairedActionIndexesRef.current = new Set()
-    appliedSuggestionKeysRef.current = new Set()
+  const applyLocalFix = (fix: SuggestedExtractorFix, fixKey: string, rowLocation: string) => {
+    if (appliedLocalFixKeys.has(fixKey) || appliedLocalFixKeysRef.current.has(fixKey) || externallyEdited) return
+    appliedLocalFixKeysRef.current.add(fixKey)
+    onApplyExtractor?.(fix.actionIndex, fix.extractor, fix.step)
+    if (onAddExtractor) {
+      const result = isFlatActionStep(fix.step)
+        ? onAddExtractor(fix.actionIndex, fix.extractor, undefined)
+        : onAddExtractor(fix.actionIndex, fix.extractor, undefined, fix.step)
+      if (result.extractorAdded || result.requestRepaired) {
+        panelMutationPendingRef.current = true
+      }
+      if (!result.extractorAvailable) {
+        appliedLocalFixKeysRef.current.delete(fixKey)
+        return
+      }
+    }
+    setAppliedLocalFixKeys(previous => new Set(previous).add(fixKey))
+    setAppliedLocalFixes(previous => new Map(previous).set(fixKey, { rowLocation, fix }))
   }
+
+  const resetDiagnosis = clearDiagnosisState
 
   const coverageTruncated = currentDiagnosisCoverage?.truncated === true
   const coverageCompared = currentDiagnosisCoverage?.compared_recorded_steps
@@ -432,6 +529,7 @@ export function CorrelationDiagnosePanel({
   const diagnosisInconclusive = currentDiagnosisCoverage?.compared_recorded_steps === 0
   const relationshipEvidence = useMemo(() => admitRelationshipEvidence(currentDiagnosisCoverage?.relationship_coverage), [currentDiagnosisCoverage?.relationship_coverage])
   const relationshipInconclusive = relationshipEvidence.present && (relationshipEvidence.malformed || relationshipEvidence.coverage?.complete !== true)
+  const showServerDiagnosisControls = Boolean(diagnoseWithBaseline || diagnoseWithUpload || !script)
 
   return (
     <div className="replay-detail-block correlation-diagnose" aria-label="Correlation diagnosis">
@@ -440,8 +538,78 @@ export function CorrelationDiagnosePanel({
         Compare this replay against the recording to find values that rotated (session tokens, CSRF, view-state) and add the extractors that fix them.
       </p>
 
+      {script && localDiffRows.length > 0 && (
+        <div className="correlation-diff-rows" aria-label="Recording diff steps">
+          {localDiffRows.map((row, rowIndex) => {
+            const locationLabel = row.stepLocationLabel || `#${row.actionIndex + 1}`
+            const liveFixKeys = new Set(row.suggestedFixes.map(fix => localFixIdentity(locationLabel, fix)))
+            const retainedFixes: SuggestedExtractorFix[] = []
+            for (const [key, entry] of appliedLocalFixes.entries()) {
+              if (entry.rowLocation === locationLabel && !liveFixKeys.has(key)) {
+                retainedFixes.push(entry.fix)
+              }
+            }
+            const displayFixes = [...row.suggestedFixes, ...retainedFixes]
+            return (
+              <div
+                key={`${locationLabel}-${rowIndex}`}
+                className="correlation-diff-row"
+              >
+                <div className="correlation-diagnose-item-head">
+                  {onSelectAction ? (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost correlation-step-badge"
+                      onClick={() => onSelectAction(row.actionIndex, row.step)}
+                    >
+                      {locationLabel}
+                    </button>
+                  ) : (
+                    <span className="metric-badge correlation-step-badge">{locationLabel}</span>
+                  )}
+                  <strong>{row.actionName}</strong>
+                  <span className="metric-badge">{row.method}</span>
+                  {typeof row.statusCode === 'number' && (
+                    <span className="metric-badge">{row.statusCode}</span>
+                  )}
+                </div>
+                {displayFixes.map(fix => {
+                  const fixLocationLabel = fix.stepLocationLabel || `#${fix.actionIndex + 1}`
+                  const fixKey = localFixIdentity(locationLabel, fix)
+                  const isApplied = appliedLocalFixKeys.has(fixKey)
+                  return (
+                    <div key={fixKey} className="extractor-tester-actions">
+                      {onSelectAction ? (
+                        <button
+                          type="button"
+                          className="btn btn-xs btn-ghost correlation-step-badge"
+                          onClick={() => onSelectAction(fix.actionIndex, fix.step)}
+                        >
+                          {fixLocationLabel}
+                        </button>
+                      ) : (
+                        <span className="metric-badge correlation-step-badge">{fixLocationLabel}</span>
+                      )}
+                      <span>{fix.reason}</span>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        disabled={isApplied || externallyEdited}
+                        onClick={() => applyLocalFix(fix, fixKey, locationLabel)}
+                      >
+                        {isApplied ? 'Extractor added' : 'Add as extractor'}
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <CorrelationRelationshipCoverage coverage={currentDiagnosisCoverage?.relationship_coverage} />
-      {currentSuggestions === null ? (
+      {showServerDiagnosisControls && (currentSuggestions === null ? (
         <div className="correlation-diagnose-actions">
           {recordingStatusState === 'loading' ? (
             <button type="button" className="btn btn-sm btn-secondary" disabled>Checking stored baseline…</button>
@@ -534,9 +702,18 @@ export function CorrelationDiagnosePanel({
           {currentSuggestions.map((suggestion, index) => {
             const appliedKey = suggestionIdentity(suggestion)
             const applicationResult = applicationResults.get(appliedKey)
-            const canApply = !!suggestion.extractor && suggestion.source_step_id >= 0 && suggestion.source_step_id < actionCount
+            const sourceStep = resolveStepForObservationId(suggestion.source_step_id)
+            const failingStep = typeof suggestion.failing_step_id === 'number'
+              ? resolveStepForObservationId(suggestion.failing_step_id)
+              : undefined
+            const sourceLocationLabel = formatStepLocation(sourceStep) || `#${sourceStep.actionIndex + 1}`
+            const canApply = !!suggestion.extractor && isStepEditable(sourceStep)
             const requiresManualReplacement = suggestion.review_action === 'manual_value_replacement_required'
-            const hasLocalRepair = automaticRepairSupported && repairLocationsFromSuggestion(suggestion, replaySteps).length > 0
+            const hasLocalRepair = automaticRepairSupported &&
+              failingStep !== undefined &&
+              isFlatActionStep(failingStep) &&
+              isStepEditable(failingStep) &&
+              repairLocationsFromSuggestion(suggestion, replaySteps).length > 0
             const expectedAutomaticRepair = !requiresManualReplacement && typeof suggestion.failing_step_id === 'number' && hasLocalRepair
             const fullyApplied = !!applicationResult?.extractorAvailable && (!expectedAutomaticRepair || applicationResult.requestRepaired)
             const extractorOnly = !!applicationResult?.extractorAvailable && expectedAutomaticRepair && !applicationResult.requestRepaired
@@ -544,6 +721,17 @@ export function CorrelationDiagnosePanel({
               <div key={`${suggestion.rule_id}-${index}`} className={`correlation-diagnose-item severity-${suggestion.severity}`}>
                 <div className="correlation-diagnose-item-head">
                   <span className={`action-signal-pill ${suggestion.severity === 'error' ? 'error' : 'warning'}`}>{suggestion.severity}</span>
+                  {onSelectAction ? (
+                    <button
+                      type="button"
+                      className="btn btn-xs btn-ghost correlation-step-badge"
+                      onClick={() => onSelectAction(sourceStep.actionIndex, sourceStep)}
+                    >
+                      {sourceLocationLabel}
+                    </button>
+                  ) : (
+                    <span className="metric-badge correlation-step-badge">{sourceLocationLabel}</span>
+                  )}
                   <strong>{suggestion.title}</strong>
                   {typeof suggestion.confidence === 'number' && (
                     <span className="metric-badge">{Math.round(suggestion.confidence * 100)}%</span>
@@ -571,7 +759,7 @@ export function CorrelationDiagnosePanel({
             )
           })}
         </div>
-      )}
+      ))}
       {error && <span className="extractor-tester-error">{error}</span>}
     </div>
   )

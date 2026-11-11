@@ -7,10 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type scriptArgs struct {
@@ -117,30 +121,215 @@ func parseScriptArgs(raw []string) scriptArgs {
 	return args
 }
 
+const maxCLIScriptBytes = 32 << 20
+
+func readBoundedCLIScriptFile(path string) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	data, err := io.ReadAll(io.LimitReader(f, maxCLIScriptBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > maxCLIScriptBytes {
+		return nil, fmt.Errorf("script exceeds %d byte limit", maxCLIScriptBytes)
+	}
+	return data, nil
+}
+
+func parseScriptFileForCLI(path string) (*dsl.Script, *engine.RedactionConfig, error) {
+	data, err := readBoundedCLIScriptFile(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("read script file: %w", err)
+	}
+	return parseScriptSnapshotForCLI(path, data)
+}
+
+func parseScriptSnapshotForCLI(path string, data []byte) (*dsl.Script, *engine.RedactionConfig, error) {
+	var wrapper struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, nil, fmt.Errorf("parse script JSON: %w", err)
+	}
+	parsed := &wrapper.Script
+	if parsed.Name == "" && parsed.Protocol == "" && len(parsed.Actions) == 0 {
+		var direct dsl.Script
+		if err := json.Unmarshal(data, &direct); err != nil {
+			return nil, nil, fmt.Errorf("parse script JSON: %w", err)
+		}
+		parsed = &direct
+	}
+	rc := cliScriptRedactionConfig(parsed)
+	baseDir := filepath.Dir(path)
+	if resolveErr := dsl.ResolveBodyRefs(parsed, baseDir); resolveErr != nil {
+		return nil, rc, resolveErr
+	}
+	rc = cliScriptRedactionConfig(parsed)
+	if baseDir != "" {
+		absDir, absErr := filepath.Abs(baseDir)
+		if absErr != nil {
+			return nil, rc, fmt.Errorf("resolve script directory: %w", absErr)
+		}
+		if regErr := fileasset.RegisterRoot(absDir); regErr != nil {
+			return nil, rc, fmt.Errorf("register script asset directory: %w", regErr)
+		}
+		for i := range parsed.DataSources {
+			dsPath := parsed.DataSources[i].Path
+			if dsPath == "" || filepath.IsAbs(dsPath) {
+				continue
+			}
+			resolved, relErr := filepath.Abs(filepath.Join(absDir, dsPath))
+			if relErr != nil {
+				return nil, rc, fmt.Errorf("resolve data source %q: %w", dsPath, relErr)
+			}
+			parsed.DataSources[i].Path = resolved
+		}
+	}
+	rc = cliScriptRedactionConfig(parsed)
+	if issues := dsl.ValidateScriptIssuesWithPreservedImportCredentials(parsed); len(issues) > 0 {
+		return nil, rc, &dsl.ValidationError{Issues: issues}
+	}
+	return parsed, rc, nil
+}
+
+func loadScriptForCLIExecution(path string, args runArgs) (*dsl.Script, *engine.RedactionConfig, error) {
+	script, rc, err := parseScriptFileForCLI(path)
+	if err != nil {
+		return nil, attachCLIEnvSecrets(rc, args.env), err
+	}
+	overridden, err := applyRuntimeOverrides(script, args)
+	if err != nil {
+		return nil, attachCLIEnvSecrets(rc, args.env), err
+	}
+	return overridden, cliScriptExecutionRedactionConfig(overridden, args.env), nil
+}
+
+func loadScriptSnapshotForCLIExecution(path string, data []byte, args runArgs) (*dsl.Script, *engine.RedactionConfig, error) {
+	script, rc, err := parseScriptSnapshotForCLI(path, data)
+	if err != nil {
+		return nil, attachCLIEnvSecrets(rc, args.env), err
+	}
+	overridden, err := applyRuntimeOverrides(script, args)
+	if err != nil {
+		return nil, attachCLIEnvSecrets(rc, args.env), err
+	}
+	return overridden, cliScriptExecutionRedactionConfig(overridden, args.env), nil
+}
+
+func cliScriptExecutionRedactionConfig(script *dsl.Script, env map[string]string) *engine.RedactionConfig {
+	return attachCLIEnvSecrets(cliScriptRedactionConfig(script), env)
+}
+
+func attachCLIEnvSecrets(rc *engine.RedactionConfig, env map[string]string) *engine.RedactionConfig {
+	if len(env) == 0 {
+		return rc
+	}
+	if rc == nil {
+		var err error
+		rc, err = engine.NewRedactionConfig(nil)
+		if err != nil {
+			return nil
+		}
+	}
+	var envSecrets []string
+	for key, value := range env {
+		if value == "" {
+			continue
+		}
+		if scrub.SensitiveName(key) || scrub.Value(value, scrub.Policy{}) != value {
+			envSecrets = append(envSecrets, value)
+		}
+	}
+	if len(envSecrets) == 0 {
+		return rc
+	}
+	if withEnv, err := engine.WithScriptSourcedSecretValueRedaction(rc, envSecrets); err == nil {
+		return withEnv
+	}
+	return rc
+}
+
+func cliScriptBytesRedactionConfig(data []byte) *engine.RedactionConfig {
+	if len(data) == 0 {
+		return cliScriptRedactionConfig(nil)
+	}
+	var wrapper struct {
+		Script dsl.Script `json:"script"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err == nil && (wrapper.Script.Name != "" || wrapper.Script.Protocol != "" || len(wrapper.Script.Actions) > 0) {
+		return cliScriptRedactionConfig(&wrapper.Script)
+	}
+	var direct dsl.Script
+	if err := json.Unmarshal(data, &direct); err == nil {
+		return cliScriptRedactionConfig(&direct)
+	}
+	return cliScriptRedactionConfig(nil)
+}
+
+func cliScriptRedactionConfig(script *dsl.Script) *engine.RedactionConfig {
+	rc, err := engine.NewRedactionConfig(nil)
+	if err != nil || script == nil {
+		return rc
+	}
+	if values, inspectErr := engine.ImportedCredentialValues(script); inspectErr == nil && len(values) > 0 {
+		if withValues, attachErr := engine.WithScriptSourcedSecretValueRedaction(rc, values); attachErr == nil {
+			rc = withValues
+		}
+	}
+	return rc
+}
+
+func scrubCLIText(text string, rc *engine.RedactionConfig) string {
+	if text == "" {
+		return ""
+	}
+	if rc != nil {
+		text = rc.ScrubText(text)
+	}
+	return scrub.Value(text, scrub.Policy{})
+}
+
 func validateScriptFile(path string) scriptValidationResult {
-	script, err := dsl.ParseFile(path)
+	script, rc, err := parseScriptFileForCLI(path)
 	if err != nil {
 		// One issue per finding, as the API's validation routes list them.
 		var invalid *dsl.ValidationError
 		if errors.As(err, &invalid) {
-			return scriptValidationResult{Valid: false, Issues: append([]string{}, invalid.Issues...)}
+			issues := make([]string, len(invalid.Issues))
+			for i, issue := range invalid.Issues {
+				issues[i] = scrubCLIText(issue, rc)
+			}
+			return scriptValidationResult{Valid: false, Issues: issues}
 		}
-		return scriptValidationResult{Valid: false, Issues: []string{err.Error()}}
+		return scriptValidationResult{Valid: false, Issues: []string{scrubCLIText(err.Error(), rc)}}
 	}
-	issues := dsl.ValidateScriptIssues(script)
 	return scriptValidationResult{
-		Valid:    len(issues) == 0,
-		Script:   script.Name,
+		Valid:    true,
+		Script:   scrubCLIText(script.Name, rc),
 		Protocol: script.Protocol,
-		Issues:   issuesOrEmpty(issues),
+		Issues:   []string{},
 		HTTP3:    scriptHTTP3Note(script),
 	}
 }
 
+func scrubCLIURLOrText(raw string, rc *engine.RedactionConfig) string {
+	if raw == "" {
+		return ""
+	}
+	if rc != nil {
+		raw = rc.ScrubText(raw)
+	}
+	raw = scrub.ValueURL(raw, scrub.Policy{})
+	return scrubCLIText(raw, rc)
+}
+
 func explainScriptFile(path string) (scriptExplainResult, error) {
-	script, err := dsl.ParseFile(path)
+	script, rc, err := parseScriptFileForCLI(path)
 	if err != nil {
-		return scriptExplainResult{}, err
+		return scriptExplainResult{}, errors.New(scrubCLIText(err.Error(), rc))
 	}
 	assertions := 0
 	extractors := 0
@@ -157,20 +346,22 @@ func explainScriptFile(path string) (scriptExplainResult, error) {
 		}
 		return nil
 	}); err != nil {
-		return scriptExplainResult{}, fmt.Errorf("count script checks: %w", err)
+		return scriptExplainResult{}, fmt.Errorf("count script checks: %s", scrubCLIText(err.Error(), rc))
 	}
+	baseURL := scrubCLIURLOrText(script.Config.BaseURL, rc)
+	safeName := scrubCLIText(script.Name, rc)
 	result := scriptExplainResult{
-		Name:           script.Name,
+		Name:           safeName,
 		Protocol:       script.Protocol,
-		BaseURL:        script.Config.BaseURL,
+		BaseURL:        baseURL,
 		Actions:        len(script.Actions),
 		Assertions:     assertions,
 		Extractors:     extractors,
 		DataSources:    len(script.DataSources),
 		GoalConfigured: script.GoalConfig != nil,
-		GeneratedBy:    script.GeneratedBy,
-		GeneratedFrom:  script.GeneratedFrom,
-		Summary:        fmt.Sprintf("%s is a %s script with %d top-level action%s, %d assertion%s, and %d extractor%s across all phases and nested requests.", script.Name, script.Protocol, len(script.Actions), plural(len(script.Actions)), assertions, plural(assertions), extractors, plural(extractors)),
+		GeneratedBy:    scrubCLIText(script.GeneratedBy, rc),
+		GeneratedFrom:  scrubCLIURLOrText(script.GeneratedFrom, rc),
+		Summary:        fmt.Sprintf("%s is a %s script with %d top-level action%s, %d assertion%s, and %d extractor%s across all phases and nested requests.", safeName, script.Protocol, len(script.Actions), plural(len(script.Actions)), assertions, plural(assertions), extractors, plural(extractors)),
 	}
 	if len(script.DataSources) == 0 {
 		result.NextActions = append(result.NextActions, "Add data sources if this flow needs per-user or per-iteration variation.")
@@ -229,13 +420,6 @@ func writeScriptExplain(args scriptArgs, result scriptExplainResult) {
 func writeJSON(value any) {
 	payload, _ := json.MarshalIndent(value, "", "  ")
 	fmt.Println(string(payload))
-}
-
-func issuesOrEmpty(issues []string) []string {
-	if issues == nil {
-		return []string{}
-	}
-	return issues
 }
 
 func plural(count int) string {

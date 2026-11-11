@@ -16,6 +16,7 @@ import { TIMING_SOURCE_LABELS, WATERFALL_PHASES, WATERFALL_PHASE_BY_KEY, formatW
 import type { DebugTimelineRowModel } from './waterfall/debugEventModel'
 import type { DebugWaterfallNode } from './waterfall/debugTree'
 import { debugRequestView, toCurl, toHarLog } from './waterfall/debugRequestExport'
+import { curlCommandGaps } from './requestResponseInspectorModel'
 
 type DrawerTab = 'timing' | 'request' | 'response' | 'headers' | 'correlation' | 'transport'
 const TABS: Array<[DrawerTab, string]> = [
@@ -73,6 +74,8 @@ export function DebugWaterfallDrawer({
   onInspect,
   canRevealInScript,
   onRevealInScript,
+  canEdit = true,
+  onEdit,
 }: {
   node: DebugWaterfallNode
   row?: DebugTimelineRowModel
@@ -81,6 +84,8 @@ export function DebugWaterfallDrawer({
   onInspect?: () => void
   canRevealInScript?: boolean
   onRevealInScript?: () => void
+  canEdit?: boolean
+  onEdit?: () => void
 }) {
   const baseId = useId().replace(/:/g, '')
   const [tab, setTab] = useState<DrawerTab>('timing')
@@ -137,7 +142,7 @@ export function DebugWaterfallDrawer({
         </header>
         {onInspect && (
           <div className="wf-drawer-actions">
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onInspect}>Inspect {node.label}</button>
+            <button type="button" className="btn btn-sm btn-ghost" aria-label={`Inspect ${node.label || 'action'}`} onClick={onInspect}>Inspect</button>
           </div>
         )}
         <div className="wf-drawer-panel">
@@ -186,9 +191,13 @@ export function DebugWaterfallDrawer({
   }
 
   const ev = row.event
+  const actionLabel = (hop ? row.actionName : node.label) || 'action'
   const started = ev.started_at ? Date.parse(ev.started_at) : Number.NaN
   const completed = ev.completed_at ? Date.parse(ev.completed_at) : Number.NaN
   const elapsedMs = Number.isFinite(started) && Number.isFinite(completed) && completed >= started ? completed - started : null
+  const curlGaps = view && ev.snapshot ? curlCommandGaps(ev.snapshot) : []
+  const curlGapsId = `${baseId}-curl-gaps`
+  const curlGapsNote = curlGaps.length > 0 ? `cURL note: ${curlGaps.join(', ')}` : ''
   return (
     <div className="wf-drawer-inner">
       <header className="wf-drawer-header">
@@ -204,13 +213,28 @@ export function DebugWaterfallDrawer({
         <code>{formatWaterfallMs(hop ? hop.durationMs : row.durationMs)}</code>
       </header>
       <div className="wf-drawer-actions">
+        {onEdit && <button type="button" className="btn btn-sm btn-secondary" disabled={!canEdit} aria-label={`Edit ${actionLabel}`} onClick={onEdit}>Edit</button>}
         {onRevealInScript && <button type="button" className="btn btn-sm btn-secondary" disabled={!canRevealInScript} onClick={onRevealInScript}>Reveal in script</button>}
-        <button type="button" className="btn btn-sm btn-secondary" disabled={!view} onClick={() => void copyCurl()}>Copy as cURL</button>
-        <button type="button" className="btn btn-sm btn-secondary" disabled={!view} onClick={() => void openHar()}>Open in HAR</button>
-        {onInspect && <button type="button" className="btn btn-sm btn-ghost" onClick={onInspect}>Inspect {(hop ? row.actionName : node.label) || 'action'}</button>}
+        <button
+          type="button"
+          className="btn btn-sm btn-secondary"
+          disabled={!view}
+          aria-describedby={curlGaps.length > 0 ? curlGapsId : undefined}
+          title={curlGapsNote || undefined}
+          onClick={() => void copyCurl()}
+        >
+          Copy as cURL
+        </button>
+        {view && <button type="button" className="btn btn-sm btn-secondary" onClick={() => void openHar()}>Download HAR</button>}
+        {onInspect && <button type="button" className="btn btn-sm btn-ghost" aria-label={`Inspect ${actionLabel}`} onClick={onInspect}>Inspect</button>}
         {/* Always mounted so screen readers announce each change. */}
         <span className="wf-copy-status" role="status">{copyStatus}</span>
       </div>
+      {curlGaps.length > 0 && (
+        <p id={curlGapsId} className="wf-drawer-status">
+          {curlGapsNote}.
+        </p>
+      )}
       <TabList className="wf-drawer-tabs" aria-label="Request details">
         {TABS.map(([key, label]) => (
           <button

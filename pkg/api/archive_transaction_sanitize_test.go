@@ -495,3 +495,78 @@ func TestArchivedNetworkTraceKeepsCookieNameLists(t *testing.T) {
 		t.Fatalf("expected unknown trace keys dropped, got %+v", trace)
 	}
 }
+
+func TestSanitizeArchivedNetworkEntriesScrubsHARBodiesSOAPJSONAndFormCredentials(t *testing.T) {
+	const (
+		soapPwd  = "synth-archive-soap-pwd-9701"
+		wssePwd  = "synth-archive-wsse-pwd-9702"
+		accPwd   = "synth-archive-acc-pwd-9703"
+		emailTok = "synth-archive-email-tok-9704"
+		formTok  = "synth-archive-confirm-9705"
+		snapPwd  = "synth-archive-snap-pwd-9706"
+		urlCred  = "synth-archive-origin-pwd-9707"
+	)
+
+	var output bytes.Buffer
+	w := &runArchiveWriter{
+		manifest:  RunArchiveManifest{TestID: "run-har-body-scrub", TestName: "HARBodyScrub"},
+		txEncoder: json.NewEncoder(&output),
+	}
+	err := w.RecordResult(&protocol.Result{
+		ActionName: "MultiBodyStep",
+		Success:    false,
+		StatusCode: 500,
+		NetworkEntries: []protocol.NetworkEntry{
+			{
+				Method:      "POST",
+				URL:         "https://api.example.test/soap",
+				RequestBody: `<soapenv:Envelope xmlns:ns="urn:test" xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><soapenv:Header><wsse:Security><wsse:UsernameToken><wsse:Password>` + wssePwd + `</wsse:Password></wsse:UsernameToken></wsse:Security></soapenv:Header><soapenv:Body><ns:Login><ns:userPassword>` + soapPwd + `</ns:userPassword></ns:Login></soapenv:Body></soapenv:Envelope>`,
+				HAR: &protocol.ReplayHARExchange{
+					RequestBody: &protocol.ReplayHARBody{
+						State:    "retained",
+						MimeType: "text/xml",
+						Text:     `<ns:Login xmlns:ns="urn:test"><ns:userPassword>` + soapPwd + `</ns:userPassword></ns:Login>`,
+					},
+					ResponseBody: &protocol.ReplayHARBody{
+						State:    "retained",
+						MimeType: "application/json",
+						Text:     `{"accPassword":"` + accPwd + `","emailToken":"` + emailTok + `","status":"failed"}`,
+					},
+				},
+				BrowserEvidence: &protocol.BrowserResourceEvidence{
+					Origin: "https://operator:" + urlCred + "@api.example.test/app",
+				},
+			},
+			{
+				Method: "POST",
+				URL:    "https://api.example.test/form",
+				HAR: &protocol.ReplayHARExchange{
+					RequestBody: &protocol.ReplayHARBody{
+						State:    "retained",
+						MimeType: "application/x-www-form-urlencoded",
+						Text:     `username=alice&_CONFIRMATIONTOKEN=` + formTok,
+					},
+				},
+			},
+		},
+		Snapshot: &protocol.ErrorSnapshot{
+			RequestURL:   "https://api.example.test/login",
+			RequestBody:  `{"managerPassword":"` + snapPwd + `"}`,
+			ResponseBody: `<ns:Fault><ns:userPassword>` + soapPwd + `</ns:userPassword></ns:Fault>`,
+			HTML:         `<html><script>const accPassword = 'short-arch-html-pin';</script></html>`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("RecordResult: %v", err)
+	}
+
+	serialized := output.String()
+	for _, secret := range []string{soapPwd, wssePwd, accPwd, emailTok, formTok, snapPwd, urlCred, "short-arch-html-pin"} {
+		if strings.Contains(serialized, secret) {
+			t.Fatalf("archived transaction leaked %q: %s", secret, serialized)
+		}
+	}
+	if !strings.Contains(serialized, `\"status\":\"failed\"`) {
+		t.Fatalf("archived transaction dropped benign HAR response JSON field: %s", serialized)
+	}
+}

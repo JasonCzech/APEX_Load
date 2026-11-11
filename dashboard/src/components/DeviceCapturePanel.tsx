@@ -17,6 +17,7 @@ import { downloadBlob } from '../utils/fileUtils'
 import RecordingMarkerControls from './RecordingMarkerControls'
 import { RECORDING_REVIEW_STEP_LIMIT, recordedScriptSteps } from './recordingReviewModel'
 import { createReplaySessionId } from './scriptEditorUtils'
+import { requirementsPreserveDestinationValues } from './secretBindingUtils'
 
 // How often a running capture's counts refresh.
 export const DEVICE_CAPTURE_POLL_MS = 2000
@@ -30,6 +31,8 @@ interface DeviceCapturePanelProps {
   // The recording profile selected in Recording Studio: the agent has no
   // project store, so the capture takes it along.
   recordingProfile?: RecordingProfile
+  // Whether "Scrub sensitive credentials and headers" is enabled in Recording Studio.
+  scrubSensitive?: boolean
 }
 
 interface DeviceCaptureSaveOperation {
@@ -68,6 +71,7 @@ export default function DeviceCapturePanel({
   commitGenericImportBatch,
   onImported,
   recordingProfile,
+  scrubSensitive,
 }: DeviceCapturePanelProps) {
   const api = useMemo(() => deviceCaptureApi(connection), [connection])
   const [interfaces, setInterfaces] = useState<DeviceCaptureInterface[]>([])
@@ -168,6 +172,15 @@ export default function DeviceCapturePanel({
     }
   }
 
+  const effectiveScrubSensitive = scrubSensitive ?? Boolean(recordingProfile?.scrub_sensitive)
+  const outgoingRecordingProfile: RecordingProfile | undefined = recordingProfile
+    ? (effectiveScrubSensitive === Boolean(recordingProfile.scrub_sensitive)
+        ? recordingProfile
+        : { ...recordingProfile, scrub_sensitive: effectiveScrubSensitive })
+    : effectiveScrubSensitive
+      ? { id: 'scrub-sensitive', name: 'Scrub credentials', scrub_sensitive: true }
+      : undefined
+
   const start = () => run(async () => {
     if (saveOperation.current) throw new Error('Retry the pending save before starting another capture')
     const startedScope = scopeRef.current
@@ -175,7 +188,7 @@ export default function DeviceCapturePanel({
       name: name.trim() || 'Device capture',
       address,
       include_hosts: hostList(includeHosts),
-      ...(recordingProfile ? { recording_profile: recordingProfile } : {}),
+      ...(outgoingRecordingProfile ? { recording_profile: outgoingRecordingProfile } : {}),
     })
     if (scopeRef.current !== startedScope) return
     setCapture(res.capture)
@@ -293,7 +306,7 @@ export default function DeviceCapturePanel({
     const script = preview?.scripts?.[0] ?? preview?.script
     return recordedScriptSteps(script)
   }, [preview])
-  // Credentials the conversion found keep their recorded values.
+  // Credentials the conversion found keep their recorded values unless scrub_sensitive replaced them with {{secret.*}}.
   const credentials = preview?.secret_binding_requirements || []
 
   return (
@@ -344,6 +357,11 @@ export default function DeviceCapturePanel({
           {recordingProfile && (
             <p className="rec-hint" data-testid="device-capture-profile">
               Records and converts with the recording profile <strong>{recordingProfile.name}</strong>.
+            </p>
+          )}
+          {effectiveScrubSensitive && (
+            <p className="rec-hint" data-testid="device-capture-scrub">
+              Sensitive credentials and headers will be replaced with project secret placeholders during conversion.
             </p>
           )}
           <button type="button" className="btn btn-primary" onClick={() => void start()} disabled={busy || !!pendingSave || !address}>
@@ -427,13 +445,19 @@ export default function DeviceCapturePanel({
               {preview.warnings.map(warning => <li key={warning}>{warning}</li>)}
             </ul>
           )}
-          {credentials.length > 0 && (
-            <p className="rec-hint" data-testid="device-capture-credentials">
-              The script keeps {credentials.length === 1 ? 'a recorded credential' : `${credentials.length} recorded credentials`} as
-              recorded ({Array.from(new Set(credentials.map(requirement => requirement.label))).join(', ')}). To keep them in
-              project secrets instead, change them in the script editor after saving.
-            </p>
-          )}
+          {credentials.length > 0 && (() => {
+            const credentialLabels = Array.from(new Set(credentials.map(requirement => requirement.label))).join(', ')
+            const scrubbedCount = credentials.filter(requirement => requirement.destination_value_preserved !== true).length
+            return (
+              <p className="rec-hint" data-testid="device-capture-credentials">
+                {requirementsPreserveDestinationValues(credentials)
+                  ? `The script keeps ${credentials.length === 1 ? 'a recorded credential' : `${credentials.length} recorded credentials`} as recorded (${credentialLabels}). To keep them in project secrets instead, change them in the script editor after saving.`
+                  : scrubbedCount === credentials.length
+                    ? `The script replaced ${scrubbedCount === 1 ? 'a recorded credential' : `${scrubbedCount} recorded credentials`} with project secret placeholders (${credentialLabels}). Configure those secrets under Project secrets or edit the script after saving.`
+                    : `The script replaced ${scrubbedCount === 1 ? 'a recorded credential' : `${scrubbedCount} recorded credentials`} with project secret placeholders and kept ${credentials.length - scrubbedCount} as recorded (${credentialLabels}). Configure the referenced secrets under Project secrets or edit the script after saving.`}
+              </p>
+            )
+          })()}
           {steps.length > 0 && (
             <div className="rec-detail-table-wrap rec-review-steps">
               <table className="rec-detail-table" aria-label="Converted steps">

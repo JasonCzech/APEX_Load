@@ -221,6 +221,10 @@ function ProfileEditor({ profile, rules, onChange, disabled }: {
           <input type="checkbox" checked={profile.capture_cookies === true} disabled={disabled} onChange={event => set({ capture_cookies: event.target.checked ? true : undefined })} />
           <span>Record Cookie headers (replay's cookie jar sends them otherwise)</span>
         </label>
+        <label className="rec-checkbox-row">
+          <input type="checkbox" checked={profile.scrub_sensitive === true} disabled={disabled} onChange={event => set({ scrub_sensitive: event.target.checked ? true : undefined })} />
+          <span>Scrub sensitive credentials and headers in recorded script</span>
+        </label>
       </fieldset>
 
       <fieldset className="rec-profile-group">

@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	_ "modernc.org/sqlite"
 )
 
@@ -41,19 +43,65 @@ func init() {
 }
 
 type Database struct {
-	db                 *sql.DB
-	tx                 *sql.Tx
-	driver             string
-	dsn                string
-	queryTimeout       time.Duration
-	maxRows            int
-	readOnly           bool
-	rollbackOnTeardown bool
+	db                       *sql.DB
+	tx                       *sql.Tx
+	driver                   string
+	dsn                      string
+	queryTimeout             time.Duration
+	maxRows                  int
+	readOnly                 bool
+	rollbackOnTeardown       bool
+	unredactedDebugSnapshots bool
+	redactionMu              sync.RWMutex
+	redactor                 protocol.TextRedactor
+}
+
+var _ protocol.RuntimeTextRedactorSetter = (*Database)(nil)
+
+func (d *Database) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
+	d.redactionMu.Lock()
+	d.redactor = redactor
+	d.redactionMu.Unlock()
+}
+
+func (d *Database) currentRedactor() protocol.TextRedactor {
+	d.redactionMu.RLock()
+	redactor := d.redactor
+	d.redactionMu.RUnlock()
+	return redactor
+}
+
+func (d *Database) redactText(value string) string {
+	if value == "" {
+		return ""
+	}
+	out := value
+	if d.dsn != "" && d.dsn != ":memory:" && !strings.HasPrefix(strings.ToLower(d.dsn), "file::memory:") {
+		sanitizedDSN := scrub.Value(d.dsn, scrub.Policy{})
+		if sanitizedDSN == d.dsn {
+			sanitizedDSN = "[REDACTED]"
+		}
+		out = strings.ReplaceAll(out, d.dsn, sanitizedDSN)
+	}
+	if redactor := d.currentRedactor(); redactor != nil {
+		out = redactor(out)
+	}
+	return scrub.ValueLabel(out, scrub.Policy{})
+}
+
+func (d *Database) redactError(err error) error {
+	if err == nil {
+		return nil
+	}
+	msg := d.redactText(err.Error())
+	msg = scrub.Value(msg, scrub.Policy{})
+	return errors.New(msg)
 }
 
 func (d *Database) Name() string { return "database" }
 
 func (d *Database) Init(ctx context.Context, config map[string]any) error {
+	d.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	configuredDriver := strings.ToLower(strings.TrimSpace(protocol.ConfigString(config, "database_driver")))
 	if err := validateDatabaseDriver(configuredDriver); err != nil {
 		return err
@@ -89,7 +137,7 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	}
 	db, err := sql.Open(d.driver, d.dsn)
 	if err != nil {
-		return err
+		return d.redactError(err)
 	}
 	if maxOpen := protocol.ConfigInt(config, "database_max_open_conns"); maxOpen > 0 {
 		db.SetMaxOpenConns(maxOpen)
@@ -111,7 +159,7 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	if err := d.db.PingContext(ctx); err != nil {
 		_ = d.db.Close()
 		d.db = nil
-		return err
+		return d.redactError(err)
 	}
 	return nil
 }
@@ -183,24 +231,27 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 	if err != nil {
 		result.Success = false
 		result.StatusCode = 500
-		result.ErrorMessage = err.Error()
+		result.ErrorMessage = d.redactError(err).Error()
 	}
 	if result.Success {
 		if extractorErr := runDatabaseExtractors(action.Extractors, result); extractorErr != "" {
 			result.Success = false
 			result.StatusCode = 500
-			result.ErrorMessage = extractorErr
+			result.ErrorMessage = d.redactText(extractorErr)
 		}
 	}
 	if result.Success {
-		if assertionErr := evaluateDatabaseAssertions(action.Assertions, result, result.ResponseBody); assertionErr != "" {
+		if assertionErr := d.evaluateDatabaseAssertions(action.Assertions, result, result.ResponseBody); assertionErr != "" {
 			result.Success = false
 			result.StatusCode = 500
-			result.ErrorMessage = assertionErr
+			result.ErrorMessage = d.redactText(assertionErr)
 		}
 	}
+	if !d.unredactedDebugSnapshots {
+		d.scrubQueryOutputs(result, evidencePayload)
+	}
 	if !result.Success {
-		result.Snapshot = databaseSnapshot(action, result)
+		result.Snapshot = d.databaseSnapshot(action, result)
 	}
 	result.ServerTelemetry = &protocol.ServerTelemetry{
 		ServerProcessingMs: float64(result.Duration.Microseconds()) / 1000,
@@ -217,7 +268,19 @@ func (d *Database) Execute(ctx context.Context, action *protocol.Action) (*proto
 	} else {
 		evidenceResult.ResponseBody = ""
 	}
-	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, &evidenceResult)
+	evidenceAction := action
+	if !d.unredactedDebugSnapshots {
+		copied := *action
+		rawTarget := strings.TrimSpace(action.RedactedTarget)
+		if rawTarget == "" {
+			rawTarget = sqlText(action)
+		}
+		copied.RedactedTarget = d.redactText(rawTarget)
+		copied.RedactedHeaders = d.redactHeaders(action)
+		copied.RedactedParams = d.redactParamsMap(action.RedactedParams, action.Params)
+		evidenceAction = &copied
+	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(evidenceAction, &evidenceResult)
 	result.ProtocolEvidenceOmittedCount = evidenceResult.ProtocolEvidenceOmittedCount + evidenceOmitted
 	return result, nil
 }
@@ -241,7 +304,225 @@ func (d *Database) HealthCheck(ctx context.Context) error {
 	if d.db == nil {
 		return nil
 	}
-	return d.db.PingContext(ctx)
+	return d.redactError(d.db.PingContext(ctx))
+}
+
+const maxDatabaseCellScrubDepth = 8
+
+func (d *Database) scrubCellValue(column string, value any) (any, bool) {
+	return d.scrubCellValueDepth(column, value, 0)
+}
+
+func (d *Database) scrubCellValueDepth(column string, value any, depth int) (any, bool) {
+	if scrub.SensitiveName(column) {
+		if value == nil {
+			return nil, false
+		}
+		if text, ok := value.(string); ok && text == scrub.Redacted {
+			return value, false
+		}
+		return scrub.Redacted, true
+	}
+	switch typed := value.(type) {
+	case nil, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+		return value, false
+	case json.Number:
+		raw := string(typed)
+		redacted := d.redactText(raw)
+		if redacted != raw {
+			return redacted, true
+		}
+		return value, false
+	case string:
+		redacted := d.redactText(typed)
+		return redacted, redacted != typed
+	case []byte:
+		raw := string(typed)
+		redacted := d.redactText(raw)
+		if redacted != raw {
+			return []byte(redacted), true
+		}
+		return value, false
+	case []string:
+		if depth >= maxDatabaseCellScrubDepth {
+			return scrub.Redacted, true
+		}
+		var out []string
+		changed := false
+		for i, elem := range typed {
+			redacted := d.redactText(elem)
+			if redacted != elem {
+				if !changed {
+					out = append([]string(nil), typed...)
+					changed = true
+				}
+				out[i] = redacted
+			}
+		}
+		if changed {
+			return out, true
+		}
+		return value, false
+	case []any:
+		if depth >= maxDatabaseCellScrubDepth {
+			return scrub.Redacted, true
+		}
+		var out []any
+		changed := false
+		for i, elem := range typed {
+			next, elemChanged := d.scrubCellValueDepth("", elem, depth+1)
+			if elemChanged {
+				if !changed {
+					out = append([]any(nil), typed...)
+					changed = true
+				}
+				out[i] = next
+			}
+		}
+		if changed {
+			return out, true
+		}
+		return value, false
+	case map[string]string:
+		if depth >= maxDatabaseCellScrubDepth {
+			return scrub.Redacted, true
+		}
+		var out map[string]string
+		changed := false
+		for k, elem := range typed {
+			next, elemChanged := d.scrubCellValueDepth(k, elem, depth+1)
+			if elemChanged {
+				if !changed {
+					out = make(map[string]string, len(typed))
+					for origK, origV := range typed {
+						out[origK] = origV
+					}
+					changed = true
+				}
+				if str, ok := next.(string); ok {
+					out[k] = str
+				} else {
+					out[k] = scrub.Redacted
+				}
+			}
+		}
+		if changed {
+			return out, true
+		}
+		return value, false
+	case map[string]any:
+		if depth >= maxDatabaseCellScrubDepth {
+			return scrub.Redacted, true
+		}
+		var out map[string]any
+		changed := false
+		for k, elem := range typed {
+			next, elemChanged := d.scrubCellValueDepth(k, elem, depth+1)
+			if elemChanged {
+				if !changed {
+					out = make(map[string]any, len(typed))
+					for origK, origV := range typed {
+						out[origK] = origV
+					}
+					changed = true
+				}
+				out[k] = next
+			}
+		}
+		if changed {
+			return out, true
+		}
+		return value, false
+	default:
+		if depth >= maxDatabaseCellScrubDepth {
+			return scrub.Redacted, true
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return scrub.Redacted, true
+		}
+		var generic any
+		if err := jsonextract.DecodeExact(encoded, &generic); err != nil {
+			return scrub.Redacted, true
+		}
+		next, genericChanged := d.scrubCellValueDepth(column, generic, depth+1)
+		if genericChanged {
+			return next, true
+		}
+		return value, false
+	}
+}
+
+func firstDatabasePayloadColumn(payload map[string]any) string {
+	switch cols := payload["columns"].(type) {
+	case []string:
+		if len(cols) > 0 {
+			return cols[0]
+		}
+	case []any:
+		if len(cols) > 0 {
+			col, _ := cols[0].(string)
+			return col
+		}
+	}
+	return ""
+}
+
+func (d *Database) scrubQueryPayloadMap(payload map[string]any) bool {
+	if len(payload) == 0 {
+		return false
+	}
+	firstCol := firstDatabasePayloadColumn(payload)
+	changed := false
+	scrubRow := func(row map[string]any) {
+		for col, val := range row {
+			if next, cellChanged := d.scrubCellValue(col, val); cellChanged {
+				row[col] = next
+				changed = true
+			}
+		}
+	}
+	switch rows := payload["rows"].(type) {
+	case []map[string]any:
+		for _, row := range rows {
+			scrubRow(row)
+		}
+	case []any:
+		for _, entry := range rows {
+			if row, ok := entry.(map[string]any); ok {
+				scrubRow(row)
+			}
+		}
+	}
+	if firstRow, ok := payload["first_row"].(map[string]any); ok {
+		scrubRow(firstRow)
+	}
+	if scalar, exists := payload["scalar"]; exists {
+		if next, scalarChanged := d.scrubCellValue(firstCol, scalar); scalarChanged {
+			payload["scalar"] = next
+			changed = true
+		}
+	}
+	return changed
+}
+
+func (d *Database) scrubQueryOutputs(result *protocol.Result, evidencePayload map[string]any) {
+	d.scrubQueryPayloadMap(evidencePayload)
+	if result == nil || result.ResponseBody == "" {
+		return
+	}
+	payload, err := decodeDatabasePayload(result.ResponseBody)
+	if err != nil {
+		result.ResponseBody = d.redactText(result.ResponseBody)
+		return
+	}
+	if d.scrubQueryPayloadMap(payload) {
+		if encoded, encodeErr := encodeDatabasePayload(payload); encodeErr == nil {
+			result.ResponseBody = encoded
+		} else {
+			result.ResponseBody = scrub.Redacted
+		}
+	}
 }
 
 func (d *Database) begin(ctx context.Context) error {
@@ -765,7 +1046,7 @@ func extractDatabaseBodyValue(extractor protocol.Extractor, body []byte) (string
 	}
 }
 
-func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protocol.Result, body string) string {
+func (d *Database) evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protocol.Result, body string) string {
 	if len(assertions) == 0 {
 		return ""
 	}
@@ -795,7 +1076,12 @@ func evaluateDatabaseAssertions(assertions []protocol.Assertion, result *protoco
 			actual := jsonextract.Stringify(payload["scalar"])
 			expected := strings.TrimSpace(fmt.Sprint(assertion.Expected))
 			if actual != expected {
-				return fmt.Sprintf("scalar_equals assertion failed: got %q, want %q", actual, expected)
+				reportedActual := actual
+				if d != nil && !d.unredactedDebugSnapshots {
+					scrubbedScalar, _ := d.scrubCellValue(firstDatabasePayloadColumn(payload), payload["scalar"])
+					reportedActual = jsonextract.Stringify(scrubbedScalar)
+				}
+				return fmt.Sprintf("scalar_equals assertion failed: got %q, want %q", reportedActual, expected)
 			}
 		case "body_contains":
 			if !strings.Contains(body, assertion.Value) {
@@ -822,16 +1108,131 @@ func decodeDatabasePayload(body string) (map[string]any, error) {
 	return payload, nil
 }
 
-func databaseSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+func (d *Database) redactHeaders(action *protocol.Action) map[string]string {
+	if action == nil || (len(action.Headers) == 0 && len(action.RedactedHeaders) == 0) {
+		return nil
+	}
+	out := make(map[string]string, len(action.Headers)+len(action.RedactedHeaders))
+	policy := scrub.Policy{}
+	for key, value := range action.Headers {
+		if policy.SensitiveHeader(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = d.redactText(value)
+		}
+	}
+	for key, value := range action.RedactedHeaders {
+		if policy.SensitiveHeader(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = d.redactText(value)
+		}
+	}
+	return out
+}
+
+func (d *Database) redactParamsMap(redacted, raw map[string]any) map[string]any {
+	src := raw
+	if len(redacted) > 0 {
+		src = redacted
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for k, v := range src {
+		if scrub.SensitiveName(k) {
+			out[k] = scrub.Redacted
+			continue
+		}
+		out[k] = d.redactParamValue(v, 0)
+	}
+	return out
+}
+
+func (d *Database) redactParamValue(v any, depth int) any {
+	if v == nil {
+		return nil
+	}
+	if depth > 8 {
+		return scrub.Redacted
+	}
+	switch typed := v.(type) {
+	case string:
+		return d.redactText(typed)
+	case []string:
+		cp := make([]string, len(typed))
+		for i, item := range typed {
+			cp[i] = d.redactText(item)
+		}
+		return cp
+	case []any:
+		cp := make([]any, len(typed))
+		for i, item := range typed {
+			cp[i] = d.redactParamValue(item, depth+1)
+		}
+		return cp
+	case map[string]string:
+		cp := make(map[string]string, len(typed))
+		for k, item := range typed {
+			if scrub.SensitiveName(k) {
+				cp[k] = scrub.Redacted
+			} else {
+				cp[k] = d.redactText(item)
+			}
+		}
+		return cp
+	case map[string]any:
+		cp := make(map[string]any, len(typed))
+		for k, item := range typed {
+			if scrub.SensitiveName(k) {
+				cp[k] = scrub.Redacted
+			} else {
+				cp[k] = d.redactParamValue(item, depth+1)
+			}
+		}
+		return cp
+	default:
+		return v
+	}
+}
+
+func (d *Database) databaseSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
 	if action == nil || result == nil {
 		return nil
 	}
+	if d.unredactedDebugSnapshots {
+		headers := make(map[string]string, len(action.Headers))
+		for k, v := range action.Headers {
+			headers[k] = v
+		}
+		if len(headers) == 0 {
+			headers = nil
+		}
+		return &protocol.ErrorSnapshot{
+			RequestMethod:  action.Type,
+			RequestURL:     sqlText(action),
+			RequestHeaders: headers,
+			RequestBody:    string(action.Body),
+			ResponseStatus: result.StatusCode,
+			ResponseBody:   result.ResponseBody,
+		}
+	}
+	requestURL := strings.TrimSpace(action.RedactedTarget)
+	if requestURL == "" {
+		requestURL = sqlText(action)
+	}
+	requestBody := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		requestBody = string(action.RedactedBody)
+	}
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Type,
-		RequestURL:     sqlText(action),
-		RequestBody:    string(action.Body),
+		RequestURL:     d.redactText(requestURL),
+		RequestHeaders: d.redactHeaders(action),
+		RequestBody:    d.redactText(requestBody),
 		ResponseStatus: result.StatusCode,
-		ResponseBody:   result.ResponseBody,
+		ResponseBody:   d.redactText(result.ResponseBody),
 	}
 }
 

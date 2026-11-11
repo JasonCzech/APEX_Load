@@ -973,7 +973,15 @@ export default function ScriptCreateOptions({
                                   : 'Not specified'}
                               </td>
                               <td style={{ textAlign: 'right' }}>
-                                <button type="button" className="btn btn-sm btn-secondary" onClick={() => onStartTemplateScript(template.script)}>Use {template.name}</button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-secondary"
+                                  style={{ whiteSpace: 'nowrap' }}
+                                  aria-label={`Use ${template.name.trim() || 'template'}`}
+                                  onClick={() => onStartTemplateScript(template.script)}
+                                >
+                                  Use
+                                </button>
                               </td>
                             </tr>
                           )
@@ -1010,7 +1018,15 @@ export default function ScriptCreateOptions({
                           </td>
                           <td><div className="script-create-table-description">{row.description}</div></td>
                           <td style={{ textAlign: 'right' }}>
-                            <button type="button" className="btn btn-sm btn-secondary" onClick={row.onSelect}>Open {row.name}</button>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-secondary"
+                              style={{ whiteSpace: 'nowrap' }}
+                              aria-label={`Open ${row.name.trim() || 'editor'}`}
+                              onClick={row.onSelect}
+                            >
+                              Open
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1052,7 +1068,15 @@ export default function ScriptCreateOptions({
                               </div>
                             </td>
                             <td style={{ textAlign: 'right' }}>
-                              <button type="button" className="btn btn-sm btn-secondary" onClick={() => onComposeComponent(component)}>Compose {component.name}</button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-secondary"
+                                style={{ whiteSpace: 'nowrap' }}
+                                aria-label={`Compose ${component.name.trim() || 'block'}`}
+                                onClick={() => onComposeComponent(component)}
+                              >
+                                Compose
+                              </button>
                             </td>
                           </tr>
                         ))}

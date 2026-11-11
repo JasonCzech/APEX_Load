@@ -91,47 +91,28 @@ func resolvedActionCredentialValues(script *dsl.Script, action *protocol.Action)
 		seen:     make(map[string]struct{}),
 	}
 
-	if !scriptPreservesImportedCredentialValues(script) {
-		// Basic-auth user/password embedded in a script is script-sourced whether
-		// the script was imported or hand-authored. It is collected for symmetry
-		// with the imported path and then discarded by the caller.
-		if action.Auth != nil && strings.EqualFold(strings.TrimSpace(action.Auth.Type), "basic") {
-			collector.collectResolvedAuth(action.Auth)
-		}
-		// URL userinfo is the same Basic surface with no auth block: net/http
-		// synthesises "Basic base64(user:password)" from https://user:pass@host
-		// inside Client.send. Collecting only the auth block here left the two
-		// spellings of one credential obeying different rules — an action-auth
-		// literal was scrubbed from run output while an otherwise identical
-		// URL-embedded literal was disclosed, at the DEFAULT setting.
-		collector.collectResolvedURLUserinfo(action.Target)
-		return collector.values, nil
-	}
-
 	targets, err := decodeImportedCredentialTargets(
 		action.Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey],
 	)
 	if err != nil {
-		return nil, err
+		targets = nil
 	}
 	collector.collectResolvedActionKnownCredentials(action)
-	if len(targets) == 0 && strings.TrimSpace(action.Method) != "" && len(action.Body) > 0 {
-		body, mediaType, err := resolvedActionBody(action)
-		if err != nil {
-			return nil, err
-		}
-		if err := collector.collectLegacyRequestBodyCredentials(
-			body,
-			mediaType,
-			0,
-			&legacyCredentialBodyBudget{},
-		); err != nil {
-			return nil, err
+	if len(action.Body) > 0 && actionCarriesExecutablePayload(action.Type, action.Method) {
+		if body, mediaType, err := resolvedActionBody(action); err == nil {
+			_ = collector.collectLegacyRequestBodyCredentials(
+				body,
+				mediaType,
+				0,
+				&legacyCredentialBodyBudget{},
+			)
 		}
 	}
 	for _, target := range targets {
 		if err := collector.collectResolvedActionTarget(action, target); err != nil {
-			return nil, err
+			if isUnsupportedCredentialLocatorFieldError(err) {
+				return nil, err
+			}
 		}
 	}
 	return collector.values, nil
@@ -143,24 +124,44 @@ func (collector *importedCredentialCollector) collectResolvedActionKnownCredenti
 	}
 	collector.collectResolvedURL(action.Target)
 	for _, header := range action.HeaderList {
-		if credential.SensitiveHeader(header.Name) {
+		if collector.isSensitiveHeader(header.Name) {
 			collector.collectHeaderCredential(header.Name, header.Value)
 		}
 	}
 	for name, value := range action.Headers {
-		if credential.SensitiveHeader(name) {
+		if collector.isSensitiveHeader(name) {
+			collector.collectHeaderCredential(name, value)
+		}
+	}
+	for _, header := range action.DefaultHeaderList {
+		if collector.isSensitiveHeader(header.Name) {
+			collector.collectHeaderCredential(header.Name, header.Value)
+		}
+	}
+	for name, value := range action.DefaultHeaders {
+		if collector.isSensitiveHeader(name) {
 			collector.collectHeaderCredential(name, value)
 		}
 	}
 	collector.collectResolvedAuth(action.Auth)
 	collector.collectSensitiveTree(action.Params, "params", false)
-
-	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(action.Type)), "browser_") {
-		return
+	paramUser, hasUser := resolvedActionParamString(action, "username")
+	paramPass, hasPass := resolvedActionParamString(action, "password")
+	if hasUser || hasPass {
+		effectiveUser := paramUser
+		effectivePass := paramPass
+		if effectiveUser == "" && collector.script != nil && !templatePattern.MatchString(collector.script.Config.Network.Username) {
+			effectiveUser = collector.script.Config.Network.Username
+		}
+		if effectivePass == "" && collector.script != nil && !templatePattern.MatchString(collector.script.Config.Network.Password) {
+			effectivePass = collector.script.Config.Network.Password
+		}
+		for _, value := range appendMailSASLComposites(nil, effectiveUser, effectivePass) {
+			collector.add(value)
+		}
 	}
-	marked, _ := action.Metadata["source_marked_secret"].(bool)
-	masked, _ := action.Metadata["source_masked_secret"].(bool)
-	if !marked && !masked {
+
+	if !isSensitiveBrowserActionInput(action.Type, action.Name, action.Selector, action.Target, action.Metadata, action.Params) {
 		return
 	}
 	collector.add(action.Value)
@@ -388,6 +389,25 @@ func (collector *importedCredentialCollector) collectResolvedAuth(auth *protocol
 	}
 }
 
+func resolvedURLQueryCredentialValues(script *dsl.Script, raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	collector := importedCredentialCollector{
+		script:   script,
+		resolved: true,
+		seen:     make(map[string]struct{}),
+	}
+	// Collect sensitive query values (userinfo composites are handled separately
+	// with authored-vs-secret-store origin classification).
+	queryStart := strings.IndexByte(raw, '?')
+	if queryStart < 0 {
+		return nil
+	}
+	collector.collectURL("https://placeholder.invalid"+raw[queryStart:], nil)
+	return collector.values
+}
+
 func (collector *importedCredentialCollector) collectResolvedURL(raw string) {
 	collector.collectURL(raw, nil)
 	collector.collectResolvedURLUserinfo(raw)
@@ -399,4 +419,10 @@ func (collector *importedCredentialCollector) collectResolvedURLUserinfo(raw str
 		return
 	}
 	collector.collectURLUserinfo(parsed.User)
+	if password, ok := parsed.User.Password(); ok {
+		pair := parsed.User.Username() + ":" + password
+		payload := base64.StdEncoding.EncodeToString([]byte(pair))
+		collector.add(payload)
+		collector.add("Basic " + payload)
+	}
 }

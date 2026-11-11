@@ -519,7 +519,7 @@ describe('ScriptsAuthoringShell', () => {
     await flushPromises()
 
     expect(blocksTab().getAttribute('aria-selected')).toBe('true')
-    expect(container.textContent).toContain('Compose Login Flow')
+    expect(container.querySelector('button[aria-label="Compose Login Flow"]')?.textContent?.trim()).toBe('Compose')
   })
 
   it('asks before leaving a chosen draft while its editor is still loading', async () => {
@@ -663,7 +663,8 @@ describe('ScriptsAuthoringShell', () => {
 
     await clickButton('Starter templates')
 
-    await clickButton('HTTP Smoke')
+    expect(container.querySelector('button[aria-label="Use HTTP Smoke"]')?.textContent?.trim()).toBe('Use')
+    await clickButton('Use HTTP Smoke')
     expect(actions.startTemplateScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'HTTP Smoke',
       protocol: 'http',
@@ -771,7 +772,7 @@ describe('ScriptsAuthoringShell', () => {
   }
 
   async function clickButton(label: string) {
-    const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Copy'].includes(label) ? element.querySelector('strong')?.textContent === label : element.textContent?.includes(label)))
+    const button = Array.from(container.querySelectorAll('button')).find(element => (['Create','Import','Record','Copy'].includes(label) ? element.querySelector('strong')?.textContent === label : element.getAttribute('aria-label') === label || element.textContent?.includes(label)))
     expect(button).toBeTruthy()
     if (!button) {
       return

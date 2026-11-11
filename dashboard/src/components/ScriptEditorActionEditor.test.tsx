@@ -605,4 +605,27 @@ describe('ActionEditor transaction field', () => {
     expect(text).not.toContain('/login')
     expect(text).not.toContain('session_id')
   })
+
+  it('associates the Transaction input with an accessible SLA hint via aria-describedby', () => {
+    renderEditor({
+      name: 'Checkout step',
+      type: 'GET',
+      target: '/checkout',
+      metadata: { source_transaction: 'Checkout' },
+    } as unknown as ScriptActionDefinition)
+
+    const txInput = container.querySelector<HTMLInputElement>('input[placeholder="(none)"]')
+    expect(txInput).not.toBeNull()
+    expect(txInput?.value).toBe('Checkout')
+
+    const describedById = txInput?.getAttribute('aria-describedby')
+    expect(describedById).toBeTruthy()
+    const hint = describedById ? document.getElementById(describedById) : null
+    expect(hint?.tagName).toBe('SMALL')
+    expect(hint?.classList.contains('field-hint')).toBe(true)
+    expect(hint?.textContent).toBe('Timed and aggregated (TPS, percentiles, pass/fail); transaction and phase SLAs attach to this name.')
+
+    const labelledById = txInput?.getAttribute('aria-labelledby')
+    expect(labelledById ? document.getElementById(labelledById)?.textContent : null).toBe('Transaction')
+  })
 })

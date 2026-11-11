@@ -395,7 +395,7 @@ func (vu *VUser) runConcurrentHTTP(ctx context.Context, action dsl.Action, errCf
 						}
 					}
 					child.retrySensitiveValues = history.observedValues()
-					if executor.runtimeCredentialRedactionErr != nil {
+					if executor.runtimePublicationUnavailable() {
 						child.publicationRedactionFailed = true
 					}
 					config, projectionErr := boundConcurrentCompletedResult(child.result, len(children), child.redaction, child.retrySensitiveValues)

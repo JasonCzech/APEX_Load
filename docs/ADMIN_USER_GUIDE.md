@@ -405,72 +405,43 @@ controller that role and retains `Key Vault Secrets User` for generators.
 
 ### Import migration policy
 
-Source credential migration is controlled in the application by
+File, archive, and collection imports preserve literal values from the source
+artifact directly in the converted DSL without scrubbing or forced secret
+tokenization, except where vendor ciphertext lacks plaintext in the source
+(such as LoadRunner `lr_unmask`, `lr_decrypt`, `EncryptedValue`, or
+`ProxyPasswordIsEncrypted=true`). Operators can optionally bind credentials to
+`{{secret.NAME}}` project secrets during import review or later in the script
+editor.
+
+One-click migration of source credentials into new project secrets during import
+review is controlled by
 `system_settings.script_imports.allow_source_secret_migration`. It defaults to
 `false` and only a system administrator can enable it. Enabling the policy does
 not bypass project authorization: a project or system administrator must still
 explicitly select migration for an import.
 
-Imports create missing logical names only. They never replace an existing
-Project Secret. Literal `[REDACTED]` values are unrecoverable and remain
-deferred for later configuration.
+Imports create missing logical names only and never replace an existing project
+secret. Unrecoverable vendor ciphertext remains deferred for explicit secret
+configuration when required by the active protocol or proxy mode.
 
-### Imported script proxy and TLS policy
+### Imported script credentials and runtime redaction
 
-An imported script keeps the credentials from its source. Editors see them
-masked and cannot read them, but every run still sends them. To stop an editor
-from capturing a credential they cannot read, the settings that decide where
-and how it is sent are locked once such a script is saved: the base URL, the
-proxy mode and proxy settings, TLS, the HTTP version and QUIC, the redirect
-limit, default headers, HTTP authentication, WS-Security, the SOAP namespaces
-and the web runtime's additional attributes, plus every configuration section not listed below as
-saving: the other protocols' settings (WebSocket, gRPC, database, messaging,
-Java, browser and the rest, timeouts included), JMeter compatibility, sampler
-schedules and native services. A save that changes one of them is refused with
-"script changes the execution context for retained imported credentials", and the
-message says how to proceed. The same refusal covers a parameter, data source or
-step that a credential-bearing request reads (for a credential kept at script
-level, every parameter and data source, and the wire fields of every request;
-see Import fidelity and repairs); the policy below never unlocks those.
+Script reads, authoring projections, saves, and library exports return and
+accept the unredacted DSL directly. Editors can inspect and update request
+targets, headers, bodies, parameters, data sources, proxy mode and proxy
+settings, TLS versions, and protocol configuration on imported scripts without
+transport-pinning locks. Live HTTP proxy and browser recordings likewise keep
+captured traffic unredacted by default unless `scrub_sensitive` is enabled on
+the recording profile (**Scrub sensitive credentials and headers in recorded script**)
+or via **Scrub sensitive credentials and headers** when starting a proxy or
+browser recording.
 
-Of the script's configuration, only these runtime settings still save: think time, pacing, error handling, run
-logic, observability, logging, results and browser emulation; HTTP tuning such
-as the HTTP section's timeouts (other than QUIC's), connection limits and keep-alive,
-response checks and warnings, caching, cookies, DNS cache and IP version, trace
-headers, and the HTTP user agent and accept headers; the web runtime's download
-filters, content checks, network simulation and profiles, streaming, data
-formatting and source IPs; and the SOAP version and fault handling. Choosing **No Proxy** is also
-allowed, because it sends the credential straight to the host it already goes
-to; the exception is a script that keeps a `Proxy-Authorization` header, which
-would then go to that host. After No Proxy, the saved proxy settings can stay
-as they were or be blanked, but not be rewritten or extended, because a later
-switch back to a proxy would activate them.
-
-`system_settings.script_imports.allow_retained_credential_transport_edits`
-([Import credential policy](#/access?setting=imports), under Access) lifts that
-lock for the proxy mode, the proxy settings (URL, PAC URL and bypass list) and
-TLS. It defaults to `false` and
-only a system administrator can change it. Each change is written to the audit
-log (`retained_credential_transport_policy_changed`). Enable it only where every
-editor is already trusted with the imported credentials, such as a test
-environment.
-
-The setting applies to saving a script (including a library bundle import), to
-authoring-session drafts and to debugging or replaying an edited draft, so those
-accept the same edits. It does not unlock request targets, default headers or
-authentication, nor the browser proxy. A new credential must still be bound as a
-runtime secret. A script that keeps a proxy username, a proxy password or a
-`Proxy-Authorization` header keeps its proxy URL, PAC URL and bypass list
-locked (a proxy username or password can still be blanked with them), so the
-credential cannot follow a new proxy; a kept `Proxy-Authorization` header also
-locks the proxy mode and keeps the block exactly as it is. Bind the
-credential as a runtime secret first. GitHub sync, guided repairs and the runtime-override check
-at test start stay strict, because repository content can come from people who
-are not APEX editors.
-
-Turning the setting off does not undo edits already made. A proxy or TLS change
-that was saved while it was on becomes the script's baseline, and an edit staged
-in an authoring-session draft is not re-checked when the draft is approved.
+During interactive replay, debugging, shakeout, and load test execution, the
+runtime automatically redacts both values resolved through `{{secret.NAME}}`
+and literal credentials present in the DSL from logs, protocol traces, failure
+samples, snapshots, reports, and run archives. Moving literal credentials into
+`{{secret.NAME}}` project secrets remains recommended when you want centralized
+secret rotation or separation between script authors and secret administrators.
 
 ### Distributed execution
 

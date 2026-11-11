@@ -885,7 +885,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const sourceFileRef = useRef<File | null>(file)
   sourceFileRef.current = file
   const [postmanEnvironmentFile, setPostmanEnvironmentFile] = useState<File | null>(null)
-  const [postmanSanitizeSensitive, setPostmanSanitizeSensitive] = useState(true)
   const [postmanIncludeAssertions, setPostmanIncludeAssertions] = useState(true)
   const [postmanUseDataSource, setPostmanUseDataSource] = useState(false)
   const [postmanThinkTimeMs, setPostmanThinkTimeMs] = useState(1000)
@@ -922,7 +921,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
   const [filterClientTelemetry, setFilterClientTelemetry] = useState(true)
   const [salvageTruncatedHAR, setSalvageTruncatedHAR] = useState(false)
   const [harHTTPVersionMode, setHARHTTPVersionMode] = useState<HTTPVersionImportMode>('upgrade')
-  const [redactSensitive, setRedactSensitive] = useState(true)
   const [agentforceReplayReady, setAgentforceReplayReady] = useState(false)
   const [harSalesforceNative, setHARSalesforceNative] = useState(initialMode !== 'force_generic')
   // Conversion options changed after an inspection wait for Re-inspect HARs,
@@ -1313,7 +1311,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
           secondary_file: secondaryHARFile || undefined,
           artifact_mode: secondaryHARFile ? 'design_har_pair' : 'design_har',
           retention_days: retentionDays,
-          redact_sensitive: redactSensitive,
           salesforce_native: overrides?.salesforceNative ?? harSalesforceNative,
           agentforce_transform: agentforceReplayReady,
           signal: abortController.signal,
@@ -1326,7 +1323,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
             ...options,
             environment_file: postmanEnvironmentFile || undefined,
             include_assertions: postmanIncludeAssertions,
-            sanitize_sensitive: postmanSanitizeSensitive,
             use_parameter_data_source: postmanUseDataSource,
             default_think_time_ms: postmanThinkTimeMs,
             agentforce_transform: agentforceReplayReady,
@@ -2693,10 +2689,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
                 <input type="number" min={0} value={postmanThinkTimeMs} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setPostmanThinkTimeMs(Math.max(0, Number(event.target.value) || 0)) }} />
               </label>
               <label className="sample-toggle">
-                <input type="checkbox" checked={postmanSanitizeSensitive} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setPostmanSanitizeSensitive(event.target.checked) }} />
-                Scrub sensitive fields
-              </label>
-              <label className="sample-toggle">
                 <input type="checkbox" checked={postmanIncludeAssertions} disabled={sourceMutationLocked} onChange={event => { invalidateConversionSource(); setPostmanIncludeAssertions(event.target.checked) }} />
                 Add status assertions
               </label>
@@ -2792,10 +2784,6 @@ export default function ProtocolAssetImport({ kind, initialFile, initialComparis
               <label className="sample-import-field">
                 <span>Retention Days</span>
                 <input type="number" min={1} value={retentionDays} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRetentionDays(Math.max(1, Number(event.target.value) || 1)) }} />
-              </label>
-              <label className="sample-toggle">
-                <input type="checkbox" checked={redactSensitive} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setRedactSensitive(event.target.checked) }} />
-                Scrub sensitive fields
               </label>
               <label className="sample-toggle sample-import-span-2">
                 <input type="checkbox" checked={includeStaticAssets} disabled={sourceMutationLocked} onChange={event => { stageConversionOptionChange(); setIncludeStaticAssets(event.target.checked) }} />

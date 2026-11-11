@@ -23,6 +23,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
 	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 	"github.com/jasonczech/apexload/pkg/protocol/messaging"
@@ -88,7 +89,31 @@ type Kafka struct {
 	initialized    bool
 	sharedProducer bool
 	// traceCarrier writes and reads W3C context in record headers (trace_carrier).
-	traceCarrier bool
+	traceCarrier    bool
+	redactionMu     sync.RWMutex
+	secretRegistrar protocol.RuntimeSecretRegistrar
+}
+
+var _ protocol.RuntimeSecretRegistrarSetter = (*Kafka)(nil)
+
+func (k *Kafka) SetRuntimeSecretRegistrar(registrar protocol.RuntimeSecretRegistrar) {
+	k.redactionMu.Lock()
+	k.secretRegistrar = registrar
+	k.redactionMu.Unlock()
+}
+
+func (k *Kafka) notifyOAuthToken(token httpprotocol.OAuthToken) {
+	k.redactionMu.RLock()
+	registrar := k.secretRegistrar
+	k.redactionMu.RUnlock()
+	if registrar == nil {
+		return
+	}
+	values := []string{token.AccessToken}
+	if token.RefreshToken != "" {
+		values = append(values, token.RefreshToken)
+	}
+	registrar("oauth:kafka", values)
 }
 
 // pendingProduce is a record buffered during an open transaction; it is flushed
@@ -109,6 +134,7 @@ type atomicTransactionCommitter interface {
 }
 
 type config struct {
+	OnOAuthToken                                                                                            func(httpprotocol.OAuthToken) `json:"-"`
 	UnredactedDebugErrors                                                                                   bool
 	ConsumerTransactions                                                                                    bool
 	Producer                                                                                                producerTuning
@@ -182,6 +208,7 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		return err
 	}
 	k.cfg = config{
+		OnOAuthToken:          k.notifyOAuthToken,
 		UnredactedDebugErrors: boolValue(cfg, protocol.ReplayUnredactedDebugConfigKey),
 		Producer:              tuning,
 		TLSMinVersion:         stringValue(cfg, "kafka_tls_min_version"), TLSMaxVersion: stringValue(cfg, "kafka_tls_max_version"),
@@ -307,6 +334,7 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		return fmt.Errorf("Kafka generic properties are not executable; use validated typed configuration")
 	}
 	if hasExplicitOAuth(k.cfg) {
+		k.cfg.OnOAuthToken = k.notifyOAuthToken
 		if err := validateExplicitOAuth(k.cfg); err != nil {
 			return err
 		}
@@ -319,12 +347,15 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		return err
 	}
 	namespace := stringValue(cfg, "runtime_mock_namespace")
-	create := func() kafkaClient {
-		if k.cfg.Mock {
+	create := func(effective config) kafkaClient {
+		if effective.Mock {
 			sharedBroker.acquire(namespace)
 			return mockClient{broker: sharedBroker, namespace: namespace, release: &sync.Once{}}
 		}
-		return newRealClient(k.cfg)
+		return newRealClient(effective)
+	}
+	if prev, ok := k.client.(borrowedProducer); ok {
+		_ = prev.Teardown(ctx)
 	}
 	k.sharedProducer = false
 	if lifecycle := stringValue(cfg, "kafka_producer_lifecycle"); lifecycle != "" {
@@ -335,13 +366,13 @@ func (k *Kafka) Init(ctx context.Context, cfg map[string]any) error {
 		if !ok || owner == nil {
 			return fmt.Errorf("Kafka source producer session is required")
 		}
-		k.client, err = owner.acquire(ctx, stringValue(cfg, "kafka_source_configuration"), k.cfg, namespace, create)
+		k.client, err = owner.acquireWithConfig(ctx, stringValue(cfg, "kafka_source_configuration"), k.cfg, namespace, create)
 		if err != nil {
 			return err
 		}
 		k.sharedProducer = true
 	} else {
-		k.client = create()
+		k.client = create(k.cfg)
 	}
 
 	k.valueSerde = valueSerde

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"reflect"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -741,6 +742,11 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 		cfg["kafka_oauth_token_url"] = o.TokenURL
 		cfg["kafka_oauth_client_id"] = o.ClientID
 		cfg["kafka_oauth_client_secret"] = o.ClientSecretRef
+		if strings.TrimSpace(o.ClientSecretRef) == "" {
+			if literal := kafkaOAuthClientSecretField(o); literal != "" {
+				cfg["kafka_oauth_client_secret_literal"] = literal
+			}
+		}
 		cfg["kafka_oauth_client_scope"] = o.Scope
 		cfg["kafka_oauth_authentication_method"] = o.AuthenticationMethod
 	}
@@ -845,6 +851,17 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 	if kafkaCfg.Mock {
 		cfg["kafka_mock"] = true
 	}
+}
+
+func kafkaOAuthClientSecretField(o *dsl.KafkaOAuthConfig) string {
+	if o == nil {
+		return ""
+	}
+	field := reflect.ValueOf(*o).FieldByName("ClientSecret")
+	if !field.IsValid() || field.Kind() != reflect.String {
+		return ""
+	}
+	return field.String()
 }
 
 func appendEventHubsConfig(cfg map[string]any, script *dsl.Script) {

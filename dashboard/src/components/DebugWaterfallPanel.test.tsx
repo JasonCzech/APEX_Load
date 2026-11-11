@@ -140,4 +140,86 @@ describe('DebugWaterfallPanel', () => {
     expect(slider.getAttribute('aria-valuetext')).toMatch(/^Showing 0 to 380 ms of 380 ms$/)
   })
 
+  it('renders concise Inspect and Edit drawer actions with accessible action names', () => {
+    const onInspect = vi.fn()
+    const onEditAction = vi.fn()
+    const canEditAction = vi.fn((event: BrowserReplayEvent) => event.action_index === 0)
+    const events = [
+      ev(0, {
+        action_name: 'Pay',
+        network_entries: [
+          { url: 'https://shop.test/pay', method: 'POST', status_code: 302, duration_ms: 30, har: { phases: [{ name: 'wait', start_ms: 0, end_ms: 30 }] } },
+          { url: 'https://shop.test/pay/done', method: 'GET', status_code: 200, duration_ms: 50, har: { phases: [{ name: 'wait', start_ms: 0, end_ms: 50 }] } },
+        ],
+      }),
+      ev(1, { action_name: 'Teardown_only_step' }),
+    ]
+    const c = mount(
+      <DebugWaterfallPanel
+        events={events}
+        selectedEventIndex={0}
+        onInspectEvent={onInspect}
+        canEditAction={canEditAction}
+        onEditAction={onEditAction}
+      />,
+    )
+    const drawer = () => c.querySelector('[aria-label="Selected row details"]')!
+    const editPay = drawer().querySelector<HTMLButtonElement>('button[aria-label="Edit Pay"]')!
+    const inspectPay = drawer().querySelector<HTMLButtonElement>('button[aria-label="Inspect Pay"]')!
+    expect(editPay.textContent).toBe('Edit')
+    expect(editPay.disabled).toBe(false)
+    expect(inspectPay.textContent).toBe('Inspect')
+    act(() => editPay.click())
+    expect(onEditAction).toHaveBeenCalledTimes(1)
+    expect(onEditAction).toHaveBeenLastCalledWith(events[0])
+    act(() => inspectPay.click())
+    expect(onInspect).toHaveBeenCalledWith(0)
+
+    // Hop rows label Edit and Inspect with the owning action name ('Pay'), not the hop URL.
+    const payRow = [...c.querySelectorAll<HTMLElement>('.wf-row[data-node-id]')].find(r => r.querySelector('.wf-name-label')?.textContent === 'Pay')!
+    act(() => payRow.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click())
+    act(() => c.querySelector<HTMLElement>('.wf-kind-hop')!.click())
+    const hopEdit = drawer().querySelector<HTMLButtonElement>('button[aria-label="Edit Pay"]')!
+    expect(hopEdit.textContent).toBe('Edit')
+    act(() => hopEdit.click())
+    expect(onEditAction).toHaveBeenCalledTimes(2)
+    expect(onEditAction).toHaveBeenLastCalledWith(events[0])
+
+    // Non-editable action disables Edit while keeping Inspect active.
+    const secondRow = [...c.querySelectorAll<HTMLElement>('.wf-row[data-node-id]')].find(r => r.querySelector('.wf-name-label')?.textContent === 'Teardown_only_step')!
+    act(() => secondRow.click())
+    const disabledEdit = drawer().querySelector<HTMLButtonElement>('button[aria-label="Edit Teardown_only_step"]')!
+    expect(disabledEdit.textContent).toBe('Edit')
+    expect(disabledEdit.disabled).toBe(true)
+
+    // Iteration parent row omits Edit.
+    const actionsRow = [...c.querySelectorAll<HTMLElement>('.wf-row[data-node-id]')].find(r => r.querySelector('.wf-name-label')?.textContent === 'Actions')!
+    act(() => actionsRow.click())
+    expect(drawer().querySelector('button[aria-label^="Edit "]')).toBeNull()
+  })
+
+  it('labels the single-event HAR button Download HAR and surfaces curlCommandGaps notes when truncated', () => {
+    const events = [
+      ev(0, {
+        snapshot: {
+          request_method: 'POST',
+          request_url: 'https://shop.test/r0',
+          request_body: 'payload...[truncated]',
+          request_headers_omitted: true,
+          response_status: 200,
+        },
+      }),
+    ]
+    const c = mount(<DebugWaterfallPanel events={events} selectedEventIndex={0} />)
+    const drawer = c.querySelector('[aria-label="Selected row details"]')!
+    const drawerButtons = [...drawer.querySelectorAll<HTMLButtonElement>('.wf-drawer-actions button')].map(b => b.textContent)
+    expect(drawerButtons).toContain('Download HAR')
+    expect(drawerButtons).not.toContain('Open in HAR')
+    const copyCurlBtn = [...drawer.querySelectorAll<HTMLButtonElement>('.wf-drawer-actions button')].find(b => b.textContent === 'Copy as cURL')!
+    const describedById = copyCurlBtn.getAttribute('aria-describedby')
+    expect(describedById).toBeTruthy()
+    const noteEl = drawer.querySelector(`#${CSS.escape(describedById!)}`)
+    expect(noteEl?.textContent).toContain('cURL note: body truncated by retention limits, some headers omitted or shortened by retention limits.')
+  })
+
 })

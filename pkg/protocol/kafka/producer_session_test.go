@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 type sessionTraceClient struct {
@@ -162,5 +164,147 @@ func TestProducerCleanupErrorsDoNotDiscloseAdapterText(t *testing.T) {
 				t.Fatal("lost context classification", err)
 			}
 		}
+	}
+}
+
+func TestProducerSessionMultipleKafkaInstancesShareProducerAndBroadcastOAuthTokens(t *testing.T) {
+	session := NewProducerSession()
+	defer session.Close(context.Background())
+
+	k1 := &Kafka{name: "kafka"}
+	k2 := &Kafka{name: "kafka"}
+	var got1, got2 []string
+	k1.SetRuntimeSecretRegistrar(func(_ string, vals []string) { got1 = append(got1, vals...) })
+	k2.SetRuntimeSecretRegistrar(func(_ string, vals []string) { got2 = append(got2, vals...) })
+
+	cfg := map[string]any{
+		"kafka_mock":                 true,
+		"kafka_topic":                "topic-a",
+		"kafka_producer_lifecycle":   "source_engine",
+		"kafka_producer_session":     session,
+		"kafka_source_configuration": "plan/shared",
+	}
+	if err := k1.Init(context.Background(), cfg); err != nil {
+		t.Fatalf("k1.Init: %v", err)
+	}
+	cfg2 := map[string]any{
+		"kafka_mock":                 true,
+		"kafka_topic":                "topic-b",
+		"kafka_producer_lifecycle":   "source_engine",
+		"kafka_producer_session":     session,
+		"kafka_source_configuration": "plan/shared",
+	}
+	if err := k2.Init(context.Background(), cfg2); err != nil {
+		t.Fatalf("k2.Init failed on shared producer session: %v", err)
+	}
+
+	// Verify acquireWithConfig relays pre-existing and subsequent OAuth tokens to all borrowers.
+	tokenSession := NewProducerSession()
+	defer tokenSession.Close(context.Background())
+	var relayCfg config
+	_, err := tokenSession.acquireWithConfig(context.Background(), "oauth-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { got1 = append(got1, "r1:"+tok.AccessToken) },
+	}, "run", func(effective config) kafkaClient {
+		relayCfg = effective
+		return &sessionTraceClient{}
+	})
+	if err != nil {
+		t.Fatalf("first acquireWithConfig: %v", err)
+	}
+	relayCfg.OnOAuthToken(httpprotocol.OAuthToken{AccessToken: "tok-initial"})
+	_, err = tokenSession.acquireWithConfig(context.Background(), "oauth-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { got2 = append(got2, "r2:"+tok.AccessToken) },
+	}, "run", func(config) kafkaClient {
+		t.Fatal("unexpected second client construction")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("second acquireWithConfig: %v", err)
+	}
+	relayCfg.OnOAuthToken(httpprotocol.OAuthToken{AccessToken: "tok-rotated"})
+	if strings.Join(got1, ",") != "r1:tok-initial,r1:tok-rotated" || strings.Join(got2, ",") != "r2:tok-initial,r2:tok-rotated" {
+		t.Fatalf("unexpected token broadcast: got1=%v got2=%v", got1, got2)
+	}
+
+	// Finding 7 regression: rotating > maxProducerSessionCachedTokens (64) evicts
+	// oldest tokens so late subscribers receive the most recent active tokens.
+	ringSession := NewProducerSession()
+	defer ringSession.Close(context.Background())
+	var ringCfg config
+	_, err = ringSession.acquireWithConfig(context.Background(), "ring-key", config{}, "run", func(effective config) kafkaClient {
+		ringCfg = effective
+		return &sessionTraceClient{}
+	})
+	if err != nil {
+		t.Fatalf("ringSession initial acquire: %v", err)
+	}
+	const totalRotations = 70
+	for i := 1; i <= totalRotations; i++ {
+		ringCfg.OnOAuthToken(httpprotocol.OAuthToken{AccessToken: fmt.Sprintf("rot-tok-%d", i)})
+	}
+	var lateSeen []string
+	_, err = ringSession.acquireWithConfig(context.Background(), "ring-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { lateSeen = append(lateSeen, tok.AccessToken) },
+	}, "run", func(config) kafkaClient {
+		t.Fatal("unexpected client construction on ringSession")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("ringSession late acquire: %v", err)
+	}
+	if len(lateSeen) != maxProducerSessionCachedTokens {
+		t.Fatalf("expected %d cached tokens replayed, got %d", maxProducerSessionCachedTokens, len(lateSeen))
+	}
+	if lateSeen[0] != "rot-tok-7" || lateSeen[len(lateSeen)-1] != "rot-tok-70" {
+		t.Fatalf("expected sliding window [rot-tok-7..rot-tok-70], got [%s..%s]", lateSeen[0], lateSeen[len(lateSeen)-1])
+	}
+
+	// Round-8 Finding 4 regression: borrowedProducer.Teardown unsubscribes its
+	// per-VUser OAuth listener so finished open-arrival VUsers are not retained
+	// across the run, while active and new borrowers keep receiving tokens.
+	unsubSession := NewProducerSession()
+	defer unsubSession.Close(context.Background())
+	var unsubCfg config
+	var b1Seen, b2Seen, b3Seen []string
+	b1, err := unsubSession.acquireWithConfig(context.Background(), "unsub-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { b1Seen = append(b1Seen, tok.AccessToken) },
+	}, "run", func(effective config) kafkaClient {
+		unsubCfg = effective
+		return &sessionTraceClient{}
+	})
+	if err != nil {
+		t.Fatalf("b1 acquire: %v", err)
+	}
+	b2, err := unsubSession.acquireWithConfig(context.Background(), "unsub-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { b2Seen = append(b2Seen, tok.AccessToken) },
+	}, "run", func(config) kafkaClient { return nil })
+	if err != nil {
+		t.Fatalf("b2 acquire: %v", err)
+	}
+	defer b2.Teardown(context.Background())
+	unsubCfg.OnOAuthToken(httpprotocol.OAuthToken{AccessToken: "u-tok-1"})
+	if err := b1.Teardown(context.Background()); err != nil {
+		t.Fatalf("b1 Teardown: %v", err)
+	}
+	// Idempotent double Teardown must also be safe.
+	if err := b1.Teardown(context.Background()); err != nil {
+		t.Fatalf("b1 second Teardown: %v", err)
+	}
+	unsubCfg.OnOAuthToken(httpprotocol.OAuthToken{AccessToken: "u-tok-2"})
+	if strings.Join(b1Seen, ",") != "u-tok-1" {
+		t.Fatalf("torn-down borrower b1 still received token refresh after Teardown: %v", b1Seen)
+	}
+	if strings.Join(b2Seen, ",") != "u-tok-1,u-tok-2" {
+		t.Fatalf("active borrower b2 missed token refresh: %v", b2Seen)
+	}
+	b3, err := unsubSession.acquireWithConfig(context.Background(), "unsub-key", config{
+		OnOAuthToken: func(tok httpprotocol.OAuthToken) { b3Seen = append(b3Seen, tok.AccessToken) },
+	}, "run", func(config) kafkaClient { return nil })
+	if err != nil {
+		t.Fatalf("b3 acquire: %v", err)
+	}
+	defer b3.Teardown(context.Background())
+	if strings.Join(b3Seen, ",") != "u-tok-1,u-tok-2" {
+		t.Fatalf("new borrower b3 missed seen token replay: %v", b3Seen)
 	}
 }

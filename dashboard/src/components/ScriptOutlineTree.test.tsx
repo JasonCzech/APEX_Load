@@ -264,4 +264,77 @@ describe('ScriptOutlineTree expansion across edits', () => {
     render(modelOf(B))
     expect(expanded('B')).toBe('true')
   })
+
+  it('keeps full non-Aura labels in DOM, uses Aura short method names when narrow, and gates tooltips on DOM overflow', () => {
+    const longUszName = `T01_${'CheckoutStepZeroSpaceIdentifier'.repeat(8)}`
+    expect(longUszName.length).toBeGreaterThan(248)
+    const auraRawName = 'aura://RecordUiController/ACTION$getRecordWithFields'
+    const fitStepName = 'MediumStepLabelForWidthCheck'
+    let observedCallback: ((entries: Array<{ contentRect: { width: number } }>) => void) | null = null
+    const originalResizeObserver = globalThis.ResizeObserver
+    globalThis.ResizeObserver = class MockResizeObserver {
+      constructor(cb: (entries: Array<{ contentRect: { width: number } }>) => void) {
+        observedCallback = cb
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+
+    try {
+      const narrowModel = modelOf([step(longUszName), step(auraRawName), step(fitStepName)])
+      render(narrowModel)
+
+      act(() => {
+        observedCallback?.([{ contentRect: { width: 140 } }])
+      })
+
+      const tree = document.querySelector<HTMLElement>('[role="tree"]')!
+      const names = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"] .script-outline-name')).map(el => el.textContent)
+      // Full 248-char .usz label remains unsliced in DOM; Aura row switches to short method name when narrow.
+      expect(names).toContain(longUszName)
+      expect(names).toContain('getRecordWithFields')
+      // Full Aura Controller.method name stays in the treeitem's accessible name.
+      const auraRow = rowNamed('RecordUiController.getRecordWithFields')
+      expect(auraRow).toBeDefined()
+
+      // When wide, Aura row displays the full Controller.method label.
+      act(() => {
+        observedCallback?.([{ contentRect: { width: 520 } }])
+      })
+      expect(auraRow.querySelector('.script-outline-name')?.textContent).toBe('RecordUiController.getRecordWithFields')
+
+      // Narrow again: CSS-overflowing .usz row shows tooltip, while unclipped row (scrollWidth <= clientWidth) does not, even if canvas width was tiny.
+      act(() => {
+        observedCallback?.([{ contentRect: { width: 70 } }])
+      })
+      const longRow = rowNamed(longUszName)
+      const longNameEl = longRow.querySelector<HTMLElement>('.script-outline-name')!
+      Object.defineProperty(longNameEl, 'clientWidth', { configurable: true, value: 50 })
+      Object.defineProperty(longNameEl, 'scrollWidth', { configurable: true, value: 960 })
+
+      act(() => {
+        longRow.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+        longRow.focus()
+      })
+      const tipId = longRow.getAttribute('aria-describedby')
+      expect(tipId).toBeTruthy()
+      expect(document.getElementById(tipId!)?.textContent).toBe(longUszName)
+
+      key(longRow, 'Escape')
+      expect(longRow.getAttribute('aria-describedby')).toBeNull()
+
+      const unclippedRow = rowNamed(fitStepName)
+      const unclippedNameEl = unclippedRow.querySelector<HTMLElement>('.script-outline-name')!
+      Object.defineProperty(unclippedNameEl, 'clientWidth', { configurable: true, value: 220 })
+      Object.defineProperty(unclippedNameEl, 'scrollWidth', { configurable: true, value: 120 })
+      act(() => {
+        unclippedRow.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+        unclippedRow.focus()
+      })
+      expect(unclippedRow.getAttribute('aria-describedby')).toBeNull()
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
 })

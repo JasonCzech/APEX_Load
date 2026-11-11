@@ -92,13 +92,13 @@ stats, detected correlations, and a **source review** for traceability.
 
 `pkg/convert/sourceview/source_review.go` defines `Review{SourceFiles, Mappings}`:
 
-- `SourceFiles` — the (credential-redacted, truncated) original artifact text.
+- `SourceFiles` — the original artifact text (bounded by size; literal values from the imported file are preserved without scrubbing).
 - `Mappings` — `Mapping{SourceFile, StartLine, EndLine, TargetPath, TargetKind, …}` tying
   each source line range to the DSL element it produced (e.g. `actions[5]`,
   `actions[3].assertions[0]`). This drives the side-by-side import-review UI.
 
 Provenance is also stamped onto the script itself via `Script.Metadata.Import`
-(source format, original name, redaction state).
+(source format and original name).
 
 ```mermaid
 flowchart TD
@@ -125,7 +125,7 @@ kinds of edits so the script is data-driven rather than hard-coded:
 | `correlation` | response→request value flow (via `pkg/convert/correlate`) | extract from response, inject `{{var.*}}` downstream |
 | `generated` | identifiers and time stamps a client makes up per request (trace, span, message, request and correlation IDs; a request time stamp) | a `uuid`, `random_string` or `date_time` `Parameter` updated each iteration, referenced as `{{var.*}}` |
 | `data_param` | parameterizable literals (user id, email, search term) | `{{data.*}}` / a `Parameter` |
-| `secret` | credential-shaped values (passwords, tokens, keys) | `{{secret.*}}` |
+| `secret` | credential-shaped values (passwords, tokens, keys; preserved literally unless bound) | optional `{{secret.*}}` |
 
 `data_param` suggestions come from field names (`LooksParameterName` in `heuristics.go`).
 A name is split into words at separators, case changes and digits, so `user_id`, `userId`,
@@ -174,6 +174,9 @@ The flagship on-ramp is the embedded browser recorder:
 3. **Convert** — `pkg/recorder/converter.go → ConvertSessionWithOptions(session, name, opts)`
    produces a `dsl.Script` (HTTP or WebSocket actions), extracts correlations, optionally
    parameterizes recorded inputs, and can export a side-car HAR (`pkg/recorder/har.go`).
+   Live HTTP proxy and browser recordings keep captured traffic and typed inputs unredacted
+   by default; operators can opt in to capture-time scrubbing via `scrub_sensitive: true` on
+   `recordingprofile.Profile` (or the proxy or browser recorder's `scrub_sensitive` start option).
 
 All five capture/HAR entry points — dedicated HAR (`POST /api/v1/scripts/import/har`),
 Salesforce HAR (`POST /api/v1/scripts/import/salesforce`), sample HAR
@@ -355,7 +358,9 @@ sequenceDiagram
 Just before a protocol action runs, `vu.resolveAction` (`pkg/engine/vuser_resolve.go`)
 expands every template in `target`, `headers`, `body`, and `params` via
 `interpolateWithSecrets`, producing a `*protocol.Action` with fully-resolved strings (plus
-redacted copies for logging). See [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#choose-data-and-variable-lifetimes) for operator guidance. Namespaces and runtime gates:
+redacted copies for logging; both resolved `{{secret.NAME}}` values and literal credentials in
+the DSL are automatically scrubbed from replay, debug, and load-test outputs, traces, failure
+samples, and run archives). See [DSL operator guide](HELP_DSL_OPERATOR_GUIDE.md#choose-data-and-variable-lifetimes) for operator guidance. Namespaces and runtime gates:
 
 | Template | Resolves to | Source & unresolved / security rules |
 |---|---|---|
@@ -607,8 +612,8 @@ The contract above is receipt version 1. A keyed create may send
 `X-APEX-Authoring-Receipt-Version: 2`. The create, its group and data-pool
 bindings and the completed receipt then commit in one transaction, together
 with the original outcome: the resource ID, project, content revision and
-creation time, and the disclosure-safe authoring projection the create
-committed. A version 2 retry with the same key returns that recorded
+creation time, and the authoring projection the create committed (unredacted
+for scripts; masked runtime credentials for scenarios). A version 2 retry with the same key returns that recorded
 `AuthoringReceiptOutcome` unchanged (`Idempotent-Replayed: true`, no `ETag`),
 never the resource as it is now: read the current authoring projection before
 editing it. A projection that would bring the outcome near its 4 MiB bound

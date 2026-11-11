@@ -56,6 +56,9 @@
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .rr-correlation-table thead .rr-correlation-col-direction { width: 84px; }
@@ -63,6 +66,12 @@
 .rr-correlation-table thead .rr-correlation-col-where { width: 20%; }
 .rr-correlation-table thead .rr-correlation-col-result { width: 170px; }
 .rr-correlation-table thead .rr-correlation-col-copy { width: 44px; }
+
+.rr-correlation-table .rr-correlation-col-copy,
+.rr-correlation-table .rr-correlation-copy {
+  padding-left: 6px;
+  padding-right: 6px;
+}
 
 .rr-correlation-copy {
   text-align: right;
@@ -79,60 +88,16 @@
   padding: 0;
 }
 
-/* Shown only in a narrow pane, where it stands in for the Direction column. */
-.rr-correlation-table .rr-correlation-direction-inline {
-  display: none;
-}
-
-/* A narrow debugger pane: the Direction column goes (the variable cell shows
-   it as a small label instead, so one of the two is ever displayed), cells
-   tighten, and a long result wraps as a rounded label rather than a pill. */
-@container debugger-detail (max-width: 640px) {
-  .rr-correlation-table {
-    font-size: 12px;
-  }
-
-  .rr-correlation-table th,
-  .rr-correlation-table td {
-    padding: 6px 6px;
-  }
-
-  .rr-correlation-table .rr-correlation-col-direction,
-  .rr-correlation-table .rr-correlation-direction {
-    display: none;
-  }
-
-  .rr-correlation-table .rr-correlation-direction-inline {
-    display: block;
-    color: var(--text-secondary);
-    font-family: var(--font-sans, inherit);
-    font-size: 11px;
-    font-weight: 400;
-  }
-
-  .rr-correlation-table thead .rr-correlation-col-variable { width: 28%; }
-  .rr-correlation-table thead .rr-correlation-col-where { width: 20%; }
-  .rr-correlation-table thead .rr-correlation-col-result { width: 92px; }
-  .rr-correlation-table thead .rr-correlation-col-copy { width: 40px; }
-
-  .rr-correlation-badge {
-    padding: 1px 6px;
-    border-radius: 6px;
-    font-size: 11px;
-    white-space: normal;
-  }
-
-  .rr-correlation-later {
-    font-size: 11px;
-  }
-}
-
 .rr-correlation-direction {
   color: var(--text-secondary);
   font-size: 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .rr-correlation-table th.rr-correlation-variable {
+  min-inline-size: 0;
   font-family: var(--font-mono);
   font-size: 12.5px;
   font-weight: 500;
@@ -144,6 +109,8 @@
   font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
+  overflow: hidden;
+  overflow-wrap: break-word;
 }
 
 .rr-correlation-one-line {
@@ -152,6 +119,7 @@
   white-space: nowrap;
   text-overflow: ellipsis;
   min-width: 0;
+  min-inline-size: 0;
 }
 
 .rr-correlation-change {
@@ -185,6 +153,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: 3px;
+  min-width: 0;
 }
 
 .rr-correlation-badge {
@@ -217,8 +186,10 @@
 }
 
 .rr-correlation-later {
+  max-width: 100%;
   color: var(--text-secondary);
   font-size: 12px;
+  overflow-wrap: break-word;
 }
 
 .rr-correlation-children ul {
@@ -233,4 +204,49 @@
   color: var(--text-secondary);
   font-size: 12px;
   overflow-wrap: break-word;
+}
+
+/* A narrow debugger pane (placed after base rules so equal-specificity selectors
+   win the cascade): Direction stays in its own column so <th scope="row"> keeps
+   the pure variable name, and percentage column budgets keep Value and the 28px
+   Copy button visible down to ~300px 3-column panes. */
+@container debugger-detail (max-width: 640px) {
+  .rr-correlation-table {
+    font-size: 12px;
+  }
+
+  .rr-correlation-table th,
+  .rr-correlation-table td {
+    padding: 6px 5px;
+  }
+
+  .rr-correlation-table .rr-correlation-col-copy,
+  .rr-correlation-table .rr-correlation-copy {
+    padding-left: 3px;
+    padding-right: 3px;
+  }
+
+  .rr-correlation-table thead th,
+  .rr-correlation-direction {
+    font-size: 11.5px;
+  }
+
+  .rr-correlation-table thead .rr-correlation-col-direction { width: 13%; }
+  .rr-correlation-table thead .rr-correlation-col-variable { width: 21%; }
+  .rr-correlation-table thead .rr-correlation-col-where { width: 16%; }
+  .rr-correlation-table thead .rr-correlation-col-result { width: 19%; }
+  .rr-correlation-table thead .rr-correlation-col-copy { width: 34px; }
+
+  .rr-correlation-badge {
+    max-width: 100%;
+    padding: 1px 6px;
+    border-radius: 6px;
+    font-size: 11px;
+    white-space: normal;
+    overflow-wrap: break-word;
+  }
+
+  .rr-correlation-later {
+    font-size: 11px;
+  }
 }

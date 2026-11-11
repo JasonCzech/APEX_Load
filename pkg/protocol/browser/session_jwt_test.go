@@ -296,3 +296,51 @@ func TestSalesforceJWTSignInEndsWithItsCaller(t *testing.T) {
 		t.Fatalf("a cancelled sign-in took %s", elapsed)
 	}
 }
+
+func TestSalesforceJWTSessionRegistersMintedTokenAndFrontdoorSecrets(t *testing.T) {
+	fake := newFakeSalesforce(t)
+	var mu sync.Mutex
+	seen := map[string][]string{}
+
+	b := &Browser{}
+	b.SetRuntimeSecretRegistrar(func(origin string, values []string) {
+		mu.Lock()
+		seen[origin] = append(seen[origin], values...)
+		mu.Unlock()
+	})
+	if err := b.configureSalesforceJWTSession(fake.config("registrar@acme.test", "")); err != nil {
+		t.Fatalf("configureSalesforceJWTSession: %v", err)
+	}
+	frontdoor, err := b.salesforceJWT.frontdoorURL(context.Background())
+	if err != nil || frontdoor == "" {
+		t.Fatalf("frontdoorURL = %q, %v", frontdoor, err)
+	}
+
+	b2 := &Browser{}
+	b2.SetRuntimeSecretRegistrar(func(origin string, values []string) {
+		mu.Lock()
+		seen[origin] = append(seen[origin], values...)
+		mu.Unlock()
+	})
+	if err := b2.configureSalesforceJWTSession(fake.config("registrar2@acme.test", "")); err != nil {
+		t.Fatalf("configureSalesforceJWTSession(2): %v", err)
+	}
+	frontdoor2, err := b2.salesforceJWT.frontdoorURL(context.Background())
+	if err != nil || frontdoor2 == "" {
+		t.Fatalf("frontdoorURL(2) = %q, %v", frontdoor2, err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(seen["oauth:browser_jwt_token"]) < 2 {
+		t.Fatalf("expected both observers' minted JWT tokens registered, got %#v", seen)
+	}
+	if len(seen["oauth:browser_jwt_frontdoor"]) != 4 {
+		t.Fatalf("expected only frontdoor URLs and OTP query parameters (never startURL/retURL) registered, got %#v", seen)
+	}
+	for _, val := range seen["oauth:browser_jwt_frontdoor"] {
+		if val == "/" || val == "/lightning/page/home" || strings.HasPrefix(val, "/") {
+			t.Fatalf("frontdoor secret registration included redirect path %q: %#v", val, seen)
+		}
+	}
+}

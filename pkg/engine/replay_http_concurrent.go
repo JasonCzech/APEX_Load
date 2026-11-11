@@ -22,7 +22,7 @@ func runReplayConcurrentHTTP(ctx context.Context, vu *VUser, action dsl.Action, 
 	if !vu.unredactedDebug {
 		scrubReplayDebugAction(&boundary, vu.RedactionConfig)
 	}
-	if !vu.unredactedDebug && vu.runtimeCredentialRedactionErr != nil {
+	if !vu.unredactedDebug && vu.runtimePublicationUnavailable() {
 		omitUnredactableReplayDebugAction(&boundary)
 	}
 	if debugger != nil {

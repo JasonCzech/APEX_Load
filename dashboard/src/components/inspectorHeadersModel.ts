@@ -1,5 +1,5 @@
 import type { HTTPConfig, ScriptActionDefinition, ScriptHeaderEntry } from '../types/scripts'
-import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
+import { isSensitiveCredentialPreviewKey, isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 
 // Rows for the Request/Response inspector's header and form-field tables.
 // Values are shown exactly as the event carries them: a value the engine
@@ -29,6 +29,8 @@ export interface InspectorHeaderRow {
   key: boolean
   /** Hidden here (a secret-sourced value); never copied. */
   masked: boolean
+  /** True when the backend snapshot already sent a [REDACTED]/[MASKED] placeholder. */
+  serverRedacted?: boolean
   /** Request headers only. */
   source?: InspectorValueSource
 }
@@ -37,6 +39,8 @@ export interface InspectorFormFieldRow {
   name: string
   value: string
   masked: boolean
+  /** True when the backend snapshot already sent a [REDACTED]/[MASKED] placeholder. */
+  serverRedacted?: boolean
   source: InspectorValueSource
 }
 
@@ -79,6 +83,13 @@ const SCRIPT_DEFAULT: InspectorValueSource = { kind: 'default', label: 'Script d
 // classifier does not list (Salesforce's login form posts "pw").
 const EXTRA_PASSWORD_FIELD_NAMES = new Set(['pw', 'pword'])
 
+const SERVER_REDACTED_VALUE = /^\[(?:redacted|masked)\]$/i
+
+/** Whether a value is a server-side redaction placeholder ([REDACTED] or [MASKED]). */
+export function isServerRedactedValue(value: string | null | undefined): boolean {
+  return typeof value === 'string' && SERVER_REDACTED_VALUE.test(value.trim())
+}
+
 function lower(name: string): string {
   return name.trim().toLowerCase()
 }
@@ -89,22 +100,101 @@ function lower(name: string): string {
  * Key headers come first in the direction's order; the rest keep their order.
  */
 export function inspectorHeaderRows(
-  headers: Readonly<Record<string, string>> | null | undefined,
-  direction: InspectorHeaderDirection,
+  headers: Readonly<Record<string, string>> | readonly InspectorHeaderRow[] | null | undefined,
+  direction: InspectorHeaderDirection = 'request',
 ): InspectorHeaderRow[] {
   if (!headers) return []
   const keyOrder = KEY_HEADERS[direction]
   const rows: Array<{ row: InspectorHeaderRow, order: number }> = []
-  for (const [name, raw] of Object.entries(headers)) {
+  if (Array.isArray(headers)) {
+    for (const item of headers) {
+      if (!item || typeof item.name !== 'string' || !item.name.trim()) continue
+      const rank = keyOrder.indexOf(lower(item.name))
+      const value = String(item.value ?? '')
+      const masked = Boolean(item.masked || value === MASKED_VALUE)
+      const serverRedacted = Boolean(item.serverRedacted || isServerRedactedValue(value))
+      rows.push({
+        row: {
+          ...item,
+          value: masked ? MASKED_VALUE : value,
+          key: rank >= 0,
+          masked,
+          ...(serverRedacted ? { serverRedacted: true } : {}),
+        },
+        order: rank >= 0 ? rank : keyOrder.length,
+      })
+    }
+    return rows.sort((a, b) => a.order - b.order).map(entry => entry.row)
+  }
+  for (const [name, raw] of Object.entries(headers as Readonly<Record<string, string>>)) {
     if (!name.trim()) continue
     const values = typeof raw === 'string' ? raw.split('\n') : [String(raw ?? '')]
     for (const value of values) {
       const rank = keyOrder.indexOf(lower(name))
-      rows.push({ row: { name, value, key: rank >= 0, masked: false }, order: rank >= 0 ? rank : keyOrder.length })
+      const masked = value === MASKED_VALUE
+      const serverRedacted = isServerRedactedValue(value)
+      rows.push({
+        row: {
+          name,
+          value,
+          key: rank >= 0,
+          masked,
+          ...(serverRedacted ? { serverRedacted: true } : {}),
+        },
+        order: rank >= 0 ? rank : keyOrder.length,
+      })
     }
   }
   // Array.prototype.sort is stable, so repeated and non-key headers keep their order.
   return rows.sort((a, b) => a.order - b.order).map(entry => entry.row)
+}
+
+/** Builds inspector header rows from a header name/value record. */
+export function headerRowsFromRecord(
+  headers: Readonly<Record<string, string>> | null | undefined,
+  direction: InspectorHeaderDirection = 'request',
+): InspectorHeaderRow[] {
+  return inspectorHeaderRows(headers, direction)
+}
+
+const HEADER_LINE_NAME = /^:?[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
+/**
+ * Parses raw "Name: Value" lines into inspector header rows, or returns [] when
+ * the text is empty or does not consist of valid HTTP header lines.
+ */
+export function headerRowsFromText(
+  text: string | null | undefined,
+  direction: InspectorHeaderDirection = 'request',
+): InspectorHeaderRow[] {
+  if (typeof text !== 'string') return []
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+  if (lines.length === 0) return []
+  const record: Record<string, string> = {}
+  for (const line of lines) {
+    const colon = line.startsWith(':') ? line.indexOf(':', 1) : line.indexOf(':')
+    if (colon <= 0) return []
+    const name = line.slice(0, colon).trim()
+    if (!HEADER_LINE_NAME.test(name)) return []
+    const value = line.slice(colon + 1).trim()
+    record[name] = Object.prototype.hasOwnProperty.call(record, name)
+      ? `${record[name]}\n${value}`
+      : value
+  }
+  return inspectorHeaderRows(record, direction)
+}
+
+/** Rebuilds a header record from inspector header rows, preserving repeated header names via newline join. */
+export function headerRecordFromRows(rows: readonly InspectorHeaderRow[]): Record<string, string> {
+  const record: Record<string, string> = {}
+  for (const row of rows) {
+    if (!row.name.trim()) continue
+    const value = row.masked ? MASKED_VALUE : row.value
+    record[row.name] = Object.prototype.hasOwnProperty.call(record, row.name)
+      ? `${record[row.name]}\n${value}`
+      : value
+  }
+  return record
 }
 
 /** The rows "Show key headers" shows, or null when there is nothing to toggle. */
@@ -222,7 +312,14 @@ export function withRequestHeaderSources(rows: readonly InspectorHeaderRow[], co
     // carry the secret of any authored value.
     const mayCarrySecret = anySecret && (name === 'cookie' || sent < everyAuthored.length)
     const masked = row.masked || source.kind === 'secret' || mayCarrySecret
-    return { ...row, value: masked ? MASKED_VALUE : row.value, source, masked }
+    const serverRedacted = Boolean(row.serverRedacted || isServerRedactedValue(row.value))
+    return {
+      ...row,
+      value: masked ? MASKED_VALUE : row.value,
+      source,
+      masked,
+      ...(serverRedacted ? { serverRedacted: true } : {}),
+    }
   })
 }
 
@@ -300,6 +397,28 @@ export function isPasswordLikeFieldName(name: string): boolean {
   return EXTRA_PASSWORD_FIELD_NAMES.has(normalized) || isSensitiveCredentialPreviewName(name)
 }
 
+/** Whether a header or form field name is credential/password-sensitive. */
+export function isSensitiveFieldName(name: string): boolean {
+  return isPasswordLikeFieldName(name) || isSensitiveCredentialPreviewKey(name)
+}
+
+/**
+ * Masks credential/password-sensitive rows in-place, preserving `serverRedacted`
+ * when the original row value was already `[REDACTED]`/`[MASKED]`.
+ */
+export function maskInspectorRows<T extends InspectorHeaderRow | InspectorFormFieldRow>(rows: readonly T[]): T[] {
+  return rows.map(row => {
+    const serverRedacted = Boolean(row.serverRedacted || isServerRedactedValue(row.value))
+    const masked = Boolean(row.masked || isSensitiveFieldName(row.name))
+    return {
+      ...row,
+      value: masked ? MASKED_VALUE : row.value,
+      masked,
+      ...(serverRedacted ? { serverRedacted: true } : {}),
+    }
+  })
+}
+
 /** The authored body when it is plain form text the dashboard can read, else null. */
 function authoredFormBody(action: ScriptActionDefinition): string | null {
   if (typeof action.body !== 'string' || !action.body || action.body_file || action.body_multipart) return null
@@ -334,7 +453,14 @@ export function inspectorFormFieldRows(
     const values = authored?.get(key)
     const source = values ? authoredValueSource(values[occurrence] ?? values[0] ?? '', unresolved) : UNKNOWN
     const masked = source.kind === 'secret' || isPasswordLikeFieldName(name)
-    return { name, value: masked ? MASKED_VALUE : value, masked, source }
+    const serverRedacted = isServerRedactedValue(value)
+    return {
+      name,
+      value: masked ? MASKED_VALUE : value,
+      masked,
+      ...(serverRedacted ? { serverRedacted: true } : {}),
+      source,
+    }
   })
 }
 
@@ -348,13 +474,58 @@ export function sourcesUnavailableNote(replayMatchesCurrentScript: boolean): str
     : 'Sources are unavailable because the script changed since this run.'
 }
 
-/** The form table's note on masked fields, naming the copies on screen that still include them. */
-export function maskedFieldNote(count: number, unmaskedCopies: readonly string[] = []): string {
+export interface MaskedFieldNoteRowLike {
+  value?: string
+  rawValue?: string
+  masked?: boolean
+  serverRedacted?: boolean
+}
+
+export interface MaskedFieldNoteOptions {
+  serverRedacted?: boolean
+  rows?: readonly MaskedFieldNoteRowLike[]
+}
+
+function rowHasServerRedaction(row: MaskedFieldNoteRowLike | null | undefined): boolean {
+  if (!row) return false
+  return Boolean(row.serverRedacted || isServerRedactedValue(row.rawValue) || isServerRedactedValue(row.value))
+}
+
+/**
+ * The form/header table's note on masked fields, naming the copies on screen
+ * that still include client-masked values while clarifying when server-redacted
+ * values (`[REDACTED]`) remain redacted in exports (`Copy as cURL` / `Download HAR`).
+ */
+export function maskedFieldNote(
+  count: number,
+  unmaskedCopiesOrOptions: readonly string[] | MaskedFieldNoteOptions = [],
+  optionsOrRows?: MaskedFieldNoteOptions | readonly MaskedFieldNoteRowLike[],
+): string {
   const hidden = count === 1 ? '1 field is hidden here.' : `${count} fields are hidden here.`
-  if (unmaskedCopies.length === 0) return hidden
-  const names = unmaskedCopies.length === 1
-    ? unmaskedCopies[0]
-    : `${unmaskedCopies.slice(0, -1).join(', ')} and ${unmaskedCopies[unmaskedCopies.length - 1]}`
-  const verb = unmaskedCopies.length === 1 ? 'includes' : 'include'
-  return `${hidden} ${names} ${verb} ${count === 1 ? 'it' : 'them'}.`
+  const copies: readonly string[] = Array.isArray(unmaskedCopiesOrOptions) ? unmaskedCopiesOrOptions : []
+  const explicitOptions: MaskedFieldNoteOptions | undefined = !Array.isArray(unmaskedCopiesOrOptions)
+    ? unmaskedCopiesOrOptions as MaskedFieldNoteOptions
+    : Array.isArray(optionsOrRows)
+      ? { rows: optionsOrRows }
+      : optionsOrRows as MaskedFieldNoteOptions | undefined
+  const serverRedacted = Boolean(
+    explicitOptions?.serverRedacted ||
+    explicitOptions?.rows?.some(rowHasServerRedaction),
+  )
+  if (!serverRedacted) {
+    if (copies.length === 0) return hidden
+    const names = copies.length === 1
+      ? copies[0]
+      : `${copies.slice(0, -1).join(', ')} and ${copies[copies.length - 1]}`
+    const verb = copies.length === 1 ? 'includes' : 'include'
+    return `${hidden} ${names} ${verb} ${count === 1 ? 'it' : 'them'}.`
+  }
+  if (copies.length === 0) {
+    return `${hidden} Client-masked values can be revealed locally; server-redacted values ([REDACTED]) remain redacted in exports (Copy as cURL / Download HAR).`
+  }
+  const names = copies.length === 1
+    ? copies[0]
+    : `${copies.slice(0, -1).join(', ')} and ${copies[copies.length - 1]}`
+  const verb = copies.length === 1 ? 'includes' : 'include'
+  return `${hidden} ${names} ${verb} client-masked values; server-redacted values ([REDACTED]) remain redacted in exports (Copy as cURL / Download HAR).`
 }

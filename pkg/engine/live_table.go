@@ -423,7 +423,7 @@ func (vu *VUser) liveRequestValuesAllowed(request livetable.Request) bool {
 	if config == nil {
 		return true
 	}
-	if config.runtimePublicationUnavailable {
+	if config.publicationUnavailable() {
 		return false
 	}
 	all := allRuntimeSecretValues(config)

@@ -24,6 +24,8 @@ export interface DebugWaterfallPanelProps {
   onInspectEvent?: (eventIndex: number) => void
   canRevealInScript?: (event: BrowserReplayEvent) => boolean
   onRevealInScript?: (event: BrowserReplayEvent) => void
+  canEditAction?: (event: BrowserReplayEvent) => boolean
+  onEditAction?: (event: BrowserReplayEvent) => void
   variant?: 'dock' | 'summary'
   ariaLabel?: string
 }
@@ -47,6 +49,8 @@ export function DebugWaterfallPanel({
   onInspectEvent,
   canRevealInScript,
   onRevealInScript,
+  canEditAction,
+  onEditAction,
   variant = 'dock',
   ariaLabel = 'Execution timeline waterfall',
 }: DebugWaterfallPanelProps) {
@@ -143,6 +147,8 @@ export function DebugWaterfallPanel({
       onInspect={onInspectEvent && inspectIndexOf(selected) != null ? () => onInspectEvent(inspectIndexOf(selected)!) : undefined}
       canRevealInScript={row ? (canRevealInScript ? canRevealInScript(row.event) : true) : false}
       onRevealInScript={onRevealInScript && row ? () => onRevealInScript(row.event) : undefined}
+      canEdit={row ? (canEditAction ? canEditAction(row.event) : Boolean(onEditAction)) : false}
+      onEdit={onEditAction && row ? () => onEditAction(row.event) : undefined}
     />
   ) : (
     <p className="wf-drawer-status" style={{ padding: 12 }}>Select a row to see its timing, request, response, headers, correlation and transport details.</p>

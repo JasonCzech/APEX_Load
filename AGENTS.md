@@ -302,4 +302,4 @@ These are design targets, not yet backed by published benchmark artifacts. Do no
 - Ramp-up rate: 500 VUsers/second/pod
 
 ## Tech Stack
-Go 1.26.10+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS / EKS / ECS Fargate / Azure Container Apps & Container Instances | Helm | Terraform
+Go 1.26.11+ | SQLite (default) / PostgreSQL 16 (optional) | Redis/Valkey (optional, HA) | React 18 + TS | Prometheus + gRPC | AKS / EKS / ECS Fargate / Azure Container Apps & Container Instances | Helm | Terraform

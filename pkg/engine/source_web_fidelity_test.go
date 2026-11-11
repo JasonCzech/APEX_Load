@@ -69,8 +69,8 @@ func TestSourceSaveStringRandomArrayKeepsOpaqueValueAndRunEvidence(t *testing.T)
 			if vu.Variables["Picked"] != selected || vu.Variables["picked"] != selected {
 				t.Fatalf("selected runtime value was interpolated again: %q, %q", vu.Variables["Picked"], vu.Variables["picked"])
 			}
-			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[selected]; registered != mode.redact {
-				t.Fatalf("selected value run-evidence registration = %v, want %v", registered, mode.redact)
+			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[selected]; !registered {
+				t.Fatalf("selected value run-evidence registration = %v, want true", registered)
 			}
 			// Authored template arguments still expand once when no array selection
 			// is present; their substituted runtime bytes remain opaque too.

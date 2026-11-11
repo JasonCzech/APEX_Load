@@ -36,18 +36,14 @@ function defaultHeaderEntries(value: HTTPConfig): ScriptHeaderEntry[] {
   return [...ordered, ...compatibility]
 }
 
-function pinnedCookieNames(value: HTTPConfig): Array<{ enabled: boolean, masked: boolean, name: string }> {
+function pinnedCookieNames(value: HTTPConfig): Array<{ enabled: boolean, name: string }> {
   return defaultHeaderEntries(value)
     .filter(entry => canonical(entry.name) === 'cookie')
-    .flatMap<{ enabled: boolean, masked: boolean, name: string }>(entry => {
-      if (entry.value === '[REDACTED]') {
-        return [{ enabled: enabled(entry), masked: true, name: '' }]
-      }
+    .flatMap<{ enabled: boolean, name: string }>(entry => {
       return entry.value.split(';').map(part => part.trim()).filter(Boolean).map(part => {
         const separator = part.indexOf('=')
         return {
           enabled: enabled(entry),
-          masked: separator >= 0 && part.slice(separator + 1).trim() === '[REDACTED]',
           name: (separator >= 0 ? part.slice(0, separator) : part).trim(),
         }
       })
@@ -75,7 +71,6 @@ export function countPinnedCookieErrors(value?: HTTPConfig): number {
   const cookies = pinnedCookieNames(value || {})
   return cookies.filter(cookie => {
     if (!cookie.enabled) return false
-    if (cookie.masked) return false
     if (!cookie.name || !VALID_NAME.test(cookie.name)) return true
     return cookies.filter(candidate => candidate.enabled && candidate.name.trim() === cookie.name.trim()).length > 1
   }).length

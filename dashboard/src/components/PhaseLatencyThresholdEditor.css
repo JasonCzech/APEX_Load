@@ -1,3 +1,6 @@
+.phase-latency-rules > .setting-row { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+.phase-latency-rules > .setting-row > .setting-info { flex: 1 1 280px; min-width: 0; }
+.phase-latency-rules .setting-row > button { flex: 0 0 auto; align-self: center; width: auto; }
 .phase-latency-rule-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .phase-latency-rule-list .phase-latency-rule { display: flex; flex-direction: row; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; }
 .settings-inline-field { display: inline-flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--text-secondary); }

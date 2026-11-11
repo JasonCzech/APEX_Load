@@ -69,6 +69,23 @@ func GenerateSchema() ([]byte, error) {
 	if script, ok := defs["Script"].(map[string]any); ok {
 		script["required"] = []any{"name", "protocol", "actions"}
 	}
+	if rule, ok := defs["TransactionSLARule"].(map[string]any); ok {
+		rule["required"] = []any{"transaction", "metric", "comparator", "threshold"}
+		if properties, ok := rule["properties"].(map[string]any); ok {
+			for name, values := range map[string][]string{
+				"phase":      {"dns", "connect", "tls", "server", "download"},
+				"metric":     {"average_duration_ms", "bytes_received", "bytes_sent", "error_count", "error_rate_pct", "goodput_pct", "max_acknowledgement_ms", "max_consumer_lag_ms", "max_consumer_offset_lag", "max_duration_ms", "min_duration_ms", "minimum_count", "output_tokens_per_sec", "p50_ttft_ms", "p90_duration_ms", "p90_tpot_ms", "p90_ttft_ms", "p95_duration_ms", "p95_itl_ms", "p95_tpot_ms", "p95_ttft_ms", "p99_duration_ms", "p99_itl_ms", "p99_tpot_ms", "p99_ttft_ms", "throttle_rate_pct", "tps", "truncation_rate_pct"},
+				"comparator": {"lt", "lte", "gt", "gte", "eq", "neq"},
+				"population": {"transaction", "action"},
+				"severity":   {"fail", "warning"},
+				"iterations": {"warm", "all", "cold"},
+			} {
+				if prop, ok := properties[name].(map[string]any); ok {
+					prop["enum"] = values
+				}
+			}
+		}
+	}
 	action, ok := defs["Action"].(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("reflected schema has no Action definition")

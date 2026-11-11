@@ -537,13 +537,13 @@ A script from an older import can reference a name ending in a hashed identity; 
 editor's Secret bindings, Author Problems and Checks, and the script library show it by
 its readable name, with the exact name in the details or on hover. Shared assets lists
 exact names.
-Values resolved through `{{secret.NAME}}` are redacted from logs, snapshots, reports,
-and archives regardless of any other setting.
-
-Credentials that arrived *inside an imported script* are treated differently: the
-script keeps them literally so it stays runnable, and whether they are redacted from
-run output is a project setting (`log.redact_run_evidence`, off by default). Move them
-into application or project secrets when you want them genuinely protected.
+Values resolved through `{{secret.NAME}}` as well as literal credentials present in an
+imported or authored script are automatically redacted from logs, snapshots, failure
+samples, reports, and run archives during replay, debugging, and test runs. Turning on
+`log.redact_run_evidence` extends redaction to additional session and response evidence
+without modifying the script itself. Moving literal credentials into application or
+project secrets (`{{secret.NAME}}`) remains optional when you want centralized rotation
+or separate secret administration.
 
 ## Validating And Replaying
 
@@ -795,21 +795,24 @@ script content. A header HTTP cannot send as recorded (a quote, a line break or 
 curl fragment in its name or value) is left out of the request, which is held for
 review; the import review and the editor's Author Problems name the header and what is
 wrong with it, so you can correct it in the source and import again (a Bruno collection
-instead offers to trim or remove it at review). Only credentials an operator supplies
-(authorization, API and subscription keys, auth tokens, passwords) go to credential
-review; cookies and session, anti-forgery and trace headers are state the source
-recorded, so every importer keeps them as imported and the script shows them (run
-evidence redaction, when it is on, still masks them). An input the source references but never
+instead offers to trim or remove it at review). Plaintext credentials, cookies, session
+identifiers, anti-forgery headers, and trace headers present in the imported artifact are
+preserved directly in the converted DSL; credential review lists operator-supplied
+credentials (authorization headers, API and subscription keys, auth tokens, passwords) so
+you can optionally bind them to `{{secret.NAME}}` project secrets during import or later in
+the editor, and runtime replay and test execution automatically redact both `{{secret.NAME}}`
+and literal credentials from outputs and logs. An input the source references but never
 supplies (**Required runtime inputs** under the review's data substitutions) takes one value
 for every user, a column of a data pool each virtual user reads its own row of
 (`{{data.alias.column}}`; bind the alias in the scenario's Data step), or a value generated
 each iteration (a UUID, the current time or random digits); the script records the choice.
-An input that looks like a credential or session (a token, key, password, session ID or
-anti-forgery token) takes a project secret (`{{secret.NAME}}`, named after the input and
-numbered when the project already holds that name, so it never sends another credential's
-value unasked; add the secret under Project secrets before a run) or a data pool column, never
-a value kept in the script, which would show it masked; it stays unsupplied until you choose.
-A trace ID is an ordinary input.
+An unset input that looks like a credential (a token, key, password, or secret) supports all
+four supply modes — **One value for every user**, **A project secret** (`{{secret.NAME}}`,
+named after the input and numbered when the project already holds that name, so it never
+sends another credential's value unasked; add the secret under Project secrets before a
+run), **A different value per user, from a data pool**, or **A value generated each
+iteration** — and stays unsupplied until you choose.
+Cookies, session identifiers, anti-forgery tokens, and trace IDs are ordinary inputs.
 Importing the same source again lists, under **Imported before**, each script an earlier
 import saved and offers to update it as a new version (it keeps its name and folder, and its
 reference key moves to the next version) or create a copy. A source that declares its identity (a Postman collection, an OpenAPI,
@@ -889,7 +892,7 @@ time for an in-app checklist of the browser DevTools settings below.
 | Browser DevTools setting | Recommended state | Why it matters for 2-HAR comparison and DSL conversion |
 | --- | --- | --- |
 | `Preserve log` (Network toolbar) | Checked | Retains multi-hop sign-in and sign-out redirect chains (`302` → `frontdoor.jsp` → `VFLoginFlow` → `/one/one.app`) across full-page navigations. |
-| `Allow to generate HAR (with sensitive data)` (`Settings ⚙ → Preferences → Network`, Chrome/Edge 130+) | Checked | Click-and-hold the Network export arrow and choose `Export HAR (with sensitive data)…` (Firefox: right-click → `Save All As HAR`). Preserves `Cookie`, `Set-Cookie` (`__Host-ERIC_*`, `sid`), and `Authorization` headers for correlation verification. On import, the review lists every credential the capture carries; you bind each one to a project secret before saving. Moving a recorded value into a new project secret needs the **Allow source secret migration** admin setting (off by default) and an **Inspect & review** import, not **Validate Only**. |
+| `Allow to generate HAR (with sensitive data)` (`Settings ⚙ → Preferences → Network`, Chrome/Edge 130+) | Checked | Click-and-hold the Network export arrow and choose `Export HAR (with sensitive data)…` (Firefox: right-click → `Save All As HAR`). Preserves `Cookie`, `Set-Cookie` (`__Host-ERIC_*`, `sid`), and `Authorization` headers for correlation verification and unredacted DSL conversion. On import, captured values stay in the converted DSL by default, and the review optionally lets you bind credentials to project secrets. Populating new project secrets directly from captured values requires the **Allow source secret migration** admin setting (off by default) and an **Inspect & review** import, not **Validate Only**. |
 | Separate Incognito / InPrivate windows | Two independent sessions | Close the first private window completely before recording the second capture so each recording starts unauthenticated with distinct session tokens, CSRF nonces, and Aura context values, and without browser-extension noise. |
 | `Clear network log` before submitting sign-in | Clear after login page loads | Load the login URL first, let initial static framework bundles finish downloading, clear the network log, and then submit credentials. Drops pre-login static bundle bloat while keeping the complete authentication `POST` and redirect chain. |
 | `Disable cache` (Network toolbar) | Unchecked | Dynamic HTML documents and XHR/Fetch API calls (`Cache-Control: no-store`) still record full wire payloads while immutable versioned JS/CSS bundles are served from browser cache instead of re-downloading tens of megabytes per navigation. |
@@ -937,7 +940,7 @@ HAR import into a two-capture correlation analysis:
 2. **Desktop and Mobile SDK lifecycle hoisting:** Desktop sign-in chains (login `POST` →
    `/secur/frontdoor.jsp` → `contentDoor` / `VFLoginFlow` `/visualforce/recsession` →
    `/one/one.app`) are hoisted into `init` alongside a `salesforce_users` CSV data
-   source (`username` and secret-masked `password`), while trailing `/secur/logout.jsp`
+   source (`username` and `password`), while trailing `/secur/logout.jsp`
    requests move into `teardown`. Client telemetry filtering (`InstrumentationBeacon`
    and `o11y` beacons) is on by default for every HAR and Salesforce import, whatever
    the traffic, unless static assets are included or you turn it off. Step transactions

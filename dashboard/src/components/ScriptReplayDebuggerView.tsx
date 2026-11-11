@@ -1,4 +1,5 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import type { RequestResponseInspectorTab, ResponseActions } from './requestResponseInspectorModel'
 
 import { scriptDataUsage } from './scriptDataUsageModel'
@@ -17,6 +18,10 @@ import { buildDebugOutline } from './debugOutlineModel'
 import { DEFAULT_REPLAY_OPTIONS } from './scriptEditorState'
 import { currentRuntimeLookup, type RuntimeInspectionMode } from './debugRuntimeState'
 import { debugNextAction, debugNextRequestParts, previewTemplate, type PreviewSegment } from './debugNextRequest'
+import InspectorHeaderTable from './InspectorHeaderTable'
+import { isPasswordLikeFieldName, MASKED_VALUE } from './inspectorHeadersModel'
+import { isCredentialLocatorName, isSensitiveCredentialPreviewHeader, isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
+import type { StepPosition } from './referenceScopeModel'
 import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
 import { effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
 import { formatPacingTiming } from './runtimeTiming'
@@ -136,7 +141,20 @@ export interface ScriptReplayDebuggerViewProps {
   onFollowExecution: (enabled: boolean) => void
   onUpdateBreakpoints: (next: ScriptDebugBreakpoint[]) => Promise<void>
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
-  addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
+  addExtractorDefinition: (
+    actionIndex: number,
+    extractor: ScriptExtractorDefinition,
+    repair?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+    step?: Partial<StepPosition> | null,
+  ) => CorrelationApplyResult
+  onAddExtractor?: (
+    actionIndex: number,
+    extractor: ScriptExtractorDefinition,
+    repair?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+    step?: Partial<StepPosition> | null,
+  ) => CorrelationApplyResult | void
+  /** Active center tab / workspace identifier (e.g. 'debug-summary' vs 'action-list'). */
+  activeWorkspace?: string
   /** Replaces a replayed step's extractor in place (the inspector's failing-extractor tester): true when it did, else why not. */
   replaceExtractorDefinition?: (event: ReplayActionEvent, name: string, extractor: Pick<ScriptExtractorDefinition, 'source' | 'type' | 'expression'>) => true | string
   applyReplaySuggestedLocator: (event: ReplayActionEvent, locator: string) => void
@@ -167,6 +185,10 @@ export interface ScriptReplayDebuggerViewProps {
   handleValidateScript: () => Promise<void>
   isBrowserScript: boolean
   jsonParseMessage: string
+  canEditAction?: (event: BrowserReplayEvent) => boolean
+  onEditAction?: (event: BrowserReplayEvent) => void
+  canRevealInScript?: (event: BrowserReplayEvent) => boolean
+  onRevealInScript?: (event: BrowserReplayEvent) => void
   onEditReplayAction: (event: BrowserReplayEvent) => void
   onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
@@ -238,6 +260,8 @@ export function ScriptReplayDebuggerView({
   runHistory, runRecord, seedVariables, followExecution, onFollowExecution, onUpdateBreakpoints,
   actionProblemRows,
   addExtractorDefinition,
+  onAddExtractor,
+  activeWorkspace,
   replaceExtractorDefinition,
   breakpointSummary,
   browserReplaySession,
@@ -261,6 +285,10 @@ export function ScriptReplayDebuggerView({
   handleValidateScript,
   isBrowserScript,
   jsonParseMessage,
+  canRevealInScript,
+  onRevealInScript,
+  canEditAction,
+  onEditAction,
   onEditReplayAction,
   http3UpgradeScopes,
   onSwitchToHTTP3Upgrade,
@@ -309,6 +337,14 @@ export function ScriptReplayDebuggerView({
 }: ScriptReplayDebuggerViewProps) {
   // The Base URL applies only to relative action targets.
   const absoluteTargetCount = [...(script.init || []), ...(script.actions || []), ...(script.teardown || [])].filter(action => /^https?:\/\//i.test(action.target || "")).length
+  const [inspectorRetryCount, setInspectorRetryCount] = useState(0)
+  const InspectorComponent = useMemo(
+    () => (inspectorRetryCount === 0 ? RequestResponseInspector : lazy(() => import('./RequestResponseInspector'))),
+    [inspectorRetryCount],
+  )
+  useEffect(() => {
+    void import('./RequestResponseInspector').catch(() => {})
+  }, [])
   const {
     activeDebuggerResize,
     currentDebugAction,
@@ -385,6 +421,30 @@ export function ScriptReplayDebuggerView({
   const testRunContinues = debugContinuesAfterFailure({ afterFailure: 'test-run' }, script)
   const [narrowPane, setNarrowPane] = useState<'outline' | 'editor' | 'inspector'>('editor')
   const [dockCollapsed, setDockCollapsed] = useState(true)
+  const effectiveAddExtractor = useMemo(
+    () => (
+      actionIndex: number,
+      extractor: ScriptExtractorDefinition,
+      repair?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+      step?: Partial<StepPosition> | null,
+    ): CorrelationApplyResult => {
+      if (onAddExtractor) {
+        const res = onAddExtractor(actionIndex, extractor, repair, step)
+        if (res) return res
+      }
+      return addExtractorDefinition(actionIndex, extractor, repair, step)
+    },
+    [addExtractorDefinition, onAddExtractor],
+  )
+  const prevActiveWorkspaceRef = useRef(activeWorkspace)
+  useEffect(() => {
+    if (prevActiveWorkspaceRef.current !== activeWorkspace) {
+      prevActiveWorkspaceRef.current = activeWorkspace
+      if (activeWorkspace === 'debug-summary') {
+        setDockCollapsed(true)
+      }
+    }
+  }, [activeWorkspace])
   const [rawLogs, setRawLogs] = useState(false)
   const [breakpointsPending, setBreakpointsPending] = useState(false)
   const [variablesSubtab, setVariablesSubtab] = useState<'values' | 'sources'>('values')
@@ -571,7 +631,7 @@ export function ScriptReplayDebuggerView({
                     <p>Applies to the next run. Text bodies are redacted; binary, oversized, or incomplete bodies are omitted. Only observed redirect hops and measured timing phases can be retained. Existing evidence limits still apply.</p>
                   </fieldset>}
                   <label><span>Evidence capture</span><select value={replayOptions.capture || 'diagnostic'} onChange={e => setReplayOptions(prev => ({ ...prev, capture: e.target.value as 'diagnostic' | 'errors' | 'script' }))}><option value="diagnostic">Diagnostic — bounded detailed capture</option><option value="errors">Failures only</option><option value="script">Use saved Runtime Settings (custom)</option></select></label>
-                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention limits. Browser capture uses per-action screenshots. Other protocols retain their native evidence. Debugger sessions and exports can contain unredacted credentials and values.</p>
+                  <p>HTTP/SOAP diagnostic capture: up to 100 messages, 64 KiB per message, 4 MiB total, subject to server retention limits. Browser capture uses per-action screenshots. Other protocols retain their native evidence. Secrets and credentials are redacted automatically; non-credential runtime values and response evidence can still appear in debugger sessions and exports unless run evidence redaction is enabled.</p>
                   <label>
                     <span>Debugger Group</span>
                     <input
@@ -657,7 +717,14 @@ export function ScriptReplayDebuggerView({
             <div className="debugger-body">
               <div className="debug-session-row">
               <div className="debug-session-tools debug-selection-status">
-                <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
+                {(() => {
+                  const selectionStatusText = selectedReplayEvent
+                    ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}`
+                    : currentDebugAction
+                      ? `Current: ${currentDebugAction.action_name}`
+                      : 'Select an action to inspect evidence'
+                  return <span title={selectionStatusText}>{selectionStatusText}</span>
+                })()}
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
                 <button type="button" className="btn btn-sm btn-ghost" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
               </div>
@@ -878,7 +945,7 @@ export function ScriptReplayDebuggerView({
                               </tr>
                               <tr>
                                 <th scope="row">Redact run evidence</th>
-                                <td>{script.config.log?.redact_run_evidence ? 'On' : 'Off (platform secrets always redacted)'}</td>
+                                <td>{script.config.log?.redact_run_evidence ? 'On' : 'Off (secrets and credentials always redacted)'}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Debugger group</th>
@@ -1017,8 +1084,12 @@ export function ScriptReplayDebuggerView({
                     {!replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, F9, or Cmd/Ctrl+B), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
+                      <LazyLoadBoundary
+                        title="Request and response inspector could not be loaded."
+                        onRetry={() => setInspectorRetryCount(count => count + 1)}
+                      >
                       <Suspense fallback={<div className="debugger-empty" role="status">Loading request and response…</div>}>
-                      <RequestResponseInspector
+                      <InspectorComponent
                         event={selectedReplayEvent}
                         index={selectedReplayEventIndex}
                         script={script}
@@ -1030,9 +1101,37 @@ export function ScriptReplayDebuggerView({
                         variableDiff={replayVariableDiffs[selectedReplayEventIndex] || {}}
                         copiedSection={copiedReplaySnapshotSection}
                         onCopySection={handleCopyReplaySnapshotSection}
-                        onEditAction={onEditReplayAction}
+                        onEditAction={event => {
+                          if (canEditAction && !canEditAction(event)) return
+                          ;(onEditAction ?? onEditReplayAction)(event)
+                        }}
                         onOpenDebugOptions={() => setDebuggerSettingsOpen(true)}
-                        addExtractorDefinition={addExtractorDefinition}
+                        addExtractorDefinition={(
+                          actionIndex: number,
+                          extractor: ScriptExtractorDefinition,
+                          repairOrStep?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+                          step?: Partial<StepPosition> | null,
+                        ) => {
+                          const defaultStep: StepPosition = {
+                            phase: normalizeDebugPhase(selectedReplayEvent.phase) as 'init' | 'action' | 'teardown',
+                            actionIndex: selectedReplayEvent.action_index ?? actionIndex,
+                            stepPath: selectedReplayEvent.step_path?.length
+                              ? selectedReplayEvent.step_path
+                              : typeof selectedReplayEvent.request_index === 'number' && selectedReplayEvent.request_index >= 0
+                                ? [`requests[${selectedReplayEvent.request_index}]`]
+                                : undefined,
+                          }
+                          const isRepairObj = Boolean(
+                            repairOrStep &&
+                            typeof repairOrStep === 'object' &&
+                            ('failingActionIndex' in repairOrStep || 'requestLocations' in repairOrStep || 'matchedValue' in repairOrStep || 'replacement' in repairOrStep),
+                          )
+                          if (isRepairObj) {
+                            return effectiveAddExtractor(actionIndex, extractor, repairOrStep, step ?? defaultStep)
+                          }
+                          const resolvedStep = step ?? (repairOrStep as Partial<StepPosition> | null | undefined) ?? defaultStep
+                          return effectiveAddExtractor(actionIndex, extractor, resolvedStep, resolvedStep)
+                        }}
                         replaceExtractorDefinition={replaceExtractorDefinition}
                         http3UpgradeScopes={http3UpgradeScopes}
                         onSwitchToHTTP3Upgrade={onSwitchToHTTP3Upgrade}
@@ -1043,6 +1142,7 @@ export function ScriptReplayDebuggerView({
                         onSelectEvent={selectInspectorEvent}
                       />
                       </Suspense>
+                      </LazyLoadBoundary>
                     ) : (replaying && browserReplaySession?.current_action) ? (
                       (() => {
                         const ca = browserReplaySession?.current_action
@@ -1155,14 +1255,25 @@ export function ScriptReplayDebuggerView({
                     </div>
                   ) : debuggerBottomTab === 'timeline' ? (
                     <div className="debugger-timeline">
-                      <DebugWaterfallPanel
-                        events={debugEvents}
-                        selectedEventIndex={selectedReplayEventIndex}
-                        onSelectEvent={jumpToEvent}
-                        onInspectEvent={jumpToEvent}
-                        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
-                        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } }}
-                      />
+                      {activeWorkspace === 'debug-summary' && dockCollapsed ? (
+                        <p className="debugger-empty" data-testid="debugger-timeline-summary-active">
+                          Transaction waterfall is shown in the Summary workspace above.
+                          {onOpenRequestResponse && (
+                            <> <button type="button" className="link-button" onClick={onOpenRequestResponse}>Inspect requests</button></>
+                          )}
+                        </p>
+                      ) : (
+                        <DebugWaterfallPanel
+                          events={debugEvents}
+                          selectedEventIndex={selectedReplayEventIndex}
+                          onSelectEvent={jumpToEvent}
+                          onInspectEvent={jumpToEvent}
+                          canRevealInScript={canRevealInScript ?? (event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) })}
+                          onRevealInScript={onRevealInScript ?? (event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } })}
+                          canEditAction={canEditAction}
+                          onEditAction={onEditAction}
+                        />
+                      )}
                       <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>
                   ) : debuggerBottomTab === 'problems' ? (
@@ -1303,23 +1414,187 @@ export function PreviewText({ segments, highlightText }: { segments: PreviewSegm
     : <span key={index} className={`debug-preview-${segment.kind}`} title={PREVIEW_TITLES[segment.kind]}>{segment.text}</span>)}</>
 }
 
+function isSensitivePreviewKey(name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed || isCredentialLocatorName(trimmed)) return false
+  return (
+    isSensitiveCredentialPreviewHeader(trimmed) ||
+    isSensitiveCredentialPreviewName(trimmed) ||
+    isPasswordLikeFieldName(trimmed)
+  )
+}
+
+function maskSensitivePreviewText(
+  rawText: string,
+  values: Readonly<Record<string, string>> | null,
+  runId: string | undefined,
+  reveal: boolean,
+): { segments: PreviewSegment[]; hasMasked: boolean } {
+  let hasMasked = false
+  const sensitiveTemplateExprs = new Set<string>()
+  let workingText = rawText.replace(
+    /([?&]|^)([A-Za-z0-9_.-]+)=([^&#\s]+)/g,
+    (full, prefix: string, key: string, val: string) => {
+      if (!val || !isSensitivePreviewKey(key)) return full
+      const singleTemplate = /^\{\{\s*([^{}]+?)\s*\}\}$/.exec(val)
+      if (singleTemplate) {
+        const expr = singleTemplate[1].trim()
+        if (values?.[expr] !== undefined) {
+          sensitiveTemplateExprs.add(expr)
+          hasMasked = true
+        }
+        return full
+      }
+      hasMasked = true
+      return reveal ? full : `${prefix}${key}=${MASKED_VALUE}`
+    },
+  )
+  workingText = workingText.replace(
+    /("([A-Za-z0-9_.-]+)"\s*:\s*")([^"]*)(")/g,
+    (full, open: string, key: string, val: string, close: string) => {
+      if (!val || !isSensitivePreviewKey(key)) return full
+      const singleTemplate = /^\{\{\s*([^{}]+?)\s*\}\}$/.exec(val)
+      if (singleTemplate) {
+        const expr = singleTemplate[1].trim()
+        if (values?.[expr] !== undefined) {
+          sensitiveTemplateExprs.add(expr)
+          hasMasked = true
+        }
+        return full
+      }
+      hasMasked = true
+      return reveal ? full : `${open}${MASKED_VALUE}${close}`
+    },
+  )
+  const rawSegments = previewTemplate(rawText, values, runId)
+  for (const match of rawText.matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)) {
+    const expr = match[1]
+    if (expr === 'run.id' || expr.startsWith('secret.') || expr.startsWith('fn.') || expr.startsWith('fake.')) continue
+    if (values?.[expr] === undefined) continue
+    const leaf = expr.split('.').pop() || expr
+    if (isSensitivePreviewKey(leaf) || isSensitivePreviewKey(expr)) {
+      sensitiveTemplateExprs.add(expr)
+      hasMasked = true
+    }
+  }
+  if (reveal || !hasMasked) {
+    return { segments: rawSegments, hasMasked }
+  }
+  const maskedValues: Record<string, string> | null = values
+    ? Object.fromEntries(
+        Object.entries(values).map(([k, v]) => {
+          const leaf = k.split('.').pop() || k
+          const shouldMask = sensitiveTemplateExprs.has(k) || isSensitivePreviewKey(leaf) || isSensitivePreviewKey(k)
+          return [k, shouldMask ? MASKED_VALUE : v]
+        }),
+      )
+    : null
+  return {
+    segments: previewTemplate(workingText, maskedValues, runId),
+    hasMasked,
+  }
+}
+
 /**
  * The request a paused session runs next, as VuGen's next-step view shows it:
  * the action's target, headers and body with the values this session holds
  * now. Values an earlier step has yet to provide stay as written.
  */
-function DebugNextRequest({ script, action, values, runId }: { script: ScriptDefinition; action: ScriptDebugAction; values: Readonly<Record<string, string>> | null; runId?: string }) {
+export function DebugNextRequest({ script, action, values, runId }: { script: ScriptDefinition; action: ScriptDebugAction; values: Readonly<Record<string, string>> | null; runId?: string }) {
+  const actionIdentity = `${action.event_index ?? ''}:${action.phase}:${action.action_index}:${action.request_index ?? ''}:${(action.step_path || []).join('/')}`
+  const [prevActionIdentity, setPrevActionIdentity] = useState(actionIdentity)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [revealSensitive, setRevealSensitive] = useState(false)
+  const [headerRevealOverrides, setHeaderRevealOverrides] = useState<Record<string, boolean>>({})
+  if (prevActionIdentity !== actionIdentity) {
+    setPrevActionIdentity(actionIdentity)
+    setCopiedKey(null)
+    setRevealSensitive(false)
+    setHeaderRevealOverrides({})
+  }
   const definition = debugNextAction(script, action)
   if (!definition) return null
   const { target, headers, body } = debugNextRequestParts(definition)
   if (!target && !headers.length && !body) return null
   const shownBody = body && body.length > PREVIEW_BODY_LIMIT ? `${body.slice(0, PREVIEW_BODY_LIMIT)}…` : body
+  const targetPreview = target ? maskSensitivePreviewText(target, values, runId, revealSensitive) : null
+  const bodyPreview = shownBody ? maskSensitivePreviewText(shownBody, values, runId, revealSensitive) : null
+  const hasMaskedTargetOrBody = Boolean(targetPreview?.hasMasked || bodyPreview?.hasMasked)
+  const resolvedHeaderRecord: Record<string, string> = {}
+  const sensitiveHeaderNames: string[] = []
+  for (const [name, value] of headers) {
+    if (!name) continue
+    const headerPreview = maskSensitivePreviewText(value, values, runId, true)
+    const resolved = headerPreview.segments.map(segment => segment.text).join('')
+    const isPureUnresolvedTemplate = /^\{\{\s*[^{}]+?\s*\}\}$/.test(value.trim()) && !headerPreview.segments.some(seg => seg.kind === 'value')
+    const hasSecretReference = headerPreview.segments.some(seg => seg.kind === 'secret')
+    const isSensitiveHeader = Boolean(resolved && !isPureUnresolvedTemplate && !hasSecretReference && (isSensitivePreviewKey(name) || headerPreview.hasMasked))
+    if (isSensitiveHeader && !sensitiveHeaderNames.includes(name)) {
+      sensitiveHeaderNames.push(name)
+    }
+    const showHeaderValue = (headerRevealOverrides[name] ?? revealSensitive) || !isSensitiveHeader
+    const displayedValue = showHeaderValue ? resolved : MASKED_VALUE
+    resolvedHeaderRecord[name] = resolvedHeaderRecord[name] !== undefined
+      ? `${resolvedHeaderRecord[name]}, ${displayedValue}`
+      : displayedValue
+  }
+  const toggleHeaderReveal = (name: string) => {
+    setHeaderRevealOverrides(prev => ({
+      ...prev,
+      [name]: !(prev[name] ?? revealSensitive),
+    }))
+  }
+  const handleCopy = (key: string, val: string) => {
+    setCopiedKey(key)
+    void navigator.clipboard?.writeText(val)
+  }
   return (
     <section className="debugger-next-request" aria-label="Next request">
-      <h4>Next request <small>{values ? 'with this session\u2019s current values' : 'this session\u2019s values are not available, so references show as written'}</small></h4>
-      {target && <p className="debugger-next-request-line"><code className="debug-log-token token-method">{definition.method || action.method || action.action_type}</code> <PreviewText segments={previewTemplate(target, values, runId)} highlightText /></p>}
-      {headers.length > 0 && <dl className="debugger-next-request-headers">{headers.map(([name, value], index) => <div key={`${name}-${index}`}><dt className="debug-log-token token-header">{name}</dt><dd><PreviewText segments={previewTemplate(value, values, runId)} highlightText /></dd></div>)}</dl>}
-      {shownBody && <pre className="debugger-next-request-body"><PreviewText segments={previewTemplate(shownBody, values, runId)} highlightText /></pre>}
+      <div className="debugger-next-request-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+        <h4>Next request <small>{values ? 'with this session\u2019s current values' : 'this session\u2019s values are not available, so references show as written'}</small></h4>
+        {hasMaskedTargetOrBody && (
+          <button
+            type="button"
+            className="btn btn-sm btn-ghost inspector-header-reveal-btn"
+            onClick={() => {
+              setRevealSensitive(prev => !prev)
+              setHeaderRevealOverrides({})
+            }}
+            aria-label={revealSensitive ? 'Hide sensitive request values' : 'Show sensitive request values'}
+          >
+            {revealSensitive ? 'Hide' : 'Show value'}
+          </button>
+        )}
+      </div>
+      {target && targetPreview && <p className="debugger-next-request-line"><code className="debug-log-token token-method">{definition.method || action.method || action.action_type}</code> <PreviewText segments={targetPreview.segments} highlightText /></p>}
+      {headers.length > 0 && (
+        <div className="debugger-next-request-headers">
+          <InspectorHeaderTable
+            direction="request"
+            headers={resolvedHeaderRecord}
+            sources={{ authored: { action: definition, http: script.config?.http }, view: 'scripted' }}
+            label="Next request headers"
+            copyKeyPrefix="next-req-hdr"
+            copiedKey={copiedKey}
+            onCopy={handleCopy}
+          />
+          {sensitiveHeaderNames.map(name => {
+            const isRevealed = headerRevealOverrides[name] ?? revealSensitive
+            return (
+              <button
+                key={name}
+                type="button"
+                className="btn btn-sm btn-ghost inspector-header-reveal-btn"
+                aria-label={isRevealed ? `Hide ${name} value` : `Show ${name} value`}
+                onClick={() => toggleHeaderReveal(name)}
+              >
+                {isRevealed ? 'Hide' : 'Show value'}
+              </button>
+            )
+          })}
+        </div>
+      )}
+      {shownBody && bodyPreview && <pre className="debugger-next-request-body"><PreviewText segments={bodyPreview.segments} highlightText /></pre>}
     </section>
   )
 }

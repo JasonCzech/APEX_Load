@@ -73,7 +73,7 @@ The current controller can run in either local or distributed mode without chang
 
 ## Requirements
 
-- Go `1.26.10+`
+- Go `1.26.11+`
 - Node.js `22.23.3` (pinned by `.nvmrc`, CI, the production builder, and dashboard `engines`)
 - Windows local utility: Windows PowerShell `5.1+` or PowerShell `7+`
 
@@ -336,9 +336,9 @@ Three root Dockerfiles serve distinct runtime profiles:
 
 | Dockerfile | Base / Toolchain | CGO & Build Tags | Chromium / Browser Runtime | Target Use |
 |------------|------------------|------------------|----------------------------|------------|
-| `Dockerfile` | Alpine `3.24` (`golang:1.26.10-alpine`) | `CGO_ENABLED=0`; `GO_BUILD_TAGS=standard\|enterprise` | Alpine musl `chromium` (`APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome`) | Default protocol load generator image (`make docker-generator`) and `compose.yaml` local services |
-| `Dockerfile.controller` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.10-bookworm`) | `CGO_ENABLED=1` with `-tags analytics_duckdb` (plus enterprise messaging tags when `GO_BUILD_TAGS=enterprise`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Production controller image (`make docker-controller`) with native DuckDB analytics and browser Verify/replay |
-| `Dockerfile.browser-generator` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.10-bookworm`) | `CGO_ENABLED=0`; `BINARY=generator` (`GO_BUILD_TAGS=standard`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Dedicated browser-observer generator pools sharing the exact Playwright Chromium major version with recording and Verify |
+| `Dockerfile` | Alpine `3.24` (`golang:1.26.11-alpine`) | `CGO_ENABLED=0`; `GO_BUILD_TAGS=standard\|enterprise` | Alpine musl `chromium` (`APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome`) | Default protocol load generator image (`make docker-generator`) and `compose.yaml` local services |
+| `Dockerfile.controller` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.11-bookworm`) | `CGO_ENABLED=1` with `-tags analytics_duckdb` (plus enterprise messaging tags when `GO_BUILD_TAGS=enterprise`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Production controller image (`make docker-controller`) with native DuckDB analytics and browser Verify/replay |
+| `Dockerfile.browser-generator` | Debian 13 (`debian:trixie-slim`, built on `golang:1.26.11-bookworm`) | `CGO_ENABLED=0`; `BINARY=generator` (`GO_BUILD_TAGS=standard`) | Playwright-pinned glibc Chromium in `/ms-playwright` | Dedicated browser-observer generator pools sharing the exact Playwright Chromium major version with recording and Verify |
 
 ### Frontend checks
 

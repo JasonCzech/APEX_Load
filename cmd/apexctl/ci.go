@@ -614,16 +614,35 @@ func executeCI(ctx context.Context, args ciArgs) (CIResult, error) {
 	return executeControllerCI(ctx, args, variables)
 }
 
+func scrubLocalCIError(err error, rc *engine.RedactionConfig) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return context.DeadlineExceeded
+	}
+	scrubbed := scrubCLIText(err.Error(), rc)
+	var cfgErr *ciConfigurationFailure
+	if errors.As(err, &cfgErr) {
+		return &ciConfigurationFailure{err: errors.New(scrubbed)}
+	}
+	return errors.New(scrubbed)
+}
+
 func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]string) (CIResult, error) {
 	if err := validateLocalCIGitHubTrust(); err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
 	}
 	rawScript, resolvedScriptPath, err := loadTrustedCIScriptSnapshot(ctx, args.scriptPath)
 	if err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, scrubLocalCIError(err, nil)
 	}
+	cliRedaction := attachCLIEnvSecrets(cliScriptBytesRedactionConfig(rawScript), variables)
 	if err := validateGitHubLocalCIAssetIsolation(rawScript); err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, scrubLocalCIError(err, cliRedaction)
 	}
 	run := runArgs{
 		script: resolvedScriptPath, baseURL: args.baseURL, env: variables,
@@ -632,9 +651,12 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 		maxAvgServerProcessingMs: args.maxAvgServerProcessingMs,
 		maxAvgTransferMs:         args.maxAvgTransferMs, maxErrorCount: args.maxErrorCount,
 	}
-	script, err := loadScriptSnapshotForRun(resolvedScriptPath, rawScript, run)
+	script, scriptRedaction, err := loadScriptSnapshotForCLIExecution(resolvedScriptPath, rawScript, run)
+	if scriptRedaction != nil {
+		cliRedaction = scriptRedaction
+	}
 	if err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("prepare script: %w", err)
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, scrubLocalCIError(fmt.Errorf("prepare script: %w", err), cliRedaction)
 	}
 	localGoals := resolveGoalConfig(script, run)
 	if args.requireSLA && (localGoals == nil ||
@@ -645,9 +667,9 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 			localGoals.MaxErrorCount == nil)) {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "MISSING_SLA"}, ciConfigurationErrorf("no SLA threshold was configured")
 	}
-	eng, err := engine.New(engine.Config{Script: script, VUsers: args.vusers, Duration: args.duration, RampUp: args.rampUp})
+	eng, err := engine.New(engine.Config{Script: script, VUsers: args.vusers, Duration: args.duration, RampUp: args.rampUp, RedactionConfig: cliRedaction})
 	if err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("create engine: %w", err)
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, scrubLocalCIError(fmt.Errorf("create engine: %w", err), cliRedaction)
 	}
 	started := time.Now()
 	runResult, runErr := eng.Run(ctx)
@@ -667,7 +689,7 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 	if runErr != nil {
 		result.Outcome = ciOutcomeExecutionError
 		result.Status = "FAILED"
-		return result, runErr
+		return result, scrubLocalCIError(runErr, cliRedaction)
 	}
 	classifyCIResult(&result)
 	return result, nil

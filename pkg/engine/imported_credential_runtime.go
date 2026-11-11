@@ -21,6 +21,7 @@ const runtimeCredentialScriptScopePrefix = "script:"
 const (
 	runtimeCredentialTemplateScope        = runtimeCredentialScriptScopePrefix + "import_templates"
 	runtimeCredentialScriptActionScope    = runtimeCredentialScriptScopePrefix + "resolved_action"
+	runtimeCredentialScriptOAuthURLScope  = runtimeCredentialScriptScopePrefix + "oauth_token_url"
 	runtimeCredentialSourceVariablePrefix = runtimeCredentialScriptScopePrefix + "source_variable:"
 
 	runtimeCredentialActionScope   = "resolved_action"
@@ -132,10 +133,13 @@ func (vu *VUser) replaceRuntimeCredentialScopes(updates map[string][]string) err
 	if vu.runtimeCredentialRedactionErr != nil {
 		return vu.runtimeCredentialRedactionErr
 	}
+	if vu.runtimePublicationUnavailable() {
+		return errDynamicRuntimeSecretRedactionUnavailable
+	}
 	if len(updates) == 0 {
 		return nil
 	}
-	redactScriptSourced := scriptRedactsRunEvidence(vu.Script)
+	redactScriptSourced := scriptRedactsCredentials(vu.Script)
 	prospective := cloneRuntimeCredentialScopes(vu.runtimeCredentialScopes)
 	for name, values := range updates {
 		name = strings.TrimSpace(name)
@@ -226,7 +230,7 @@ func runtimeCredentialScopesEqual(left, right map[string][]string) bool {
 // snapshots has no remaining input.
 func (vu *VUser) publishRuntimeCredentialRedaction(scopes map[string][]string) error {
 	platformManaged, scriptSourced := runtimeCredentialScopeValues(scopes)
-	if !scriptRedactsRunEvidence(vu.Script) {
+	if !scriptRedactsCredentials(vu.Script) {
 		scriptSourced = nil
 	}
 	platformManaged = filterRuntimeCredentialBaseValues(platformManaged, vu.runtimeCredentialBase, false)
@@ -377,8 +381,8 @@ func (vu *VUser) refreshImportedCredentialRuntimeValues() error {
 		return nil
 	}
 	vu.ensureImportedCredentialInspection()
-	if vu.runtimeCredentialRedactionErr != nil {
-		return vu.runtimeCredentialRedactionErr
+	if err := vu.runtimeCredentialRedactionError(); err != nil {
+		return err
 	}
 	return vu.replaceRuntimeCredentialScope(
 		runtimeCredentialTemplateScope,
@@ -390,7 +394,7 @@ func (vu *VUser) refreshImportedCredentialRuntimeValues() error {
 // expressions against the VUser's current variables, parameters, data row, and
 // environment. An expression that does not resolve contributes nothing.
 func (vu *VUser) resolvedScriptSourcedTemplateValues() []string {
-	if vu == nil || !scriptRedactsRunEvidence(vu.Script) {
+	if vu == nil || !scriptRedactsCredentials(vu.Script) {
 		return nil
 	}
 	expressions := scriptSourcedTemplateExpressions(vu.importedCredentialInspection.templatePlan())
@@ -461,10 +465,27 @@ func scriptSourcedTemplateExpressions(plan *importedCredentialTemplatePlan) []st
 	return expressions
 }
 
+var errDynamicRuntimeSecretRedactionUnavailable = errors.New("runtime credential redaction failed")
+
 func (vu *VUser) runtimeCredentialRedactionError() error {
 	if vu == nil {
 		return nil
 	}
 	vu.ensureImportedCredentialInspection()
-	return vu.runtimeCredentialRedactionErr
+	if vu.runtimeCredentialRedactionErr != nil {
+		return vu.runtimeCredentialRedactionErr
+	}
+	if vu.concurrentPublicationRedaction.publicationUnavailable() || vu.RedactionConfig.publicationUnavailable() {
+		return errDynamicRuntimeSecretRedactionUnavailable
+	}
+	return nil
+}
+
+func (vu *VUser) runtimePublicationUnavailable() bool {
+	if vu == nil {
+		return false
+	}
+	return vu.runtimeCredentialRedactionErr != nil ||
+		vu.concurrentPublicationRedaction.publicationUnavailable() ||
+		vu.RedactionConfig.publicationUnavailable()
 }

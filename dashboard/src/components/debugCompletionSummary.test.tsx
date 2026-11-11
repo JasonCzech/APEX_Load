@@ -131,20 +131,29 @@ describe('debug summary page', () => {
       expect(waterfallSection?.querySelector('.wf-row.selected .wf-name-label')?.textContent).toBe('Checkout')
       expect(waterfallSection?.querySelector('[aria-label="Selected row details"]')?.textContent).toContain('Expected 200, got 500')
 
-      // Switch to Errors and warnings tab and back
+      // Switch to Errors and warnings tab and back; tab-echo heading is omitted while section landmark remains
       act(() => tabs[1].click())
       expect(tabs[0].getAttribute('aria-selected')).toBe('false')
       expect(tabs[1].getAttribute('aria-selected')).toBe('true')
       expect(transactionsPanel.hidden).toBe(true)
       expect(issuesPanel.hidden).toBe(false)
+      expect(issuesPanel.querySelector('section[aria-label="Errors and warnings"]')).not.toBeNull()
+      expect(issuesPanel.querySelector('h3')).toBeNull()
+      const issueInspectBtn = issuesPanel.querySelector<HTMLButtonElement>('.debug-summary-issue-actions button[aria-label="Inspect Checkout"]')!
+      expect(issueInspectBtn.textContent).toBe('Inspect')
+      act(() => issueInspectBtn.click())
+      expect(onSelectEvent).toHaveBeenCalledWith(1)
       act(() => tabs[0].click())
       expect(transactionsPanel.hidden).toBe(false)
       expect(issuesPanel.hidden).toBe(true)
 
       act(() => button('Export session').click())
       expect(onExportSession).toHaveBeenCalledTimes(1)
-      act(() => button('Inspect Checkout').click())
-      expect(onSelectEvent).toHaveBeenCalledWith(1)
+      const drawerInspectBtn = transactionsPanel.querySelector<HTMLButtonElement>('.wf-drawer-actions button[aria-label="Inspect Checkout"]')!
+      expect(drawerInspectBtn.textContent).toBe('Inspect')
+      act(() => drawerInspectBtn.click())
+      expect(onSelectEvent).toHaveBeenCalledTimes(2)
+      expect(onSelectEvent).toHaveBeenLastCalledWith(1)
       await act(async () => button('Download HAR').click())
       expect(onDownloadHAR).toHaveBeenCalledTimes(1)
       expect(container.querySelector('[role="alert"]')?.textContent).toBe('Session expired.')
@@ -158,7 +167,7 @@ describe('debug summary page', () => {
       expect(container.textContent).not.toContain('No network traffic was retained')
       render(true)
       expect(container.textContent).not.toContain('Expected 200, got 500')
-      expect(button('Inspect Checkout')).toBeUndefined()
+      expect(container.querySelector('button[aria-label="Inspect Checkout"]')).toBeNull()
       expect(button('Export session')).toBeDefined()
 
       // Switching tabs and selecting a waterfall row resets cleanly when snapshot.key changes
@@ -190,19 +199,99 @@ describe('debug summary page', () => {
     } finally { act(() => root.unmount()); container.remove() }
   })
 
-  it('keeps the summary facts on one non-wrapping row outside mobile and omits the retired HAR meta section', async () => {
+  it('keeps summary facts on one row when wide, wraps via @container <= 820px and mobile @media, and enforces nowrap issue actions', async () => {
     // @ts-expect-error node:fs is available in the Vitest runtime.
     const { readFileSync } = await import('node:fs')
     // @ts-expect-error node:url is available in the Vitest runtime.
     const { fileURLToPath, URL: NodeURL } = await import('node:url')
     const css = readFileSync(fileURLToPath(new NodeURL('./DebugCompletionSummary.css', import.meta.url)), 'utf8') as string
+    expect(css).toMatch(/\.debug-completion-summary\s*\{[^}]*container:\s*debug-summary\s*\/\s*inline-size/)
+    const containerIdx = css.indexOf('@container debug-summary (max-width: 820px)')
     const mobileIdx = css.indexOf('@media (max-width: 768px)')
-    expect(mobileIdx).toBeGreaterThan(0)
-    const desktopCss = css.slice(0, mobileIdx)
+    expect(containerIdx).toBeGreaterThan(0)
+    expect(mobileIdx).toBeGreaterThan(containerIdx)
+    const wideCss = css.slice(0, containerIdx)
+    const containerCss = css.slice(containerIdx, mobileIdx)
     const mobileCss = css.slice(mobileIdx)
-    expect(desktopCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*nowrap/)
-    expect(mobileCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*grid/)
+    expect(wideCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*flex[^}]*flex-wrap:\s*nowrap/)
+    expect(wideCss).toMatch(/\.debug-summary-facts\s*>\s*div\s*\{[^}]*min-inline-size:\s*0/)
+    expect(wideCss).toMatch(/\.debug-summary-facts\s+dd\s*\{[^}]*text-overflow:\s*ellipsis/)
+    expect(containerCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*grid[^}]*minmax\(120px,\s*1fr\)/)
+    expect(containerCss).toMatch(/\.debug-summary-facts\s*>\s*div\s*\{[^}]*min-inline-size:\s*120px/)
+    expect(mobileCss).toMatch(/\.debug-summary-facts\s*\{[^}]*display:\s*grid[^}]*minmax\(120px,\s*1fr\)/)
+    expect(css).toMatch(/\.debug-summary-issue-actions\s*\{[^}]*display:\s*inline-flex[^}]*flex-wrap:\s*nowrap[^}]*white-space:\s*nowrap/)
     expect(css).not.toContain('.debug-summary-har-meta')
+  })
+
+  it('plumbs direct Edit actions into both Errors and warnings and the waterfall drawer', async () => {
+    const { default: Summary } = await import('./DebugCompletionSummary')
+    const snapshot = fixture()
+    // Add a second failed event whose edit action is disabled by canEditAction
+    snapshot.report!.events.push({
+      event_id: 'three',
+      event_index: 2,
+      action_index: 2,
+      phase: 'teardown',
+      action_name: 'Long_zero_space_enterprise_action_identifier_for_teardown_step',
+      action_type: 'request',
+      target: '/logout',
+      success: false,
+      error_message: 'Logout failed',
+      status_code: 502,
+      started_at: '2026-10-25T12:00:02Z',
+      completed_at: '2026-10-25T12:00:03Z',
+      duration_ms: 1000,
+    })
+    const onSelectEvent = vi.fn()
+    const onEditAction = vi.fn()
+    const canEditAction = vi.fn((event: { phase?: string }) => event.phase !== 'teardown')
+    const container = document.createElement('div'); document.body.appendChild(container)
+    const root = createRoot(container)
+    try {
+      act(() => root.render(
+        <Summary
+          snapshot={snapshot}
+          stale={false}
+          unavailable={false}
+          onExportSession={vi.fn()}
+          onSelectEvent={onSelectEvent}
+          onDownloadHAR={vi.fn()}
+          canEditAction={canEditAction}
+          onEditAction={onEditAction}
+        />,
+      ))
+      // Waterfall drawer (Checkout is selected by default as first failure)
+      const drawerEdit = container.querySelector<HTMLButtonElement>('#debug-summary-panel-transactions .wf-drawer-actions button[aria-label="Edit Checkout"]')!
+      expect(drawerEdit).not.toBeNull()
+      expect(drawerEdit.textContent).toBe('Edit')
+      expect(drawerEdit.disabled).toBe(false)
+      act(() => drawerEdit.click())
+      expect(onEditAction).toHaveBeenCalledTimes(1)
+      expect(onEditAction).toHaveBeenLastCalledWith(snapshot.report!.events[1])
+
+      // Switch to Errors and warnings tab
+      const issuesTab = container.querySelector<HTMLButtonElement>('#debug-summary-tab-issues')!
+      act(() => issuesTab.click())
+      const issuesPanel = container.querySelector<HTMLElement>('#debug-summary-panel-issues')!
+      const rows = [...issuesPanel.querySelectorAll<HTMLTableRowElement>('tbody tr.debug-summary-issue-row')]
+      // Row 0: Checkout (editable), Row 1: teardown step (disabled edit), Row 2: session/log warning (no eventIndex -> '—')
+      expect(rows).toHaveLength(3)
+      const checkoutActions = rows[0].querySelector('.debug-summary-issue-actions')!
+      const checkoutButtons = [...checkoutActions.querySelectorAll<HTMLButtonElement>('button')]
+      expect(checkoutButtons.map(b => b.textContent)).toEqual(['Inspect', 'Edit'])
+      expect(checkoutButtons.map(b => b.getAttribute('aria-label'))).toEqual(['Inspect Checkout', 'Edit Checkout'])
+      expect(checkoutButtons[1].disabled).toBe(false)
+      act(() => checkoutButtons[1].click())
+      expect(onEditAction).toHaveBeenCalledTimes(2)
+      expect(onEditAction).toHaveBeenLastCalledWith(snapshot.report!.events[1])
+
+      const teardownEdit = rows[1].querySelector<HTMLButtonElement>('button[aria-label="Edit Long_zero_space_enterprise_action_identifier_for_teardown_step"]')!
+      expect(teardownEdit.textContent).toBe('Edit')
+      expect(teardownEdit.disabled).toBe(true)
+
+      expect(rows[2].querySelector('.debug-summary-issue-actions')).toBeNull()
+      expect(rows[2].querySelectorAll('td')[4]?.textContent).toBe('—')
+    } finally { act(() => root.unmount()); container.remove() }
   })
 
   it('shows the recording comparison as the Recording diff sub-tab and opens it on request', async () => {
@@ -237,7 +326,7 @@ describe('debug summary page', () => {
       expect(transactionsPanel().hidden).toBe(true)
       expect(diffPanel()?.hidden).toBe(false)
       const section = diffPanel()!.querySelector('section[aria-label="Recording diff"]')!
-      expect(section.querySelector('h3')?.textContent).toBe('Recording diff')
+      expect(section.querySelector('h3')).toBeNull()
       expect(section.querySelector('[data-testid="diff"]')?.textContent).toBe('Compared with the recording')
 
       // A newer request switches to the tab and focuses it; the same request again does not.
@@ -469,11 +558,17 @@ describe('debug summary transaction table', () => {
       expect(drawer().querySelector('[aria-label="Timing breakdown for Checkout"]')?.textContent).toContain('outside child spans')
       expect(drawer().querySelector('time')?.getAttribute('datetime')).toBe(run.report!.events[0].started_at)
       expect(drawer().textContent).toContain('Self time')
-      // Selecting the request offers inspection of its execution.
+      // Selecting the request offers concise Inspect of its execution with accessible label.
       act(() => rowByLabel('Pay')!.click())
-      const inspectButton = [...drawer().querySelectorAll('button')].find(b => b.textContent === 'Inspect Pay')!
+      const inspectButton = drawer().querySelector<HTMLButtonElement>('button[aria-label="Inspect Pay"]')!
+      expect(inspectButton.textContent).toBe('Inspect')
       act(() => inspectButton.click())
       expect(inspect).toHaveBeenCalledWith(0)
+      // Selecting a redirect hop names row.actionName ('Checkout' from event.action_name) in Inspect aria-label.
+      const firstHop = container.querySelector<HTMLElement>('.wf-kind-hop')!
+      act(() => firstHop.click())
+      const hopInspect = drawer().querySelector<HTMLButtonElement>('button[aria-label="Inspect Checkout"]')!
+      expect(hopInspect.textContent).toBe('Inspect')
       expect([...drawer().querySelectorAll('[role="tab"]')].map(t => t.textContent)).toEqual(['Timing', 'Request', 'Response', 'Headers', 'Correlation', 'Transport'])
       // Execution rows keep start/end/elapsed/action time from the old table.
       expect(drawer().querySelectorAll('time')).toHaveLength(2)

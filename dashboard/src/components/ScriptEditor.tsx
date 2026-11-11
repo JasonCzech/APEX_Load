@@ -1,9 +1,9 @@
 import DebugCompletionSummary, { DebugSummaryRecordingDiff, type DebugSummaryTabRequest } from './DebugCompletionSummary'
-import RecordingDiffPanel from './RecordingDiffPanel'
 import { replayFrameForEvent, type ReplaySourceFrame } from './waterfall/replaySourceFrame'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
 import { useDebugCompletionSummary } from './debugCompletionModel'
+import { downloadBrowserReplayHAR } from '../hooks/api/useBrowserHARApi'
 import { downloadBlob } from '../utils/fileUtils'
 import { liveTableSandboxError, parseLiveTableSandboxSeeds } from './liveTableSandboxModel'
 import { nativeJavaScriptTemplate } from './nativeServicesModel'
@@ -52,10 +52,10 @@ import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
-import { ApiError } from '../hooks/apiClient'
+import { ApiError, request } from '../hooks/apiClient'
 import type { BrowserToHTTPPreviewResponse, ScriptRepairResponse } from '../hooks/api/useScriptApi'
 import { useKeyboardShortcuts } from '../hooks/KeyboardShortcutProvider'
 import { useHasTopbarContributionProvider, useTopbarContribution, type TopbarAction, type TopbarContribution } from '../hooks/TopbarContributionProvider'
@@ -70,6 +70,7 @@ import { ensureDslActionCatalog } from './dslActionCatalog'
 import {
   BrowserReplayEvent,
   BrowserReplayReport,
+  type BrowserReplaySessionResponse,
   ScriptDebugBreakpoint,
   ScriptDebugAction,
   ScriptDebugSession,
@@ -96,7 +97,6 @@ import {
   addCorrelationExtractorIfMissing,
   applyCorrelationRepairToAction,
   correlationEditableActionsKey,
-  correlationExtractorScope,
   correlationRepairRequiresStructuralBodyReview,
   currentCorrelationEditableActionsKey,
   resolveCorrelationExtractorAndRepair,
@@ -323,6 +323,10 @@ import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
 export type { ActionEditorSelectionState } from './scriptEditorJsonModel'
+
+// The Recording diff panel and its correlation diagnosis model load on first
+// use, keeping them off the initial ScriptEditor chunk.
+const RecordingDiffPanel = lazy(() => import('./RecordingDiffPanel'))
 
 // focusOutlineRow's stand-in for "the outline's selected row".
 const SELECTED_OUTLINE_ROW = '\u0000selected'
@@ -725,6 +729,7 @@ interface ReplayWSMessage extends WSMessage {
   event?: ReplayActionEvent
   report?: ReplayReport
   session?: ScriptDebugSession
+  error?: string
 }
 
 type DataSourceConfig = ScriptDataSource
@@ -1086,6 +1091,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }, [setError, setSuccess])
   const [replayStartPending, setReplayStartPending] = useState(false)
+  const [nativeReplaySessionId, setNativeReplaySessionId] = useState<string | null>(null)
+  const [nativeReplayRunning, setNativeReplayRunning] = useState(false)
+  const [nativeReplayStarting, setNativeReplayStarting] = useState(false)
+  const [nativeReplayReport, setNativeReplayReport] = useState<BrowserReplayReport | null>(null)
+  const [nativeReplayUnavailable, setNativeReplayUnavailable] = useState(false)
+  const [nativeReplayHarAvailable, setNativeReplayHarAvailable] = useState(false)
+  const nativeReplayBusy = nativeReplayStarting || nativeReplayRunning
+  const nativeReplaySessionIdRef = useRef<string | null>(null)
+  nativeReplaySessionIdRef.current = nativeReplaySessionId
+  const nativeReplayRunningRef = useRef(false)
+  nativeReplayRunningRef.current = nativeReplayRunning
+  const nativeReplayEvidenceUnavailableRef = useRef(false)
+  const nativeReplaySessionIdsRef = useRef(new Set<string>())
+  const nativeReplayEventsRef = useRef<BrowserReplayEvent[]>([])
+  const nativeReplayGroupRef = useRef('')
+  const nativeReplayStartedAtRef = useRef('')
+  const nativeReplayNotFoundCountRef = useRef(0)
+  const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
+  const effectiveBrowserReplaySession = nativeReplayStarting ? null : browserReplaySession
+  const effectiveReplayReport = nativeReplayStarting ? null : replayReport
   const [replayStartRefusal, setReplayStartRefusal] = useState<ReplayStartRefusalRecord | null>(null)
   const replayStartInFlightRef = useRef<object | null>(null)
   const replayStartAttemptRef = useRef<{
@@ -1153,11 +1178,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const duplicateScriptName = Boolean(script.name?.trim()) && (takenScriptNames || []).some(name => name.trim().toLowerCase() === script.name.trim().toLowerCase())
   const scriptPhaseActionRows = useMemo(() => buildScriptPhaseActionRows(script), [script])
   const replayDebuggerController = useScriptReplayDebuggerController({
-    browserReplaySession,
+    browserReplaySession: effectiveBrowserReplaySession,
     debugActionRows: scriptPhaseActionRows,
     expandedReplayEvent,
-    replayReport,
-    replaying,
+    replayReport: effectiveReplayReport,
+    replaying: replaying || nativeReplayBusy,
     scriptId,
   })
   const {
@@ -1234,21 +1259,33 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
   const outlineModel = useMemo(() => buildOutlineModel(scriptPhaseActionRows, { showMarkers: outlineShowMarkers }), [outlineShowMarkers, scriptPhaseActionRows])
   const outlineNaturalWidthRef = useRef<(() => number) | null>(null)
+  const [actionListHideMarkers, setActionListHideMarkers] = useState(false)
+  const hasSourceTransactionMarkers = useMemo(
+    () => scriptPhaseActionRows.some(row => row.action.type === 'source_transaction'),
+    [scriptPhaseActionRows],
+  )
+  useEffect(() => {
+    if (!hasSourceTransactionMarkers && actionListHideMarkers) setActionListHideMarkers(false)
+  }, [actionListHideMarkers, hasSourceTransactionMarkers])
+  const effectiveActionListHideMarkers = actionListHideMarkers && hasSourceTransactionMarkers
   // The outline filter narrows the rendered rows by name/type/target, and by the
   // names the outline shows (Class.method, a folded sub-transaction's name), so
   // the action list and the outline find the same steps. It does not mutate the
   // script; rows keep their original actionIndex so every row handler
   // (select/move/breakpoint) stays correct over the filtered view.
   const filteredActionRows = useMemo(() => {
+    const baseRows = effectiveActionListHideMarkers
+      ? scriptPhaseActionRows.filter(row => row.action.type !== 'source_transaction')
+      : scriptPhaseActionRows
     const needle = outlineActionFilter.trim().toLowerCase()
-    if (!needle) return scriptPhaseActionRows
-    const byFields = new Set(filterScriptPhaseActionRows(scriptPhaseActionRows, outlineActionFilter))
-    return scriptPhaseActionRows.filter(row => {
+    if (!needle) return baseRows
+    const byFields = new Set(filterScriptPhaseActionRows(baseRows, outlineActionFilter))
+    return baseRows.filter(row => {
       if (byFields.has(row)) return true
       const step = outlineModel.stepsByKey.get(debugSequenceKey(row.phase, row.actionIndex))
       return Boolean(step && [step.label, step.measuredAs?.name].some(text => text?.toLowerCase().includes(needle)))
     })
-  }, [outlineActionFilter, outlineModel, scriptPhaseActionRows])
+  }, [effectiveActionListHideMarkers, outlineActionFilter, outlineModel, scriptPhaseActionRows])
   // Per-row transaction band membership (left rail bracketing a transaction's rows).
   const transactionBands = useMemo(() => computeTransactionBands(filteredActionRows), [filteredActionRows])
   // Container actions (http_sequence / control_*) the operator has expanded in the
@@ -1905,6 +1942,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     setReplayScreenshotSelection(null)
     setReplaySeedVariables({})
     setReplaying(false)
+    nativeReplaySessionIdRef.current = null
+    nativeReplayRunningRef.current = false
+    nativeReplayEvidenceUnavailableRef.current = false
+    nativeReplaySessionIdsRef.current.clear()
+    nativeReplayEventsRef.current = []
+    nativeReplayGroupRef.current = ''
+    nativeReplayStartedAtRef.current = ''
+    nativeReplayNotFoundCountRef.current = 0
+    setNativeReplaySessionId(null)
+    setNativeReplayRunning(false)
+    setNativeReplayStarting(false)
+    setNativeReplayReport(null)
+    setNativeReplayUnavailable(false)
+    setNativeReplayHarAvailable(false)
     setSecretBindingsOpen(false)
     setError('')
     setWarnings([])
@@ -2327,10 +2378,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // and Source Mapping follow the selection. Links to a step from elsewhere,
   // such as a problem or a data usage, open the Action editor.
   // `focusInspector: false` selects without moving focus (the outline's row menu has it).
-  const selectAuthorPhaseAction = (row: ScriptPhaseActionRow, { keepCenterTab = false, focusInspector = true } = {}) => {
+  const selectAuthorPhaseAction = (
+    row: ScriptPhaseActionRow,
+    { keepCenterTab = false, focusInspector = true, section = 'request' }: { keepCenterTab?: boolean; focusInspector?: boolean; section?: string } = {},
+  ) => {
     setAuthorOverview(false)
     if (!keepCenterTab) openCenterTab(ACTION_LIST_TAB_ID)
-    setInspectorFocusSection('request')
+    setInspectorFocusSection(section)
     // From the row menu, a narrow layout keeps showing the outline.
     if (focusInspector) {
       setNarrowAuthorPane('editor')
@@ -2385,8 +2439,196 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const [followExecution, setFollowExecution] = useState(true)
   const followExecutionRef = useRef(true)
   const changeFollowExecution = (enabled: boolean) => { setRuntimeFrameSourcePath(null); followExecutionRef.current = enabled; setFollowExecution(enabled) }
+  const adoptNativeReplayEvents = useCallback((incoming: BrowserReplayEvent[] | undefined, authoritative = false): BrowserReplayEvent[] => {
+    if (!incoming) return nativeReplayEventsRef.current.filter(Boolean)
+    const next = authoritative ? [] as BrowserReplayEvent[] : nativeReplayEventsRef.current.slice()
+    incoming.forEach((event, position) => {
+      if (!event || typeof event !== 'object' || typeof event.action_type !== 'string') return
+      const index = Number.isInteger(event.event_index) && (event.event_index ?? -1) >= 0
+        ? event.event_index!
+        : position
+      next[index] = event
+    })
+    nativeReplayEventsRef.current = next
+    return next.filter(Boolean)
+  }, [])
+  const finalizeNativeReplay = useCallback((
+    sessionId: string,
+    outcome: {
+      phase: 'completed' | 'failed' | 'stopped'
+      report: BrowserReplayReport | null
+      events?: BrowserReplayEvent[]
+      sessionError?: string
+      unavailable?: boolean
+      runtimeEvidenceUnavailable?: boolean
+    },
+  ) => {
+    if (!nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId || !editorMountedRef.current) return
+    if (outcome.report?.replay_session_id && outcome.report.replay_session_id !== sessionId) return
+    const isEvidenceUnavailable = Boolean(
+      nativeReplayEvidenceUnavailableRef.current
+      || outcome.runtimeEvidenceUnavailable
+      || runtimeEvidenceUnavailable(outcome.report),
+    )
+    nativeReplayRunningRef.current = false
+    setNativeReplayRunning(false)
+    setNativeReplayUnavailable(Boolean(outcome.unavailable))
+    setRuntimeInspectionMode(prev => prev === 'selected' ? 'selected' : 'retained')
+    if (isEvidenceUnavailable) {
+      nativeReplayEvidenceUnavailableRef.current = true
+      setUnavailableRuntimeSessionId(sessionId)
+    }
+    const isStopped = outcome.phase === 'stopped' || Boolean(outcome.report?.stopped)
+    const resolvedEvents = Array.isArray(outcome.report?.events)
+      ? outcome.report.events.filter(Boolean)
+      : (outcome.events?.length ? outcome.events : nativeReplayEventsRef.current.filter(Boolean))
+    const nowIso = new Date().toISOString()
+    const startedAt = outcome.report?.started_at || nativeReplayStartedAtRef.current || resolvedEvents[0]?.started_at || nowIso
+    const completedAt = outcome.report?.completed_at || resolvedEvents[resolvedEvents.length - 1]?.completed_at || nowIso
+    const succeeded = !isStopped && outcome.phase === 'completed' && (
+      outcome.report ? Boolean(outcome.report.success) : resolvedEvents.length > 0 && resolvedEvents.every(ev => ev.success)
+    )
+    const fallbackError = !isStopped && !succeeded && !outcome.report?.error
+      ? (outcome.sessionError || resolvedEvents.find(ev => !ev.success && ev.error_message)?.error_message || (!outcome.report ? 'Native browser replay ended without a completion report.' : undefined))
+      : undefined
+    const group = outcome.report?.group || nativeReplayGroupRef.current || `${currentRunRef.current?.scriptName || 'script'}-browser-replay`
+    const rawFinalReport: BrowserReplayReport = {
+      ...(outcome.report || {
+        group,
+        protocol: 'browser',
+        started_at: startedAt,
+        completed_at: completedAt,
+        success: false,
+        events: resolvedEvents,
+      }),
+      replay_session_id: outcome.report?.replay_session_id || sessionId,
+      group,
+      protocol: outcome.report?.protocol || 'browser',
+      started_at: startedAt,
+      completed_at: completedAt,
+      stopped: isStopped ? true : undefined,
+      success: succeeded,
+      error: isStopped ? undefined : (outcome.report?.error || fallbackError),
+      events: resolvedEvents,
+      runtime_evidence_unavailable: isEvidenceUnavailable ? true : outcome.report?.runtime_evidence_unavailable,
+    }
+    const finalReport = isEvidenceUnavailable ? omitUnavailableReplayReport(rawFinalReport) : rawFinalReport
+    const harAvailable = Boolean(outcome.report && !outcome.unavailable && !isEvidenceUnavailable)
+    setNativeReplayHarAvailable(harAvailable)
+    const sessionStatus: ScriptDebugSession['status'] = isStopped ? 'stopped' : succeeded ? 'completed' : 'failed'
+    const rawSyntheticSession: ScriptDebugSession = {
+      id: finalReport.replay_session_id || sessionId,
+      group: rawFinalReport.group,
+      protocol: rawFinalReport.protocol || 'browser',
+      status: sessionStatus,
+      log_level: currentRunRef.current?.options.logLevel || 'info',
+      current_event_index: finalReport.events.length,
+      started_at: finalReport.started_at,
+      completed_at: finalReport.completed_at,
+      error: rawFinalReport.error,
+      events: rawFinalReport.events,
+      report: rawFinalReport,
+      runtime_evidence_unavailable: rawFinalReport.runtime_evidence_unavailable,
+      har: {
+        eligible: true,
+        available: harAvailable,
+        retained_request_count: isEvidenceUnavailable ? 0 : finalReport.events.reduce((sum, ev) => sum + (ev.network_entries?.length ?? 0), 0),
+        reason: harAvailable
+          ? undefined
+          : isEvidenceUnavailable
+            ? 'Runtime evidence unavailable.'
+            : 'No network traffic was retained for this run.',
+        limitations: 'Contains retained traffic only. Bodies, redirect hops, and measured timing phases follow the run’s capture options and may be unavailable. Capture and retention limits apply.',
+      },
+    }
+    const syntheticSession = isEvidenceUnavailable
+      ? { ...omitUnavailableReplaySession(rawSyntheticSession), har: rawSyntheticSession.har }
+      : rawSyntheticSession
+    setBrowserReplaySession(syntheticSession)
+    setReplayReport(finalReport)
+    setNativeReplayReport(finalReport)
+    setExpandedReplayEvent(finalReport.events.length > 0 ? replayEvidenceIndex(finalReport) : null)
+    setReplayActivity(prev => upsertReplayActivity(prev, {
+      id: 'complete',
+      kind: syntheticSession.status === 'failed' ? 'error' : 'complete',
+      title: syntheticSession.status === 'completed'
+        ? 'Native browser replay completed successfully'
+        : syntheticSession.status === 'stopped'
+          ? 'Native browser replay stopped'
+          : 'Native browser replay completed with failures',
+      detail: finalReport.error,
+      timestamp: finalReport.completed_at,
+      success: syntheticSession.status === 'completed' ? true : syntheticSession.status === 'failed' ? false : undefined,
+    }))
+  }, [setBrowserReplaySession, setExpandedReplayEvent, setReplayActivity, setReplayReport])
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
+    const activeNativeId = nativeReplayRunningRef.current ? nativeReplaySessionIdRef.current : null
+    if (activeNativeId && msg.replay_session_id === activeNativeId && (
+      msg.type === 'browser_replay_event'
+      || msg.type === 'browser_replay_completed'
+      || msg.type === 'browser_replay_failed'
+      || msg.type === 'browser_replay_stopped'
+    )) {
+      const msgEvidenceUnavailable = runtimeEvidenceUnavailable(msg, msg.session, msg.report, msg.session?.report)
+      if (msgEvidenceUnavailable) {
+        nativeReplayEvidenceUnavailableRef.current = true
+        setUnavailableRuntimeSessionId(activeNativeId)
+      }
+      if (msg.type === 'browser_replay_event' && msg.event && typeof msg.event === 'object' && typeof msg.event.action_type === 'string') {
+        const replayEvent = msg.event
+        const idx = Number.isInteger(replayEvent.event_index) && (replayEvent.event_index ?? -1) >= 0
+          ? replayEvent.event_index!
+          : (typeof msg.event_index === 'number' && msg.event_index >= 0 ? msg.event_index : nativeReplayEventsRef.current.length)
+        const next = nativeReplayEventsRef.current.slice()
+        next[idx] = replayEvent
+        nativeReplayEventsRef.current = next
+        const compactEvents = next.filter(Boolean)
+        setBrowserReplaySession(prev => prev && prev.id === activeNativeId && !prev.completed_at ? {
+          ...prev,
+          current_event_index: compactEvents.length,
+          current_event: replayEvent,
+          events: compactEvents,
+        } : prev)
+        setReplayReport(prev => prev && !prev.completed_at && prev.replay_session_id === activeNativeId ? {
+          ...prev,
+          events: compactEvents,
+          success: prev.success && replayEvent.success,
+          error: prev.error || replayEvent.error_message,
+        } : prev)
+        setReplayActivity(prev => upsertReplayActivity(prev, {
+          id: `event-${idx}`,
+          kind: 'event',
+          title: `${replayEvent.action_name || replayEvent.action_type || 'Action'} ${replayEvent.success ? 'completed' : 'failed'}`,
+          detail: replayEvent.success
+            ? (replayEvent.target || replayEvent.selector || replayEvent.action_type)
+            : (replayEvent.error_message || replayEvent.target || replayEvent.action_type),
+          timestamp: replayEvent.completed_at || replayEvent.started_at || new Date().toISOString(),
+          success: replayEvent.success,
+          changedVariables: Object.keys(appliedReplayExtractions(replayEvent)),
+        }))
+        const compactIdx = compactEvents.indexOf(replayEvent)
+        if (followExecutionRef.current && compactIdx >= 0) setExpandedReplayEvent(compactIdx)
+        return
+      }
+      const terminalPhase: 'completed' | 'failed' | 'stopped' = msg.type === 'browser_replay_completed'
+        ? 'completed'
+        : msg.type === 'browser_replay_stopped'
+          ? 'stopped'
+          : 'failed'
+      const msgReport = msg.report && Array.isArray(msg.report.events)
+        ? msg.report
+        : (msg.session?.report && Array.isArray(msg.session.report.events) ? msg.session.report : null)
+      const mergedEvents = adoptNativeReplayEvents(msgReport?.events ?? msg.session?.events, Boolean(msgReport?.events))
+      finalizeNativeReplay(activeNativeId, {
+        phase: terminalPhase,
+        report: msgReport,
+        events: mergedEvents,
+        sessionError: msg.session?.error || (typeof msg.error === 'string' ? msg.error : undefined),
+        runtimeEvidenceUnavailable: msgEvidenceUnavailable,
+      })
+      return
+    }
     const trackedSessionId = activeReplaySessionId || (replayStartPending ? replayStartAttemptRef.current?.sessionId : null)
     if (!trackedSessionId || (msg.replay_session_id !== trackedSessionId && msg.debug_session_id !== trackedSessionId)) return
 
@@ -2784,7 +3026,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
-  }, [activeReplaySessionId, replayStartPending, admitRuntimeSession, publishRuntimeAdmission, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replayStartPending, adoptNativeReplayEvents, finalizeNativeReplay, admitRuntimeSession, publishRuntimeAdmission, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
@@ -3079,34 +3321,160 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     })
   }
 
-  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair): CorrelationApplyResult => {
-    const sourceAction = script.actions[actionIdx]
+  const collectAllScriptActions = (current: ScriptData): Action[] => {
+    const collected: Action[] = []
+    const visit = (list: Action[] | undefined) => {
+      for (const item of list || []) {
+        collected.push(item)
+        const rawReqs = item.type === 'http_sequence' && Array.isArray(item.params?.requests)
+          ? (item.params.requests as unknown[]).filter((req): req is Action => Boolean(req) && typeof req === 'object' && !Array.isArray(req))
+          : []
+        visit(rawReqs)
+        visit(item.control?.steps)
+        visit(item.control?.else)
+        visit(item.control?.default)
+        for (const switchCase of item.control?.cases || []) visit(switchCase.steps)
+        for (const branch of item.control?.branches || []) visit(branch.steps)
+      }
+    }
+    visit(current.init)
+    visit(current.actions)
+    visit(current.teardown)
+    return collected
+  }
+
+  const isCorrelationRepairLike = (
+    value: CorrelationExtractorRepair | Partial<StepPosition> | null | undefined,
+  ): value is CorrelationExtractorRepair => {
+    if (!value || typeof value !== 'object') return false
+    return 'failingActionIndex' in value || 'requestLocations' in value || 'matchedValue' in value || 'replacement' in value
+  }
+
+  const isExtractorStepRefLike = (
+    value: CorrelationExtractorRepair | Partial<StepPosition> | null | undefined,
+  ): value is Partial<StepPosition> & { requestIndex?: number } => {
+    if (!value || typeof value !== 'object') return false
+    if (isCorrelationRepairLike(value)) return false
+    return 'phase' in value || 'actionIndex' in value || 'stepPath' in value || 'requestIndex' in value
+  }
+
+  const normalizeExtractorStepRef = (
+    step: (Partial<StepPosition> & { requestIndex?: number }) | null | undefined,
+    fallbackActionIndex: number,
+  ): StepPosition => {
+    const phase: ScriptActionPhase = step?.phase === 'init' || step?.phase === 'teardown' ? step.phase : 'action'
+    const actionIndex = typeof step?.actionIndex === 'number' ? step.actionIndex : fallbackActionIndex
+    const rawStepPath = Array.isArray(step?.stepPath) ? [...step.stepPath] : []
+    const normalizedStepPath = rawStepPath.map(segment => (
+      segment
+        .replace(/^(?:steps|try)\[(\d+)\]$/, 'then[$1]')
+        .replace(/^params\.requests\[(\d+)\]$/, 'requests[$1]')
+        .replace(/^cases\[(\d+)\](?:\.steps)?\[(\d+)\]$/, 'case[$1][$2]')
+        .replace(/^branch\[(\d+)\]\[(\d+)\]$/, 'branches[$1].steps[$2]')
+    ))
+    if (typeof step?.requestIndex === 'number' && step.requestIndex >= 0) {
+      const reqSegment = `requests[${step.requestIndex}]`
+      if (normalizedStepPath[normalizedStepPath.length - 1] !== reqSegment) {
+        normalizedStepPath.push(reqSegment)
+      }
+    }
+    return {
+      phase,
+      actionIndex,
+      ...(normalizedStepPath.length > 0 ? { stepPath: normalizedStepPath } : {}),
+    }
+  }
+
+  const resolveFallbackNestedAction = (root: Action | undefined, stepPath?: string[]): Action | undefined => {
+    let cur = root
+    for (const seg of stepPath || []) {
+      if (!cur) return undefined
+      const direct = resolveNestedAction(cur, [seg])
+      if (direct) { cur = direct; continue }
+      const m = /^(then|else|loop|default|steps|try|catch|finally)\[(\d+)\]$/.exec(seg)
+      if (!m) return undefined
+      const [, kind, idx] = m
+      const pri = /^(then|loop|steps|try)$/.test(kind) ? 'steps' : kind
+      const bags = [cur.control, cur.params] as Array<Record<string, unknown> | undefined>
+      const bag = bags.find(b => Array.isArray(b?.[pri])) ?? bags.find(b => Array.isArray(b?.[kind]))
+      const list = (bag?.[pri] ?? bag?.[kind]) as Action[] | undefined
+      cur = list?.[+idx]
+    }
+    return cur
+  }
+
+  const resolveExtractorStepAction = (current: ScriptData, position: StepPosition): Action | undefined => {
+    const root = phaseActionsForScript(current, position.phase)[position.actionIndex]
+    return !root || !position.stepPath?.length ? root : resolveFallbackNestedAction(root, position.stepPath)
+  }
+
+  const updateExtractorStep = (current: ScriptData, position: StepPosition, updater: (action: Action) => Action): ScriptData => {
+    const root = phaseActionsForScript(current, position.phase)[position.actionIndex]
+    if (!root) return current
+    if (!position.stepPath?.length || resolveNestedAction(root, position.stepPath)) return updateStep(current, position, updater)
+    const key = position.phase === 'action' ? 'actions' : position.phase
+    const list = [...(current[key] || [])]
+    const clone = structuredClone(root)
+    const target = resolveFallbackNestedAction(clone, position.stepPath)
+    if (!target) return current
+    const updated = updater(target)
+    if (updated !== target) {
+      for (const k of Object.keys(target)) delete (target as unknown as Record<string, unknown>)[k]
+      Object.assign(target, updated)
+    }
+    list[position.actionIndex] = clone
+    return { ...current, [key]: list }
+  }
+
+  const addExtractorDefinition = (
+    actionIdx: number,
+    extractor: ScriptExtractorDefinition,
+    repairOrStep?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+    maybeStep?: Partial<StepPosition> | null,
+  ): CorrelationApplyResult => {
+    const explicitStep = isExtractorStepRefLike(maybeStep)
+      ? maybeStep
+      : isExtractorStepRefLike(repairOrStep)
+        ? repairOrStep
+        : undefined
+    const rawRepair: CorrelationExtractorRepair | undefined = isCorrelationRepairLike(repairOrStep) ? repairOrStep : undefined
+    const targetStep = normalizeExtractorStepRef(explicitStep, actionIdx)
+    const sourceAction = resolveExtractorStepAction(script, targetStep)
     if (!sourceAction) return { extractorAdded: false, extractorAvailable: false, requestRepaired: false }
-    const extractorScope = correlationExtractorScope(script)
-    const { extractor: effectiveExtractor, repair: effectiveRepair } = resolveCorrelationExtractorAndRepair(sourceAction, extractorScope, extractor, repair)
-    const repairAction = effectiveRepair &&
-      effectiveRepair.failingActionIndex >= 0 &&
-      effectiveRepair.failingActionIndex < script.actions.length
-      ? script.actions[effectiveRepair.failingActionIndex]
-      : undefined
+    const extractorScope = collectAllScriptActions(script)
+    const { extractor: effectiveExtractor, repair: effectiveRepair } = resolveCorrelationExtractorAndRepair(sourceAction, extractorScope, extractor, rawRepair)
+    const repairExplicitStep = (rawRepair as { failingStep?: Partial<StepPosition> & { requestIndex?: number } } | undefined)?.failingStep
+    const repairStep = effectiveRepair && (repairExplicitStep || effectiveRepair.failingActionIndex >= 0)
+      ? normalizeExtractorStepRef(repairExplicitStep, effectiveRepair.failingActionIndex)
+      : null
+    const repairAction = repairStep ? resolveExtractorStepAction(script, repairStep) : undefined
     const repairWillApply = Boolean(repairAction && effectiveRepair && applyCorrelationRepairToAction(repairAction, effectiveRepair) !== repairAction)
     const repairRequiresStructuralReview = Boolean(repairAction && effectiveRepair && correlationRepairRequiresStructuralBodyReview(repairAction, effectiveRepair))
     const extractorAlreadyExists = Boolean(sourceAction.extractors?.some(existing => existing.name === effectiveExtractor.name))
-    const actions = [...script.actions]
-    actions[actionIdx] = addCorrelationExtractorIfMissing(actions[actionIdx], effectiveExtractor)
-    if (effectiveRepair && effectiveRepair.failingActionIndex >= 0 && effectiveRepair.failingActionIndex < actions.length) {
-      actions[effectiveRepair.failingActionIndex] = applyCorrelationRepairToAction(actions[effectiveRepair.failingActionIndex], effectiveRepair)
-    }
-    setScript({ ...script, actions })
+    setScript(prev => {
+      let next = updateExtractorStep(prev, targetStep, target => addCorrelationExtractorIfMissing(target, effectiveExtractor))
+      if (repairWillApply && effectiveRepair && repairStep) {
+        next = updateExtractorStep(next, repairStep, target => applyCorrelationRepairToAction(target, effectiveRepair))
+      }
+      return next
+    })
+    const repairTargetLabel = repairStep && (repairStep.phase !== 'action' || repairStep.stepPath?.length)
+      ? (repairAction?.name || `${formatDebugPhaseLabel(repairStep.phase).toLowerCase()} ${repairStep.actionIndex + 1}`)
+      : effectiveRepair
+        ? `action ${effectiveRepair.failingActionIndex + 1}`
+        : ''
     const repairSuffix = repairWillApply && effectiveRepair
-      ? ` Updated action ${effectiveRepair.failingActionIndex + 1} to use ${effectiveRepair.replacement}.`
+      ? ` Updated ${repairTargetLabel} to use ${effectiveRepair.replacement}.`
       : repairRequiresStructuralReview
         ? ' The Aura body requires structural review; automatic request replacement was not applied.'
       : effectiveRepair
         ? ' The mapped request value was not found; replace it manually.'
       : ''
     const extractorMessage = extractorAlreadyExists ? `Kept existing extractor "${effectiveExtractor.name}"` : `Added extractor "${effectiveExtractor.name}"`
-    setSuccess(`${extractorMessage} on ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.${repairSuffix}`)
+    const targetLabel = sourceAction.name || (targetStep.phase === 'action' && !targetStep.stepPath?.length
+      ? `action ${targetStep.actionIndex + 1}`
+      : `${formatDebugPhaseLabel(targetStep.phase).toLowerCase()} ${targetStep.actionIndex + 1}`)
+    setSuccess(`${extractorMessage} on ${targetLabel}.${repairSuffix}`)
     return {
       extractorAdded: !extractorAlreadyExists,
       extractorAvailable: true,
@@ -3257,7 +3625,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     stored: Boolean(scriptId), revisionState: authoringRevisionState, hasBaseline: Boolean(authoringBaseline), saving, secretBindingsOpen, validating,
     dirty: scriptEditorDirty, hasName: Boolean(currentDraftScript.name), jsonParseMessage, fieldDraftProblem, baseURLError: draftBaseURLError || '',
   })
-  const validateScriptDisabled = saving || replaying || validating || !currentDraftScript.name
+  const validateScriptDisabled = saving || replaying || nativeReplayBusy || validating || !currentDraftScript.name
   const validateScriptTitle = validating
     ? 'Checking script readiness'
     : !currentDraftScript.name
@@ -3335,7 +3703,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       }
       const { stored: savedScript, baseline: savedBaseline, definition: savedDefinition } = persisted
       const adoptedSavedDocument = validationDocumentKeyRef.current === documentKeyAtSave && parameterDataEditGenerationRef.current === parameterDataEditGenerationAtSave
-      adoptPersistedScript({ stored: savedScript, baseline: savedBaseline, definition: savedDefinition, submitted: flushedScript }, adoptedSavedDocument)
+      const editorSubmittedBase = adoptedSavedDocument ? currentScript : flushedScript
+      adoptPersistedScript({ stored: savedScript, baseline: savedBaseline, definition: savedDefinition, submitted: editorSubmittedBase }, adoptedSavedDocument)
       const expectedCurrentDocumentKey = adoptedSavedDocument ? formatScriptJson(savedDefinition) : documentKeyAtSave
       if (!scriptId) {
         savedScriptOpeningRef.current = true
@@ -3356,7 +3725,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       result.laterEdits = hasLaterDraft
       const source = currentAuthoringSourceRef.current
       const lateDraft = hasLaterDraft ? applyPendingParameterDataCellEdits(source.script, Array.from(pendingParameterDataCellEditsRef.current.values())) : !savedBaseline ? currentScript : undefined
-      const retainedDraft = lateDraft && savedBaseline ? reapplyScriptDraft(lateDraft, savedBaseline, flushedScript) : lateDraft
+      const retainedDraft = lateDraft && savedBaseline ? reapplyScriptDraft(lateDraft, savedBaseline, editorSubmittedBase) : lateDraft
       const retainedJsonText = hasLaterDraft && source.jsonDirty ? source.jsonText : undefined
       const retainedCreatedSecretNames = pendingCreatedSecretNamesRef.current.length ? [...pendingCreatedSecretNamesRef.current] : undefined
       // Nothing is awaited after onSave: the page holds back the return that
@@ -3667,10 +4036,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     if (openSettings) setDebuggerSettingsOpen(true)
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
-  const currentRunRef = useRef<Omit<DebugRunRecord, 'report'> | null>(null)
-  const showDebugSummary = useCallback(() => { workspaceTabRef.current = 'debug'; setWorkspaceTab('debug'); openCenterTab('debug-summary') }, [openCenterTab])
+  const showDebugSummary = useCallback(() => {
+    const activeId = browserReplaySession?.id || replayReport?.replay_session_id
+    if (activeId && nativeReplaySessionIdsRef.current.has(activeId)) return
+    workspaceTabRef.current = 'debug'
+    setWorkspaceTab('debug')
+    openCenterTab('debug-summary')
+  }, [browserReplaySession?.id, openCenterTab, replayReport?.replay_session_id])
   const debugCompletionSnapshot = useDebugCompletionSummary({
-    session: browserReplaySession, report: replayReport, running: replaying,
+    session: effectiveBrowserReplaySession, report: effectiveReplayReport, running: replaying || nativeReplayBusy,
     scriptName: currentRunRef.current?.scriptName || script.name,
     draft: currentRunRef.current?.draft || false,
     transactions: currentRunRef.current?.transactions,
@@ -3690,11 +4064,25 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   useEffect(() => {
     currentRunRef.current = null
     setDebugRunHistory([])
+    nativeReplaySessionIdRef.current = null
+    nativeReplayRunningRef.current = false
+    nativeReplayEvidenceUnavailableRef.current = false
+    nativeReplaySessionIdsRef.current.clear()
+    nativeReplayEventsRef.current = []
+    nativeReplayGroupRef.current = ''
+    nativeReplayStartedAtRef.current = ''
+    nativeReplayNotFoundCountRef.current = 0
+    setNativeReplaySessionId(null)
+    setNativeReplayRunning(false)
+    setNativeReplayStarting(false)
+    setNativeReplayReport(null)
+    setNativeReplayUnavailable(false)
+    setNativeReplayHarAvailable(false)
   }, [scriptId, projectId, folderId, initialScript])
 
   const handleReplay = useCallback(async (options?: { startPaused?: boolean; runTo?: ScriptDebugBreakpoint; afterSave?: boolean; ignoreBreakpoints?: boolean; iterations?: number }) => {
     const replayResourceScope = editorResourceScopeRef.current
-    if (replayStartInFlightRef.current === replayResourceScope) return
+    if (replayStartInFlightRef.current === replayResourceScope || nativeReplayRunningRef.current) return
     const replayResourceIsCurrent = () => (
       editorMountedRef.current
       && editorResourceScopeRef.current === replayResourceScope
@@ -3715,6 +4103,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
     if (gate.kind === 'waiting' && (gate.cause === 'secrets' || gate.cause === 'save')) return
     replayStartInFlightRef.current = replayResourceScope
+    nativeReplaySessionIdRef.current = null
+    nativeReplayRunningRef.current = false
+    nativeReplayEvidenceUnavailableRef.current = false
+    nativeReplayEventsRef.current = []
+    nativeReplayNotFoundCountRef.current = 0
+    setNativeReplaySessionId(null)
+    setNativeReplayRunning(false)
+    setNativeReplayStarting(false)
+    setNativeReplayReport(null)
+    setNativeReplayUnavailable(false)
+    setNativeReplayHarAvailable(false)
     setError('')
     setSuccess('')
     setWarnings([])
@@ -3790,6 +4189,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
       }
       const replayGroup = payload.group_name || `${currentScript.name || 'script'}-replay`
+      nativeReplaySessionIdRef.current = null
+      nativeReplayRunningRef.current = false
+      nativeReplayEvidenceUnavailableRef.current = false
+      setNativeReplaySessionId(null)
+      setNativeReplayRunning(false)
+      setNativeReplayReport(null)
+      setNativeReplayUnavailable(false)
+      setNativeReplayHarAvailable(false)
       setUnavailableRuntimeSessionId(null)
       setActiveReplaySessionId(replaySessionId)
       setBrowserReplaySession(null)
@@ -4059,16 +4466,73 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     }
   }, [admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setBrowserReplaySession])
 
+  const canStopActiveReplay = Boolean((replaying && activeReplaySessionId) || (nativeReplayRunning && nativeReplaySessionId))
+  const nativeReplayStopInFlightRef = useRef<string | null>(null)
+
   const handleStopReplay = useCallback(async () => {
-    if (!activeReplaySessionId) return
+    if (activeReplaySessionId) {
+      setSuccess('Stopping debugger…')
+      try {
+        await performDebugMutation(() => api.stopScriptDebugSession(activeReplaySessionId))
+        setError('')
+      } catch (e: unknown) {
+        setError(getErrorMessage(e, 'Failed to stop debugger'))
+      }
+      return
+    }
+    const nativeSessionId = nativeReplayRunningRef.current ? nativeReplaySessionIdRef.current : null
+    if (!nativeSessionId || nativeReplayStopInFlightRef.current === nativeSessionId) return
+    nativeReplayStopInFlightRef.current = nativeSessionId
+    const scope = editorResourceScopeRef.current
     setSuccess('Stopping debugger…')
     try {
-      await performDebugMutation(() => api.stopScriptDebugSession(activeReplaySessionId))
+      const response = await api.stopBrowserReplaySession(encodeURIComponent(nativeSessionId))
+      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return
       setError('')
+      const session = response?.session
+      if (
+        session
+        && session.id === nativeSessionId
+        && nativeReplayRunningRef.current
+        && nativeReplaySessionIdRef.current === nativeSessionId
+      ) {
+        const stopEvidenceUnavailable = runtimeEvidenceUnavailable(session, session.report)
+        if (stopEvidenceUnavailable) {
+          nativeReplayEvidenceUnavailableRef.current = true
+          setUnavailableRuntimeSessionId(nativeSessionId)
+        }
+        const sessionReport = session.report && Array.isArray(session.report.events) ? session.report : null
+        const terminalPhase: 'completed' | 'failed' | 'stopped' | null = session.status === 'completed'
+          ? 'completed'
+          : session.status === 'failed'
+            ? 'failed'
+            : session.status === 'stopped'
+              ? 'stopped'
+              : null
+        const finalized = Boolean(session.completed_at) || sessionReport !== null
+        if (terminalPhase && finalized) {
+          const mergedEvents = adoptNativeReplayEvents(
+            sessionReport ? sessionReport.events : session.events,
+            Boolean(sessionReport || session.events?.length),
+          )
+          finalizeNativeReplay(nativeSessionId, {
+            phase: terminalPhase,
+            report: sessionReport,
+            events: mergedEvents,
+            sessionError: session.error,
+            runtimeEvidenceUnavailable: stopEvidenceUnavailable,
+          })
+        }
+      }
     } catch (e: unknown) {
+      if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return
       setError(getErrorMessage(e, 'Failed to stop debugger'))
+    } finally {
+      if (nativeReplayStopInFlightRef.current === nativeSessionId) {
+        nativeReplayStopInFlightRef.current = null
+      }
     }
-  }, [activeReplaySessionId, api, performDebugMutation, setError, setSuccess])
+  }, [activeReplaySessionId, adoptNativeReplayEvents, api, finalizeNativeReplay, performDebugMutation, setError, setSuccess])
 
   const handlePauseResumeReplay = useCallback(async () => {
     if (!activeReplaySessionId || !browserReplaySession) return
@@ -4085,6 +4549,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }, [activeReplaySessionId, api, browserReplaySession, performDebugMutation, setError, setSuccess])
 
   const handleStepReplay = useCallback(async (mode: ScriptDebugStepMode = 'into') => {
+    if (!activeReplaySessionId && (nativeReplayRunningRef.current || replayStartInFlightRef.current === editorResourceScopeRef.current)) return
     openReplayDebugger(false)
     if (!activeReplaySessionId || !browserReplaySession) {
       await handleReplay({ startPaused: true })
@@ -4576,7 +5041,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         : 'Load and review the current version of the script before saving and debugging.'
       : undefined
   const replayGate = replayStartGate({
-    replaying,
+    replaying: replaying || nativeReplayBusy,
     saving,
     hasName: Boolean(currentDraftScript.name),
     actionCount: (currentDraftScript.actions || []).length,
@@ -4862,12 +5327,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     {
       id: 'script.debug.run',
       // While blocked, F5 opens the next blocker as the Debug button does.
-      label: replaying ? 'Continue debugger' : replayGateKind === 'blocked' ? 'Resolve replay blockers' : replayGateKind === 'save-first' ? 'Save and debug' : 'Run debugger',
+      label: replaying ? 'Continue debugger' : nativeReplayBusy ? 'Run debugger' : replayGateKind === 'blocked' ? 'Resolve replay blockers' : replayGateKind === 'save-first' ? 'Save and debug' : 'Run debugger',
       keys: 'F5',
       group: 'Script Editor',
-      disabled: !replaying && replayGateKind === 'waiting',
+      disabled: nativeReplayBusy || (!replaying && replayGateKind === 'waiting'),
       priority: 850,
       onTrigger: () => {
+        if (nativeReplayRunningRef.current) return
         if (replaying) {
           if (isReplayPaused) void handlePauseResumeReplay()
         } else {
@@ -4880,7 +5346,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       label: 'Stop debugger',
       keys: 'Shift+F5',
       group: 'Script Editor',
-      disabled: !replaying,
+      disabled: !canStopActiveReplay,
       priority: 850,
       onTrigger: () => { void handleStopReplay() },
     },
@@ -4889,7 +5355,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       label: 'Step debugger',
       keys: 'F10',
       group: 'Script Editor',
-      disabled: !((replaying && isReplayPaused) || (!replaying && replayGateKind === 'ready')),
+      disabled: nativeReplayBusy || !((replaying && isReplayPaused) || (!replaying && replayGateKind === 'ready')),
       priority: 850,
       onTrigger: () => { void handleStepReplay('into') },
     },
@@ -4932,6 +5398,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   ], [
     activateWorkspaceTab,
     activeAction,
+    canStopActiveReplay,
     debugActionRows,
     debugRunMenuOpen,
     debuggerReadinessBtnRef,
@@ -4942,6 +5409,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     handleStepReplay,
     handleStopReplay,
     isReplayPaused,
+    nativeReplayBusy,
     replayGateKind,
     replaying,
     saveScriptDisabled,
@@ -5085,6 +5553,97 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
   }, [activeReplaySessionId, replaying, replayStartPending, api, admitRuntimeSession, invalidateRuntimeAuthority, runtimeRequest, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplaying])
+
+  // Reconcile native browser replay sessions in ScriptEditor itself so workspace
+  // switches away from Debug (which unmount BrowserReplayProgress) cannot strand
+  // an in-progress run or drop a stopped/failed/completed terminal state.
+  useEffect(() => {
+    if (!nativeReplayRunning || !nativeReplaySessionId) return
+    const sessionId = nativeReplaySessionId
+    const scope = editorResourceScopeRef.current
+    let cancelled = false
+    let pollTimer: number | null = null
+    const poll = async () => {
+      if (cancelled || !nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId) return
+      try {
+        const encodedId = encodeURIComponent(sessionId)
+        const response = api.getBrowserReplaySession
+          ? await api.getBrowserReplaySession(encodedId)
+          : await request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${encodedId}`)
+        if (cancelled || !editorMountedRef.current || editorResourceScopeRef.current !== scope) return
+        if (!nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId) return
+        nativeReplayNotFoundCountRef.current = 0
+        const session = response?.session
+        if (!session || session.id !== sessionId) return
+        const pollEvidenceUnavailable = runtimeEvidenceUnavailable(session, session.report)
+        if (pollEvidenceUnavailable) {
+          nativeReplayEvidenceUnavailableRef.current = true
+          setUnavailableRuntimeSessionId(sessionId)
+        }
+        const sessionReport = session.report && Array.isArray(session.report.events) ? session.report : null
+        const terminalPhase: 'completed' | 'failed' | 'stopped' | null = session.status === 'completed'
+          ? 'completed'
+          : session.status === 'failed'
+            ? 'failed'
+            : session.status === 'stopped'
+              ? 'stopped'
+              : null
+        const finalized = Boolean(session.completed_at) || sessionReport !== null
+        const mergedEvents = adoptNativeReplayEvents(
+          sessionReport ? sessionReport.events : session.events,
+          Boolean(terminalPhase && finalized && (sessionReport || session.events?.length)),
+        )
+        if (terminalPhase && finalized) {
+          finalizeNativeReplay(sessionId, {
+            phase: terminalPhase,
+            report: sessionReport,
+            events: mergedEvents,
+            sessionError: session.error,
+            runtimeEvidenceUnavailable: pollEvidenceUnavailable,
+          })
+          return
+        }
+        setBrowserReplaySession(prev => prev && prev.id === sessionId && !prev.completed_at ? {
+          ...prev,
+          status: session.status === 'paused' ? 'paused' : 'running',
+          current_event_index: mergedEvents.length,
+          current_event: session.current_event ?? mergedEvents[mergedEvents.length - 1],
+          events: mergedEvents,
+          runtime_evidence_unavailable: session.runtime_evidence_unavailable,
+        } : prev)
+        setReplayReport(prev => prev && !prev.completed_at && prev.replay_session_id === sessionId ? {
+          ...prev,
+          events: mergedEvents,
+          success: mergedEvents.every(ev => ev.success),
+          error: session.error || prev.error,
+        } : prev)
+      } catch (cause: unknown) {
+        if (cancelled || !editorMountedRef.current || editorResourceScopeRef.current !== scope) return
+        if (!nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId) return
+        if (cause instanceof ApiError && cause.status === 404) {
+          nativeReplayNotFoundCountRef.current += 1
+          if (nativeReplayNotFoundCountRef.current > 4) {
+            finalizeNativeReplay(sessionId, {
+              phase: 'failed',
+              report: null,
+              events: nativeReplayEventsRef.current.filter(Boolean),
+              unavailable: true,
+              sessionError: 'Native browser replay session could not be confirmed.',
+            })
+            return
+          }
+        }
+      }
+      if (!cancelled && nativeReplayRunningRef.current && nativeReplaySessionIdRef.current === sessionId) {
+        pollTimer = window.setTimeout(() => { void poll() }, 1200)
+      }
+    }
+    void poll()
+    return () => {
+      cancelled = true
+      if (pollTimer !== null) window.clearTimeout(pollTimer)
+    }
+  }, [adoptNativeReplayEvents, api, finalizeNativeReplay, nativeReplayRunning, nativeReplaySessionId, setBrowserReplaySession, setReplayReport])
 
   const addParameter = (type = 'list') => {
     const parameters = script.parameters || []
@@ -6339,11 +6898,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // Validation evidence describes one bound document (fingerprint, baseline
   // revision and context); any change to them makes it stale.
   const validationEvidenceMatchesCurrentDraft = validationResultIsCurrent
-  const debugEvidenceStatus = replayReport?.completed_at
-    ? (!replayEvidenceMatchesCurrentDraft ? 'stale' : replayReport.stopped ? 'stopped' : replayReport.success ? 'passed' : 'failed')
-    : activeReplaySessionId || browserReplaySession
-      ? 'in progress'
-      : 'missing'
+  const debugEvidenceStatus = nativeReplayBusy
+    ? 'in progress'
+    : replayReport?.completed_at
+      ? (!replayEvidenceMatchesCurrentDraft ? 'stale' : replayReport.stopped ? 'stopped' : replayReport.success ? 'passed' : 'failed')
+      : activeReplaySessionId || browserReplaySession
+        ? 'in progress'
+        : 'missing'
   const validationPassed = validationSidebarResult?.tone === 'success' || validationSidebarResult?.tone === 'warning'
   // Server validation failed only for import fidelity blockers it folds in
   // (replayStartGate): promotion and load-test launch hold the script for
@@ -6356,7 +6917,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   const importReviewAllowsDebug = replayGate.kind !== 'blocked'
     && !currentValidationIssues.some(issue => promotionFoldCoveredByGate(issue, promotionFoldCodes))
   const approvalReady = Boolean(
-    validationEvidence
+    !nativeReplayBusy
+    && validationEvidence
     && validationPassed
     && validationEvidenceMatchesCurrentDraft
     && replayReport?.completed_at
@@ -6389,8 +6951,8 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     { key: 'ready', tone: approvalReady ? 'ok' : 'none', word: approvalReady ? 'Ready' : 'Not ready', detail: approvalReady ? 'Approval readiness: ready for review.' : 'Approval readiness: needs a passing check and debug run of this draft.' },
   ]
   // Nothing runs until the controller admits the start: until then it is starting.
-  const debugWorkspaceStatusLabel = replaying
-    ? (replayStartPending && !browserReplaySession ? 'Starting' : isReplayPaused ? 'Paused' : 'Running')
+  const debugWorkspaceStatusLabel = replaying || nativeReplayBusy
+    ? ((replayStartPending && !browserReplaySession) || nativeReplayStarting ? 'Starting' : isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
       ? (!replayEvidenceMatchesCurrentDraft ? 'Stale' : replayReport.stopped ? 'Stopped' : replayReport.success ? 'Passed' : 'Failed')
       : activeReplaySessionId || browserReplaySession
@@ -6616,7 +7178,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   // A refused start's notice is worded from what blocks the draft now; a
   // refusal of a saved copy the draft does not match asks for a save.
   const replayStartNotice = (() => {
-    if (replaying) return null
+    if (replaying || nativeReplayBusy) return null
     if (staleStoredReplayRefusal) {
       const count = storedGateProblemCount(storedReplayGateIssues)
       return { kind: 'save-first' as const, text: `Debug did not start: the saved script still has ${count} ${count === 1 ? 'problem that blocks' : 'problems that block'} replay. Save your changes, then debug.` }
@@ -6938,13 +7500,13 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
       compactLabel: 'Stop',
       icon: <DebugTopbarIcon kind="stop" />,
       className: 'topbar-debug-action topbar-debug-action-stop',
-      hidden: workspaceTab !== 'debug' || !replaying,
+      hidden: workspaceTab !== 'debug' || !(replaying || nativeReplayBusy),
       title: 'Stop debugger',
       tone: 'danger',
-      disabled: !activeReplaySessionId || !replaying,
+      disabled: !canStopActiveReplay,
       onClick: () => { void topbarActionHandlersRef.current.handleStopReplay() },
     },
-  ], [activeReplaySessionId, browserReplaySession, isReplayPaused, replaying, stepReplayDisabled, workspaceTab])
+  ], [activeReplaySessionId, browserReplaySession, canStopActiveReplay, isReplayPaused, nativeReplayBusy, replaying, stepReplayDisabled, workspaceTab])
   const debugSelectedActionKey = authorCodeFocus ? authorCodeFocus.key || `${authorCodeFocus.phase}:${authorCodeFocus.actionIndex}` : activeAction !== null ? `action:${activeAction}` : undefined
   const debugSelectedItem = useMemo(
     () => buildDebugRailRenderRows(debugActionRows, replayDebuggerController.effectiveExpandedDebugSequences).find(item => item.key === debugSelectedActionKey),
@@ -6967,7 +7529,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             : {}),
     }
   }, [debugSelectedItem, debugSelectedRow, selectedReplayEvent])
-  const debugRunDropdownNode = (!replaying || isReplayPaused) && workspaceTab === 'debug' && (
+  const debugRunDropdownNode = (!replaying || isReplayPaused) && !nativeReplayBusy && workspaceTab === 'debug' && (
     !replaying && replayGateButton.intent !== 'start' ? (
       <TopbarActionButton
         action={{
@@ -7039,6 +7601,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               tabIndex={-1}
               onKeyDown={event => {
                 if (handleDebugRunMenuEscape(event)) return
+                if (event.target instanceof HTMLInputElement) return
                 const items = debugRunMenuItems()
                 if (items.length === 0) return
                 const current = items.indexOf(document.activeElement as HTMLButtonElement)
@@ -7125,40 +7688,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               >
                 Run in step mode
               </button>
+              <label className="debug-run-dropdown-iterations">
+                <span>Iterations</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  disabled={replaying}
+                  aria-label="Iterations to run"
+                  aria-describedby="debug-run-iterations-hint"
+                  aria-invalid={debugIterationDraftValid ? undefined : true}
+                  className="debug-run-iterations-input"
+                  value={debugIterationDraft}
+                  onChange={event => {
+                    const text = event.target.value
+                    setDebugIterationDraft(text)
+                    const parsed = Number(text)
+                    if (/^\d+$/.test(text.trim()) && parsed >= 1 && parsed <= 100) setDebugIterationCount(parsed)
+                  }}
+                  onBlur={() => { commitDebugIterationDraft() }}
+                  onKeyDown={event => {
+                    if (handleDebugRunMenuEscape(event)) return
+                    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Home' || event.key === 'End') {
+                      event.stopPropagation()
+                      return
+                    }
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const iterations = commitDebugIterationDraft()
+                      setDebugRunMenuOpen(false)
+                      void topbarActionHandlersRef.current.handleReplay({ startPaused: false, ignoreBreakpoints: true, iterations })
+                    }
+                  }}
+                />
+                <small id="debug-run-iterations-hint" className={debugIterationDraftValid ? undefined : 'debug-run-iterations-invalid'}>1–100</small>
+              </label>
             </div>
-            {/* The count is a field, which a menu may not hold: it sits below
-                the menu, where Tab from a command reaches it. */}
-            <label className="debug-run-dropdown-iterations">
-              <span>Iterations</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                disabled={replaying}
-                aria-label="Iterations to run"
-                aria-describedby="debug-run-iterations-hint"
-                aria-invalid={debugIterationDraftValid ? undefined : true}
-                className="debug-run-iterations-input"
-                value={debugIterationDraft}
-                onChange={event => {
-                  const text = event.target.value
-                  setDebugIterationDraft(text)
-                  const parsed = Number(text)
-                  if (/^\d+$/.test(text.trim()) && parsed >= 1 && parsed <= 100) setDebugIterationCount(parsed)
-                }}
-                onBlur={() => { commitDebugIterationDraft() }}
-                onKeyDown={event => {
-                  if (handleDebugRunMenuEscape(event)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    const iterations = commitDebugIterationDraft()
-                    setDebugRunMenuOpen(false)
-                    void topbarActionHandlersRef.current.handleReplay({ startPaused: false, ignoreBreakpoints: true, iterations })
-                  }
-                }}
-              />
-              <small id="debug-run-iterations-hint" className={debugIterationDraftValid ? undefined : 'debug-run-iterations-invalid'}>1–100</small>
-            </label>
           </div>
         )}
       </div>
@@ -7664,13 +8230,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         onChange={event => setOutlineActionFilter(event.target.value)}
                         aria-label="Filter the action list by name, type, or target"
                       />
-                      {outlineActionFilter.trim() && (
+                      {hasSourceTransactionMarkers && (
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-ghost"
+                          aria-pressed={effectiveActionListHideMarkers}
+                          data-testid="action-list-hide-markers"
+                          onClick={() => setActionListHideMarkers(prev => !prev)}
+                        >
+                          Hide markers
+                        </button>
+                      )}
+                      {(outlineActionFilter.trim() || effectiveActionListHideMarkers) && (
                         <span className="action-list-filter-count" aria-live="polite">{filteredActionRows.length}/{scriptPhaseActionRows.length}</span>
                       )}
                     </div>
                     {filteredActionRows.length === 0 ? (
                       <div className="action-list">
-                        <div className="action-empty">No actions match “{outlineActionFilter.trim()}”.</div>
+                        <div className="action-empty">{outlineActionFilter.trim() ? `No actions match “${outlineActionFilter.trim()}”.` : 'No non-marker actions.'}</div>
                       </div>
                     ) : (
                     <div className="action-table">
@@ -7803,6 +8380,11 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                         const controlAction = isControlAction(a)
                         const rowIssues = actionIssueBuckets[phase]?.[i] || []
                         const rowBlockKey = debugSequenceKey(phase, i)
+                        const outlineStep = outlineModel.stepsByKey.get(rowBlockKey)
+                        const rawStepName = a.name || `${phaseLabel} ${i + 1}`
+                        const rowDisplayLabel = outlineStep?.label && outlineStep.label !== rawStepName
+                          ? `${outlineStep.label} · ${actionRowLabel(a)}`
+                          : actionRowLabel(a)
                         const phaseActionCount = scriptActionsForPhase(script, phase).length
                         const rowActionKind = phase === 'action' ? 'action' : `${phaseLabel.toLowerCase()} action`
                         const rowActive = authorCodeFocus
@@ -7854,22 +8436,26 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                               <TooltipButton
                                 type="button"
                                 className="action-cell action-name-text action-name-toggle"
-                                title={actionRowLabel(a)}
+                                title={rowDisplayLabel}
                                 aria-label={`${containerExpanded ? 'Collapse' : 'Expand'} ${actionRowLabel(a)}`}
                                 aria-expanded={containerExpanded}
                                 onClick={event => { event.stopPropagation(); toggleAuthorContainer(item.key) }}
                               >
-                                {actionRowLabel(a)}
+                                {rowDisplayLabel}
                               </TooltipButton>
                             ) : (
-                              <span className="action-cell action-name-text" title={actionRowLabel(a)}>{actionRowLabel(a)}</span>
+                              <span className="action-cell action-name-text" title={rowDisplayLabel}>{rowDisplayLabel}</span>
                             )}
                             <div className="action-cell action-cell-txn">
-                              {actionTransactionName(a) && (
+                              {actionTransactionName(a) ? (
                                 <span className="action-txn-pill" title={`Transaction: ${actionTransactionName(a)}`}>
                                   ⏱ {actionTransactionName(a)}
                                 </span>
-                              )}
+                              ) : outlineStep?.measuredAs ? (
+                                <span className="action-txn-pill" title={`Sub-transaction: ${outlineStep.measuredAs.name}`}>
+                                  ⏱ {splitMeasureName(outlineStep.measuredAs.name).child || outlineStep.measuredAs.name}
+                                </span>
+                              ) : null}
                               {txnMarker && (
                                 <span
                                   className={`action-txn-marker ${txnMarker.role}`}
@@ -7940,13 +8526,20 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     </section>
   ))
 
+  const canEditReplayAction = (event: BrowserReplayEvent): boolean => {
+    const key = replayEventStepKey(event)
+    return !replaying && !nativeReplayBusy && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey && Boolean(key && resolveAuthorJsonScopeByKey(script, key))
+  }
   const editReplayAction = (event: BrowserReplayEvent) => {
+    if (!canEditReplayAction(event)) return
     const key = replayEventStepKey(event)
     const scope = key ? resolveAuthorJsonScopeByKey(script, key) : null
     if (!key || !scope) return
+    changeFollowExecution(false)
     const actionIndex = event.action_index ?? 0
     const phase = event.phase as ScriptActionPhase
     const path = replayEventStepPath(event)
+    setAuthorOverview(false)
     setInspectorFocusSection(scope.action.assertions?.length ? 'checks' : 'request')
     setNarrowAuthorPane('editor')
     setSelectedOutlineParameterName(null)
@@ -7965,6 +8558,32 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         || check?.querySelector<HTMLElement>('input, select')
         || panel.querySelector<HTMLElement>('.action-editor-panel input')
     }, script, true)
+  }
+  const canRevealReplayAction = (event: BrowserReplayEvent): boolean => {
+    const frame = replayFrameForEvent(event)
+    if (!frame || frame.action_index < 0 || Boolean(jsonParseMessage) || replayEditableActionsKey !== currentEditableActionsKey) return false
+    const key = `${frame.phase}:${frame.action_index}${frame.step_path?.length ? `#${frame.step_path.join('/')}` : ''}`
+    return Boolean(resolveAuthorJsonScopeByKey(script, key))
+  }
+  const revealReplayAction = (event: BrowserReplayEvent) => {
+    const frame = replayFrameForEvent(event)
+    if (!frame || frame.action_index < 0 || Boolean(jsonParseMessage) || replayEditableActionsKey !== currentEditableActionsKey) return
+    const path = frame.step_path || []
+    const key = `${frame.phase}:${frame.action_index}${path.length ? `#${path.join('/')}` : ''}`
+    const scope = resolveAuthorJsonScopeByKey(script, key)
+    if (!scope) return
+    changeFollowExecution(false)
+    setAuthorOverview(false)
+    setInspectorFocusSection('request')
+    setNarrowAuthorPane('editor')
+    setSelectedOutlineParameterName(null)
+    activateWorkspaceTab('author')
+    openCenterTab(ACTION_LIST_TAB_ID)
+    setActiveAction(frame.phase === 'action' && path.length === 0 ? frame.action_index : null)
+    setAuthorCodeFocus({ phase: frame.phase, actionIndex: frame.action_index, stepPath: path, key, label: event.action_name || scope.action.name || scope.path })
+    setAuthorRightSidebarCollapsed(false)
+    setShowFullScriptJson(false)
+    requestInspectorFocus({ phase: frame.phase, actionIndex: frame.action_index, stepPath: path }, undefined, script, true)
   }
   const replayEventRequestScope = (event: BrowserReplayEvent) => {
     const key = replayEventStepKey(event)
@@ -8007,23 +8626,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
   // The run compared with the script's recording (or an uploaded HAR): the
   // debug Summary's Recording diff, for non-browser scripts with a run.
+  useEffect(() => {
+    void import('./RecordingDiffPanel').catch(() => {})
+  }, [])
   const recordingDiff = !isBrowserScript && replayReport ? (
-    <RecordingDiffPanel
-      scriptId={scriptId}
-      projectId={projectId}
-      report={replayReport}
-      activeReplaySessionId={activeReplaySessionId}
-      session={browserReplaySession}
-      replaying={replaying}
-      replayEditableActionsKey={replayEditableActionsKey}
-      currentEditableActionsKey={currentEditableActionsKey}
-      recordingStatus={scriptRecordingStatus}
-      recordingStatusState={scriptRecordingStatusState}
-      onRetryRecordingStatus={retryScriptRecordingStatus}
-      actionCount={script.actions.length}
-      api={api}
-      onAddExtractor={addExtractorDefinition}
-    />
+    <Suspense fallback={null}>
+      <RecordingDiffPanel
+        script={script}
+        scriptId={scriptId}
+        projectId={projectId}
+        report={replayReport}
+        activeReplaySessionId={activeReplaySessionId}
+        session={browserReplaySession}
+        replaying={replaying}
+        replayEditableActionsKey={replayEditableActionsKey}
+        currentEditableActionsKey={currentEditableActionsKey}
+        recordingStatus={scriptRecordingStatus}
+        recordingStatusState={scriptRecordingStatusState}
+        onRetryRecordingStatus={retryScriptRecordingStatus}
+        actionCount={(() => {
+          const allCount = collectAllScriptActions(script).length
+          return allCount > 0 ? Math.max(allCount, replayReport.events?.length || 0) : 0
+        })()}
+        api={api}
+        onAddExtractor={addExtractorDefinition}
+        onSelectAction={(actionIdx, step) => {
+          const normalized = normalizeExtractorStepRef(step, actionIdx)
+          const row = scriptPhaseActionRows.find(candidate => candidate.phase === normalized.phase && candidate.actionIndex === normalized.actionIndex)
+          activateWorkspaceTab('author')
+          if (row) {
+            selectAuthorStep(row, normalized.stepPath)
+          } else {
+            openCenterTab(ACTION_LIST_TAB_ID)
+            selectAuthorPhaseIndex(normalized.phase, normalized.actionIndex)
+          }
+        }}
+      />
+    </Suspense>
   ) : undefined
   const openRecordingDiff = () => {
     setDebugSummaryTabRequest(previous => ({ tab: 'recording-diff', id: (previous?.id ?? 0) + 1 }))
@@ -8059,9 +8698,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
         consumeRecordingDiffFocus={consumeRecordingDiffFocus}
         onExportSession={handleDownloadBrowserReplayExport}
         onSelectEvent={index => { returnToDebugger(); setDebuggerTab('request'); setExpandedReplayEvent(index) }}
-        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
-        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) inspectRuntimeFrame(frame) }}
+        canRevealInScript={canRevealReplayAction}
+        onRevealInScript={revealReplayAction}
+        canEditAction={canEditReplayAction}
+        onEditAction={editReplayAction}
         onDownloadHAR={async () => {
+          if (nativeReplaySessionIdsRef.current.has(debugCompletionSnapshot.session.id)) {
+            await downloadBrowserReplayHAR(debugCompletionSnapshot.session.id, false)
+            return
+          }
           const content = await api.exportScriptDebugSession(debugCompletionSnapshot.session.id, 'har')
           if (!(content instanceof Blob)) throw new Error('HAR export returned an invalid response.')
           await downloadBlob(content, `script-debug-${sanitizeDownloadName(debugCompletionSnapshot.session.id, 'run')}.har`)
@@ -8074,11 +8719,24 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
           key={`${editorResourceScopeVersionRef.current}:${activeReplaySessionId || 'idle'}`}
           event={selectedReplayEvent}
           variables={replayVariableInspector || {}}
-          running={replaying}
+          running={replaying || nativeReplayBusy}
           projectId={projectId}
-          nativeReplayDisabled={replaying || replayGateButton.disabled || Boolean(jsonParseMessage)}
+          nativeReplaySessionId={nativeReplaySessionId}
+          nativeReplayRunning={nativeReplayRunning}
+          nativeReplayReport={
+            nativeReplayReport
+              ? (runtimeVariablesUnavailable || runtimeEvidenceUnavailable(nativeReplayReport)
+                ? omitUnavailableReplayReport(nativeReplayReport)
+                : nativeReplayReport)
+              : null
+          }
+          nativeReplayHarAvailable={nativeReplayHarAvailable && !runtimeVariablesUnavailable}
+          nativeReplayUnavailable={nativeReplayUnavailable}
+          nativeReplayDisabled={replaying || nativeReplayBusy || replayGateButton.disabled || Boolean(jsonParseMessage)}
           nativeReplayTitle={replayGateButton.disabled ? replayGateButton.title : undefined}
           onStartNativeReplay={async () => {
+            const replayResourceScope = editorResourceScopeRef.current
+            if (replaying || nativeReplayRunningRef.current || replayStartInFlightRef.current === replayResourceScope) return null
             const gate = replayStartGateRef.current
             if (gate.kind === 'blocked') {
               goToReplayBlockerRef.current()
@@ -8087,32 +8745,220 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             if (gate.kind === 'save-first') {
               throw new Error('Save the script before running native browser replay.')
             }
-            if (gate.kind === 'waiting' && (gate.cause === 'secrets' || gate.cause === 'save')) return null
-            const currentScript = resolveDraft().script
-            if (jsonDirty) commitJsonDraft(currentScript)
-            const variables = parseReplayVariablesText(replayOptions.variablesText)
-            const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
-            const runIdProblem = debugRunIdError(replayOptions.runId)
-            if (runIdProblem) throw new Error(runIdProblem)
-            const payload = {
-              ...buildReplayStartPayload(currentScript, {
-                projectId,
-                groupName: replayOptions.groupName,
-                variables,
-                ignoreThinkTime: replayOptions.ignoreThinkTime,
-              }),
-              live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
-              ...(replayOptions.runId.trim() ? { run_id: replayOptions.runId.trim() } : {}),
-              ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
-              record_har: true,
+            if (gate.kind === 'waiting' && (gate.cause === 'secrets' || gate.cause === 'save' || gate.cause === 'busy')) return null
+            replayStartInFlightRef.current = replayResourceScope
+            setNativeReplayStarting(true)
+            setError('')
+            setSuccess('')
+            try {
+              const replayDraft = resolveDraft()
+              const currentScript = replayDraft.script
+              if (jsonDirty) commitJsonDraft(currentScript)
+              const variables = parseReplayVariablesText(replayOptions.variablesText)
+              const liveTableSeeds = parseLiveTableSandboxSeeds(replayOptions.liveTableSeedsText)
+              const runIdProblem = debugRunIdError(replayOptions.runId)
+              if (runIdProblem) throw new Error(runIdProblem)
+              const payload = {
+                ...buildReplayStartPayload(currentScript, {
+                  projectId,
+                  groupName: replayOptions.groupName,
+                  variables,
+                  ignoreThinkTime: replayOptions.ignoreThinkTime,
+                }),
+                live_table_seeds: liveTableSeeds.length ? liveTableSeeds : undefined,
+                ...(replayOptions.runId.trim() ? { run_id: replayOptions.runId.trim() } : {}),
+                ...(replayOptions.afterFailure !== 'test-run' ? { continue_on_error: replayOptions.afterFailure === 'continue' } : {}),
+                record_har: true,
+              }
+              const response = scriptId
+                ? await api.startBrowserReplaySession(scriptId, payload)
+                : await api.startDraftBrowserReplaySession(payload)
+              if (!editorMountedRef.current || editorResourceScopeRef.current !== replayResourceScope) return null
+              const sessionId = response.replay_session_id || response.session?.id || null
+              if (sessionId) {
+                const startedAt = response.session?.started_at || new Date().toISOString()
+                const group = response.session?.group || replayOptions.groupName.trim() || `${currentScript.name || 'script'}-browser-replay`
+                const initialEvidenceUnavailable = runtimeEvidenceUnavailable(response.session, response.session?.report)
+                debugMutationSequenceRef.current += 1
+                publishRuntimeAdmission({ ...EMPTY_DEBUG_RUNTIME, generation: runtimeAdmissionRef.current.generation + 1 })
+                setRuntimeInspectionMode('current')
+                setRuntimeFrameSourcePath(null)
+                setActiveReplaySessionId(null)
+                setUnavailableRuntimeSessionId(initialEvidenceUnavailable ? sessionId : null)
+                setExpandedReplayEvent(null)
+                setExpandedReplayBrowserArtifacts({})
+                setReplayScreenshotSelection(null)
+                nativeReplaySessionIdsRef.current.add(sessionId)
+                nativeReplaySessionIdRef.current = sessionId
+                nativeReplayRunningRef.current = true
+                nativeReplayEvidenceUnavailableRef.current = initialEvidenceUnavailable
+                nativeReplayEventsRef.current = []
+                nativeReplayGroupRef.current = group
+                nativeReplayStartedAtRef.current = startedAt
+                nativeReplayNotFoundCountRef.current = 0
+                setNativeReplaySessionId(sessionId)
+                setNativeReplayRunning(true)
+                setNativeReplayReport(null)
+                setNativeReplayUnavailable(false)
+                setNativeReplayHarAvailable(false)
+                setBrowserReplaySession({
+                  id: sessionId,
+                  group,
+                  protocol: response.session?.protocol || 'browser',
+                  status: 'running',
+                  log_level: replayOptions.logLevel || 'info',
+                  current_event_index: 0,
+                  started_at: startedAt,
+                  events: [],
+                  runtime_evidence_unavailable: response.session?.runtime_evidence_unavailable,
+                })
+                setReplayReport({
+                  replay_session_id: sessionId,
+                  group,
+                  protocol: response.session?.protocol || 'browser',
+                  started_at: startedAt,
+                  completed_at: '',
+                  success: true,
+                  events: [],
+                  final_variables: variables,
+                })
+                setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
+                setReplayLayoutKey(stepLayoutKey(currentScript))
+                setReplayDocumentFingerprint(replayDraft.fingerprint)
+                setReplayRunVariablesKey(replayVariablesKey(variables))
+                setReplaySeedVariables(variables || {})
+                setReplayActivity([{
+                  id: 'start',
+                  kind: 'start',
+                  title: 'Native browser replay started',
+                  detail: currentScript.config.base_url || 'Action-specific targets',
+                  timestamp: startedAt,
+                }])
+                currentRunRef.current = {
+                  id: sessionId,
+                  scriptName: currentScript.name,
+                  transactions: captureDebugTransactionDefinitions(currentScript),
+                  options: structuredClone({ ...replayOptions, startPaused: false, liveTableSeedsText: undefined }),
+                  breakpoints: [],
+                  iterations: 1,
+                  target: currentScript.config.base_url || 'Action-specific targets',
+                  draft: scriptEditorDirty,
+                  dataSourceCount: currentScript.data_sources?.length || 0,
+                  failurePolicy: debugContinuesAfterFailure(replayOptions, currentScript) ? 'Continue on error' : 'Stop on error',
+                  inputs: (currentScript.parameters || []).map(p => ({ name: p.name, source: p.data_source || p.type, selection: p.selection || 'default', update: p.update, startRow: p.start_row, seed: p.seed })),
+                }
+                const initialReport = response.session?.report && Array.isArray(response.session.report.events) ? response.session.report : null
+                const initialStatus = response.session?.status
+                if ((response.session?.completed_at || initialReport) && (initialStatus === 'completed' || initialStatus === 'failed' || initialStatus === 'stopped')) {
+                  const initialEvents = adoptNativeReplayEvents(
+                    initialReport ? initialReport.events : response.session?.events,
+                    Boolean(initialReport || response.session?.events?.length),
+                  )
+                  finalizeNativeReplay(sessionId, {
+                    phase: initialStatus,
+                    report: initialReport,
+                    events: initialEvents,
+                    sessionError: response.session?.error,
+                    runtimeEvidenceUnavailable: initialEvidenceUnavailable,
+                  })
+                }
+              }
+              return sessionId
+            } finally {
+              if (replayStartInFlightRef.current === replayResourceScope) {
+                replayStartInFlightRef.current = null
+              }
+              if (editorMountedRef.current && editorResourceScopeRef.current === replayResourceScope) {
+                setNativeReplayStarting(false)
+              }
             }
-            const response = scriptId
-              ? await api.startBrowserReplaySession(scriptId, payload)
-              : await api.startDraftBrowserReplaySession(payload)
-            return response.replay_session_id || response.session?.id || null
           }}
-          onEdit={!replaying && !jsonParseMessage && selectedReplayEvent && replayEditableActionsKey === currentEditableActionsKey ? () => editReplayAction(selectedReplayEvent) : undefined}
-          onApplyLocator={!replaying && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
+          onCompleteNativeReplay={(completedReport, completedEvents) => {
+            const sessionId = nativeReplaySessionIdRef.current
+            const scope = editorResourceScopeRef.current
+            if (!nativeReplayRunningRef.current || !sessionId || !editorMountedRef.current) return
+            if (runtimeEvidenceUnavailable(completedReport)) {
+              nativeReplayEvidenceUnavailableRef.current = true
+              setUnavailableRuntimeSessionId(sessionId)
+            }
+            adoptNativeReplayEvents(completedReport?.events ?? completedEvents, false)
+            void (async () => {
+              try {
+                const encodedId = encodeURIComponent(sessionId)
+                const response = api.getBrowserReplaySession
+                  ? await api.getBrowserReplaySession(encodedId)
+                  : await request<BrowserReplaySessionResponse>(`/browser-replay/sessions/${encodedId}`)
+                if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return
+                if (!nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId) return
+                const session = response?.session
+                if (!session || session.id !== sessionId) return
+                const sessionEvidenceUnavailable = runtimeEvidenceUnavailable(session, session.report)
+                if (sessionEvidenceUnavailable) {
+                  nativeReplayEvidenceUnavailableRef.current = true
+                  setUnavailableRuntimeSessionId(sessionId)
+                }
+                const sessionReport = session.report && Array.isArray(session.report.events) ? session.report : null
+                const terminalPhase: 'completed' | 'failed' | 'stopped' | null = session.status === 'completed'
+                  ? 'completed'
+                  : session.status === 'failed'
+                    ? 'failed'
+                    : session.status === 'stopped'
+                      ? 'stopped'
+                      : null
+                const finalized = Boolean(session.completed_at) || sessionReport !== null
+                if (terminalPhase && finalized) {
+                  const candidateEvents = sessionReport
+                    ? sessionReport.events
+                    : (session.events?.length ? session.events : (completedReport?.events ?? completedEvents))
+                  const mergedEvents = adoptNativeReplayEvents(
+                    candidateEvents,
+                    Boolean(sessionReport || session.events?.length),
+                  )
+                  finalizeNativeReplay(sessionId, {
+                    phase: terminalPhase,
+                    report: sessionReport,
+                    events: mergedEvents,
+                    sessionError: session.error,
+                    runtimeEvidenceUnavailable: sessionEvidenceUnavailable,
+                  })
+                }
+              } catch (cause: unknown) {
+                if (!editorMountedRef.current || editorResourceScopeRef.current !== scope) return
+                if (!nativeReplayRunningRef.current || nativeReplaySessionIdRef.current !== sessionId) return
+                if (cause instanceof ApiError && cause.status === 404) {
+                  finalizeNativeReplay(sessionId, {
+                    phase: 'failed',
+                    report: null,
+                    events: adoptNativeReplayEvents(completedReport?.events ?? completedEvents, false),
+                    unavailable: true,
+                    sessionError: 'Native browser replay session could not be confirmed.',
+                  })
+                }
+              }
+            })()
+          }}
+          onDismissNativeReplay={() => {
+            const dismissedId = nativeReplaySessionIdRef.current
+            const wasRunning = nativeReplayRunningRef.current
+            nativeReplaySessionIdRef.current = null
+            nativeReplayRunningRef.current = false
+            nativeReplayEvidenceUnavailableRef.current = false
+            nativeReplayEventsRef.current = []
+            nativeReplayNotFoundCountRef.current = 0
+            setNativeReplayRunning(false)
+            setNativeReplaySessionId(null)
+            setNativeReplayReport(null)
+            setNativeReplayUnavailable(false)
+            setNativeReplayHarAvailable(false)
+            if (wasRunning && dismissedId) {
+              void Promise.resolve(api.stopBrowserReplaySession?.(encodeURIComponent(dismissedId))).catch(() => {})
+              setBrowserReplaySession(prev => prev && !prev.completed_at && prev.id === dismissedId ? null : prev)
+              setReplayReport(prev => prev && !prev.completed_at && prev.replay_session_id === dismissedId ? null : prev)
+              if (currentRunRef.current?.id === dismissedId) currentRunRef.current = null
+            }
+          }}
+          onEdit={selectedReplayEvent && canEditReplayAction(selectedReplayEvent) ? () => editReplayAction(selectedReplayEvent) : undefined}
+          onApplyLocator={!replaying && !nativeReplayBusy && !jsonParseMessage && replayEditableActionsKey === currentEditableActionsKey ? applyReplaySuggestedLocator : undefined}
         />
       )
     }
@@ -8819,7 +9665,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               <ParameterizationReview
                 parameterization={serverParameterization}
                 script={script}
-                disabled={saving || validating || replaying}
+                disabled={saving || validating || replaying || nativeReplayBusy}
                 onApplied={(applied, diffs) => {
                   replaceScriptWithHistory(applied)
                   recordAssistantChange('Applied server parameterization', `${diffs.length} change${diffs.length === 1 ? '' : 's'}`)
@@ -8941,9 +9787,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               </button>
             </TabList>
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-              <TooltipButton type="button" className={`debugger-icon-btn${replayGateButton.intent === 'resolve' ? ' danger' : ''}`} title={replayGateButton.title} aria-label={replayGateButton.ariaLabel} onClick={() => void handleReplay()} disabled={replaying || replayGateButton.disabled}>
+              <TooltipButton type="button" className={`debugger-icon-btn${replayGateButton.intent === 'resolve' ? ' danger' : ''}`} title={replayGateButton.title} aria-label={replayGateButton.ariaLabel} onClick={() => void handleReplay()} disabled={replaying || nativeReplayBusy || replayGateButton.disabled}>
                 <span className="debugger-icon" aria-hidden="true">{replayGateButton.intent === 'resolve' ? '⊘' : <>&#9654;</>}</span>
-                <span>{replaying ? (replayStartPending && !browserReplaySession ? 'Starting…' : 'Running…') : replayGateButton.label}</span>
+                <span>{replaying || nativeReplayBusy ? ((replayStartPending && !browserReplaySession) || nativeReplayStarting ? 'Starting…' : 'Running…') : replayGateButton.label}</span>
               </TooltipButton>
               {workspaceTab === 'debug' && (
                 <>
@@ -8964,7 +9810,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                     <span className="debugger-icon" aria-hidden="true">&#8635;</span>
                     <span>Finish Loop</span>
                   </TooltipButton>
-                  <TooltipButton type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!activeReplaySessionId || !replaying}>
+                  <TooltipButton type="button" className="debugger-icon-btn" title="Stop debugger" onClick={handleStopReplay} disabled={!canStopActiveReplay}>
                     <span className="debugger-icon" aria-hidden="true">&#9209;</span>
                     <span>Stop</span>
                   </TooltipButton>
@@ -9080,11 +9926,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             onOpenHistory={() => setShowHistory(true)}
             actionProblemRows={actionProblemRows}
             addExtractorDefinition={addExtractorDefinition}
+            activeWorkspace={centerTabsState.activeTabId}
             replaceExtractorDefinition={replaceEventExtractor}
             responseActions={responseActions}
             applyReplaySuggestedLocator={applyReplaySuggestedLocator}
             breakpointSummary={breakpointSummary}
-            browserReplaySession={browserReplaySession}
+            browserReplaySession={effectiveBrowserReplaySession}
             clearDebugBreakpoints={clearDebugBreakpoints}
             controller={replayDebuggerController}
             copiedReplaySnapshotSection={copiedReplaySnapshotSection}
@@ -9107,6 +9954,10 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             handleValidateScript={handleValidateScript}
             isBrowserScript={isBrowserScript}
             jsonParseMessage={jsonParseMessage}
+            canEditAction={canEditReplayAction}
+            onEditAction={editReplayAction}
+            canRevealInScript={canRevealReplayAction}
+            onRevealInScript={revealReplayAction}
             onEditReplayAction={editReplayAction}
             http3UpgradeScopes={http3UpgradeScopes}
             onSwitchToHTTP3Upgrade={switchReplayEventToHTTP3Upgrade}
@@ -9127,14 +9978,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             }}
             problemCount={problemCount}
             projectId={projectId}
-            replayStartPending={replayStartPending}
+            replayStartPending={replayStartPending || nativeReplayStarting}
             replayActivity={replayActivity}
             replayFailingEvent={replayFailingEvent}
             replayFailingEventIndex={replayFailingEventIndex}
-            replaying={replaying}
+            replaying={replaying || nativeReplayBusy}
             replayLatestActivity={replayLatestActivity}
             replayOptions={replayOptions}
-            replayReport={replayReport}
+            replayReport={effectiveReplayReport}
             replayEditableActionsKey={replayEditableActionsKey}
             currentEditableActionsKey={currentEditableActionsKey}
             runHistory={debugRunHistory.filter(r => r.id !== currentRunRef.current?.id)}
@@ -9526,12 +10377,19 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
                   })}
                   onSelectActionProblem={selectAuthorPhaseAction}
                   onSelectExtractor={(item) => {
-                    if (item.phase === 'action') selectAuthorAction(item.actionIndex)
-                    else {
-                      setActiveAction(null)
-                      setAuthorCodeFocus({ phase: item.phase, actionIndex: item.actionIndex })
-                      openCenterTab(SCRIPT_JSON_TAB_ID)
+                    const row = scriptPhaseActionRows.find(candidate => candidate.phase === item.phase && candidate.actionIndex === item.actionIndex)
+                    if (row) {
+                      selectAuthorPhaseAction(row, { section: 'checks' })
+                      return
                     }
+                    setAuthorOverview(false)
+                    openCenterTab(ACTION_LIST_TAB_ID)
+                    setInspectorFocusSection('checks')
+                    setNarrowAuthorPane('editor')
+                    setAuthorRightSidebarCollapsed(false)
+                    setSelectedOutlineParameterName(null)
+                    setScriptJsonSidebarTab('details')
+                    selectAuthorPhaseIndex(item.phase, item.actionIndex)
                   }}
                   parameterInspectorItems={parameterInspectorItems}
                   readiness={renderReadyToRunCard({ showChecklist: true })}

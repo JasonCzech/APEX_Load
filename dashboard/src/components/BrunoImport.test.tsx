@@ -22,6 +22,7 @@ const apiMock = {
   inspectBrunoImport: vi.fn(),
   getBrunoImportSessionSource: vi.fn(),
   commitBrunoImport: vi.fn(),
+  listProjectSecrets: vi.fn(),
   getProjectSecretStatuses: vi.fn(),
   createProjectSecrets: vi.fn(),
   migrateImportSecrets: vi.fn(),
@@ -304,6 +305,7 @@ describe('BrunoImport', () => {
       created_at: '2026-07-16T19:00:00Z',
       updated_at: '2026-07-16T19:00:00Z',
     })
+    apiMock.listProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
     apiMock.getProjectSecretStatuses.mockResolvedValue({
       project_id: 'project-1',
       capabilities: {
@@ -1329,11 +1331,13 @@ describe('BrunoImport', () => {
     expect(dialog?.textContent).toContain('Missing variables')
     expect(dialog?.textContent).toContain('env')
     expect(dialog?.textContent).toContain('Source mappings')
-    expect(dialog?.textContent).toContain('Masked APEX Load DSL script')
+    expect(dialog?.textContent).toContain('Inspect sanitized source')
+    expect(dialog?.textContent).toContain('APEX Load DSL script')
+    expect(dialog?.textContent).not.toContain('Masked APEX Load DSL script')
     expect(dialog?.textContent).toContain('First API')
     expect(dialog?.querySelector('[aria-label="Source mappings JSON"] .cm-editor')).not.toBeNull()
-    expect(dialog?.querySelector('[aria-label="Masked APEX Load DSL script JSON"] .cm-editor')).not.toBeNull()
-    expect(dialog?.querySelector('[aria-label="Masked APEX Load DSL script JSON"] .apex-dsl-section-key')).not.toBeNull()
+    expect(dialog?.querySelector('[aria-label="APEX Load DSL script JSON"] .cm-editor')).not.toBeNull()
+    expect(dialog?.querySelector('[aria-label="APEX Load DSL script JSON"] .apex-dsl-section-key')).not.toBeNull()
     expect(dialog?.querySelectorAll('.bruno-native-review-section pre.bruno-json')).toHaveLength(0)
     expect(document.activeElement?.getAttribute('aria-label')).toBe('Close review for CTA/first.yml')
 
@@ -2418,28 +2422,244 @@ describe('BrunoImport', () => {
         candidates: [
           { id: 'env-id', name: 'env', source_variable: 'env', kind: 'source_variable', occurrence_count: 1 },
           { id: 'ban-id', name: 'ban', source_variable: 'ban', kind: 'source_variable', occurrence_count: 1 },
+          { id: 'tok-id', name: 'apiToken', source_variable: 'apiToken', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
         ],
         summary: {},
       },
       previous_inputs: {
         'env-id': { mode: 'data', alias: 'environments', column: 'host' },
         'ban-id': { mode: 'value', value: 'BAN-0042' },
+        'tok-id': { mode: 'secret', reference: '{{secret.CUSTOM_API_TOKEN}}' },
       },
     }
-    withInputs.result.scripts[0].missing_variables = ['env', 'ban']
+    withInputs.result.scripts[0].missing_variables = ['env', 'ban', 'apiToken']
     await renderAndInspect(withInputs as never, 'folder-1')
 
     const review = container.querySelector('.bruno-data-review')!
     expect(review.textContent).toContain('{{data.environments.host}}')
-    expect(review.querySelectorAll('.import-input-previous')).toHaveLength(2)
+    expect(review.textContent).toContain('{{secret.CUSTOM_API_TOKEN}}')
+    expect(review.querySelectorAll('.import-input-previous')).toHaveLength(3)
     await act(async () => {
       saveDraftButton()?.click()
       await Promise.resolve()
       await Promise.resolve()
     })
     const payload = apiMock.commitBrunoImport.mock.calls[0][0]
-    expect(payload.input_bindings).toEqual({ 'env-id': { mode: 'data', alias: 'environments', column: 'host' } })
+    expect(payload.input_bindings).toEqual({
+      'env-id': { mode: 'data', alias: 'environments', column: 'host' },
+      'tok-id': { mode: 'secret', secret: 'CUSTOM_API_TOKEN' },
+    })
     expect(payload.shared_values).toEqual({ 'ban-id': 'BAN-0042' })
+  })
+
+  it('refreshes project secret names across repeated credential configurations and after closing Open Secrets', async () => {
+    let storedSecretNames: string[] = []
+    apiMock.listProjectSecrets.mockImplementation(async () => ({
+      project_id: 'project-1',
+      secrets: storedSecretNames.map(name => ({ name })),
+      count: storedSecretNames.length,
+    }))
+    apiMock.createProjectSecrets.mockImplementation(async (_projectId: string, created: Array<{ name: string }>) => {
+      storedSecretNames = [...new Set([...storedSecretNames, ...created.map(item => item.name)])]
+      return { project_id: 'project-1', secrets: created, count: created.length }
+    })
+
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts = [inspection.result.scripts[0]]
+    inspection.result.fidelity.executable_items = 1
+    ;(inspection.result.scripts[0] as typeof inspection.result.scripts[0] & { secret_requirements: unknown[] }).secret_requirements = [
+      {
+        id: 'req-1',
+        path: 'CTA/first.yml:http.auth.password',
+        key: 'password',
+        suggested_name: 'AUTH_PASSWORD',
+        context: 'Auth password',
+        replacement: '{{secret.AUTH_PASSWORD}}',
+        source_value_available: false,
+        destination_value_preserved: false,
+        preservation_unavailable_reason: 'source_value_unavailable',
+      },
+      {
+        id: 'req-2',
+        path: 'CTA/first.yml:http.headers.X-Api-Token',
+        key: 'x-api-token',
+        suggested_name: 'API_TOKEN',
+        context: 'API token header',
+        replacement: '{{secret.API_TOKEN}}',
+        source_value_available: false,
+        destination_value_preserved: false,
+        preservation_unavailable_reason: 'source_value_unavailable',
+      },
+    ]
+    inspection.result.scripts[0].missing_variables = ['apiToken', 'clientKey']
+    const withInputs = {
+      ...inspection,
+      shared_values: {
+        candidates: [
+          { id: 'tok-id', name: 'apiToken', source_variable: 'apiToken', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+          { id: 'key-id', name: 'clientKey', source_variable: 'clientKey', kind: 'source_variable', credential_shaped: true, occurrence_count: 1 },
+        ],
+        summary: {},
+      },
+    }
+
+    // Fail the first two commits so two sequential SecretBindingReview saves occur in the same review session.
+    apiMock.commitBrunoImport
+      .mockRejectedValueOnce(new Error('first commit paused'))
+      .mockRejectedValueOnce(new Error('second commit paused'))
+
+    await renderAndInspect(withInputs as never, 'folder-1')
+    expect(apiMock.listProjectSecrets).toHaveBeenCalledTimes(1)
+
+    const authPasswordInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Secret value for AUTH_PASSWORD"]')!
+    const apiTokenInput = () => container.querySelector<HTMLInputElement>('input[aria-label="Secret value for API_TOKEN"]')!
+    expect(authPasswordInput()).not.toBeNull()
+    expect(apiTokenInput()).not.toBeNull()
+
+    // Configure first secret (AUTH_PASSWORD) only, leaving API_TOKEN blank -> commit triggers createProjectSecrets(['AUTH_PASSWORD']).
+    act(() => setInput(authPasswordInput(), 'pw-one'))
+    await act(async () => {
+      saveDraftButton()?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    expect(storedSecretNames).toEqual(['AUTH_PASSWORD'])
+    const callsAfterFirst = apiMock.listProjectSecrets.mock.calls.length
+    expect(callsAfterFirst).toBeGreaterThanOrEqual(2)
+
+    // Configure second secret (API_TOKEN) in the same session -> projectSecrets must reload again!
+    act(() => setInput(apiTokenInput(), 'tok-two'))
+    await act(async () => {
+      await Promise.resolve()
+    })
+    await act(async () => {
+      saveDraftButton()?.click()
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+      await new Promise(resolve => window.setTimeout(resolve, 0))
+    })
+    expect(storedSecretNames).toContain('API_TOKEN')
+    expect(apiMock.listProjectSecrets.mock.calls.length).toBeGreaterThan(callsAfterFirst)
+
+    // Also add CLIENT_KEY via Open Secrets (SharedAssetsDialog) and close the dialog -> projectSecrets reloads on close!
+    const openSecretsBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('#bruno-inspection-panel-credentials button'))
+      .find(button => button.textContent === 'Open Secrets')!
+    await act(async () => {
+      openSecretsBtn.click()
+      await Promise.resolve()
+    })
+    storedSecretNames = [...storedSecretNames, 'CLIENT_KEY']
+    const doneBtn = document.body.querySelector<HTMLButtonElement>('.shared-assets-dialog-footer .btn-primary')!
+    await act(async () => {
+      doneBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    // In Data & parameters, both apiToken and clientKey now avoid colliding with API_TOKEN and CLIENT_KEY.
+    const chooseSecret = (variable: string) => {
+      const select = Array.from(container.querySelectorAll<HTMLLabelElement>('.bruno-data-review label'))
+        .find(label => label.textContent?.startsWith(`Supply ${variable}`))!
+        .querySelector('select')!
+      act(() => {
+        Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'secret')
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+      })
+    }
+    chooseSecret('apiToken')
+    chooseSecret('clientKey')
+    expect(container.querySelector('.bruno-data-review')?.textContent).toContain('{{secret.API_TOKEN_2}}')
+    expect(container.querySelector('.bruno-data-review')?.textContent).toContain('{{secret.CLIENT_KEY_2}}')
+  })
+
+  it('deduplicates fallback previous_inputs secret bindings against async projectSecrets while preserving touched edits', async () => {
+    apiMock.listProjectSecrets.mockResolvedValue({
+      project_id: 'project-1',
+      secrets: [{ name: 'SECRET_VALUE' }, { name: 'API_TOKEN' }],
+      count: 2,
+    })
+
+    const inspection = nativeInspectionFixture()
+    inspection.result.scripts = [inspection.result.scripts[0]]
+    inspection.result.fidelity.executable_items = 1
+    inspection.result.scripts[0].missing_variables = ['__', 'apiToken']
+    const withPreviousFallback = {
+      ...inspection,
+      previous_inputs: {
+        'punct-id': { mode: 'secret', reference: '' },
+        'tok-id': { mode: 'secret', reference: '' },
+      },
+      shared_values: {
+        candidates: [
+          { id: 'punct-id', name: '__', source_variable: '__', kind: 'source_variable', credential_shaped: false, occurrence_count: 1 },
+          { id: 'tok-id', name: 'apiToken', source_variable: 'apiToken', kind: 'source_variable', credential_shaped: false, occurrence_count: 1 },
+        ],
+        summary: {},
+      },
+    }
+
+    await renderAndInspect(withPreviousFallback as never, 'folder-1')
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    const dataPanel = container.querySelector('#bruno-inspection-panel-data')!
+    const supplySelect = (variable: string) => Array.from(dataPanel.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.startsWith(`Supply ${variable}`))!
+      .querySelector('select')!
+    const secretField = (variable: string) => Array.from(dataPanel.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.startsWith(`Project secret for ${variable}`))!
+      .querySelector('input')!
+    const valueField = (variable: string) => Array.from(dataPanel.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.startsWith(`Value for ${variable}`))!
+      .querySelector('input')!
+
+    expect(apiMock.listProjectSecrets).toHaveBeenCalledWith('project-1')
+    expect(supplySelect('__').value).toBe('secret')
+    expect(supplySelect('apiToken').value).toBe('secret')
+    expect(secretField('__').value).toBe('SECRET_VALUE_2')
+    expect(secretField('apiToken').value).toBe('API_TOKEN_2')
+    expect(dataPanel.querySelector('.import-input-supply-warning')).toBeNull()
+
+    // Touch apiToken manually, then reload projectSecrets via Open Secrets -> touched field stays intact while untouched field re-reconciles.
+    act(() => setInput(secretField('apiToken'), 'CUSTOM_TOKEN'))
+    apiMock.listProjectSecrets.mockResolvedValue({
+      project_id: 'project-1',
+      secrets: [{ name: 'SECRET_VALUE' }, { name: 'SECRET_VALUE_2' }, { name: 'API_TOKEN' }, { name: 'CUSTOM_TOKEN' }],
+      count: 4,
+    })
+    const openSecretsBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('#bruno-inspection-panel-credentials button'))
+      .find(button => button.textContent === 'Open Secrets')!
+    await act(async () => {
+      openSecretsBtn.click()
+      await Promise.resolve()
+    })
+    const doneBtn = document.body.querySelector<HTMLButtonElement>('.shared-assets-dialog-footer .btn-primary')!
+    await act(async () => {
+      doneBtn.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(secretField('__').value).toBe('SECRET_VALUE_3')
+    expect(secretField('apiToken').value).toBe('CUSTOM_TOKEN')
+
+    // Switching Supply __ directly from 'secret' to 'value' switches to literal input and submits shared_values cleanly.
+    act(() => {
+      const sel = supplySelect('__')
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(sel, 'value')
+      sel.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(supplySelect('__').value).toBe('value')
+    act(() => setInput(valueField('__'), 'literal-punct'))
+    await act(async () => {
+      saveDraftButton()?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const [committedPayload] = apiMock.commitBrunoImport.mock.calls[apiMock.commitBrunoImport.mock.calls.length - 1]
+    expect(committedPayload.shared_values).toEqual({ 'punct-id': 'literal-punct' })
+    expect(committedPayload.input_bindings).toEqual({ 'tok-id': { mode: 'secret', secret: 'CUSTOM_TOKEN' } })
   })
 
   it('puts a left-out header back or leaves it out without an acknowledgement', async () => {

@@ -45,7 +45,19 @@ function compareIssues(a: DebugSummaryIssue, b: DebugSummaryIssue, field: IssueS
   return direction === 'asc' ? cmp : -cmp
 }
 
-function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSummaryIssue[]; onSelectEvent: (index: number) => void }) {
+function DebugSummaryIssuesTable({
+  issues,
+  allEvents,
+  onSelectEvent,
+  canEditAction,
+  onEditAction,
+}: {
+  issues: DebugSummaryIssue[]
+  allEvents: readonly BrowserReplayEvent[]
+  onSelectEvent: (index: number) => void
+  canEditAction?: (event: BrowserReplayEvent) => boolean
+  onEditAction?: (event: BrowserReplayEvent) => void
+}) {
   const filterId = useId()
   const severityId = useId()
   const phaseId = useId()
@@ -162,11 +174,22 @@ function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSumma
                   <td>{issue.statusCode ? `HTTP ${issue.statusCode}` : '—'}</td>
                   <td className="debug-summary-issue-message">{issue.message}</td>
                   <td>
-                    {issue.eventIndex != null ? (
-                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => onSelectEvent(issue.eventIndex!)}>
-                        Inspect {issue.actionName || 'action'}
-                      </button>
-                    ) : '—'}
+                    {issue.eventIndex != null ? (() => {
+                      const actionLabel = issue.actionName || 'action'
+                      const ev = allEvents[issue.eventIndex]
+                      return (
+                        <div className="debug-summary-issue-actions">
+                          <button type="button" className="btn btn-sm btn-secondary" aria-label={`Inspect ${actionLabel}`} onClick={() => onSelectEvent(issue.eventIndex!)}>
+                            Inspect
+                          </button>
+                          {ev && onEditAction && (
+                            <button type="button" className="btn btn-sm btn-secondary" disabled={canEditAction ? !canEditAction(ev) : false} aria-label={`Edit ${actionLabel}`} onClick={() => onEditAction(ev)}>
+                              Edit
+                            </button>
+                          )}
+                        </div>
+                      )
+                    })() : '—'}
                   </td>
                 </tr>
               ))
@@ -178,31 +201,35 @@ function DebugSummaryIssuesTable({ issues, onSelectEvent }: { issues: DebugSumma
   )
 }
 
-/** The Recording diff without a run summary: shown while a run is live or when its summary is unavailable. */
-export function DebugSummaryRecordingDiff({ children, consumeFocusRequest }: {
+/** The Recording diff: standalone with a heading when shown without sub-tabs, or headless inside its tabpanel. */
+export function DebugSummaryRecordingDiff({ children, consumeFocusRequest, showHeading = true }: {
   children: ReactNode
   /**
    * Answers "Compare with recording" where the diff is not a sub-tab: returns
    * true once for a pending request, and the section's heading then takes focus.
    */
   consumeFocusRequest?: () => boolean
+  showHeading?: boolean
 }) {
   const heading = useRef<HTMLHeadingElement>(null)
   useEffect(() => {
-    if (consumeFocusRequest?.()) heading.current?.focus()
+    if (showHeading && consumeFocusRequest?.()) heading.current?.focus()
   })
   return <section aria-label="Recording diff" className="debug-summary-recording-diff">
-    <h3 ref={heading} tabIndex={consumeFocusRequest ? -1 : undefined}>Recording diff</h3>
+    {showHeading && <h3 ref={heading} tabIndex={consumeFocusRequest ? -1 : undefined}>Recording diff</h3>}
     {children}
   </section>
 }
 
-export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript, recordingDiff, loadComparison, tabRequest, consumeRecordingDiffFocus }: {
+export default function DebugCompletionSummary({ snapshot, stale, unavailable, onSelectEvent, onDownloadHAR, onExportSession, onRevealInScript, canRevealInScript, canEditAction, onEditAction, recordingDiff, loadComparison, tabRequest, consumeRecordingDiffFocus }: {
   snapshot: DebugCompletionSnapshot; stale: boolean; unavailable: boolean
   onSelectEvent: (index: number) => void
   /** Jump the script editor to the action that produced an execution. */
   onRevealInScript?: (event: BrowserReplayEvent) => void
   canRevealInScript?: (event: BrowserReplayEvent) => boolean
+  /** Open the visual action editor for the action that produced an execution. */
+  canEditAction?: (event: BrowserReplayEvent) => boolean
+  onEditAction?: (event: BrowserReplayEvent) => void
   onDownloadHAR: () => Promise<void>
   onExportSession: () => Promise<void> | void
   /** The run compared with a recording (non-browser scripts), shown as the Recording diff sub-tab. */
@@ -392,6 +419,8 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
               onInspectEvent={onSelectEvent}
               onRevealInScript={onRevealInScript}
               canRevealInScript={canRevealInScript}
+              canEditAction={canEditAction}
+              onEditAction={onEditAction}
             />
           </section>
         ) : (
@@ -406,8 +435,16 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
         hidden={activeTab !== 'issues'}
       >
         <section aria-label="Errors and warnings" className="debug-summary-issues-section">
-          <h3>Errors and warnings</h3>
-          {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : <DebugSummaryIssuesTable key={`issues-${snapshot.key}`} issues={model.issues} onSelectEvent={onSelectEvent} />}
+          {model.issues.length === 0 ? <p>No errors or warnings were retained.</p> : (
+            <DebugSummaryIssuesTable
+              key={`issues-${snapshot.key}`}
+              issues={model.issues}
+              allEvents={allEvents}
+              onSelectEvent={onSelectEvent}
+              canEditAction={canEditAction}
+              onEditAction={onEditAction}
+            />
+          )}
         </section>
       </div>
       {recordingDiff && (
@@ -418,7 +455,7 @@ export default function DebugCompletionSummary({ snapshot, stale, unavailable, o
           className="debug-summary-tabpanel"
           hidden={activeTab !== 'recording-diff'}
         >
-          <DebugSummaryRecordingDiff>{recordingDiff}</DebugSummaryRecordingDiff>
+          <DebugSummaryRecordingDiff showHeading={false}>{recordingDiff}</DebugSummaryRecordingDiff>
         </div>
       )}
       {loadComparison && (

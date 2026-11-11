@@ -66,6 +66,7 @@ export interface ScriptCodePaneProps {
   ariaLabel?: string
   subtitle?: string
   allowDirectEdit?: boolean
+  defaultEditEnabled?: boolean
   jumpToLineRequest?: ScriptCodeLineJumpRequest | null
   candidateMatchRanges?: ScriptCodeMatchRange[]
   parameterMatchRanges?: ScriptCodeMatchRange[]
@@ -94,6 +95,7 @@ export function ScriptCodePane({
   ariaLabel = title,
   subtitle,
   allowDirectEdit = true,
+  defaultEditEnabled = false,
   jumpToLineRequest,
   candidateMatchRanges = [],
   parameterMatchRanges = [],
@@ -111,7 +113,7 @@ export function ScriptCodePane({
   onDocumentChangeRef.current = onChange
   const handleDocumentChange = useCallback((nextValue: string) => onDocumentChangeRef.current(nextValue), [])
   const parameterNavigationRef = useRef<{ name?: string; editorReadyVersion: number }>({ editorReadyVersion: -1 })
-  const [jsonEditEnabled, setJsonEditEnabled] = useState(false)
+  const [jsonEditEnabled, setJsonEditEnabled] = useState(() => Boolean(allowDirectEdit && defaultEditEnabled))
   const [editorReadyVersion, setEditorReadyVersion] = useState(0)
   const [wordWrapEnabled, setWordWrapEnabled] = useCodeLineWrapPreference()
   const [tabMovesFocus, setTabMovesFocus] = useEditorTabMovesFocus()
@@ -135,6 +137,10 @@ export function ScriptCodePane({
   useEffect(() => {
     if (!allowDirectEdit && jsonEditEnabled) setJsonEditEnabled(false)
   }, [allowDirectEdit, jsonEditEnabled])
+
+  useEffect(() => {
+    if (allowDirectEdit && defaultEditEnabled) setJsonEditEnabled(true)
+  }, [allowDirectEdit, defaultEditEnabled])
 
   const isDirectlyEditable = allowDirectEdit && jsonEditEnabled
   const keyboardHintId = useMemo(
@@ -304,7 +310,7 @@ export function ScriptCodePane({
               Parameterize
             </button>
           )}
-          {allowDirectEdit && !jsonEditEnabled && <button type="button" className="btn btn-sm btn-secondary" onClick={() => setJsonEditEnabled(true)}>Edit JSON</button>}
+          {allowDirectEdit && <button type="button" className="btn btn-sm btn-secondary" aria-pressed={jsonEditEnabled} onClick={() => setJsonEditEnabled(true)}>Edit JSON</button>}
           {allowDirectEdit && (jsonEditEnabled || status !== 'synced') && <>
             <button type="button" className="btn btn-sm btn-ghost" onClick={onFormat}>Format</button>
             <button type="button" className="btn btn-sm btn-secondary" onClick={() => { onApply(); if (status !== 'invalid') setJsonEditEnabled(false) }} disabled={status === 'invalid' || status === 'synced'}>Apply changes</button>
@@ -427,13 +433,23 @@ export function ScriptJsonDocument({
   /** Further actions on the script's source (e.g. imported metadata), shown in the scope bar. */
   sourceActions?: ReactNode
 }) {
+  const [pendingFullScriptEdit, setPendingFullScriptEdit] = useState(false)
+  useEffect(() => {
+    if (!showSelectedActionJson && pendingFullScriptEdit) {
+      setPendingFullScriptEdit(false)
+    }
+  }, [pendingFullScriptEdit, showSelectedActionJson])
+  const handleScopeBarShowFullScriptJson = useCallback((show: boolean) => {
+    setPendingFullScriptEdit(false)
+    onShowFullScriptJson(show)
+  }, [onShowFullScriptJson])
   const scopeBar = (
     <ScriptJsonScopeBar
       fullScriptOnly={fullScriptOnly}
       scope={scope}
       showFullScriptJson={showFullScriptJson}
       unavailable={selectedJsonUnavailable}
-      onShowFullScriptJson={onShowFullScriptJson}
+      onShowFullScriptJson={handleScopeBarShowFullScriptJson}
     >{sourceActions}</ScriptJsonScopeBar>
   )
   if (showSelectedActionJson && scope) {
@@ -441,7 +457,7 @@ export function ScriptJsonDocument({
     return (
       <>
         {scopeBar}
-        <p className="author-source-scope-help">This view shows only the selected action. <button type="button" className="btn btn-sm btn-secondary" onClick={() => onShowFullScriptJson(true)}>Edit in Full Script JSON</button> Whole-script editing preserves all action fields.</p>
+        <p className="author-source-scope-help">This view shows only the selected action. <button type="button" className="btn btn-sm btn-secondary" onClick={() => { setPendingFullScriptEdit(true); onShowFullScriptJson(true) }}>Edit in Full Script JSON</button> Whole-script editing preserves all action fields.</p>
         <ScriptCodePane
           value={selectedJsonText}
           status="synced"
@@ -466,7 +482,7 @@ export function ScriptJsonDocument({
   return (
     <>
       {scopeBar}
-      <ScriptCodePane {...sourcePane} />
+      <ScriptCodePane {...sourcePane} defaultEditEnabled={pendingFullScriptEdit || sourcePane.defaultEditEnabled} />
       <ActionParameterMenu
         selectionState={selectionState}
         onOpenParameterEditor={onOpenParameterEditor}

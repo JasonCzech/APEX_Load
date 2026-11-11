@@ -58,7 +58,7 @@ export const RUNTIME_SEARCH_TERMS: Partial<Record<RuntimeSettingsSectionId, stri
   think: 'delay distribution mean gaussian uniform recorded multiplier limit ignore',
   pacing: 'rate tps interval random delay',
   runlogic: 'iterations global transactions arrival open closed max in flight rate cap',
-  errors: 'continue fail retry backoff handling',
+  errors: 'continue fail retry backoff handling transaction sla phase sla transaction_rules dns connect tls server download',
   log: 'diagnostic capture verbosity level',
   browser_emulation: 'user agent language device browser cache session identity',
   imported_source: 'block scheduling action sequence order preserved source',

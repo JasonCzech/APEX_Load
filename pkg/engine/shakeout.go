@@ -54,6 +54,7 @@ func RunScriptShakeoutWithRunIDAndSecretResolver(ctx context.Context, groupName 
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("group", groupName, "script", script.Name)
 	}
+	redactionConfig = ensureDynamicSecretRegistry(redactionConfig)
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
@@ -103,8 +104,14 @@ func RunScriptShakeoutWithRunIDAndSecretResolver(ctx context.Context, groupName 
 		return fmt.Errorf("data source init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 	vu.DataProvider = dataProvider
-	if err := vu.loadDataRow(); err != nil {
-		return err
+	vu.ParameterAllocation = &ParameterAllocation{Population: 1, Offset: 0, Iterations: 1}
+	if err := vu.prepareRuntimeState(); err != nil {
+		return fmt.Errorf("prepare shakeout data: %s", scrubSensitiveTextWithConfig(err.Error(), vu.resultPublicationRedactionConfig()))
+	}
+	defer vu.closeLiveTables()
+	vu.startLiveTableRenewal(ctx)
+	if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
+		return fmt.Errorf("prepare shakeout credential redaction: %s", scrubSensitiveTextWithConfig(err.Error(), vu.resultPublicationRedactionConfig()))
 	}
 
 	for _, action := range script.Init {
@@ -127,25 +134,38 @@ func runShakeoutAction(ctx context.Context, vu *VUser, action dsl.Action, phase 
 		if err == nil {
 			return nil
 		}
-		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig))
+		if vu.resultPublicationUnavailable() {
+			return fmt.Errorf("%s error detail unavailable", phase)
+		}
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(err.Error(), vu.resultPublicationRedactionConfig()))
 	}
 	resolved := vu.resolveAction(action)
 	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
 	if err != nil {
-		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q error: %s", phase, action.Name, err), vu.RedactionConfig))
+		if vu.resultPublicationUnavailable() {
+			return fmt.Errorf("%s error detail unavailable", phase)
+		}
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q error: %s", phase, action.Name, err), vu.resultPublicationRedactionConfig()))
 	}
 	if result == nil {
 		return fmt.Errorf("%s %q returned no result", phase, action.Name)
 	}
 	if err := vu.mergeExtractions(result); err != nil {
-		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q extraction retention failed: %s", phase, action.Name, err), vu.RedactionConfig))
+		if vu.resultPublicationUnavailable() {
+			return fmt.Errorf("%s extraction retention failed: error detail unavailable", phase)
+		}
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q extraction retention failed: %s", phase, action.Name, err), vu.resultPublicationRedactionConfig()))
 	}
+	scrubSensitiveResultWithOptions(result, vu.resultPublicationRedactionConfig(), logConfigRetainsSuccessfulResponseBody(vu.Script.Config.Log))
 	if !result.Success {
+		if vu.resultPublicationUnavailable() {
+			return fmt.Errorf("%s failed: error detail unavailable", phase)
+		}
 		reason := result.ErrorMessage
 		if reason == "" {
 			reason = fmt.Sprintf("status %d", result.StatusCode)
 		}
-		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q failed: %s", phase, action.Name, reason), vu.RedactionConfig))
+		return fmt.Errorf("%s", scrubSensitiveTextWithConfig(fmt.Sprintf("%s %q failed: %s", phase, action.Name, reason), vu.resultPublicationRedactionConfig()))
 	}
 	return nil
 }

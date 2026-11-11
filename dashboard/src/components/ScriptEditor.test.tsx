@@ -32,8 +32,9 @@ const { codeMirrorDispatchMock, codeMirrorScrollDoms } = vi.hoisted(() => ({
   codeMirrorScrollDoms: [] as HTMLElement[],
 }))
 
-const { useWebSocketMock } = vi.hoisted(() => ({
+const { useWebSocketMock, activeWebSocketSubscribers } = vi.hoisted(() => ({
   useWebSocketMock: vi.fn(),
+  activeWebSocketSubscribers: new Set<{ onMessage?: (message: unknown) => void }>(),
 }))
 
 const { replaySessionIdMock } = vi.hoisted(() => ({ replaySessionIdMock: vi.fn() }))
@@ -78,6 +79,7 @@ const apiMock = {
   replayScript: vi.fn(),
   startDraftBrowserReplaySession: vi.fn(),
   startBrowserReplaySession: vi.fn(),
+  getBrowserReplaySession: vi.fn(),
   startDraftScriptDebugSession: vi.fn(),
   startScriptDebugSession: vi.fn(),
   previewBrowserToHTTP: vi.fn(),
@@ -125,9 +127,23 @@ vi.mock('../hooks/useApi', () => ({
   useApi: () => compatibleApi,
 }))
 
-vi.mock('../hooks/useWebSocket', () => ({
-  useWebSocket: useWebSocketMock,
-}))
+vi.mock('../hooks/useWebSocket', async () => {
+  const { useEffect, useRef } = await import('react')
+  return {
+    useWebSocket: (options?: { enabled?: boolean; onMessage?: (message: unknown) => void }) => {
+      const subRef = useRef<{ onMessage?: (message: unknown) => void }>({})
+      subRef.current.onMessage = options?.enabled === false ? undefined : options?.onMessage
+      useEffect(() => {
+        const entry = subRef.current
+        activeWebSocketSubscribers.add(entry)
+        return () => {
+          activeWebSocketSubscribers.delete(entry)
+        }
+      }, [])
+      return useWebSocketMock(options)
+    },
+  }
+})
 
 vi.mock('@uiw/react-codemirror', async () => {
   const { useEffect, useRef } = await import('react')
@@ -724,6 +740,17 @@ describe('ScriptEditor', () => {
         events: [],
       },
     })
+    apiMock.getBrowserReplaySession.mockImplementation(async (sessionId: string) => ({
+      session: {
+        id: sessionId,
+        group: 'Checkout Flow-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        current_event_index: 0,
+        started_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    }))
     apiMock.previewBrowserToHTTP.mockResolvedValue({
       schema_version: 'apexload.browser_to_http_preview.v1',
       generated_at: '2026-05-14T20:00:02Z',
@@ -815,6 +842,7 @@ describe('ScriptEditor', () => {
       root.unmount()
     })
     container.remove()
+    activeWebSocketSubscribers.clear()
     vi.clearAllMocks()
     window.location.hash = ''
   })
@@ -2448,8 +2476,25 @@ describe('ScriptEditor', () => {
     const filter = container.querySelector<HTMLInputElement>('.actions-sidebar input[aria-label="Find action"]')!
     await act(async () => { changeInputValue(filter, 'HostConfigController.get') })
     expect(Array.from(container.querySelectorAll('.action-item')).map(row => row.textContent?.includes('T02_Login_aura_2'))).toEqual([true])
+    const matchedRow = container.querySelector<HTMLElement>('.action-item')!
+    expect(matchedRow.querySelector('.action-name-text')?.textContent).toBe('HostConfigController.getConfigData · T02_Login_aura_2')
+    expect(matchedRow.querySelector('.action-cell-txn .action-txn-pill')?.textContent).toBe('⏱ HostConfigController/ACTION$getConfigData')
+    expect(matchedRow.querySelector('.action-cell-txn .action-txn-pill')?.getAttribute('title')).toBe('Sub-transaction: T02_Login||HostConfigController/ACTION$getConfigData')
     expect(labels()).toEqual(['Actions', 'T02_Login', 'HostConfigController.getConfigData'])
     await act(async () => { changeInputValue(filter, '') })
+
+    // Overview & bulk offers a Hide markers toggle that filters out source_transaction rows when pressed.
+    const hideMarkersBtn = container.querySelector<HTMLButtonElement>('[data-testid="action-list-hide-markers"]')!
+    expect(hideMarkersBtn).not.toBeNull()
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(5)
+    await act(async () => { hideMarkersBtn.click() })
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('true')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(1)
+    expect(container.querySelector('.action-list-filter-count')?.textContent).toBe('1/5')
+    await act(async () => { hideMarkersBtn.click() })
+    expect(hideMarkersBtn.getAttribute('aria-pressed')).toBe('false')
+    expect(container.querySelectorAll('.action-item')).toHaveLength(5)
 
     await act(async () => { folded.click() })
     await flushReact()
@@ -2475,6 +2520,14 @@ describe('ScriptEditor', () => {
     expect(card()).toBeNull()
     await act(async () => { markers.click() })
     expect(labels()).toEqual(['Actions', 'T02_Login', 'aura_2', 'End T02_Login'])
+
+    // If Hide markers is active and markers are removed from the script, the toggle and filter count reset cleanly.
+    await act(async () => { container.querySelector<HTMLButtonElement>('[data-testid="action-list-hide-markers"]')!.click() })
+    expect(container.querySelector('.action-list-filter-count')?.textContent).toBe('1/3')
+    await act(async () => { container.querySelectorAll<HTMLButtonElement>('.action-item-actions button[title="Delete"]')[0]?.click() })
+    await act(async () => { root.render(<ScriptEditor initialScript={initialScript} />) })
+    expect(container.querySelector('[data-testid="action-list-hide-markers"]')).toBeNull()
+    expect(container.querySelector('.action-list-filter-count')).toBeNull()
   })
 
   it('keeps keyboard focus on a transaction it closes, though the list stops rendering only the rows in view', async () => {
@@ -3147,17 +3200,18 @@ describe('ScriptEditor', () => {
     expect(lifecycleRows().some(row => row.textContent?.includes('Cleanup_B'))).toBe(true)
   })
 
-  it('tells the author which masked credentials a duplicated step goes without', async () => {
-    const maskedScript: ScriptDefinition = {
+  it('preserves literal credentials without a warning toast when duplicating a lifecycle step', async () => {
+    const importedAuthScript: ScriptDefinition = {
       ...initialScript,
-      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=[REDACTED]', header_list: [{ name: 'Authorization', value: 'Bearer [REDACTED]' }] } as unknown as ScriptDefinition['actions'][number]],
+      init: [{ name: 'Sign in', type: 'POST', method: 'POST', target: '/login', body: 'un=alice&pw=literal-pw', header_list: [{ name: 'Authorization', value: 'Bearer literal-token' }] } as unknown as ScriptDefinition['actions'][number]],
     } as ScriptDefinition
-    await act(async () => { root.render(<ScriptEditor initialScript={maskedScript} />) })
+    await act(async () => { root.render(<ScriptEditor initialScript={importedAuthScript} />) })
     const signIn = () => Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).find(row => row.textContent?.includes('Sign in') && !row.textContent?.includes('(copy)'))
     await act(async () => {
       signIn()?.querySelector<HTMLButtonElement>('[aria-label="Duplicate init action"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
-    expect(container.querySelector('.editor-toast.warning')?.textContent).toContain('The copy of Sign in has no value for 2 masked credentials (body, header Authorization)')
+    expect(container.querySelector('.editor-toast.warning')).toBeNull()
+    expect(Array.from(container.querySelectorAll<HTMLElement>('.action-item.lifecycle-action')).some(row => row.textContent?.includes('Sign in (copy)'))).toBe(true)
   })
 
   it('remaps lifecycle breakpoints when lifecycle actions move and delete', async () => {
@@ -5421,8 +5475,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Used In')
     expect(container.textContent).toContain('Step 2: Complete Checkout')
     expect(container.textContent).toContain('abc123')
-    expect(container.textContent).toContain('Open Step 1')
-    expect(container.textContent).toContain('Open Step 2')
+    expect(correlationSection?.querySelector('button[aria-label="Open source Step 1: Login for session_id"]')?.textContent?.trim()).toBe('Open source')
+    expect(correlationSection?.querySelector('button[aria-label="Open use Step 2: Complete Checkout for session_id"]')?.textContent?.trim()).toBe('Open use')
 
     const sidebarActions = container.querySelectorAll('.action-item')
     expect(sidebarActions.length).toBeGreaterThan(1)
@@ -5492,7 +5546,7 @@ describe('ScriptEditor', () => {
     expect(activeMappingRow?.dataset.targetPath).toBe('actions[1]')
 
     const openDependentStepButton = Array.from(container.querySelectorAll('button')).find(button =>
-      button.textContent?.trim() === 'Open Step 2',
+      button.getAttribute('aria-label') === 'Open use Step 2: Complete Checkout for session_id',
     )
     expect(openDependentStepButton).toBeTruthy()
     if (!openDependentStepButton) {
@@ -6961,7 +7015,8 @@ describe('ScriptEditor', () => {
     await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))!
     await act(async () => { optionsButton.click() })
-    expect(container.textContent).toContain('Debugger sessions and exports can contain unredacted credentials and values.')
+    expect(container.textContent).toContain('Secrets and credentials are redacted automatically; non-credential runtime values and response evidence can still appear in debugger sessions and exports unless run evidence redaction is enabled.')
+    expect(container.textContent).not.toContain('unredacted credentials')
     const afterFailure = container.querySelector<HTMLSelectElement>('select[aria-label="After a failure"]')!
     // The default names what a test run of this script does (it opts out of continue-on-error).
     expect(afterFailure.selectedOptions[0].textContent).toBe('As a test run: stop this iteration')
@@ -7335,7 +7390,8 @@ describe('ScriptEditor', () => {
     expect(document.activeElement).toBe(recordingDiffTab)
     const panel = container.querySelector<HTMLElement>('#debug-summary-panel-recording-diff')
     expect(panel?.hidden).toBe(false)
-    expect(panel?.querySelector('[aria-label="Recording diff"] h3')?.textContent).toBe('Recording diff')
+    expect(panel?.querySelector('section[aria-label="Recording diff"]')).not.toBeNull()
+    expect(panel?.querySelector('[aria-label="Recording diff"] h3')).toBeNull()
     expect(Array.from(panel?.querySelectorAll('button') ?? []).some(button => button.textContent === 'Diagnose correlations')).toBe(true)
     // Asking again after choosing another sub-tab returns to the Recording diff.
     await act(async () => container.querySelector<HTMLButtonElement>('#debug-summary-tab-transactions')!.click())
@@ -13348,6 +13404,8 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Login_Request_2')
 
     await act(async () => { Array.from(container.querySelectorAll('button')).find(button => button.textContent === '+ Add Action')?.click() })
+    expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent?.includes('GET request'))).toBe(true)
+    expect(Array.from(document.querySelectorAll('button')).some(button => button.textContent?.includes('Poll status'))).toBe(true)
     const starterButton = Array.from(document.querySelectorAll('button')).find(button =>
       button.textContent?.includes('POST JSON'),
     )
@@ -15190,8 +15248,8 @@ describe('ScriptEditor', () => {
       expect(runToBreakpointBtn().disabled).toBe(false)
 
       // Run X iterations (ignores breakpoints and Start paused, so completes without pausing).
-      // The count field sits below the menu, which may hold only commands.
-      expect(menu()!.querySelector('input')).toBeNull()
+      // The count field sits inside the #debug-run-menu landmark at the bottom.
+      expect(menu()!.querySelector('input')).not.toBeNull()
       const iterInput = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
       expect(iterInput.value).toBe('2')
       // The field can be cleared while it is edited: it does not snap back to the last count.
@@ -15359,12 +15417,1686 @@ describe('ScriptEditor', () => {
       await flushReact()
       expect(focusedLabel()).toBe('Run a single iteration')
       const countField = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
+      expect(menu()?.contains(countField)).toBe(true)
       await act(async () => { countField.focus(); changeInputValue(countField, '250') })
       expect(countField.getAttribute('aria-invalid')).toBe('true')
+      // Arrow keys and Home/End inside the iterations input do not steal focus to menu items.
+      await press('ArrowLeft', countField)
+      await press('ArrowRight', countField)
+      await press('Home', countField)
+      await press('End', countField)
+      expect(document.activeElement).toBe(countField)
       await act(async () => { countField.blur() })
       await flushReact()
       expect(countField.value).toBe('100')
       expect(apiMock.startScriptDebugSession).not.toHaveBeenCalled()
     })
+
+    it('saves proxy_mode system -> none alongside synthesized source_mapping_review across consecutive and in-flight saves', async () => {
+      const importedScript: ScriptDefinition = {
+        ...initialScript,
+        config: {
+          ...initialScript.config,
+          http: {
+            ...initialScript.config.http,
+            proxy_mode: 'system',
+          },
+        },
+        actions: [
+          {
+            name: 'Login',
+            type: 'POST',
+            method: 'POST',
+            target: '/login',
+            headers: { Authorization: 'Bearer literal-imported-token' },
+            body: 'username=alice&password=literal-imported-password',
+          },
+        ],
+        metadata: {
+          import: {
+            source: 'enterprise_script_archive',
+            preserved: {
+              source_review: {
+                source_files: [{ path: 'Action.c', content: 'web_submit_data("Login", "Action=https://api.example.test/login", LAST);' }],
+                mappings: [
+                  {
+                    id: 'map-1',
+                    source_file: 'Action.c',
+                    start_line: 1,
+                    end_line: 1,
+                    target_path: 'actions[0]',
+                    target_kind: 'action',
+                    confidence: 1,
+                    disposition: 'executed',
+                  },
+                ],
+              },
+            },
+          },
+        },
+      }
+      const pair = authoringFixture(importedScript, 'script-1', 'project-1')
+      let saveAttempt = 0
+      let resolvePendingSave: ((value: ReturnType<typeof savedAuthoringFixture>) => void) | null = null
+      apiMock.updateScript.mockImplementation((id: string, draft: ScriptDefinition) => {
+        saveAttempt += 1
+        const saved = savedAuthoringFixture(draft, id, 'project-1', saveAttempt === 1 ? 'b' : 'c')
+        if (saveAttempt === 1) {
+          return new Promise(resolve => {
+            resolvePendingSave = resolve
+          })
+        }
+        return Promise.resolve(saved)
+      })
+
+      let latestRetainedDraft: ScriptDefinition | undefined
+      function Host() {
+        const [authoring, setAuthoring] = useState(pair)
+        const [retainedDraft, setRetainedDraft] = useState<ScriptDefinition | undefined>(undefined)
+        return (
+          <ScriptEditor
+            scriptId="script-1"
+            initialScript={authoring.projection.script}
+            initialAuthoring={authoring}
+            initialRetainedDraft={retainedDraft}
+            projectId="project-1"
+            onSave={(saved, options) => {
+              latestRetainedDraft = options?.retainedDraft
+              setRetainedDraft(options?.retainedDraft)
+              if (saved.authoring_projection) {
+                setAuthoring({
+                  projection: saved.authoring_projection,
+                  etag: `"script-authoring-v1:${saved.content_revision}"`,
+                })
+              }
+            }}
+          />
+        )
+      }
+
+      await act(async () => {
+        root.render(<Host />)
+      })
+      await flushReact()
+
+      await act(async () => {
+        findCenterTab(container, 'Settings')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      })
+      await flushReact()
+
+      const compatibilityToggle = Array.from(container.querySelectorAll('button')).find(button =>
+        button.textContent?.includes('Web HTTP/HTML Compatibility'),
+      )
+      if (compatibilityToggle) {
+        await act(async () => {
+          compatibilityToggle.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        })
+      }
+
+      const proxyModeSelect = () => Array.from(container.querySelectorAll('select')).find(select =>
+        Array.from(select.options).some(option => option.value === 'system' && option.textContent?.includes('environment proxy')),
+      ) as HTMLSelectElement
+      expect(proxyModeSelect()).toBeTruthy()
+      expect(proxyModeSelect().value).toBe('system')
+
+      await act(async () => {
+        proxyModeSelect().value = 'none'
+        proxyModeSelect().dispatchEvent(new Event('change', { bubbles: true }))
+      })
+      await flushReact()
+
+      const saveButton = () => container.querySelector<HTMLButtonElement>('button[aria-label="Save script"]')!
+      expect(saveButton().disabled).toBe(false)
+
+      // Start Save #1 (synthesizes source_mapping_review via preserveMappingBindings),
+      // then mutate proxy_mode again while Save #1 is in flight (adoptedSavedDocument === false).
+      await act(async () => {
+        saveButton().click()
+      })
+      await flushReact()
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(1)
+
+      const firstSavedDraft = apiMock.updateScript.mock.calls[0][1] as ScriptDefinition
+      expect(firstSavedDraft.config.http?.proxy_mode).toBe('none')
+      expect(firstSavedDraft.actions[0].headers).toEqual({ Authorization: 'Bearer literal-imported-token' })
+      expect(firstSavedDraft.actions[0].body).toBe('username=alice&password=literal-imported-password')
+      expect((firstSavedDraft.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+
+      const nameInput = () => container.querySelector<HTMLInputElement>('.side-panel-script-name input')!
+      await act(async () => {
+        changeInputValue(nameInput(), 'Edited while saving')
+      })
+      await flushReact()
+
+      await act(async () => {
+        resolvePendingSave?.(savedAuthoringFixture(firstSavedDraft, 'script-1', 'project-1', 'b'))
+      })
+      await flushReact()
+      await flushReact()
+
+      // Both the retainedDraft emitted to onSave and Save #2 must keep the synthesized source_mapping_review.
+      expect(latestRetainedDraft?.name).toBe('Edited while saving')
+      expect(latestRetainedDraft?.config.http?.proxy_mode).toBe('none')
+      expect((latestRetainedDraft?.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+      expect(saveButton().disabled).toBe(false)
+
+      await act(async () => {
+        saveButton().click()
+      })
+      await flushReact()
+      await flushReact()
+
+      expect(apiMock.updateScript).toHaveBeenCalledTimes(2)
+      const secondSavedDraft = apiMock.updateScript.mock.calls[1][1] as ScriptDefinition
+      expect(secondSavedDraft.name).toBe('Edited while saving')
+      expect(secondSavedDraft.config.http?.proxy_mode).toBe('none')
+      expect((secondSavedDraft.metadata as any)?.import?.preserved?.source_mapping_review).toEqual(
+        expect.objectContaining({
+          bindings: expect.objectContaining({ 'map-1': expect.objectContaining({ path: 'actions[0]' }) }),
+        }),
+      )
+      expect(saveButton().disabled).toBe(true)
+      expect(container.textContent).not.toContain('server baseline loaded after')
+    })
+  })
+
+  it('preserves wider --author-utility-width for .author-right-sidebar-wide in ScriptEditor.css cascade', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
+
+    const baseIdx = editorCss.lastIndexOf('.script-editor .actions-content-grid { --author-utility-width: minmax(220px, 24%); }')
+    const wideIdx = editorCss.lastIndexOf('.script-editor .actions-content-grid.author-right-sidebar-wide { --author-utility-width: minmax(320px, 44%); }')
+    const collapsedIdx = editorCss.lastIndexOf('.script-editor .actions-content-grid.author-right-sidebar-collapsed { --author-utility-width: 32px; }')
+
+    expect(baseIdx).toBeGreaterThan(-1)
+    expect(wideIdx).toBeGreaterThan(baseIdx)
+    expect(collapsedIdx).toBeGreaterThan(wideIdx)
+  })
+
+  it('routes Reveal in script from Debug summary and Timeline to the editable Action editor across phases and nested steps', async () => {
+    const multiPhaseScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Init auth token', type: 'request', method: 'POST', target: '/auth/init' }],
+      actions: [
+        {
+          name: 'Checkout sequence',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [
+              { name: 'Load cart', type: 'request', method: 'GET', target: '/cart' },
+              { name: 'Submit order', type: 'request', method: 'POST', target: '/order' },
+            ],
+          },
+        },
+      ],
+      teardown: [{ name: 'Teardown session', type: 'request', method: 'POST', target: '/auth/logout' }],
+    }
+    const events = [
+      {
+        event_id: 'ev-init',
+        event_index: 0,
+        phase: 'init' as const,
+        action_index: 0,
+        action_name: 'Init auth token',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/auth/init',
+        status_code: 200,
+        success: true,
+        duration_ms: 15,
+        started_at: '2026-05-14T20:00:00.000Z',
+        completed_at: '2026-05-14T20:00:00.015Z',
+      },
+      {
+        event_id: 'ev-nested',
+        event_index: 1,
+        phase: 'action' as const,
+        action_index: 0,
+        request_index: 1,
+        step_path: ['requests[1]'],
+        action_name: 'Submit order',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/order',
+        status_code: 500,
+        error_message: 'HTTP 500 Internal Server Error',
+        success: false,
+        duration_ms: 42,
+        started_at: '2026-05-14T20:00:00.020Z',
+        completed_at: '2026-05-14T20:00:00.062Z',
+      },
+      {
+        event_id: 'ev-teardown',
+        event_index: 2,
+        phase: 'teardown' as const,
+        action_index: 0,
+        action_name: 'Teardown session',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/auth/logout',
+        status_code: 200,
+        success: true,
+        duration_ms: 10,
+        started_at: '2026-05-14T20:00:00.070Z',
+        completed_at: '2026-05-14T20:00:00.080Z',
+      },
+    ]
+    apiMock.startScriptDebugSession.mockImplementationOnce(async (_id: unknown, payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-session-reveal'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Checkout Flow-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00.000Z',
+            completed_at: '2026-05-14T20:00:00.080Z',
+            success: false,
+            error: '1 action failed',
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'failed', '2'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={multiPhaseScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    // Toggle Overview & bulk open first so we prove Reveal in script clears authorOverview.
+    const overviewBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent?.trim() === 'Overview & bulk')!
+    await act(async () => { overviewBtn.click() })
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summary).not.toBeNull()
+
+    // Select the nested failing request row in the summary waterfall and click "Reveal in script".
+    const waterfallRows = Array.from(summary.querySelectorAll<HTMLElement>('[role="row"], [data-waterfall-id], button, tr, .wf-row'))
+    const nestedRow = waterfallRows.find(el => el.textContent?.includes('Submit order'))
+    expect(nestedRow).toBeDefined()
+    await act(async () => { nestedRow!.click() })
+    await flushReact()
+
+    const revealBtn = Array.from(summary.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent?.trim() === 'Reveal in script')!
+    expect(revealBtn).toBeDefined()
+    expect(revealBtn.disabled).toBe(false)
+
+    await act(async () => { revealBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    const actionEditorPanel = container.querySelector<HTMLElement>('.author-main-action .action-editor-panel')
+    expect(actionEditorPanel).not.toBeNull()
+    expect(actionEditorPanel?.closest('[hidden]')).toBeNull()
+    expect(container.querySelector('[aria-label="Full Script JSON"]')).toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].params.requests[1]')
+
+    // Return to Debug -> Timeline bottom dock and reveal the teardown step too.
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+
+    const bottomTimelineTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]')).find(btn => btn.textContent?.trim() === 'Timeline')!
+    await act(async () => { bottomTimelineTab.click() })
+    await flushReact()
+
+    const dockRows = Array.from(container.querySelectorAll<HTMLElement>('.debugger-timeline [role="row"], .debugger-timeline .wf-row, .debugger-timeline tr'))
+    const dockTeardownRow = dockRows.find(el => el.textContent?.includes('Teardown session'))
+    expect(dockTeardownRow).toBeDefined()
+    await act(async () => { dockTeardownRow!.click() })
+    await flushReact()
+
+    const dockRevealBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-timeline button')).find(btn => btn.textContent?.trim() === 'Reveal in script')!
+    expect(dockRevealBtn).toBeDefined()
+    await act(async () => { dockRevealBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('teardown[0]')
+  })
+
+  it('opens the visual Action editor for init and teardown extractors in ScriptJsonInsightsView', async () => {
+    const extractorScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{
+        name: 'Bootstrap CSRF',
+        type: 'request',
+        method: 'GET',
+        target: '/csrf',
+        extractors: [{ name: 'csrf_token', source: 'body', type: 'jsonpath', expression: '$.token' }],
+      }],
+      teardown: [{
+        name: 'Audit logout',
+        type: 'request',
+        method: 'POST',
+        target: '/logout',
+        extractors: [{ name: 'logout_receipt', source: 'header', type: 'regex', expression: 'X-Receipt: (\\S+)' }],
+      }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={extractorScript} />)
+    })
+    await flushReact()
+
+    // Switch to DSL center tab so the right companion sidebar renders ScriptJsonInsightsView.
+    const dslTab = findCenterTab(container, 'DSL')!
+    expect(dslTab).toBeDefined()
+    await act(async () => { dslTab.click() })
+    await flushReact()
+
+    const insightsTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-json-sidebar-tab')).find(btn => btn.textContent?.trim() === 'Insights')
+    if (insightsTab) {
+      await act(async () => { insightsTab.click() })
+      await flushReact()
+    }
+
+    const initExtractorBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.utility-link-button')).find(btn => btn.textContent?.includes('csrf_token'))!
+    expect(initExtractorBtn).toBeDefined()
+    await act(async () => { initExtractorBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.center-tab-panel.active .author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('init[0]')
+    const initChecksTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .action-editor-panel [role="tab"]'))
+      .find(btn => btn.textContent?.includes('Correlation & checks'))!
+    expect(initChecksTab.getAttribute('aria-selected')).toBe('true')
+    const initChecksPanel = document.getElementById(initChecksTab.getAttribute('aria-controls')!)!
+    expect(initChecksPanel.hidden).toBe(false)
+    expect(Array.from(initChecksPanel.querySelectorAll('input')).some(input => input.value === 'csrf_token')).toBe(true)
+
+    // Switch back to DSL and verify teardown extractor also opens the visual Action editor on Correlation & checks.
+    await act(async () => { findCenterTab(container, 'DSL')!.click() })
+    await flushReact()
+    const insightsTabAgain = Array.from(container.querySelectorAll<HTMLButtonElement>('.script-json-sidebar-tab')).find(btn => btn.textContent?.trim() === 'Insights')
+    if (insightsTabAgain) {
+      await act(async () => { insightsTabAgain.click() })
+      await flushReact()
+    }
+
+    const teardownExtractorBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.utility-link-button')).find(btn => btn.textContent?.includes('logout_receipt'))!
+    expect(teardownExtractorBtn).toBeDefined()
+    await act(async () => { teardownExtractorBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.center-tab-panel.active .author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('teardown[0]')
+    const teardownChecksTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .action-editor-panel [role="tab"]'))
+      .find(btn => btn.textContent?.includes('Correlation & checks'))!
+    expect(teardownChecksTab.getAttribute('aria-selected')).toBe('true')
+    const teardownChecksPanel = document.getElementById(teardownChecksTab.getAttribute('aria-controls')!)!
+    expect(teardownChecksPanel.hidden).toBe(false)
+    expect(Array.from(teardownChecksPanel.querySelectorAll('input')).some(input => input.value === 'logout_receipt')).toBe(true)
+  })
+
+  it('unifies Native browser replay completion with ScriptEditor debug evidence and summary while preserving HAR downloads', async () => {
+    const browserScript: ScriptDefinition = {
+      version: '1.0',
+      name: 'Browser Checkout',
+      protocol: 'browser',
+      config: { base_url: 'https://shop.example.test' },
+      actions: [
+        { name: 'Open storefront', type: 'browser_goto', target: 'https://shop.example.test' },
+      ],
+    }
+    apiMock.startBrowserReplaySession.mockResolvedValueOnce({
+      replay_session_id: 'native-browser-1',
+      session: {
+        id: 'native-browser-1',
+        group: 'Browser Checkout-browser-replay',
+        protocol: 'browser',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        events: [],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-browser-1" initialScript={browserScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    expect(container.querySelector('.script-status-chips')?.textContent).toContain('Not debugged')
+
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+
+    const nativeRegion = container.querySelector<HTMLElement>('[aria-label="Native browser replay"]')!
+    expect(nativeRegion).not.toBeNull()
+    const runNativeBtn = Array.from(nativeRegion.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent?.trim() === 'Run native browser replay')!
+    await act(async () => {
+      runNativeBtn.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.startBrowserReplaySession).toHaveBeenCalledWith(
+      'script-browser-1',
+      expect.objectContaining({ record_har: true }),
+    )
+    expect(nativeRegion.querySelector('[data-testid="replay-progress"]')).not.toBeNull()
+    // M1: While native browser replay is live, Debug session bar shows Running (never "No debug run yet") and disables Session Overrides.
+    expect(container.querySelector('.debug-session-bar .debug-session-idle')).toBeNull()
+    expect(container.querySelector('.debug-session-bar .replay-live-badge')?.textContent).toBe('Running')
+    const debugOptionsToggle = Array.from(container.querySelectorAll<HTMLButtonElement>('.debug-session-bar button')).find(btn => btn.textContent?.includes('Debug options'))!
+    await act(async () => { debugOptionsToggle.click() })
+    await flushReact()
+    const overridesRegion = container.querySelector('[aria-label="Session Overrides"]')!
+    expect(overridesRegion.querySelector<HTMLFieldSetElement>('fieldset.replay-options-grid')?.disabled).toBe(true)
+    expect(Array.from(overridesRegion.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent?.trim() === 'Reset session options')?.disabled).toBe(true)
+    await act(async () => { debugOptionsToggle.click() })
+    await flushReact()
+
+    const completedBrowserEvent = {
+      event_id: 'bev-1',
+      event_index: 0,
+      phase: 'action' as const,
+      action_index: 0,
+      action_name: 'Open storefront',
+      action_type: 'browser_goto',
+      target: 'https://shop.example.test',
+      page_title: 'Storefront',
+      page_url: 'https://shop.example.test/',
+      extractions: { storefront_token: 'tok-99' },
+      success: true,
+      duration_ms: 84,
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+    }
+    const completedBrowserReport = {
+      replay_session_id: 'native-browser-1',
+      group: 'Browser Checkout-browser-replay',
+      protocol: 'browser',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [completedBrowserEvent],
+    }
+
+    // Collapse the right debug detail pane before completion so DebugVariableWatches is unmounted (H2 regression check).
+    const collapseRightBtn = container.querySelector<HTMLButtonElement>('[aria-label="Collapse inspector"], [aria-label="Hide session details"], .debugger-detail-collapse')
+    if (collapseRightBtn) {
+      await act(async () => { collapseRightBtn.click() })
+      await flushReact()
+    }
+
+    await act(async () => {
+      Array.from(activeWebSocketSubscribers).forEach(sub => sub.onMessage?.({
+        type: 'browser_replay_completed',
+        replay_session_id: 'native-browser-1',
+        report: completedBrowserReport,
+      }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // 1. Native browser replay progress + HAR/evidence download buttons remain mounted on Browser evidence tab.
+    const progressAfter = container.querySelector('[aria-label="Native browser replay"] [data-testid="replay-progress"]')!
+    expect(progressAfter).not.toBeNull()
+    expect(progressAfter.textContent).toContain('Verified ✓')
+    expect(progressAfter.textContent).toContain('Download replay HAR')
+    expect(progressAfter.textContent).toContain('Download replay evidence')
+
+    // 2. ScriptBrowserEvidence immediately populates with the completed step, TabList, and extracted Variables.
+    expect(container.querySelector('[aria-label="Selected browser action evidence"]')?.textContent).toContain('Open storefront')
+    const evidenceTabList = container.querySelector('[role="tablist"][aria-label="Browser evidence views"]')!
+    expect(evidenceTabList).not.toBeNull()
+    const variablesTab = Array.from(evidenceTabList.querySelectorAll<HTMLButtonElement>('[role="tab"]')).find(btn => btn.textContent?.trim() === 'Variables')!
+    expect(variablesTab).toBeDefined()
+    await act(async () => { variablesTab.click() })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Selected browser action evidence"] [role="tabpanel"]')?.textContent).toContain('storefront_token')
+    expect(container.querySelector('[aria-label="Selected browser action evidence"] [role="tabpanel"]')?.textContent).toContain('tok-99')
+
+    // 3. Switching to Summary center tab renders the populated DebugCompletionSummary with native Download HAR wired to /browser-replay/sessions/:id/har.
+    const summaryTab = findCenterTab(container, 'Summary')
+    expect(summaryTab).toBeDefined()
+    await act(async () => { summaryTab!.click() })
+    await flushReact()
+    expect(container.querySelector('.center-tab-panel.active .debug-completion-summary')).not.toBeNull()
+    expect(container.querySelector('.center-tab-panel.active')?.textContent).not.toContain('Complete a debug run to view its summary.')
+    const summaryHarBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+      .find(btn => btn.textContent?.trim() === 'Download HAR')!
+    expect(summaryHarBtn).toBeDefined()
+    const harFetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('{"log":{"version":"1.2","entries":[]}}', {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Disposition': 'attachment; filename="replay-native-browser-1.har"',
+        },
+      }),
+    )
+    const createObjectURLSpy = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:mock-har')
+    const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+    const clickAnchorSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    try {
+      await act(async () => { summaryHarBtn.click() })
+      await flushReact()
+      expect(harFetchSpy).toHaveBeenCalledTimes(1)
+      const calledUrl = String(harFetchSpy.mock.calls[0]?.[0])
+      expect(calledUrl).toContain('/browser-replay/sessions/native-browser-1/har')
+    } finally {
+      clickAnchorSpy.mockRestore()
+      revokeObjectURLSpy.mockRestore()
+      createObjectURLSpy.mockRestore()
+      harFetchSpy.mockRestore()
+    }
+
+    // 4. Returning to Author workspace reflects canonical Debugged status on the status chips.
+    await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+    await flushReact()
+    expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debugged')
+    expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Not debugged')
+  })
+
+  it('tracks Native browser replay across Author switches (stopped vs 404 failed), preserves passed runs across 404 remounts, and cleans up mid-run Close', async () => {
+    vi.useFakeTimers()
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(
+      JSON.stringify({ error: 'session expired' }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
+    ))
+    try {
+      const draftBrowserScript: ScriptDefinition = {
+        version: '1.0',
+        name: 'Draft Browser Flow',
+        protocol: 'browser',
+        config: { base_url: 'https://shop.example.test' },
+        actions: [
+          { name: 'Open storefront', type: 'browser_goto', target: 'https://shop.example.test' },
+        ],
+      }
+      apiMock.startDraftBrowserReplaySession
+        .mockResolvedValueOnce({
+          replay_session_id: 'draft-native-1',
+          session: {
+            id: 'draft-native-1',
+            group: 'Draft Browser Flow-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:00:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'draft-native-2',
+          session: {
+            id: 'draft-native-2',
+            group: 'Draft Browser Flow v2-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:01:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'draft-native-3',
+          session: {
+            id: 'draft-native-3',
+            group: 'Draft Browser Flow v2-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:02:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'draft-native-4',
+          session: {
+            id: 'draft-native-4',
+            group: 'Draft Browser Flow v2-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:03:00Z',
+            events: [],
+          },
+        })
+
+      await act(async () => {
+        root.render(<ScriptEditor initialScript={draftBrowserScript} projectId="project-1" />)
+      })
+      await act(async () => { await Promise.resolve() })
+
+      await act(async () => { findOpenDebuggerButton(container)!.click() })
+      await act(async () => { await Promise.resolve() })
+
+      const clickRunNative = async () => {
+        const region = container.querySelector<HTMLElement>('[aria-label="Native browser replay"]')!
+        const btn = Array.from(region.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent?.trim() === 'Run native browser replay')!
+        await act(async () => {
+          btn.click()
+          await Promise.resolve()
+        })
+        await act(async () => { await Promise.resolve() })
+      }
+
+      const sendWsToMounted = async (payload: Record<string, unknown>) => {
+        await act(async () => {
+          Array.from(activeWebSocketSubscribers).forEach(sub => sub.onMessage?.(payload))
+          await Promise.resolve()
+        })
+        await act(async () => { await Promise.resolve() })
+      }
+
+      await clickRunNative()
+      const mountedWhileInDebug = activeWebSocketSubscribers.size
+
+      await sendWsToMounted({
+        type: 'browser_replay_completed',
+        replay_session_id: 'draft-native-1',
+        report: {
+          replay_session_id: 'draft-native-1',
+          group: 'Draft Browser Flow-browser-replay',
+          protocol: 'browser',
+          started_at: '2026-05-14T20:00:00Z',
+          completed_at: '2026-05-14T20:00:01Z',
+          success: true,
+          events: [{
+            event_id: 'ev-1',
+            event_index: 0,
+            phase: 'action',
+            action_index: 0,
+            action_name: 'Open storefront',
+            action_type: 'browser_goto',
+            target: 'https://shop.example.test',
+            success: true,
+            duration_ms: 42,
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:01Z',
+          }],
+        },
+      })
+
+      // Switch Debug -> Author -> Debug after backend /browser-replay/sessions/draft-native-1 returns 404.
+      await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+      await act(async () => { await Promise.resolve() })
+      // Unmounting BrowserReplayProgress removes its WebSocket listener.
+      const subscribersInAuthor = activeWebSocketSubscribers.size
+      expect(subscribersInAuthor).toBeLessThan(mountedWhileInDebug)
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debugged')
+
+      await act(async () => { findWorkspaceTab(container, 'Debug')!.click() })
+      await act(async () => { await Promise.resolve() })
+      // Finished native replay renders static terminal card without remounting live BrowserReplayProgress WS/polling.
+      expect(activeWebSocketSubscribers.size).toBe(subscribersInAuthor)
+      for (let i = 0; i < 6; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1600)
+        })
+      }
+      // Retained passing report AND HAR downloads in ScriptBrowserEvidence stay intact (no 404 alert or Issues found).
+      expect(container.querySelector('.debug-session-bar .replay-live-badge')?.textContent).toBe('Passed')
+      expect(container.querySelector('[aria-label="Selected browser action evidence"]')?.textContent).toContain('Open storefront')
+      const remountedProgress = container.querySelector<HTMLElement>('[aria-label="Native browser replay"] [data-testid="replay-progress"]')!
+      expect(remountedProgress).not.toBeNull()
+      expect(remountedProgress.textContent).toContain('Verified ✓')
+      expect(remountedProgress.textContent).not.toContain('Issues found')
+      expect(remountedProgress.textContent).toContain('Download replay HAR')
+      expect(remountedProgress.textContent).toContain('Download replay evidence')
+      expect(remountedProgress.querySelector('[role="alert"]')).toBeNull()
+
+      // Switch back to Author, edit script so Run 1 becomes stale, then return to Debug and start Run 2.
+      await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debugged')
+
+      const nameInput = container.querySelector<HTMLInputElement>('input[aria-label="Script name"]')
+      if (nameInput) {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+        await act(async () => {
+          setter?.call(nameInput, 'Draft Browser Flow v2')
+          nameInput.dispatchEvent(new Event('input', { bubbles: true }))
+          nameInput.dispatchEvent(new Event('change', { bubbles: true }))
+        })
+        await act(async () => { await Promise.resolve() })
+        expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debug stale')
+      }
+
+      await act(async () => { findWorkspaceTab(container, 'Debug')!.click() })
+      await act(async () => { await Promise.resolve() })
+      await clickRunNative()
+
+      // Concurrent Quick actions Debug trigger is disabled while native replay is running.
+      const quickDebugBtn = container.querySelector<HTMLButtonElement>('[aria-label="Quick actions"] button')
+      expect(quickDebugBtn?.disabled).toBe(true)
+
+      // Switching to Author while Run 2 is in progress unmounts BrowserReplayProgress, shows Debugging, and ScriptEditor's persistent WS listener classifies browser_replay_stopped as Debug stopped.
+      await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debugging')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debugged')
+
+      await sendWsToMounted({
+        type: 'browser_replay_stopped',
+        replay_session_id: 'draft-native-2',
+      })
+      expect(findWorkspaceTab(container, 'Author')?.getAttribute('aria-selected')).toBe('true')
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debug stopped')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debug failed')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debugged')
+
+      // Run 3: Switching to Author when WS drops and backend poll returns 404 (>4 retries) finalizes as Debug failed (never stuck Debugging).
+      apiMock.getBrowserReplaySession.mockRejectedValue(new ApiError('session missing', 404))
+      await act(async () => { findWorkspaceTab(container, 'Debug')!.click() })
+      await act(async () => { await Promise.resolve() })
+      await clickRunNative()
+      await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debugging')
+      for (let i = 0; i < 6; i += 1) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1300)
+        })
+      }
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debug failed')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debugging')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debugged')
+      await act(async () => { findWorkspaceTab(container, 'Debug')!.click() })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { findCenterTab(container, 'Summary')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+          .find(btn => btn.textContent?.trim() === 'Download HAR'),
+      ).toBeUndefined()
+      await act(async () => { findCenterTab(container, 'Browser Replay')!.click() })
+      await act(async () => { await Promise.resolve() })
+
+      // Run 4: Mid-run Close (onDismissNativeReplay) stops session and clears uncompleted state so Author does not stay stuck at Debugging.
+      apiMock.getBrowserReplaySession.mockImplementation(async (sessionId: string) => ({
+        session: { id: sessionId, group: 'Draft Browser Flow v2-browser-replay', protocol: 'browser', status: 'running', current_event_index: 0, started_at: '2026-05-14T20:03:00Z', events: [] },
+      }))
+      await clickRunNative()
+      const closeBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-testid="replay-progress"] button')).find(btn => btn.textContent?.trim() === 'Close')!
+      await act(async () => { closeBtn.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(apiMock.stopBrowserReplaySession).toHaveBeenCalledWith('draft-native-4')
+      await act(async () => { findWorkspaceTab(container, 'Author')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Not debugged')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debugging')
+    } finally {
+      fetchSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('enables debugger Stop during live Native browser replay and classifies stopped sessions as Stopped when BrowserReplayProgress poll finishes first without report.stopped', async () => {
+    vi.useFakeTimers()
+    let currentStoppedPayload: Record<string, unknown> | null = null
+    let activeMockSessionId = 'native-stop-1'
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+      if (!url.includes('/browser-replay/sessions/')) {
+        return new Response(JSON.stringify({ error: 'not mocked' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      if (currentStoppedPayload) {
+        return new Response(JSON.stringify({ session: currentStoppedPayload }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        })
+      }
+      return new Response(JSON.stringify({
+        session: {
+          id: activeMockSessionId,
+          group: 'Stop Browser Flow-browser-replay',
+          protocol: 'browser',
+          status: 'running',
+          started_at: '2026-05-14T20:10:00Z',
+          events: [],
+        },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    try {
+      const draftBrowserScript: ScriptDefinition = {
+        version: '1.0',
+        name: 'Stop Browser Flow',
+        protocol: 'browser',
+        config: { base_url: 'https://shop.example.test' },
+        actions: [
+          { name: 'Open storefront', type: 'browser_goto', target: 'https://shop.example.test' },
+        ],
+      }
+      apiMock.startDraftBrowserReplaySession
+        .mockResolvedValueOnce({
+          replay_session_id: 'native-stop-1',
+          session: {
+            id: 'native-stop-1',
+            group: 'Stop Browser Flow-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:10:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'native-stop-zero',
+          session: {
+            id: 'native-stop-zero',
+            group: 'Stop Browser Flow-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:11:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'native-fail-reportless',
+          session: {
+            id: 'native-fail-reportless',
+            group: 'Stop Browser Flow-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:12:00Z',
+            events: [],
+          },
+        })
+        .mockResolvedValueOnce({
+          replay_session_id: 'native-fail-404',
+          session: {
+            id: 'native-fail-404',
+            group: 'Stop Browser Flow-browser-replay',
+            protocol: 'browser',
+            status: 'running',
+            started_at: '2026-05-14T20:13:00Z',
+            events: [],
+          },
+        })
+      apiMock.getBrowserReplaySession.mockImplementation(async (sessionId: string) => ({
+        session: currentStoppedPayload && currentStoppedPayload.id === sessionId
+          ? currentStoppedPayload as never
+          : {
+              id: sessionId,
+              group: 'Stop Browser Flow-browser-replay',
+              protocol: 'browser',
+              status: 'running' as const,
+              current_event_index: 0,
+              started_at: '2026-05-14T20:10:00Z',
+              events: [],
+            },
+      }))
+
+      await act(async () => {
+        root.render(
+          <TopbarContributionProvider>
+            <TopbarContributionHarness />
+            <ScriptEditor initialScript={draftBrowserScript} projectId="project-1" />
+          </TopbarContributionProvider>,
+        )
+      })
+      await act(async () => { await Promise.resolve() })
+
+      const clickMode = (label: 'Author' | 'Debug') =>
+        Array.from(container.querySelectorAll<HTMLElement>('[data-testid="topbar-contribution"] .mode-chip'))
+          .find(chip => chip.textContent?.trim() === label)!
+
+      await act(async () => { clickMode('Debug').click() })
+      await act(async () => { await Promise.resolve() })
+
+      const clickRunNative = async () => {
+        const region = container.querySelector<HTMLElement>('[aria-label="Native browser replay"]')!
+        const btn = Array.from(region.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent?.trim() === 'Run native browser replay')!
+        await act(async () => {
+          btn.click()
+          await Promise.resolve()
+        })
+        await act(async () => { await Promise.resolve() })
+      }
+
+      await clickRunNative()
+
+      // Debugger Stop control in .debug-session-controls is visible & enabled while native browser replay is running, and stops the native session.
+      const stopBtn = container.querySelector<HTMLButtonElement>('.topbar-debug-action-stop')!
+      expect(stopBtn).not.toBeNull()
+      expect(stopBtn.hidden).toBe(false)
+      expect(stopBtn.disabled).toBe(false)
+      await act(async () => { stopBtn.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(apiMock.stopBrowserReplaySession).toHaveBeenCalledWith('native-stop-1')
+
+      // Advance past ScriptEditor's 1200ms tick while still running, then mark stopped (with no session.report and an earlier failed action) before BrowserReplayProgress's 1500ms tick!
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1250)
+      })
+      currentStoppedPayload = {
+        id: 'native-stop-1',
+        group: 'Stop Browser Flow-browser-replay',
+        protocol: 'browser',
+        status: 'stopped',
+        started_at: '2026-05-14T20:10:00Z',
+        completed_at: '2026-05-14T20:10:01Z',
+        events: [{
+          event_id: 'ev-stop-1',
+          event_index: 0,
+          phase: 'action',
+          action_index: 0,
+          action_name: 'Open storefront',
+          action_type: 'browser_goto',
+          target: 'https://shop.example.test',
+          success: false,
+          error_message: 'Navigation interrupted before stop',
+          duration_ms: 35,
+          started_at: '2026-05-14T20:10:00Z',
+          completed_at: '2026-05-14T20:10:01Z',
+        }],
+      }
+      // BrowserReplayProgress's 1500ms poll fires at +300ms (t=1550ms), well before ScriptEditor's next 1200ms poll at t=2400ms.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350)
+      })
+      await act(async () => { await Promise.resolve() })
+
+      expect(container.querySelector('.debug-session-bar .replay-live-badge')?.textContent).toBe('Stopped')
+      const stopCard1 = container.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(stopCard1.querySelector('.brp-status')?.textContent).toBe('Stopped')
+      expect(stopCard1.textContent).not.toContain('Download replay HAR')
+      expect(stopCard1.textContent).not.toContain('Download replay evidence')
+      expect(stopCard1.textContent).not.toContain('Verified output and scope')
+      await act(async () => { findCenterTab(container, 'Summary')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+          .find(btn => btn.textContent?.trim() === 'Download HAR'),
+      ).toBeUndefined()
+      await act(async () => { clickMode('Author').click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debug stopped')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debug failed')
+
+      // Sub-case 2: 0-event stopped session where BrowserReplayProgress calls onComplete(null, []) at t=1500ms before ScriptEditor's t=2400ms poll.
+      currentStoppedPayload = null
+      activeMockSessionId = 'native-stop-zero'
+      await act(async () => { clickMode('Debug').click() })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { findCenterTab(container, 'Browser Replay')!.click() })
+      await act(async () => { await Promise.resolve() })
+
+      await clickRunNative()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1250)
+      })
+      currentStoppedPayload = {
+        id: 'native-stop-zero',
+        group: 'Stop Browser Flow-browser-replay',
+        protocol: 'browser',
+        status: 'stopped',
+        started_at: '2026-05-14T20:11:00Z',
+        completed_at: '2026-05-14T20:11:01Z',
+        events: [],
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350)
+      })
+      await act(async () => { await Promise.resolve() })
+
+      expect(container.querySelector('.debug-session-bar .replay-live-badge')?.textContent).toBe('Stopped')
+      const stopCardZero = container.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(stopCardZero.querySelector('.brp-status')?.textContent).toBe('Stopped')
+      expect(stopCardZero.textContent).not.toContain('Download replay HAR')
+      expect(stopCardZero.textContent).not.toContain('Download replay evidence')
+      expect(stopCardZero.textContent).not.toContain('Verified output and scope')
+      await act(async () => { findCenterTab(container, 'Summary')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+          .find(btn => btn.textContent?.trim() === 'Download HAR'),
+      ).toBeUndefined()
+      await act(async () => { clickMode('Author').click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.script-status-chips')?.textContent).toContain('Debug stopped')
+      expect(container.querySelector('.script-status-chips')?.textContent).not.toContain('Debug failed')
+
+      // Sub-case 3: Reportless failed session where BrowserReplayProgress's 1500ms poll synthesizes a fallback report first;
+      // onCompleteNativeReplay must preserve sessionReport === null (hiding HAR/evidence downloads & synthetic Verified output).
+      currentStoppedPayload = null
+      activeMockSessionId = 'native-fail-reportless'
+      await act(async () => { clickMode('Debug').click() })
+      await act(async () => { await Promise.resolve() })
+      await act(async () => { findCenterTab(container, 'Browser Replay')!.click() })
+      await act(async () => { await Promise.resolve() })
+
+      await clickRunNative()
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1250)
+      })
+      currentStoppedPayload = {
+        id: 'native-fail-reportless',
+        group: 'Stop Browser Flow-browser-replay',
+        protocol: 'browser',
+        status: 'failed',
+        error: 'Chromium launch failed before replay started',
+        started_at: '2026-05-14T20:12:00Z',
+        completed_at: '2026-05-14T20:12:01Z',
+        events: [],
+      }
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(350)
+      })
+      await act(async () => { await Promise.resolve() })
+
+      expect(container.querySelector('.debug-session-bar .replay-live-badge')?.textContent).toBe('Failed')
+      const reportlessFailCard = container.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(reportlessFailCard.querySelector('.brp-status')?.textContent).toBe('Issues found')
+      expect(reportlessFailCard.textContent).not.toContain('Download replay HAR')
+      expect(reportlessFailCard.textContent).not.toContain('Download replay evidence')
+      expect(reportlessFailCard.textContent).not.toContain('Verified output and scope')
+      expect(reportlessFailCard.querySelector('[role="alert"]')).toBeNull()
+      await act(async () => { findCenterTab(container, 'Summary')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.center-tab-panel.active')?.textContent).toContain('Chromium launch failed before replay started')
+      expect(container.querySelector('.center-tab-panel.active')?.textContent).not.toContain('Replay verification')
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+          .find(btn => btn.textContent?.trim() === 'Download HAR'),
+      ).toBeUndefined()
+
+      // Sub-case 4: When BrowserReplayProgress completes via WS with a client-synthesized report while getBrowserReplaySession returns 404,
+      // onCompleteNativeReplay marks the session unavailable and hides HAR/evidence downloads instead of trusting the synthesized report.
+      currentStoppedPayload = null
+      activeMockSessionId = 'native-fail-404'
+      apiMock.getBrowserReplaySession.mockImplementation(async (sessionId: string) => {
+        if (sessionId === 'native-fail-404' && currentStoppedPayload?.status === '404') {
+          throw new ApiError('session retired', 404)
+        }
+        return {
+          session: {
+            id: sessionId,
+            group: 'Stop Browser Flow-browser-replay',
+            protocol: 'browser' as const,
+            status: 'running' as const,
+            current_event_index: 0,
+            started_at: '2026-05-14T20:13:00Z',
+            events: [],
+          },
+        }
+      })
+      await act(async () => { findCenterTab(container, 'Browser Replay')!.click() })
+      await act(async () => { await Promise.resolve() })
+
+      const subsBeforeRun4 = new Set(activeWebSocketSubscribers)
+      await clickRunNative()
+      const progressOnlySubs = Array.from(activeWebSocketSubscribers).filter(sub => !subsBeforeRun4.has(sub))
+      expect(progressOnlySubs.length).toBeGreaterThan(0)
+      currentStoppedPayload = { status: '404' }
+      await act(async () => {
+        progressOnlySubs.forEach(sub => sub.onMessage?.({
+          type: 'browser_replay_failed',
+          replay_session_id: 'native-fail-404',
+        }))
+        await Promise.resolve()
+      })
+      await act(async () => { await Promise.resolve() })
+
+      const unconfirmedCard = container.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(unconfirmedCard.querySelector('.brp-status')?.textContent).toBe('Issues found')
+      expect(unconfirmedCard.querySelector('[role="alert"]')?.textContent).toContain('Replay session could not be confirmed.')
+      expect(unconfirmedCard.textContent).not.toContain('Download replay HAR')
+      expect(unconfirmedCard.textContent).not.toContain('Download replay evidence')
+      expect(unconfirmedCard.textContent).not.toContain('Verified output and scope')
+      await act(async () => { findCenterTab(container, 'Summary')!.click() })
+      await act(async () => { await Promise.resolve() })
+      expect(container.querySelector('.center-tab-panel.active')?.textContent).not.toContain('Replay verification')
+      expect(
+        Array.from(container.querySelectorAll<HTMLButtonElement>('.center-tab-panel.active .debug-summary-actions button'))
+          .find(btn => btn.textContent?.trim() === 'Download HAR'),
+      ).toBeUndefined()
+    } finally {
+      fetchSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('opens Author -> Action editor from Edit CTAs in DebugCompletionSummary (Errors and warnings & Transactions drawer) and dock Timeline waterfall drawer', async () => {
+    const multiPhaseScript: ScriptDefinition = {
+      ...initialScript,
+      init: [{ name: 'Init auth token', type: 'request', method: 'POST', target: '/auth/init' }],
+      actions: [
+        {
+          name: 'Checkout sequence',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [
+              { name: 'Load cart', type: 'request', method: 'GET', target: '/cart' },
+              {
+                name: 'Submit order',
+                type: 'request',
+                method: 'POST',
+                target: '/order',
+                assertions: [{ type: 'status_code', expected: 201 }],
+              },
+            ],
+          },
+        },
+      ],
+      teardown: [{ name: 'Teardown session', type: 'request', method: 'POST', target: '/auth/logout' }],
+    }
+    const events = [
+      {
+        event_id: 'ev-init-edit',
+        event_index: 0,
+        phase: 'init' as const,
+        action_index: 0,
+        action_name: 'Init auth token',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/auth/init',
+        status_code: 200,
+        success: true,
+        duration_ms: 15,
+        started_at: '2026-05-14T20:00:00.000Z',
+        completed_at: '2026-05-14T20:00:00.015Z',
+      },
+      {
+        event_id: 'ev-nested-edit',
+        event_index: 1,
+        phase: 'action' as const,
+        action_index: 0,
+        request_index: 1,
+        step_path: ['requests[1]'],
+        action_name: 'Submit order',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/order',
+        status_code: 500,
+        error_message: 'expected status 201, got 500',
+        success: false,
+        duration_ms: 42,
+        started_at: '2026-05-14T20:00:00.020Z',
+        completed_at: '2026-05-14T20:00:00.062Z',
+      },
+      {
+        event_id: 'ev-teardown-edit',
+        event_index: 2,
+        phase: 'teardown' as const,
+        action_index: 0,
+        action_name: 'Teardown session',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://shop.example.test/auth/logout',
+        status_code: 200,
+        success: true,
+        duration_ms: 10,
+        started_at: '2026-05-14T20:00:00.070Z',
+        completed_at: '2026-05-14T20:00:00.080Z',
+      },
+    ]
+    apiMock.startScriptDebugSession.mockImplementationOnce(async (_id: unknown, payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-session-edit'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Checkout Flow-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00.000Z',
+            completed_at: '2026-05-14T20:00:00.080Z',
+            success: false,
+            error: 'expected status 201, got 500',
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'failed', '2'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={multiPhaseScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    const overviewBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(btn => btn.textContent?.trim() === 'Overview & bulk')!
+    await act(async () => { overviewBtn.click() })
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // 1. DebugCompletionSummary -> Errors and warnings table -> Edit Submit order
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summary).not.toBeNull()
+    await act(async () => {
+      summary.querySelector<HTMLButtonElement>('#debug-summary-tab-issues')!.click()
+    })
+    await flushReact()
+
+    const issueEditBtn = summary.querySelector<HTMLButtonElement>('#debug-summary-panel-issues button[aria-label="Edit Submit order"]')!
+    expect(issueEditBtn).not.toBeNull()
+    expect(issueEditBtn.textContent?.trim()).toBe('Edit')
+    expect(issueEditBtn.disabled).toBe(false)
+
+    await act(async () => { issueEditBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    const actionEditorPanel = container.querySelector<HTMLElement>('.author-main-action .action-editor-panel')
+    expect(actionEditorPanel).not.toBeNull()
+    expect(actionEditorPanel?.closest('[hidden]')).toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].params.requests[1]')
+    const checksTab = Array.from(actionEditorPanel!.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      .find(btn => btn.textContent?.includes('Correlation & checks'))!
+    expect(checksTab.getAttribute('aria-selected')).toBe('true')
+
+    // 2. DebugCompletionSummary -> Transactions waterfall drawer -> Edit Init auth token
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+    await act(async () => { findCenterTab(container, 'Summary')!.click() })
+    await flushReact()
+
+    const summaryAgain = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    await act(async () => {
+      summaryAgain.querySelector<HTMLButtonElement>('#debug-summary-tab-transactions')!.click()
+    })
+    await flushReact()
+
+    const waterfallInitRow = Array.from(summaryAgain.querySelectorAll<HTMLElement>('[role="row"], .wf-row'))
+      .find(el => el.textContent?.includes('Init auth token'))!
+    expect(waterfallInitRow).toBeDefined()
+    await act(async () => { waterfallInitRow.click() })
+    await flushReact()
+
+    const txDrawerEditBtn = summaryAgain.querySelector<HTMLButtonElement>('#debug-summary-panel-transactions button[aria-label="Edit Init auth token"]')!
+    expect(txDrawerEditBtn).not.toBeNull()
+    expect(txDrawerEditBtn.textContent?.trim()).toBe('Edit')
+    expect(txDrawerEditBtn.disabled).toBe(false)
+    await act(async () => { txDrawerEditBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('init[0]')
+
+    // 3. Dock Timeline waterfall drawer -> Edit Teardown session
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+    const bottomTimelineTab = Array.from(container.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]'))
+      .find(btn => btn.textContent?.trim() === 'Timeline')!
+    await act(async () => { bottomTimelineTab.click() })
+    await flushReact()
+
+    const dockTeardownRow = Array.from(container.querySelectorAll<HTMLElement>('.debugger-timeline [role="row"], .debugger-timeline .wf-row'))
+      .find(el => el.textContent?.includes('Teardown session'))!
+    expect(dockTeardownRow).toBeDefined()
+    await act(async () => { dockTeardownRow.click() })
+    await flushReact()
+
+    const dockEditBtn = container.querySelector<HTMLButtonElement>('.debugger-timeline button[aria-label="Edit Teardown session"]')!
+    expect(dockEditBtn).not.toBeNull()
+    expect(dockEditBtn.textContent?.trim()).toBe('Edit')
+    expect(dockEditBtn.disabled).toBe(false)
+    await act(async () => { dockEditBtn.click() })
+    await flushReact()
+
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.author-main-action .action-editor-panel')).not.toBeNull()
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('teardown[0]')
+
+    // 4. Editing the action's target mutates currentEditableActionsKey, disabling Edit on stale evidence in both Summary and Dock.
+    const targetInput = Array.from(container.querySelectorAll<HTMLInputElement>('.author-main-action .action-editor-panel input'))
+      .find(input => input.value === '/auth/logout')!
+    expect(targetInput).toBeDefined()
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(targetInput, '/auth/logout-v2')
+      targetInput.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    await flushReact()
+
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+    expect(container.querySelector<HTMLButtonElement>('.debugger-timeline button[aria-label="Edit Teardown session"]')?.disabled).toBe(true)
+
+    await act(async () => { findCenterTab(container, 'Summary')!.click() })
+    await flushReact()
+    const staleSummary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(staleSummary.querySelector<HTMLButtonElement>('#debug-summary-panel-transactions button[aria-label="Edit Submit order"]')?.disabled).toBe(true)
+    await act(async () => { staleSummary.querySelector<HTMLButtonElement>('#debug-summary-tab-issues')!.click() })
+    await flushReact()
+    expect(staleSummary.querySelector<HTMLButtonElement>('#debug-summary-panel-issues button[aria-label="Edit Submit order"]')?.disabled).toBe(true)
+    // While Summary is the active center tab, the bottom dock Timeline panel does not mount a second DebugWaterfallPanel.
+    expect(container.querySelector('.debugger-timeline .debug-execution-timeline')).toBeNull()
+    expect(container.querySelector('[data-testid="debugger-timeline-summary-active"]')).not.toBeNull()
+  })
+
+  it('adds extractors to nested http_sequence child requests and init/teardown steps via RequestResponseInspector', async () => {
+    const nestedExtractorScript: ScriptDefinition = {
+      version: '1.0',
+      name: 'Nested_Extractor_Script',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      init: [
+        { name: 'Init auth', type: 'request', method: 'POST', target: '/auth/init' },
+      ],
+      actions: [
+        {
+          name: 'Order sequence',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [
+              { name: 'Create draft', type: 'request', method: 'POST', target: '/orders/draft' },
+              { name: 'Confirm draft', type: 'request', method: 'POST', target: '/orders/confirm' },
+            ],
+          },
+        },
+      ],
+    }
+    const events = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'Init auth',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/auth/init',
+        status_code: 200,
+        success: true,
+        duration_ms: 10,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        snapshot: { response_body: '{"token":"tok-init-1"}', response_headers: { 'Content-Type': 'application/json' } },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        request_index: 1,
+        step_path: ['requests[1]'],
+        parent_action_name: 'Order sequence',
+        action_name: 'Confirm draft',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/orders/confirm',
+        status_code: 200,
+        success: true,
+        duration_ms: 14,
+        started_at: '2026-05-14T20:00:01Z',
+        completed_at: '2026-05-14T20:00:02Z',
+        snapshot: { response_body: '{"orderId":"ord-900"}', response_headers: { 'Content-Type': 'application/json' } },
+      },
+    ]
+    apiMock.startDraftScriptDebugSession.mockImplementationOnce(async (payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-nested-ext'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Nested_Extractor_Script-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:02Z',
+            success: true,
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'completed', '2'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={nestedExtractorScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // In Summary -> Recording diff, verify 3-phase and nested step badges render and navigate to Author -> Action editor
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summary).not.toBeNull()
+    await act(async () => {
+      summary.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')!.click()
+    })
+    await flushReact()
+
+    const diffStepBadges = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] .correlation-step-badge'))
+    expect(diffStepBadges.map(btn => btn.textContent?.trim())).toEqual(['Init #1', '#1 · Request 2'])
+    await act(async () => {
+      diffStepBadges[1]!.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].params.requests[1]')
+
+    // Return to Debug -> Summary -> Transactions waterfall, select Confirm draft (requests[1]) and click Inspect to open RequestResponseInspector on event 1
+    await act(async () => {
+      findOpenDebuggerButton(container)!.click()
+    })
+    await flushReact()
+    await act(async () => {
+      findCenterTab(container, 'Summary')!.click()
+    })
+    await flushReact()
+
+    const summaryAfterNav = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summaryAfterNav).not.toBeNull()
+    await act(async () => {
+      summaryAfterNav.querySelector<HTMLButtonElement>('#debug-summary-tab-transactions')!.click()
+    })
+    await flushReact()
+
+    const waterfallConfirmRow = Array.from(summaryAfterNav.querySelectorAll<HTMLElement>('[role="row"], .wf-row'))
+      .find(el => el.textContent?.includes('Confirm draft'))!
+    expect(waterfallConfirmRow).toBeDefined()
+    await act(async () => { waterfallConfirmRow.click() })
+    await flushReact()
+
+    const inspectConfirmBtn = summaryAfterNav.querySelector<HTMLButtonElement>('#debug-summary-panel-transactions button[aria-label="Inspect Confirm draft"]')!
+    expect(inspectConfirmBtn).not.toBeNull()
+    await act(async () => { inspectConfirmBtn.click() })
+    await flushReact()
+
+    // Switch RequestResponseInspector to the Correlation sub-tab where ExtractorTester is rendered
+    await vi.waitFor(() => {
+      expect(inspectorTab(container, 'Correlation')).toBeDefined()
+    })
+    await openInspectorTab(container, 'Correlation')
+    await flushReact()
+
+    // Use ExtractorTester inside RequestResponseInspector to add an extractor to Confirm draft (requests[1])
+    const expInput = container.querySelector<HTMLInputElement>('.extractor-tester .extractor-tester-expression')!
+    expect(expInput).not.toBeNull()
+    await act(async () => {
+      changeInputValue(expInput, '"orderId":"([^"]+)"')
+    })
+    await flushReact()
+
+    const varNameInput = container.querySelector<HTMLInputElement>('.extractor-tester input[placeholder="extracted_value"]')!
+    expect(varNameInput).not.toBeNull()
+    await act(async () => {
+      changeInputValue(varNameInput, 'order_id')
+    })
+    await flushReact()
+
+    const addExtBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.extractor-tester button'))
+      .find(btn => btn.textContent?.includes('Add as extractor'))!
+    expect(addExtBtn).toBeDefined()
+    expect(addExtBtn.disabled).toBe(false)
+    await act(async () => {
+      addExtBtn.click()
+    })
+    await flushReact()
+
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Added extractor "order_id" on Confirm draft.')
+
+    await act(async () => {
+      addExtBtn.click()
+    })
+    await flushReact()
+
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Kept existing extractor "order_id" on Confirm draft.')
+  })
+
+  it('normalizes transaction steps[i] and control_try try[i]/catch[i] paths when navigating and adding extractors from RecordingDiffPanel', async () => {
+    const txnTryScript: ScriptDefinition = {
+      name: 'Txn_Try_Script',
+      version: '1.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [
+        {
+          name: 'Checkout Transaction',
+          type: 'transaction',
+          target: '',
+          control: {
+            steps: [
+              { name: 'Issue csrf', type: 'request', method: 'GET', target: '/csrf' },
+            ],
+          },
+        },
+        {
+          name: 'Try Submit',
+          type: 'control_try',
+          target: '',
+          control: {
+            steps: [
+              { name: 'Submit order', type: 'request', method: 'POST', target: '/submit', headers: { 'X-Csrf': '{{var.csrf_token}}' } },
+            ],
+            catch: [
+              { name: 'Fallback token', type: 'request', method: 'GET', target: '/fallback' },
+            ],
+          } as unknown as ScriptDefinition['actions'][number]['control'],
+        },
+      ],
+    }
+    const events = [
+      {
+        phase: 'action',
+        action_index: 0,
+        step_path: ['steps[0]'],
+        action_name: 'Issue csrf',
+        action_type: 'request',
+        method: 'GET',
+        target: 'https://api.example.test/csrf',
+        status_code: 200,
+        success: true,
+        duration_ms: 8,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        snapshot: { request_url: 'https://api.example.test/csrf', response_status: 200, response_body: '{"csrf_token":"csrf-xyz"}' },
+      },
+      {
+        phase: 'action',
+        action_index: 1,
+        step_path: ['try[0]'],
+        action_name: 'Submit order',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/submit',
+        status_code: 403,
+        success: false,
+        duration_ms: 9,
+        started_at: '2026-05-14T20:00:01Z',
+        completed_at: '2026-05-14T20:00:02Z',
+        snapshot: { request_url: 'https://api.example.test/submit', request_headers: { 'X-Csrf': 'csrf-xyz' }, response_status: 403 },
+      },
+      {
+        phase: 'action',
+        action_index: 1,
+        step_path: ['catch[0]'],
+        action_name: 'Fallback token',
+        action_type: 'request',
+        method: 'GET',
+        target: 'https://api.example.test/fallback',
+        status_code: 200,
+        success: true,
+        duration_ms: 7,
+        started_at: '2026-05-14T20:00:02Z',
+        completed_at: '2026-05-14T20:00:03Z',
+        snapshot: { request_url: 'https://api.example.test/fallback', response_status: 200, response_body: '{"fallback_token":"fb-1"}' },
+      },
+    ]
+    apiMock.startDraftScriptDebugSession.mockImplementationOnce(async (payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-txn-try'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Txn_Try_Script-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:03Z',
+            success: false,
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'failed', '3'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={txnTryScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    await act(async () => {
+      findCenterTab(container, 'Summary')!.click()
+    })
+    await flushReact()
+
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    await act(async () => {
+      summary.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')!.click()
+    })
+    await flushReact()
+
+    // Click "Add as extractor" on the local diff suggestion targeting #1 · Steps #1
+    const addFixBtn = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] button'))
+      .find(btn => btn.textContent === 'Add as extractor')!
+    expect(addFixBtn).toBeDefined()
+    await act(async () => {
+      addFixBtn.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Added extractor "csrf_token" on Issue csrf.')
+
+    // Click the #1 · Steps #1 step badge and verify it selects the nested step inside the transaction
+    const txnStepBadge = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] .correlation-step-badge'))
+      .find(btn => btn.textContent?.trim() === '#1 · Steps #1')!
+    expect(txnStepBadge).toBeDefined()
+    await act(async () => {
+      txnStepBadge.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].control.steps[0]')
   })
 })

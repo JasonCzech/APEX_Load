@@ -3,11 +3,15 @@ package generatorrpc
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // The generator RPC boundary is the third copy of the static credential
@@ -71,9 +75,9 @@ func TestStagedAssignmentScriptSourcedRedactionFollowsScriptSetting(t *testing.T
 		redactRunEvidence *bool
 		redacted          bool
 	}{
-		{name: "unset_defaults_to_visible", redactRunEvidence: nil, redacted: false},
+		{name: "unset_defaults_to_redacted", redactRunEvidence: nil, redacted: true},
 		{name: "redaction_on", redactRunEvidence: &redactOn, redacted: true},
-		{name: "redaction_off", redactRunEvidence: &redactOff, redacted: false},
+		{name: "redaction_off_still_redacts_secrets", redactRunEvidence: &redactOff, redacted: true},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			service := newIsolatedService(t, 10, WithExecution())
@@ -272,5 +276,273 @@ func TestAssignmentFingerprintTracksRunEvidenceSetting(t *testing.T) {
 	}
 	if on, off := fingerprint(scriptWith(true)), fingerprint(scriptWith(false)); on == off {
 		t.Fatalf("assignment fingerprint %x is identical across run-evidence settings", on)
+	}
+}
+
+func TestValidateWorkAssignmentAndStagingAllowLiteralDSLSecretsAndJavaVMPropertiesWithoutSecretDeliveryTransport(t *testing.T) {
+	const (
+		javaVMSecret = "synth-java-vm-pwd-9601"
+		headerSecret = "synth-http-bearer-9602"
+		bundleSecret = "synth-bundle-secret-9603"
+	)
+
+	javaPayload, err := json.Marshal(map[string]any{
+		"name":     "java-literal-vm",
+		"protocol": "http",
+		"config": map[string]any{
+			"base_url": "https://example.test",
+			"java_vuser": map[string]any{
+				"additional_vm_parameters": []string{"-Dapp.password=" + javaVMSecret},
+			},
+		},
+		"actions": []any{map[string]any{
+			"name":   "req",
+			"type":   "request",
+			"method": "GET",
+			"target": "/orders",
+			"headers": map[string]string{
+				"Authorization": "Bearer " + headerSecret,
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal java/http script: %v", err)
+	}
+
+	// Guard 3 (#14): AllowsSecretDelivery()==false must succeed when len(secretBundle)==0
+	// even if the script carries literal DSL credentials.
+	reqNoBundle := stageRequest("run-no-bundle", "script-lit", 1)
+	reqNoBundle.ScriptContent = javaPayload
+	validated, err := validateWorkAssignment(reqNoBundle, 1<<20, false)
+	if err != nil {
+		t.Fatalf("validateWorkAssignment rejected literal-only script when allowSecretDelivery=false: %v", err)
+	}
+
+	// Conversely, len(secretBundle)>0 still requires allowSecretDelivery=true.
+	reqWithBundle := stageRequest("run-with-bundle", "script-bundle", 1)
+	reqWithBundle.ScriptContent = javaPayload
+	reqWithBundle.SecretBundle = map[string]string{"PLATFORM_TOKEN": bundleSecret}
+	reqWithBundle.SecretBundleId = "bundle-9603"
+	if _, err := validateWorkAssignment(reqWithBundle, 1<<20, false); err == nil {
+		t.Fatalf("validateWorkAssignment accepted non-empty SecretBundle when allowSecretDelivery=false")
+	}
+
+	service := newIsolatedService(t, 10, WithExecution())
+	service.mu.Lock()
+	decision := service.lifecycleCoordinator.reserveStageLocked(service, validated)
+	service.mu.Unlock()
+	if decision.kind != assignmentStagePrepare || decision.plan == nil {
+		t.Fatalf("staging decision = %+v", decision)
+	}
+	prepared, err := service.prepareAssignmentStage(context.Background(), decision.plan)
+	if err != nil {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-no-bundle", decision.plan.token)
+		service.mu.Unlock()
+		t.Fatalf("prepareAssignmentStage rejected literal Java VM property / header credential: %v", err)
+	}
+	defer func() {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-no-bundle", decision.plan.token)
+		service.mu.Unlock()
+		service.cleanupPreparedAssignmentStage(decision.plan, prepared)
+	}()
+
+	cfg := prepared.execution.redactionConfig
+	if cfg.HasRuntimeSecretMaterial() {
+		t.Fatalf("HasRuntimeSecretMaterial() = true for literal-only staged assignment")
+	}
+	for _, secret := range []string{javaVMSecret, headerSecret} {
+		if got := cfg.ScrubText("value=" + secret); strings.Contains(got, secret) {
+			t.Fatalf("staged RedactionConfig leaked literal secret %q: %q", secret, got)
+		}
+	}
+
+	// Finding 1 regression: when a bundle secret backs HTTP Basic auth, the
+	// staged groupExecution.redactionConfig shares MultiGroupEngine's auth
+	// composites and dynamicSecretRegistry.
+	basicPayload, err := json.Marshal(map[string]any{
+		"name":     "bundle-basic-composite",
+		"protocol": "http",
+		"config": map[string]any{
+			"base_url": "https://example.test",
+			"http": map[string]any{
+				"auth": map[string]any{
+					"type":     "basic",
+					"username": "svc-operator",
+					"password": "{{secret.PLATFORM_TOKEN}}",
+				},
+			},
+		},
+		"actions": []any{map[string]any{
+			"name": "req", "type": "request", "method": "GET", "target": "/orders",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal basic script: %v", err)
+	}
+	reqComposite := stageRequest("run-composite", "script-composite", 1)
+	reqComposite.ScriptContent = basicPayload
+	reqComposite.SecretBundle = map[string]string{"PLATFORM_TOKEN": bundleSecret}
+	reqComposite.SecretBundleId = "bundle-9604"
+	valComposite, err := validateWorkAssignment(reqComposite, 1<<20, true)
+	if err != nil {
+		t.Fatalf("validateWorkAssignment composite: %v", err)
+	}
+	service.mu.Lock()
+	decComposite := service.lifecycleCoordinator.reserveStageLocked(service, valComposite)
+	service.mu.Unlock()
+	prepComposite, err := service.prepareAssignmentStage(context.Background(), decComposite.plan)
+	if err != nil {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-composite", decComposite.plan.token)
+		service.mu.Unlock()
+		t.Fatalf("prepareAssignmentStage composite: %v", err)
+	}
+	defer func() {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-composite", decComposite.plan.token)
+		service.mu.Unlock()
+		service.cleanupPreparedAssignmentStage(decComposite.plan, prepComposite)
+	}()
+
+	basicWire := base64.StdEncoding.EncodeToString([]byte("svc-operator:" + bundleSecret))
+	compCfg := prepComposite.execution.redactionConfig
+	if got := compCfg.ScrubText("Authorization: Basic " + basicWire); strings.Contains(got, basicWire) {
+		t.Fatalf("staged groupExecution.redactionConfig missed HTTP Basic composite: %q", got)
+	}
+	const dynToken = "synth-staged-dyn-token-9605"
+	prepComposite.execution.engine.GroupRedactionConfig(0).RegisterDynamicSecrets("oauth:http", []string{dynToken})
+	if got := compCfg.ScrubText("Bearer " + dynToken); strings.Contains(got, dynToken) {
+		t.Fatalf("staged groupExecution.redactionConfig disconnected from engine dynamicSecretRegistry: %q", got)
+	}
+
+	// Finding 6 regression: prepareAssignmentStage fails closed with InvalidArgument
+	// when ImportedCredentialValues encounters an unsupported credential locator field.
+	badLocatorPayload, err := json.Marshal(map[string]any{
+		"name":     "bad-locator-stage",
+		"protocol": "http",
+		"config":   map[string]any{"base_url": "https://example.test"},
+		"actions": []any{map[string]any{
+			"name":   "req",
+			"type":   "request",
+			"method": "GET",
+			"target": "/orders",
+			"metadata": map[string]any{
+				dsl.ImportPreservedCredentialTargetsMetadataKey: []any{
+					map[string]any{"field": "unsupported_future_secret_surface"},
+				},
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal bad-locator script: %v", err)
+	}
+	reqBadLocator := stageRequest("run-bad-locator", "script-bad-locator", 1)
+	reqBadLocator.ScriptContent = badLocatorPayload
+	valBadLocator := validatedStageRequest(t, reqBadLocator)
+	service.mu.Lock()
+	decBadLocator := service.lifecycleCoordinator.reserveStageLocked(service, valBadLocator)
+	service.mu.Unlock()
+	if _, stageErr := service.prepareAssignmentStage(context.Background(), decBadLocator.plan); status.Code(stageErr) != codes.InvalidArgument {
+		t.Fatalf("expected InvalidArgument on unsupported credential locator in prepareAssignmentStage, got %v", stageErr)
+	}
+	service.mu.Lock()
+	service.lifecycleCoordinator.rollbackStageLocked("run-bad-locator", decBadLocator.plan.token)
+	service.mu.Unlock()
+
+	// Round-4 Finding 4a regression: prepareAssignmentStage scrubs literal credentials
+	// embedded in validation issues (e.g. actions[0].Name) before returning InvalidArgument.
+	badValidationPayload, err := json.Marshal(map[string]any{
+		"name":     "bad-validation-stage",
+		"protocol": "http",
+		"config":   map[string]any{"base_url": "https://example.test"},
+		"actions": []any{map[string]any{
+			"name":    "step-" + headerSecret,
+			"type":    "unsupported_action_type",
+			"headers": map[string]any{"Authorization": "Bearer " + headerSecret},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal bad-validation script: %v", err)
+	}
+	reqBadValidation := stageRequest("run-bad-validation", "script-bad-validation", 1)
+	reqBadValidation.ScriptContent = badValidationPayload
+	valBadValidation := validatedStageRequest(t, reqBadValidation)
+	service.mu.Lock()
+	decBadValidation := service.lifecycleCoordinator.reserveStageLocked(service, valBadValidation)
+	service.mu.Unlock()
+	_, valStageErr := service.prepareAssignmentStage(context.Background(), decBadValidation.plan)
+	if status.Code(valStageErr) != codes.InvalidArgument || strings.Contains(valStageErr.Error(), headerSecret) {
+		t.Fatalf("expected scrubbed InvalidArgument on invalid script in prepareAssignmentStage, got %v", valStageErr)
+	}
+	service.mu.Lock()
+	service.lifecycleCoordinator.rollbackStageLocked("run-bad-validation", decBadValidation.plan.token)
+	service.mu.Unlock()
+
+	// Round-8 Finding 2 regression: when script-sourced credentials exceed the
+	// runtime matcher value budget (> 101,024 distinct CSV values), distributed
+	// staging degrades best-effort without failing the assignment or disturbing
+	// platform-managed SecretBundle redaction.
+	var csvBuilder strings.Builder
+	csvBuilder.WriteString("password\n")
+	for i := 0; i < 101_030; i++ {
+		csvBuilder.WriteString("v")
+		csvBuilder.WriteString(strconv.Itoa(i))
+		csvBuilder.WriteByte('\n')
+	}
+	overflowPayload, err := json.Marshal(map[string]any{
+		"name":     "script-sourced-overflow",
+		"protocol": "http",
+		"config":   map[string]any{"base_url": "https://example.test"},
+		"data_sources": []any{map[string]any{
+			"name":        "creds",
+			"type":        "csv",
+			"inline_data": csvBuilder.String(),
+		}},
+		"actions": []any{map[string]any{
+			"name":   "req",
+			"type":   "request",
+			"method": "GET",
+			"target": "/orders",
+			"headers": map[string]string{
+				"Authorization": "Bearer {{data.creds.password}}",
+				"X-Platform":    "{{secret.PLATFORM_TOKEN}}",
+			},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("marshal overflow script: %v", err)
+	}
+	reqOverflow := stageRequest("run-overflow", "script-overflow", 1)
+	reqOverflow.ScriptContent = overflowPayload
+	reqOverflow.SecretBundle = map[string]string{"PLATFORM_TOKEN": bundleSecret}
+	reqOverflow.SecretBundleId = "bundle-overflow"
+	valOverflow, err := validateWorkAssignment(reqOverflow, 4<<20, true)
+	if err != nil {
+		t.Fatalf("validateWorkAssignment overflow: %v", err)
+	}
+	service.mu.Lock()
+	decOverflow := service.lifecycleCoordinator.reserveStageLocked(service, valOverflow)
+	service.mu.Unlock()
+	prepOverflow, overflowErr := service.prepareAssignmentStage(context.Background(), decOverflow.plan)
+	if overflowErr != nil {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-overflow", decOverflow.plan.token)
+		service.mu.Unlock()
+		t.Fatalf("prepareAssignmentStage failed instead of degrading best-effort on script-sourced matcher overflow: %v", overflowErr)
+	}
+	defer func() {
+		service.mu.Lock()
+		service.lifecycleCoordinator.rollbackStageLocked("run-overflow", decOverflow.plan.token)
+		service.mu.Unlock()
+		service.cleanupPreparedAssignmentStage(decOverflow.plan, prepOverflow)
+	}()
+	overflowCfg := prepOverflow.execution.redactionConfig
+	if !overflowCfg.HasRuntimeSecretMaterial() {
+		t.Fatalf("expected HasRuntimeSecretMaterial()=true when SecretBundle is present on overflow fallback")
+	}
+	if got := overflowCfg.ScrubText("platform=" + bundleSecret); strings.Contains(got, bundleSecret) {
+		t.Fatalf("platform-managed SecretBundle secret leaked after script-sourced overflow fallback: %q", got)
 	}
 }

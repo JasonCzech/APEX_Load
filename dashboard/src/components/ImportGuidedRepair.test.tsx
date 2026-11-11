@@ -52,7 +52,7 @@ it.each([false, true])('points to the Content-Type header for an XML body in a J
   } finally { await act(async () => root.unmount()); container.remove(); vi.clearAllMocks() }
 })
 
-it('requires a redacted preview before applying and retains the reviewed operation', async () => {
+it('requires a preview before applying and retains the reviewed operation', async () => {
   const script = { name: 'Protected draft', version: '1.0', protocol: 'http', config: { base_url: 'https://example.test' }, actions: [], metadata: { import: { source: 'enterprise_script_archive', preserved: { server_import_attestation_v1: 'protected:one' } } } } as ScriptDefinition
   const result = { candidate_id: 'protected:one', revision: 'protected:one', script, before: script, findings: [{ code: 'restored_body_required', action_path: 'actions[0]', source_ref: 'Action.c:3', detail: 'Restore this body' }], readiness: { replay_ready: false, blocking_codes: ['restored_body_required'] }, expires_at: '2099-09-19', fidelity_report: {} }
   mock.request.mockResolvedValue(result)
@@ -65,7 +65,7 @@ it('requires a redacted preview before applying and retains the reviewed operati
     expect(container.textContent).toContain('Action.c:3')
     const preview = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')!
     await act(async () => preview.click())
-    expect(container.textContent).toContain('Redacted before / after')
+    expect(container.textContent).toContain('Before / after')
     expect(container.querySelector('[aria-label="Repair outcome"]')?.textContent).toContain('Blocked')
     expect(container.querySelector('.lr-repair-preview-fields')?.textContent).toContain('No field paths changed')
     expect(container.querySelector('[aria-label="Before repair JSON"]')).toBeNull()
@@ -295,7 +295,7 @@ it('discards an in-flight preview when a category handoff changes the selected i
   await act(async () => Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Preview repair')!.click())
   await act(async () => root.render(<GuidedRepair script={script} projectId="p" onApplied={onApplied} categoryFocus={{ category: 'runtime', revision: 1 }} />))
   await act(async () => finish(result))
-  expect(container.querySelector('[aria-label="Redacted repair preview"]')).toBeNull()
+  expect(container.querySelector('[aria-label="Repair preview"]')).toBeNull()
   expect(container.textContent).not.toContain('Apply reviewed repair')
   expect(onApplied).not.toHaveBeenCalled()
  } finally { await act(async () => root.unmount()); vi.clearAllMocks() }

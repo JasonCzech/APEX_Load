@@ -329,6 +329,19 @@ type RuntimeSecretActivitySetter interface {
 	SetRuntimeSecretActivity(func() bool)
 }
 
+// RuntimeSecretRegistrar registers runtime-minted secret values (such as
+// dynamically fetched OAuth access/refresh tokens or session exchange URLs)
+// under a named scope so engine redaction scrubs them from errors, snapshots,
+// traces, and logs.
+type RuntimeSecretRegistrar func(scope string, values []string)
+
+// RuntimeSecretRegistrarSetter is an optional protocol capability allowing
+// protocol adapters that mint credentials at runtime to register them into
+// active runtime redaction before they reach the wire or retained outputs.
+type RuntimeSecretRegistrarSetter interface {
+	SetRuntimeSecretRegistrar(RuntimeSecretRegistrar)
+}
+
 // CookieController is an optional capability for protocols that maintain a
 // per-VUser cookie store. The engine invokes ClearCookies when it dispatches a
 // cookie_clear action (imported from web_cleanup_cookies), discarding every

@@ -212,14 +212,13 @@ for (const scenario of [
       await expect(page.getByRole('heading', { name: 'Credential groups (1)', exact: true })).not.toBeVisible()
       await expect(page.locator('.script-import-review-preview')).toHaveAttribute('open', '')
       const download = page.waitForEvent('download')
-      await page.getByRole('button', { name: 'Download complete protected JSON' }).click()
+      await page.getByRole('button', { name: 'Download complete review JSON' }).click()
       const savedDownload = await download
       const { readFile } = await import('node:fs/promises')
       const reviewText = await readFile((await savedDownload.path())!, 'utf8')
       const review = JSON.parse(reviewText)
       expect(review.script.actions.length).toBeGreaterThanOrEqual(2)
-      expect(reviewText).not.toContain('test-only-token')
-      // A cookie is state the script recorded, not a credential: it stays as imported.
+      expect(reviewText).toContain('test-only-token')
       expect(reviewText).toContain('session=test-only-cookie')
       expect(JSON.stringify(result.summary)).not.toContain('Anypoint Client ID Enforcement')
     }
@@ -323,8 +322,8 @@ test('LoadRunner batch saves ready scripts, stays on import, and accepts another
 })
 
 // The encrypted-session lifecycle is covered by API tests. This browser test
-// isolates the review interaction with typed redacted repair responses.
-test('LoadRunner guided repair previews redacted changes before applying', async ({ page }, testInfo) => {
+// isolates the review interaction with typed repair preview responses.
+test('LoadRunner guided repair previews changes before applying', async ({ page }, testInfo) => {
   if (process.env.APEXLOAD_E2E_PROFILE === 'local-auth') await login(page)
   const workspace = await createWorkspace(page.context().request)
   let draft: Record<string, any> = {}
@@ -352,7 +351,7 @@ test('LoadRunner guided repair previews redacted changes before applying', async
     const apply = route.request().url().endsWith('/apply')
     if (apply) { applies++; expect(req.operation.body).toBe('restored test body') }
     const revised = JSON.parse(JSON.stringify(draft))
-    if (!inspect) revised.actions[0].body = '[REDACTED]'
+    if (!inspect) revised.actions[0].body = String(req.operation.body || '')
     if (apply || applies) revised.metadata.import.preserved.server_import_attestation_v1 = 'protected:browser-repair-two'
     await route.fulfill({ json: { candidate_id: apply ? 'protected:browser-repair-two' : req.candidate_id, revision: apply ? 'protected:browser-repair-two' : req.revision, before: draft, script: revised, findings: inspect && !applies ? findings : [], readiness: { replay_ready: !inspect || !!applies, promotion_ready: !inspect || !!applies, blocking_codes: inspect && !applies ? ['restored_body_required'] : [] }, secret_binding_requirements: [], fidelity_report: { promotion_status: inspect && !applies ? 'blocked' : 'promotable', blockers: inspect && !applies ? ['restored_body_required'] : [] }, expires_at: expiry } })
   })
@@ -368,14 +367,14 @@ test('LoadRunner guided repair previews redacted changes before applying', async
   await repair.getByLabel('Repair value').fill('restored test body')
   await expect(repair.getByRole('button', { name: 'Apply reviewed repair' })).toHaveCount(0)
   await repair.getByRole('button', { name: 'Preview repair' }).click()
-  const preview = repair.getByRole('region', { name: 'Redacted repair preview' })
+  const preview = repair.getByRole('region', { name: 'Repair preview' })
   await expect(preview.getByRole('group', { name: 'Repair outcome' })).toContainText('Passed')
   await expect(preview.locator('.lr-repair-preview-fields')).toContainText('actions[0].body')
   await preview.screenshot({ path: testInfo.outputPath('repair-preview.png') })
-  await repair.getByText('Redacted before / after', { exact: true }).click()
+  await repair.getByText('Before / after', { exact: true }).click()
   const afterCode = repair.getByRole('region', { name: 'After repair JSON' })
-  await expect(afterCode).toContainText('[REDACTED]')
-  await expect(afterCode).not.toContainText('restored test body')
+  await expect(afterCode).toContainText('restored test body')
+  await expect(afterCode).not.toContainText('[REDACTED]')
   const highlightedColors = await afterCode.locator('.cm-content').evaluate(content => new Set(Array.from(content.querySelectorAll('.cm-line span')).map(span => getComputedStyle(span).color)).size)
   expect(highlightedColors).toBeGreaterThan(1)
   await preview.screenshot({ path: testInfo.outputPath('repair-preview-code.png') })

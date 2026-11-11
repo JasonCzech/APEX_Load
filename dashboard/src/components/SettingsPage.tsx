@@ -1074,10 +1074,10 @@ export default function SettingsPage({
   }), [auditEvents.length, settings.auth.mode, settings.general.max_concurrent_tests, systemReadiness?.status, usageAccounting])
   const governanceSubsectionSummaries = useMemo<Record<GovernanceSettingsSubsectionId, string>>(() => ({
     'schedule-defaults': formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto'),
-    'script-imports': `${settings.script_imports.allow_source_secret_migration ? 'Migration enabled' : 'Migration disabled'}${settings.script_imports.allow_retained_credential_transport_edits ? ', proxy/TLS edits allowed' : ''}`,
+    'script-imports': settings.script_imports.allow_source_secret_migration ? 'Migration enabled' : 'Migration disabled',
     'service-account-apis': `${serviceAccounts.length} account${serviceAccounts.length === 1 ? '' : 's'}`,
     'recent-audit-events': `${auditEvents.length} event${auditEvents.length === 1 ? '' : 's'}`,
-  }), [auditEvents.length, serviceAccounts.length, settings.schedule_defaults.approval_policy, settings.script_imports.allow_source_secret_migration, settings.script_imports.allow_retained_credential_transport_edits])
+  }), [auditEvents.length, serviceAccounts.length, settings.schedule_defaults.approval_policy, settings.script_imports.allow_source_secret_migration])
   const capacitySubsectionSummaries = useMemo<Record<CapacitySettingsSubsectionId, string>>(() => ({
     availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
     generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
@@ -3762,11 +3762,11 @@ export default function SettingsPage({
                         <div className="setting-info">
                           <span className="setting-label">{destinationTitle('imports')}</span>
                           <span className="setting-desc">
-                            Controls whether project and system administrators may opt in to copying recoverable credential values from a protected import session into the project secret provider. Also controls whether the proxy and TLS settings of an imported script that keeps credentials can be edited.
+                            Controls whether project and system administrators may opt in to copying recoverable credential values from a protected import session into the project secret provider.
                           </span>
                         </div>
-                        <span className={`script-health-token ${settings.script_imports.allow_source_secret_migration || settings.script_imports.allow_retained_credential_transport_edits ? 'warning' : ''}`}>
-                          {settings.script_imports.allow_source_secret_migration || settings.script_imports.allow_retained_credential_transport_edits ? 'relaxed' : 'default'}
+                        <span className={`script-health-token ${settings.script_imports.allow_source_secret_migration ? 'warning' : ''}`}>
+                          {settings.script_imports.allow_source_secret_migration ? 'relaxed' : 'default'}
                         </span>
                       </div>
                       <div className="setting-row">
@@ -3784,23 +3784,6 @@ export default function SettingsPage({
                             onChange={event => updateScriptImports({ allow_source_secret_migration: event.target.checked })}
                           />
                           <span>{settings.script_imports.allow_source_secret_migration ? 'Allowed' : 'Blocked'}</span>
-                        </label>
-                      </div>
-                      <div className="setting-row">
-                        <div className="setting-info">
-                          <span className="setting-label">Allow proxy and TLS edits on imported scripts</span>
-                          <span className="setting-desc">
-                            Default off. An imported script keeps its source credentials, which editors cannot read, so its proxy and TLS settings are locked: a proxy an editor controls could capture them. Turn this on only where every editor is trusted with those credentials, such as a test environment. Editing other runtime settings stays allowed either way, and so does choosing No Proxy unless the script keeps a Proxy-Authorization header; and new credentials must still be bound as runtime secrets.
-                          </span>
-                        </div>
-                        <label className="settings-checkbox-label">
-                          <input aria-label="Allow proxy and TLS edits on imported scripts"
-                            type="checkbox"
-                            checked={settings.script_imports.allow_retained_credential_transport_edits}
-                            disabled={formDisabled}
-                            onChange={event => updateScriptImports({ allow_retained_credential_transport_edits: event.target.checked })}
-                          />
-                          <span>{settings.script_imports.allow_retained_credential_transport_edits ? 'Allowed' : 'Blocked'}</span>
                         </label>
                       </div>
                       {!canManageSystem && (

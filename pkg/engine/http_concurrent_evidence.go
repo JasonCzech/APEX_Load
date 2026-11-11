@@ -318,6 +318,7 @@ func omitConcurrentPublicEvidence(result *protocol.Result) {
 	}
 	clearConcurrentRichEvidence(result)
 	result.ClientMetrics, result.ServerTelemetry, result.Snapshot = nil, nil, nil
+	result.AuthoredStep, result.TraceLinks, result.TraceLinksTruncated = nil, nil, false
 	result.PropertyDimensions, result.CSVExportIDs, result.WarningCodes = nil, nil, nil
 	result.ProtocolEvidence = map[string]any{"concurrent_group_evidence_bounded": true, "concurrent_group_evidence_details_complete": false}
 	for key, value := range structural {
@@ -375,7 +376,12 @@ func omitConcurrentJoinedPublicEvidence(children []preparedHTTPChild) {
 }
 
 func (vu *VUser) resultPublicationRedactionConfig() *RedactionConfig {
-	if vu.runtimeCredentialRedactionErr != nil {
+	if vu == nil {
+		return nil
+	}
+	if vu.runtimeCredentialRedactionErr != nil ||
+		vu.concurrentPublicationRedaction.publicationUnavailable() ||
+		vu.RedactionConfig.publicationUnavailable() {
 		return unavailableRuntimePublicationConfig
 	}
 	if vu.concurrentPublicationRedaction != nil {
@@ -388,6 +394,9 @@ func (vu *VUser) resultPublicationRedactionConfig() *RedactionConfig {
 // output matcher to the shared inherited base, and the join attaches one shared
 // group matcher. Neither path flattens a large inherited matcher per sibling.
 func attachConcurrentRuntimeMatcher(base, matcher *RedactionConfig) (*RedactionConfig, error) {
+	if base.publicationUnavailable() || matcher.publicationUnavailable() {
+		return nil, errors.New("concurrent HTTP publication redaction failed")
+	}
 	if matcher == nil {
 		return base, nil
 	}
@@ -439,6 +448,11 @@ func concurrentRuntimeValueTotals(config *RedactionConfig) (count, bytes int) {
 }
 
 func concurrentRuntimeValuePresent(config *RedactionConfig, value string) bool {
+	if dyn := config.dynamicOverlay(); dyn != nil {
+		if _, exists := dyn.runtimeSecretValues[value]; exists {
+			return true
+		}
+	}
 	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		if _, exists := config.runtimeSecretValues[value]; exists {
 			return true
@@ -449,5 +463,5 @@ func concurrentRuntimeValuePresent(config *RedactionConfig, value string) bool {
 }
 
 func (vu *VUser) resultPublicationUnavailable() bool {
-	return vu.concurrentPublicationUnavailable || vu.runtimeCredentialRedactionErr != nil
+	return vu.concurrentPublicationUnavailable || vu.runtimePublicationUnavailable()
 }

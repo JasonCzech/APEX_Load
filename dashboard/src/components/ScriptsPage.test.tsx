@@ -2566,11 +2566,12 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Java over HTTP')
     expect(container.textContent).toContain('embedded or sidecar helper execution')
 
-    const soapButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Web services (SOAP)'))
+    const soapButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open Web services (SOAP)"]')
     expect(soapButton).toBeTruthy()
     if (!soapButton) {
       return
     }
+    expect(soapButton.textContent?.trim()).toBe('Open')
 
     await act(async () => {
       soapButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2602,11 +2603,12 @@ describe('ScriptsPage', () => {
     await clickButton('Create')
     await clickButton('Blank & assisted editors')
 
-    const javaButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Java over HTTP'))
+    const javaButton = container.querySelector<HTMLButtonElement>('button[aria-label="Open Java over HTTP"]')
     expect(javaButton).toBeTruthy()
     if (!javaButton) {
       return
     }
+    expect(javaButton.textContent?.trim()).toBe('Open')
 
     await act(async () => {
       javaButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2670,11 +2672,12 @@ describe('ScriptsPage', () => {
 
     await clickButton('Starter templates')
 
-    const templateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Browser Checkout Canary'))
+    const templateButton = container.querySelector<HTMLButtonElement>('button[aria-label="Use Browser Checkout Canary"]')
     expect(templateButton).toBeTruthy()
     if (!templateButton) {
       return
     }
+    expect(templateButton.textContent?.trim()).toBe('Use')
 
     await act(async () => {
       templateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -2712,11 +2715,12 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Reusable blocks')
     expect(container.textContent).toContain('OAuth Bearer Token Flow')
 
-    const componentButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('OAuth Bearer Token Flow'))
+    const componentButton = container.querySelector<HTMLButtonElement>('button[aria-label="Compose OAuth Bearer Token Flow"]')
     expect(componentButton).toBeTruthy()
     if (!componentButton) {
       return
     }
+    expect(componentButton.textContent?.trim()).toBe('Compose')
 
     await act(async () => {
       componentButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))

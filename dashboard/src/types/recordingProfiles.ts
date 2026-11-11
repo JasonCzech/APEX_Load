@@ -44,6 +44,7 @@ export type RecordingProfile = {
   background_requests?: string[]
   body_capture_limit_bytes?: number
   capture_cookies?: boolean
+  scrub_sensitive?: boolean
   correlation?: RecordingProfileCorrelation
 }
 

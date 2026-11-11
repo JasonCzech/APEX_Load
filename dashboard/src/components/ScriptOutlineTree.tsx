@@ -4,7 +4,7 @@ import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 
 import { isMacLike } from '../hooks/KeyboardShortcutProvider'
 import { debugSequenceKey, type DebugRailRenderRow, type ScriptPhaseActionRow } from './scriptEditorWorkbench'
-import { carryGroupKeys, fitOutlineName, outlineNodeRows, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
+import { carryGroupKeys, outlineNodeRows, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
 import TooltipButton from './ux/TooltipButton'
 import './ux/TooltipButton.css'
 
@@ -171,8 +171,8 @@ function selectsSame(item: DebugRailRenderRow | undefined, selection: ScriptOutl
 
 /**
  * The Author outline: phases, transactions and steps as a keyboard-navigable
- * tree. A long outline renders only the rows in view, and names are cut at the
- * end on a word boundary to fit, never inside an identifier.
+ * tree. A long outline renders only the rows in view; Aura steps switch to
+ * their method name when narrow, and overflowing names truncate via CSS ellipsis.
  */
 export default function ScriptOutlineTree({ model, resetKey, query, expandedContainers, onToggleContainer, selection, onSelect, hasBreakpoint, hasIssue, showMarkers, onShowMarkersChange, naturalWidthRef, debug, onToggleRowBreakpoint, multiSelect: multiSelectProp, revealGroup, onRevealed }: Props) {
   // Debug keeps one selection and no row menu.
@@ -459,10 +459,16 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     }
   }
 
-  // The full name, for a row whose label is shorter: on hover and on focus.
+  // The full name, when a row has a distinct title, uses its short method name, or CSS ellipsis clips its label: on hover and on focus.
   const [tip, setTip] = useState<{ key: string; text: string; left: number; top: number; focused: boolean } | null>(null)
-  const showTip = (row: OutlineRow, shown: string, element: HTMLElement, focused: boolean) => {
-    const text = row.title && row.title !== shown ? row.title : ''
+  const showTip = (row: OutlineRow, shown: string, truncated: boolean, element: HTMLElement, focused: boolean) => {
+    const nameEl = element.querySelector<HTMLElement>('.script-outline-name')
+    const overflowed = nameEl && nameEl.clientWidth > 0 ? nameEl.scrollWidth > nameEl.clientWidth : truncated
+    const text = shown !== row.label || (row.title && row.title !== shown)
+      ? (row.title || row.label)
+      : overflowed
+        ? (row.title || row.label)
+        : ''
     if (!text) { setTip(null); return }
     const box = element.getBoundingClientRect()
     setTip({ key: row.key, text, left: Math.max(8, box.left + 24), top: box.bottom + 4, focused })
@@ -525,7 +531,9 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     const multiSelected = multiActive && selected
     const group = row.kind === 'phase' || row.kind === 'transaction' || row.kind === 'subtransaction'
     const room = width - rowChrome(row, { breakpoint, issue }, status)
-    const shown = width > 0 ? fitOutlineName(row.label, room, text => measure(fontOf(row), text), row.short) : row.label
+    const labelFits = !(width > 0) || measure(fontOf(row), row.label) <= room
+    const shown = !labelFits && row.short ? row.short : row.label
+    const truncated = !labelFits && (!row.short || measure(fontOf(row), row.short) > room)
     // The name read out is the whole one, whatever fits on screen.
     const spoken = [row.label, occurrence, row.badge, breakpoint ? 'Breakpoint' : '', gutter ? BREAKPOINT_TEXT[gutter.state] : '', status ? STATUS_TEXT[status] : '', issue ? 'Needs attention' : ''].filter(Boolean).join(' ')
     const toggleBreakpoint = () => { if (gutter) debug?.onToggleBreakpoint(row) }
@@ -588,9 +596,9 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
           event.preventDefault()
           event.currentTarget.focus({ preventScroll: true })
         } : undefined}
-        onFocus={event => { if (event.target === event.currentTarget) { setFocusKey(row.key); showTip(row, shown, event.currentTarget, true) } }}
+        onFocus={event => { if (event.target === event.currentTarget) { setFocusKey(row.key); showTip(row, shown, truncated, event.currentTarget, true) } }}
         onBlur={() => setTip(null)}
-        onMouseEnter={event => showTip(row, shown, event.currentTarget, false)}
+        onMouseEnter={event => showTip(row, shown, truncated, event.currentTarget, false)}
         onMouseLeave={() => setTip(null)}
       >
         {debug && (gutter ? (

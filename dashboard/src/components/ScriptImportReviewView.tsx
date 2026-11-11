@@ -595,8 +595,29 @@ export function SourceMappingReviewDocument({
                   {correlation.sample_value && <code>{correlation.sample_value}</code>}
                   {(foundAtActionIndex !== null || usedAtTargets.length > 0) && (
                     <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-                      {foundAtActionIndex !== null && <button className="btn btn-secondary btn-sm" type="button" onClick={() => onSelectAction(foundAtActionIndex)}>Open {correlation.found_at}</button>}
-                      {usedAtTargets.map(({ location, actionIndex }) => <button key={`${correlation.name}:${location}`} className="btn btn-secondary btn-sm" type="button" onClick={() => onSelectAction(actionIndex)}>Open {location}</button>)}
+                      {foundAtActionIndex !== null && (
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          type="button"
+                          style={{ whiteSpace: 'nowrap' }}
+                          aria-label={`Open source ${(foundAtLabel || '').trim() || (correlation.found_at || '').trim() || 'step'} for ${correlation.name.trim() || 'correlation'}`}
+                          onClick={() => onSelectAction(foundAtActionIndex)}
+                        >
+                          Open source
+                        </button>
+                      )}
+                      {usedAtTargets.map(({ location, label, actionIndex }) => (
+                        <button
+                          key={`${correlation.name}:${location}`}
+                          className="btn btn-secondary btn-sm"
+                          type="button"
+                          style={{ whiteSpace: 'nowrap' }}
+                          aria-label={`Open use ${(label || '').trim() || (location || '').trim() || 'step'} for ${correlation.name.trim() || 'correlation'}`}
+                          onClick={() => onSelectAction(actionIndex)}
+                        >
+                          Open use
+                        </button>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -686,12 +707,34 @@ export function ImportReviewCommitPanel({
                 <strong>{correlation.name}</strong>
                 <p>{foundAtLabel}{usedAtTargets.length > 0 ? ` → ${usedAtTargets.map(target => target.label).join(', ')}` : ''}</p>
                 <div className="utility-inline-actions">
-                  {foundAtActionIndex !== null && <button type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectAction(foundAtActionIndex)}>Open source</button>}
-                  {visibleUseTargets.map(target => <button key={`${correlation.name}:${target.location}`} type="button" className="btn btn-sm btn-ghost" onClick={() => onSelectAction(target.actionIndex)}>Open use</button>)}
+                  {foundAtActionIndex !== null && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      style={{ whiteSpace: 'nowrap' }}
+                      aria-label={`Open source ${(foundAtLabel || '').trim() || (correlation.found_at || '').trim() || 'step'} for ${correlation.name.trim() || 'correlation'}`}
+                      onClick={() => onSelectAction(foundAtActionIndex)}
+                    >
+                      Open source
+                    </button>
+                  )}
+                  {visibleUseTargets.map(target => (
+                    <button
+                      key={`${correlation.name}:${target.location}`}
+                      type="button"
+                      className="btn btn-sm btn-ghost"
+                      style={{ whiteSpace: 'nowrap' }}
+                      aria-label={`Open use ${(target.label || '').trim() || (target.location || '').trim() || 'step'} for ${correlation.name.trim() || 'correlation'}`}
+                      onClick={() => onSelectAction(target.actionIndex)}
+                    >
+                      Open use
+                    </button>
+                  ))}
                   {usedAtTargets.length > 2 && (
                     <button
                       type="button"
                       className="btn btn-sm btn-ghost"
+                      style={{ whiteSpace: 'nowrap' }}
                       onClick={() => setExpandedUsesByCorrelation(current => ({ ...current, [correlationKey]: !current[correlationKey] }))}
                     >
                       {usesExpanded ? 'Show fewer uses' : `+${usedAtTargets.length - 2} more use${usedAtTargets.length - 2 === 1 ? '' : 's'}`}

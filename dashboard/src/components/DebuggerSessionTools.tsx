@@ -14,13 +14,15 @@ import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
 import { HTTPNetworkTraceEvidence } from './HTTPNetworkTraceEvidence'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
-import { formatReplayHeaders, inferDelimiter } from './scriptEditorUtils'
+import { inferDelimiter } from './scriptEditorUtils'
+import InspectorHeaderTable from './InspectorHeaderTable'
+import { isPasswordLikeFieldName, MASKED_VALUE } from './inspectorHeadersModel'
 import type { RuntimeInspectionMode } from './debugRuntimeState'
 import { DebugRuntimeStateEvidence } from './DebugRuntimeStateEvidence'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { ReplayExtractions } from './ReplayExtractions'
 import { placeSteps, stepOutputs } from './referenceScopeModel'
-import { isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
+import { isCredentialLocatorName, isSensitiveCredentialPreviewHeader, isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 
 function collectScriptAuthoredVariables(script?: ScriptDefinition): Map<string, string> {
   const result = new Map<string, string>()
@@ -224,17 +226,88 @@ export function DebugVariableWatches({ events, seed, latest, selected, onSelect,
   </section>
 }
 
-function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
+function normalizeHistoricalHeaders(
+  headers: Readonly<Record<string, string>> | string | null | undefined,
+): { record: Record<string, string> | null; fallbackText: string | null } {
+  if (!headers) return { record: null, fallbackText: null }
+  if (typeof headers === 'string') {
+    const parsed: Record<string, string> = {}
+    for (const rawLine of headers.split(/\r?\n/)) {
+      const line = rawLine.trim()
+      if (!line) continue
+      const colonIdx = line.indexOf(':')
+      if (colonIdx <= 0) continue
+      const name = line.slice(0, colonIdx).trim()
+      const value = line.slice(colonIdx + 1).trim()
+      if (!name) continue
+      parsed[name] = parsed[name] !== undefined ? `${parsed[name]}, ${value}` : value
+    }
+    if (Object.keys(parsed).length > 0) return { record: parsed, fallbackText: null }
+    return { record: null, fallbackText: headers.trim() ? headers : null }
+  }
+  return { record: Object.keys(headers).length > 0 ? { ...headers } : null, fallbackText: null }
+}
+
+function isSensitiveHistoricalHeader(name: string): boolean {
+  const trimmed = name.trim()
+  if (!trimmed || isCredentialLocatorName(trimmed)) return false
+  return (
+    isSensitiveCredentialPreviewHeader(trimmed) ||
+    isSensitiveCredentialPreviewName(trimmed) ||
+    isPasswordLikeFieldName(trimmed)
+  )
+}
+
+function maskHistoricalHeaderRecord(
+  record: Record<string, string> | null,
+  revealedKeys: ReadonlySet<string>,
+  prefix: string,
+): { maskedRecord: Record<string, string> | null; sensitiveNames: string[] } {
+  if (!record) return { maskedRecord: null, sensitiveNames: [] }
+  const maskedRecord: Record<string, string> = {}
+  const sensitiveNames: string[] = []
+  for (const [name, value] of Object.entries(record)) {
+    if (value && isSensitiveHistoricalHeader(name)) {
+      sensitiveNames.push(name)
+      maskedRecord[name] = revealedKeys.has(`${prefix}:${name}`) ? value : MASKED_VALUE
+    } else {
+      maskedRecord[name] = value
+    }
+  }
+  return { maskedRecord, sensitiveNames }
+}
+
+export function HistoricalEvidence({ report }: { report: BrowserReplayReport }) {
   const [selected, setSelected] = useState(0)
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [revealedHeaders, setRevealedHeaders] = useState<Set<string>>(() => new Set())
   const event = report.events[selected]
   if (report.runtime_evidence_unavailable) return <p role="status">{RUNTIME_VARIABLE_EVIDENCE_UNAVAILABLE}</p>
   if (report.protocol === 'browser') return <BrowserReplayDebugger report={report} running={false} selectedEventIndex={selected} onSelectEvent={setSelected} />
+  const rawReqHeaders = (event?.snapshot ? event.snapshot.request_headers : event?.headers) as Readonly<Record<string, string>> | string | undefined
+  const rawResHeaders = event?.snapshot?.response_headers as Readonly<Record<string, string>> | string | undefined
+  const reqHeaders = normalizeHistoricalHeaders(rawReqHeaders)
+  const resHeaders = normalizeHistoricalHeaders(rawResHeaders)
+  const maskedReq = maskHistoricalHeaderRecord(reqHeaders.record, revealedHeaders, `req:${selected}`)
+  const maskedRes = maskHistoricalHeaderRecord(resHeaders.record, revealedHeaders, `res:${selected}`)
+  const toggleRevealHeader = (key: string) => {
+    setRevealedHeaders(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+  const handleCopy = (key: string, value: string) => {
+    setCopiedKey(key)
+    void navigator.clipboard?.writeText(value)
+  }
   return <div className="debug-history-evidence"><label>Historical execution<select value={selected} onChange={e => setSelected(Number(e.target.value))}>{report.events.map((e, index) => <option value={index} key={index}>{eventLocation(e)} · {e.action_name} · {e.success ? 'Passed' : 'Failed'}</option>)}</select></label>{event ? <>
     <p>{event.error_message || `${event.method || event.action_type} ${event.target}`}</p><p>Response status: {event.status_code ?? 'Not captured'}</p>
     <HTTPVersionReplayEvidence evidence={event.protocol_evidence} />
     <HTTPResponseContentEvidence evidence={event.protocol_evidence} bodyState={event.snapshot?.response_body_state || event.response_body_state} />
     <HTTPNetworkTraceEvidence evidence={event.protocol_evidence} networkEntries={event.network_entries || event.snapshot?.network_entries} />
-    <div className="debug-history-columns"><section><h4>Request</h4>{event.snapshot?.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}{event.snapshot?.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}<SnapshotTextPreview text={`${event.snapshot?.request_method || event.method || event.action_type} ${event.snapshot?.request_url || event.target}\n${formatReplayHeaders(event.snapshot ? event.snapshot.request_headers : event.headers)}`} /><SnapshotBodyPreview body={event.snapshot ? event.snapshot.request_body : event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4><SnapshotTextPreview text={formatReplayHeaders(event.snapshot?.response_headers)} /><SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
+    <div className="debug-history-columns"><section><h4>Request</h4>{event.snapshot?.request_wire_headers_unavailable && <p role="status">Actual wire headers could not be verified; the displayed headers describe the connection attempt and may be incomplete.</p>}{event.snapshot?.request_headers_omitted && <p role="status">Some request headers were omitted or shortened by retention limits.</p>}<SnapshotTextPreview text={`${event.snapshot?.request_method || event.method || event.action_type} ${event.snapshot?.request_url || event.target}`} />{reqHeaders.fallbackText ? <pre>{reqHeaders.fallbackText}</pre> : <><InspectorHeaderTable direction="request" headers={maskedReq.maskedRecord} label="Historical request headers" copyKeyPrefix={`hist-req-${selected}`} copiedKey={copiedKey} onCopy={handleCopy} />{maskedReq.sensitiveNames.map(name => { const key = `req:${selected}:${name}`; const isRevealed = revealedHeaders.has(key); return <button key={key} type="button" className="btn btn-sm btn-ghost inspector-header-reveal-btn" aria-label={isRevealed ? `Hide ${name} value` : `Show ${name} value`} onClick={() => toggleRevealHeader(key)}>{isRevealed ? 'Hide' : 'Show value'}</button> })}</>}<SnapshotBodyPreview body={event.snapshot ? event.snapshot.request_body : event.body} emptyMessage="No request body retained" /></section><section><h4>Response</h4>{resHeaders.fallbackText ? <pre>{resHeaders.fallbackText}</pre> : <><InspectorHeaderTable direction="response" headers={maskedRes.maskedRecord} label="Historical response headers" copyKeyPrefix={`hist-res-${selected}`} copiedKey={copiedKey} onCopy={handleCopy} />{maskedRes.sensitiveNames.map(name => { const key = `res:${selected}:${name}`; const isRevealed = revealedHeaders.has(key); return <button key={key} type="button" className="btn btn-sm btn-ghost inspector-header-reveal-btn" aria-label={isRevealed ? `Hide ${name} value` : `Show ${name} value`} onClick={() => toggleRevealHeader(key)}>{isRevealed ? 'Hide' : 'Show value'}</button> })}</>}<SnapshotBodyPreview body={event.snapshot?.response_body} headers={event.snapshot?.response_headers} emptyMessage={`Response body: ${event.snapshot?.response_body_state || event.response_body_state || 'not retained'}`} /></section></div>
     {Boolean(event.protocol_evidence_omitted_count) && <p role="status">{event.protocol_evidence_omitted_count} protocol evidence {event.protocol_evidence_omitted_count === 1 ? 'item was' : 'items were'} omitted or shortened by retention limits.</p>}
     {event.protocol_evidence && <details><summary>Protocol evidence</summary><SnapshotBodyPreview body={JSON.stringify(event.protocol_evidence, null, 2)} /></details>}<details><summary>Extracted variables</summary>{event.action_type === 'live_table' ? <SnapshotBodyPreview body={JSON.stringify(event.extractions || {}, null, 2)} /> : <ReplayExtractions event={event} />}</details>
   </> : <p>No retained executions.</p>}</div>

@@ -104,7 +104,9 @@ vi.mock("../hooks/apiClient", () => ({
 
 // The device capture panel talks to the agent itself (its own test covers it).
 vi.mock("./DeviceCapturePanel", () => ({
-  default: () => <div data-testid="device-capture-panel" />,
+  default: ({ scrubSensitive }: { scrubSensitive?: boolean }) => (
+    <div data-testid="device-capture-panel" data-scrub-sensitive={String(Boolean(scrubSensitive))} />
+  ),
 }));
 
 vi.mock("../utils/fileUtils", () => ({
@@ -2599,6 +2601,168 @@ describe("RecordingStudio", () => {
     expect(apiMock.startRecording).toHaveBeenCalledWith(
       expect.objectContaining({ project_id: "proj-1", recording_profile_id: "checkout", capture_cookies: true }),
     );
+    expect(apiMock.startRecording.mock.calls[0][0].scrub_sensitive).toBeUndefined();
+  });
+
+  it("keeps scrub_sensitive unchecked by default and threads profile or manual opt-in into startRecording", async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({
+      profiles: [{ id: "scrubbed", name: "Scrubbed profile", scrub_sensitive: true }],
+      rules: [],
+      updated_at: "2026-10-09T00:00:00Z",
+    });
+    apiMock.startRecording.mockResolvedValue({
+      session: {
+        id: "rec-scrub",
+        name: "Recording Session",
+        status: "recording",
+        started_at: "2026-10-09T00:00:00Z",
+        requests: [],
+        filters: { exclude_static: true, scrub_sensitive: true },
+      },
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+    const advancedBtn = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    );
+    if (advancedBtn) {
+      await act(async () => {
+        advancedBtn.click();
+      });
+    }
+    expect(container.textContent).toContain("Capture WebSocket frame payloads");
+    expect(container.textContent).not.toContain("Capture WebSocket frame payloads (scrubbed)");
+
+    await openProxyAdvanced(container);
+    const scrubCheckbox = () => Array.from(
+      container.querySelectorAll('input[type="checkbox"]'),
+    ).find((input) =>
+      (input as HTMLInputElement).parentElement?.textContent?.includes(
+        "Scrub sensitive credentials and headers",
+      ),
+    ) as HTMLInputElement | undefined;
+    expect(scrubCheckbox()?.checked).toBe(false);
+
+    const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
+    await act(async () => {
+      picker.value = "scrubbed";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(scrubCheckbox()?.checked).toBe(true);
+    expect(container.textContent).toContain("Capture WebSocket frame payloads (scrubbed)");
+
+    const startButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Start recording",
+    )!;
+    await act(async () => {
+      startButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(apiMock.startRecording).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: "proj-1",
+        recording_profile_id: "scrubbed",
+        scrub_sensitive: true,
+      }),
+    );
+  });
+
+  it("sends scrub_sensitive false when the operator unchecks a scrubbing profile and threads scrub_sensitive into browser recordings", async () => {
+    apiMock.getRecordingProfiles.mockResolvedValue({
+      profiles: [{ id: "scrubbed", name: "Scrubbed profile", scrub_sensitive: true }],
+      rules: [],
+      updated_at: "2026-10-09T00:00:00Z",
+    });
+    apiMock.startRecording.mockResolvedValue({
+      session: {
+        id: "rec-unscrubbed",
+        name: "Recording Session",
+        status: "recording",
+        started_at: "2026-10-09T00:00:00Z",
+        requests: [],
+        filters: { exclude_static: true, scrub_sensitive: false },
+      },
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+    });
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Web" } as any} />);
+    });
+    await flushPromises();
+
+    // Select the scrubbing profile first so scrubSensitive syncs to true.
+    const picker = container.querySelector('select[aria-label="Recording profile"]') as HTMLSelectElement;
+    await act(async () => {
+      picker.value = "scrubbed";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    // Open Browser Advanced options and verify scrub_sensitive threads into startBrowserRecording without recording_profile_id.
+    const browserAdvancedBtn = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Advanced options",
+    )!;
+    await act(async () => {
+      browserAdvancedBtn.click();
+    });
+    const findScrubCheckboxes = () =>
+      Array.from(container.querySelectorAll('input[type="checkbox"]')).filter((input) =>
+        (input as HTMLInputElement).parentElement?.textContent?.includes(
+          "Scrub sensitive credentials and headers",
+        ),
+      ) as HTMLInputElement[];
+    expect(findScrubCheckboxes()[0]?.checked).toBe(true);
+    expect(container.textContent).toContain("Capture WebSocket frame payloads (scrubbed)");
+
+    const urlInput = container.querySelector('input[aria-label="Start URL address"]') as HTMLInputElement;
+    await act(async () => {
+      setInput(urlInput, "shop.example/checkout");
+    });
+    const browserStartBtn = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Start browser recording"),
+    )!;
+    await act(async () => {
+      browserStartBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledWith(
+      expect.objectContaining({
+        start_url: "https://shop.example/checkout",
+        scrub_sensitive: true,
+      }),
+    );
+    expect(apiMock.startBrowserRecording.mock.calls[0][0]).not.toHaveProperty("recording_profile_id");
+
+    // Now uncheck scrubbing and start a proxy recording: scrub_sensitive: false must be sent to override the profile.
+    await openProxyAdvanced(container);
+    const activeScrubBox = findScrubCheckboxes()[0]!;
+    expect(activeScrubBox.checked).toBe(true);
+    await act(async () => {
+      activeScrubBox.click();
+    });
+    expect(activeScrubBox.checked).toBe(false);
+
+    const proxyStartBtn = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.trim() === "Start recording",
+    )!;
+    await act(async () => {
+      proxyStartBtn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+    await flushPromises();
+
+    expect(apiMock.startRecording).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: "proj-1",
+        recording_profile_id: "scrubbed",
+        scrub_sensitive: false,
+      }),
+    );
   });
 
   it("shows the host filters a selected profile adds beside the fields they add to", async () => {
@@ -3854,8 +4018,21 @@ describe("RecordingStudio", () => {
     await flushPromises();
     expect(container.textContent).not.toContain("no longer accepts this connection");
     expect(container.querySelector('[data-testid="browser-recorder-bridge-connected"]')).not.toBeNull();
-    // A paired agent can also capture a phone or tablet.
-    expect(container.querySelector('[data-testid="device-capture-panel"]')).not.toBeNull();
+    // A paired agent can also capture a phone or tablet, inheriting scrubSensitive.
+    expect(container.querySelector('[data-testid="device-capture-panel"]')?.getAttribute("data-scrub-sensitive")).toBe("false");
+    const advancedBtn = Array.from(container.querySelectorAll("button")).find((b) => b.textContent?.trim() === "Advanced options");
+    if (advancedBtn) {
+      await act(async () => {
+        advancedBtn.click();
+      });
+    }
+    const scrubBox = Array.from(container.querySelectorAll('input[type="checkbox"]')).find((input) =>
+      (input as HTMLInputElement).parentElement?.textContent?.includes("Scrub sensitive credentials and headers"),
+    ) as HTMLInputElement;
+    await act(async () => {
+      scrubBox.click();
+    });
+    expect(container.querySelector('[data-testid="device-capture-panel"]')?.getAttribute("data-scrub-sensitive")).toBe("true");
   });
 
   it("explains the drop when another tab cleared the refused connection first", async () => {

@@ -185,9 +185,9 @@ it('retains invalid category edits, applies one atomic request, and supports can
   expect(mocks.request).toHaveBeenCalledTimes(2)
  } finally { await act(async () => root.unmount()); container.remove(); mocks.request.mockReset() }
 })
-it('consolidates source mappings, shows safe quoted CSV samples, and keeps masked list values read-only', async () => {
+it('consolidates source mappings, shows safe quoted CSV samples, and keeps list values editable', async () => {
  const draft = script()
- draft.parameters = [{ name: 'region', type: 'file', data_source: 'users', column: 'region' }, { name: 'password', type: 'list', values: ['[REDACTED]'] }]
+ draft.parameters = [{ name: 'region', type: 'file', data_source: 'users', column: 'region' }, { name: 'password', type: 'list', values: ['literal-pass'] }]
  draft.data_sources = [{ name: 'users', type: 'csv', strategy: 'sequential', delimiter: 'comma', first_row_header: true, inline_data: 'region,code\n"west,\ncoast",1\n"east",2\n' }]
  draft.metadata = { import: { preserved: { parameter_file_sections: { 'users.prm': { region: { Table: 'users.csv' }, orphan: { Table: 'missing.csv' } } } } } }
  const container = document.createElement('div'); const root = createRoot(container)
@@ -199,8 +199,7 @@ it('consolidates source mappings, shows safe quoted CSV samples, and keeps maske
   expect(container.textContent).toContain('Unmapped parameter source sections')
   expect(container.querySelector('.import-row-details')?.textContent?.match(/users.prm · region/g)).toHaveLength(1)
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit password"]')!.click())
-  expect(container.querySelector('[aria-label="password: values"]')).toBeNull()
-  expect(container.textContent).toContain('Protected — manage in Credentials')
+  expect(container.querySelector<HTMLTextAreaElement>('[aria-label="password: values"]')?.value).toBe('literal-pass')
  } finally { await act(async () => root.unmount()) }
 })
 
@@ -508,17 +507,16 @@ it('normalizes known timeout units while preserving exact source evidence', () =
  expect(row.imported).toBe('ReceiveTimeout: 3 (default.cfg / HTTP)')
 })
 
-it('keeps complete ordinary lists inspectable without exposing credential values', async () => {
+it('keeps complete parameter lists inspectable including imported credential lists', async () => {
  const draft = script()
- draft.parameters = [{ name: 'regions', type: 'list', values: ['west', 'east', 'north'] }, { name: 'password', type: 'list', values: ['private-one', 'private-two', 'private-three'] }]
+ draft.parameters = [{ name: 'regions', type: 'list', values: ['west', 'east', 'north'] }, { name: 'password', type: 'list', values: ['literal-one', 'literal-two', 'literal-three'] }]
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   await act(async () => root.render(<ImportParameterInventory script={draft} />))
   const details = [...container.querySelectorAll('details')].filter(element => element.querySelector('summary')?.textContent === 'All values')
-  expect(details).toHaveLength(1)
+  expect(details).toHaveLength(2)
   expect(details[0].textContent).toContain('west\neast\nnorth')
-  expect(container.textContent).not.toContain('private-one')
-  expect(container.textContent).toContain('Protected — manage in Credentials')
+  expect(details[1].textContent).toContain('literal-one\nliteral-two\nliteral-three')
  } finally { await act(async () => root.unmount()) }
 })
 
@@ -553,19 +551,20 @@ it('does not mark a valid remote mapping broken merely because columns are not l
  } finally { act(() => root.unmount()) }
 })
 
-it('protects API keys and token samples, editors, and evidence using the shared credential policy', async () => {
+it('displays and edits imported API keys, token samples, and runtime evidence directly', async () => {
  const draft = script()
- draft.parameters = [{ name: 'api_key', type: 'list', values: ['never-render-list'] }, { name: 'session_token', type: 'file', data_source: 'input', column: 'token' }, { name: 'secretary', type: 'list', values: ['ordinary-value'] }]
- draft.data_sources = [{ name: 'input', type: 'csv', first_row_header: true, strategy: 'sequential', inline_data: 'token\nnever-render-file' }]
- draft.metadata = { import: { preserved: { parameter_file_sections: { 'input.prm': { api_key: { Value: 'never-render-mapped-evidence' }, refresh_token: { Value: 'never-render-unmapped-evidence' } } }, runtime_files: { 'default.cfg': { HTTP: { APIKey: 'never-render-runtime' } } } } } }
+ draft.parameters = [{ name: 'api_key', type: 'list', values: ['literal-list-key'] }, { name: 'session_token', type: 'file', data_source: 'input', column: 'token' }, { name: 'secretary', type: 'list', values: ['ordinary-value'] }]
+ draft.data_sources = [{ name: 'input', type: 'csv', first_row_header: true, strategy: 'sequential', inline_data: 'token\nliteral-file-token' }]
+ draft.metadata = { import: { preserved: { parameter_file_sections: { 'input.prm': { api_key: { Value: 'literal-mapped-evidence' }, refresh_token: { Value: 'literal-unmapped-evidence' } } }, runtime_files: { 'default.cfg': { HTTP: { APIKey: 'literal-runtime-key' } } } } } }
  const container = document.createElement('div'); const root = createRoot(container)
  try {
   await act(async () => root.render(<ImportSettingsProvider script={draft} disabled={false} onApplied={vi.fn()} onBusyChange={vi.fn()}><ImportParameterInventory script={draft} /><ImportRuntimeSettingsTable script={draft} /></ImportSettingsProvider>))
-  expect(container.innerHTML).not.toContain('never-render')
+  expect(container.textContent).toContain('literal-list-key')
+  expect(container.textContent).toContain('Sample: literal-file-token')
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit api_key"]')!.click())
-  expect(container.querySelector('[aria-label="api_key: values"]')).toBeNull()
+  expect(container.querySelector<HTMLTextAreaElement>('[aria-label="api_key: values"]')?.value).toBe('literal-list-key')
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit session_token"]')!.click())
-  expect(container.innerHTML).not.toContain('never-render')
+  expect(container.textContent).toContain('literal-unmapped-evidence')
   await act(async () => container.querySelector<HTMLButtonElement>('[aria-label="Edit secretary"]')!.click())
   expect(container.querySelector<HTMLTextAreaElement>('[aria-label="secretary: values"]')?.value).toBe('ordinary-value')
  } finally { await act(async () => root.unmount()) }
@@ -702,7 +701,7 @@ it('shows Java Kafka source settings as migration evidence without claiming nati
  expect(acks.note).toContain('config.kafka.acks')
  expect(acks.note).toContain('not applied to a native Go Kafka script')
  const credential = groups['Requires decision'].find(row => row.label === 'sasl.jaas.config')!
- expect(credential.imported).not.toContain('never-display-test-credential')
- expect(credential.importedSummary).toBe('Protected — manage in Credentials')
+ expect(credential.imported).toContain('never-display-test-credential (Actions.java:13)')
+ expect(credential.importedSummary).toBe('never-display-test-credential')
  expect(groups['Not applicable'].some(row => row.label === 'group.id')).toBe(true)
 })

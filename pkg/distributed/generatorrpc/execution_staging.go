@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/proto"
@@ -37,18 +38,6 @@ type assignmentStageDecision struct {
 	errorMessage      string
 	availableCapacity int32
 	err               error
-}
-
-func assignmentPreservesImportedCredentials(script *dsl.Script) bool {
-	if script == nil || script.Metadata == nil || script.Metadata.Import == nil ||
-		strings.TrimSpace(script.Metadata.Import.Source) == "" {
-		return false
-	}
-	policy, _ := script.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey].(string)
-	return strings.EqualFold(
-		strings.TrimSpace(policy),
-		dsl.ImportPreservedCredentialPolicyPreserve,
-	)
 }
 
 // assignmentRuntimePreflightError distinguishes a generator-specific runtime
@@ -1186,17 +1175,14 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			return nil, status.Error(codes.InvalidArgument, "browser original source structure does not match runtime")
 		}
 	}
-	validationIssues := dsl.ValidateScriptIssues(&script)
-	if assignmentPreservesImportedCredentials(&script) {
-		// Assignments originate from the controller's durable script snapshot.
-		// A server-attested import may retain exact credential-bearing JVM argv;
-		// the trusted validator still rejects every structural/process-control
-		// option violation.
-		validationIssues = dsl.ValidateScriptIssuesWithPreservedImportCredentials(&script)
-	}
+	// Assignments allow literal credentials (including credential-bearing JVM
+	// -D system properties) in the DSL while still rejecting structural and
+	// process-control option violations.
+	validationIssues := dsl.ValidateScriptIssuesWithPreservedImportCredentials(&script)
 	if len(validationIssues) > 0 {
+		bestEffortRC := stagingValidationRedactionConfig(&script, request.GetSecretBundle())
 		const maxValidationMessageBytes = 16 << 10
-		message := strings.Join(validationIssues, "; ")
+		message := scrub.ValueLabel(bestEffortRC.ScrubText(strings.Join(validationIssues, "; ")), scrub.Policy{})
 		if len(message) > maxValidationMessageBytes {
 			message = boundedtext.TruncateUTF8(message, maxValidationMessageBytes-len("...[truncated]")) + "...[truncated]"
 		}
@@ -1242,37 +1228,37 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "validate staged data files: %v", err)
 	}
+	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
 	redactionConfig, err := engine.NewRedactionConfig(redactionRulesFromProto(request.GetRedactionRules()))
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "build redaction config: %v", err)
 	}
-	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, secretBundleValues(request.GetSecretBundle()))
+	platformManagedSecrets := append(
+		secretBundleValues(request.GetSecretBundle()),
+		engine.RuntimeProtocolAuthCompositeValues(&script, runtimeSecrets)...,
+	)
+	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, platformManagedSecrets)
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
 	}
-	// Retained import credentials are always inspected so malformed locator
-	// metadata is rejected at the staging boundary. Whether their values also join
-	// the run-output matcher is the operator's call, carried by the script's own
-	// Config.Log.RedactRunEvidence — so it travels with scriptContent and changes
-	// the assignment fingerprint for free, with no proto field of its own.
-	//
-	// The platform-managed secret bundle above is registered first and is never
-	// gated. A script-sourced overflow drops the script-sourced contribution
-	// rather than rejecting the assignment.
+	// Literal credentials in the executable DSL are unconditionally registered as
+	// script-sourced runtime redaction material alongside the platform-managed
+	// secret bundle, while keeping HasRuntimeSecretMaterial() scoped strictly to
+	// platform-managed secrets. Structural locator errors fail closed, whereas a
+	// script-sourced matcher budget overflow degrades best-effort without
+	// disturbing the platform-managed matcher (matching engine.New / NewMultiGroup).
 	importedCredentials, err := engine.ImportedCredentialValues(&script)
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "inspect retained import credentials")
+		msg := scrub.ValueLabel(redactionConfig.ScrubText(err.Error()), scrub.Policy{})
+		return nil, status.Errorf(codes.InvalidArgument, "inspect script-sourced credentials: %s", msg)
 	}
-	if engine.ScriptRedactsRunEvidence(&script) && len(importedCredentials) > 0 {
-		scriptSourcedRedaction, scriptSourcedErr := engine.WithScriptSourcedSecretValueRedaction(
+	if len(importedCredentials) > 0 {
+		if scriptSourcedRedaction, scriptSourcedErr := engine.WithScriptSourcedSecretValueRedaction(
 			redactionConfig,
 			importedCredentials,
-		)
-		if scriptSourcedErr != nil {
-			slog.Warn("script-sourced run-evidence redaction was dropped",
-				"test_id", request.GetTestId(),
-				"script", script.Name,
-			)
+		); scriptSourcedErr != nil {
+			msg := scrub.ValueLabel(redactionConfig.ScrubText(scriptSourcedErr.Error()), scrub.Policy{})
+			slog.Warn("distributed staging skipped script-sourced redaction after matcher budget limit", "reason", msg)
 		} else {
 			redactionConfig = scriptSourcedRedaction
 		}
@@ -1280,7 +1266,6 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if request.GetPrepareOnly() && (javaHost != nil || script.Protocol == "java_vuser") {
 		return nil, status.Error(codes.FailedPrecondition, "runtime does not support traffic-free preparation")
 	}
-	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
 	var preflight protocol.RuntimePreflightResult
 	var preflightErr error
 	if javaHost == nil && !request.GetPrepareOnly() {
@@ -1385,7 +1370,11 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	}
 	mge, err := engine.NewMultiGroup(groupConfig)
 	if err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "build execution engine: %v", err)
+		msg := scrub.ValueLabel(redactionConfig.ScrubText(err.Error()), scrub.Policy{})
+		return nil, status.Errorf(codes.InvalidArgument, "build execution engine: %s", msg)
+	}
+	if mgeRedaction := mge.GroupRedactionConfig(0); mgeRedaction != nil {
+		redactionConfig = mgeRedaction
 	}
 	prepared.execution = &groupExecution{
 		javaHost:            javaHost != nil,
@@ -1689,4 +1678,24 @@ func (service *Service) effectiveAdoptionGrace(assignment *pb.WorkAssignment) ti
 		return 0
 	}
 	return min(max(assignment.GetAdoptionGrace().AsDuration(), 0), service.maxAdoptionGrace)
+}
+
+func stagingValidationRedactionConfig(script *dsl.Script, bundle map[string]string) *engine.RedactionConfig {
+	rc, err := engine.NewRedactionConfig(nil)
+	if err != nil {
+		return nil
+	}
+	if values := secretBundleValues(bundle); len(values) > 0 {
+		if withBundle, attachErr := engine.WithSecretValueRedactionChecked(rc, values); attachErr == nil {
+			rc = withBundle
+		}
+	}
+	if script != nil {
+		if imported, inspectErr := engine.ImportedCredentialValues(script); inspectErr == nil && len(imported) > 0 {
+			if withScript, attachErr := engine.WithScriptSourcedSecretValueRedaction(rc, imported); attachErr == nil {
+				rc = withScript
+			}
+		}
+	}
+	return rc
 }

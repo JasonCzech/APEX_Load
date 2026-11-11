@@ -2792,6 +2792,560 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('step 2 (scroll) has no replayable selector')
   })
 
+  it('enables Open in Visual Editor before Preview conversion, auto-converts, and guards concurrent clicks', async () => {
+    const onEdit = vi.fn()
+    let resolvePreview!: (value: any) => void
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockImplementationOnce(
+      () => new Promise(resolve => { resolvePreview = resolve }),
+    )
+
+    await renderPanel({ onEdit })
+    const openEditorButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open in Visual Editor')!
+    expect(openEditorButton).toBeDefined()
+    expect(openEditorButton.disabled).toBe(false)
+    expect(openEditorButton.getAttribute('aria-describedby')).toBeNull()
+    expect(container.querySelector('[data-testid="recording-empty-steps-reason"]')).toBeNull()
+
+    await act(async () => {
+      openEditorButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      openEditorButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(1)
+    expect(openEditorButton.disabled).toBe(true)
+
+    await act(async () => {
+      resolvePreview({
+        script: {
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        },
+        scripts: [{
+          name: 'Checkout Flow',
+          protocol: 'browser',
+          actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        }],
+        warnings: [],
+        stats: {},
+      })
+    })
+    await flushPromises()
+
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Flow',
+      protocol: 'browser',
+      actions: [expect.objectContaining({ type: 'browser_goto' })],
+    }))
+  })
+
+  it('converts and opens the browser script instead of silent no-op when Open in Visual Editor is clicked after saving a Salesforce draft', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: salesforceStoppedSession })
+
+    await renderPanel({ onEdit, onImported })
+    await clickButton('Review Salesforce HTTP draft')
+    await flushPromises()
+    await clickButton('Save Salesforce HTTP script')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).not.toHaveBeenCalled()
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Flow',
+      protocol: 'browser',
+      actions: [{ name: 'Navigate' }, { name: 'Fill' }],
+    }))
+  })
+
+  it('falls back to opening the Salesforce HTTP draft when Open in Visual Editor is clicked on a zero-step session', async () => {
+    const onEdit = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...salesforceStoppedSession,
+        step_count: 0,
+        steps: [],
+      },
+    })
+
+    await renderPanel({ onEdit })
+    await clickButton('Review Salesforce HTTP draft')
+    await flushPromises()
+    await clickButton('Save Salesforce HTTP script')
+    await flushPromises()
+
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).not.toHaveBeenCalled()
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Flow Salesforce HTTP',
+      protocol: 'http',
+      actions: [expect.objectContaining({ name: 'Aura Bootstrap' })],
+    }))
+  })
+
+  it('surfaces conversion errors cleanly when pre-preview Open in Visual Editor fails', async () => {
+    const onEdit = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockRejectedValueOnce(new Error('recorded steps could not be converted'))
+
+    await renderPanel({ onEdit })
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(onEdit).not.toHaveBeenCalled()
+    const feedback = container.querySelector('[data-testid="recording-save-feedback"]')
+    expect(feedback?.getAttribute('role')).toBe('alert')
+    expect(feedback?.textContent).toBe('Not opened: recorded steps could not be converted')
+    const openEditorButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open in Visual Editor')!
+    expect(openEditorButton.disabled).toBe(false)
+  })
+
+  it('mounts credential review first when pre-preview Open in Visual Editor detects credentials', async () => {
+    const onEdit = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValue(credentialPreviewResult())
+    apiMock.applyBrowserRecordingSecretBindings.mockResolvedValue({
+      script: { ...credentialScript, config: { password: '{{secret.LOGIN_PASSWORD}}' } },
+      secret_binding_requirements: [],
+    })
+
+    await renderPanel({ onEdit })
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="recording-save-feedback"]')?.textContent)
+      .toBe('Credentials detected. Review the credential choices above, then open in the Visual Editor.')
+
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      config: { password: '{{secret.LOGIN_PASSWORD}}' },
+    }))
+  })
+
+  it('disables Open in Visual Editor and exposes a visible aria-describedby reason when no convertible steps exist', async () => {
+    const onEdit = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...stoppedSession,
+        step_count: 0,
+        steps: [],
+      },
+    })
+
+    await renderPanel({ onEdit })
+    const openEditorButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open in Visual Editor')!
+    const reason = container.querySelector<HTMLElement>('[data-testid="recording-empty-steps-reason"]')!
+    expect(openEditorButton.disabled).toBe(true)
+    expect(reason).not.toBeNull()
+    expect(reason.getAttribute('role')).toBe('status')
+    expect(openEditorButton.getAttribute('aria-describedby')).toBe(reason.id)
+    expect(reason.textContent).toContain('This recording has no browser steps to convert. Start a new recording to capture steps.')
+  })
+
+  it('requires explicit Save and open in Visual Editor confirmation before persisting fresh credential-preserving drafts without double-fetching or leaking secret sessions', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const preservedResult = (name: string, secretSessionId: string) => ({
+      import_draft_expires_at: '2099-01-01T00:00:00Z',
+      source_secret_session_id: secretSessionId,
+      script: {
+        name,
+        protocol: 'browser' as const,
+        actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        metadata: {
+          import: {
+            source: 'browser_recorder',
+            preserved: { import_value_policy: 'preserve' },
+            server_import_attestation_v1: { token: `tok-${secretSessionId}` },
+          },
+        },
+      },
+      scripts: [{
+        name,
+        protocol: 'browser' as const,
+        actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        metadata: {
+          import: {
+            source: 'browser_recorder',
+            preserved: { import_value_policy: 'preserve' },
+            server_import_attestation_v1: { token: `tok-${secretSessionId}` },
+          },
+        },
+      }],
+      secret_binding_requirements: [],
+      warnings: [],
+      stats: {},
+    })
+
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion
+      .mockResolvedValueOnce(preservedResult('Checkout Flow', 'sec-1'))
+      .mockResolvedValueOnce(preservedResult('Renamed Flow', 'sec-2'))
+
+    await renderPanel({ onImported, onEdit })
+    // 1) Pre-preview Open in Visual Editor with credential-preserving draft & 0 discrete requirements:
+    //    First click previews and relabels to "Save and open in Visual Editor" without making an unannounced library save.
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(1)
+    expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
+    expect(onImported).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(container.querySelector('[data-testid="recording-save-feedback"]')?.textContent).toContain(
+      'This conversion preserves imported credentials. Select Save and open in Visual Editor to save it first.',
+    )
+
+    //    Second click on the relabelled control performs the durable save without double-fetching:
+    await clickButton('Save and open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(1)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'sec-1',
+    })
+    expect(onImported).toHaveBeenCalledTimes(1)
+    expect(onEdit).not.toHaveBeenCalled()
+
+    // 2) Change scriptName so preview becomes stale (label reverts to Open in Visual Editor):
+    const nameInput = container.querySelector<HTMLInputElement>('#browser-recording-script-name')!
+    await setInputValue(nameInput, 'Renamed Flow')
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(2)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[data-testid="recording-save-feedback"]')?.textContent).toContain(
+      'This conversion preserves imported credentials. Select Save and open in Visual Editor to save it first.',
+    )
+
+    await clickButton('Save and open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledTimes(2)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(2)
+    expect(apiMock.convertBrowserRecording).toHaveBeenLastCalledWith('brec-1', expect.objectContaining({
+      name: 'Renamed Flow',
+      expected_script_count: 1,
+    }))
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'sec-2',
+    })
+    expect(onImported).toHaveBeenCalledTimes(2)
+  })
+
+  it('shows excluded-steps reason on a stopped session and lets the operator re-include a step to re-enable Open in Visual Editor', async () => {
+    const onEdit = vi.fn()
+    const allExcludedSteps = stoppedSession.steps.map(step => ({ ...step, excluded: true }))
+    const includedSteps = stoppedSession.steps.map((step, index) => ({ ...step, excluded: index !== 0 }))
+    apiMock.getBrowserRecording.mockResolvedValue({
+      session: {
+        ...stoppedSession,
+        steps: allExcludedSteps,
+      },
+    })
+    apiMock.updateBrowserRecordingStep.mockResolvedValueOnce({
+      session: {
+        ...stoppedSession,
+        steps: includedSteps,
+      },
+    })
+
+    await renderPanel({ onEdit })
+    const openEditorButton = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open in Visual Editor')!
+    expect(openEditorButton().disabled).toBe(true)
+    const reason = container.querySelector('[data-testid="recording-empty-steps-reason"]')
+    expect(reason?.textContent).toContain('All recorded steps are excluded. Include at least one step')
+
+    const includeButton = container.querySelector<HTMLButtonElement>('.brp-step-actions button[title="Include"]')!
+    expect(includeButton).not.toBeNull()
+    await act(async () => {
+      includeButton.click()
+    })
+    await flushPromises()
+
+    expect(apiMock.updateBrowserRecordingStep).toHaveBeenCalledWith('brec-1', 1, { excluded: false })
+    expect(openEditorButton().disabled).toBe(false)
+    expect(container.querySelector('[data-testid="recording-empty-steps-reason"]')).toBeNull()
+  })
+
+  it('honors Salesforce credential-preserving and expiry state on zero-step fallback without mislabeling browser sessions after Salesforce save', async () => {
+    const onEdit = vi.fn()
+    const onImported = vi.fn()
+    const preservedSalesforceScript = {
+      name: 'Checkout Flow Salesforce HTTP',
+      version: '1.0.0',
+      protocol: 'http' as const,
+      config: { base_url: 'https://acme.my.salesforce.com' },
+      actions: [{ name: 'Aura Bootstrap', type: 'request', method: 'POST', target: '/aura' }],
+      metadata: {
+        import: {
+          source: 'salesforce',
+          preserved: { import_value_policy: 'preserve' },
+          server_import_attestation_v1: { token: 'sf-tok' },
+        },
+      },
+    }
+    apiMock.importSalesforce.mockResolvedValue({
+      import_draft_expires_at: '2099-01-01T00:00:00Z',
+      scripts: [preservedSalesforceScript],
+      script: preservedSalesforceScript,
+      secret_binding_requirements: [],
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { converted_actions: 1 },
+      summary: { salesforce_review: { detected: true } },
+    })
+    // Omit .script from commitGenericImportBatch so withFallbackPersistedScript attaches preservedSalesforceScript onto savedScript.script:
+    apiMock.commitGenericImportBatch.mockImplementation(async ({ scripts }: { scripts: any[] }) => ({
+      count: scripts.length,
+      scripts: scripts.map((entry, index) => ({
+        id: `script-sf-${index + 1}`,
+        name: entry.name,
+        protocol: entry.protocol,
+        version: '1',
+        created_at: '2026-05-12T20:10:00Z',
+      })),
+    }))
+
+    // 1) Normal session WITH browser steps: saving credential-preserving Salesforce draft must NOT relabel browser button to "Save and open in Visual Editor"
+    apiMock.getBrowserRecording.mockResolvedValueOnce({ session: salesforceStoppedSession })
+    await renderPanel({ onEdit, onImported })
+    await clickButton('Review Salesforce HTTP draft')
+    await flushPromises()
+    await clickButton('Save Salesforce HTTP script')
+    await flushPromises()
+
+    const browserOpenBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open in Visual Editor')
+    expect(browserOpenBtn).toBeDefined()
+
+    // 2) Zero-step session: main button reflects Salesforce fallback's credential-preserving save label & guards concurrent clicks
+    apiMock.getBrowserRecording.mockResolvedValueOnce({
+      session: { ...salesforceStoppedSession, id: 'brec-sf-0', step_count: 0, steps: [] },
+    })
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-sf-0" onEdit={onEdit} onImported={onImported} />)
+    })
+    await flushPromises()
+    await clickButton('Review Salesforce HTTP draft')
+    await flushPromises()
+
+    const fallbackSaveAndOpenBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Save and open in Visual Editor')!
+    expect(fallbackSaveAndOpenBtn).toBeDefined()
+    expect(fallbackSaveAndOpenBtn.disabled).toBe(false)
+
+    apiMock.commitGenericImportBatch.mockClear()
+    await act(async () => {
+      fallbackSaveAndOpenBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      fallbackSaveAndOpenBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(apiMock.commitGenericImportBatch).toHaveBeenCalledTimes(1)
+  })
+
+  it('uses Salesforce fallback instead of reconverting zero steps after previewing, reviewing Salesforce draft, and excluding every step, and re-enables Open when an expired preview goes stale', async () => {
+    const onEdit = vi.fn()
+    const singleStepSalesforceSession = {
+      ...salesforceStoppedSession,
+      step_count: 1,
+      steps: [{ seq: 1, kind: 'fill', timestamp: '2026-05-12T20:00:01Z', candidates: [{ kind: 'css', value: '#user', confidence: 90 }] }],
+    }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: singleStepSalesforceSession })
+    apiMock.updateBrowserRecordingStep.mockResolvedValueOnce({
+      session: {
+        ...singleStepSalesforceSession,
+        step_count: 0,
+        steps: [{ ...singleStepSalesforceSession.steps[0], excluded: true }],
+      },
+    })
+
+    await renderPanel({ onEdit })
+    await clickButton('Preview conversion')
+    await flushPromises()
+    await clickButton('Review Salesforce HTTP draft')
+    await flushPromises()
+
+    const excludeBtn = container.querySelector<HTMLButtonElement>('.brp-step-actions button[title="Exclude"]')!
+    await act(async () => {
+      excludeBtn.click()
+    })
+    await flushPromises()
+
+    apiMock.previewBrowserRecordingConversion.mockClear()
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    expect(apiMock.previewBrowserRecordingConversion).not.toHaveBeenCalled()
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Checkout Flow Salesforce HTTP',
+      protocol: 'http',
+    }))
+
+    // Also verify L1: an expired preview disables Save and Open while current, and re-enables both once options change so a fresh conversion can be fetched
+    apiMock.getBrowserRecording.mockResolvedValueOnce({
+      session: { ...stoppedSession, id: 'brec-expired-stale', project_id: 'project-1' },
+    })
+    apiMock.previewBrowserRecordingConversion
+      .mockResolvedValueOnce({
+        ...credentialPreviewResult(),
+        import_draft_expires_at: '2020-01-01T00:00:00Z',
+      })
+      .mockResolvedValueOnce({
+        script: {
+          name: 'Refreshed Checkout Flow',
+          protocol: 'browser',
+          actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        },
+        scripts: [{
+          name: 'Refreshed Checkout Flow',
+          protocol: 'browser',
+          actions: [{ type: 'browser_goto', name: 'Open shop', url: 'https://shop.example' }],
+        }],
+        warnings: [],
+        stats: {},
+      })
+    onEdit.mockClear()
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-expired-stale" onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await clickButton('Preview conversion')
+    await flushPromises()
+
+    const findSaveBtn = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save unverified draft'))!
+    const findOpenBtn = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Open in Visual Editor') || button.textContent?.includes('Save and open in Visual Editor'))!
+    expect(findSaveBtn().disabled).toBe(true)
+    expect(findOpenBtn().disabled).toBe(true)
+
+    const nameInput = container.querySelector<HTMLInputElement>('#browser-recording-script-name')!
+    await setInputValue(nameInput, 'Refreshed Checkout Flow')
+    expect(findSaveBtn().disabled).toBe(false)
+    expect(findOpenBtn().disabled).toBe(false)
+    expect(findOpenBtn().textContent?.trim()).toBe('Open in Visual Editor')
+
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenLastCalledWith('brec-expired-stale', expect.objectContaining({
+      name: 'Refreshed Checkout Flow',
+    }))
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Refreshed Checkout Flow',
+      protocol: 'browser',
+    }))
+  })
+
+  it.each([
+    {
+      name: 'credential-preserving discrete requirement prompts save-and-open review and relabels the button',
+      result: {
+        ...credentialPreviewResult(),
+        import_draft_expires_at: '2099-07-26T12:30:00Z',
+        script: {
+          ...credentialScript,
+          metadata: {
+            import: {
+              source: 'browser_recorder',
+              preserved: { import_value_policy: 'preserve' },
+            },
+          },
+        },
+        scripts: [{
+          ...credentialScript,
+          metadata: {
+            import: {
+              source: 'browser_recorder',
+              preserved: { import_value_policy: 'preserve' },
+            },
+          },
+        }],
+        secret_binding_requirements: [{
+          ...credentialRequirement,
+          destination_value_preserved: true,
+        }],
+      },
+      expectedRole: 'status',
+      expectedMessage: 'Credentials detected. Review the credential choices above, then save and open in the Visual Editor.',
+      expectedButtonLabel: 'Save and open in Visual Editor',
+      expectedDisabled: false,
+    },
+    {
+      name: 'already-expired fresh conversion draft surfaces role=alert without opening or saving',
+      result: {
+        ...credentialPreviewResult(),
+        import_draft_expires_at: '2020-01-01T00:00:00Z',
+      },
+      expectedRole: 'alert',
+      expectedMessage: 'Not opened: This credential-preserving import draft has expired.',
+      expectedButtonLabel: 'Save and open in Visual Editor',
+      expectedDisabled: true,
+    },
+    {
+      name: 'empty script conversion result surfaces role=alert without opening or saving',
+      result: {
+        script: undefined,
+        scripts: [],
+        warnings: [],
+        stats: {},
+      },
+      expectedRole: 'alert',
+      expectedMessage: 'Not opened: conversion produced no script to edit.',
+      expectedButtonLabel: 'Open in Visual Editor',
+      expectedDisabled: false,
+    },
+  ])('handles pre-preview Open in Visual Editor fresh-conversion guard: $name', async ({
+    result,
+    expectedRole,
+    expectedMessage,
+    expectedButtonLabel,
+    expectedDisabled,
+  }) => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce(result)
+
+    await renderPanel({ onImported, onEdit })
+    await clickButton('Open in Visual Editor')
+    await flushPromises()
+
+    const feedback = container.querySelector<HTMLElement>('[data-testid="recording-save-feedback"]')!
+    expect(feedback).not.toBeNull()
+    expect(feedback.getAttribute('role')).toBe(expectedRole)
+    expect(feedback.textContent).toContain(expectedMessage)
+    const openBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Open in Visual Editor') || button.textContent?.includes('Save and open in Visual Editor'))!
+    expect(openBtn.textContent?.trim()).toBe(expectedButtonLabel)
+    expect(openBtn.disabled).toBe(expectedDisabled)
+    expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
+    expect(onImported).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
+  })
+
 })
 
 async function flushPromises() {

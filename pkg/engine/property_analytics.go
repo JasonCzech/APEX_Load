@@ -8,6 +8,9 @@ import (
 // resultPropertyDimensions is a result's promoted property dimensions and,
 // within a browser iteration that can start cold or warm, which it was.
 func (vu *VUser) resultPropertyDimensions(extractions map[string]string) map[string]string {
+	if vu.resultPublicationUnavailable() {
+		return nil
+	}
 	dimensions := promotedPropertyDimensions(vu.Script, extractions)
 	if vu.iterationTemperature == "" {
 		return dimensions

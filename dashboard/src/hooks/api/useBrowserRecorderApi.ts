@@ -87,6 +87,7 @@ export type BrowserRecorderSession = {
   capture_har: boolean
   // capture_hovers says whether this recording records hover steps.
   capture_hovers?: boolean
+  scrub_sensitive?: boolean
   started_at: string
   stopped_at?: string
   stop_reason?: 'requested' | 'browser_closed' | 'forced'
@@ -163,6 +164,9 @@ export type BrowserRecorderStartRequest = {
   // quic_mode 'off' launches the recorded browser with QUIC disabled, so the
   // recording holds no HTTP/3 traffic. Omitted means the browser default.
   quic_mode?: 'auto' | 'off'
+  // scrub_sensitive opts into redacting sensitive credentials and headers at
+  // capture time. Off/omitted by default so recordings keep captured traffic.
+  scrub_sensitive?: boolean
 }
 
 export type BrowserRecorderConvertRequest = {
