@@ -224,9 +224,17 @@ func TestWebSocketOnlySessionHonorsScrubSensitiveAndRedactHeaders(t *testing.T) 
 	}
 
 	// ScrubSensitive=true on SessionFilters at capture time is also honored by default ConvertSession.
-	capturedScrubSession := *wsSession
-	capturedScrubSession.Filters.ScrubSensitive = true
-	scrubbedByFilter := ConvertSession(&capturedScrubSession, "WS Filter Scrub")
+	capturedScrubSession := &Session{
+		ID:      wsSession.ID,
+		Name:    wsSession.Name,
+		BaseURL: wsSession.BaseURL,
+		Filters: FilterConfig{
+			RedactHeaders:  []string{"X-Custom-Secret"},
+			ScrubSensitive: true,
+		},
+		Requests: wsSession.Requests,
+	}
+	scrubbedByFilter := ConvertSession(capturedScrubSession, "WS Filter Scrub")
 	if scrubbedByFilter.Script.Actions[0].Headers["Authorization"] != "[redacted]" ||
 		scrubbedByFilter.Script.Actions[0].Headers["X-Api-Key"] != "[redacted]" {
 		t.Fatalf("session-filter ScrubSensitive WS headers leaked credentials: %#v", scrubbedByFilter.Script.Actions[0].Headers)
