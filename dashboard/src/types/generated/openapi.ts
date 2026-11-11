@@ -70037,6 +70037,7 @@ export interface operations {
       };
       "query"?: {
         "format"?: string;
+        "scrub"?: boolean;
       };
     };
     requestBody?: never;
@@ -85504,6 +85505,7 @@ export interface operations {
               "include_hosts"?: Array<string>;
               "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
+              "scrub_sensitive"?: boolean;
             };
             "id": string;
             "last_filtered_host"?: string;
@@ -123035,7 +123037,6 @@ export interface operations {
     parameters: {
       "query"?: {
         "project_id"?: string;
-        "scrub"?: boolean;
       };
     };
     requestBody?: never;
@@ -124933,6 +124934,7 @@ export interface operations {
         "include_requests"?: boolean;
         "project_id"?: string;
         "requests"?: boolean;
+        "scrub"?: boolean;
       };
     };
     requestBody?: never;
@@ -132350,6 +132352,7 @@ export interface operations {
               "include_hosts"?: Array<string>;
               "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
+              "scrub_sensitive"?: boolean;
             };
             "id": string;
             "last_filtered_host"?: string;
@@ -179472,6 +179475,7 @@ export interface operations {
               "include_hosts"?: Array<string>;
               "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
+              "scrub_sensitive"?: boolean;
             };
             "id": string;
             "last_filtered_host"?: string;
@@ -189938,6 +189942,7 @@ export interface operations {
           "project_id"?: string;
           "recording_profile_id"?: string;
           "redact_headers"?: Array<string>;
+          "scrub_sensitive"?: (boolean) | null;
         };
       };
     };
@@ -199549,6 +199554,7 @@ export interface operations {
               "include_hosts"?: Array<string>;
               "recording_profile_id"?: string;
               "redact_headers"?: Array<string>;
+              "scrub_sensitive"?: boolean;
             };
             "id": string;
             "last_filtered_host"?: string;

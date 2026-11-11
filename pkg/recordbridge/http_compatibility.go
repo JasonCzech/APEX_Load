@@ -61,3 +61,6 @@ func MergeRecorderHostFilters(profileHosts, requestHosts []string) []string {
 func RecorderCaptureCookies(requested *bool, profile *recordingprofile.Profile) bool {
 	return recorderCaptureCookies(requested, profile)
 }
+func RecorderScrubSensitive(requested *bool, profile *recordingprofile.Profile) bool {
+	return recorderScrubSensitive(requested, profile)
+}

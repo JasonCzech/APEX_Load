@@ -1410,7 +1410,8 @@ operations:
 		}
 		if cfg.OAuth.TokenURL != "https://idp.example.test/oauth2/token" ||
 			cfg.OAuth.ClientID != "kafka-app" ||
-			cfg.OAuth.ClientSecretRef != "sec~123" ||
+			cfg.OAuth.ClientSecret != "sec~123" ||
+			cfg.OAuth.ClientSecretRef != "" ||
 			cfg.OAuth.Scope != "kafka.produce" {
 			t.Fatalf("oauth = %+v, want populated client_credentials settings", cfg.OAuth)
 		}

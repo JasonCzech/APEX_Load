@@ -163,8 +163,8 @@ func lifecycleAuth2Properties() map[string]map[lifecycleProperty][]lifecycleProo
 				e2eProof("workflow-jmeter-fidelity.spec.ts", "JMeter fidelity review retains blockers and regenerates explicit timestamp and name repairs"),
 			},
 			lifecycleSecrets: {
-				vitestProof(sample, "stores sample authentication options as governed secret references"),
-				vitestProof(review, "never places imported credential values in the generated preview DOM"),
+				vitestProof(sample, "preserves literal sample authentication passwords and also supports explicit {{secret.NAME}} references"),
+				vitestProof(review, "displays imported credential values and secret references unredacted in the generated preview DOM"),
 			},
 			lifecycleGates: {goProof("TestDisabledImportFeatureBlocksGlobalAdminPathAfterRBAC")},
 			lifecyclePending: {

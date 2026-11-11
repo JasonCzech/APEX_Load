@@ -1110,13 +1110,18 @@ func deriveKafkaClientFlow(doc *document, creds brokerCredentials) *dsl.KafkaOAu
 		kafkaprotocol.ValidateOAuthTokenEndpoint(tokenURL) != nil {
 		return nil
 	}
-	return &dsl.KafkaOAuthConfig{
-		Mode:            "client_credentials",
-		TokenURL:        tokenURL,
-		ClientID:        clientID,
-		ClientSecretRef: clientSecret,
-		Scope:           scope,
+	oauth := &dsl.KafkaOAuthConfig{
+		Mode:     "client_credentials",
+		TokenURL: tokenURL,
+		ClientID: clientID,
+		Scope:    scope,
 	}
+	if strings.HasPrefix(clientSecret, "{{secret.") {
+		oauth.ClientSecretRef = clientSecret
+	} else {
+		oauth.ClientSecret = clientSecret
+	}
+	return oauth
 }
 
 func serverVarAuthoredString(variables map[string]serverVariable, names ...string) string {

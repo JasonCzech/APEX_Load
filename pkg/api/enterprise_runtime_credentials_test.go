@@ -217,9 +217,8 @@ ProxyPassword=` + proxyPass + `
 	}
 	if inspection.Script.Config.HTTP.ProxyMode != "none" ||
 		inspection.Script.Config.HTTP.Proxy.URL != "" ||
-		inspection.Script.Config.HTTP.Proxy.Username != proxyUser ||
-		inspection.Script.Config.HTTP.Proxy.Password != proxyPass ||
-		importDraftAttestationToken(&inspection.Script) == "" ||
+		inspection.Script.Config.HTTP.Proxy.Username != "" ||
+		inspection.Script.Config.HTTP.Proxy.Password != "" ||
 		!strings.Contains(importResponse.Body.String(), proxyUser) ||
 		!strings.Contains(importResponse.Body.String(), proxyPass) {
 		t.Fatalf(
@@ -264,10 +263,10 @@ ProxyPassword=` + proxyPass + `
 	}
 	if durable.Script.Config.HTTP.ProxyMode != "none" ||
 		durable.Script.Config.HTTP.Proxy.URL != "" ||
-		durable.Script.Config.HTTP.Proxy.Username != proxyUser ||
-		durable.Script.Config.HTTP.Proxy.Password != proxyPass {
+		durable.Script.Config.HTTP.Proxy.Username != "" ||
+		durable.Script.Config.HTTP.Proxy.Password != "" {
 		t.Fatalf(
-			"durable disabled proxy record lost source credentials: %#v",
+			"durable disabled proxy record unexpectedly populated active proxy config: %#v",
 			durable.Script.Config.HTTP,
 		)
 	}
@@ -322,8 +321,8 @@ ProxyPassword=` + proxyPass + `
 	if exportedEnvelope.Script == nil ||
 		exportedEnvelope.Script.Config.HTTP.ProxyMode != "none" ||
 		exportedEnvelope.Script.Config.HTTP.Proxy.URL != "" ||
-		exportedEnvelope.Script.Config.HTTP.Proxy.Username != proxyUser ||
-		exportedEnvelope.Script.Config.HTTP.Proxy.Password != proxyPass {
+		exportedEnvelope.Script.Config.HTTP.Proxy.Username != "" ||
+		exportedEnvelope.Script.Config.HTTP.Proxy.Password != "" {
 		t.Fatalf("script export is not the durable inert proxy record: %s", exported)
 	}
 }

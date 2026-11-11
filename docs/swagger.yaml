@@ -45485,12 +45485,6 @@ paths:
           required: false
           schema:
             type: string
-        - name: scrub
-          in: query
-          description: Handler-defined query parameter.
-          required: false
-          schema:
-            type: boolean
       tags:
         - Browser Recorder
       x-handler: handleListBrowserRecordings
@@ -46183,6 +46177,12 @@ paths:
           required: false
           schema:
             type: string
+        - name: scrub
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Browser Recorder
       x-handler: handleExportBrowserRecording
@@ -99835,6 +99835,12 @@ paths:
           required: false
           schema:
             type: boolean
+        - name: scrub
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: boolean
       tags:
         - Recorder
       x-handler: handleListRecordings
@@ -99933,6 +99939,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      scrub_sensitive:
+                        type: boolean
                     required:
                       - exclude_static
                   id:
@@ -100641,6 +100649,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      scrub_sensitive:
+                        type: boolean
                     required:
                       - exclude_static
                   id:
@@ -101115,6 +101125,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      scrub_sensitive:
+                        type: boolean
                     required:
                       - exclude_static
                   id:
@@ -101380,6 +101392,8 @@ paths:
                         type: array
                         items:
                           type: string
+                      scrub_sensitive:
+                        type: boolean
                     required:
                       - exclude_static
                   id:
@@ -101802,6 +101816,9 @@ paths:
                   type: array
                   items:
                     type: string
+                scrub_sensitive:
+                  type: boolean
+                  nullable: true
       responses:
         "201":
           description: Created

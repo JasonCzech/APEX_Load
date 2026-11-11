@@ -26,6 +26,9 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		RedactHeaders         []string `json:"redact_headers,omitempty"`
 		// CaptureCookies, when set, wins over the recording profile's.
 		CaptureCookies *bool `json:"capture_cookies,omitempty"`
+		// ScrubSensitive opts into scrubbing sensitive values in live session
+		// reads, mutations, and HAR exports.
+		ScrubSensitive *bool `json:"scrub_sensitive,omitempty"`
 		// RecordingProfileID names a project recording profile: its host
 		// filters, capture limit and cookie capture fill the options left
 		// unset here, and conversions of the session apply it.
@@ -71,12 +74,14 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		s.broadcastRecorderSessionEvent(projectID, evt)
 	}
 
+	scrubSensitive := recordbridge.RecorderScrubSensitive(req.ScrubSensitive, profile)
 	filters := recorder.SessionFilters{
 		ExcludeHosts:          req.ExcludeHosts,
 		IncludeHosts:          req.IncludeHosts,
 		BodyCaptureLimitBytes: req.BodyCaptureLimitBytes,
 		RedactHeaders:         req.RedactHeaders,
 		CaptureCookies:        recorderCaptureCookies(req.CaptureCookies, profile),
+		ScrubSensitive:        scrubSensitive,
 		RecordingProfileID:    req.RecordingProfileID,
 	}
 	if req.ExcludeStatic != nil {
@@ -84,14 +89,38 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		filters.ExcludeStaticSet = true
 	}
 
+	// Record the opt-in before the session exists so no read can observe the
+	// new session unscrubbed. After StartSessionForProject succeeds (including
+	// any retention eviction it performed), prune settled preferences that are
+	// no longer retained before committing this session's preference.
+	recordbridge.BeginProxySessionScrubSensitive(id, scrubSensitive)
+
 	session, err := s.recorder.StartSessionForProject(id, req.Name, projectID, filters, notify)
 	if err != nil {
+		recordbridge.DeleteProxySessionScrubSensitive(id)
 		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
+	pruneGen := recordbridge.ProxySessionScrubGeneration()
+	liveSessionIDs := make([]string, 0)
+	for _, retained := range s.recorder.ListSessionSummaries() {
+		if retained != nil {
+			liveSessionIDs = append(liveSessionIDs, retained.ID)
+		}
+	}
+	recordbridge.PruneProxySessionScrubSensitiveBefore(pruneGen, liveSessionIDs)
+	recordbridge.CommitProxySessionScrubSensitive(id)
+
+	responseSession := recordbridge.CloneRecorderSessionForResponse(session)
+	if recordbridge.ShouldScrubRecorderSession(r, session, s.canExportRawRecording(r, projectID)) {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		responseSession = sanitizeRecorderSessionForResponse(session)
+	} else {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	}
 
 	resp := map[string]any{
-		"session":    sanitizeRecorderSessionForResponse(session),
+		"session":    responseSession,
 		"proxy_addr": s.recorder.ProxyAddr(),
 	}
 	if s.recorderClientIsLocal(r) {
@@ -126,6 +155,16 @@ func (s *Server) broadcastRecorderSessionEvent(projectID string, evt recorder.Se
 	s.hub.BroadcastScopedJSON("", projectID, payload)
 }
 
+func (s *Server) writeRecorderSessionMutationResponse(w http.ResponseWriter, r *http.Request, session *recorder.Session) {
+	if session != nil && recordbridge.ShouldScrubRecorderSession(r, session, s.canExportRawRecording(r, session.ProjectID)) {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+		return
+	}
+	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	writeJSON(w, http.StatusOK, recordbridge.CloneRecorderSessionForResponse(session))
+}
+
 func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	session, err := s.recorder.PauseSession(id)
@@ -133,7 +172,7 @@ func (s *Server) handlePauseRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+	s.writeRecorderSessionMutationResponse(w, r, session)
 }
 
 func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +182,7 @@ func (s *Server) handleResumeRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+	s.writeRecorderSessionMutationResponse(w, r, session)
 }
 
 func (s *Server) handleStartRecordingTransaction(w http.ResponseWriter, r *http.Request) {
@@ -172,7 +211,7 @@ func (s *Server) handleStopRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+	s.writeRecorderSessionMutationResponse(w, r, session)
 }
 
 func (s *Server) handleGetRecording(w http.ResponseWriter, r *http.Request) {
@@ -183,7 +222,8 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 	projectID := authorizedProjectOr(r, r.URL.Query().Get("project_id"))
 	includeRequests := queryIncludes(r.URL.Query(), "requests") || strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_requests")), "true")
 	raw := rawRecordingExportRequested(r)
-	if raw && !s.canExportRawRecording(r, projectID) {
+	canExportRaw := s.canExportRawRecording(r, projectID)
+	if raw && !canExportRaw {
 		s.recordAuditEvent(r, "recording.session_list_raw", "denied", "recording", "", projectID, map[string]any{"reason": "insufficient_role"})
 		writeError(w, http.StatusForbidden, "raw recording session access requires editor, project_admin, or system_admin access")
 		return
@@ -202,14 +242,32 @@ func (s *Server) handleListRecordings(w http.ResponseWriter, r *http.Request) {
 		sessions = filtered
 	}
 	active := s.visibleRecorderSessionForRequest(r, s.recorder.ActiveSessionSummary(), projectID)
-	if raw {
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
-	} else {
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
-		for index := range sessions {
-			sessions[index] = sanitizeRecorderSessionForResponse(sessions[index])
+	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
+	anyScrubbed := scrubRequested || (!raw && !canExportRaw)
+	for index := range sessions {
+		sItem := sessions[index]
+		if sItem == nil {
+			continue
 		}
-		active = sanitizeRecorderSessionForResponse(active)
+		if recordbridge.ShouldScrubRecorderSession(r, sItem, s.canExportRawRecording(r, sItem.ProjectID)) {
+			sessions[index] = sanitizeRecorderSessionForResponse(sItem)
+			anyScrubbed = true
+		} else {
+			sessions[index] = recordbridge.CloneRecorderSessionForResponse(sItem)
+		}
+	}
+	if active != nil {
+		if recordbridge.ShouldScrubRecorderSession(r, active, s.canExportRawRecording(r, active.ProjectID)) {
+			active = sanitizeRecorderSessionForResponse(active)
+			anyScrubbed = true
+		} else {
+			active = recordbridge.CloneRecorderSessionForResponse(active)
+		}
+	}
+	if anyScrubbed {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+	} else {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
 	}
 	// A listing keeps each session's open transactions; its markers come
 	// with the session itself (GET /api/v1/recorder/{id}).
@@ -234,6 +292,7 @@ func (s *Server) handleDeleteRecording(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "recording session not found")
 		return
 	}
+	recordbridge.DeleteProxySessionScrubSensitive(id)
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }
 

@@ -345,8 +345,8 @@ func TestBrunoNativeGeneratedInputBinding(t *testing.T) {
 	}
 }
 
-// A credential input a Bruno commit binds reads a project secret, recorded
-// for a re-import; a generated value is refused, as in every other importer.
+// A credential input a Bruno commit binds can read a project secret, recorded
+// for a re-import.
 func TestBrunoNativeInputBindingSuppliesACredentialFromAProjectSecret(t *testing.T) {
 	script := &dsl.Script{
 		Name: "inquire", Version: "1.0", Protocol: "http",
@@ -369,10 +369,6 @@ func TestBrunoNativeInputBindingSuppliesACredentialFromAProjectSecret(t *testing
 	}
 	if session.ID == "" || !session.CredentialShaped {
 		t.Fatalf("sessionId candidate = %+v", session)
-	}
-	if err := applyBrunoNativeInputBindings(cloneScriptDefinition(script), 0, candidates, nil,
-		map[string]sharedvalue.Binding{session.ID: {Mode: sharedvalue.BindingGenerated, Generator: sharedvalue.GeneratorUUID}}); err == nil {
-		t.Fatal("a credential took a generated value")
 	}
 	bound := cloneScriptDefinition(script)
 	if err := applyBrunoNativeInputBindings(bound, 0, candidates, nil,

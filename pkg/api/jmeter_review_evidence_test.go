@@ -23,7 +23,7 @@ func TestJMeterReviewResponseUsesNormalizedEvidence(t *testing.T) {
 	for _, tc := range []struct {
 		name, query string
 		blockers    int
-	}{{"original", "", 2}, {"UTC", "&time_mode=utc", 1}, {"bindings", "&time_mode=utc&variable_bindings=" + url.QueryEscape(`{"client_id":"cid","client_secret":"cs"}`), 2}} {
+	}{{"original", "", 2}, {"UTC", "&time_mode=utc", 1}, {"bindings", "&time_mode=utc&variable_bindings=" + url.QueryEscape(`{"client_id":"cid","client_secret":"cs"}`), 0}} {
 		t.Run(tc.name, func(t *testing.T) {
 			var previews []map[string]json.RawMessage
 			for _, route := range []string{"jmeter", "jmeter/validate"} {
@@ -71,8 +71,8 @@ func TestJMeterReviewResponseUsesNormalizedEvidence(t *testing.T) {
 				}
 				var p ReplayPreflight
 				json.Unmarshal(body["preflight"], &p)
-				if p.Valid {
-					t.Fatal("source became ready")
+				if p.Valid != (tc.blockers == 0) {
+					t.Fatalf("preflight.Valid=%v, want %v (blockers=%d)", p.Valid, tc.blockers == 0, tc.blockers)
 				}
 				previews = append(previews, body)
 			}

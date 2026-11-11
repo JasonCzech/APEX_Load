@@ -98,14 +98,15 @@ func postJMeterMigrationImport(t *testing.T, server *Server, endpoint, projectID
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("%s status = %d: %s", endpoint, recorder.Code, recorder.Body.String())
 	}
-	for _, canary := range []string{jmeterMigrationEventHubsKey, jmeterMigrationKafkaClientID, jmeterMigrationKafkaClientSecr} {
-		if strings.Contains(recorder.Body.String(), canary) {
-			t.Fatalf("%s response disclosed a source credential value", endpoint)
-		}
-	}
 	var response map[string]any
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
+	}
+	reqBytes, _ := json.Marshal(response["secret_binding_requirements"])
+	for _, canary := range []string{jmeterMigrationEventHubsKey, jmeterMigrationKafkaClientID, jmeterMigrationKafkaClientSecr} {
+		if strings.Contains(string(reqBytes), canary) {
+			t.Fatalf("%s secret_binding_requirements disclosed a source credential value", endpoint)
+		}
 	}
 	return response
 }
@@ -140,7 +141,7 @@ func TestJMeterImportOffersSourceSecretMigration(t *testing.T) {
 	if !ok {
 		t.Fatalf("Event Hubs requirement is not migratable: %+v", requirements)
 	}
-	if _, ok := available["/config/kafka/oauth/client_secret_ref"]; !ok {
+	if _, ok := available["/config/kafka/oauth/client_secret"]; !ok {
 		t.Fatalf("Kafka OAuth client secret is not migratable: %+v", requirements)
 	}
 
@@ -233,14 +234,15 @@ func TestJMeterBatchImportKeepsSourceSecretMigrationThroughRepairs(t *testing.T)
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("%s = %d: %s", endpoint, recorder.Code, recorder.Body.String())
 		}
-		for _, canary := range []string{jmeterMigrationEventHubsKey, jmeterMigrationKafkaClientID, jmeterMigrationKafkaClientSecr} {
-			if strings.Contains(recorder.Body.String(), canary) {
-				t.Fatalf("%s disclosed a source credential value", endpoint)
-			}
-		}
 		var response map[string]any
 		if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 			t.Fatal(err)
+		}
+		reqBytes, _ := json.Marshal(response["secret_binding_requirements"])
+		for _, canary := range []string{jmeterMigrationEventHubsKey, jmeterMigrationKafkaClientID, jmeterMigrationKafkaClientSecr} {
+			if strings.Contains(string(reqBytes), canary) {
+				t.Fatalf("%s secret_binding_requirements disclosed a source credential value", endpoint)
+			}
 		}
 		return recorder, response
 	}

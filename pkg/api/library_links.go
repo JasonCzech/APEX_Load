@@ -101,6 +101,43 @@ func libraryScriptHashMatches(script *dsl.Script, expected string) bool {
 	return false
 }
 
+// libraryScriptBundleItemHashConflict validates an inbound script item's
+// declared content hash against its payload and returns a conflict reason, or
+// "" when the hash is acceptable. A versioned (unmasked) item must match
+// hashLibraryScript exactly; an unversioned legacy item may match any hash
+// libraryScriptHashMatches accepts.
+func libraryScriptBundleItemHashConflict(item LibraryBundleItem) string {
+	expected := strings.TrimSpace(item.ContentHash)
+	if expected == "" || item.Script == nil {
+		return "declared content hash does not match script payload"
+	}
+	switch strings.TrimSpace(item.ContentHashVersion) {
+	case libraryScriptHashVersionUnmasked:
+		if hashLibraryScript(item.Script) != expected {
+			return "declared content hash does not match script payload"
+		}
+	case "":
+		if !libraryScriptHashMatches(item.Script, expected) {
+			return "declared content hash does not match script payload"
+		}
+	default:
+		return "unsupported script content_hash_version " + strings.TrimSpace(item.ContentHashVersion)
+	}
+	return ""
+}
+
+// shouldReconcileLegacyMaskedLibraryBundleItem reports whether an inbound
+// script item needs masked-secret reconciliation against the local prior
+// script. Only unversioned legacy exports do: their payload may carry
+// [REDACTED] projections (or sentinel-free projections such as {{fn.uuid()}})
+// that must be restored from the prior or, with no prior, rejected as orphan
+// sentinels so a masked placeholder never executes as a credential. A
+// versioned unmasked export is the verbatim stored definition and is imported
+// as-is, including any literal "[REDACTED]" text it legitimately contains.
+func shouldReconcileLegacyMaskedLibraryBundleItem(item LibraryBundleItem) bool {
+	return strings.TrimSpace(item.ContentHashVersion) != libraryScriptHashVersionUnmasked
+}
+
 func libraryScriptHashesEquivalent(left, right *dsl.Script) bool {
 	if left == nil || right == nil {
 		return left == nil && right == nil

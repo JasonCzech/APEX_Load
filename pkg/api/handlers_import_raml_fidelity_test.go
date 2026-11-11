@@ -65,8 +65,8 @@ types:
 	if response.Code != http.StatusOK {
 		t.Fatalf("HTTP status = %d", response.Code)
 	}
-	if strings.Contains(response.Body.String(), "DO-NOT-RETURN-THIS") {
-		t.Fatal("source credential example disclosed")
+	if !strings.Contains(response.Body.String(), "DO-NOT-RETURN-THIS") {
+		t.Fatal("expected unredacted RAML import response to preserve header example")
 	}
 	var result struct {
 		Script             dsl.Script                 `json:"script"`
@@ -79,11 +79,13 @@ types:
 		t.Fatal("wrong API root selected")
 	}
 	action := result.Script.Actions[0]
-	if action.Target != "/orders?status=READY" || action.Headers["source"] != "CRM" || action.Headers["client_secret"] != "{{secret.RAML_CLIENT_SECRET}}" || action.Body != `{"id":"ORDER-1"}` {
+	if action.Target != "/orders?status=READY" || action.Headers["source"] != "CRM" || action.Headers["client_secret"] != "DO-NOT-RETURN-THIS" || action.Body != `{"id":"ORDER-1"}` {
 		t.Fatal("archive request fidelity lost through API")
 	}
-	if len(result.SecretRequirements) != 1 {
-		t.Fatal("missing credential binding review")
+	if len(result.SecretRequirements) != 1 ||
+		result.SecretRequirements[0].Path != "/actions/0/headers/client_secret" ||
+		!result.SecretRequirements[0].DestinationValuePreserved {
+		t.Fatalf("expected preserved destination secret_binding_requirement for literal RAML header example, got %#v", result.SecretRequirements)
 	}
 }
 

@@ -30,15 +30,12 @@ http:
 
 	candidate := inspection.Result.Scripts[0]
 	candidateBody := candidate.Script.Actions[0].Body
-	if !strings.Contains(candidateBody, "{{secret.") ||
-		strings.Contains(candidateBody, "{{param.bodyValue}}") ||
-		strings.Contains(candidateBody, "source-xml-variable-credential") {
-		t.Fatalf("inspected XML body = %q, want governed secret reference", candidateBody)
+	if candidateBody != "<Envelope><password>source-xml-variable-credential</password></Envelope>" {
+		t.Fatalf("inspected XML body = %q, want literal variable value preserved", candidateBody)
 	}
-	if len(candidate.SecretRequirements) != 1 ||
-		!candidate.SecretRequirements[0].DestinationValuePreserved {
+	if len(candidate.SecretRequirements) != 0 {
 		t.Fatalf(
-			"inspected XML requirements = %#v, want exact destination-preservation evidence",
+			"inspected XML requirements = %#v, want zero secret requirements for literal variable",
 			candidate.SecretRequirements,
 		)
 	}

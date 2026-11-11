@@ -57,12 +57,15 @@ func TestJMeterGatedSourceCredentialIsDurableAndMaskedOnRead(t *testing.T) {
 	if projected == nil {
 		t.Fatal("maskScriptSecrets returned nil")
 	}
-	projectedJSON, err := json.Marshal(projected)
+	jsr223JSON, err := json.Marshal(projected.Metadata.Import.Preserved["jsr223_sources"])
 	if err != nil {
-		t.Fatalf("marshal projected script: %v", err)
+		t.Fatalf("marshal projected jsr223_sources: %v", err)
 	}
-	if strings.Contains(string(projectedJSON), credential) {
-		t.Fatalf("ordinary script projection disclosed the source credential: %s", projectedJSON)
+	if strings.Contains(string(jsr223JSON), credential) {
+		t.Fatalf("ordinary script projection disclosed the source credential in jsr223_sources: %s", jsr223JSON)
+	}
+	if !strings.Contains(projected.Actions[0].Value, credential) {
+		t.Fatalf("review_required action Value should preserve JSR223 source text for operator review, got %q", projected.Actions[0].Value)
 	}
 }
 

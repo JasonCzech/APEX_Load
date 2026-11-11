@@ -336,13 +336,12 @@ func TestJMeterZIPConvertsEveryJMXInDeterministicPathOrder(t *testing.T) {
 	if len(result.Scripts) != 2 {
 		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
 	}
-	if len(result.SecretRequirements) != 2 ||
-		result.SecretRequirements[0].SuggestedName == result.SecretRequirements[1].SuggestedName {
-		t.Fatalf("multi-JMX credentials were not allocated across the batch: %#v", result.SecretRequirements)
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("expected zero converter secret requirements for literal [REDACTED] headers, got %#v", result.SecretRequirements)
 	}
-	for index, wantPath := range []string{"a/first.jmx", "z/second.jmx"} {
-		if result.SecretRequirements[index].Source.Path != wantPath {
-			t.Fatalf("requirement %d source = %q, want %q", index, result.SecretRequirements[index].Source.Path, wantPath)
+	for index := range []string{"a/first.jmx", "z/second.jmx"} {
+		if got := result.Scripts[index].Actions[0].Headers["X-API-Key"]; got != "[REDACTED]" {
+			t.Fatalf("script %d X-API-Key = %q, want verbatim [REDACTED]", index, got)
 		}
 	}
 	if result.Scripts[0].Name == result.Scripts[1].Name ||

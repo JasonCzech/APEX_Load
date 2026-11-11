@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"os"
 	"reflect"
-	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -18,7 +17,6 @@ import (
 	"time"
 
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
-	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
@@ -363,24 +361,27 @@ http:
 // of a project secret, and the sentinel is never sent or disclosed.
 func TestBrunoNativeInspectTurnsRedactedRecordedHeaderIntoInput(t *testing.T) {
 	tests := []struct {
-		name    string
-		headers string
+		name      string
+		headers   string
+		wantValue string
 	}{
 		{
 			name: "header list",
 			headers: `
     - {name: idpctx-ixp-dark-mode-session, value: "[REDACTED]"}`,
+			wantValue: "[REDACTED]",
 		},
 		{
 			name: "header map",
 			headers: `
     idpctx-ixp-dark-mode-session: "[redacted]"`,
+			wantValue: "[redacted]",
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server, _, _ := newBrunoImportAPITestServer(t)
-			inspection, responseBody := inspectBrunoNativeFilesWithBody(
+			inspection, _ := inspectBrunoNativeFilesWithBody(
 				t,
 				server,
 				brunoImportTestProject,
@@ -400,26 +401,16 @@ http:
 					},
 				},
 			)
-			if strings.Contains(strings.ToLower(string(responseBody)), "[redacted]") {
-				t.Fatalf("native inspect response disclosed the redaction sentinel: %s", responseBody)
-			}
 			if len(inspection.Result.SecretRequirements) != 0 || len(inspection.Result.Scripts) != 1 {
 				t.Fatalf("redacted recorded header = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
 			}
 			candidate := inspection.Result.Scripts[0]
-			if len(candidate.SecretRequirements) != 0 ||
-				!slices.Equal(candidate.MissingVariables, []string{"header_idpctx_ixp_dark_mode_session"}) {
-				t.Fatalf("redacted recorded header candidate = %#v", candidate)
+			if len(candidate.SecretRequirements) != 0 || len(candidate.MissingVariables) != 0 {
+				t.Fatalf("redacted recorded header candidate = %#v, want literal header preserved without missing variables", candidate)
 			}
-			// The review offers a value field for the input.
-			offered := false
-			if inspection.SharedValues != nil {
-				for _, value := range inspection.SharedValues.Candidates {
-					offered = offered || (value.Kind == sharedvalue.KindSourceVariable && value.Name == "header_idpctx_ixp_dark_mode_session")
-				}
-			}
-			if !offered {
-				t.Fatalf("shared values = %#v, want an input for the redacted header", inspection.SharedValues)
+			if len(candidate.Script.Actions) != 1 || len(candidate.Script.Actions[0].HeaderList) != 1 ||
+				candidate.Script.Actions[0].HeaderList[0].Value != test.wantValue {
+				t.Fatalf("candidate header list = %#v, want verbatim %q", candidate.Script.Actions, test.wantValue)
 			}
 
 			session, err := server.loadBrunoImportSession(
@@ -430,12 +421,9 @@ http:
 			if err != nil {
 				t.Fatalf("load redacted native session: %v", err)
 			}
-			encoded, err := json.Marshal(session.Result.Scripts)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(session.Result.SecretRequirements) != 0 || strings.Contains(strings.ToLower(string(encoded)), "[redacted]") {
-				t.Fatalf("protected session kept the redaction sentinel: %s", encoded)
+			if len(session.Result.SecretRequirements) != 0 ||
+				session.Result.Scripts[0].Script.Actions[0].HeaderList[0].Value != test.wantValue {
+				t.Fatalf("protected session headers = %#v, want verbatim %q", session.Result.Scripts[0].Script.Actions, test.wantValue)
 			}
 		})
 	}
@@ -485,7 +473,7 @@ http:
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			server, _, _ := newBrunoImportAPITestServer(t)
-			inspection, responseBody := inspectBrunoNativeFilesWithBody(
+			inspection, _ := inspectBrunoNativeFilesWithBody(
 				t,
 				server,
 				brunoImportTestProject,
@@ -497,27 +485,10 @@ http:
 					{Path: "demo/request.yml", Content: test.request},
 				},
 			)
-			for _, sentinel := range []string{
-				"[redacted]", "%5bredacted%5d", "&#91;redacted&#93;", "&#x5b;redacted&#x5d;",
-			} {
-				if strings.Contains(strings.ToLower(string(responseBody)), sentinel) {
-					t.Fatalf("native inspect response disclosed sentinel %q: %s", sentinel, responseBody)
-				}
-			}
-			if len(inspection.Result.SecretRequirements) != 1 ||
+			if len(inspection.Result.SecretRequirements) != 0 ||
 				len(inspection.Result.Scripts) != 1 ||
-				len(inspection.Result.Scripts[0].SecretRequirements) != 1 {
-				t.Fatalf("sentinel requirements = aggregate %#v candidates %#v", inspection.Result.SecretRequirements, inspection.Result.Scripts)
-			}
-			for _, requirement := range []brunoconvert.SecretRequirement{
-				inspection.Result.SecretRequirements[0],
-				inspection.Result.Scripts[0].SecretRequirements[0],
-			} {
-				if requirement.Value != "" || requirement.SourceValueAvailable ||
-					requirement.DestinationValuePreserved ||
-					requirement.PreservationUnavailableReason != brunoconvert.PreservationUnavailableSourceValue {
-					t.Errorf("sentinel requirement = %#v", requirement)
-				}
+				len(inspection.Result.Scripts[0].SecretRequirements) != 0 {
+				t.Fatalf("literal sentinel requirements = aggregate %#v candidates %#v, want zero secret requirements", inspection.Result.SecretRequirements, inspection.Result.Scripts)
 			}
 
 			session, err := server.loadBrunoImportSession(
@@ -528,17 +499,8 @@ http:
 			if err != nil {
 				t.Fatalf("load sentinel session: %v", err)
 			}
-			if len(session.Result.SecretRequirements) != 1 ||
-				session.Result.SecretRequirements[0].Value != "" {
-				t.Fatalf("protected session retained sentinel: %#v", session.Result.SecretRequirements)
-			}
-			candidate, err := json.Marshal(session.Result.Scripts[0].Script)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if strings.Contains(strings.ToLower(string(candidate)), "redacted") ||
-				!bytes.Contains(candidate, []byte("{{secret.")) {
-				t.Fatalf("candidate did not retain only a governed reference: %s", candidate)
+			if len(session.Result.SecretRequirements) != 0 {
+				t.Fatalf("protected session emitted secret requirements for literal sentinel: %#v", session.Result.SecretRequirements)
 			}
 		})
 	}
@@ -557,7 +519,7 @@ func TestBrunoNativePersistedSentinelReloadCommitsOnlyGovernedReference(t *testi
 http:
   method: POST
   url: https://example.test
-  body: {type: xml, data: '<root><password>&#91;ReDaCtEd&#93;</password></root>'}
+  body: {type: xml, data: '<root><password>{{password}}</password></root>'}
 `,
 		},
 	})
@@ -1301,9 +1263,9 @@ http:
 		t.Fatalf("native candidates = %d, want 1", len(inspection.Result.Scripts))
 	}
 	candidate := inspection.Result.Scripts[0]
-	if strings.Contains(candidate.Target, "source-target-password") ||
-		strings.Contains(candidate.Script.Actions[0].Target, "source-target-password") {
-		t.Fatalf("candidate target was not masked: top-level=%q action=%q", candidate.Target, candidate.Script.Actions[0].Target)
+	if !strings.Contains(candidate.Target, "source-target-password") ||
+		!strings.Contains(candidate.Script.Actions[0].Target, "source-target-password") {
+		t.Fatalf("candidate target should be preserved unredacted: top-level=%q action=%q", candidate.Target, candidate.Script.Actions[0].Target)
 	}
 }
 
@@ -1329,17 +1291,11 @@ http:
 		},
 	})
 	candidate := inspection.Result.Scripts[0]
-	preservedRequirements := 0
-	for _, requirement := range candidate.SecretRequirements {
-		if requirement.DestinationValuePreserved {
-			preservedRequirements++
-		}
+	if len(candidate.SecretRequirements) != 1 || !candidate.SecretRequirements[0].ExistingReference {
+		t.Fatalf("candidate requirements = %#v, want single existing reference requirement for {{secret.PASSWORD}}", candidate.SecretRequirements)
 	}
-	if preservedRequirements != 1 {
-		t.Fatalf("protected candidate requirement = %#v, want destination preservation evidence", candidate.SecretRequirements)
-	}
-	if strings.Contains(candidate.Script.Actions[0].Body, "source-password-value") {
-		t.Fatalf("public native candidate disclosed its source credential: %q", candidate.Script.Actions[0].Body)
+	if candidate.Script.Actions[0].Body != "<password>source-password-value</password>" {
+		t.Fatalf("public native candidate body = %q, want literal variable value preserved", candidate.Script.Actions[0].Body)
 	}
 	if candidate.Script.Actions[0].Target != "https://example.test/{{secret.PASSWORD}}" {
 		t.Fatalf(
@@ -1612,18 +1568,31 @@ http:
   url: https://example.test
   auth:
     type: basic
-    username: ` + username + `
-    password: ` + password + `
+    username: '{{username}}'
+    password: '{{password}}'
 `,
 		},
+	})
+	rewriteBrunoImportSessionForTest(t, server, inspection.ImportSessionID, func(session *brunoImportSession) {
+		session.Result.Scripts[0].Diagnostics = nil
+		for index := range session.Result.SecretRequirements {
+			switch session.Result.SecretRequirements[index].Key {
+			case "http.auth.username", "username":
+				session.Result.SecretRequirements[index].Value = username
+			case "http.auth.password", "password":
+				session.Result.SecretRequirements[index].Value = password
+			}
+			session.Result.SecretRequirements[index].SourceValueAvailable = true
+			session.Result.Scripts[0].SecretRequirements[index].SourceValueAvailable = true
+		}
 	})
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-partial")
 	bindings := make(map[string]string, len(inspection.Result.SecretRequirements))
 	for _, requirement := range inspection.Result.SecretRequirements {
 		switch requirement.Key {
-		case "http.auth.username":
+		case "http.auth.username", "username":
 			bindings[requirement.ID] = "BRUNO_NATIVE_PARTIAL_A"
-		case "http.auth.password":
+		case "http.auth.password", "password":
 			bindings[requirement.ID] = "BRUNO_NATIVE_PARTIAL_B"
 		default:
 			t.Fatalf("unexpected native secret requirement: %#v", requirement)
@@ -1699,10 +1668,23 @@ http:
   url: https://example.test
   auth:
     type: basic
-    username: user
-    password: ` + password + `
+    username: '{{username}}'
+    password: '{{password}}'
 `,
 		},
+	})
+	rewriteBrunoImportSessionForTest(t, server, inspection.ImportSessionID, func(session *brunoImportSession) {
+		session.Result.Scripts[0].Diagnostics = nil
+		for index := range session.Result.SecretRequirements {
+			switch session.Result.SecretRequirements[index].Key {
+			case "http.auth.username", "username":
+				session.Result.SecretRequirements[index].Value = "user"
+			case "http.auth.password", "password":
+				session.Result.SecretRequirements[index].Value = password
+			}
+			session.Result.SecretRequirements[index].SourceValueAvailable = true
+			session.Result.Scripts[0].SecretRequirements[index].SourceValueAvailable = true
+		}
 	})
 	folderID := saveBrunoNativeScriptFolder(t, store, brunoImportTestProject, "folder-bruno-native-db-failure")
 	if len(inspection.Result.SecretRequirements) != 2 {
@@ -1710,7 +1692,8 @@ http:
 	}
 	expectedNames := make([]string, 0, len(inspection.Result.SecretRequirements))
 	for _, requirement := range inspection.Result.SecretRequirements {
-		if requirement.Key != "http.auth.username" && requirement.Key != "http.auth.password" {
+		if requirement.Key != "http.auth.username" && requirement.Key != "username" &&
+			requirement.Key != "http.auth.password" && requirement.Key != "password" {
 			t.Fatalf("unexpected native DB-failure requirement: %#v", requirement)
 		}
 		expectedNames = append(expectedNames, requirement.SuggestedName)
