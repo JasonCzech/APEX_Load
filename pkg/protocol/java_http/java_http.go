@@ -8,12 +8,14 @@ import (
 	"math"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpproto "github.com/jasonczech/apexload/pkg/protocol/http"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const supportedCodec = "java_serialized_object_base64"
@@ -41,6 +43,9 @@ func init() {
 type JavaHTTP struct {
 	unredactedDebugSnapshots bool
 	http                     *httpproto.HTTP
+	redactionMu              sync.RWMutex
+	redactor                 protocol.TextRedactor
+	secretActive             func() bool
 	baseURL                  string
 	codec                    string
 	helperMode               string
@@ -55,9 +60,95 @@ type JavaHTTP struct {
 }
 
 var (
-	_ protocol.CookieController = (*JavaHTTP)(nil)
-	_ protocol.CacheController  = (*JavaHTTP)(nil)
+	_ protocol.CookieController            = (*JavaHTTP)(nil)
+	_ protocol.CacheController             = (*JavaHTTP)(nil)
+	_ protocol.RuntimeTextRedactorSetter   = (*JavaHTTP)(nil)
+	_ protocol.RuntimeSecretActivitySetter = (*JavaHTTP)(nil)
 )
+
+func (j *JavaHTTP) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
+	j.redactionMu.Lock()
+	j.redactor = redactor
+	j.redactionMu.Unlock()
+	if j.http != nil {
+		if setter, ok := any(j.http).(protocol.RuntimeTextRedactorSetter); ok {
+			setter.SetRuntimeTextRedactor(redactor)
+		}
+	}
+}
+
+func (j *JavaHTTP) SetRuntimeSecretActivity(active func() bool) {
+	j.redactionMu.Lock()
+	j.secretActive = active
+	j.redactionMu.Unlock()
+	if j.http != nil {
+		if setter, ok := any(j.http).(protocol.RuntimeSecretActivitySetter); ok {
+			setter.SetRuntimeSecretActivity(active)
+		}
+	}
+}
+
+func (j *JavaHTTP) currentRedactor() protocol.TextRedactor {
+	j.redactionMu.RLock()
+	redactor := j.redactor
+	j.redactionMu.RUnlock()
+	return redactor
+}
+
+func (j *JavaHTTP) currentSecretActive() func() bool {
+	j.redactionMu.RLock()
+	active := j.secretActive
+	j.redactionMu.RUnlock()
+	return active
+}
+
+func (j *JavaHTTP) payloadContainsSecret(raw []byte, encoded string, includeHeuristic bool) bool {
+	if j.unredactedDebugSnapshots {
+		return false
+	}
+	if len(raw) == 0 && strings.TrimSpace(encoded) == "" {
+		return false
+	}
+	redactor := j.currentRedactor()
+	checkText := func(s string) bool {
+		if s == "" {
+			return false
+		}
+		if redactor != nil && redactor(s) != s {
+			return true
+		}
+		return includeHeuristic && scrub.BodyText(s) != s
+	}
+	if encoded != "" && redactor != nil && redactor(encoded) != encoded {
+		return true
+	}
+	if len(raw) > 0 {
+		if checkText(string(raw)) {
+			return true
+		}
+		// Inspect printable ASCII runs embedded inside binary Java serialization
+		// streams (e.g. TC_STRING values surrounded by stream opcodes/lengths).
+		runStart := -1
+		for idx, b := range raw {
+			if b >= 0x20 && b <= 0x7e {
+				if runStart < 0 {
+					runStart = idx
+				}
+				continue
+			}
+			if runStart >= 0 {
+				if idx-runStart >= 4 && checkText(string(raw[runStart:idx])) {
+					return true
+				}
+				runStart = -1
+			}
+		}
+		if runStart >= 0 && len(raw)-runStart >= 4 && checkText(string(raw[runStart:])) {
+			return true
+		}
+	}
+	return false
+}
 
 func (j *JavaHTTP) Name() string { return "java_http" }
 
@@ -158,6 +249,16 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 		j.footprintReq = &normalized
 	}
 	j.http = &httpproto.HTTP{}
+	if redactor := j.currentRedactor(); redactor != nil {
+		if setter, ok := any(j.http).(protocol.RuntimeTextRedactorSetter); ok {
+			setter.SetRuntimeTextRedactor(redactor)
+		}
+	}
+	if active := j.currentSecretActive(); active != nil {
+		if setter, ok := any(j.http).(protocol.RuntimeSecretActivitySetter); ok {
+			setter.SetRuntimeSecretActivity(active)
+		}
+	}
 	return j.http.Init(ctx, config)
 }
 
@@ -253,7 +354,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 			DependencyType:  "java_http",
 			ErrorMessage:    fmt.Sprintf("unsupported java_http action body encoding: %s", bodyEncoding),
 			ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-			Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared, j.unredactedDebugSnapshots),
+			Snapshot:        j.buildPreflightSnapshot(&prepared),
 		}, nil
 	}
 	zeroBytes := int64(0)
@@ -274,7 +375,7 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 				DependencyType:  "java_http",
 				ErrorMessage:    fmt.Sprintf("invalid base64 java_http body: %v", err),
 				ServerTelemetry: &protocol.ServerTelemetry{SerializationMs: durationToMilliseconds(base64DecodeDuration)},
-				Snapshot:        buildJavaHTTPPreflightSnapshot(j.baseURL, &prepared, j.unredactedDebugSnapshots),
+				Snapshot:        j.buildPreflightSnapshot(&prepared),
 			}, nil
 		}
 		decodedBytes := int64(len(decoded))
@@ -319,16 +420,38 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 		mappedExtractions = applyResponseMapping(j.responseMapping, result.ResponseBody)
 	}
 	deserializationDuration := time.Duration(0)
+	var rawResponseBytes []byte
+	if result != nil {
+		rawResponseBytes = []byte(result.ResponseBody)
+	}
 	if result != nil && j.preserveBinaryResult {
 		startedAt := time.Now()
-		result.ResponseBody = base64.StdEncoding.EncodeToString([]byte(result.ResponseBody))
+		encodedResp := base64.StdEncoding.EncodeToString(rawResponseBytes)
 		observedEncode := time.Since(startedAt)
 		var encodeMs float64
 		deserializationDuration, encodeMs = base64OperationMeasurement(observedEncode)
 		diagnostic.Base64EncodeMs = &encodeMs
 		if diagnostic.ResponseRetainedBytes != nil {
-			encodedBytes := int64(len(result.ResponseBody))
+			encodedBytes := int64(len(encodedResp))
 			diagnostic.ResponseBase64Bytes = &encodedBytes
+		}
+		if j.currentRedactor() != nil && j.payloadContainsSecret(rawResponseBytes, encodedResp, false) {
+			result.ResponseBody = scrub.Redacted
+		} else {
+			result.ResponseBody = encodedResp
+		}
+	} else if result != nil && len(rawResponseBytes) > 0 && j.currentRedactor() != nil && j.payloadContainsSecret(rawResponseBytes, "", false) {
+		result.ResponseBody = scrub.Redacted
+	}
+	if result != nil && result.Snapshot != nil && !j.unredactedDebugSnapshots {
+		if len(prepared.Body) > 0 && j.payloadContainsSecret(prepared.Body, string(action.Body), true) {
+			result.Snapshot.RequestBody = scrub.Redacted
+		} else if result.Snapshot.RequestBody != "" && j.payloadContainsSecret([]byte(result.Snapshot.RequestBody), result.Snapshot.RequestBody, true) {
+			result.Snapshot.RequestBody = scrub.Redacted
+		}
+		if result.Snapshot.ResponseBody != "" && (result.ResponseBody == scrub.Redacted || j.payloadContainsSecret([]byte(result.Snapshot.ResponseBody), result.Snapshot.ResponseBody, true)) {
+			result.Snapshot.ResponseBody = scrub.Redacted
+			result.Snapshot.ResponseBodyState = "redacted"
 		}
 	}
 	if result != nil {
@@ -499,6 +622,33 @@ func firstHeaderValue(headers map[string]string, key string) string {
 	return ""
 }
 
+func (j *JavaHTTP) buildPreflightSnapshot(action *protocol.Action) *protocol.ErrorSnapshot {
+	snap := buildJavaHTTPPreflightSnapshot(j.baseURL, action, j.unredactedDebugSnapshots)
+	if snap == nil || j.unredactedDebugSnapshots {
+		return snap
+	}
+	redactor := j.currentRedactor()
+	if redactor != nil {
+		snap.RequestURL = redactor(snap.RequestURL)
+		if snap.RequestBody != "" && j.payloadContainsSecret([]byte(snap.RequestBody), snap.RequestBody, true) {
+			snap.RequestBody = scrub.Redacted
+		} else {
+			snap.RequestBody = redactor(snap.RequestBody)
+		}
+	}
+	if len(snap.RequestHeaders) > 0 {
+		policy := scrub.Policy{}
+		for key, value := range snap.RequestHeaders {
+			if policy.SensitiveHeader(key) {
+				snap.RequestHeaders[key] = scrub.Redacted
+			} else if redactor != nil {
+				snap.RequestHeaders[key] = redactor(value)
+			}
+		}
+	}
+	return snap
+}
+
 func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action, unredactedDebug ...bool) *protocol.ErrorSnapshot {
 	raw := len(unredactedDebug) > 0 && unredactedDebug[0]
 	if action == nil {
@@ -512,6 +662,13 @@ func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action, unr
 	requestBody := string(action.Body)
 	if !raw && len(action.RedactedBody) > 0 {
 		requestBody = string(action.RedactedBody)
+	}
+	if !raw && requestBody != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(requestBody)); err == nil {
+			if scrub.BodyText(string(decoded)) != string(decoded) {
+				requestBody = scrub.Redacted
+			}
+		}
 	}
 	requestHeaders := cloneHeaders(action.Headers)
 	if !raw {

@@ -113,10 +113,10 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 		"selects text vs digest; carries no credential"),
 
 	// --- excluded: no wire form reachable from this matcher -----------------
-	"config.network.username": excluded(
-		"read into pkg/protocol/network at network.go:75-76 and never used"),
-	"config.network.password": excluded(
-		"read into pkg/protocol/network at network.go:75-76 and never used"),
+	"config.network.username": covered("config.network",
+		"SMTP SASL AUTH PLAIN / AUTH LOGIN base64 composites"),
+	"config.network.password": covered("config.network",
+		"SMTP SASL AUTH PLAIN / AUTH LOGIN base64 composites"),
 	"config.network.address": excluded(
 		"host:port for a raw socket; no userinfo grammar and no HTTP dialer"),
 	"config.jms.broker_url": excluded(
@@ -141,6 +141,15 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 	"config.sapgui.password":          excluded("SAP GUI logon credential; no HTTP dialer"),
 	"config.observability.external_metrics.url": excluded(
 		"polled by the API server (pkg/api/external_metrics.go); never enters buildProtoConfig or this matcher"),
+}
+
+func init() {
+	if _, ok := reflect.TypeOf(dsl.KafkaOAuthConfig{}).FieldByName("ClientSecret"); ok {
+		credentialSurfaceDispositions["config.kafka.oauth.client_secret"] = covered(
+			"config.kafka.oauth",
+			"OAuth Basic credential pair",
+		)
+	}
 }
 
 // credentialSurfaceFieldTriggers are the json-name tokens that make a string
@@ -505,12 +514,13 @@ func TestScriptCredentialCompositeSurfacesCoversEveryConfigSurface(t *testing.T)
 			},
 			Kafka:    dsl.KafkaConfig{SchemaRegistryURL: "https://u:{{secret.P}}@registry.test"},
 			Database: dsl.DatabaseConfig{DSN: "postgres://u:{{secret.P}}@db.test/app"},
+			Network:  dsl.NetworkConfig{Username: "u", Password: "{{secret.P}}"},
 		},
 	}
 	resolver := SecretResolverFunc(func(name string) (string, bool) { return "pw", name == "P" })
 	config := buildProtoConfigWithSecretResolver(script, resolver)
 
-	names := make([]string, 0, 9)
+	names := make([]string, 0, 11)
 	for _, surface := range scriptCredentialCompositeSurfaces(script, config) {
 		names = append(names, surface.name)
 	}
@@ -526,6 +536,7 @@ func TestScriptCredentialCompositeSurfacesCoversEveryConfigSurface(t *testing.T)
 		"config.http.proxy",
 		"config.http.proxy.url",
 		"config.kafka.schema_registry_url",
+		"config.network",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("scriptCredentialCompositeSurfaces names = %v, want %v", names, want)

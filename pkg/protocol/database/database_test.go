@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"errors"
 	"io"
 	"strings"
@@ -559,5 +560,210 @@ func TestDatabaseReadOnlyAppliesToQueryAction(t *testing.T) {
 	}
 	if result.Success || !strings.Contains(result.ErrorMessage, "read_only") {
 		t.Fatalf("result = %#v, want read-only rejection", result)
+	}
+}
+
+func TestDatabaseScalarAndDSNErrorRedaction(t *testing.T) {
+	const (
+		scalarSecret = "synth-db-scalar-secret-9101"
+		dsnSecret    = "synth-db-dsn-secret-9102"
+	)
+
+	db := &Database{}
+	db.SetRuntimeTextRedactor(func(s string) string {
+		return strings.ReplaceAll(s, scalarSecret, "[REDACTED]")
+	})
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver": "sqlite",
+		"database_dsn":    ":memory:",
+	}); err != nil {
+		t.Fatalf("init database: %v", err)
+	}
+	defer db.Teardown(context.Background())
+
+	res, err := db.Execute(context.Background(), &protocol.Action{
+		Name:   "select-secret-scalar",
+		Type:   "db_query",
+		Target: "SELECT ? AS col_zero, 'visible-row' AS col_one",
+		Params: map[string]any{"binds": []any{scalarSecret}},
+	})
+	if err != nil || !res.Success {
+		t.Fatalf("db_query failed: err=%v msg=%s", err, res.ErrorMessage)
+	}
+	if strings.Contains(res.ResponseBody, scalarSecret) {
+		t.Fatalf("database ResponseBody leaked scalar secret: %s", res.ResponseBody)
+	}
+	rowsEvidence, _ := res.ProtocolEvidence["rows"].(map[string]any)
+	if scalar, _ := rowsEvidence["scalar"].(string); strings.Contains(scalar, scalarSecret) {
+		t.Fatalf("database ProtocolEvidence scalar leaked secret: %q", scalar)
+	}
+
+	dsnHolder := &Database{dsn: "postgres://dbadmin:" + dsnSecret + "@db.example.test:5432/orders"}
+	redactedErr := dsnHolder.redactError(errors.New("dial error on postgres://dbadmin:" + dsnSecret + "@db.example.test:5432/orders: connection refused"))
+	if redactedErr == nil || strings.Contains(redactedErr.Error(), dsnSecret) {
+		t.Fatalf("database redactError leaked DSN credential: %v", redactedErr)
+	}
+
+	failedRes, err := db.Execute(context.Background(), &protocol.Action{
+		Name:    "failing-secret-query",
+		Type:    "db_query",
+		Target:  "SELECT * FROM missing_table WHERE secret = '" + scalarSecret + "'",
+		Headers: map[string]string{"X-AccPassword": "short-db-hdr-pwd", "X-Custom": scalarSecret},
+		Body:    []byte("body-" + scalarSecret),
+	})
+	if err != nil || failedRes.Success || failedRes.Snapshot == nil {
+		t.Fatalf("expected failing query with snapshot, got err=%v res=%#v", err, failedRes)
+	}
+	snapJSON, _ := json.Marshal(failedRes.Snapshot)
+	evJSON, _ := json.Marshal(failedRes.ProtocolEvidence)
+	for _, secret := range []string{scalarSecret, "short-db-hdr-pwd"} {
+		if strings.Contains(string(snapJSON), secret) || strings.Contains(string(evJSON), secret) {
+			t.Fatalf("database failure snapshot/evidence leaked %q: snap=%s ev=%s", secret, snapJSON, evJSON)
+		}
+	}
+
+	// Boundary: when "[REDACTED]" expansion pushes scrubbed JSON past hardDatabaseResponseBytes,
+	// scrubQueryOutputs fails closed to "[REDACTED]" rather than retaining raw cells.
+	const cellCount = 450_000
+	rows := make([]map[string]any, cellCount)
+	for i := range rows {
+		rows[i] = map[string]any{"password": "a"}
+	}
+	nearLimitJSON, err := json.Marshal(map[string]any{"rows": rows})
+	if err != nil || len(nearLimitJSON) >= hardDatabaseResponseBytes {
+		t.Fatalf("unexpected fixture size=%d err=%v", len(nearLimitJSON), err)
+	}
+	overflowRes := &protocol.Result{ResponseBody: string(nearLimitJSON)}
+	db.scrubQueryOutputs(overflowRes, nil)
+	if overflowRes.ResponseBody != "[REDACTED]" {
+		t.Fatalf("expected fail-closed [REDACTED] on scrubbed payload byte overflow, got len=%d", len(overflowRes.ResponseBody))
+	}
+
+	// Finding 5 regression: scalar_equals evaluates against raw DB scalar (passes when matching),
+	// and scrubs DB-resident sensitive-column scalars (<24 chars, not in DSL) on assertion failure.
+	const dbResidentShortKey = "db-key-77"
+	passScalarRes, err := db.Execute(context.Background(), &protocol.Action{
+		Name:   "assert-scalar-pass",
+		Type:   "db_query",
+		Target: "SELECT '" + dbResidentShortKey + "' AS api_key",
+		Assertions: []protocol.Assertion{
+			{Type: "scalar_equals", Expected: dbResidentShortKey},
+		},
+	})
+	if err != nil || !passScalarRes.Success {
+		t.Fatalf("expected scalar_equals assertion against raw DB scalar to pass, got err=%v res=%#v", err, passScalarRes)
+	}
+	failScalarRes, err := db.Execute(context.Background(), &protocol.Action{
+		Name:   "assert-scalar-fail",
+		Type:   "db_query",
+		Target: "SELECT '" + dbResidentShortKey + "' AS api_key",
+		Assertions: []protocol.Assertion{
+			{Type: "scalar_equals", Expected: "different-expected-value"},
+		},
+	})
+	if err != nil || failScalarRes.Success {
+		t.Fatalf("expected scalar_equals mismatch to fail, got err=%v res=%#v", err, failScalarRes)
+	}
+	if strings.Contains(failScalarRes.ErrorMessage, dbResidentShortKey) || !strings.Contains(failScalarRes.ErrorMessage, "[REDACTED]") {
+		t.Fatalf("scalar_equals failure ErrorMessage leaked DB-resident sensitive scalar %q: %q", dbResidentShortKey, failScalarRes.ErrorMessage)
+	}
+
+	// Structured slice/map cells and scalars must never panic on non-comparable Go
+	// values and must recursively scrub nested sensitive keys and secret strings.
+	structuredPayload := map[string]any{
+		"columns": []string{"meta", "tags", "password"},
+		"rows": []map[string]any{{
+			"meta": map[string]any{
+				"safe":        "visible",
+				"accPassword": "short-nested-pin-99",
+				"dsn":         scalarSecret,
+			},
+			"tags":     []any{"alpha", scalarSecret, map[string]any{"api_key": "short-tag-key"}},
+			"password": []any{"secret-array-item"},
+		}},
+		"first_row": map[string]any{
+			"meta": map[string]any{
+				"safe":        "visible",
+				"accPassword": "short-nested-pin-99",
+			},
+			"tags": []string{"alpha", scalarSecret},
+		},
+		"scalar": []any{"neutral-elem", map[string]any{"secretToken": "short-scalar-tok"}},
+	}
+	if !db.scrubQueryPayloadMap(structuredPayload) {
+		t.Fatal("expected structured payload map with nested secrets to report changed=true")
+	}
+	structuredEncoded, err := json.Marshal(structuredPayload)
+	if err != nil {
+		t.Fatalf("marshal scrubbed structured payload: %v", err)
+	}
+	for _, secret := range []string{"short-nested-pin-99", scalarSecret, "short-tag-key", "secret-array-item", "short-scalar-tok"} {
+		if strings.Contains(string(structuredEncoded), secret) {
+			t.Fatalf("scrubbed structured database payload leaked %q: %s", secret, structuredEncoded)
+		}
+	}
+	for _, keep := range []string{"visible", "alpha", "neutral-elem"} {
+		if !strings.Contains(string(structuredEncoded), keep) {
+			t.Fatalf("scrubbed structured database payload dropped benign value %q: %s", keep, structuredEncoded)
+		}
+	}
+
+	// Clean non-comparable slice/map payload reports changed=false without panicking.
+	cleanStructured := map[string]any{
+		"columns": []string{"tags", "attrs"},
+		"rows": []map[string]any{{
+			"tags":  []any{"one", "two"},
+			"attrs": map[string]any{"env": "staging"},
+		}},
+		"scalar": []any{"one", "two"},
+	}
+	if db.scrubQueryPayloadMap(cleanStructured) {
+		t.Fatal("expected clean structured payload to report changed=false")
+	}
+
+	// Excessive nesting past maxDatabaseCellScrubDepth fails closed to [REDACTED].
+	deep := any(map[string]any{"leaf": "deep-secret"})
+	for range maxDatabaseCellScrubDepth + 2 {
+		deep = map[string]any{"child": deep}
+	}
+	deepPayload := map[string]any{
+		"columns": []string{"nested"},
+		"rows":    []map[string]any{{"nested": deep}},
+		"scalar":  deep,
+	}
+	if !db.scrubQueryPayloadMap(deepPayload) {
+		t.Fatal("expected over-depth payload to fail closed with changed=true")
+	}
+	deepEncoded, _ := json.Marshal(deepPayload)
+	if strings.Contains(string(deepEncoded), "deep-secret") {
+		t.Fatalf("over-depth database payload leaked leaf value: %s", deepEncoded)
+	}
+
+	// Action Params containing map[string]string or over-depth nesting must be scrubbed in ProtocolEvidence.
+	deepParam := any("deep-param-secret")
+	for range 11 {
+		deepParam = map[string]any{"child": deepParam}
+	}
+	paramEvRes, err := db.Execute(context.Background(), &protocol.Action{
+		Name:   "param-map-string-string",
+		Type:   "db_query",
+		Target: "SELECT 1 AS ok",
+		Params: map[string]any{
+			"labels": map[string]string{
+				"password": "short-param-map-pwd",
+				"dsn":      scalarSecret,
+				"env":      "staging",
+			},
+			"over_depth": deepParam,
+		},
+	})
+	if err != nil || !paramEvRes.Success {
+		t.Fatalf("param-map-string-string Execute: err=%v res=%#v", err, paramEvRes)
+	}
+	paramEvJSON, _ := json.Marshal(paramEvRes.ProtocolEvidence)
+	for _, secret := range []string{"short-param-map-pwd", scalarSecret, "deep-param-secret"} {
+		if strings.Contains(string(paramEvJSON), secret) {
+			t.Fatalf("database ProtocolEvidence leaked param secret %q: %s", secret, paramEvJSON)
+		}
 	}
 }

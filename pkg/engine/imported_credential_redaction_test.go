@@ -180,8 +180,12 @@ func TestImportedCredentialValuesForDisclosureFailsClosedBesideStaleLocator(t *t
 		}},
 	}
 
-	if _, err := ImportedCredentialValues(script); err == nil {
-		t.Fatal("strict runtime inspection accepted a stale locator")
+	runtimeValues, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues failed on stale locator: %v", err)
+	}
+	if !containsExactString(runtimeValues, pin) {
+		t.Fatalf("ImportedCredentialValues() = %#v, want valid pin %q alongside stale locator", runtimeValues, pin)
 	}
 	if values, err := ImportedCredentialValuesForDisclosure(script); err == nil ||
 		values != nil {
@@ -490,8 +494,11 @@ func TestLegacyBodyCredentialFallbackFailsClosedForMalformedDeclaredStructure(t 
 			Body: `{"password":"unterminated`,
 		}},
 	}
-	if _, err := ImportedCredentialValues(script); err == nil {
-		t.Fatal("malformed declared JSON credential body did not fail closed")
+	if _, err := ImportedCredentialValuesForDisclosure(script); err == nil {
+		t.Fatal("malformed declared JSON credential body did not fail closed for disclosure")
+	}
+	if _, err := ImportedCredentialValues(script); err != nil {
+		t.Fatalf("malformed declared JSON body unnecessarily blocked runtime execution: %v", err)
 	}
 	script.Actions[0].Body = `{"ordinary":"intentionally malformed`
 	if _, err := ImportedCredentialValues(script); err != nil {
@@ -860,12 +867,21 @@ func TestImportedCredentialValuesResolvesCompositionalMultipartAndXMLLocators(t 
 		}},
 	}
 
+	disclosed, err := ImportedCredentialValuesForDisclosure(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure: %v", err)
+	}
+	if containsExactString(disclosed, firstPassword) {
+		t.Fatalf("disclosure values = %#v, unexpectedly included unlocated occurrence %q", disclosed, firstPassword)
+	}
+
 	values, err := ImportedCredentialValues(script)
 	if err != nil {
 		t.Fatalf("ImportedCredentialValues: %v", err)
 	}
 	for _, want := range []string{
 		"Bearer " + partHeader,
+		firstPassword,
 		secondPassword,
 		branchPassword,
 		formPassword,
@@ -875,7 +891,6 @@ func TestImportedCredentialValuesResolvesCompositionalMultipartAndXMLLocators(t 
 		}
 	}
 	for _, unwanted := range []string{
-		firstPassword,
 		"ordinary",
 		"keep",
 	} {

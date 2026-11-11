@@ -176,6 +176,7 @@ func preflightBrowserSession(ctx context.Context, group GroupConfig, base map[st
 		defer cancelTeardown()
 		_ = callProtocolTeardown(teardownCtx, proto, group.RedactionConfig)
 	}()
+	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return group.RedactionConfig })
 	if err := callProtocolInit(ctx, proto, config, group.RedactionConfig); err != nil {
 		return label + " could not start its browser" + cause(err)
 	}

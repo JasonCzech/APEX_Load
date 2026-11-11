@@ -118,3 +118,40 @@ func TestKafkaInitCarriesInternalDebugCapability(t *testing.T) {
 		}
 	}
 }
+
+func TestKafkaExplicitOAuthRegistersMintedTokenWithRuntimeSecretRegistrar(t *testing.T) {
+	const mintedToken = "synth-kafka-oauth-token-9401"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fmt.Fprintf(w, `{"access_token":%q,"expires_in":300}`, mintedToken)
+	}))
+	defer server.Close()
+
+	var registered []string
+	instance := &Kafka{name: "kafka"}
+	instance.SetRuntimeSecretRegistrar(func(origin string, values []string) {
+		if origin == "oauth:kafka" {
+			registered = append(registered, values...)
+		}
+	})
+	if err := instance.Init(context.Background(), map[string]any{
+		"kafka_mock":                true,
+		"kafka_oauth_mode":          "client_credentials",
+		"kafka_oauth_token_url":     server.URL,
+		"kafka_oauth_client_id":     "kafka-client",
+		"kafka_oauth_client_secret": "synth-kafka-client-secret-9402",
+		"kafka_sasl_mechanism":      "oauthbearer",
+		"kafka_security_protocol":   "sasl_ssl",
+		"allowed_target_hosts":      []string{"127.0.0.1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = instance.Teardown(context.Background()) }()
+
+	got, err := explicitOAuthTokenWithClient(context.Background(), instance.cfg, server.Client())
+	if err != nil || got != mintedToken {
+		t.Fatalf("explicitOAuthTokenWithClient = %q, %v", got, err)
+	}
+	if len(registered) == 0 || registered[0] != mintedToken {
+		t.Fatalf("RuntimeSecretRegistrar did not receive minted Kafka OAuth token: %v", registered)
+	}
+}

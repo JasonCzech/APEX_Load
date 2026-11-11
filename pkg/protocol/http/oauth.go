@@ -74,13 +74,49 @@ type OAuthTokenRequest struct {
 	HTTPClient           *http.Client `json:"-"`
 	// UnredactedDebugErrors is restricted to interactive debugger requests.
 	UnredactedDebugErrors bool `json:"-"`
+	// OnToken notifies runtime redaction before a fetched or cached OAuth token
+	// is returned to the caller.
+	OnToken func(OAuthToken) `json:"-"`
 }
 
 type OAuthToken struct {
-	AccessToken string
-	TokenType   string
-	InstanceURL string
-	ExpiresAt   time.Time
+	AccessToken  string
+	RefreshToken string
+	TokenType    string
+	InstanceURL  string
+	ExpiresAt    time.Time
+}
+
+type oauthTokenObserverKey struct{}
+
+// WithOAuthTokenObserver attaches a callback invoked whenever FetchOAuth2Token
+// returns a valid OAuthToken.
+func WithOAuthTokenObserver(ctx context.Context, fn func(OAuthToken)) context.Context {
+	if fn == nil {
+		return ctx
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	prev, _ := ctx.Value(oauthTokenObserverKey{}).(func(OAuthToken))
+	if prev == nil {
+		return context.WithValue(ctx, oauthTokenObserverKey{}, fn)
+	}
+	return context.WithValue(ctx, oauthTokenObserverKey{}, func(token OAuthToken) {
+		prev(token)
+		fn(token)
+	})
+}
+
+func notifyOAuthTokenObservers(ctx context.Context, req OAuthTokenRequest, token OAuthToken) {
+	if req.OnToken != nil {
+		req.OnToken(token)
+	}
+	if ctx != nil {
+		if obs, ok := ctx.Value(oauthTokenObserverKey{}).(func(OAuthToken)); ok && obs != nil {
+			obs(token)
+		}
+	}
 }
 
 var (
@@ -174,6 +210,7 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 	}
 	key := oauthTokenCacheKey(req)
 	if token, ok := loadOAuthToken(key); ok {
+		notifyOAuthTokenObservers(ctx, req, token)
 		return token, nil
 	}
 	flightKey := key
@@ -204,7 +241,9 @@ func FetchOAuth2Token(ctx context.Context, req OAuthTokenRequest) (OAuthToken, e
 		if result.Err != nil {
 			return OAuthToken{}, result.Err
 		}
-		return result.Val.(OAuthToken), nil
+		token := result.Val.(OAuthToken)
+		notifyOAuthTokenObservers(ctx, req, token)
+		return token, nil
 	}
 }
 
@@ -340,7 +379,7 @@ func releaseOAuthTokenFetchSlot(slots chan struct{}) {
 }
 
 func oauthTokenApproxBytes(token OAuthToken) int {
-	return len(token.AccessToken) + len(token.TokenType) + len(token.InstanceURL) + 64
+	return len(token.AccessToken) + len(token.RefreshToken) + len(token.TokenType) + len(token.InstanceURL) + 64
 }
 
 func normalizeOAuthGrant(grant string) string {
@@ -545,6 +584,7 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 	}
 	var payload struct {
 		AccessToken      string `json:"access_token"`
+		RefreshToken     string `json:"refresh_token"`
 		TokenType        string `json:"token_type"`
 		ExpiresIn        any    `json:"expires_in"`
 		InstanceURL      string `json:"instance_url"`
@@ -597,11 +637,16 @@ func fetchOAuth2TokenUncached(ctx context.Context, req OAuthTokenRequest) (OAuth
 		}
 		ttl = time.Duration(expiresIn) * time.Second
 	}
+	refreshToken := strings.TrimSpace(payload.RefreshToken)
+	if len(refreshToken) > maxOAuthAccessTokenBytes || strings.ContainsAny(refreshToken, "\r\n\x00") {
+		refreshToken = ""
+	}
 	return OAuthToken{
-		AccessToken: accessToken,
-		TokenType:   tokenType,
-		InstanceURL: instanceURL,
-		ExpiresAt:   time.Now().Add(ttl),
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		TokenType:    tokenType,
+		InstanceURL:  instanceURL,
+		ExpiresAt:    time.Now().Add(ttl),
 	}, nil
 }
 

@@ -793,3 +793,51 @@ func TestOAuthEndpointURLAllowed(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchOAuth2TokenNotifiesRuntimeRedactionOnMintAndCacheHit(t *testing.T) {
+	resetOAuthTokenCacheForTest()
+	const (
+		mintedAccess  = "synth-oauth-access-9301"
+		mintedRefresh = "synth-oauth-refresh-9302"
+	)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  mintedAccess,
+			"refresh_token": mintedRefresh,
+			"expires_in":    300,
+		})
+	}))
+	defer server.Close()
+
+	var onTokenCalls, ctxObserverCalls int32
+	ctx := WithOAuthTokenObserver(context.Background(), func(tok OAuthToken) {
+		if tok.AccessToken == mintedAccess && tok.RefreshToken == mintedRefresh {
+			atomic.AddInt32(&ctxObserverCalls, 1)
+		}
+	})
+	req := OAuthTokenRequest{
+		TokenURL:     server.URL,
+		GrantType:    OAuthGrantClientCredentials,
+		ClientID:     "client-obs",
+		ClientSecret: "secret-obs",
+		OnToken: func(tok OAuthToken) {
+			if tok.AccessToken == mintedAccess && tok.RefreshToken == mintedRefresh {
+				atomic.AddInt32(&onTokenCalls, 1)
+			}
+		},
+	}
+
+	// First fetch (minted) and second fetch (cached) must both notify observers.
+	for i := 0; i < 2; i++ {
+		tok, err := FetchOAuth2Token(ctx, req)
+		if err != nil || tok.AccessToken != mintedAccess {
+			t.Fatalf("round %d FetchOAuth2Token = %+v, %v", i, tok, err)
+		}
+	}
+	if got := atomic.LoadInt32(&onTokenCalls); got != 2 {
+		t.Fatalf("OnToken calls = %d, want 2 (mint + cache hit)", got)
+	}
+	if got := atomic.LoadInt32(&ctxObserverCalls); got != 2 {
+		t.Fatalf("context observer calls = %d, want 2 (mint + cache hit)", got)
+	}
+}

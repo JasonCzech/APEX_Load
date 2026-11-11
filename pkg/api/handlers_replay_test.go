@@ -510,20 +510,45 @@ func TestHandleReplayScriptUsesDraftOverride(t *testing.T) {
 	}
 }
 
-func TestTransientReplayAndDebugDraftsRequireSecretBindingsBeforeExecution(t *testing.T) {
+func TestTransientReplayAndDebugDraftsAllowLiteralCredentialsAndRedactOutputs(t *testing.T) {
 	const secret = "transient-inline-credential"
+	const soapSecret = "transient-soap-user-password"
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		if !strings.Contains(action.Target, secret) {
+			t.Fatalf("protocol received scrubbed target %q; want literal executable credential", action.Target)
+		}
+		if !strings.Contains(string(action.Body), soapSecret) {
+			t.Fatalf("protocol received scrubbed body %q; want literal executable SOAP credential", string(action.Body))
+		}
+		return &protocol.Result{
+			ActionName:   action.Name,
+			Success:      false,
+			StatusCode:   http.StatusUnauthorized,
+			ErrorMessage: "auth rejected for " + secret + " / " + soapSecret,
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestURL:     action.Target,
+				RequestHeaders: map[string]string{"Authorization": "Bearer " + secret},
+				RequestBody:    string(action.Body),
+				ResponseBody:   `{"error":"invalid token ` + secret + `"}`,
+			},
+		}, nil
+	})
 	server := NewServer(ServerConfig{})
 	script := map[string]any{
-		"name":       "Unsafe transient draft",
+		"name":       "Transient literal credential draft",
 		"version":    "1",
-		"protocol":   "http",
+		"protocol":   protocolName,
 		"project_id": "transient-secret-project",
 		"config":     map[string]any{"base_url": "https://example.test"},
 		"actions": []map[string]any{{
 			"name":   "request",
 			"type":   "request",
-			"method": "GET",
+			"method": "POST",
 			"target": "https://example.test/path?api_key=" + secret,
+			"headers": map[string]string{
+				"Authorization": "Bearer " + secret,
+			},
+			"body": `<soapenv:Envelope><soapenv:Body><ns:Login><ns:userPassword>` + soapSecret + `</ns:userPassword></ns:Login></soapenv:Body></soapenv:Envelope>`,
 		}},
 	}
 	body := map[string]any{
@@ -534,7 +559,6 @@ func TestTransientReplayAndDebugDraftsRequireSecretBindingsBeforeExecution(t *te
 		"/api/v1/scripts/replay",
 		"/api/v1/scripts/replay/sessions",
 		"/api/v1/scripts/debug/sessions",
-		"/api/v1/scripts/browser-replay/sessions",
 	} {
 		t.Run(path, func(t *testing.T) {
 			payload, err := json.Marshal(body)
@@ -545,16 +569,34 @@ func TestTransientReplayAndDebugDraftsRequireSecretBindingsBeforeExecution(t *te
 			request.Header.Set("Content-Type", "application/json")
 			response := httptest.NewRecorder()
 			server.mux.ServeHTTP(response, request)
-			if response.Code != http.StatusUnprocessableEntity ||
-				!strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
-				strings.Contains(response.Body.String(), secret) {
-				t.Fatalf("%s response = %d %s", path, response.Code, response.Body.String())
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s response = %d %s, want 200", path, response.Code, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), secretBindingsRequiredCode) {
+				t.Fatalf("%s unexpectedly required secret bindings: %s", path, response.Body.String())
+			}
+			if strings.Contains(response.Body.String(), secret) || strings.Contains(response.Body.String(), soapSecret) {
+				t.Fatalf("%s response leaked literal credential: %s", path, response.Body.String())
+			}
+			if path != "/api/v1/scripts/replay" {
+				var started ScriptDebugStartResponse
+				if err := json.Unmarshal(response.Body.Bytes(), &started); err != nil {
+					t.Fatalf("decode session start: %v", err)
+				}
+				done := waitForScriptDebugStatus(t, server.scriptDebug, started.ReplaySessionID, ScriptDebugFailed)
+				encoded, err := json.Marshal(done)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if strings.Contains(string(encoded), secret) || strings.Contains(string(encoded), soapSecret) {
+					t.Fatalf("%s terminal session leaked literal credential: %s", path, encoded)
+				}
 			}
 		})
 	}
 
 	stored := server.runner.StoreScript(&dsl.Script{
-		Name: "Stored safe script", Protocol: "http", ProjectID: "transient-secret-project",
+		Name: "Stored safe script", Protocol: protocolName, ProjectID: "transient-secret-project",
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{{Name: "safe", Type: "request", Method: http.MethodGet, Target: "/safe"}},
 	})
@@ -569,9 +611,10 @@ func TestTransientReplayAndDebugDraftsRequireSecretBindingsBeforeExecution(t *te
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, request)
-	if response.Code != http.StatusUnprocessableEntity ||
-		!strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
-		strings.Contains(response.Body.String(), secret) {
+	if response.Code != http.StatusOK ||
+		strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
+		strings.Contains(response.Body.String(), secret) ||
+		strings.Contains(response.Body.String(), soapSecret) {
 		t.Fatalf("stored override response = %d %s", response.Code, response.Body.String())
 	}
 }

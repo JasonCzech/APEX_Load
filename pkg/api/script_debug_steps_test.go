@@ -2,6 +2,9 @@ package api
 
 import (
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"sync"
@@ -326,4 +329,111 @@ func TestScriptDebugLogRetentionIsBounded(t *testing.T) {
 	if session.logBytes > maxScriptDebugLogBytes {
 		t.Fatalf("retained log bytes = %d, limit %d", session.logBytes, maxScriptDebugLogBytes)
 	}
+}
+
+func TestScriptDebugManagerRedactsLiteralDSLCredentialsAcrossLiveBreakpointsLogsAndHAR(t *testing.T) {
+	const (
+		literalBearer = "synth-debug-bearer-9801"
+		literalSoap   = "synth-debug-soap-pwd-9802"
+		managedSecret = "synth-debug-managed-9803"
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/status" {
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"status":"ok"}`))
+			return
+		}
+		reqBody, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"rejected_auth":"` + r.Header.Get("Authorization") + `","echo_soap":"` + literalSoap + `","len":` + jsonNumberLen(len(reqBody)) + `}`))
+	}))
+	defer srv.Close()
+
+	continueTrue := true
+	manager := NewScriptDebugManager(NewHub())
+	manager.Start("", &dsl.Script{
+		Name:     "Debug Literal Redaction",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config: dsl.ScriptConfig{
+			BaseURL: srv.URL,
+		},
+		Parameters: []dsl.Parameter{{
+			Name:   "login_password",
+			Type:   "list",
+			Values: []string{literalBearer},
+		}},
+		Actions: []dsl.Action{
+			{
+				Name:   "soap-step",
+				Type:   "request",
+				Method: "POST",
+				Target: "/soap?api_key={{secret.DEBUG_API_KEY}}",
+				Headers: map[string]string{
+					"Authorization": "Bearer " + literalBearer,
+					"Content-Type":  "text/xml",
+				},
+				Body: `<ns:Login xmlns:ns="urn:test"><ns:userPassword>` + literalSoap + `</ns:userPassword></ns:Login>`,
+			},
+			{
+				Name:   "after-step",
+				Type:   "request",
+				Method: "GET",
+				Target: "/status",
+			},
+		},
+	}, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-literal-redaction",
+		Breakpoints:     []ScriptDebugBreakpoint{{Phase: "action", ActionIndex: 1}},
+		ContinueOnError: &continueTrue,
+		LogLevel:        "trace",
+		RuntimeProfile: &engine.ReplayRuntimeProfile{
+			HAROptions: &protocol.ReplayHAROptions{Bodies: "both"},
+		},
+		SecretResolver: engine.SecretResolverFunc(func(name string) (string, bool) {
+			return managedSecret, name == "DEBUG_API_KEY"
+		}),
+	})
+
+	paused := waitForScriptDebugStatus(t, manager, "debug-literal-redaction", ScriptDebugPaused)
+	pausedJSON, err := json.Marshal(paused)
+	if err != nil {
+		t.Fatalf("marshal paused debug session: %v", err)
+	}
+	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
+		if strings.Contains(string(pausedJSON), secret) {
+			t.Fatalf("paused debug session leaked %q: %s", secret, pausedJSON)
+		}
+	}
+
+	if _, ok, changed := manager.Resume("debug-literal-redaction"); !ok || !changed {
+		t.Fatalf("Resume debug session failed: ok=%v changed=%v", ok, changed)
+	}
+	done := waitForScriptDebugStatus(t, manager, "debug-literal-redaction", ScriptDebugFailed)
+	doneJSON, err := json.Marshal(done)
+	if err != nil {
+		t.Fatalf("marshal completed debug session: %v", err)
+	}
+	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
+		if strings.Contains(string(doneJSON), secret) {
+			t.Fatalf("completed debug session leaked %q: %s", secret, doneJSON)
+		}
+	}
+
+	harBytes, harAvail, ok := manager.ExportHARForProject("debug-literal-redaction", "")
+	if !ok || !harAvail.Available {
+		t.Fatalf("ExportHARForProject unavailable: ok=%v avail=%+v", ok, harAvail)
+	}
+	for _, secret := range []string{literalBearer, literalSoap, managedSecret} {
+		if strings.Contains(string(harBytes), secret) {
+			t.Fatalf("exported debug HAR leaked %q: %s", secret, harBytes)
+		}
+	}
+}
+
+func jsonNumberLen(n int) string {
+	b, _ := json.Marshal(n)
+	return string(b)
 }
