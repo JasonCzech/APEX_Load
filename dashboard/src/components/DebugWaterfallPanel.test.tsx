@@ -198,4 +198,28 @@ describe('DebugWaterfallPanel', () => {
     expect(drawer().querySelector('button[aria-label^="Edit "]')).toBeNull()
   })
 
+  it('labels the single-event HAR button Download HAR and surfaces curlCommandGaps notes when truncated', () => {
+    const events = [
+      ev(0, {
+        snapshot: {
+          request_method: 'POST',
+          request_url: 'https://shop.test/r0',
+          request_body: 'payload...[truncated]',
+          request_headers_omitted: true,
+          response_status: 200,
+        },
+      }),
+    ]
+    const c = mount(<DebugWaterfallPanel events={events} selectedEventIndex={0} />)
+    const drawer = c.querySelector('[aria-label="Selected row details"]')!
+    const drawerButtons = [...drawer.querySelectorAll<HTMLButtonElement>('.wf-drawer-actions button')].map(b => b.textContent)
+    expect(drawerButtons).toContain('Download HAR')
+    expect(drawerButtons).not.toContain('Open in HAR')
+    const copyCurlBtn = [...drawer.querySelectorAll<HTMLButtonElement>('.wf-drawer-actions button')].find(b => b.textContent === 'Copy as cURL')!
+    const describedById = copyCurlBtn.getAttribute('aria-describedby')
+    expect(describedById).toBeTruthy()
+    const noteEl = drawer.querySelector(`#${CSS.escape(describedById!)}`)
+    expect(noteEl?.textContent).toContain('cURL note: body truncated by retention limits, some headers omitted or shortened by retention limits.')
+  })
+
 })

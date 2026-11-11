@@ -1,5 +1,4 @@
 import DebugCompletionSummary, { DebugSummaryRecordingDiff, type DebugSummaryTabRequest } from './DebugCompletionSummary'
-import RecordingDiffPanel from './RecordingDiffPanel'
 import { replayFrameForEvent, type ReplaySourceFrame } from './waterfall/replaySourceFrame'
 import { appliedReplayExtractions } from './replayExtractionValues'
 import { captureDebugTransactionDefinitions } from './debugTransactionModel'
@@ -53,7 +52,7 @@ import TabList from './ux/TabList'
 import DialogLayer from './ux/DialogLayer'
 import PanelToggle from "./ux/PanelToggle"
 import { handleTabKey } from './tabKeyboard'
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useMemo, useReducer, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { useApi } from '../hooks/useApi'
 import { ApiError, request } from '../hooks/apiClient'
@@ -98,7 +97,6 @@ import {
   addCorrelationExtractorIfMissing,
   applyCorrelationRepairToAction,
   correlationEditableActionsKey,
-  correlationExtractorScope,
   correlationRepairRequiresStructuralBodyReview,
   currentCorrelationEditableActionsKey,
   resolveCorrelationExtractorAndRepair,
@@ -325,6 +323,10 @@ import './ScriptEditor.css'
 
 export type { ActionEditorParameterDraft } from './scriptEditorState'
 export type { ActionEditorSelectionState } from './scriptEditorJsonModel'
+
+// The Recording diff panel and its correlation diagnosis model load on first
+// use, keeping them off the initial ScriptEditor chunk.
+const RecordingDiffPanel = lazy(() => import('./RecordingDiffPanel'))
 
 // focusOutlineRow's stand-in for "the outline's selected row".
 const SELECTED_OUTLINE_ROW = '\u0000selected'
@@ -3307,34 +3309,160 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
     })
   }
 
-  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair): CorrelationApplyResult => {
-    const sourceAction = script.actions[actionIdx]
+  const collectAllScriptActions = (current: ScriptData): Action[] => {
+    const collected: Action[] = []
+    const visit = (list: Action[] | undefined) => {
+      for (const item of list || []) {
+        collected.push(item)
+        const rawReqs = item.type === 'http_sequence' && Array.isArray(item.params?.requests)
+          ? (item.params.requests as unknown[]).filter((req): req is Action => Boolean(req) && typeof req === 'object' && !Array.isArray(req))
+          : []
+        visit(rawReqs)
+        visit(item.control?.steps)
+        visit(item.control?.else)
+        visit(item.control?.default)
+        for (const switchCase of item.control?.cases || []) visit(switchCase.steps)
+        for (const branch of item.control?.branches || []) visit(branch.steps)
+      }
+    }
+    visit(current.init)
+    visit(current.actions)
+    visit(current.teardown)
+    return collected
+  }
+
+  const isCorrelationRepairLike = (
+    value: CorrelationExtractorRepair | Partial<StepPosition> | null | undefined,
+  ): value is CorrelationExtractorRepair => {
+    if (!value || typeof value !== 'object') return false
+    return 'failingActionIndex' in value || 'requestLocations' in value || 'matchedValue' in value || 'replacement' in value
+  }
+
+  const isExtractorStepRefLike = (
+    value: CorrelationExtractorRepair | Partial<StepPosition> | null | undefined,
+  ): value is Partial<StepPosition> & { requestIndex?: number } => {
+    if (!value || typeof value !== 'object') return false
+    if (isCorrelationRepairLike(value)) return false
+    return 'phase' in value || 'actionIndex' in value || 'stepPath' in value || 'requestIndex' in value
+  }
+
+  const normalizeExtractorStepRef = (
+    step: (Partial<StepPosition> & { requestIndex?: number }) | null | undefined,
+    fallbackActionIndex: number,
+  ): StepPosition => {
+    const phase: ScriptActionPhase = step?.phase === 'init' || step?.phase === 'teardown' ? step.phase : 'action'
+    const actionIndex = typeof step?.actionIndex === 'number' ? step.actionIndex : fallbackActionIndex
+    const rawStepPath = Array.isArray(step?.stepPath) ? [...step.stepPath] : []
+    const normalizedStepPath = rawStepPath.map(segment => (
+      segment
+        .replace(/^(?:steps|try)\[(\d+)\]$/, 'then[$1]')
+        .replace(/^params\.requests\[(\d+)\]$/, 'requests[$1]')
+        .replace(/^cases\[(\d+)\](?:\.steps)?\[(\d+)\]$/, 'case[$1][$2]')
+        .replace(/^branch\[(\d+)\]\[(\d+)\]$/, 'branches[$1].steps[$2]')
+    ))
+    if (typeof step?.requestIndex === 'number' && step.requestIndex >= 0) {
+      const reqSegment = `requests[${step.requestIndex}]`
+      if (normalizedStepPath[normalizedStepPath.length - 1] !== reqSegment) {
+        normalizedStepPath.push(reqSegment)
+      }
+    }
+    return {
+      phase,
+      actionIndex,
+      ...(normalizedStepPath.length > 0 ? { stepPath: normalizedStepPath } : {}),
+    }
+  }
+
+  const resolveFallbackNestedAction = (root: Action | undefined, stepPath?: string[]): Action | undefined => {
+    let cur = root
+    for (const seg of stepPath || []) {
+      if (!cur) return undefined
+      const direct = resolveNestedAction(cur, [seg])
+      if (direct) { cur = direct; continue }
+      const m = /^(then|else|loop|default|steps|try|catch|finally)\[(\d+)\]$/.exec(seg)
+      if (!m) return undefined
+      const [, kind, idx] = m
+      const pri = /^(then|loop|steps|try)$/.test(kind) ? 'steps' : kind
+      const bags = [cur.control, cur.params] as Array<Record<string, unknown> | undefined>
+      const bag = bags.find(b => Array.isArray(b?.[pri])) ?? bags.find(b => Array.isArray(b?.[kind]))
+      const list = (bag?.[pri] ?? bag?.[kind]) as Action[] | undefined
+      cur = list?.[+idx]
+    }
+    return cur
+  }
+
+  const resolveExtractorStepAction = (current: ScriptData, position: StepPosition): Action | undefined => {
+    const root = phaseActionsForScript(current, position.phase)[position.actionIndex]
+    return !root || !position.stepPath?.length ? root : resolveFallbackNestedAction(root, position.stepPath)
+  }
+
+  const updateExtractorStep = (current: ScriptData, position: StepPosition, updater: (action: Action) => Action): ScriptData => {
+    const root = phaseActionsForScript(current, position.phase)[position.actionIndex]
+    if (!root) return current
+    if (!position.stepPath?.length || resolveNestedAction(root, position.stepPath)) return updateStep(current, position, updater)
+    const key = position.phase === 'action' ? 'actions' : position.phase
+    const list = [...(current[key] || [])]
+    const clone = structuredClone(root)
+    const target = resolveFallbackNestedAction(clone, position.stepPath)
+    if (!target) return current
+    const updated = updater(target)
+    if (updated !== target) {
+      for (const k of Object.keys(target)) delete (target as unknown as Record<string, unknown>)[k]
+      Object.assign(target, updated)
+    }
+    list[position.actionIndex] = clone
+    return { ...current, [key]: list }
+  }
+
+  const addExtractorDefinition = (
+    actionIdx: number,
+    extractor: ScriptExtractorDefinition,
+    repairOrStep?: CorrelationExtractorRepair | Partial<StepPosition> | null,
+    maybeStep?: Partial<StepPosition> | null,
+  ): CorrelationApplyResult => {
+    const explicitStep = isExtractorStepRefLike(maybeStep)
+      ? maybeStep
+      : isExtractorStepRefLike(repairOrStep)
+        ? repairOrStep
+        : undefined
+    const rawRepair: CorrelationExtractorRepair | undefined = isCorrelationRepairLike(repairOrStep) ? repairOrStep : undefined
+    const targetStep = normalizeExtractorStepRef(explicitStep, actionIdx)
+    const sourceAction = resolveExtractorStepAction(script, targetStep)
     if (!sourceAction) return { extractorAdded: false, extractorAvailable: false, requestRepaired: false }
-    const extractorScope = correlationExtractorScope(script)
-    const { extractor: effectiveExtractor, repair: effectiveRepair } = resolveCorrelationExtractorAndRepair(sourceAction, extractorScope, extractor, repair)
-    const repairAction = effectiveRepair &&
-      effectiveRepair.failingActionIndex >= 0 &&
-      effectiveRepair.failingActionIndex < script.actions.length
-      ? script.actions[effectiveRepair.failingActionIndex]
-      : undefined
+    const extractorScope = collectAllScriptActions(script)
+    const { extractor: effectiveExtractor, repair: effectiveRepair } = resolveCorrelationExtractorAndRepair(sourceAction, extractorScope, extractor, rawRepair)
+    const repairExplicitStep = (rawRepair as { failingStep?: Partial<StepPosition> & { requestIndex?: number } } | undefined)?.failingStep
+    const repairStep = effectiveRepair && (repairExplicitStep || effectiveRepair.failingActionIndex >= 0)
+      ? normalizeExtractorStepRef(repairExplicitStep, effectiveRepair.failingActionIndex)
+      : null
+    const repairAction = repairStep ? resolveExtractorStepAction(script, repairStep) : undefined
     const repairWillApply = Boolean(repairAction && effectiveRepair && applyCorrelationRepairToAction(repairAction, effectiveRepair) !== repairAction)
     const repairRequiresStructuralReview = Boolean(repairAction && effectiveRepair && correlationRepairRequiresStructuralBodyReview(repairAction, effectiveRepair))
     const extractorAlreadyExists = Boolean(sourceAction.extractors?.some(existing => existing.name === effectiveExtractor.name))
-    const actions = [...script.actions]
-    actions[actionIdx] = addCorrelationExtractorIfMissing(actions[actionIdx], effectiveExtractor)
-    if (effectiveRepair && effectiveRepair.failingActionIndex >= 0 && effectiveRepair.failingActionIndex < actions.length) {
-      actions[effectiveRepair.failingActionIndex] = applyCorrelationRepairToAction(actions[effectiveRepair.failingActionIndex], effectiveRepair)
-    }
-    setScript({ ...script, actions })
+    setScript(prev => {
+      let next = updateExtractorStep(prev, targetStep, target => addCorrelationExtractorIfMissing(target, effectiveExtractor))
+      if (repairWillApply && effectiveRepair && repairStep) {
+        next = updateExtractorStep(next, repairStep, target => applyCorrelationRepairToAction(target, effectiveRepair))
+      }
+      return next
+    })
+    const repairTargetLabel = repairStep && (repairStep.phase !== 'action' || repairStep.stepPath?.length)
+      ? (repairAction?.name || `${formatDebugPhaseLabel(repairStep.phase).toLowerCase()} ${repairStep.actionIndex + 1}`)
+      : effectiveRepair
+        ? `action ${effectiveRepair.failingActionIndex + 1}`
+        : ''
     const repairSuffix = repairWillApply && effectiveRepair
-      ? ` Updated action ${effectiveRepair.failingActionIndex + 1} to use ${effectiveRepair.replacement}.`
+      ? ` Updated ${repairTargetLabel} to use ${effectiveRepair.replacement}.`
       : repairRequiresStructuralReview
         ? ' The Aura body requires structural review; automatic request replacement was not applied.'
       : effectiveRepair
         ? ' The mapped request value was not found; replace it manually.'
       : ''
     const extractorMessage = extractorAlreadyExists ? `Kept existing extractor "${effectiveExtractor.name}"` : `Added extractor "${effectiveExtractor.name}"`
-    setSuccess(`${extractorMessage} on ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.${repairSuffix}`)
+    const targetLabel = sourceAction.name || (targetStep.phase === 'action' && !targetStep.stepPath?.length
+      ? `action ${targetStep.actionIndex + 1}`
+      : `${formatDebugPhaseLabel(targetStep.phase).toLowerCase()} ${targetStep.actionIndex + 1}`)
+    setSuccess(`${extractorMessage} on ${targetLabel}.${repairSuffix}`)
     return {
       extractorAdded: !extractorAlreadyExists,
       extractorAvailable: true,
@@ -7460,6 +7588,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               tabIndex={-1}
               onKeyDown={event => {
                 if (handleDebugRunMenuEscape(event)) return
+                if (event.target instanceof HTMLInputElement) return
                 const items = debugRunMenuItems()
                 if (items.length === 0) return
                 const current = items.indexOf(document.activeElement as HTMLButtonElement)
@@ -7546,40 +7675,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
               >
                 Run in step mode
               </button>
+              <label className="debug-run-dropdown-iterations">
+                <span>Iterations</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  disabled={replaying}
+                  aria-label="Iterations to run"
+                  aria-describedby="debug-run-iterations-hint"
+                  aria-invalid={debugIterationDraftValid ? undefined : true}
+                  className="debug-run-iterations-input"
+                  value={debugIterationDraft}
+                  onChange={event => {
+                    const text = event.target.value
+                    setDebugIterationDraft(text)
+                    const parsed = Number(text)
+                    if (/^\d+$/.test(text.trim()) && parsed >= 1 && parsed <= 100) setDebugIterationCount(parsed)
+                  }}
+                  onBlur={() => { commitDebugIterationDraft() }}
+                  onKeyDown={event => {
+                    if (handleDebugRunMenuEscape(event)) return
+                    if (event.key === 'ArrowLeft' || event.key === 'ArrowRight' || event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Home' || event.key === 'End') {
+                      event.stopPropagation()
+                      return
+                    }
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      const iterations = commitDebugIterationDraft()
+                      setDebugRunMenuOpen(false)
+                      void topbarActionHandlersRef.current.handleReplay({ startPaused: false, ignoreBreakpoints: true, iterations })
+                    }
+                  }}
+                />
+                <small id="debug-run-iterations-hint" className={debugIterationDraftValid ? undefined : 'debug-run-iterations-invalid'}>1–100</small>
+              </label>
             </div>
-            {/* The count is a field, which a menu may not hold: it sits below
-                the menu, where Tab from a command reaches it. */}
-            <label className="debug-run-dropdown-iterations">
-              <span>Iterations</span>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                disabled={replaying}
-                aria-label="Iterations to run"
-                aria-describedby="debug-run-iterations-hint"
-                aria-invalid={debugIterationDraftValid ? undefined : true}
-                className="debug-run-iterations-input"
-                value={debugIterationDraft}
-                onChange={event => {
-                  const text = event.target.value
-                  setDebugIterationDraft(text)
-                  const parsed = Number(text)
-                  if (/^\d+$/.test(text.trim()) && parsed >= 1 && parsed <= 100) setDebugIterationCount(parsed)
-                }}
-                onBlur={() => { commitDebugIterationDraft() }}
-                onKeyDown={event => {
-                  if (handleDebugRunMenuEscape(event)) return
-                  if (event.key === 'Enter') {
-                    event.preventDefault()
-                    const iterations = commitDebugIterationDraft()
-                    setDebugRunMenuOpen(false)
-                    void topbarActionHandlersRef.current.handleReplay({ startPaused: false, ignoreBreakpoints: true, iterations })
-                  }
-                }}
-              />
-              <small id="debug-run-iterations-hint" className={debugIterationDraftValid ? undefined : 'debug-run-iterations-invalid'}>1–100</small>
-            </label>
           </div>
         )}
       </div>
@@ -8461,23 +8593,43 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
   }
   // The run compared with the script's recording (or an uploaded HAR): the
   // debug Summary's Recording diff, for non-browser scripts with a run.
+  useEffect(() => {
+    void import('./RecordingDiffPanel').catch(() => {})
+  }, [])
   const recordingDiff = !isBrowserScript && replayReport ? (
-    <RecordingDiffPanel
-      scriptId={scriptId}
-      projectId={projectId}
-      report={replayReport}
-      activeReplaySessionId={activeReplaySessionId}
-      session={browserReplaySession}
-      replaying={replaying}
-      replayEditableActionsKey={replayEditableActionsKey}
-      currentEditableActionsKey={currentEditableActionsKey}
-      recordingStatus={scriptRecordingStatus}
-      recordingStatusState={scriptRecordingStatusState}
-      onRetryRecordingStatus={retryScriptRecordingStatus}
-      actionCount={script.actions.length}
-      api={api}
-      onAddExtractor={addExtractorDefinition}
-    />
+    <Suspense fallback={null}>
+      <RecordingDiffPanel
+        script={script}
+        scriptId={scriptId}
+        projectId={projectId}
+        report={replayReport}
+        activeReplaySessionId={activeReplaySessionId}
+        session={browserReplaySession}
+        replaying={replaying}
+        replayEditableActionsKey={replayEditableActionsKey}
+        currentEditableActionsKey={currentEditableActionsKey}
+        recordingStatus={scriptRecordingStatus}
+        recordingStatusState={scriptRecordingStatusState}
+        onRetryRecordingStatus={retryScriptRecordingStatus}
+        actionCount={(() => {
+          const allCount = collectAllScriptActions(script).length
+          return allCount > 0 ? Math.max(allCount, replayReport.events?.length || 0) : 0
+        })()}
+        api={api}
+        onAddExtractor={addExtractorDefinition}
+        onSelectAction={(actionIdx, step) => {
+          const normalized = normalizeExtractorStepRef(step, actionIdx)
+          const row = scriptPhaseActionRows.find(candidate => candidate.phase === normalized.phase && candidate.actionIndex === normalized.actionIndex)
+          activateWorkspaceTab('author')
+          if (row) {
+            selectAuthorStep(row, normalized.stepPath)
+          } else {
+            openCenterTab(ACTION_LIST_TAB_ID)
+            selectAuthorPhaseIndex(normalized.phase, normalized.actionIndex)
+          }
+        }}
+      />
+    </Suspense>
   ) : undefined
   const openRecordingDiff = () => {
     setDebugSummaryTabRequest(previous => ({ tab: 'recording-diff', id: (previous?.id ?? 0) + 1 }))
@@ -9741,6 +9893,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialAuthoring
             onOpenHistory={() => setShowHistory(true)}
             actionProblemRows={actionProblemRows}
             addExtractorDefinition={addExtractorDefinition}
+            activeWorkspace={centerTabsState.activeTabId}
             replaceExtractorDefinition={replaceEventExtractor}
             responseActions={responseActions}
             applyReplaySuggestedLocator={applyReplaySuggestedLocator}

@@ -15219,8 +15219,8 @@ describe('ScriptEditor', () => {
       expect(runToBreakpointBtn().disabled).toBe(false)
 
       // Run X iterations (ignores breakpoints and Start paused, so completes without pausing).
-      // The count field sits below the menu, which may hold only commands.
-      expect(menu()!.querySelector('input')).toBeNull()
+      // The count field sits inside the #debug-run-menu landmark at the bottom.
+      expect(menu()!.querySelector('input')).not.toBeNull()
       const iterInput = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
       expect(iterInput.value).toBe('2')
       // The field can be cleared while it is edited: it does not snap back to the last count.
@@ -15388,8 +15388,15 @@ describe('ScriptEditor', () => {
       await flushReact()
       expect(focusedLabel()).toBe('Run a single iteration')
       const countField = container.querySelector<HTMLInputElement>('.debug-run-dropdown-menu input[aria-label="Iterations to run"]')!
+      expect(menu()?.contains(countField)).toBe(true)
       await act(async () => { countField.focus(); changeInputValue(countField, '250') })
       expect(countField.getAttribute('aria-invalid')).toBe('true')
+      // Arrow keys and Home/End inside the iterations input do not steal focus to menu items.
+      await press('ArrowLeft', countField)
+      await press('ArrowRight', countField)
+      await press('Home', countField)
+      await press('End', countField)
+      expect(document.activeElement).toBe(countField)
       await act(async () => { countField.blur() })
       await flushReact()
       expect(countField.value).toBe('100')
@@ -16568,5 +16575,324 @@ describe('ScriptEditor', () => {
     await act(async () => { staleSummary.querySelector<HTMLButtonElement>('#debug-summary-tab-issues')!.click() })
     await flushReact()
     expect(staleSummary.querySelector<HTMLButtonElement>('#debug-summary-panel-issues button[aria-label="Edit Submit order"]')?.disabled).toBe(true)
+    // While Summary is the active center tab, the bottom dock Timeline panel does not mount a second DebugWaterfallPanel.
+    expect(container.querySelector('.debugger-timeline .debug-execution-timeline')).toBeNull()
+    expect(container.querySelector('[data-testid="debugger-timeline-summary-active"]')).not.toBeNull()
+  })
+
+  it('adds extractors to nested http_sequence child requests and init/teardown steps via RequestResponseInspector', async () => {
+    const nestedExtractorScript: ScriptDefinition = {
+      version: '1.0',
+      name: 'Nested_Extractor_Script',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      init: [
+        { name: 'Init auth', type: 'request', method: 'POST', target: '/auth/init' },
+      ],
+      actions: [
+        {
+          name: 'Order sequence',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [
+              { name: 'Create draft', type: 'request', method: 'POST', target: '/orders/draft' },
+              { name: 'Confirm draft', type: 'request', method: 'POST', target: '/orders/confirm' },
+            ],
+          },
+        },
+      ],
+    }
+    const events = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'Init auth',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/auth/init',
+        status_code: 200,
+        success: true,
+        duration_ms: 10,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        snapshot: { response_body: '{"token":"tok-init-1"}', response_headers: { 'Content-Type': 'application/json' } },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        request_index: 1,
+        step_path: ['requests[1]'],
+        parent_action_name: 'Order sequence',
+        action_name: 'Confirm draft',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/orders/confirm',
+        status_code: 200,
+        success: true,
+        duration_ms: 14,
+        started_at: '2026-05-14T20:00:01Z',
+        completed_at: '2026-05-14T20:00:02Z',
+        snapshot: { response_body: '{"orderId":"ord-900"}', response_headers: { 'Content-Type': 'application/json' } },
+      },
+    ]
+    apiMock.startDraftScriptDebugSession.mockImplementationOnce(async (payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-nested-ext'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Nested_Extractor_Script-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:02Z',
+            success: true,
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'completed', '2'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={nestedExtractorScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    // In Summary -> Recording diff, verify 3-phase and nested step badges render and navigate to Author -> Action editor
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summary).not.toBeNull()
+    await act(async () => {
+      summary.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')!.click()
+    })
+    await flushReact()
+
+    const diffStepBadges = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] .correlation-step-badge'))
+    expect(diffStepBadges.map(btn => btn.textContent?.trim())).toEqual(['Init #1', '#1 · Request 2'])
+    await act(async () => {
+      diffStepBadges[1]!.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].params.requests[1]')
+
+    // Return to Debug -> Summary -> Transactions waterfall, select Confirm draft (requests[1]) and click Inspect to open RequestResponseInspector on event 1
+    await act(async () => {
+      findOpenDebuggerButton(container)!.click()
+    })
+    await flushReact()
+    await act(async () => {
+      findCenterTab(container, 'Summary')!.click()
+    })
+    await flushReact()
+
+    const summaryAfterNav = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    expect(summaryAfterNav).not.toBeNull()
+    await act(async () => {
+      summaryAfterNav.querySelector<HTMLButtonElement>('#debug-summary-tab-transactions')!.click()
+    })
+    await flushReact()
+
+    const waterfallConfirmRow = Array.from(summaryAfterNav.querySelectorAll<HTMLElement>('[role="row"], .wf-row'))
+      .find(el => el.textContent?.includes('Confirm draft'))!
+    expect(waterfallConfirmRow).toBeDefined()
+    await act(async () => { waterfallConfirmRow.click() })
+    await flushReact()
+
+    const inspectConfirmBtn = summaryAfterNav.querySelector<HTMLButtonElement>('#debug-summary-panel-transactions button[aria-label="Inspect Confirm draft"]')!
+    expect(inspectConfirmBtn).not.toBeNull()
+    await act(async () => { inspectConfirmBtn.click() })
+    await flushReact()
+
+    // Switch RequestResponseInspector to the Correlation sub-tab where ExtractorTester is rendered
+    await vi.waitFor(() => {
+      expect(inspectorTab(container, 'Correlation')).toBeDefined()
+    })
+    await openInspectorTab(container, 'Correlation')
+    await flushReact()
+
+    // Use ExtractorTester inside RequestResponseInspector to add an extractor to Confirm draft (requests[1])
+    const expInput = container.querySelector<HTMLInputElement>('.extractor-tester .extractor-tester-expression')!
+    expect(expInput).not.toBeNull()
+    await act(async () => {
+      changeInputValue(expInput, '"orderId":"([^"]+)"')
+    })
+    await flushReact()
+
+    const varNameInput = container.querySelector<HTMLInputElement>('.extractor-tester input[placeholder="extracted_value"]')!
+    expect(varNameInput).not.toBeNull()
+    await act(async () => {
+      changeInputValue(varNameInput, 'order_id')
+    })
+    await flushReact()
+
+    const addExtBtn = Array.from(container.querySelectorAll<HTMLButtonElement>('.extractor-tester button'))
+      .find(btn => btn.textContent?.includes('Add as extractor'))!
+    expect(addExtBtn).toBeDefined()
+    expect(addExtBtn.disabled).toBe(false)
+    await act(async () => {
+      addExtBtn.click()
+    })
+    await flushReact()
+
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Added extractor "order_id" on Confirm draft.')
+
+    await act(async () => {
+      addExtBtn.click()
+    })
+    await flushReact()
+
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Kept existing extractor "order_id" on Confirm draft.')
+  })
+
+  it('normalizes transaction steps[i] and control_try try[i]/catch[i] paths when navigating and adding extractors from RecordingDiffPanel', async () => {
+    const txnTryScript: ScriptDefinition = {
+      name: 'Txn_Try_Script',
+      version: '1.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [
+        {
+          name: 'Checkout Transaction',
+          type: 'transaction',
+          target: '',
+          control: {
+            steps: [
+              { name: 'Issue csrf', type: 'request', method: 'GET', target: '/csrf' },
+            ],
+          },
+        },
+        {
+          name: 'Try Submit',
+          type: 'control_try',
+          target: '',
+          control: {
+            steps: [
+              { name: 'Submit order', type: 'request', method: 'POST', target: '/submit', headers: { 'X-Csrf': '{{var.csrf_token}}' } },
+            ],
+            catch: [
+              { name: 'Fallback token', type: 'request', method: 'GET', target: '/fallback' },
+            ],
+          } as unknown as ScriptDefinition['actions'][number]['control'],
+        },
+      ],
+    }
+    const events = [
+      {
+        phase: 'action',
+        action_index: 0,
+        step_path: ['steps[0]'],
+        action_name: 'Issue csrf',
+        action_type: 'request',
+        method: 'GET',
+        target: 'https://api.example.test/csrf',
+        status_code: 200,
+        success: true,
+        duration_ms: 8,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        snapshot: { request_url: 'https://api.example.test/csrf', response_status: 200, response_body: '{"csrf_token":"csrf-xyz"}' },
+      },
+      {
+        phase: 'action',
+        action_index: 1,
+        step_path: ['try[0]'],
+        action_name: 'Submit order',
+        action_type: 'request',
+        method: 'POST',
+        target: 'https://api.example.test/submit',
+        status_code: 403,
+        success: false,
+        duration_ms: 9,
+        started_at: '2026-05-14T20:00:01Z',
+        completed_at: '2026-05-14T20:00:02Z',
+        snapshot: { request_url: 'https://api.example.test/submit', request_headers: { 'X-Csrf': 'csrf-xyz' }, response_status: 403 },
+      },
+      {
+        phase: 'action',
+        action_index: 1,
+        step_path: ['catch[0]'],
+        action_name: 'Fallback token',
+        action_type: 'request',
+        method: 'GET',
+        target: 'https://api.example.test/fallback',
+        status_code: 200,
+        success: true,
+        duration_ms: 7,
+        started_at: '2026-05-14T20:00:02Z',
+        completed_at: '2026-05-14T20:00:03Z',
+        snapshot: { request_url: 'https://api.example.test/fallback', response_status: 200, response_body: '{"fallback_token":"fb-1"}' },
+      },
+    ]
+    apiMock.startDraftScriptDebugSession.mockImplementationOnce(async (payload: { replay_session_id?: string }) => {
+      const sid = payload.replay_session_id || 'debug-txn-try'
+      return {
+        ...debugSessionResponse(
+          {
+            replay_session_id: sid,
+            group: 'Txn_Try_Script-debug',
+            protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z',
+            completed_at: '2026-05-14T20:00:03Z',
+            success: false,
+            events,
+          },
+          unavailableRuntimeMetadata(sid, 'failed', '3'),
+        ),
+        replay_session_id: sid,
+        debug_session_id: sid,
+      }
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={txnTryScript} projectId="project-1" />)
+    })
+    await flushReact()
+
+    await act(async () => {
+      findDebuggerRunButton(container)!.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    await act(async () => {
+      findCenterTab(container, 'Summary')!.click()
+    })
+    await flushReact()
+
+    const summary = container.querySelector<HTMLElement>('.center-tab-panel.active .debug-completion-summary')!
+    await act(async () => {
+      summary.querySelector<HTMLButtonElement>('#debug-summary-tab-recording-diff')!.click()
+    })
+    await flushReact()
+
+    // Click "Add as extractor" on the local diff suggestion targeting #1 · Steps #1
+    const addFixBtn = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] button'))
+      .find(btn => btn.textContent === 'Add as extractor')!
+    expect(addFixBtn).toBeDefined()
+    await act(async () => {
+      addFixBtn.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-toast.success')?.textContent).toContain('Added extractor "csrf_token" on Issue csrf.')
+
+    // Click the #1 · Steps #1 step badge and verify it selects the nested step inside the transaction
+    const txnStepBadge = Array.from(summary.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] .correlation-step-badge'))
+      .find(btn => btn.textContent?.trim() === '#1 · Steps #1')!
+    expect(txnStepBadge).toBeDefined()
+    await act(async () => {
+      txnStepBadge.click()
+    })
+    await flushReact()
+    expect(container.querySelector('.editor-body')?.classList.contains('workspace-author')).toBe(true)
+    expect(container.querySelector('.inspector-selection-path')?.textContent).toContain('actions[0].control.steps[0]')
   })
 })

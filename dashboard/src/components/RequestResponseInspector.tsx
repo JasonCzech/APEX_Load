@@ -3,8 +3,13 @@ import type { BrowserReplayEvent } from '../types/replay'
 import type { ScriptDefinition, ScriptExtractorDefinition } from '../types/scripts'
 import LiveTableStepResult from './LiveTableStepResult'
 import ResponseSelection from './ResponseSelection'
-import { resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
-import { replayEventStepKey } from './actionChecksModel'
+import { authorFocusFromKey, authorFocusKey, resolveAuthorJsonScopeByKey } from './scriptEditorJsonModel'
+import { replayEventStepKey, replayEventStepPath } from './actionChecksModel'
+import type { StepPosition } from './referenceScopeModel'
+import { downloadBlob } from '../utils/fileUtils'
+import { traceLinkProviderLabel } from './traceLinkLabels'
+import { buildDebugTimelineModel } from './waterfall/debugEventModel'
+import { debugRequestView, toHarLog, type DebugRequestView } from './waterfall/debugRequestExport'
 import { responseBodyMessage } from './debuggerExperience'
 import { HTTPVersionReplayEvidence, type HTTP3UpgradeScope } from './HTTPVersionReplayEvidence'
 import { HTTPResponseContentEvidence } from './HTTPResponseContentEvidence'
@@ -72,6 +77,84 @@ import {
 } from './requestResponseInspectorModel'
 import './RequestResponseInspector.css'
 
+export type ScriptStepRef = StepPosition
+
+export interface InspectorTraceLink {
+  provider?: string
+  label?: string
+  url: string
+}
+
+type InspectorReplayEvent = BrowserReplayEvent & {
+  step_id?: string
+  url?: string
+  request_headers?: Record<string, string>
+  response_headers?: Record<string, string>
+  response_body?: string
+  trace_links?: readonly InspectorTraceLink[]
+  runtime_evidence_unavailable?: boolean
+}
+
+function stepPositionFromKey(key: string): StepPosition | null {
+  const focus = authorFocusFromKey(key)
+  if (!focus) return null
+  return {
+    phase: focus.phase,
+    actionIndex: focus.actionIndex,
+    ...(focus.stepPath?.length ? { stepPath: focus.stepPath } : {}),
+  }
+}
+
+/** Resolves a replay event's script step reference across init, action, teardown, and nested step paths. */
+function eventStep(event: BrowserReplayEvent): StepPosition | null {
+  const ext = event as InspectorReplayEvent
+  const path = replayEventStepPath(event)
+  if (typeof ext.step_id === 'string' && ext.step_id.trim()) {
+    const parsed = stepPositionFromKey(ext.step_id.trim())
+    if (parsed) {
+      return !parsed.stepPath?.length && path.length > 0 ? { ...parsed, stepPath: path } : parsed
+    }
+  }
+  const key = replayEventStepKey(event)
+  if (key) {
+    if (event.action_index !== undefined && (typeof event.action_index !== 'number' || event.action_index < 0)) {
+      return null
+    }
+    return stepPositionFromKey(key)
+  }
+  if (!event.phase && typeof event.action_index === 'number' && event.action_index >= 0) {
+    return { phase: 'action', actionIndex: event.action_index, ...(path.length > 0 ? { stepPath: path } : {}) }
+  }
+  return null
+}
+
+/** Label for an external APM trace link, falling back to the provider label. */
+function traceLinkLabel(provider?: string, label?: string): string {
+  const trimmed = typeof label === 'string' ? label.trim() : ''
+  if (trimmed) return trimmed
+  return `Open trace in ${traceLinkProviderLabel(provider || 'unknown')}`
+}
+
+/** Exports a single replay event as a HAR 1.2 file download. */
+async function downloadSingleEventHar(event: BrowserReplayEvent): Promise<void> {
+  const eventExt = event as InspectorReplayEvent
+  const snapshot = event.snapshot
+  const view: DebugRequestView = debugRequestView(event) ?? {
+    method: (snapshot?.request_method || event.method || 'GET').toUpperCase(),
+    url: snapshot?.request_url || eventExt.url || event.target || 'http://localhost/',
+    headers: { ...(snapshot?.request_headers || eventExt.request_headers || event.headers || {}) },
+    body: snapshot?.request_body ?? event.body,
+    status: snapshot?.response_status ?? event.status_code,
+    responseHeaders: { ...(snapshot?.response_headers || eventExt.response_headers || {}) },
+    responseBody: snapshot?.response_body ?? eventExt.response_body,
+  }
+  const row = buildDebugTimelineModel([event]).rows[0]
+  if (!row) return
+  const blob = new Blob([JSON.stringify(toHarLog(view, row), null, 2)], { type: 'application/json' })
+  const name = (event.action_name || 'request').replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 60) || 'request'
+  await downloadBlob(blob, `${name}.har`)
+}
+
 export interface RequestResponseInspectorProps {
   event: BrowserReplayEvent
   /** The event's index in the run: copy keys and the response selection are per event. */
@@ -88,7 +171,17 @@ export interface RequestResponseInspectorProps {
   onCopySection: (key: string, value: string) => Promise<void>
   onEditAction: (event: BrowserReplayEvent) => void
   onOpenDebugOptions: () => void
-  addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
+  addExtractorDefinition?: (
+    actionIndex: number,
+    extractor: ScriptExtractorDefinition,
+    repair?: CorrelationExtractorRepair,
+    step?: ScriptStepRef | null,
+  ) => CorrelationApplyResult | void
+  onAddExtractor?: (
+    actionIndex: number,
+    extractor: ScriptExtractorDefinition,
+    step?: ScriptStepRef | null,
+  ) => void
   /**
    * Replaces the event's step's extractor named name with the given source,
    * type and expression, in place: true when it did, else why not. Lets the
@@ -133,6 +226,7 @@ export default function RequestResponseInspector({
   onEditAction,
   onOpenDebugOptions,
   addExtractorDefinition,
+  onAddExtractor,
   replaceExtractorDefinition,
   http3UpgradeScopes,
   onSwitchToHTTP3Upgrade,
@@ -213,13 +307,49 @@ export default function RequestResponseInspector({
     }
   }, [])
 
-  const editableActionIndex = event.phase === 'action' && typeof event.action_index === 'number' && event.action_index < script.actions.length
-    ? event.action_index
+  const eventExt = event as InspectorReplayEvent
+  const runtimeEvidenceUnavailable = Boolean(
+    runtimeVariablesUnavailable || eventExt.runtime_evidence_unavailable,
+  )
+  const stepRef = eventStep(event)
+  const resolvedStepKey = stepRef ? authorFocusKey(stepRef) : replayEventStepKey(event)
+  const hasAddExtractorHandler = Boolean(onAddExtractor || addExtractorDefinition)
+  const canAddExtractor = hasAddExtractorHandler
+    && !runtimeEvidenceUnavailable
+    && (stepRef !== null || (typeof event.action_index === 'number' && event.action_index >= 0))
+  const editableActionIndex = canAddExtractor
+    ? (stepRef?.actionIndex ?? (typeof event.action_index === 'number' && event.action_index >= 0 ? event.action_index : 0))
     : null
+  const handleAddExtractor = (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => {
+    if (onAddExtractor) {
+      if (stepRef) onAddExtractor(actionIndex, extractor, stepRef)
+      else onAddExtractor(actionIndex, extractor)
+    }
+    if (addExtractorDefinition) {
+      if (stepRef) addExtractorDefinition(actionIndex, extractor, repair, stepRef)
+      else if (repair !== undefined) addExtractorDefinition(actionIndex, extractor, repair)
+      else addExtractorDefinition(actionIndex, extractor)
+    }
+  }
   const actionName = event.action_name || 'Unnamed action'
   const methodTarget = `${event.method || event.action_type || ''} ${event.target || ''}`.trim()
   const snapshot = event.snapshot
   const structuredSnapshot = snapshot && hasStructuredReplaySnapshot(snapshot) ? snapshot : null
+  const canDownloadHar = !runtimeEvidenceUnavailable && Boolean(
+    eventExt.url ||
+    eventExt.request_headers ||
+    event.headers ||
+    eventExt.response_headers ||
+    structuredSnapshot?.request_url ||
+    structuredSnapshot?.request_headers ||
+    structuredSnapshot?.response_headers,
+  )
+  const safeTraceLinks = !runtimeEvidenceUnavailable && Array.isArray(eventExt.trace_links)
+    ? eventExt.trace_links.filter(
+      (link): link is InspectorTraceLink =>
+        Boolean(link && typeof link.url === 'string' && /^https?:\/\//i.test(link.url.trim())),
+    )
+    : []
 
   const verdictError = event.success ? null : event.error_message || 'Action failed.'
   const follower = isFollowerFailure(event)
@@ -251,8 +381,7 @@ export default function RequestResponseInspector({
   // the script's HTTP defaults, only while the replay matches the script (a
   // reordered action's headers are not taken for this one's).
   const requestSources = useMemo(() => {
-    const stepKey = replayEventStepKey(event)
-    const action = replayMatchesCurrentScript && stepKey ? resolveAuthorJsonScopeByKey(script, stepKey)?.action : undefined
+    const action = replayMatchesCurrentScript && resolvedStepKey ? resolveAuthorJsonScopeByKey(script, resolvedStepKey)?.action : undefined
     const wire: InspectorSourceContext = {
       view: 'wire',
       authored: action ? { action, http: script.config?.http } : null,
@@ -268,17 +397,17 @@ export default function RequestResponseInspector({
       authored: wire.authored,
     })
     return { wire, scripted, form }
-  }, [event, script, replayMatchesCurrentScript])
+  }, [event, resolvedStepKey, script, replayMatchesCurrentScript])
   // The Correlation tab's badge counts the table's own rows.
   const correlationModel = useMemo(
-    () => correlationTableForEvent(event, variableDiff, replayMatchesCurrentScript ? script : null, runtimeVariablesUnavailable),
-    [event, variableDiff, script, replayMatchesCurrentScript, runtimeVariablesUnavailable],
+    () => correlationTableForEvent(event, variableDiff, replayMatchesCurrentScript ? script : null, runtimeEvidenceUnavailable),
+    [event, variableDiff, script, replayMatchesCurrentScript, runtimeEvidenceUnavailable],
   )
 
-  const curlCommand = structuredSnapshot ? buildCurlCommand(structuredSnapshot) : null
+  const curlCommand = !runtimeEvidenceUnavailable && structuredSnapshot ? buildCurlCommand(structuredSnapshot) : null
   // A snapshot cut by retention still copies, labelled incomplete (the button
   // and its tooltip name each gap) rather than passing for the wire request.
-  const curlGaps = structuredSnapshot ? curlCommandGaps(structuredSnapshot) : []
+  const curlGaps = !runtimeEvidenceUnavailable && structuredSnapshot ? curlCommandGaps(structuredSnapshot) : []
   const curlGapsId = `${baseId}-curl-gaps`
 
   // The step's failing extractor seeds the tester. It is resolved only while
@@ -292,9 +421,8 @@ export default function RequestResponseInspector({
   const failingName = testable ? failingExtractorName(event) : null
   const testerKey = failingName ? `${eventKey}:${failingName}` : 'free'
   const resolveFailingExtractor = () => {
-    const stepKey = replayEventStepKey(event)
-    return failingName && stepKey && replayMatchesCurrentScript
-      ? findExtractorDefinition(resolveAuthorJsonScopeByKey(script, stepKey)?.action.extractors, failingName)
+    return failingName && resolvedStepKey && replayMatchesCurrentScript
+      ? findExtractorDefinition(resolveAuthorJsonScopeByKey(script, resolvedStepKey)?.action.extractors, failingName)
       : null
   }
   const [failingSeed, setFailingSeed] = useState(() => ({ key: testerKey, extractor: resolveFailingExtractor() }))
@@ -343,7 +471,7 @@ export default function RequestResponseInspector({
               <button
                 type="button"
                 className="btn btn-sm btn-secondary"
-                onClick={() => addExtractorDefinition(editableActionIndex, {
+                onClick={() => handleAddExtractor(editableActionIndex, {
                   name: fields.name || 'correlation_value',
                   source: fields.source || 'body',
                   type: fields.type || fields.extract_type || 'regex',
@@ -634,7 +762,7 @@ export default function RequestResponseInspector({
   const renderCorrelation = () => {
     const liveTable = event.action_type === 'live_table'
     const testerHeadingId = `${baseId}-extractor-tester`
-    const stepKey = replayEventStepKey(event)
+    const stepKey = resolvedStepKey
     // A failing extractor that reads what the tester cannot show (the URL,
     // the status code) is named instead of being tried against the body.
     const unsupportedSurface = failingExtractor ? extractorTesterUnsupportedSurface(failingExtractor) : null
@@ -653,7 +781,7 @@ export default function RequestResponseInspector({
         event={event}
         variableDiff={variableDiff}
         script={replayMatchesCurrentScript ? script : null}
-        runtimeVariablesUnavailable={runtimeVariablesUnavailable}
+        runtimeVariablesUnavailable={runtimeEvidenceUnavailable}
         showEmptyState={!liveTable && !testable}
         copyKeyPrefix={`${index}:correlation`}
         copiedKey={copiedSection}
@@ -681,7 +809,7 @@ export default function RequestResponseInspector({
             key={seed ? `${testerKey}:seeded` : testerKey}
             event={event}
             actionIndex={editableActionIndex}
-            onAddExtractor={addExtractorDefinition}
+            onAddExtractor={(idx, extractor) => handleAddExtractor(idx, extractor)}
             initialDraft={seed ? {
               name: seed.name,
               source: seed.source,
@@ -702,10 +830,10 @@ export default function RequestResponseInspector({
     const pageURL = event.page_url || snapshot?.page_url
     const pageTitle = event.page_title || snapshot?.page_title
     const bodyState = snapshot?.response_body_state || event.response_body_state
-    const version = runtimeVariablesUnavailable ? null : httpReplayVersionEvidence(event.protocol_evidence)
-    const content = runtimeVariablesUnavailable ? null : httpResponseContentEvidence(event.protocol_evidence, bodyState)
+    const version = runtimeEvidenceUnavailable ? null : httpReplayVersionEvidence(event.protocol_evidence)
+    const content = runtimeEvidenceUnavailable ? null : httpResponseContentEvidence(event.protocol_evidence, bodyState)
     // Hop phases are runtime evidence: withheld with it, leaving the total.
-    const bar = runtimeVariablesUnavailable ? inspectorTimingBar({ ...event, network_entries: undefined, snapshot: undefined }) : inspectorTimingBar(event)
+    const bar = runtimeEvidenceUnavailable ? inspectorTimingBar({ ...event, network_entries: undefined, snapshot: undefined }) : inspectorTimingBar(event)
     return <>
       <section className="rr-inspector-timing" aria-label="Timing">
         <p className="rr-inspector-timing-span">
@@ -761,7 +889,7 @@ export default function RequestResponseInspector({
       <HTTPNetworkTraceEvidence
         evidence={event.protocol_evidence}
         networkEntries={replayNetworkEntries(event)}
-        unavailable={runtimeVariablesUnavailable}
+        unavailable={runtimeEvidenceUnavailable}
         inline
       />
     </>
@@ -781,7 +909,7 @@ export default function RequestResponseInspector({
       {/* Hop phases are runtime evidence: withheld with it, as Timing does. */}
       <InspectorNetworkTable
         event={event}
-        phasesUnavailable={runtimeVariablesUnavailable}
+        phasesUnavailable={runtimeEvidenceUnavailable}
         requestSources={requestSources.wire}
         copyKeyPrefix={`${index}:network`}
         copiedKey={copiedSection}
@@ -916,6 +1044,26 @@ export default function RequestResponseInspector({
               {copiedSection === `${index}:curl` ? 'Copied' : curlGaps.length ? 'Copy as cURL (incomplete)' : 'Copy as cURL'}
             </button>
           )}
+          {canDownloadHar && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost rr-inspector-har"
+              onClick={() => void downloadSingleEventHar(event)}
+            >
+              Download HAR
+            </button>
+          )}
+          {safeTraceLinks.map((link, linkIdx) => (
+            <a
+              key={`${link.provider || 'trace'}-${linkIdx}-${link.url}`}
+              href={link.url.trim()}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-sm btn-ghost rr-inspector-trace-link"
+            >
+              {traceLinkLabel(link.provider, link.label)}
+            </a>
+          ))}
           {!replaying && replayMatchesCurrentScript && <button type="button" className="btn btn-sm btn-secondary rr-inspector-edit" onClick={() => onEditAction(event)}>Edit this action</button>}
         </div>
       </header>

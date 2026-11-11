@@ -154,25 +154,115 @@ describe('InspectorNetworkTable', () => {
     expect(openDetail()).toBeNull()
   })
 
-  it('shows the own request’s headers through the Request tab’s sources and masks', () => {
+  it('shows the own request’s headers through the Request tab’s sources and masks, and renders sub-resource/response headers as InspectorHeaderTables', () => {
     const action = { name: 'Home', type: 'GET', target: '/', headers: { Authorization: '{{secret.TOKEN}}' } } as ScriptActionDefinition
     const own = event({
       network_entries: [
-        { method: 'GET', url: 'https://shop.example.test/', status_code: 200, request_headers: { Authorization: 'Bearer live-token', Accept: '*/*' } },
-        { method: 'GET', url: 'https://shop.example.test/app.js', status_code: 200, request_headers: { Accept: 'text/javascript' } },
+        { method: 'GET', url: 'https://shop.example.test/', status_code: 200, request_headers: { Authorization: 'Bearer live-token', Accept: '*/*' }, response_headers: { 'Set-Cookie': 'sid=live-secret-1\nsid2=live-secret-2', 'Content-Type': 'text/html' } },
+        { method: 'GET', url: 'https://shop.example.test/app.js', status_code: 200, request_headers: { Accept: 'text/javascript', Authorization: 'Bearer sub-secret' } },
       ],
     })
     render(own, false, { view: 'wire', authored: { action } })
     act(() => rowButton('(this request)')?.click())
     const detail = openDetail()!
     expect(detail.querySelector('table[aria-label="Request headers of the selected request"]')).not.toBeNull()
+    expect(detail.querySelector('table[aria-label="Response headers of the selected request"]')).not.toBeNull()
     expect(detail.innerHTML).not.toContain('live-token')
+    expect(detail.innerHTML).not.toContain('live-secret-1')
+    expect(detail.innerHTML).not.toContain('live-secret-2')
     expect(detail.textContent).toContain(MASKED_VALUE)
     expect(detail.textContent).toContain('Secret')
-    // Another request's headers stay plain text.
+    // Sub-resource request and response headers also render as InspectorHeaderTables, masking sensitive headers without Comes from.
     act(() => rowButton('/app.js')?.click())
-    expect(openDetail()?.querySelector('table')).toBeNull()
-    expect(openDetail()?.textContent).toContain('text/javascript')
+    const subDetail = openDetail()!
+    const subReqTable = subDetail.querySelector('table[aria-label="Request headers of the selected request"]')
+    const subResTable = subDetail.querySelector('table[aria-label="Response headers of the selected request"]')
+    expect(subReqTable).not.toBeNull()
+    expect(subResTable).not.toBeNull()
+    expect([...subReqTable!.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Header', 'Value', 'Copy'])
+    expect(subDetail.innerHTML).not.toContain('sub-secret')
+    expect(subDetail.textContent).toContain(MASKED_VALUE)
+    expect(subDetail.textContent).toContain('text/javascript')
+
+    // HTTP/2 pseudo-headers (:authority, :status) alongside sensitive headers remain masked and never fall back to raw <pre>.
+    const h2Sub = event({
+      network_entries: [
+        {
+          method: 'GET',
+          url: 'https://shop.example.test/h2-sub',
+          status_code: 200,
+          request_headers: { ':authority': 'shop.example.test', Authorization: 'Bearer h2-secret-token' },
+          response_headers: { ':status': '200', 'Set-Cookie': 'sid=h2-cookie-secret; HttpOnly' },
+        },
+      ],
+    })
+    render(h2Sub)
+    act(() => rowButton('/h2-sub')?.click())
+    const h2Detail = openDetail()!
+    expect(h2Detail.innerHTML).not.toContain('h2-secret-token')
+    expect(h2Detail.innerHTML).not.toContain('h2-cookie-secret')
+    expect(h2Detail.textContent).toContain(MASKED_VALUE)
+    act(() => Array.from(h2Detail.querySelectorAll<HTMLButtonElement>('button')).find(b => b.textContent?.includes('Show all'))?.click())
+    expect(h2Detail.textContent).toContain(':authority')
+    expect(h2Detail.innerHTML).not.toContain('h2-secret-token')
+  })
+
+  it('displays hop transport metadata (connection reuse, remote_addr, TLS version, and stripped redirect headers) when a hop trace is present', () => {
+    const hopped = event({
+      network_entries: [
+        {
+          method: 'GET',
+          url: 'https://shop.example.test/',
+          status_code: 302,
+          duration_ms: 18,
+          response_headers: { Location: 'https://checkout.example.test/pay' },
+          trace: {
+            http_protocol: 'HTTP/2.0',
+            connection_reused: false,
+            remote_addr: '203.0.113.9:443',
+            tls_version: 'TLS 1.3',
+            tls_negotiated_proto: 'h2',
+            stripped_redirect_headers: ['Authorization', 'Cookie'],
+          },
+        },
+        {
+          method: 'GET',
+          url: 'https://checkout.example.test/pay',
+          status_code: 200,
+          duration_ms: 24,
+          trace: {
+            http_protocol: 'HTTP/2.0',
+            connection_reused: true,
+            remote_addr: '203.0.113.10:443',
+            tls_version: 'TLS 1.3',
+            content_encoding: 'gzip',
+          },
+        },
+      ],
+    })
+    render(hopped)
+    act(() => rowButton('(this request)')?.click())
+    const hop1Facts = openDetail()?.querySelector('.rr-network-detail-facts')?.textContent ?? ''
+    expect(hop1Facts).toContain('HTTP/2.0')
+    expect(hop1Facts).toContain('New connection')
+    expect(hop1Facts).toContain('remote 203.0.113.9:443')
+    expect(hop1Facts).toContain('TLS 1.3 (h2)')
+    expect(hop1Facts).toContain('stripped Authorization, Cookie')
+
+    act(() => rowButton('(redirect)')?.click())
+    const hop2Facts = openDetail()?.querySelector('.rr-network-detail-facts')?.textContent ?? ''
+    expect(hop2Facts).toContain('Reused connection')
+    expect(hop2Facts).toContain('remote 203.0.113.10:443')
+    expect(hop2Facts).toContain('TLS 1.3')
+    expect(hop2Facts).toContain('encoding gzip')
+
+    // Withholds hop transport telemetry when runtime evidence is unavailable.
+    render(hopped, true)
+    act(() => rowButton('(this request)')?.click())
+    const unavailableFacts = openDetail()?.querySelector('.rr-network-detail-facts')?.textContent ?? ''
+    expect(unavailableFacts).not.toContain('New connection')
+    expect(unavailableFacts).not.toContain('203.0.113.9:443')
+    expect(unavailableFacts).not.toContain('stripped Authorization')
   })
 
   it('renders nothing without requests', () => {
@@ -204,7 +294,7 @@ describe('InspectorNetworkTable', () => {
 
       // Zero width (hidden tabpanel) keeps the default wide column set.
       reportWidth(0)
-      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+      expect([...container.querySelectorAll('.rr-network-table > thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
 
       act(() => rowButton('/app.js')?.click())
       expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('6')
@@ -215,7 +305,7 @@ describe('InspectorNetworkTable', () => {
       expect([...container.querySelectorAll('colgroup > col')].map(col => col.className)).toEqual([
         'rr-network-col-request', 'rr-network-col-status', 'rr-network-col-time', 'rr-network-col-body',
       ])
-      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Request', 'Status', 'Time', 'Body'])
+      expect([...container.querySelectorAll('.rr-network-table > thead th')].map(th => th.textContent)).toEqual(['Request', 'Status', 'Time', 'Body'])
       expect(container.querySelectorAll('.rr-network-col-hop, .rr-network-col-type')).toHaveLength(0)
       expect(bodyRows()[0].children).toHaveLength(4)
       expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('4')
@@ -223,7 +313,7 @@ describe('InspectorNetworkTable', () => {
       // Widening past 580px (including fractional subpixel 580.4px) restores Hop and Type and updates detail colSpan back to 6.
       reportWidth(580.4)
       expect(container.querySelector('.rr-network')?.classList.contains('is-narrow')).toBe(false)
-      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+      expect([...container.querySelectorAll('.rr-network-table > thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
       expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('6')
 
       // Initial mount measurement uses unrounded getBoundingClientRect().width before integer clientWidth.
@@ -236,7 +326,7 @@ describe('InspectorNetworkTable', () => {
       try {
         render(event())
         expect(container.querySelector('.rr-network')?.classList.contains('is-narrow')).toBe(false)
-        expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+        expect([...container.querySelectorAll('.rr-network-table > thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
       } finally {
         HTMLElement.prototype.getBoundingClientRect = rectSpy
         if (clientWidthDesc) Object.defineProperty(Element.prototype, 'clientWidth', clientWidthDesc)

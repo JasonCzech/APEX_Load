@@ -2,7 +2,14 @@ import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState } from 'rea
 import type { BrowserReplayEvent } from '../types/replay'
 import { browserResourceProtocolShortLabel } from './browserResourceEvidenceModel'
 import InspectorHeaderTable from './InspectorHeaderTable'
-import type { InspectorSourceContext } from './inspectorHeadersModel'
+import {
+  headerRecordFromRows,
+  headerRowsFromRecord,
+  isSensitiveFieldName,
+  MASKED_VALUE,
+  maskInspectorRows,
+  type InspectorSourceContext,
+} from './inspectorHeadersModel'
 import {
   filterInspectorNetworkRows,
   inspectorNetworkBodySummary,
@@ -61,16 +68,51 @@ function NetworkRowDetail({ row, id, labelledBy, phasesUnavailable, requestSourc
   const phases = phasesUnavailable ? [] : inspectorNetworkPhases(row)
   const kept = inspectorNetworkKeptBody(row)
   const ownRequest = row.role === 'self' || row.role === 'page'
-  const protocol = row.entry?.browser_evidence?.protocol ? browserResourceProtocolShortLabel(row.entry.browser_evidence) : ''
+  const hopTrace = !phasesUnavailable && row.hop !== null && row.entry?.trace && typeof row.entry.trace === 'object' && !Array.isArray(row.entry.trace)
+    ? row.entry.trace
+    : undefined
+  const strippedHeaders = Array.isArray(hopTrace?.stripped_redirect_headers)
+    ? hopTrace.stripped_redirect_headers.filter((item): item is string => typeof item === 'string' && item !== '').join(', ')
+    : typeof hopTrace?.stripped_redirect_headers === 'string'
+      ? hopTrace.stripped_redirect_headers
+      : ''
+  const protocol = row.entry?.browser_evidence?.protocol
+    ? browserResourceProtocolShortLabel(row.entry.browser_evidence)
+    : hopTrace?.http_protocol || ''
+  const connectionReuse = hopTrace?.connection_reused === true
+    ? 'Reused connection'
+    : hopTrace?.connection_reused === false
+      ? 'New connection'
+      : ''
+  const tlsDetail = hopTrace?.tls_version
+    ? `${hopTrace.tls_version}${hopTrace.tls_negotiated_proto ? ` (${hopTrace.tls_negotiated_proto})` : ''}`
+    : ''
   const facts = [
     `${row.method} ${statusText(row)}`,
     row.durationMs !== null ? formatTimingMs(row.durationMs) : '',
     protocol,
+    connectionReuse,
+    hopTrace?.remote_addr ? `remote ${hopTrace.remote_addr}` : '',
+    tlsDetail,
+    hopTrace?.content_encoding ? `encoding ${hopTrace.content_encoding}` : '',
+    strippedHeaders ? `stripped ${strippedHeaders}` : '',
     row.cacheHit ? 'from cache' : '',
     row.resource?.truncated ? 'headers or URL cut by retention' : '',
   ].filter(Boolean)
   const requestHeaders = row.resource?.request_headers || row.entry?.request_headers
   const responseHeaders = row.resource?.response_headers || row.entry?.response_headers
+  const maskHeaderRecord = (headers: Record<string, string>): Record<string, string> =>
+    Object.fromEntries(
+      Object.entries(headers).map(([key, value]) => [key, isSensitiveFieldName(key) ? MASKED_VALUE : value]),
+    )
+  const requestHeaderText = requestHeaders && Object.keys(requestHeaders).length > 0 ? formatReplayHeaders(maskHeaderRecord(requestHeaders)) : ''
+  const parsedRequestRows = requestHeaders && Object.keys(requestHeaders).length > 0 && row.role === null
+    ? maskInspectorRows(headerRowsFromRecord(requestHeaders, 'request'))
+    : []
+  const responseHeaderText = responseHeaders && Object.keys(responseHeaders).length > 0 ? formatReplayHeaders(maskHeaderRecord(responseHeaders)) : ''
+  const parsedResponseRows = responseHeaders && Object.keys(responseHeaders).length > 0
+    ? maskInspectorRows(headerRowsFromRecord(responseHeaders, 'response'))
+    : []
   return (
     <section id={id} className="rr-network-detail" aria-labelledby={labelledBy}>
       <h4 className="rr-network-detail-title"><code>{row.url || 'Unknown URL'}</code></h4>
@@ -97,18 +139,36 @@ function NetworkRowDetail({ row, id, labelledBy, phasesUnavailable, requestSourc
           copiedKey={copiedKey}
           onCopy={onCopy}
         />
+      ) : parsedRequestRows.length > 0 ? (
+        <InspectorHeaderTable
+          direction="request"
+          headers={headerRecordFromRows(parsedRequestRows)}
+          label="Request headers of the selected request"
+          copyKeyPrefix={`${copyKeyPrefix}:${row.id}:request-headers`}
+          copiedKey={copiedKey}
+          onCopy={onCopy}
+        />
       ) : (
         <div className="replay-code-block">
           <span className="replay-detail-label">Request headers</span>
-          <SnapshotTextPreview text={formatReplayHeaders(requestHeaders)} />
+          <SnapshotTextPreview text={requestHeaderText} />
         </div>
       ))}
-      {responseHeaders && Object.keys(responseHeaders).length > 0 && (
+      {responseHeaders && Object.keys(responseHeaders).length > 0 && (parsedResponseRows.length > 0 ? (
+        <InspectorHeaderTable
+          direction="response"
+          headers={headerRecordFromRows(parsedResponseRows)}
+          label="Response headers of the selected request"
+          copyKeyPrefix={`${copyKeyPrefix}:${row.id}:response-headers`}
+          copiedKey={copiedKey}
+          onCopy={onCopy}
+        />
+      ) : (
         <div className="replay-code-block">
           <span className="replay-detail-label">Response headers</span>
-          <SnapshotTextPreview text={formatReplayHeaders(responseHeaders)} />
+          <SnapshotTextPreview text={responseHeaderText} />
         </div>
-      )}
+      ))}
       {ownRequest && !kept ? (
         <p className="rr-network-detail-note">This action&apos;s response body is on the Response tab.</p>
       ) : (

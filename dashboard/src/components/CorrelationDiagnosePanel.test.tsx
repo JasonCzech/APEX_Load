@@ -1255,4 +1255,379 @@ describe('CorrelationDiagnosePanel', () => {
     expect(container.innerHTML).not.toContain('unknown_future_state')
   })
 
+  it('surfaces Init #1 step location and forwards step ref to onApplyExtractor, onAddExtractor, and onSelectAction', async () => {
+    const multiPhaseEvents: ScriptReplayActionEvent[] = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'vuser_init login',
+        action_type: 'POST',
+        target: '/login',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 1,
+        status_code: 200,
+        success: true,
+        snapshot: { request_url: '/login', response_status: 200, response_body: '{"t":"new"}' },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        action_name: 'submit',
+        action_type: 'POST',
+        target: '/submit',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 1,
+        status_code: 403,
+        success: false,
+        snapshot: { request_url: '/submit', request_body: 'csrf=OLD', response_status: 403 },
+      },
+    ]
+    const diagnoseWithBaseline = vi.fn().mockResolvedValue(diagnoseResponse)
+    const onAddExtractor = vi.fn().mockReturnValue(appliedResult)
+    const onApplyExtractor = vi.fn()
+    const onSelectAction = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <CorrelationDiagnosePanel
+          scriptId="s1"
+          replaySessionId="replay-init-1"
+          replayTerminal
+          replayMatchesCurrentScript
+          events={multiPhaseEvents}
+          recordingStatus={{ exists: true, request_count: 2 }}
+          actionCount={1}
+          diagnoseWithBaseline={diagnoseWithBaseline}
+          diagnoseWithUpload={vi.fn()}
+          onAddExtractor={onAddExtractor}
+          onApplyExtractor={onApplyExtractor}
+          onSelectAction={onSelectAction}
+        />,
+      )
+    })
+
+    const diagnoseButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Diagnose correlations')!
+    await act(async () => { diagnoseButton.click() })
+
+    const stepBadge = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Init #1')!
+    expect(stepBadge).toBeDefined()
+    await act(async () => { stepBadge.click() })
+    expect(onSelectAction).toHaveBeenCalledWith(0, { phase: 'init', actionIndex: 0 })
+
+    const addButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add as extractor')!
+    await act(async () => { addButton.click() })
+
+    expect(onApplyExtractor).toHaveBeenCalledWith(
+      0,
+      { name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t', on_miss: 'fail' },
+      { phase: 'init', actionIndex: 0 },
+    )
+    expect(onAddExtractor).toHaveBeenCalledWith(
+      0,
+      { name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t', on_miss: 'fail' },
+      { failingActionIndex: 0, requestLocations: [{ field: 'request_body', start: 5, end: 8 }], replacement: '{{var.csrf}}' },
+      { phase: 'init', actionIndex: 0 },
+    )
+  })
+
+  it('renders 3-phase and nested control_if / http_sequence diff rows when script is provided', async () => {
+    const script = {
+      init: [{ name: 'vuser_init login', type: 'POST', method: 'POST', target: '/api/login' }],
+      actions: [
+        {
+          name: 'if branch',
+          type: 'control_if',
+          target: '',
+          control: {
+            steps: [{ name: 'cart step', type: 'POST', method: 'POST', target: '/api/cart' }],
+          },
+        },
+        {
+          name: 'seq bundle',
+          type: 'http_sequence',
+          target: '',
+          params: {
+            requests: [
+              { name: 'seq req 1', type: 'GET', method: 'GET', target: '/api/seq-1' },
+            ],
+          },
+        },
+      ],
+      teardown: [{ name: 'vuser_end logout', type: 'POST', method: 'POST', target: '/api/logout' }],
+    }
+    const nestedEvents: ScriptReplayActionEvent[] = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'vuser_init login',
+        action_type: 'POST',
+        target: '/api/login',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 200,
+        success: true,
+        snapshot: { request_url: '/api/login', response_status: 200, response_body: '{"auth_token":"tok-abc"}' },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        action_name: 'cart step',
+        action_type: 'POST',
+        target: '/api/cart',
+        step_path: ['then[0]'],
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 401,
+        success: false,
+        snapshot: { request_url: '/api/cart', request_headers: { Authorization: 'Bearer tok-abc' }, response_status: 401 },
+      },
+      {
+        phase: 'action',
+        action_index: 1,
+        action_name: 'seq req 1',
+        action_type: 'GET',
+        target: '/api/seq-1',
+        request_index: 0,
+        step_path: ['requests[0]'],
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 200,
+        success: true,
+        snapshot: { request_url: '/api/seq-1', response_status: 200 },
+      },
+      {
+        phase: 'teardown',
+        action_index: 0,
+        action_name: 'vuser_end logout',
+        action_type: 'POST',
+        target: '/api/logout',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 204,
+        success: true,
+        snapshot: { request_url: '/api/logout', response_status: 204 },
+      },
+    ]
+    const onApplyExtractor = vi.fn()
+    const onSelectAction = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <CorrelationDiagnosePanel
+          script={script}
+          events={nestedEvents}
+          onApplyExtractor={onApplyExtractor}
+          onSelectAction={onSelectAction}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Init #1')
+    expect(container.textContent).toContain('#1 · Then #1')
+    expect(container.textContent).toContain('#2 · Request 1')
+    expect(container.textContent).toContain('Teardown #1')
+
+    const nestedButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === '#1 · Then #1')!
+    await act(async () => { nestedButton.click() })
+    expect(onSelectAction).toHaveBeenCalledWith(0, { phase: 'action', actionIndex: 0, stepPath: ['then[0]'] })
+
+    const applyFixButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add as extractor')!
+    await act(async () => { applyFixButton.click() })
+    expect(onApplyExtractor).toHaveBeenCalledWith(
+      0,
+      expect.objectContaining({ name: 'auth_token', source: 'body', type: 'jsonpath', expression: '$.auth_token' }),
+      { phase: 'init', actionIndex: 0 },
+    )
+  })
+
+  it('falls back to extractor-only when failing_step_id resolves to a teardown step rather than mutating actions[0]', async () => {
+    const threePhaseEvents: ScriptReplayActionEvent[] = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'vuser_init login',
+        action_type: 'POST',
+        target: '/login',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 1,
+        status_code: 200,
+        success: true,
+        snapshot: { request_url: '/login', response_status: 200, response_body: '{"t":"new"}' },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        action_name: 'orders',
+        action_type: 'GET',
+        target: '/orders',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 1,
+        status_code: 200,
+        success: true,
+      },
+      {
+        phase: 'teardown',
+        action_index: 0,
+        action_name: 'vuser_end logout',
+        action_type: 'POST',
+        target: '/logout',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 1,
+        status_code: 403,
+        success: false,
+        snapshot: { request_url: '/logout', request_body: 'csrf=OLD', response_status: 403 },
+      },
+    ]
+    const teardownFailureResponse: CorrelationDiagnoseResponse = {
+      ...diagnoseResponse,
+      suggestions: [{
+        ...diagnoseResponse.suggestions[0],
+        source_step_id: 0,
+        failing_step_id: 2,
+      }],
+    }
+    const onAddExtractor = vi.fn().mockReturnValue(extractorOnlyResult)
+
+    await act(async () => {
+      root.render(
+        <CorrelationDiagnosePanel
+          scriptId="s1"
+          replaySessionId="replay-teardown-1"
+          replayTerminal
+          replayMatchesCurrentScript
+          events={threePhaseEvents}
+          recordingStatus={{ exists: true, request_count: 3 }}
+          actionCount={1}
+          diagnoseWithBaseline={vi.fn().mockResolvedValue(teardownFailureResponse)}
+          diagnoseWithUpload={vi.fn()}
+          onAddExtractor={onAddExtractor}
+        />,
+      )
+    })
+
+    const diagnoseButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Diagnose correlations')!
+    await act(async () => { diagnoseButton.click() })
+
+    const addButton = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Add as extractor')!
+    await act(async () => { addButton.click() })
+
+    expect(onAddExtractor).toHaveBeenCalledWith(
+      0,
+      { name: 'csrf', source: 'body', type: 'jsonpath', expression: '$.t', on_miss: 'fail' },
+      undefined,
+      { phase: 'init', actionIndex: 0 },
+    )
+    expect(container.textContent).toContain('Extractor added')
+  })
+
+  it('retains the disabled Extractor added state and advances trustedEditableActionsKey when a local diff fix mutates script', async () => {
+    let currentScript: NonNullable<React.ComponentProps<typeof CorrelationDiagnosePanel>['script']> = {
+      init: [
+        { name: 'vuser_init auth', type: 'POST', target: '/api/login' },
+      ],
+      actions: [
+        {
+          name: 'submit order',
+          type: 'POST',
+          target: '/api/order',
+          headers: { Authorization: 'Bearer {{var.auth_token}}', 'X-Csrf': '{{var.csrf_token}}' },
+        },
+      ],
+    }
+    const statefulEvents: ScriptReplayActionEvent[] = [
+      {
+        phase: 'init',
+        action_index: 0,
+        action_name: 'vuser_init auth',
+        action_type: 'POST',
+        target: '/api/login',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 200,
+        success: true,
+        snapshot: {
+          request_url: '/api/login',
+          response_status: 200,
+          response_body: '{"auth_token":"tok-1","csrf_token":"csrf-2"}',
+        },
+      },
+      {
+        phase: 'action',
+        action_index: 0,
+        action_name: 'submit order',
+        action_type: 'POST',
+        target: '/api/order',
+        started_at: '',
+        completed_at: '',
+        duration_ms: 2,
+        status_code: 401,
+        success: false,
+        snapshot: {
+          request_url: '/api/order',
+          request_headers: { Authorization: 'Bearer tok-1', 'X-Csrf': 'csrf-2' },
+          response_status: 401,
+        },
+      },
+    ]
+
+    const renderStateful = async () => {
+      const actionsKey = JSON.stringify({ init: currentScript.init, actions: currentScript.actions })
+      await act(async () => {
+        root.render(
+          <CorrelationDiagnosePanel
+            script={currentScript}
+            scriptId="s1"
+            replaySessionId="replay-stateful-1"
+            replayTerminal
+            replayMatchesCurrentScript
+            currentEditableActionsKey={actionsKey}
+            events={statefulEvents}
+            recordingStatus={{ exists: true, request_count: 2 }}
+            actionCount={2}
+            diagnoseWithBaseline={vi.fn().mockResolvedValue(diagnoseResponse)}
+            diagnoseWithUpload={vi.fn()}
+            onAddExtractor={(idx, extractor, _repair, step) => {
+              if (step?.phase === 'init') {
+                const nextInit = [...(currentScript.init || [])]
+                nextInit[idx] = { ...nextInit[idx], extractors: [...(nextInit[idx].extractors || []), extractor] }
+                currentScript = { ...currentScript, init: nextInit }
+              }
+              return { extractorAdded: true, extractorAvailable: true, requestRepaired: false }
+            }}
+          />,
+        )
+      })
+    }
+
+    await renderStateful()
+    const diagnoseBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent === 'Diagnose correlations')!
+    await act(async () => { diagnoseBtn.click() })
+    expect(container.textContent).toContain('Stale token replayed')
+
+    // Click the first local diff "Add as extractor" button and re-render with the mutated script + updated currentEditableActionsKey
+    const localFixBtnsBefore = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] button')).filter(
+      b => b.textContent === 'Add as extractor' || b.textContent === 'Extractor added',
+    )
+    expect(localFixBtnsBefore.length).toBeGreaterThanOrEqual(2)
+    await act(async () => { localFixBtnsBefore[0].click() })
+    await renderStateful()
+
+    const localFixBtnsAfter = Array.from(container.querySelectorAll<HTMLButtonElement>('[aria-label="Recording diff steps"] button')).filter(
+      b => b.textContent === 'Add as extractor' || b.textContent === 'Extractor added',
+    )
+    expect(localFixBtnsAfter.some(b => b.textContent === 'Extractor added' && b.disabled)).toBe(true)
+    expect(localFixBtnsAfter.some(b => b.textContent === 'Add as extractor' && !b.disabled)).toBe(true)
+    expect(container.textContent).not.toContain('The editable actions were changed outside this diagnosis')
+  })
+
 })

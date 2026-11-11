@@ -28,7 +28,7 @@ vi.mock('./RequestResponseInspector', () => {
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-import { ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
+import { DebugNextRequest, ScriptReplayDebuggerView } from './ScriptReplayDebuggerView'
 
 const SAMPLE_SCRIPT: ScriptDefinition = {
   version: '1.0',
@@ -49,6 +49,8 @@ function Harness({
   onEditAction = () => {},
   canRevealInScript,
   onRevealInScript,
+  activeWorkspace,
+  onOpenRequestResponse,
 }: {
   detailHost: HTMLDivElement
   report: BrowserReplayReport | null
@@ -58,6 +60,8 @@ function Harness({
   onEditAction?: (event: BrowserReplayEvent) => void
   canRevealInScript?: (event: BrowserReplayEvent) => boolean
   onRevealInScript?: (event: BrowserReplayEvent) => void
+  activeWorkspace?: string
+  onOpenRequestResponse?: () => void
 }) {
   const [expandedEvent, setExpandedEvent] = useState<number | null>(initialExpandedEvent)
   const [replayOptions, setReplayOptions] = useState(DEFAULT_REPLAY_OPTIONS)
@@ -85,6 +89,8 @@ function Harness({
       onUpdateBreakpoints={async () => {}}
       actionProblemRows={[]}
       addExtractorDefinition={() => ({ status: 'applied', actionName: 'Load catalog', extractorAdded: true, extractorAvailable: true, requestRepaired: false })}
+      activeWorkspace={activeWorkspace}
+      onOpenRequestResponse={onOpenRequestResponse}
       replaceExtractorDefinition={() => true}
       applyReplaySuggestedLocator={() => {}}
       breakpointSummary="0 breakpoints"
@@ -405,5 +411,207 @@ describe('ScriptReplayDebuggerView', () => {
     })
     const disabledEditBtn = host.querySelector<HTMLButtonElement>('.debugger-timeline button[aria-label="Edit Load catalog"]')!
     expect(disabledEditBtn.disabled).toBe(true)
+  })
+
+  it('suppresses duplicate DebugWaterfallPanel in the bottom dock when activeWorkspace is debug-summary', async () => {
+    const event: BrowserReplayEvent = {
+      phase: 'action',
+      action_index: 0,
+      action_name: 'Load catalog',
+      action_type: 'request',
+      method: 'GET',
+      target: 'https://api.example.test/catalog',
+      status_code: 200,
+      success: true,
+      duration_ms: 19,
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+    }
+    const report: BrowserReplayReport = {
+      replay_session_id: 'debug-summary-dup',
+      group: 'Checkout_Debug_Test-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [event],
+    }
+    const session: ScriptDebugSession = {
+      id: 'debug-summary-dup',
+      group: report.group,
+      protocol: 'http',
+      status: 'completed',
+      log_level: 'info',
+      current_event_index: 1,
+      started_at: report.started_at,
+      completed_at: report.completed_at,
+      events: [event],
+      report,
+    }
+    const onOpenRequestResponse = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <Harness
+          detailHost={portalHost}
+          report={report}
+          session={session}
+          activeWorkspace="action-list"
+          onOpenRequestResponse={onOpenRequestResponse}
+        />,
+      )
+    })
+
+    const timelineTab = Array.from(host.querySelectorAll<HTMLButtonElement>('.debugger-bottom-tabs [role="tab"]'))
+      .find(btn => btn.textContent?.trim() === 'Timeline')!
+    await act(async () => {
+      timelineTab.click()
+    })
+    expect(host.querySelector('.debugger-shell')?.classList.contains('debug-dock-collapsed')).toBe(false)
+    expect(host.querySelector('.debugger-timeline .debug-execution-timeline')).not.toBeNull()
+
+    // Switch activeWorkspace to 'debug-summary': dock auto-collapses and Timeline replaces the duplicate waterfall with a compact notice.
+    await act(async () => {
+      root.render(
+        <Harness
+          detailHost={portalHost}
+          report={report}
+          session={session}
+          activeWorkspace="debug-summary"
+          onOpenRequestResponse={onOpenRequestResponse}
+        />,
+      )
+    })
+    expect(host.querySelector('.debugger-shell')?.classList.contains('debug-dock-collapsed')).toBe(true)
+    expect(host.querySelector('.debugger-timeline .debug-execution-timeline')).toBeNull()
+    const summaryNotice = host.querySelector<HTMLElement>('[data-testid="debugger-timeline-summary-active"]')!
+    expect(summaryNotice).not.toBeNull()
+    expect(summaryNotice.textContent).toContain('Transaction waterfall is shown in the Summary workspace above.')
+    const inspectBtn = summaryNotice.querySelector<HTMLButtonElement>('button')!
+    expect(inspectBtn).not.toBeNull()
+    await act(async () => {
+      inspectBtn.click()
+    })
+    expect(onOpenRequestResponse).toHaveBeenCalledTimes(1)
+  })
+
+  it('masks sensitive headers, query params, and body fields in DebugNextRequest by default and reveals on toggle', async () => {
+    const sensitiveScript: ScriptDefinition = {
+      version: '1.0',
+      name: 'Auth_Debug_Test',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [
+        {
+          name: 'Authenticate user',
+          type: 'request',
+          method: 'POST',
+          target: 'https://api.example.test/login?api_key=PlainQueryKey99&session={{var.auth_token}}&mode=standard',
+          headers: {
+            Authorization: 'Bearer {{var.jwt_secret}}',
+            Origin: 'https://shop.example.test',
+          },
+          body: '{"username":"alice","password":"SuperSecretPassword!","token":"{{var.auth_token}}"}',
+        },
+        {
+          name: 'Refresh token',
+          type: 'request',
+          method: 'POST',
+          target: 'https://api.example.test/refresh?api_key=SecondStepKey88&session={{var.auth_token}}',
+          headers: {
+            Authorization: 'Bearer {{var.jwt_secret}}',
+          },
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(
+        <DebugNextRequest
+          script={sensitiveScript}
+          action={{ event_index: 0, phase: 'action', action_index: 0, action_name: 'Authenticate user', action_type: 'request', method: 'POST' }}
+          values={{ 'var.jwt_secret': 'eyJhbGciOiJIUzI1NiJ9.secret', 'var.auth_token': 'tok-live-777' }}
+          runId="debug-run-42"
+        />,
+      )
+    })
+
+    const nextReq = host.querySelector<HTMLElement>('.debugger-next-request')!
+    expect(nextReq).not.toBeNull()
+    // Non-sensitive values are visible immediately.
+    expect(nextReq.textContent).toContain('https://shop.example.test')
+    expect(nextReq.textContent).toContain('mode=standard')
+    expect(nextReq.textContent).toContain('alice')
+    // Sensitive header, query params, and body fields are masked by default.
+    expect(nextReq.textContent).not.toContain('eyJhbGciOiJIUzI1NiJ9.secret')
+    expect(nextReq.textContent).not.toContain('PlainQueryKey99')
+    expect(nextReq.textContent).not.toContain('SuperSecretPassword!')
+    expect(nextReq.textContent).not.toContain('tok-live-777')
+    expect(nextReq.textContent).toContain('••••••••')
+
+    // Reveal header via InspectorHeaderTable's Show value button.
+    const showAuthHeaderBtn = nextReq.querySelector<HTMLButtonElement>('button[aria-label="Show Authorization value"]')!
+    expect(showAuthHeaderBtn).not.toBeNull()
+    await act(async () => {
+      showAuthHeaderBtn.click()
+    })
+    expect(nextReq.textContent).toContain('Bearer eyJhbGciOiJIUzI1NiJ9.secret')
+
+    // Reveal URL/body sensitive values via DebugNextRequest's Show value button.
+    const showReqValuesBtn = nextReq.querySelector<HTMLButtonElement>('button[aria-label="Show sensitive request values"]')!
+    expect(showReqValuesBtn).not.toBeNull()
+    await act(async () => {
+      showReqValuesBtn.click()
+    })
+    expect(nextReq.textContent).toContain('PlainQueryKey99')
+    expect(nextReq.textContent).toContain('SuperSecretPassword!')
+    expect(nextReq.textContent).toContain('tok-live-777')
+
+    // Per-header Hide button can still hide Authorization while top-level Show sensitive request values is active.
+    const hideAuthHeaderBtn = nextReq.querySelector<HTMLButtonElement>('button[aria-label="Hide Authorization value"]')!
+    expect(hideAuthHeaderBtn).not.toBeNull()
+    await act(async () => {
+      hideAuthHeaderBtn.click()
+    })
+    expect(nextReq.textContent).not.toContain('eyJhbGciOiJIUzI1NiJ9.secret')
+
+    // Hide them again.
+    const hideReqValuesBtn = nextReq.querySelector<HTMLButtonElement>('button[aria-label="Hide sensitive request values"]')!
+    await act(async () => {
+      hideReqValuesBtn.click()
+    })
+    expect(nextReq.textContent).not.toContain('SuperSecretPassword!')
+
+    // Re-reveal and then step to action_index 1: revealed state resets automatically on step transition.
+    await act(async () => {
+      nextReq.querySelector<HTMLButtonElement>('button[aria-label="Show sensitive request values"]')!.click()
+    })
+    expect(nextReq.textContent).toContain('PlainQueryKey99')
+    await act(async () => {
+      root.render(
+        <DebugNextRequest
+          script={{
+            ...sensitiveScript,
+            actions: [
+              sensitiveScript.actions[0],
+              {
+                ...sensitiveScript.actions[1],
+                headers: {
+                  Authorization: 'Bearer {{secret.API_KEY}}',
+                },
+              },
+            ],
+          }}
+          action={{ event_index: 1, phase: 'action', action_index: 1, action_name: 'Refresh token', action_type: 'request', method: 'POST' }}
+          values={null}
+          runId="debug-run-42"
+        />,
+      )
+    })
+    expect(nextReq.textContent).not.toContain('SecondStepKey88')
+    expect(nextReq.textContent).not.toContain('eyJhbGciOiJIUzI1NiJ9.secret')
+    expect(nextReq.textContent).toContain('{{var.auth_token}}')
+    // Secret-sourced header is masked by InspectorHeaderTable without rendering a no-op reveal toggle.
+    expect(nextReq.querySelector('button[aria-label="Show Authorization value"]')).toBeNull()
   })
 })

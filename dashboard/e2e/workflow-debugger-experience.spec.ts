@@ -565,8 +565,10 @@ test('debug completion summary opens once, links failures, downloads retained HA
   const summaryTabs = summary.getByRole('tablist', { name: 'Debug summary sections', exact: true })
   await expect(summaryTabs.getByRole('tab', { name: 'Transactions', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(summary.getByRole('region', { name: 'Execution waterfall', exact: true })).toBeVisible()
+  await expect(summary.getByRole('complementary', { name: 'Selected row details', exact: true }).getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
+  const summaryDownloadHarBtn = summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Download HAR', exact: true })
   const downloadPromise = page.waitForEvent('download')
-  await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
+  await summaryDownloadHarBtn.click()
   const download = await downloadPromise
   expect(download.suggestedFilename()).toMatch(/\.har$/)
   const path = await download.path()
@@ -588,11 +590,12 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(summary.getByRole('button', { name: 'Edit Check order', exact: true })).toBeEnabled()
   await summary.getByRole('button', { name: 'Inspect Check order' }).click()
   await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
-  // The run's only failure: nothing before or after it to step to; its wire request can be copied as cURL.
+  // The run's only failure: nothing before or after it to step to; its wire request can be copied as cURL or downloaded as HAR.
   const inspectorHeader = page.locator('.rr-inspector-header')
   await expect(inspectorHeader.getByRole('button', { name: 'Previous failure', exact: true })).toBeDisabled()
   await expect(inspectorHeader.getByRole('button', { name: 'Next failure', exact: true })).toBeDisabled()
   await expect(inspectorHeader.getByRole('button', { name: 'Copy as cURL', exact: true })).toBeVisible()
+  await expect(inspectorHeader.getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
   // Periodic session refreshes must not take the selected evidence tab away.
   await page.waitForTimeout(1800)
   await expect(summary).toBeHidden()
@@ -605,7 +608,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(summary).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('debug-summary-desktop.png') })
   await page.setViewportSize({ width: 900, height: 850 })
-  await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
+  await expect(summaryDownloadHarBtn).toBeVisible()
   expect((await expectFactsLayout()).inlineSize).toBeLessThanOrEqual(820)
   await page.setViewportSize({ width: 768, height: 850 })
   await expectFactsLayout()
@@ -691,7 +694,7 @@ for (const protocol of ['http', 'browser'] as const) test(`${protocol} HAR captu
   const summary = page.getByRole('region', { name: 'Debug run summary', exact: true })
   const downloadHAR = async () => {
     const ready = page.waitForEvent('download')
-    await summary.getByRole('button', { name: 'Download HAR', exact: true }).click()
+    await summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Download HAR', exact: true }).click()
     const download = await ready, file = await download.path()
     const raw = await readFile(file!, 'utf8')
     expect(raw).not.toContain('private-password'); expect(raw).not.toContain('private-token')

@@ -3,11 +3,18 @@ import type { ScriptActionDefinition } from '../types/scripts'
 import {
   MASKED_VALUE,
   authoredValueSource,
+  headerRecordFromRows,
+  headerRowsFromRecord,
+  headerRowsFromText,
   inspectorFormFieldRows,
   inspectorHeaderRows,
   inspectorKeyHeaderRows,
   isFormUrlEncoded,
   isPasswordLikeFieldName,
+  isSensitiveFieldName,
+  isServerRedactedValue,
+  maskedFieldNote,
+  maskInspectorRows,
   requestBodyIsForm,
   withRequestHeaderSources,
   type InspectorSourceContext,
@@ -287,5 +294,70 @@ describe('requestBodyIsForm', () => {
     expect(requestBodyIsForm({ wireHeaders: { Accept: '*/*' }, scriptedHeaders: json, authored: { action: action(), http: { default_headers: form } } })).toBe(false)
     // A wire capture without a Content-Type falls through to the next source.
     expect(requestBodyIsForm({ wireHeaders: { Accept: '*/*' }, scriptedHeaders: {}, authored: { action: action(), http: { default_headers: form } } })).toBe(true)
+  })
+})
+
+describe('headerRowsFromText, maskInspectorRows and maskedFieldNote', () => {
+  it('parses valid header lines, masks sensitive rows and rebuilds header records', () => {
+    const parsed = headerRowsFromText('X-Custom: one\nAuthorization: Bearer secret-token\nSet-Cookie: a=1\nSet-Cookie: b=2', 'response')
+    expect(parsed.map(row => [row.name, row.value, row.key])).toEqual([
+      ['Set-Cookie', 'a=1', true],
+      ['Set-Cookie', 'b=2', true],
+      ['X-Custom', 'one', false],
+      ['Authorization', 'Bearer secret-token', false],
+    ])
+    const masked = maskInspectorRows(parsed)
+    expect(masked.find(row => row.name === 'Authorization')).toMatchObject({ masked: true, value: MASKED_VALUE })
+    expect(masked.find(row => row.name === 'X-Custom')).toMatchObject({ masked: false, value: 'one' })
+    expect(headerRecordFromRows(parsed)).toEqual({
+      'Set-Cookie': 'a=1\nb=2',
+      'X-Custom': 'one',
+      Authorization: 'Bearer secret-token',
+    })
+    const rebuilt = headerRecordFromRows(masked)
+    expect(rebuilt).toEqual({
+      'Set-Cookie': `${MASKED_VALUE}\n${MASKED_VALUE}`,
+      'X-Custom': 'one',
+      Authorization: MASKED_VALUE,
+    })
+    expect(inspectorHeaderRows(rebuilt, 'request').find(row => row.name === 'Authorization')).toMatchObject({
+      masked: true,
+      value: MASKED_VALUE,
+    })
+    expect(headerRowsFromRecord({ Accept: '*/*' })).toEqual([{ name: 'Accept', value: '*/*', key: false, masked: false }])
+    expect(headerRowsFromText(':authority: shop.example.test\nAuthorization: Bearer h2-secret\n:status: 200', 'request').map(row => [row.name, row.value])).toEqual([
+      ['Authorization', 'Bearer h2-secret'],
+      [':authority', 'shop.example.test'],
+      [':status', '200'],
+    ])
+    expect(headerRowsFromText('not a header line')).toEqual([])
+    expect(headerRowsFromText('{"json":true}')).toEqual([])
+    expect(headerRowsFromText('')).toEqual([])
+    expect(isSensitiveFieldName('Authorization')).toBe(true)
+    expect(isSensitiveFieldName('Ocp-Apim-Subscription-Key')).toBe(true)
+    expect(isSensitiveFieldName('X-Functions-Key')).toBe(true)
+    expect(isSensitiveFieldName('X-Auth')).toBe(true)
+    expect(isSensitiveFieldName('Accept')).toBe(false)
+    expect(isServerRedactedValue('[REDACTED]')).toBe(true)
+    expect(isServerRedactedValue('[MASKED]')).toBe(true)
+    expect(isServerRedactedValue('hunter2')).toBe(false)
+  })
+
+  it('distinguishes client-masked values from server-redacted [REDACTED] values in maskedFieldNote', () => {
+    expect(maskedFieldNote(1, ['Copy full request', 'Copy as cURL']))
+      .toBe('1 field is hidden here. Copy full request and Copy as cURL include it.')
+    expect(maskedFieldNote(2, ['Copy full request']))
+      .toBe('2 fields are hidden here. Copy full request includes them.')
+    expect(maskedFieldNote(1, []))
+      .toBe('1 field is hidden here.')
+
+    expect(maskedFieldNote(1, ['Copy as cURL', 'Download HAR'], { serverRedacted: true }))
+      .toBe('1 field is hidden here. Copy as cURL and Download HAR include client-masked values; server-redacted values ([REDACTED]) remain redacted in exports (Copy as cURL / Download HAR).')
+    expect(maskedFieldNote(1, { serverRedacted: true }))
+      .toBe('1 field is hidden here. Client-masked values can be revealed locally; server-redacted values ([REDACTED]) remain redacted in exports (Copy as cURL / Download HAR).')
+    const redactedRows = inspectorFormFieldRows('un=jane&pw=[REDACTED]', true, { view: 'wire' })!
+    expect(redactedRows.find(row => row.name === 'pw')?.serverRedacted).toBe(true)
+    expect(maskedFieldNote(1, ['Copy as cURL'], redactedRows))
+      .toBe('1 field is hidden here. Copy as cURL includes client-masked values; server-redacted values ([REDACTED]) remain redacted in exports (Copy as cURL / Download HAR).')
   })
 })
