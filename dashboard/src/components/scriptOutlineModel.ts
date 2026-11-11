@@ -435,6 +435,66 @@ export interface OutlineViewState {
   query: string
   /** Debug: an open sequence starts with an "All requests" row, for a breakpoint on every request. */
   allRequestsRows?: boolean
+  /** Show only HTTP request steps, sequences, and containers/groups that wrap them. */
+  httpRequestsOnly?: boolean
+}
+
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'HEAD', 'OPTIONS'])
+const HTTP_ACTION_TYPES = new Set([
+  'request',
+  'http',
+  'http_request',
+  'http_sequence',
+  'web_url',
+  'web_submit_data',
+  'web_submit_form',
+  'web_custom_request',
+  'source_web_url',
+  'source_web_submit_data',
+  'source_web_submit_form',
+  'source_web_custom_request',
+])
+
+/** Whether an action is an HTTP request step, an HTTP sequence, or a container wrapping at least one HTTP step. */
+export function isHttpOutlineAction(action: ScriptActionDefinition): boolean {
+  if (!action) return false
+  const rawType = (action.type || '').trim()
+  const lowerType = rawType.toLowerCase()
+  const kind = debugContainerKind(action)
+  if (kind) {
+    return kind === 'http_sequence' || lowerType === 'http_sequence' || containerChildSteps(action, kind).some(child => isHttpOutlineAction(child.action))
+  }
+  if (lowerType === 'group' || lowerType === 'parallel') {
+    const rawSteps = (action as unknown as { steps?: ScriptActionDefinition[] }).steps
+    const steps = action.control?.steps || (Array.isArray(rawSteps) ? rawSteps : [])
+    const branches = (action.control?.branches || []).flatMap(branch => branch.steps || [])
+    return [...steps, ...branches].some(child => isHttpOutlineAction(child))
+  }
+  if (HTTP_ACTION_TYPES.has(lowerType) || HTTP_METHODS.has(rawType.toUpperCase())) return true
+  if (action.method && HTTP_METHODS.has(action.method.trim().toUpperCase())) return true
+  if (action.target && /^https?:\/\//i.test(action.target.trim())) return true
+  return false
+}
+
+function nodeHasHttp(node: OutlineNode): boolean {
+  if (node.kind === 'step') return isHttpOutlineAction(node.row.action)
+  if (node.kind === 'marker') return false
+  return node.children.some(nodeHasHttp)
+}
+
+function nestedItemAction(item: DebugRailRenderRow): ScriptActionDefinition | null {
+  const direct = (item as { action?: ScriptActionDefinition }).action
+  if (direct) return direct
+  if (item.kind === 'leaf') return item.childAction
+  if (item.kind === 'action') return item.row.action
+  let current: ScriptActionDefinition | undefined = item.row.action
+  for (const segment of item.stepPath) {
+    if (!current) return null
+    const kind = debugContainerKind(current)
+    if (!kind) return null
+    current = containerChildSteps(current, kind).find(step => step.segment === segment)?.action
+  }
+  return current ?? null
 }
 
 function rowItem(row: ScriptPhaseActionRow): DebugRailRenderRow {
@@ -449,10 +509,12 @@ export function outlineNodeRows(node: OutlineNode): ScriptPhaseActionRow[] {
 }
 
 /** Whether a request or step inside a sequence or block (at any depth) matches the search. */
-function blockHasMatch(action: ScriptActionDefinition, needle: string): boolean {
+function blockHasMatch(action: ScriptActionDefinition, needle: string, httpOnly = false): boolean {
   const kind = debugContainerKind(action)
-  return Boolean(kind) && containerChildSteps(action, kind).some(({ action: child }) =>
-    [child.name, child.type, child.target].some(value => Boolean(value && value.toLowerCase().includes(needle))) || blockHasMatch(child, needle))
+  return Boolean(kind) && containerChildSteps(action, kind).some(({ action: child }) => {
+    if (httpOnly && !isHttpOutlineAction(child)) return false
+    return [child.name, child.type, child.target].some(value => Boolean(value && value.toLowerCase().includes(needle))) || blockHasMatch(child, needle, httpOnly)
+  })
 }
 
 /** The open blocks plus every block inside a step's own, so a match deep inside shows. */
@@ -465,19 +527,30 @@ function openingEveryBlock(row: ScriptPhaseActionRow, open: Set<string>): Set<st
   return keys
 }
 
-function nodeMatches(node: OutlineNode | OutlinePhase, needle: string): boolean {
+/** Every container key (sequences and control-flow blocks, including nested ones) in the outline. */
+export function outlineContainerKeys(model: OutlineModel): Set<string> {
+  const keys = new Set<string>()
+  for (const step of model.stepsByKey.values()) {
+    if (!debugContainerKind(step.row.action)) continue
+    for (const key of openingEveryBlock(step.row, new Set())) keys.add(key)
+  }
+  return keys
+}
+
+function nodeMatches(node: OutlineNode | OutlinePhase, needle: string, httpOnly = false): boolean {
   const has = (value?: string) => Boolean(value && value.toLowerCase().includes(needle))
   if ('phase' in node) return has(node.label)
   if (node.kind === 'step') {
     const action = node.row.action
-    return has(node.label) || has(node.title) || has(action.name) || has(action.type) || has(action.target) || has(node.measuredAs?.name) || blockHasMatch(action, needle)
+    return has(node.label) || has(node.title) || has(action.name) || has(action.type) || has(action.target) || has(node.measuredAs?.name) || blockHasMatch(action, needle, httpOnly)
   }
   if (node.kind === 'marker') return has(node.label) || has(node.name)
   return has(node.label) || has(node.name)
 }
 
-function nodeHasMatch(node: OutlineNode, needle: string): boolean {
-  return nodeMatches(node, needle) || ((node.kind === 'transaction' || node.kind === 'subtransaction') && node.children.some(child => nodeHasMatch(child, needle)))
+function nodeHasMatch(node: OutlineNode, needle: string, httpOnly = false): boolean {
+  if (httpOnly && !nodeHasHttp(node)) return false
+  return nodeMatches(node, needle, httpOnly) || ((node.kind === 'transaction' || node.kind === 'subtransaction') && node.children.some(child => nodeHasMatch(child, needle, httpOnly)))
 }
 
 /**
@@ -487,14 +560,16 @@ function nodeHasMatch(node: OutlineNode, needle: string): boolean {
  */
 export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState): OutlineRow[] {
   const needle = view.query.trim().toLowerCase()
+  const httpOnly = Boolean(view.httpRequestsOnly)
   const out: OutlineRow[] = []
   const walk = (nodes: OutlineNode[], level: number, parentKey: string, filtered: boolean) => {
     for (const node of nodes) {
-      const matches = !filtered || nodeMatches(node, needle)
-      if (filtered && !matches && !nodeHasMatch(node, needle)) continue
+      if (httpOnly && !nodeHasHttp(node)) continue
+      const matches = !filtered || nodeMatches(node, needle, httpOnly)
+      if (filtered && !matches && !nodeHasMatch(node, needle, httpOnly)) continue
       if (node.kind === 'step') {
         const container = debugContainerKind(node.row.action)
-        const searchOpens = filtered && blockHasMatch(node.row.action, needle)
+        const searchOpens = filtered && blockHasMatch(node.row.action, needle, httpOnly)
         const expanded = Boolean(container) && (searchOpens || view.expandedContainers.has(node.key))
         out.push({
           key: node.key, level, kind: 'step', label: node.label, short: node.short, occurrence: node.occurrence, title: node.title, badge: node.badge,
@@ -511,6 +586,10 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
           }
           const parents: string[] = [node.key]
           for (const item of nested) {
+            if (httpOnly) {
+              const itemAction = nestedItemAction(item)
+              if (!itemAction || !isHttpOutlineAction(itemAction)) continue
+            }
             parents.length = item.depth
             const nestedParent = parents[item.depth - 1] || node.key
             out.push({
@@ -547,10 +626,11 @@ export function visibleOutlineRows(model: OutlineModel, view: OutlineViewState):
     }
   }
   for (const phase of model.phases) {
-    // An empty Init or Teardown takes no room; Actions always shows.
+    // An empty Init or Teardown takes no room; Actions always shows unless filtered out.
     if (!phase.children.length && phase.phase !== 'action') continue
-    const phaseMatches = !needle || nodeMatches(phase, needle)
-    const childMatch = needle && phase.children.some(child => nodeHasMatch(child, needle))
+    if (httpOnly && !phase.children.some(nodeHasHttp)) continue
+    const phaseMatches = !needle || nodeMatches(phase, needle, httpOnly)
+    const childMatch = needle && phase.children.some(child => nodeHasMatch(child, needle, httpOnly))
     if (needle && !phaseMatches && !childMatch) continue
     const expanded = (needle && !phaseMatches) || view.isExpanded(phase.key)
     out.push({
