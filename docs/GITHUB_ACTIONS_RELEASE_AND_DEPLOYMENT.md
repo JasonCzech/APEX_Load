@@ -560,7 +560,7 @@ choose an uploader for consumer repositories.
 - Pin the base runner image by digest and verify required `skopeo`, Azure CLI,
   Helm, kubectl, OpenSSL, jq, and CA bundle versions during runner bootstrap.
 - The base image also needs GitHub CLI, GNU coreutils/find, Bash 5, Python 3,
-  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.10, JDK 21 (authoritative CI
+  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.11, JDK 21 (authoritative CI
   and Java Vuser lanes; `monitoring-adapters.yml` uses Temurin JDK 17 on
   `ubuntu-latest` for `apexload-monitor-helper.jar`), npm, Terraform 1.15.8,
   and the platform tools used by its lane. Trivy/Syft, Azure CLI, native Wails
