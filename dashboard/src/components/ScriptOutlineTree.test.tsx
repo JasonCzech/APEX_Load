@@ -3,10 +3,10 @@ import { act, useState } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { ScriptDefinition } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import ScriptOutlineTree, { type OutlineDebug, type OutlineMultiSelect, type ScriptOutlineSelection } from './ScriptOutlineTree'
 import { buildScriptPhaseActionRows, type DebugRailRenderRow } from './scriptEditorWorkbench'
-import { buildOutlineModel } from './scriptOutlineModel'
+import { buildOutlineModel, isHttpOutlineAction } from './scriptOutlineModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -336,5 +336,189 @@ describe('ScriptOutlineTree expansion across edits', () => {
     } finally {
       globalThis.ResizeObserver = originalResizeObserver
     }
+  })
+})
+
+describe('ScriptOutlineTree HTTP requests only filter & container-aware Expand/Collapse all', () => {
+  let host: HTMLDivElement
+  let root: Root
+  beforeEach(() => { host = document.createElement('div'); document.body.append(host); root = createRoot(host) })
+  afterEach(() => { act(() => root.unmount()); host.remove() })
+
+  const modelOf = (actions: Raw[], options: { showMarkers?: boolean } = {}) =>
+    buildOutlineModel(buildScriptPhaseActionRows({ name: 'http-filter', protocol: 'http', actions } as unknown as ScriptDefinition), options)
+
+  function StatefulOutline({ actions, initialShowMarkers = false, resetKey = 'http-filter' }: { actions: Raw[]; initialShowMarkers?: boolean; resetKey?: string }) {
+    const [showMarkers, setShowMarkers] = useState(initialShowMarkers)
+    const [expandedContainers, setExpandedContainers] = useState<Set<string>>(() => new Set())
+    const model = modelOf(actions, { showMarkers })
+    return (
+      <ScriptOutlineTree
+        model={model}
+        resetKey={resetKey}
+        query=""
+        expandedContainers={expandedContainers}
+        onToggleContainer={containerKey => {
+          setExpandedContainers(prev => {
+            const next = new Set(prev)
+            if (next.has(containerKey)) next.delete(containerKey)
+            else next.add(containerKey)
+            return next
+          })
+        }}
+        selection={null}
+        onSelect={() => undefined}
+        hasBreakpoint={() => false}
+        hasIssue={() => false}
+        showMarkers={showMarkers}
+        onShowMarkersChange={setShowMarkers}
+      />
+    )
+  }
+
+  const rowLabels = () => Array.from(document.querySelectorAll<HTMLElement>('[role="treeitem"] .script-outline-name')).map(el => el.textContent)
+  const toggleHttpOnly = () => act(() => { document.querySelector<HTMLInputElement>('[data-testid="script-outline-http-only"]')!.click() })
+  const toolButton = (name: string) => Array.from(document.querySelectorAll<HTMLButtonElement>('.script-outline-tools button')).find(btn => btn.textContent === name)!
+
+  it('classifies HTTP steps and HTTP-wrapping containers with isHttpOutlineAction', () => {
+    expect(isHttpOutlineAction({ name: 'req', type: 'request', method: 'GET', target: '/api' } as ScriptActionDefinition)).toBe(true)
+    expect(isHttpOutlineAction({ name: 'web', type: 'web_custom_request', target: '/custom' } as ScriptActionDefinition)).toBe(true)
+    expect(isHttpOutlineAction({ name: 'url', type: 'custom', target: 'https://example.test/v1' } as ScriptActionDefinition)).toBe(true)
+    expect(isHttpOutlineAction({ name: 'seq', type: 'http_sequence', params: { requests: [] } } as unknown as ScriptActionDefinition)).toBe(true)
+    expect(isHttpOutlineAction({ name: 'think', type: 'think_time' } as ScriptActionDefinition)).toBe(false)
+    expect(isHttpOutlineAction({ name: 'log', type: 'log' } as ScriptActionDefinition)).toBe(false)
+    expect(isHttpOutlineAction({ name: 'var', type: 'set_var' } as ScriptActionDefinition)).toBe(false)
+    expect(isHttpOutlineAction({
+      name: 'if-http',
+      type: 'control_if',
+      control: { condition: 'true', steps: [{ name: 'nested-get', type: 'request', method: 'GET', target: '/ok' }] },
+    } as unknown as ScriptActionDefinition)).toBe(true)
+    expect(isHttpOutlineAction({
+      name: 'if-non-http',
+      type: 'control_if',
+      control: { condition: 'true', steps: [{ name: 'nested-think', type: 'think_time' }] },
+    } as unknown as ScriptActionDefinition)).toBe(false)
+  })
+
+  it('hides non-HTTP steps, markers, and non-HTTP transaction groups while preserving HTTP requests, sequences, and HTTP containers', () => {
+    const mixedActions: Raw[] = [
+      step('fetch_home'),
+      { name: 'pause_1', type: 'think_time' },
+      { name: 'debug_log', type: 'log' },
+      { name: 'init_var', type: 'set_var' },
+      marker('start', 'EmptyTxn'),
+      { name: 'pause_in_txn', type: 'think_time' },
+      marker('end', 'EmptyTxn'),
+      marker('start', 'CheckoutTxn'),
+      { name: 'log_in_checkout', type: 'log' },
+      step('submit_order'),
+      marker('end', 'CheckoutTxn'),
+      {
+        name: 'batch_seq',
+        type: 'http_sequence',
+        params: {
+          requests: [
+            { name: 'seq_one', method: 'GET', target: '/one' },
+            { name: 'seq_two', method: 'POST', target: '/two' },
+          ],
+        },
+      },
+      {
+        name: 'conditional_http',
+        type: 'control_if',
+        control: {
+          condition: '{{var.ok}}',
+          steps: [
+            { name: 'inner_think', type: 'think_time' },
+            { name: 'inner_request', type: 'request', method: 'POST', target: '/inner' },
+            {
+              name: 'empty_inner_loop',
+              type: 'control_loop',
+              control: { count: 2, steps: [{ name: 'inner_log', type: 'log' }] },
+            },
+          ],
+        },
+      },
+      {
+        name: 'conditional_non_http',
+        type: 'control_if',
+        control: {
+          condition: '{{var.skip}}',
+          steps: [{ name: 'only_think', type: 'think_time' }],
+        },
+      },
+      marker('end', 'UnpairedMarker'),
+    ]
+
+    act(() => root.render(<StatefulOutline actions={mixedActions} initialShowMarkers={true} />))
+
+    // Verify .script-outline-tools button lock: only Expand all and Collapse all are buttons.
+    expect(Array.from(document.querySelectorAll('.script-outline-tools button')).map(btn => btn.textContent)).toEqual([
+      'Expand all',
+      'Collapse all',
+    ])
+
+    // Before toggling HTTP requests only, non-HTTP steps, markers, and EmptyTxn are visible.
+    expect(rowLabels()).toContain('pause_1')
+    expect(rowLabels()).toContain('debug_log')
+    expect(rowLabels()).toContain('init_var')
+    expect(rowLabels()).toContain('EmptyTxn')
+    expect(rowLabels()).toContain('End UnpairedMarker')
+
+    // Toggle HTTP requests only ON.
+    toggleHttpOnly()
+    expect(document.querySelector<HTMLInputElement>('[data-testid="script-outline-http-only"]')?.checked).toBe(true)
+    expect(rowLabels()).toEqual([
+      'Actions',
+      'fetch_home',
+      'CheckoutTxn',
+      'submit_order',
+      'batch_seq',
+      'conditional_http',
+    ])
+
+    // Expand all opens containers as well as transactions, and filters out non-HTTP nested leaves/containers.
+    act(() => { toolButton('Expand all').click() })
+    expect(rowLabels()).toEqual([
+      'Actions',
+      'fetch_home',
+      'CheckoutTxn',
+      'submit_order',
+      'batch_seq',
+      'seq_one',
+      'seq_two',
+      'conditional_http',
+      'inner_request',
+    ])
+
+    // Collapse all collapses both transactions and containers.
+    act(() => { toolButton('Collapse all').click() })
+    expect(rowLabels()).toEqual([
+      'Actions',
+      'fetch_home',
+      'CheckoutTxn',
+      'batch_seq',
+      'conditional_http',
+    ])
+  })
+
+  it('renders No matching steps when HTTP requests only filters out every step in a non-HTTP script', () => {
+    const nonHttpActions: Raw[] = [
+      { name: 'wait_1', type: 'think_time' },
+      { name: 'log_1', type: 'log' },
+      { name: 'set_1', type: 'set_var' },
+    ]
+    act(() => root.render(<StatefulOutline actions={nonHttpActions} />))
+    expect(rowLabels()).toEqual(['Actions', 'wait_1', 'log_1', 'set_1'])
+    expect(document.querySelector('.script-outline-empty')).toBeNull()
+
+    toggleHttpOnly()
+    expect(rowLabels()).toEqual([])
+    expect(document.querySelector('.script-outline-empty')?.textContent).toBe('No matching steps')
+
+    // Resetting the script key resets the HTTP filter.
+    act(() => root.render(<StatefulOutline actions={nonHttpActions} resetKey="another-script" />))
+    expect(document.querySelector<HTMLInputElement>('[data-testid="script-outline-http-only"]')?.checked).toBe(false)
+    expect(rowLabels()).toEqual(['Actions', 'wait_1', 'log_1', 'set_1'])
   })
 })

@@ -4,7 +4,7 @@ import { defaultRangeExtractor, useVirtualizer } from '@tanstack/react-virtual'
 
 import { isMacLike } from '../hooks/KeyboardShortcutProvider'
 import { debugSequenceKey, type DebugRailRenderRow, type ScriptPhaseActionRow } from './scriptEditorWorkbench'
-import { carryGroupKeys, outlineNodeRows, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
+import { carryGroupKeys, outlineContainerKeys, outlineNodeRows, outlineRowSelectable, outlineStartsCollapsed, splitMeasureName, visibleOutlineRows, type OutlineMeasure, type OutlineModel, type OutlineRow } from './scriptOutlineModel'
 import TooltipButton from './ux/TooltipButton'
 import './ux/TooltipButton.css'
 
@@ -182,11 +182,14 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
   const id = useId()
   const treeRef = useRef<HTMLDivElement>(null)
   const [expansion, setExpansion] = useState(() => ({ key: resetKey, state: freshExpansion(model) }))
+  const [httpRequestsOnly, setHttpRequestsOnly] = useState(false)
   // Another script, or the first content of an empty draft, starts over.
   if (expansion.key !== resetKey || (!expansion.state.sized && model.stepCount > 0)) {
+    if (expansion.key !== resetKey && httpRequestsOnly) setHttpRequestsOnly(false)
     setExpansion({ key: resetKey, state: freshExpansion(model) })
   }
   const state = expansion.key === resetKey ? expansion.state : freshExpansion(model)
+  const activeHttpRequestsOnly = expansion.key === resetKey ? httpRequestsOnly : false
   const update = (change: (current: ExpansionState) => ExpansionState) => setExpansion(previous => ({ key: previous.key, state: change(previous.state) }))
 
   // A group's key holds its name and occurrence: its open or closed state
@@ -250,7 +253,8 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     expandedContainers,
     query,
     allRequestsRows: debugging,
-  }), [debugging, expandedContainers, model, query, state])
+    httpRequestsOnly: activeHttpRequestsOnly,
+  }), [activeHttpRequestsOnly, debugging, expandedContainers, model, query, state])
 
   const selectedKey = useMemo(() => {
     if (!selection) return null
@@ -626,7 +630,8 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
     )
   }
 
-  const groupCount = model.groupsByKey.size
+  const containerKeys = useMemo(() => outlineContainerKeys(model), [model])
+  const groupCount = model.groupsByKey.size + containerKeys.size
   const selectionCount = multiKeys?.size || 0
   return (
     <>
@@ -642,11 +647,30 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
         </div>
       ) : (
       <div className="script-outline-tools">
-        <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => update(current => ({ ...current, base: 'expanded', flipped: new Set(), collapsedPhases: new Set() }))}>Expand all</button>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => update(current => ({ ...current, base: 'collapsed', flipped: new Set() }))}>Collapse all</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => {
+          update(current => ({ ...current, base: 'expanded', flipped: new Set(), collapsedPhases: new Set() }))
+          for (const key of containerKeys) {
+            if (!expandedContainers.has(key)) onToggleContainer(key)
+          }
+        }}>Expand all</button>
+        <button type="button" className="btn btn-ghost btn-sm" disabled={!groupCount} onClick={() => {
+          update(current => ({ ...current, base: 'collapsed', flipped: new Set() }))
+          for (const key of containerKeys) {
+            if (expandedContainers.has(key)) onToggleContainer(key)
+          }
+        }}>Collapse all</button>
         <label className="script-outline-markers">
           <input type="checkbox" checked={showMarkers} onChange={event => onShowMarkersChange(event.target.checked)} />
           <span>Show markers</span>
+        </label>
+        <label className="script-outline-markers">
+          <input
+            type="checkbox"
+            checked={activeHttpRequestsOnly}
+            data-testid="script-outline-http-only"
+            onChange={event => setHttpRequestsOnly(event.target.checked)}
+          />
+          <span>HTTP requests only</span>
         </label>
       </div>
       )}
@@ -657,7 +681,7 @@ export default function ScriptOutlineTree({ model, resetKey, query, expandedCont
             {virtualizer.getVirtualItems().map(item => renderRow(rows[item.index], item.index, { position: 'absolute', top: 0, left: 0, right: 0, height: ROW_HEIGHT, transform: `translateY(${item.start}px)` }))}
           </div>
         ) : rows.map((row, index) => renderRow(row, index))}
-        {!rows.length && <p className="script-outline-empty">{query.trim() ? 'No matching steps' : 'No actions'}</p>}
+        {!rows.length && <p className="script-outline-empty">{query.trim() || activeHttpRequestsOnly ? 'No matching steps' : 'No actions'}</p>}
       </div>
       {multiSelect && <span className="sr-only" aria-live="polite">{selectionCount > 1 ? `${selectionCount} selected` : ''}</span>}
       {tip && createPortal(<div id={`${id}-tip`} role="tooltip" className="ux-tooltip" style={{ left: tip.left, top: tip.top }}>{tip.text}</div>, document.body)}

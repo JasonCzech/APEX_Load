@@ -300,3 +300,217 @@ func TestRedactFindsTokensInAJSONBodyHeldInAJSONString(t *testing.T) {
 		t.Fatalf("escaped value with an inner quote or backslash was not redacted whole: %s", quoted)
 	}
 }
+
+func TestBuildExcludesUnreferencedVuGenReplayAndIDEArtifacts(t *testing.T) {
+	realFiles := []string{
+		"default.cfg",
+		"default.usp",
+		"globals.h",
+		"vuser_init.c",
+		"Action.c",
+		"vuser_end.c",
+		"replay.har",
+	}
+	noiseFiles := []string{
+		"result1/Iteration1/t1.json",
+		"result1/Iteration1/t1_RequestHeader.txt",
+		`result1\Iteration1\t2_ResponseHeader.txt`,
+		"result2/Results.xml",
+		"nested/result10/Results.xml",
+		"Bookmarks.xml",
+		"CompilerLogMetadata.xml",
+		"ReplaySummaryReport.xml",
+		"ScriptUploadMetadata.xml",
+		"UserTasks.xml",
+		"ThumbnailsCache.tmp",
+		"mdrv.log",
+		"mdrv_cmd.txt",
+		"options.txt",
+		"output.bak",
+		"output.txt",
+		"logfile.log",
+		"debug.inf",
+		"combined_script.c",
+		"Action_old.c",
+	}
+
+	files := make(map[string]string, len(realFiles)+len(noiseFiles)+MaxFiles)
+	for _, name := range realFiles {
+		files[name] = "// real script content\n"
+	}
+	for _, name := range noiseFiles {
+		files[name] = "// unreferenced IDE or replay noise\n"
+	}
+	for index := 1; index <= MaxFiles; index++ {
+		files[fmt.Sprintf("result1/Iteration1/step_%02d.json", index)] = "{}"
+	}
+
+	mappings := []Mapping{
+		{SourceFile: "Action.c", StartLine: 1, Function: "web_url", TargetPath: "actions[0]", Status: "converted"},
+	}
+	for _, mappingsCase := range [][]Mapping{mappings, nil} {
+		review := Build(files, mappingsCase)
+		if review == nil {
+			t.Fatal("Build returned nil")
+		}
+		if review.TotalSourceFiles != len(realFiles) {
+			t.Fatalf("TotalSourceFiles = %d, want %d (mappings=%v)", review.TotalSourceFiles, len(realFiles), len(mappingsCase))
+		}
+		if len(review.OmittedSourceFiles) != 0 {
+			t.Fatalf("OmittedSourceFiles = %#v, want empty (mappings=%v)", review.OmittedSourceFiles, len(mappingsCase))
+		}
+		if len(review.SourceFiles) != len(realFiles) {
+			t.Fatalf("len(SourceFiles) = %d, want %d (mappings=%v)", len(review.SourceFiles), len(realFiles), len(mappingsCase))
+		}
+		got := make(map[string]bool, len(review.SourceFiles))
+		for _, sf := range review.SourceFiles {
+			got[sf.Path] = true
+		}
+		for _, want := range realFiles {
+			if !got[want] {
+				t.Fatalf("expected real script file %q in SourceFiles, got %#v", want, review.SourceFiles)
+			}
+		}
+		for _, excluded := range noiseFiles {
+			if got[excluded] {
+				t.Fatalf("unexpected noise file %q in SourceFiles", excluded)
+			}
+		}
+	}
+}
+
+func TestShouldIncludeFileAndBuildTableDrivenArtifacts(t *testing.T) {
+	tests := []struct {
+		name           string
+		file           string
+		mappedFile     string
+		wantUnmapped   bool
+		wantWhenMapped bool
+	}{
+		{
+			name:           "replay output JSON in result1",
+			file:           "result1/Iteration1/t1.json",
+			mappedFile:     "result1/Iteration1/t1.json",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "replay summary XML in result2",
+			file:           "result2/Results.xml",
+			mappedFile:     "result2/Results.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "nested replay directory with backslashes",
+			file:           `nested\result1\Iteration1\t1_RequestHeader.txt`,
+			mappedFile:     `nested\result1\Iteration1\t1_RequestHeader.txt`,
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "Bookmarks.xml metadata",
+			file:           "Bookmarks.xml",
+			mappedFile:     "Bookmarks.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "CompilerLogMetadata.xml metadata",
+			file:           "CompilerLogMetadata.xml",
+			mappedFile:     "CompilerLogMetadata.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "ReplaySummaryReport.xml metadata",
+			file:           "ReplaySummaryReport.xml",
+			mappedFile:     "ReplaySummaryReport.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "ScriptUploadMetadata.xml metadata",
+			file:           "ScriptUploadMetadata.xml",
+			mappedFile:     "ScriptUploadMetadata.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "UserTasks.xml metadata",
+			file:           "UserTasks.xml",
+			mappedFile:     "UserTasks.xml",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "ThumbnailsCache.tmp metadata",
+			file:           "ThumbnailsCache.tmp",
+			mappedFile:     "ThumbnailsCache.tmp",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "combined wrapper C file",
+			file:           "combined_script.c",
+			mappedFile:     "combined_script.c",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "backup _old.c file",
+			file:           "Action_old.c",
+			mappedFile:     "Action_old.c",
+			wantUnmapped:   false,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "unreferenced pre_cci.c remains included",
+			file:           "pre_cci.c",
+			mappedFile:     "pre_cci.c",
+			wantUnmapped:   true,
+			wantWhenMapped: true,
+		},
+		{
+			name:           "non-numeric result directory remains included",
+			file:           "result/Results.xml",
+			mappedFile:     "result/Results.xml",
+			wantUnmapped:   true,
+			wantWhenMapped: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			unmappedRef := map[string]struct{}{"action.c": {}}
+			if got := shouldIncludeFile(tc.file, unmappedRef); got != tc.wantUnmapped {
+				t.Fatalf("shouldIncludeFile(%q, unmapped) = %v, want %v", tc.file, got, tc.wantUnmapped)
+			}
+
+			mappedRef := map[string]struct{}{strings.ToLower(tc.mappedFile): {}}
+			if got := shouldIncludeFile(tc.file, mappedRef); got != tc.wantWhenMapped {
+				t.Fatalf("shouldIncludeFile(%q, mapped) = %v, want %v", tc.file, got, tc.wantWhenMapped)
+			}
+
+			review := Build(map[string]string{
+				tc.file:    "// content\n",
+				"Action.c": "Action() { return 0; }\n",
+			}, []Mapping{
+				{SourceFile: tc.mappedFile, StartLine: 1, Function: "fn", TargetPath: "actions[0]", Status: "converted"},
+			})
+			if review == nil {
+				t.Fatal("Build returned nil")
+			}
+			found := false
+			for _, sf := range review.SourceFiles {
+				if sf.Path == tc.file {
+					found = true
+					break
+				}
+			}
+			if found != tc.wantWhenMapped {
+				t.Fatalf("Build mapped %q: found=%v, want %v (SourceFiles=%#v)", tc.file, found, tc.wantWhenMapped, review.SourceFiles)
+			}
+		})
+	}
+}

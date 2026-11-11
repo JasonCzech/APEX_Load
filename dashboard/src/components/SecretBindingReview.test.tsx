@@ -2602,6 +2602,199 @@ describe('SecretBindingReview', () => {
     ])
     expect(onApply).not.toHaveBeenCalled()
   })
+
+  it('merges paired same-step header_list and headers requirements into one credential group and binds both on commit', async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const pairedHeaderRequirements: SecretBindingRequirement[] = [
+      {
+        id: 'sfdc-lds-header-list',
+        path: '/actions/1016/header_list/11/value',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'SFDC_LDS_ENDPOINTS',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS}}',
+      },
+      {
+        id: 'sfdc-lds-headers-map',
+        path: '/actions/1016/headers/X-SFDC-LDS-Endpoints',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'SFDC_LDS_ENDPOINTS_2',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS_2}}',
+      },
+    ]
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={pairedHeaderRequirements}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const items = container.querySelectorAll<HTMLElement>('.secret-binding-review-item')
+    expect(items).toHaveLength(1)
+    expect(items[0].querySelector('.secret-binding-review-reuse-badge')?.textContent).toBe('2 locations')
+    const nameInput = items[0].querySelector<HTMLInputElement>('input[type="text"]')!
+    expect(nameInput.value).toBe('SFDC_LDS_ENDPOINTS')
+
+    const locationDetails = items[0].querySelector<HTMLDetailsElement>('.credentials-location-details')!
+    act(() => toggleDetails(locationDetails, true))
+    expect(Array.from(items[0].querySelectorAll('.credentials-location-list code')).map(code => code.textContent)).toEqual([
+      '/actions/1016/header_list/11/value',
+      '/actions/1016/headers/X-SFDC-LDS-Endpoints',
+    ])
+
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Continue with credentials'))
+    await act(async () => applyButton?.click())
+
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'sfdc-lds-header-list', secret_name: 'SFDC_LDS_ENDPOINTS' },
+      { requirement_id: 'sfdc-lds-headers-map', secret_name: 'SFDC_LDS_ENDPOINTS' },
+    ])
+  })
+
+  it('merges paired dual-header requirements within each step across multiple steps without collapsing steps together', async () => {
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const multiStepRequirements: SecretBindingRequirement[] = [
+      {
+        id: 'step-1016-header-list',
+        path: '/actions/1016/header_list/11/value',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'SFDC_LDS_ENDPOINTS',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS}}',
+      },
+      {
+        id: 'step-1016-headers-map',
+        path: '/actions/1016/headers/X-SFDC-LDS-Endpoints',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'SFDC_LDS_ENDPOINTS_2',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS_2}}',
+      },
+      {
+        id: 'step-1019-header-list',
+        path: '/actions/1019/header_list/11/value',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Sensitive request header "X-SFDC-LDS-Endpoints" on action "POST /aura". Supplies the credential value sent in the X-SFDC-LDS-Endpoints HTTP header when this request runs.',
+        suggested_name: 'SFDC_LDS_ENDPOINTS_3',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS_3}}',
+      },
+      {
+        id: 'step-1019-headers-map',
+        path: '/actions/1019/headers/X-SFDC-LDS-Endpoints',
+        label: 'X sfdc lds endpoints header',
+        context: 'Action "POST /aura"',
+        suggested_name: 'SFDC_LDS_ENDPOINTS_4',
+        replacement: '{{secret.SFDC_LDS_ENDPOINTS_4}}',
+      },
+    ]
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={multiStepRequirements}
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
+    expect(items).toHaveLength(2)
+    expect(items.map(item => item.querySelector('.secret-binding-review-reuse-badge')?.textContent)).toEqual([
+      '2 locations',
+      '2 locations',
+    ])
+    expect(items.map(item => item.querySelector<HTMLInputElement>('input[type="text"]')?.value)).toEqual([
+      'SFDC_LDS_ENDPOINTS',
+      'SFDC_LDS_ENDPOINTS_3',
+    ])
+  })
+
+  it('does not merge duplicate same-name header_list entries on a step or unverified preserved values without a value_group_id', async () => {
+    const ambiguousAndUnverifiedRequirements: SecretBindingRequirement[] = [
+      {
+        id: 'cookie-list-0',
+        path: '/actions/1016/header_list/0/value',
+        label: 'Cookie request header',
+        context: 'Header "Cookie"',
+        suggested_name: 'COOKIE',
+        replacement: '{{secret.COOKIE}}',
+      },
+      {
+        id: 'cookie-list-1',
+        path: '/actions/1016/header_list/1/value',
+        label: 'Cookie request header',
+        context: 'Header "Cookie"',
+        suggested_name: 'COOKIE_2',
+        replacement: '{{secret.COOKIE_2}}',
+      },
+      {
+        id: 'cookie-headers-map',
+        path: '/actions/1016/headers/Cookie',
+        label: 'Cookie request header',
+        context: 'Header "Cookie"',
+        suggested_name: 'COOKIE_3',
+        replacement: '{{secret.COOKIE_3}}',
+      },
+      {
+        id: 'preserved-list',
+        path: '/actions/1020/header_list/0/value',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'PRESERVED_ENDPOINTS',
+        replacement: '{{secret.PRESERVED_ENDPOINTS}}',
+        destination_value_preserved: true,
+      },
+      {
+        id: 'preserved-map',
+        path: '/actions/1020/headers/X-SFDC-LDS-Endpoints',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'PRESERVED_ENDPOINTS_2',
+        replacement: '{{secret.PRESERVED_ENDPOINTS_2}}',
+        destination_value_preserved: true,
+      },
+      {
+        id: 'mismatched-label-list',
+        path: '/actions/1025/header_list/0/value',
+        label: 'X-SFDC-LDS-Endpoints request header',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'MISMATCHED_ENDPOINTS',
+        replacement: '{{secret.MISMATCHED_ENDPOINTS}}',
+      },
+      {
+        id: 'mismatched-label-map',
+        path: '/actions/1025/headers/X-SFDC-LDS-Endpoints',
+        label: 'Unrelated custom credential label',
+        context: 'Header "X-SFDC-LDS-Endpoints"',
+        suggested_name: 'MISMATCHED_ENDPOINTS_2',
+        replacement: '{{secret.MISMATCHED_ENDPOINTS_2}}',
+      },
+    ]
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={ambiguousAndUnverifiedRequirements}
+          onApply={vi.fn()}
+        />,
+      )
+      await Promise.resolve()
+    })
+
+    const items = Array.from(container.querySelectorAll<HTMLElement>('.secret-binding-review-item'))
+    expect(items).toHaveLength(7)
+    expect(items.every(item => item.querySelector('.secret-binding-review-reuse-badge') === null)).toBe(true)
+  })
 })
 
 // A credential shared by a whole collection is deliberately split into one

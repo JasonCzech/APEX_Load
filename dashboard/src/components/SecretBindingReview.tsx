@@ -122,10 +122,172 @@ function requirementScope(requirement: SecretBindingRequirement): string {
   return 'unscoped'
 }
 
+const HEADER_LIST_VALUE_PATH_PATTERN = /^(\/.+)\/header_list\/\d+\/value$/
+const HEADERS_MAP_ENTRY_PATH_PATTERN = /^(\/.+)\/headers\/([^/]+)$/
+const HEADER_CONTEXT_NAME_PATTERN = /^(?:Header "([^"]+)"|Sensitive request header "([^"]+)"(?:\s+on\s+action\s+"[^"]+")?(?:\.|$))/i
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function decodeHeaderPathSegment(segment: string): string {
+  const unescaped = segment.replace(/~1/g, '/').replace(/~0/g, '~')
+  try {
+    return decodeURIComponent(unescaped)
+  } catch {
+    return unescaped
+  }
+}
+
+function extractHeaderNameFromContext(context: string | undefined): string {
+  const match = HEADER_CONTEXT_NAME_PATTERN.exec((context ?? '').trim())
+  return (match?.[1] ?? match?.[2] ?? '').trim().toLowerCase()
+}
+
+function requirementDestinationClass(requirement: SecretBindingRequirement): string {
+  const rebindable = requirementCanUseProjectSecret(requirement)
+  return requirement.destination_value_preserved === true
+    ? 'preserved'
+    : rebindable ? 'binding-required' : 'kept-as-recorded'
+}
+
+function dualHeaderLabelsMatch(
+  headerListLabel: string | undefined,
+  headersLabel: string | undefined,
+  headerName: string,
+): boolean {
+  const left = headerListLabel ?? ''
+  const right = headersLabel ?? ''
+  if (left === right) return true
+  const normalizedLeft = left.trim().toLowerCase()
+  const normalizedRight = right.trim().toLowerCase()
+  if (normalizedLeft !== `${headerName} request header`) return false
+  const humanizedSingle = `${headerName.replace(/[_-]/g, ' ').trim()} header`
+  const humanizedCollapsed = `${headerName.replace(/[_-]+/g, ' ').trim()} header`
+  return normalizedRight === humanizedSingle || normalizedRight === humanizedCollapsed
+}
+
+function dualHeaderMetadataMatches(
+  headerListReq: SecretBindingRequirement,
+  headersReq: SecretBindingRequirement,
+  headerName: string,
+): boolean {
+  return (
+    Boolean(headerListReq.destination_value_preserved) === Boolean(headersReq.destination_value_preserved)
+    && (headerListReq.value_group_id ?? '') === (headersReq.value_group_id ?? '')
+    && (headerListReq.source_variable ?? '') === (headersReq.source_variable ?? '')
+    && Boolean(headerListReq.unresolved_source_variable) === Boolean(headersReq.unresolved_source_variable)
+    && Boolean(headerListReq.source_value_available) === Boolean(headersReq.source_value_available)
+    && (headerListReq.preservation_unavailable_reason ?? '') === (headersReq.preservation_unavailable_reason ?? '')
+    && (headerListReq.preservation_unavailable_description ?? '') === (headersReq.preservation_unavailable_description ?? '')
+    && (headerListReq.rebind_unavailable_reason ?? '') === (headersReq.rebind_unavailable_reason ?? '')
+    && (headerListReq.rebind_unavailable_description ?? '') === (headersReq.rebind_unavailable_description ?? '')
+    && dualHeaderLabelsMatch(headerListReq.label, headersReq.label, headerName)
+    && (headerListReq.occurrence ?? 0) === (headersReq.occurrence ?? 0)
+  )
+}
+
+function dualHeaderSuggestedNamesMatch(
+  headerListSuggested: string,
+  headersSuggested: string,
+): boolean {
+  if (!headerListSuggested || !headersSuggested) return false
+  if (headersSuggested === headerListSuggested) return true
+  if (new RegExp(`^${escapeRegExp(headerListSuggested)}_\\d+$`).test(headersSuggested)) {
+    return true
+  }
+  const headerListStem = /^(.+)_\d+$/.exec(headerListSuggested)?.[1]
+  const headersStem = /^(.+)_\d+$/.exec(headersSuggested)?.[1]
+  return Boolean(headerListStem && headerListStem === headersStem)
+}
+
+function pairedSameStepHeaderBindings(
+  requirements: readonly SecretBindingRequirement[],
+): {
+  suggestedNameByHeadersReq: Map<SecretBindingRequirement, string>
+  pairedHeaderListReqs: Set<SecretBindingRequirement>
+} {
+  type Bucket = {
+    headerList: SecretBindingRequirement[]
+    headers: SecretBindingRequirement[]
+  }
+  const buckets = new Map<string, Bucket>()
+  const stepHeaderCounts = new Map<string, { headerList: number; headers: number }>()
+
+  for (const requirement of requirements) {
+    const path = requirement.path || ''
+    const scope = requirementScope(requirement)
+    const destinationClass = requirementDestinationClass(requirement)
+    const headerListMatch = HEADER_LIST_VALUE_PATH_PATTERN.exec(path)
+    if (headerListMatch) {
+      const stepPrefix = headerListMatch[1]
+      const headerName = extractHeaderNameFromContext(requirement.context)
+      if (!headerName) continue
+      const stepKey = `${scope}\u0000${stepPrefix}\u0000${headerName}`
+      const counts = stepHeaderCounts.get(stepKey) ?? { headerList: 0, headers: 0 }
+      counts.headerList += 1
+      stepHeaderCounts.set(stepKey, counts)
+      const bucketKey = `${stepKey}\u0000${destinationClass}`
+      const bucket = buckets.get(bucketKey) ?? { headerList: [], headers: [] }
+      bucket.headerList.push(requirement)
+      buckets.set(bucketKey, bucket)
+      continue
+    }
+    const headersMatch = HEADERS_MAP_ENTRY_PATH_PATTERN.exec(path)
+    if (headersMatch) {
+      const stepPrefix = headersMatch[1]
+      const pathHeaderName = decodeHeaderPathSegment(headersMatch[2]).trim().toLowerCase()
+      const contextHeaderName = extractHeaderNameFromContext(requirement.context)
+      if (contextHeaderName && pathHeaderName && contextHeaderName !== pathHeaderName) {
+        continue
+      }
+      const headerName = pathHeaderName || contextHeaderName
+      if (!headerName) continue
+      const stepKey = `${scope}\u0000${stepPrefix}\u0000${headerName}`
+      const counts = stepHeaderCounts.get(stepKey) ?? { headerList: 0, headers: 0 }
+      counts.headers += 1
+      stepHeaderCounts.set(stepKey, counts)
+      const bucketKey = `${stepKey}\u0000${destinationClass}`
+      const bucket = buckets.get(bucketKey) ?? { headerList: [], headers: [] }
+      bucket.headers.push(requirement)
+      buckets.set(bucketKey, bucket)
+    }
+  }
+
+  const suggestedNameByHeadersReq = new Map<SecretBindingRequirement, string>()
+  const pairedHeaderListReqs = new Set<SecretBindingRequirement>()
+  for (const [bucketKey, bucket] of buckets) {
+    if (bucket.headerList.length !== 1 || bucket.headers.length !== 1) continue
+    const stepKey = bucketKey.slice(0, bucketKey.lastIndexOf('\u0000'))
+    const totalCounts = stepHeaderCounts.get(stepKey)
+    if (!totalCounts || totalCounts.headerList !== 1 || totalCounts.headers !== 1) continue
+    const headerName = stepKey.slice(stepKey.lastIndexOf('\u0000') + 1)
+    const headerListReq = bucket.headerList[0]
+    const headersReq = bucket.headers[0]
+    if (!dualHeaderMetadataMatches(headerListReq, headersReq, headerName)) continue
+    const headerListSuggested = headerListReq.suggested_name?.trim() || ''
+    const headersSuggested = headersReq.suggested_name?.trim() || ''
+    if (headerListReq.destination_value_preserved === true) {
+      const valueGroupId = headerListReq.value_group_id?.trim() || ''
+      if (!valueGroupId || valueGroupId !== (headersReq.value_group_id?.trim() || '')) continue
+      if (headerListSuggested) {
+        suggestedNameByHeadersReq.set(headersReq, headerListSuggested)
+        pairedHeaderListReqs.add(headerListReq)
+      }
+      continue
+    }
+    if (!dualHeaderSuggestedNamesMatch(headerListSuggested, headersSuggested)) continue
+    suggestedNameByHeadersReq.set(headersReq, headerListSuggested)
+    pairedHeaderListReqs.add(headerListReq)
+  }
+  return { suggestedNameByHeadersReq, pairedHeaderListReqs }
+}
+
 function groupRequirements(requirements: SecretBindingRequirement[]): RequirementGroup[] {
+  const { suggestedNameByHeadersReq, pairedHeaderListReqs } = pairedSameStepHeaderBindings(requirements)
   const groups = new Map<string, RequirementGroup>()
   for (const requirement of requirements) {
-    const suggestedName = requirement.suggested_name?.trim() || ''
+    const suggestedName = suggestedNameByHeadersReq.get(requirement) ?? (requirement.suggested_name?.trim() || '')
     const scope = requirementScope(requirement)
     // A preserved occurrence and an unresolved occurrence are different
     // destination decisions even when the importer suggests the same logical
@@ -134,9 +296,7 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
     // An occurrence a project secret cannot replace is its own decision too:
     // grouped with replaceable ones, it would block their binding.
     const rebindable = requirementCanUseProjectSecret(requirement)
-    const destinationClass = requirement.destination_value_preserved === true
-      ? 'preserved'
-      : rebindable ? 'binding-required' : 'kept-as-recorded'
+    const destinationClass = requirementDestinationClass(requirement)
     const key = requirement.value_group_id && requirement.destination_value_preserved
       ? `${scope}:value:${requirement.value_group_id}${rebindable ? '' : ':recorded'}`
       : requirement.destination_value_preserved
@@ -146,7 +306,11 @@ function groupRequirements(requirements: SecretBindingRequirement[]): Requiremen
       : `${scope}:requirement:${requirement.id}`
     const existing = groups.get(key)
     if (existing) {
-      existing.requirements.push(requirement)
+      if (pairedHeaderListReqs.has(requirement)) {
+        existing.requirements.unshift(requirement)
+      } else {
+        existing.requirements.push(requirement)
+      }
     } else {
       groups.set(key, { key, requirements: [requirement], suggestedName, baseName: suggestedName, destinationClass })
     }
