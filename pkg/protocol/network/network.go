@@ -3,6 +3,7 @@ package network
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,10 +12,12 @@ import (
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/protocol/jsonextract"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -33,18 +36,75 @@ func init() {
 }
 
 type Network struct {
-	subprotocol        string
-	host               string
-	address            string
-	port               int
-	timeout            time.Duration
-	useTLS             bool
-	username           string
-	password           string
-	from               string
-	to                 []string
-	baseDN             string
-	allowedTargetHosts []string
+	subprotocol              string
+	host                     string
+	address                  string
+	port                     int
+	timeout                  time.Duration
+	useTLS                   bool
+	username                 string
+	password                 string
+	from                     string
+	to                       []string
+	baseDN                   string
+	allowedTargetHosts       []string
+	unredactedDebugSnapshots bool
+	redactionMu              sync.RWMutex
+	redactor                 protocol.TextRedactor
+}
+
+var _ protocol.RuntimeTextRedactorSetter = (*Network)(nil)
+
+func (n *Network) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
+	n.redactionMu.Lock()
+	n.redactor = redactor
+	n.redactionMu.Unlock()
+}
+
+func (n *Network) currentRedactor() protocol.TextRedactor {
+	n.redactionMu.RLock()
+	redactor := n.redactor
+	n.redactionMu.RUnlock()
+	return redactor
+}
+
+func (n *Network) redactActionText(action *protocol.Action, value string) string {
+	if value == "" {
+		return ""
+	}
+	var actionUser, actionPass string
+	if action != nil {
+		actionUser = actionParamString(action.Params, "username")
+		actionPass = actionParamString(action.Params, "password")
+	}
+	out := value
+	for _, pair := range [][2]string{
+		{protocol.FirstNonEmpty(actionUser, n.username), protocol.FirstNonEmpty(actionPass, n.password)},
+		{n.username, n.password},
+	} {
+		user, pass := pair[0], pair[1]
+		if pass == "" {
+			continue
+		}
+		candidates := []string{
+			"AUTH PLAIN " + base64.StdEncoding.EncodeToString([]byte("\x00"+user+"\x00"+pass)),
+			base64.StdEncoding.EncodeToString([]byte("\x00" + user + "\x00" + pass)),
+			base64.RawStdEncoding.EncodeToString([]byte("\x00" + user + "\x00" + pass)),
+			"AUTH LOGIN " + base64.StdEncoding.EncodeToString([]byte(pass)),
+			base64.StdEncoding.EncodeToString([]byte(pass)),
+			base64.RawStdEncoding.EncodeToString([]byte(pass)),
+			pass,
+		}
+		for _, candidate := range candidates {
+			if candidate != "" && candidate != scrub.Redacted {
+				out = strings.ReplaceAll(out, candidate, scrub.Redacted)
+			}
+		}
+	}
+	if redactor := n.currentRedactor(); redactor != nil {
+		out = redactor(out)
+	}
+	return scrub.ValueLabel(out, scrub.Policy{})
 }
 
 type operationResult struct {
@@ -78,6 +138,7 @@ func (n *Network) Init(_ context.Context, config map[string]any) error {
 	n.to = protocol.ConfigStringSlice(config, "network_to")
 	n.baseDN = protocol.ConfigString(config, "network_base_dn")
 	n.allowedTargetHosts = protocol.TargetPolicyHosts(config)
+	n.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
 	return nil
 }
 
@@ -104,9 +165,9 @@ func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.Duration = time.Since(start)
 		result.Success = false
 		result.StatusCode = 500
-		result.ErrorMessage = err.Error()
-		result.Snapshot = networkSnapshot(action, result)
-		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		result.ErrorMessage = n.redactActionText(action, err.Error())
+		result.Snapshot = n.networkSnapshot(action, result)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(n.redactedEvidenceAction(action), result)
 		return result, nil
 	}
 	if ctx == nil {
@@ -151,10 +212,15 @@ func (n *Network) Execute(ctx context.Context, action *protocol.Action) (*protoc
 		result.StatusCode = 500
 		result.ErrorMessage = assertionErr
 	}
-	if !result.Success {
-		result.Snapshot = networkSnapshot(action, result)
+	if !n.unredactedDebugSnapshots {
+		result.DependencyTarget = n.redactActionText(action, result.DependencyTarget)
+		result.ResponseBody = n.redactActionText(action, result.ResponseBody)
+		result.ErrorMessage = n.redactActionText(action, result.ErrorMessage)
 	}
-	result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+	if !result.Success {
+		result.Snapshot = n.networkSnapshot(action, result)
+	}
+	result.ProtocolEvidence = protocol.BuildProtocolEvidence(n.redactedEvidenceAction(action), result)
 	return result, nil
 }
 
@@ -754,29 +820,141 @@ func numericNetworkAssertionValue(value any) (int, bool) {
 	}
 }
 
-func networkSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
-	if action == nil || result == nil {
+func (n *Network) redactHeaders(action *protocol.Action) map[string]string {
+	if action == nil || (len(action.Headers) == 0 && len(action.RedactedHeaders) == 0) {
 		return nil
 	}
-	return &protocol.ErrorSnapshot{
-		RequestMethod:  action.Type,
-		RequestURL:     protocol.FirstNonEmpty(result.DependencyTarget, action.Target),
-		RequestHeaders: cloneActionHeaders(action.Headers),
-		RequestBody:    string(action.Body),
-		ResponseStatus: result.StatusCode,
-		ResponseBody:   result.ResponseBody,
+	out := make(map[string]string, len(action.Headers)+len(action.RedactedHeaders))
+	policy := scrub.Policy{}
+	for key, value := range action.Headers {
+		if policy.SensitiveHeader(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = n.redactActionText(action, value)
+		}
+	}
+	for key, value := range action.RedactedHeaders {
+		if policy.SensitiveHeader(key) {
+			out[key] = scrub.Redacted
+		} else {
+			out[key] = n.redactActionText(action, value)
+		}
+	}
+	return out
+}
+
+func (n *Network) redactParamsMap(action *protocol.Action, redacted, raw map[string]any) map[string]any {
+	src := raw
+	if len(redacted) > 0 {
+		src = redacted
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(src))
+	for k, v := range src {
+		if scrub.SensitiveName(k) {
+			out[k] = scrub.Redacted
+			continue
+		}
+		out[k] = n.redactParamValue(action, v, 0)
+	}
+	return out
+}
+
+func (n *Network) redactParamValue(action *protocol.Action, v any, depth int) any {
+	if v == nil {
+		return nil
+	}
+	if depth > 8 {
+		return scrub.Redacted
+	}
+	switch typed := v.(type) {
+	case string:
+		return n.redactActionText(action, typed)
+	case []string:
+		cp := make([]string, len(typed))
+		for i, item := range typed {
+			cp[i] = n.redactActionText(action, item)
+		}
+		return cp
+	case []any:
+		cp := make([]any, len(typed))
+		for i, item := range typed {
+			cp[i] = n.redactParamValue(action, item, depth+1)
+		}
+		return cp
+	case map[string]string:
+		cp := make(map[string]string, len(typed))
+		for k, item := range typed {
+			if scrub.SensitiveName(k) {
+				cp[k] = scrub.Redacted
+			} else {
+				cp[k] = n.redactActionText(action, item)
+			}
+		}
+		return cp
+	case map[string]any:
+		cp := make(map[string]any, len(typed))
+		for k, item := range typed {
+			if scrub.SensitiveName(k) {
+				cp[k] = scrub.Redacted
+			} else {
+				cp[k] = n.redactParamValue(action, item, depth+1)
+			}
+		}
+		return cp
+	default:
+		return v
 	}
 }
 
-func cloneActionHeaders(headers map[string]string) map[string]string {
-	if len(headers) == 0 {
+func (n *Network) redactedEvidenceAction(action *protocol.Action) *protocol.Action {
+	if action == nil || n.unredactedDebugSnapshots {
+		return action
+	}
+	copied := *action
+	target := protocol.FirstNonEmpty(action.RedactedTarget, action.Target)
+	copied.RedactedTarget = n.redactActionText(action, target)
+	copied.RedactedHeaders = n.redactHeaders(action)
+	copied.RedactedParams = n.redactParamsMap(action, action.RedactedParams, action.Params)
+	return &copied
+}
+
+func (n *Network) networkSnapshot(action *protocol.Action, result *protocol.Result) *protocol.ErrorSnapshot {
+	if action == nil || result == nil {
 		return nil
 	}
-	out := make(map[string]string, len(headers))
-	for key, value := range headers {
-		out[key] = value
+	if n.unredactedDebugSnapshots {
+		headers := make(map[string]string, len(action.Headers))
+		for k, v := range action.Headers {
+			headers[k] = v
+		}
+		if len(headers) == 0 {
+			headers = nil
+		}
+		return &protocol.ErrorSnapshot{
+			RequestMethod:  action.Type,
+			RequestURL:     protocol.FirstNonEmpty(result.DependencyTarget, action.Target),
+			RequestHeaders: headers,
+			RequestBody:    string(action.Body),
+			ResponseStatus: result.StatusCode,
+			ResponseBody:   result.ResponseBody,
+		}
 	}
-	return out
+	requestURL := protocol.FirstNonEmpty(result.DependencyTarget, action.RedactedTarget, action.Target)
+	requestBody := string(action.Body)
+	if len(action.RedactedBody) > 0 {
+		requestBody = string(action.RedactedBody)
+	}
+	return &protocol.ErrorSnapshot{
+		RequestMethod:  action.Type,
+		RequestURL:     n.redactActionText(action, requestURL),
+		RequestHeaders: n.redactHeaders(action),
+		RequestBody:    n.redactActionText(action, requestBody),
+		ResponseStatus: result.StatusCode,
+		ResponseBody:   n.redactActionText(action, result.ResponseBody),
+	}
 }
 
 func recordCount(value any) int {

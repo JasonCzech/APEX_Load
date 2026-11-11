@@ -12,21 +12,23 @@ import (
 )
 
 func TestConvertClassifiesEveryElementAndBlocksUnprovenMappings(t *testing.T) {
-	input := []byte(`<?xml version="1.0"?>
+	longAttr := strings.Repeat("A", 400)
+	input := []byte(fmt.Sprintf(`<?xml version="1.0"?>
 <Repository>
   <Clip name="Checkout">
-    <Transaction name="Open"><HTTP method="GET" url="https://example.test/"/></Transaction>
-    <MysteryThing value="secret-must-not-escape"/>
+    <Transaction name="Open"><HTTP method="POST" url="https://example.test/api" authHeader="Bearer literal-token" customLong=%q>{"order":"123"}</HTTP></Transaction>
+    <JavaScript name="InitHook">$context.currentClip.setValue("token", "literal-js-secret");</JavaScript>
+    <MysteryThing value="preserved-custom-attribute">custom element body</MysteryThing>
   </Clip>
   <Composition name="Regional Sale" duration="180000">
     <Track name="East" clip="Checkout" offset="60000" users="25" ramp="30000" region="us-east"/>
   </Composition>
-</Repository>`)
+</Repository>`, longAttr))
 	result, err := Convert(input, ConvertOptions{ProjectID: "project-1", FileName: "export.xml"})
 	if err != nil {
 		t.Fatalf("Convert: %v", err)
 	}
-	if got, want := len(result.Dispositions), 7; got != want {
+	if got, want := len(result.Dispositions), 8; got != want {
 		t.Fatalf("dispositions = %d, want %d: %#v", got, want, result.Dispositions)
 	}
 	for _, disposition := range result.Dispositions {
@@ -58,9 +60,23 @@ func TestConvertClassifiesEveryElementAndBlocksUnprovenMappings(t *testing.T) {
 	if group.StartOffset != "1m0s" || group.RampUp != "30s" || group.VUsers != 25 || group.LoadZone != "us-east" {
 		t.Fatalf("group = %#v", group)
 	}
+	if len(result.PreservedArtifacts) != 1 || !strings.Contains(result.PreservedArtifacts[0].Text, "literal-js-secret") {
+		t.Fatalf("preserved_artifacts missing element text: %#v", result.PreservedArtifacts)
+	}
+	foundHTTPBody := false
+	for _, action := range result.Scripts[0].Actions {
+		if action.Value == `{"order":"123"}` {
+			foundHTTPBody = true
+		}
+	}
+	if !foundHTTPBody {
+		t.Fatalf("expected HTTP element text body in review actions: %#v", result.Scripts[0].Actions)
+	}
 	serialized := mustJSON(t, result)
-	if strings.Contains(serialized, "secret-must-not-escape") {
-		t.Fatal("unapproved attribute value leaked into review output")
+	for _, want := range []string{"preserved-custom-attribute", "custom element body", "Bearer literal-token", longAttr} {
+		if !strings.Contains(serialized, want) {
+			t.Fatalf("expected %q to be preserved in review output", want)
+		}
 	}
 }
 
@@ -163,4 +179,56 @@ func mustJSON(t *testing.T, value any) string {
 		t.Fatal(err)
 	}
 	return string(encoded)
+}
+
+func TestConvertPreservesFileTemplateSyntaxInMetadataAndPassesDSLValidation(t *testing.T) {
+	rawJS := `var tpl = "{{file.template_var}}"; $context.currentClip.setValue("body", tpl);`
+	input := []byte(`<?xml version="1.0"?>
+<Repository>
+  <Clip name="TemplateClip">
+    <JavaScript name="RenderHook">` + rawJS + `</JavaScript>
+  </Clip>
+</Repository>`)
+	result, err := Convert(input, ConvertOptions{ProjectID: "project-1", FileName: "tpl.xml"})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 {
+		t.Fatalf("unexpected scripts: %#v", result.Scripts)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on CloudTest clip with {{file.template_var}}, got %v", issues)
+	}
+	if got, _ := result.Scripts[0].Actions[0].Metadata["source_text"].(string); got != rawJS {
+		t.Fatalf("action.Metadata[source_text] = %q, want verbatim %q", got, rawJS)
+	}
+	if len(result.PreservedArtifacts) != 1 || result.PreservedArtifacts[0].Text != rawJS {
+		t.Fatalf("PreservedArtifacts = %#v, want verbatim %q", result.PreservedArtifacts, rawJS)
+	}
+}
+
+func TestConvertNeutralizesRunAndFileTemplatesInDSLWhileKeepingSourceReviewVerbatim(t *testing.T) {
+	rawJS := `var runLabel = "{{run.name}}:{{run.id}}:{{file.template_var}}";`
+	input := []byte(`<?xml version="1.0"?>
+<Repository>
+  <Clip name="Clip {{run.name}}">
+    <JavaScript name="Hook {{run.id}}" customAttr="{{run.id}}/{{run.name}}">` + rawJS + `</JavaScript>
+  </Clip>
+</Repository>`)
+	result, err := Convert(input, ConvertOptions{ProjectID: "project-1", FileName: "run_tpl.xml"})
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if len(result.Scripts) != 1 {
+		t.Fatalf("unexpected scripts count: %d", len(result.Scripts))
+	}
+	if issues := dsl.ValidateScriptIssues(result.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on CloudTest clip with {{run.*}}/{{file.*}}, got %v", issues)
+	}
+	if len(result.PreservedArtifacts) != 1 || result.PreservedArtifacts[0].Text != rawJS {
+		t.Fatalf("PreservedArtifacts = %#v, want verbatim %q", result.PreservedArtifacts, rawJS)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 || !strings.Contains(result.SourceReview.SourceFiles[0].Content, rawJS) {
+		t.Fatalf("SourceReview = %#v, want verbatim %q", result.SourceReview, rawJS)
+	}
 }

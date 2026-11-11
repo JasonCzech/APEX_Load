@@ -1094,8 +1094,7 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	for index := range req.Scripts {
 		script := &req.Scripts[index]
 		if importDraftAttestationToken(script) == "" {
-			fingerprint, fingerprintErr := fingerprintImportDraftCredentials(script)
-			if fingerprintErr != nil || fingerprint.HasRawCredentials ||
+			if _, fingerprintErr := fingerprintImportDraftCredentials(script); fingerprintErr != nil ||
 				scriptHasUnavailableImportCredentialValues(script) {
 				writeError(w, http.StatusConflict, "JMeter import draft is missing its server capability; run the import again")
 				return

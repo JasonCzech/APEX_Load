@@ -315,6 +315,33 @@ func TestValidateKafkaScriptIssues(t *testing.T) {
 			},
 			wantClean: true,
 		},
+		{
+			name: "explicit oauth accepts literal client_secret",
+			mutate: func(s *Script) {
+				s.Config.Kafka.SecurityProtocol = "sasl_ssl"
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+				s.Config.Kafka.OAuth = &KafkaOAuthConfig{
+					Mode:         "client_credentials",
+					TokenURL:     "https://login.example.com/oauth2/v2.0/token",
+					ClientID:     "client-123",
+					ClientSecret: "secret~with*stars***literal",
+				}
+			},
+			wantClean: true,
+		},
+		{
+			name: "explicit oauth rejects missing secret and secret_ref",
+			mutate: func(s *Script) {
+				s.Config.Kafka.SecurityProtocol = "sasl_ssl"
+				s.Config.Kafka.SASLMechanism = "oauthbearer"
+				s.Config.Kafka.OAuth = &KafkaOAuthConfig{
+					Mode:     "client_credentials",
+					TokenURL: "https://login.example.com/oauth2/v2.0/token",
+					ClientID: "client-123",
+				}
+			},
+			wantHas: "Kafka OAuth credentials are unresolved",
+		},
 	}
 
 	for _, tt := range tests {

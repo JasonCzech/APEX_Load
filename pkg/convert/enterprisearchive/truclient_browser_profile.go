@@ -10,12 +10,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-// These files describe source-browser behavior. Inventory them without executing
-// JavaScript or copying preference values into the public review metadata.
+// These files describe source-browser behavior. Inventory their literal
+// declarations for operator review without executing JavaScript.
 const truClientBrowserProfileKey = "truclient_browser_profile_settings"
 
 const truClientBrowserProfileMaxBytes = 2 << 20
@@ -36,12 +37,14 @@ type truClientBrowserProfileFile struct {
 
 type truClientBrowserProfileListEntry struct {
 	Section    string                          `json:"section"`
+	Value      string                          `json:"value,omitempty"`
 	SourceLine int                             `json:"source_line"`
 	Status     RuntimeSettingDispositionStatus `json:"status"`
 }
 
 type truClientBrowserProfileSetting struct {
 	Key                       string                          `json:"key"`
+	Value                     string                          `json:"value,omitempty"`
 	Section                   string                          `json:"section"`
 	Status                    RuntimeSettingDispositionStatus `json:"status"`
 	DeclarationLines          []int                           `json:"declaration_lines"`
@@ -55,10 +58,10 @@ const truClientAuthenticationNote = "Source browser authentication filter select
 
 // Accept literal preference declarations only. Unknown JavaScript remains in
 // the supplied archive and keeps the authoring draft gated.
-var truClientPreferenceStatement = regexp.MustCompile(`^user_pref\s*\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*(?:true|false|null|[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*\)\s*;`)
+var truClientPreferenceStatement = regexp.MustCompile(`^user_pref\s*\(\s*("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*(true|false|null|[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*\)\s*;`)
 
 func inspectTruClientPreferenceFile(name, content string) truClientBrowserProfileFile {
-	file := truClientBrowserProfileFile{SourceFile: name, Kind: "browser_preferences", Settings: []truClientBrowserProfileSetting{}}
+	file := truClientBrowserProfileFile{SourceFile: convertutil.NeutralizeScriptMetadataString(name), Kind: "browser_preferences", Settings: []truClientBrowserProfileSetting{}}
 	if len(content) > truClientBrowserProfileMaxBytes {
 		file.Unparsed = true
 		return file
@@ -108,11 +111,23 @@ func inspectTruClientPreferenceFile(name, content string) truClientBrowserProfil
 			file.Unparsed = true
 			break
 		}
-		row := rows[key]
-		if row == nil {
-			row = &truClientBrowserProfileSetting{Key: key, Section: "Source browser preferences", Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientPreferenceNote}
-			rows[key] = row
+		rawVal := text[position+match[4] : position+match[5]]
+		val := rawVal
+		if strings.HasPrefix(rawVal, `"`) {
+			var decoded string
+			if json.Unmarshal([]byte(rawVal), &decoded) == nil {
+				val = decoded
+			}
+		} else if strings.HasPrefix(rawVal, `'`) && !strings.Contains(rawVal, `\`) && len(rawVal) >= 2 {
+			val = rawVal[1 : len(rawVal)-1]
 		}
+		safeKey := convertutil.NeutralizeScriptMetadataString(key)
+		row := rows[safeKey]
+		if row == nil {
+			row = &truClientBrowserProfileSetting{Key: safeKey, Section: "Source browser preferences", Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientPreferenceNote}
+			rows[safeKey] = row
+		}
+		row.Value = convertutil.NeutralizeScriptMetadataString(val)
 		row.DeclarationLines = append(row.DeclarationLines, line)
 		row.LastParsedDeclarationLine = line
 		file.Declarations++
@@ -128,7 +143,7 @@ func inspectTruClientPreferenceFile(name, content string) truClientBrowserProfil
 }
 
 func inspectTruClientPreferenceOverrides(name, content string) truClientBrowserProfileFile {
-	file := truClientBrowserProfileFile{SourceFile: name, Kind: "browser_preference_overrides", Settings: []truClientBrowserProfileSetting{}}
+	file := truClientBrowserProfileFile{SourceFile: convertutil.NeutralizeScriptMetadataString(name), Kind: "browser_preference_overrides", Settings: []truClientBrowserProfileSetting{}}
 	if len(content) > truClientBrowserProfileMaxBytes {
 		file.Unparsed = true
 		return file
@@ -141,13 +156,15 @@ func inspectTruClientPreferenceOverrides(name, content string) truClientBrowserP
 		}
 		line += strings.Count(content[linePosition:position], "\n")
 		linePosition = position
-		row := rows[key]
+		safeKey := convertutil.NeutralizeScriptMetadataString(key)
+		row := rows[safeKey]
 		if row == nil {
-			row = &truClientBrowserProfileSetting{Key: key, Section: "Source browser preference overrides", Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientOverrideNote}
-			rows[key] = row
+			row = &truClientBrowserProfileSetting{Key: safeKey, Section: "Source browser preference overrides", Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientOverrideNote}
+			rows[safeKey] = row
 		} else {
 			file.Unparsed = true
 		}
+		row.Value = convertutil.NeutralizeScriptMetadataString(strings.TrimSpace(string(raw)))
 		row.DeclarationLines = append(row.DeclarationLines, line)
 		file.Declarations++
 		seen := map[string]bool{}
@@ -171,8 +188,8 @@ func inspectTruClientPreferenceOverrides(name, content string) truClientBrowserP
 	return file
 }
 
-// Token traversal retains duplicate declarations and actual key locations.
-// Values are only decoded as opaque RawMessage and never enter the inventory.
+// Token traversal retains duplicate declarations, key locations, and raw JSON
+// values for operator review without evaluating scripts.
 func walkTruClientJSONFields(content []byte, visit func(string, json.RawMessage, int) bool) bool {
 	decoder := json.NewDecoder(strings.NewReader(string(content)))
 	token, err := decoder.Token()
@@ -216,7 +233,7 @@ func walkTruClientJSONFields(content []byte, visit func(string, json.RawMessage,
 }
 
 func inspectTruClientAuthenticationFilters(name, content string) truClientBrowserProfileFile {
-	file := truClientBrowserProfileFile{SourceFile: name, Kind: "browser_authentication_filters", Settings: []truClientBrowserProfileSetting{}}
+	file := truClientBrowserProfileFile{SourceFile: convertutil.NeutralizeScriptMetadataString(name), Kind: "browser_authentication_filters", Settings: []truClientBrowserProfileSetting{}}
 	if len(content) > truClientBrowserProfileMaxBytes {
 		file.Unparsed = true
 		return file
@@ -229,7 +246,7 @@ func inspectTruClientAuthenticationFilters(name, content string) truClientBrowse
 			continue
 		}
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = strings.TrimSpace(line[1 : len(line)-1])
+			section = convertutil.NeutralizeScriptMetadataString(strings.TrimSpace(line[1 : len(line)-1]))
 			continue
 		}
 		if file.Declarations+len(file.ListEntries) >= truClientBrowserProfileMaxDeclarations {
@@ -237,12 +254,12 @@ func inspectTruClientAuthenticationFilters(name, content string) truClientBrowse
 			break
 		}
 		if strings.EqualFold(section, "AllowList") || strings.EqualFold(section, "DenyList") {
-			file.Unparsed = true
-			file.ListEntries = append(file.ListEntries, truClientBrowserProfileListEntry{Section: section, SourceLine: index + 1, Status: RuntimeSettingDispositionCompatibilityOnly})
+			file.ListEntries = append(file.ListEntries, truClientBrowserProfileListEntry{Section: section, Value: convertutil.NeutralizeScriptMetadataString(line), SourceLine: index + 1, Status: RuntimeSettingDispositionCompatibilityOnly})
 			continue
 		}
-		key, _, ok := strings.Cut(line, "=")
-		key = strings.TrimSpace(key)
+		key, val, ok := strings.Cut(line, "=")
+		key = convertutil.NeutralizeScriptMetadataString(strings.TrimSpace(key))
+		val = convertutil.NeutralizeScriptMetadataString(strings.TrimSpace(val))
 		if !ok || key == "" || section == "" {
 			file.Unparsed = true
 			continue
@@ -253,6 +270,7 @@ func inspectTruClientAuthenticationFilters(name, content string) truClientBrowse
 			row = &truClientBrowserProfileSetting{Key: key, Section: "Source browser authentication filters / " + section, Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientAuthenticationNote}
 			rows[id] = row
 		}
+		row.Value = val
 		row.DeclarationLines = append(row.DeclarationLines, index+1)
 		file.Declarations++
 	}
@@ -304,12 +322,12 @@ func applyTruClientBrowserProfileReview(result *ConvertResult, files map[string]
 	if result.Script.Metadata.Import.Preserved == nil {
 		result.Script.Metadata.Import.Preserved = map[string]any{}
 	}
-	result.Script.Metadata.Import.Preserved[truClientBrowserProfileKey] = inventory
+	result.Script.Metadata.Import.Preserved[truClientBrowserProfileKey] = convertutil.NeutralizeScriptMetadataDeep(inventory)
 	gate := dsl.Action{Name: "Review source browser preferences and authentication policy", Type: "source_review", Metadata: map[string]any{"source_file": inventory.Files[0].SourceFile}}
 	importreview.ApplyToAction(&gate, []importreview.Finding{{Code: "truclient_browser_preferences_require_review", ReasonCode: "truclient_browser_preferences_require_review", Gate: importreview.GateExecution, Source: "enterprise_script_archive", SourceRef: inventory.Files[0].SourceFile, Detail: "Source browser preference files, override precedence, and authentication policy require review before native browser promotion. The bounded source preview and supplied archive retain declaration evidence; no Go Chromium equivalence is claimed."}})
 	result.Script.Init = append(result.Script.Init, gate)
 	for _, file := range inventory.Files {
-		appendSourceReviewMapping(result, SourceReviewMapping{SourceFile: file.SourceFile, StartLine: 1, Function: "Source browser profile settings", TargetPath: "metadata.import.preserved." + truClientBrowserProfileKey, TargetKind: "configuration", Status: "review_only", Notes: "Value-free preference inventory is available in Runtime settings; a bounded preview is available in Source files; complete declarations remain in the supplied archive."})
+		appendSourceReviewMapping(result, SourceReviewMapping{SourceFile: file.SourceFile, StartLine: 1, Function: "Source browser profile settings", TargetPath: "metadata.import.preserved." + truClientBrowserProfileKey, TargetKind: "configuration", Status: "review_only", Notes: "Source browser profile preference and authentication filter inventory is available in Runtime settings; a bounded preview is available in Source files; complete declarations remain in the supplied archive."})
 	}
 }
 
@@ -330,12 +348,18 @@ func appendTruClientBrowserProfileRuntimeEvidence(preserved map[string]any, runt
 				runtimeFiles[file.SourceFile][setting.Section] = map[string]string{}
 				dispositions[file.SourceFile][setting.Section] = map[string]RuntimeSettingDisposition{}
 			}
-			runtimeFiles[file.SourceFile][setting.Section][setting.Key] = "Preserved in source (" + strconv.Itoa(len(setting.DeclarationLines)) + " declarations)"
-			note := setting.Note
-			if len(file.ListEntries) > 0 {
-				note += " " + strconv.Itoa(len(file.ListEntries)) + " source Allow/Deny list records remain unparsed; value-free section/line evidence is retained in the profile inventory and original records are visible in Source files."
+			runtimeFiles[file.SourceFile][setting.Section][setting.Key] = setting.Value
+			dispositions[file.SourceFile][setting.Section][setting.Key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Note: setting.Note}
+		}
+		for _, entry := range file.ListEntries {
+			section := "Source browser authentication filters / " + entry.Section
+			if runtimeFiles[file.SourceFile][section] == nil {
+				runtimeFiles[file.SourceFile][section] = map[string]string{}
+				dispositions[file.SourceFile][section] = map[string]RuntimeSettingDisposition{}
 			}
-			dispositions[file.SourceFile][setting.Section][setting.Key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Note: note}
+			key := "line_" + strconv.Itoa(entry.SourceLine)
+			runtimeFiles[file.SourceFile][section][key] = entry.Value
+			dispositions[file.SourceFile][section][key] = RuntimeSettingDisposition{Status: RuntimeSettingDispositionCompatibilityOnly, Note: truClientAuthenticationNote}
 		}
 	}
 }

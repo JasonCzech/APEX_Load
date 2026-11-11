@@ -33,7 +33,6 @@ interface HeaderFinding {
 
 interface PinnedCookie {
   enabled: boolean
-  masked?: boolean
   name: string
   value: string
 }
@@ -114,21 +113,12 @@ function cookiePairs(entries: ScriptHeaderEntry[]): PinnedCookie[] {
   return entries
     .filter(entry => canonical(entry.name) === 'cookie')
     .flatMap(entry => {
-      if (entry.value === '[REDACTED]') {
-        return [{
-          enabled: enabled(entry),
-          masked: true,
-          name: 'Stored pinned cookie',
-          value: '[REDACTED]',
-        }]
-      }
       return entry.value.split(';').map(part => part.trim()).filter(Boolean).map(part => {
         const separator = part.indexOf('=')
         const name = separator >= 0 ? part.slice(0, separator).trim() : part
         const value = separator >= 0 ? part.slice(separator + 1).trim() : ''
         return {
           enabled: enabled(entry),
-          masked: value === '[REDACTED]',
           name,
           value,
         }
@@ -162,7 +152,7 @@ function headerFindings(entry: ScriptHeaderEntry, all: ScriptHeaderEntry[], http
     findings.push({ level: 'warning', message: `${name} duplicates a typed HTTP setting; this row is authoritative.` })
   }
   if (sensitiveHeader(name) &&
-    entry.value !== '[REDACTED]' &&
+    entry.value &&
     !entry.value.includes('{{secret.')) {
     findings.push({ level: 'warning', message: `${name} may contain a credential. Prefer a {{secret.*}} reference.` })
   }
@@ -171,7 +161,6 @@ function headerFindings(entry: ScriptHeaderEntry, all: ScriptHeaderEntry[], http
 
 function cookieNameError(cookie: PinnedCookie, all: PinnedCookie[]): string {
   if (!cookie.enabled) return ''
-  if (cookie.masked) return ''
   const name = cookie.name.trim()
   if (!name || !VALID_HEADER_NAME.test(name)) return 'Enter a valid cookie name.'
   if (all.filter(candidate => candidate.enabled && candidate.name.trim() === name).length > 1) {
@@ -240,11 +229,6 @@ function flattenActions(actions: ScriptActionDefinition[]): ScriptActionDefiniti
 // recording or import carries, not credentials.
 function sensitiveHeader(name: string): boolean {
   return SENSITIVE_HEADER_PATTERN.test(name) && !isRecordedStateHeader(name)
-}
-
-function maskedValue(name: string, value: string): string {
-  if (sensitiveHeader(name) && value && !value.includes('{{')) return '••••••••'
-  return value
 }
 
 function previewHeaders(
@@ -424,11 +408,7 @@ export default function HttpRequestDefaultsEditor({
     const cookieEntries = nextCookies
       .map(cookie => ({
         name: 'Cookie',
-        value: cookie.masked && cookie.name !== 'Stored pinned cookie'
-          ? `${cookie.name.trim()}=[REDACTED]`
-          : cookie.masked
-            ? '[REDACTED]'
-            : `${cookie.name.trim()}=${cookie.value}`,
+        value: `${cookie.name.trim()}=${cookie.value}`,
         enabled: cookie.enabled,
       }))
     commitEntries([...nonCookies, ...cookieEntries])
@@ -525,15 +505,15 @@ export default function HttpRequestDefaultsEditor({
               {cookies.map((cookie, index) => (
                 <div className={`http-cookie-grid-row ${cookieNameError(cookie, cookies) ? 'invalid' : ''}`} role="row" key={`cookie-${index}`}>
                   <span role="cell"><input aria-label={`Pinned cookie ${index + 1} enabled`} type="checkbox" checked={cookie.enabled} onChange={event => commitCookies(cookies.map((item, itemIndex) => itemIndex === index ? { ...item, enabled: event.target.checked } : item))} /></span>
-                  <span role="cell"><input aria-invalid={Boolean(cookieNameError(cookie, cookies))} aria-label={`Pinned cookie ${index + 1} name`} disabled={cookie.masked} value={cookie.name} onChange={event => commitCookies(cookies.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} placeholder="dark-route" /></span>
-                  <span role="cell"><input aria-label={`Pinned cookie ${index + 1} value`} disabled={cookie.masked} type="password" value={cookie.value} onChange={event => commitCookies(cookies.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder="{{secret.dark_cookie}}" /></span>
+                  <span role="cell"><input aria-invalid={Boolean(cookieNameError(cookie, cookies))} aria-label={`Pinned cookie ${index + 1} name`} value={cookie.name} onChange={event => commitCookies(cookies.map((item, itemIndex) => itemIndex === index ? { ...item, name: event.target.value } : item))} placeholder="dark-route" /></span>
+                  <span role="cell"><input aria-label={`Pinned cookie ${index + 1} value`} type="text" value={cookie.value} onChange={event => commitCookies(cookies.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))} placeholder="{{secret.dark_cookie}}" /></span>
                   <span role="cell"><button type="button" className="btn-icon danger" aria-label={`Remove pinned cookie ${index + 1}`} onClick={() => commitCookies(cookies.filter((_, itemIndex) => itemIndex !== index))}>×</button></span>
-                  {(cookie.masked || cookieNameError(cookie, cookies)) && <span className="http-cookie-finding" role="cell">{cookie.masked ? 'Stored value is masked. Remove this row to clear it, then add a replacement.' : cookieNameError(cookie, cookies)}</span>}
+                  {cookieNameError(cookie, cookies) && <span className="http-cookie-finding" role="cell">{cookieNameError(cookie, cookies)}</span>}
                 </div>
               ))}
             </div>
           )}
-          {cookies.some(cookie => cookie.value && cookie.value !== '[REDACTED]' && !cookie.value.includes('{{secret.')) && (
+          {cookies.some(cookie => cookie.value && !cookie.value.includes('{{secret.')) && (
             <div className="http-setting-warning" role="note">Pinned cookie values are sensitive. Prefer a {'{{secret.*}}'} reference.</div>
           )}
         </section>
@@ -643,7 +623,7 @@ export default function HttpRequestDefaultsEditor({
                 <div className={`http-header-grid-row ${findings.some(finding => finding.level === 'error') ? 'invalid' : ''}`} role="row" key={`header-${index}-${entry.name}`}>
                   <span role="cell"><input aria-label={`Header ${index + 1} enabled`} type="checkbox" checked={enabled(entry)} onChange={event => replaceHeaderAt(index, { enabled: event.target.checked })} /></span>
                   <span role="cell"><input ref={node => { headerNameRefs.current[index] = node }} aria-invalid={findings.some(finding => finding.level === 'error')} aria-label={`Header ${index + 1} name`} list={suggestionId} value={entry.name} onChange={event => replaceHeaderAt(index, { name: event.target.value })} placeholder="X-Tenant-ID" /></span>
-                  <span role="cell"><input aria-label={`Header ${index + 1} value`} type={sensitiveHeader(entry.name) ? 'password' : 'text'} value={entry.value} onChange={event => replaceHeaderAt(index, { value: event.target.value })} placeholder="{{param.tenant_id}}" /></span>
+                  <span role="cell"><input aria-label={`Header ${index + 1} value`} type="text" value={entry.value} onChange={event => replaceHeaderAt(index, { value: event.target.value })} placeholder="{{param.tenant_id}}" /></span>
                   <span role="cell">
                     <select aria-label={`Insert template into header ${index + 1}`} value="" onChange={event => {
                       if (!event.target.value) return
@@ -683,7 +663,7 @@ export default function HttpRequestDefaultsEditor({
 
       <section className="http-settings-card" aria-labelledby="effective-preview-heading">
         <div className="http-settings-card-heading">
-          <div><h5 id="effective-preview-heading">Effective Request Preview</h5><p>Review the winning header layer without exposing stored credentials.</p></div>
+          <div><h5 id="effective-preview-heading">Effective Request Preview</h5><p>Review the winning header layer for the selected request.</p></div>
           <button type="button" className="btn btn-sm btn-ghost" onClick={() => setPreviewOpen(open => !open)} aria-expanded={previewOpen}>{previewOpen ? 'Hide preview' : 'Show preview'}</button>
         </div>
         {previewOpen && (
@@ -709,7 +689,7 @@ export default function HttpRequestDefaultsEditor({
               {headerPreview.effective.map((header, index) => (
                 <div role="listitem" key={`${header.name}-${index}`}>
                   <code>{header.name}</code>
-                  <span>{maskedValue(header.name, header.value) || '(empty)'}</span>
+                  <span>{header.value || '(empty)'}</span>
                   <strong className="http-preview-origin">{header.origin}</strong>
                 </div>
               ))}
@@ -722,7 +702,7 @@ export default function HttpRequestDefaultsEditor({
                   {headerPreview.suppressed.map((header, index) => (
                     <div role="listitem" key={`${header.origin}-${header.name}-${index}`}>
                       <code>{header.name}</code>
-                      <span>{maskedValue(header.name, header.value) || '(empty)'}</span>
+                      <span>{header.value || '(empty)'}</span>
                       <strong className="http-preview-origin">{header.origin} → {header.suppressedBy}</strong>
                     </div>
                   ))}

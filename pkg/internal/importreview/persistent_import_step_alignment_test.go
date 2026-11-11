@@ -41,7 +41,7 @@ func TestPreparePersistentLibraryScriptKeepsLocatorsDespiteBogusClientLocator(t 
 		t.Fatal("precondition: this scenario needs a UID-less import")
 	}
 
-	candidate := MaskScriptSecrets(prior)
+	candidate := CloneScriptDefinition(prior)
 	candidate.Actions = candidate.Actions[1:]
 	candidate.Actions[0].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey] = []any{
 		map[string]any{"field": "zzz"},
@@ -100,10 +100,10 @@ func TestPreparePersistentLibraryScriptKeepsIdentityFieldLocatorWhenClientDropsI
 	if err != nil {
 		t.Fatalf("PreparePersistentImportedLibraryScript: %v", err)
 	}
-	candidate := MaskScriptSecrets(prior)
-	if candidate == nil || strings.Contains(candidate.Actions[1].Target, credentialValue) {
-		t.Fatalf("precondition: the path credential must be masked: %#v", candidate)
+	if projected := MaskScriptSecrets(prior); projected == nil || strings.Contains(projected.Actions[1].Target, credentialValue) {
+		t.Fatalf("precondition: the path credential must be masked in disclosure projection: %#v", projected)
 	}
+	candidate := CloneScriptDefinition(prior)
 	candidate.Actions = candidate.Actions[1:]
 	delete(candidate.Actions[0].Metadata, dsl.ImportPreservedCredentialTargetsMetadataKey)
 

@@ -61,8 +61,8 @@ func TestBrunoNativeGeneratedValuesAreSuggestedAndAppliedOnCommit(t *testing.T) 
 			if !suggestion.AutoApply {
 				t.Errorf("%s %s arrived unselected: %s", candidate.SourcePath, suggestion.VarName, suggestion.Rationale)
 			}
-			if suggestion.LiteralValue != "" || suggestion.SampleValue != "" || suggestion.Parameter != nil {
-				t.Errorf("suggestion crossed the response with server-side fields: %+v", suggestion)
+			if suggestion.SampleValue == "" {
+				t.Errorf("suggestion omitted sample value: %+v", suggestion)
 			}
 			if !strings.Contains(suggestion.Rationale, "each iteration") {
 				t.Errorf("rationale = %q, want what replaces the value", suggestion.Rationale)
@@ -414,8 +414,8 @@ func TestBrunoNativePreviousInputsSkipCredentialShapedInputs(t *testing.T) {
 	if got := previous["env-id"]; got.Mode != "value" || got.Value != "qa" {
 		t.Errorf("env = %+v", got)
 	}
-	if got, offered := previous["password-id"]; offered {
-		t.Errorf("a credential-shaped input was offered back: %+v", got)
+	if got, offered := previous["password-id"]; !offered || got.Mode != "value" || got.Value != "hunter2" {
+		t.Errorf("credential-shaped input = %+v (offered=%t), want preserved value", got, offered)
 	}
 	if other := server.brunoNativePreviousInputs("another-project", result, shared); len(other) != 0 {
 		t.Errorf("another project's script supplied inputs: %+v", other)

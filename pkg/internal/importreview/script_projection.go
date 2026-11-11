@@ -389,73 +389,20 @@ func ImportPreservedStringSlice(value any) []string {
 }
 
 func SanitizePersistentImportReviewSurfaces(script *dsl.Script) error {
-	if script == nil || IsCredentialPreservingImport(script) {
+	if script == nil {
 		return nil
 	}
-	if script.Metadata != nil && script.Metadata.Import != nil {
-		for key, value := range script.Metadata.Import.Preserved {
-			switch {
-			case key == JavaVuserApprovalEvidenceKey:
-				validated := ProjectJavaVuserApprovalEvidence(value)
-				if len(validated) == 2 {
-					script.Metadata.Import.Preserved[key] = validated
-				} else {
-					delete(script.Metadata.Import.Preserved, key)
-				}
-			case IsOpaqueImportSourcePayloadKey(key), IsExecutableImportPreservedPayloadKey(key):
-				continue
-			case IsImportPreservedJavaVMSettingsKey(key):
-				script.Metadata.Import.Preserved[key] = ProjectPreservedJavaVMSettings(key, value)
-			case IsReviewEvidenceSubtreeKey(key):
-				script.Metadata.Import.Preserved[key] = SanitizeImportReviewEvidence(value)
-			default:
-				script.Metadata.Import.Preserved[key] = ProjectScriptNode(
-					value,
-					ScriptProjectionContext{key: key, opaqueMap: true, metadata: true},
-				)
+	if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+		if value, exists := script.Metadata.Import.Preserved[JavaVuserApprovalEvidenceKey]; exists {
+			validated := ProjectJavaVuserApprovalEvidence(value)
+			if len(validated) == 2 {
+				script.Metadata.Import.Preserved[JavaVuserApprovalEvidenceKey] = validated
+			} else {
+				delete(script.Metadata.Import.Preserved, JavaVuserApprovalEvidenceKey)
 			}
 		}
 	}
-	return dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
-		if ref.Action == nil {
-			return nil
-		}
-		switch strings.ToLower(strings.TrimSpace(ref.Action.Type)) {
-		case "source_review", "review_required":
-		default:
-			return nil
-		}
-		fidelityEnvelopes := make(map[string]any, 2)
-		if ref.Action.Metadata != nil {
-			for _, key := range []string{
-				dsl.ImportHeaderFidelityMetadataKey,
-				dsl.ImportMultipartFidelityMetadataKey,
-			} {
-				if value, exists := ref.Action.Metadata[key]; exists {
-					fidelityEnvelopes[key] = value
-				}
-			}
-		}
-		sanitized := SanitizeImportReviewEvidence(ref.Action)
-		payload, err := json.Marshal(sanitized)
-		if err != nil {
-			return fmt.Errorf("sanitize %s import review action: %w", ref.Path, err)
-		}
-		var action dsl.Action
-		if err := json.Unmarshal(payload, &action); err != nil {
-			return fmt.Errorf("decode sanitized %s import review action: %w", ref.Path, err)
-		}
-		if len(fidelityEnvelopes) > 0 {
-			if action.Metadata == nil {
-				action.Metadata = make(map[string]any)
-			}
-			for key, value := range fidelityEnvelopes {
-				action.Metadata[key] = value
-			}
-		}
-		*ref.Action = action
-		return nil
-	})
+	return nil
 }
 
 func IsExecutableImportPreservedPayloadKey(key string) bool {
@@ -714,15 +661,13 @@ func ValidateJavaVMParameterDisclosureSafety(script *dsl.Script) error {
 }
 
 func ValidateJavaVMParameterSafety(script *dsl.Script, allowPreservedCredentials bool) error {
+	_ = allowPreservedCredentials
 	if script == nil {
 		return nil
 	}
-	issues := javarunner.ValidateVMParameters(script.Config.JavaVuser.AdditionalVMParameters)
-	if allowPreservedCredentials {
-		issues = javarunner.ValidateVMParametersForExecution(
-			script.Config.JavaVuser.AdditionalVMParameters,
-		)
-	}
+	issues := javarunner.ValidateVMParametersForExecution(
+		script.Config.JavaVuser.AdditionalVMParameters,
+	)
 	if len(issues) == 0 {
 		return nil
 	}

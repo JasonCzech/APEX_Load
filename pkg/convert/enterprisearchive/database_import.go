@@ -260,6 +260,7 @@ func ConvertDatabase(actions []*ParsedAction, opts ConvertOptions, detected Dete
 	default:
 		result.Warnings = append(result.Warnings, "Database DSN was imported as {{secret.database_dsn}}; replace it with a governed connection secret before replay.")
 	}
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	return result, nil
 }
 

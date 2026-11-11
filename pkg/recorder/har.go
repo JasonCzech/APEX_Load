@@ -156,7 +156,15 @@ func ExportHAR(session *Session, includeExcluded bool) ([]byte, error) {
 }
 
 func exportHAREntry(req RecordedRequest, pageID string) harEntry {
-	return buildHAREntry(req, pageID, req.HeadersMulti, req.ResponseHeadersMulti, req.Timestamp)
+	reqHeaders := req.HeadersMulti
+	if len(reqHeaders) == 0 && len(req.Headers) > 0 {
+		reqHeaders = singleValueHeaders(req.Headers)
+	}
+	respHeaders := req.ResponseHeadersMulti
+	if len(respHeaders) == 0 && len(req.ResponseHeaders) > 0 {
+		respHeaders = singleValueHeaders(req.ResponseHeaders)
+	}
+	return buildHAREntry(req, pageID, reqHeaders, respHeaders, req.Timestamp)
 }
 
 // buildHAREntry writes one recorded request as a HAR entry with the given

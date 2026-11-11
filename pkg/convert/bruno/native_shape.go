@@ -4,11 +4,8 @@ import (
 	"fmt"
 	"gopkg.in/yaml.v3"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func validateNativeLayerShape(file sourceFile, role string) error {
@@ -300,21 +297,13 @@ func validateNativeHTTPShape(httpBlock map[string]any) error {
 			if rawType, present := nativeLookupPresent(item, "type"); present && !nativeStringScalar(rawType) {
 				return errorsNewNativeShape(fmt.Sprintf("http.params[%d].type must be a string", index))
 			}
-			disabled := false
 			if rawDisabled, present := nativeLookupPresent(item, "disabled"); present &&
 				!nativeBooleanScalar(rawDisabled) {
 				return errorsNewNativeShape(fmt.Sprintf("http.params[%d].disabled must be a boolean", index))
-			} else if present {
-				disabled = nativeBool(rawDisabled)
 			}
 			if rawValue, present := nativeLookupPresent(item, "value"); present {
 				if !nativeScalarValue(rawValue) {
 					return errorsNewNativeShape(fmt.Sprintf("http.params[%d].value must be a scalar", index))
-				}
-				value := anyString(rawValue)
-				if !disabled && (nativeSensitiveURLValue(name, value) || scrub.URLTokenSensitive(value)) &&
-					!nativeStringScalar(rawValue) {
-					return errorsNewNativeShape(fmt.Sprintf("http.params[%d].value must be a string for a sensitive URL parameter", index))
 				}
 			}
 		}
@@ -340,13 +329,6 @@ func validateNativeHTTPShape(httpBlock map[string]any) error {
 		bodyType = strings.ToLower(strings.TrimSpace(bodyType))
 	}
 	if bodyType == "json" {
-		if rawData, present := nativeLookupPresent(body, "data"); present {
-			if _, encoded := rawData.(string); !encoded {
-				if err := validateNativeStructuredJSONCredentials(rawData, nil); err != nil {
-					return err
-				}
-			}
-		}
 		return nil
 	}
 	if bodyType != "form-urlencoded" && bodyType != "form_urlencoded" &&
@@ -370,80 +352,13 @@ func validateNativeHTTPShape(httpBlock map[string]any) error {
 		if !ok || strings.TrimSpace(name) == "" {
 			return errorsNewNativeShape(fmt.Sprintf("http.body.data[%d].name must be a non-empty string", index))
 		}
-		disabled := false
 		if rawDisabled, present := nativeLookupPresent(item, "disabled"); present &&
 			!nativeBooleanScalar(rawDisabled) {
 			return errorsNewNativeShape(fmt.Sprintf("http.body.data[%d].disabled must be a boolean", index))
-		} else if present {
-			disabled = nativeBool(rawDisabled)
 		}
 		if rawValue, present := nativeLookupPresent(item, "value"); present {
 			if !nativeScalarValue(rawValue) {
 				return errorsNewNativeShape(fmt.Sprintf("http.body.data[%d].value must be a scalar", index))
-			}
-			if !disabled && nativeSensitiveBodyFieldName(name) && !nativeStringScalar(rawValue) {
-				return errorsNewNativeShape(fmt.Sprintf("http.body.data[%d].value must be a string for sensitive field %q", index, name))
-			}
-		}
-	}
-	return nil
-}
-
-func validateNativeStructuredJSONCredentials(current any, context []string) error {
-	switch typed := current.(type) {
-	case map[string]any:
-		namedCredential := structuredNamedCredential(typed)
-		keys := make([]string, 0, len(typed))
-		for key := range typed {
-			keys = append(keys, key)
-		}
-		sort.Strings(keys)
-		for _, key := range keys {
-			child := typed[key]
-			nextContext := append(append([]string(nil), context...), key)
-			secretKey := key
-			fullContext := append([]string{"http", "body", "data"}, context...)
-			if strings.EqualFold(key, "value") &&
-				isStructuredCredentialName(namedCredential, fullContext, "request") {
-				secretKey = namedCredential
-			}
-			secretField := isSecretKey(secretKey, fullContext, "request") ||
-				nativeJSONCredentialContainerKey(key)
-			if strings.EqualFold(key, "value") &&
-				nativeCredentialContainerContext(context) {
-				secretField = true
-			}
-			if secretField {
-				switch child.(type) {
-				case map[string]any, []any:
-					if nativeJSONCredentialContainerKey(key) {
-						break
-					}
-					return errorsNewNativeShape(fmt.Sprintf(
-						"composite JSON credential field %q cannot be governed without changing its wire shape",
-						nativeJSONPointer(nextContext),
-					))
-				default:
-					if child == nil {
-						break
-					}
-					if _, stringValue := child.(string); !stringValue {
-						return errorsNewNativeShape(fmt.Sprintf(
-							"non-string JSON credential field %q cannot be governed without changing its wire type",
-							nativeJSONPointer(nextContext),
-						))
-					}
-				}
-			}
-			if err := validateNativeStructuredJSONCredentials(child, nextContext); err != nil {
-				return err
-			}
-		}
-	case []any:
-		for index, child := range typed {
-			nextContext := append(append([]string(nil), context...), strconv.Itoa(index))
-			if err := validateNativeStructuredJSONCredentials(child, nextContext); err != nil {
-				return err
 			}
 		}
 	}

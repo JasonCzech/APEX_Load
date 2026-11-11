@@ -1,7 +1,6 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -88,7 +87,7 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 	defer releaseAll()
 
 	for index, script := range scripts {
-		if !isCredentialPreservingImport(script) {
+		if !isCredentialPreservingImport(script) || (importDraftAttestationToken(script) == "" && !isJMeterBatchChildDraft(script)) {
 			continue
 		}
 		claim, err := s.claimImportDraftMutation(r, script)
@@ -131,14 +130,10 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		checkedFeatures[key] = struct{}{}
 	}
 
-	// Project before deriving instructions. A caller cannot smuggle an inline
-	// credential into a replacement, and when the exact draft was authenticated
-	// above the mutation lands on that draft so unrelated imported credentials
-	// stay byte-identical.
 	safeScripts := make([]*dsl.Script, len(scripts))
 	applyTargets := make([]*dsl.Script, len(scripts))
 	for index, script := range scripts {
-		safe := maskScriptSecrets(script)
+		safe := cloneScriptDefinition(script)
 		if safe == nil {
 			writeError(w, http.StatusBadRequest, "failed to project script for shared values")
 			return
@@ -147,7 +142,7 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		if claims[index] != nil {
 			applyTargets[index] = claims[index].Script
 		} else {
-			applyTargets[index] = safe
+			applyTargets[index] = cloneScriptDefinition(safe)
 		}
 	}
 
@@ -182,11 +177,6 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 
 	diffs, err := sharedvalue.Apply(applyTargets, trusted, req.Values)
 	if err != nil {
-		if errors.Is(err, sharedvalue.ErrCredentialShaped) {
-			writeError(w, http.StatusUnprocessableEntity,
-				"credential-shaped shared values must use guided credential bindings")
-			return
-		}
 		writeError(w, http.StatusUnprocessableEntity, "failed to apply shared values: "+err.Error())
 		return
 	}
@@ -210,7 +200,7 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 	// failure cannot leave half the batch rotated.
 	warnings := []string{}
 	for _, target := range applyTargets {
-		projected := maskScriptSecrets(target)
+		projected := cloneScriptDefinition(target)
 		if projected == nil {
 			writeError(w, http.StatusInternalServerError, "failed to project script after applying shared values")
 			return
@@ -218,20 +208,8 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 		warnings = append(warnings, validateScript(projected)...)
 	}
 
-	// Rotate the whole batch at once. Rotating per script in a loop would leave
-	// the drafts ahead of a mid-loop failure with their old capabilities
-	// consumed and their new ones only in the response we are about to discard,
-	// making those drafts unsaveable.
 	expiresAt, replacementsReady, rotateErr := s.completeImportDraftMutations(r, claims, applyTargets)
-	if rotateErr != nil && !replacementsReady {
-		writeScriptImportResponse(w, http.StatusServiceUnavailable, map[string]any{
-			"error":     "credential-preserving import draft could not be secured; retry the import",
-			"code":      "import_draft_attestation_unavailable",
-			"retryable": true,
-		})
-		return
-	}
-	if rotateErr != nil {
+	if rotateErr != nil && replacementsReady {
 		warnings = append(warnings, "Replacement import-draft capabilities were issued, but cleanup of one or more previous capabilities is still pending.")
 	}
 
@@ -241,8 +219,8 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 	expiries := make([]*time.Time, len(applyTargets))
 	haveExpiry := false
 	for index, target := range applyTargets {
-		responseScript := maskScriptSecrets(target)
-		if claims[index] != nil {
+		responseScript := cloneScriptDefinition(target)
+		if claims[index] != nil && replacementsReady {
 			claims[index] = nil
 			responseScript = maskImportDraftForResponse(target)
 			if !expiresAt[index].IsZero() {
@@ -250,6 +228,8 @@ func (s *Server) handleApplyImportSharedValues(w http.ResponseWriter, r *http.Re
 				expiries[index] = &stamp
 				haveExpiry = true
 			}
+		} else {
+			stripImportDraftAttestation(responseScript)
 		}
 		if responseScript == nil {
 			writeError(w, http.StatusInternalServerError, "failed to project script after applying shared values")

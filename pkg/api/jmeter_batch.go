@@ -27,6 +27,11 @@ const jmeterBatchReceiptProfile = "jmeter_batch_receipt_v1"
 const jmeterBatchMetadata = importreview.JmeterBatchMetadata
 const jmeterBatchOriginMetadata = "jmeter_batch_origin_v1"
 
+func isJMeterBatchChildDraft(script *dsl.Script) bool {
+	return script != nil && script.Metadata != nil && script.Metadata.Import != nil &&
+		script.Metadata.Import.Preserved != nil && script.Metadata.Import.Preserved[jmeterBatchMetadata] != nil
+}
+
 type jmeterBatchIdentity = importreview.JmeterBatchIdentity
 type jmeterBatchCandidate struct {
 	Identity     jmeterBatchIdentity    `json:"identity"`

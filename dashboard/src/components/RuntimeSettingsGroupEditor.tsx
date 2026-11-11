@@ -1074,7 +1074,7 @@ export default function RuntimeSettingsGroupEditor({
                   its literal credential values either way. */}
               <label className={`scenario-option-card ${effectiveLog.redact_run_evidence ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(effectiveLog.redact_run_evidence)} onChange={event => patchLog({ redact_run_evidence: event.target.checked })} />
-                <div><strong>Redact credentials in run evidence</strong><span>Redacts credential values from run logs, snapshots, reports, archives and debugger evidence. Does not change the script itself.</span></div>
+                <div><strong>Redact credentials in run evidence</strong><span>Redacts additional session and response evidence in run logs, snapshots, reports, archives and debugger output; project secrets and DSL credentials are always redacted. Does not change the script itself.</span></div>
               </label>
               <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
                 <input type="checkbox" checked={Boolean(effectiveLog.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />

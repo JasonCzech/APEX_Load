@@ -556,7 +556,7 @@ http:
 		t.Fatalf("native result = %#v", result.Scripts)
 	}
 
-	_, err = Inspect(Input{
+	activeResult, err := Inspect(Input{
 		Filename: "request.yml",
 		Content: []byte(`info: {name: Active, uid: active, type: http}
 variables:
@@ -567,8 +567,11 @@ http:
 `),
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
-	if err == nil || !strings.Contains(err.Error(), "effective variable") {
+	if err != nil {
 		t.Fatalf("active non-string credential error = %v", err)
+	}
+	if got := activeResult.Scripts[0].Script.Actions[0].Target; got != "https://example.test/12345" {
+		t.Fatalf("active non-string credential target = %q, want https://example.test/12345", got)
 	}
 }
 
@@ -964,10 +967,9 @@ func TestInspectNativeCredentialVariablesPreserveSecretSourceAndIndirection(t *t
 		forbiddenPayload string
 	}{
 		{
-			name:             "literal is scrubbed and migratable",
-			variableValue:    "source-password-value",
-			wantSourceValue:  "source-password-value",
-			forbiddenPayload: "source-password-value",
+			name:          "literal variable resolves directly without secret requirement",
+			variableValue: "source-password-value",
+			wantPassword:  "source-password-value",
 		},
 		{
 			name:          "existing secret indirection is preserved",
@@ -999,37 +1001,18 @@ http:
 			}
 			candidate := result.Scripts[0]
 			password := candidate.Script.Actions[0].Auth.Password
-			if test.wantPassword != "" && password != test.wantPassword {
+			if password != test.wantPassword {
 				t.Fatalf("password = %q, want %q", password, test.wantPassword)
 			}
-			// A readable name such as PASSWORD is fine here: the import API
-			// numbers it past any secret the project already holds for
-			// something else (TestBrunoNativeSecretNamesAvoidUnrelatedProjectSecrets).
-			if test.wantPassword == "" && password != "{{secret.PASSWORD}}" {
-				t.Fatalf("credential definition = %q, want its readable name", password)
-			}
-			if test.wantSourceValue != "" {
-				found := false
-				for _, requirement := range candidate.SecretRequirements {
-					if requirement.Replacement == password && requirement.Value == test.wantSourceValue {
-						found = true
-					}
-				}
-				if !found {
-					t.Fatalf("migratable requirement for %q not found: %#v", password, candidate.SecretRequirements)
-				}
-			}
-			if test.forbiddenPayload != "" {
-				sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-				if bytes.Contains(sanitized, []byte(test.forbiddenPayload)) {
-					t.Fatalf("sanitized source retained credential %q:\n%s", test.forbiddenPayload, sanitized)
-				}
+			sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
+			if !bytes.Contains(sanitized, []byte(test.variableValue)) {
+				t.Fatalf("archived source did not preserve %q:\n%s", test.variableValue, sanitized)
 			}
 		})
 	}
 }
 
-func TestInspectNativeScrubsGenericCredentialVariableAtItsEffectiveDefinition(t *testing.T) {
+func TestInspectNativeResolvesGenericCredentialVariableAtItsEffectiveDefinition(t *testing.T) {
 	const sourceValue = "generic-credential-source-value"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
@@ -1051,28 +1034,15 @@ http:
 		t.Fatal(err)
 	}
 	candidate := result.Scripts[0]
-	password := candidate.Script.Actions[0].Auth.Password
-	// The definition's own name, readable: a generated requirement, not the raw {{cred}}.
-	if password != "{{secret.CRED}}" {
-		t.Fatalf("governed credential replacement = %q", password)
+	if got := candidate.Script.Actions[0].Auth.Password; got != sourceValue {
+		t.Fatalf("resolved credential = %q, want %q", got, sourceValue)
 	}
-	var requirement *SecretRequirement
-	for index := range candidate.SecretRequirements {
-		current := &candidate.SecretRequirements[index]
-		if current.Replacement == password {
-			requirement = current
-			break
-		}
-	}
-	if requirement == nil || requirement.Value != sourceValue ||
-		requirement.Path != "request.yml" ||
-		!strings.HasPrefix(requirement.Key, nativeVariableRequirementKeyPrefix) {
-		t.Fatalf("governed source requirement = %#v", requirement)
+	if len(candidate.SecretRequirements) != 0 {
+		t.Fatalf("unexpected secret requirements = %#v", candidate.SecretRequirements)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	if bytes.Contains(sanitized, []byte(sourceValue)) ||
-		!bytes.Contains(sanitized, []byte(requirement.Replacement)) {
-		t.Fatalf("generic credential definition was not scrubbed:\n%s", sanitized)
+	if !bytes.Contains(sanitized, []byte(sourceValue)) {
+		t.Fatalf("archived source did not preserve %q:\n%s", sourceValue, sanitized)
 	}
 	if raw := tarFile(t, result.RawArchive, "request.yml"); !bytes.Contains(raw, []byte(sourceValue)) {
 		t.Fatalf("raw evidence unexpectedly changed:\n%s", raw)
@@ -1080,7 +1050,7 @@ http:
 }
 
 func TestInspectNativeCredentialDefinitionIdentityControlsSecretSharing(t *testing.T) {
-	t.Run("request-local definitions stay distinct", func(t *testing.T) {
+	t.Run("request-local definitions resolve independently", func(t *testing.T) {
 		result, err := Inspect(Input{
 			Files: map[string][]byte{
 				"demo/opencollection.yml": []byte("info: {name: Demo}\n"),
@@ -1109,29 +1079,23 @@ http:
 		}
 		firstPassword := result.Scripts[0].Script.Actions[0].Auth.Password
 		secondPassword := result.Scripts[1].Script.Actions[0].Auth.Password
-		if firstPassword == secondPassword {
-			t.Fatalf("request-local credentials shared logical secret %q", firstPassword)
+		if firstPassword != "request-a-secret" || secondPassword != "request-b-secret" {
+			t.Fatalf("request-local credentials = %q / %q", firstPassword, secondPassword)
 		}
-		values := map[string]string{}
-		for _, requirement := range result.SecretRequirements {
-			if strings.HasPrefix(requirement.Key, nativeVariableRequirementKeyPrefix) {
-				values[requirement.Replacement] = requirement.Value
-			}
-		}
-		if values[firstPassword] != "request-a-secret" || values[secondPassword] != "request-b-secret" {
-			t.Fatalf("request-local requirements = %#v", result.SecretRequirements)
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("unexpected secret requirements = %#v", result.SecretRequirements)
 		}
 		for path, secret := range map[string]string{
 			"demo/a.yml":  "request-a-secret",
 			"demo/b.yaml": "request-b-secret",
 		} {
-			if sanitized := tarFile(t, result.SanitizedArchive, path); bytes.Contains(sanitized, []byte(secret)) {
-				t.Fatalf("%s retained %q:\n%s", path, secret, sanitized)
+			if sanitized := tarFile(t, result.SanitizedArchive, path); !bytes.Contains(sanitized, []byte(secret)) {
+				t.Fatalf("%s did not preserve %q:\n%s", path, secret, sanitized)
 			}
 		}
 	})
 
-	t.Run("shared ancestor definition stays shared", func(t *testing.T) {
+	t.Run("shared ancestor definition resolves identically across requests", func(t *testing.T) {
 		result, err := Inspect(Input{
 			Files: map[string][]byte{
 				"demo/opencollection.yml": []byte(`info: {name: Demo}
@@ -1158,24 +1122,15 @@ http:
 		}
 		firstPassword := result.Scripts[0].Script.Actions[0].Auth.Password
 		secondPassword := result.Scripts[1].Script.Actions[0].Auth.Password
-		if firstPassword == "" || firstPassword != secondPassword {
-			t.Fatalf("shared ancestor replacements = %q / %q", firstPassword, secondPassword)
+		if firstPassword != "shared-ancestor-secret" || secondPassword != "shared-ancestor-secret" {
+			t.Fatalf("shared ancestor passwords = %q / %q", firstPassword, secondPassword)
 		}
-		projected := 0
-		for _, requirement := range result.SecretRequirements {
-			if strings.HasPrefix(requirement.Key, nativeVariableRequirementKeyPrefix) {
-				projected++
-				if requirement.Value != "shared-ancestor-secret" {
-					t.Fatalf("shared requirement = %#v", requirement)
-				}
-			}
-		}
-		if projected != 1 {
-			t.Fatalf("projected shared requirements = %d: %#v", projected, result.SecretRequirements)
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("unexpected shared requirements = %#v", result.SecretRequirements)
 		}
 	})
 
-	t.Run("shadowed ancestor definition stays excluded", func(t *testing.T) {
+	t.Run("shadowed ancestor definition uses request-local override", func(t *testing.T) {
 		result, err := Inspect(Input{
 			Files: map[string][]byte{
 				"demo/opencollection.yml": []byte(`info: {name: Demo}
@@ -1195,19 +1150,11 @@ http:
 		if err != nil {
 			t.Fatal(err)
 		}
-		projected := make([]SecretRequirement, 0)
-		for _, requirement := range result.SecretRequirements {
-			if strings.HasPrefix(requirement.Key, nativeVariableRequirementKeyPrefix) {
-				projected = append(projected, requirement)
-			}
+		if got := result.Scripts[0].Script.Actions[0].Auth.Password; got != "active-request-value" {
+			t.Fatalf("shadowed ancestor credential = %q, want active-request-value", got)
 		}
-		if len(projected) != 1 ||
-			projected[0].Path != "demo/request.yml" ||
-			projected[0].Value != "active-request-value" {
-			t.Fatalf("shadowed requirement leaked into executable candidates: %#v", projected)
-		}
-		if strings.Contains(result.Scripts[0].Script.Actions[0].Auth.Password, "OPENCOLLECTION") {
-			t.Fatalf("shadowed ancestor credential executed: %#v", result.Scripts[0].Script.Actions[0].Auth)
+		if len(result.SecretRequirements) != 0 {
+			t.Fatalf("unexpected requirements = %#v", result.SecretRequirements)
 		}
 	})
 }
@@ -1785,4 +1732,385 @@ func hasNativeDiagnostic(diagnostics []NativeDiagnostic, code string) bool {
 		}
 	}
 	return false
+}
+
+func TestInspectNativeResolvesNonSecretYAMLEnvAndBruVarsInCredentialContextsOnly(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		envPath string
+		envBody string
+	}{
+		{
+			name:    "yaml_environment_without_secret_flag",
+			envPath: "environments/prod.yml",
+			envBody: "name: prod\nvariables:\n" +
+				"  - name: baseHost\n    value: api.example.test\n" +
+				"  - name: bearerTok\n    value: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.synth\n" +
+				"  - name: queryApiKey\n    value: sk-live-synth-999\n" +
+				"  - name: bodyPass\n    value: S3cr3t!Pass\n",
+		},
+		{
+			name:    "bru_environment_vars_block",
+			envPath: "environments/prod.bru",
+			envBody: "vars {\n" +
+				"  baseHost: api.example.test\n" +
+				"  bearerTok: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.synth\n" +
+				"  queryApiKey: sk-live-synth-999\n" +
+				"  bodyPass: S3cr3t!Pass\n" +
+				"}\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				ProjectID: "project-a",
+				Files: map[string][]byte{
+					"opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Env Creds, uid: env-creds}\n"),
+					tc.envPath:           []byte(tc.envBody),
+					"requests/login.yml": []byte(`info: {name: Login, uid: req-1, type: http, seq: 1}
+http:
+  method: POST
+  url: https://{{baseHost}}/v1/login?api_key={{queryApiKey}}
+  headers:
+    - {name: Authorization, value: "Bearer {{bearerTok}}"}
+    - {name: Content-Type, value: application/json}
+  body:
+    type: json
+    data: '{"username":"alice","password":"{{bodyPass}}"}'
+`),
+				},
+				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatalf("Inspect: %v", err)
+			}
+			if len(result.Scripts) != 1 {
+				t.Fatalf("scripts = %d, want 1", len(result.Scripts))
+			}
+			cand := result.Scripts[0]
+			act := cand.Script.Actions[0]
+			if act.Target != "https://{{var.baseHost}}/v1/login?api_key=sk-live-synth-999" {
+				t.Fatalf("target = %q, want baseHost kept as {{var.baseHost}} and api_key resolved", act.Target)
+			}
+			if got := act.Headers["Authorization"]; got != "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.synth" {
+				t.Fatalf("Authorization = %q, want resolved literal bearer token", got)
+			}
+			if !strings.Contains(act.Body, `"password":"S3cr3t!Pass"`) {
+				t.Fatalf("body = %q, want resolved literal JSON password", act.Body)
+			}
+			if len(cand.SecretRequirements) != 0 || len(result.SecretRequirements) != 0 {
+				t.Fatalf("unexpected secret requirements: cand=%#v result=%#v", cand.SecretRequirements, result.SecretRequirements)
+			}
+			if hasNativeDiagnostic(cand.Diagnostics, "bruno_sensitive_header_resolution_review_required") {
+				t.Fatalf("unexpected sensitive header review diagnostic: %#v", cand.Diagnostics)
+			}
+			if promo, _ := act.Metadata["promotion_blocker"].(bool); promo {
+				t.Fatalf("unexpected promotion_blocker on resolved credential templates: %#v", act.Metadata)
+			}
+			if len(cand.MissingVariables) != 1 || cand.MissingVariables[0] != "baseHost" {
+				t.Fatalf("missing variables = %#v, want [baseHost] so environment selection remains available", cand.MissingVariables)
+			}
+		})
+	}
+}
+
+func TestInspectNativeResolvesCompoundCredentialShapedQuotedBruAndMapFormEnvironments(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		envPath string
+		envBody string
+	}{
+		{
+			name:    "quoted_bru_environment_vars",
+			envPath: "environments/prod.bru",
+			envBody: "vars {\n" +
+				"  baseHost: \"api.example.test\"\n" +
+				"  sessionToken: \"sess:123\"\n" +
+				"  myApiToken: 'tok:456'\n" +
+				"  id_token: \"jwt.789.synth\"\n" +
+				"  userSessionId: 'usid-001'\n" +
+				"}\n",
+		},
+		{
+			name:    "mapping_form_yaml_environment_variables",
+			envPath: "environments/prod.yml",
+			envBody: "name: prod\nvariables:\n" +
+				"  baseHost: api.example.test\n" +
+				"  sessionToken: sess:123\n" +
+				"  myApiToken: tok:456\n" +
+				"  id_token:\n" +
+				"    value: jwt.789.synth\n" +
+				"    secret: true\n" +
+				"  userSessionId: usid-001\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := Inspect(Input{
+				ProjectID: "project-a",
+				Files: map[string][]byte{
+					"opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Compound Env, uid: comp-env}\n"),
+					tc.envPath:           []byte(tc.envBody),
+					"requests/call.yml": []byte(`info: {name: Call, uid: req-1, type: http, seq: 1}
+http:
+  method: POST
+  url: https://{{baseHost}}/v1/s/{{sessionToken}}
+  headers:
+    - {name: X-Client-Trace, value: "{{myApiToken}}"}
+    - {name: Content-Type, value: application/json}
+  body:
+    type: json
+    data: '{"jwt":"{{id_token}}","sid":"{{userSessionId}}"}'
+`),
+				},
+				Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+			})
+			if err != nil {
+				t.Fatalf("Inspect: %v", err)
+			}
+			if len(result.Environments) != 1 {
+				t.Fatalf("environments = %d, want 1", len(result.Environments))
+			}
+			if got := result.Environments[0].Values["baseHost"]; got != "api.example.test" {
+				t.Fatalf("environment baseHost = %q, want unquoted api.example.test", got)
+			}
+			if got := result.Environments[0].Values["sessionToken"]; got != "sess:123" {
+				t.Fatalf("environment sessionToken = %q, want unquoted sess:123", got)
+			}
+			cand := result.Scripts[0]
+			act := cand.Script.Actions[0]
+			if act.Target != "https://{{var.baseHost}}/v1/s/sess:123" {
+				t.Fatalf("target = %q, want sessionToken resolved without quotes and baseHost kept as {{var.baseHost}}", act.Target)
+			}
+			if got := act.Headers["X-Client-Trace"]; got != "tok:456" {
+				t.Fatalf("X-Client-Trace = %q, want unquoted tok:456", got)
+			}
+			if !strings.Contains(act.Body, `"jwt":"jwt.789.synth"`) || !strings.Contains(act.Body, `"sid":"usid-001"`) {
+				t.Fatalf("body = %q, want resolved id_token and userSessionId", act.Body)
+			}
+			if len(cand.MissingVariables) != 1 || cand.MissingVariables[0] != "baseHost" {
+				t.Fatalf("missing variables = %#v, want only [baseHost]", cand.MissingVariables)
+			}
+			if len(cand.SecretRequirements) != 0 || len(result.SecretRequirements) != 0 {
+				t.Fatalf("unexpected secret requirements: cand=%#v result=%#v", cand.SecretRequirements, result.SecretRequirements)
+			}
+		})
+	}
+}
+
+func TestInspectNativePreservesNamespacedRuntimeTemplatesAndNonCredentialTokenWords(t *testing.T) {
+	t.Run("namespaced_runtime_templates_without_secret_or_promotion_blocker", func(t *testing.T) {
+		result, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Runtime Namespaces, uid: rt-ns}\n"),
+				"requests/call.yml": []byte(`info: {name: Call, uid: req-1, type: http, seq: 1}
+http:
+  method: POST
+  url: "https://api.example.test/v1/items"
+  headers:
+    - {name: X-Trace-Context, value: "{{var.session_cookie}}"}
+    - {name: X-Request-Cursor, value: "{{param.pageToken}}"}
+    - {name: X-Upstream-Endpoint, value: "{{env.TOKEN_URL}}"}
+    - {name: Content-Type, value: application/json}
+  body:
+    type: json
+    data: '{"actor":"{{data.users.api_token}}"}'
+`),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		cand := result.Scripts[0]
+		act := cand.Script.Actions[0]
+		if got := act.Headers["X-Trace-Context"]; got != "{{var.session_cookie}}" {
+			t.Fatalf("X-Trace-Context = %q, want {{var.session_cookie}}", got)
+		}
+		if got := act.Headers["X-Request-Cursor"]; got != "{{param.pageToken}}" {
+			t.Fatalf("X-Request-Cursor = %q, want {{param.pageToken}}", got)
+		}
+		if got := act.Headers["X-Upstream-Endpoint"]; got != "{{env.TOKEN_URL}}" {
+			t.Fatalf("X-Upstream-Endpoint = %q, want {{env.TOKEN_URL}}", got)
+		}
+		if !strings.Contains(act.Body, `"actor":"{{data.users.api_token}}"`) {
+			t.Fatalf("body = %q, want {{data.users.api_token}} preserved", act.Body)
+		}
+		if len(cand.SecretRequirements) != 0 || len(result.SecretRequirements) != 0 {
+			t.Fatalf("unexpected secret requirements: cand=%#v result=%#v", cand.SecretRequirements, result.SecretRequirements)
+		}
+		if promo, _ := act.Metadata["promotion_blocker"].(bool); promo {
+			t.Fatalf("unexpected promotion_blocker: %#v", act.Metadata)
+		}
+	})
+
+	t.Run("multi_env_non_credential_token_words_stay_missing_variables_not_secrets", func(t *testing.T) {
+		result, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Multi Env Words, uid: me-words}\n"),
+				"environments/dev.yml": []byte("name: dev\nvariables:\n" +
+					"  tokenUrl: https://dev.idp.example.test/oauth/token\n" +
+					"  tokenType: Bearer\n" +
+					"  maxTokens: 256\n" +
+					"  sharedAccessKeyName: SendPolicy\n"),
+				"environments/prod.yml": []byte("name: prod\nvariables:\n" +
+					"  tokenUrl: https://prod.idp.example.test/oauth/token\n" +
+					"  tokenType: Bearer\n" +
+					"  maxTokens: 512\n" +
+					"  sharedAccessKeyName: ProdSendPolicy\n"),
+				"requests/call.yml": []byte(`info: {name: Call, uid: req-1, type: http, seq: 1}
+http:
+  method: POST
+  url: "https://api.example.test/v1/items?endpoint={{tokenUrl}}&policy={{sharedAccessKeyName}}"
+  headers:
+    - {name: X-Token-Kind, value: "{{tokenType}}"}
+    - {name: Content-Type, value: application/json}
+  body:
+    type: json
+    data: '{"max_tokens":"{{maxTokens}}","kind":"{{tokenType}}"}'
+`),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		cand := result.Scripts[0]
+		act := cand.Script.Actions[0]
+		wantTarget := "https://api.example.test/v1/items?endpoint={{var.tokenUrl}}&policy={{var.sharedAccessKeyName}}"
+		if act.Target != wantTarget {
+			t.Fatalf("target = %q, want %q", act.Target, wantTarget)
+		}
+		if !strings.Contains(act.Body, `"max_tokens":"{{var.maxTokens}}"`) ||
+			!strings.Contains(act.Body, `"kind":"{{var.tokenType}}"`) {
+			t.Fatalf("body = %q, want {{var.maxTokens}} and {{var.tokenType}} preserved for SharedValues selection", act.Body)
+		}
+		if len(cand.SecretRequirements) != 0 || len(result.SecretRequirements) != 0 {
+			t.Fatalf("unexpected secret requirements: cand=%#v result=%#v", cand.SecretRequirements, result.SecretRequirements)
+		}
+		if hasNativeDiagnostic(cand.Diagnostics, "bruno_url_secret_encoding_review_required") ||
+			hasNativeDiagnostic(cand.Diagnostics, "bruno_json_secret_escaping_review_required") {
+			t.Fatalf("unexpected secret review diagnostics: %#v", cand.Diagnostics)
+		}
+	})
+}
+
+func TestBrunoEnvironmentVarsSecretAndMultiEnvConflicts(t *testing.T) {
+	t.Run("bru_vars_secret_block_resolves_literal_and_populates_environment_option", func(t *testing.T) {
+		result, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml":    []byte("opencollection: 1.0.0\ninfo: {name: Bru Secret Env, uid: bru-sec-1}\n"),
+				"environments/prod.bru": []byte("vars {\n  apiHost: https://api.example.test\n}\nvars:secret {\n  apiToken: bru-secret-literal-123\n}\n"),
+				"requests/call.yml":     []byte("info: {name: Call, uid: req-1, type: http, seq: 1}\nhttp:\n  method: GET\n  url: https://api.example.test/v1/items\n  headers:\n    - {name: Authorization, value: \"Bearer {{apiToken}}\"}\n"),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		if len(result.Environments) != 1 || result.Environments[0].Values["apiToken"] != "bru-secret-literal-123" {
+			t.Fatalf("Environments = %#v, want prod.bru vars:secret apiToken populated", result.Environments)
+		}
+		act := result.Scripts[0].Script.Actions[0]
+		if got := act.Headers["Authorization"]; got != "Bearer bru-secret-literal-123" {
+			t.Fatalf("Authorization = %q, want Bearer bru-secret-literal-123", got)
+		}
+		if promo, _ := act.Metadata["promotion_blocker"].(bool); promo {
+			t.Fatalf("unexpected promotion_blocker: %#v", act.Metadata)
+		}
+	})
+
+	t.Run("asymmetric_secret_flag_and_dotenv_do_not_bypass_multi_env_conflict", func(t *testing.T) {
+		result, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml": []byte("opencollection: 1.0.0\ninfo: {name: Asymmetric Conflict, uid: asym-1}\n"),
+				".env":               []byte("apiToken=dotenv-fallback-token\n"),
+				"environments/dev.yml": []byte("name: dev\nvariables:\n" +
+					"  - {name: apiToken, value: dev-secret-token, secret: true}\n"),
+				"environments/prod.yml": []byte("name: prod\nvariables:\n" +
+					"  apiToken: prod-plain-token\n"),
+				"requests/call.yml": []byte("info: {name: Call, uid: req-1, type: http, seq: 1}\nhttp:\n  method: GET\n  url: https://api.example.test/v1/items\n  headers:\n    - {name: X-Custom-Key, value: \"{{apiToken}}\"}\n"),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		act := result.Scripts[0].Script.Actions[0]
+		if got := act.Headers["X-Custom-Key"]; got == "dev-secret-token" || got == "dotenv-fallback-token" || got == "prod-plain-token" {
+			t.Fatalf("conflicted multi-env apiToken silently resolved to %q instead of requiring environment selection", got)
+		}
+	})
+
+	t.Run("conflicting_multiple_dotenv_files_do_not_silently_pick_last_file", func(t *testing.T) {
+		result, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml":   []byte("opencollection: 1.0.0\ninfo: {name: Multi DotEnv, uid: mde-1}\n"),
+				"environments/dev.env": []byte("SERVICE_KEY=dev-env-key\n"),
+				"environments/prd.env": []byte("SERVICE_KEY=prd-env-key\n"),
+				"requests/call.yml":    []byte("info: {name: Call, uid: req-1, type: http, seq: 1}\nhttp:\n  method: GET\n  url: https://api.example.test/v1/items\n  headers:\n    - {name: X-Service, value: \"{{process.env.SERVICE_KEY}}\"}\n"),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect: %v", err)
+		}
+		act := result.Scripts[0].Script.Actions[0]
+		if got := act.Headers["X-Service"]; got == "dev-env-key" || got == "prd-env-key" {
+			t.Fatalf("conflicting .env files silently resolved process.env.SERVICE_KEY to %q", got)
+		}
+	})
+
+	t.Run("bru_vars_with_inner_braces_before_secrets_preserve_values_and_detect_multi_env_conflict", func(t *testing.T) {
+		prodBru := []byte("vars {\n  url: https://{{host}}/v1\n  password: \"p}w\"\n  _token: under-secret\n  auth.token: dot-secret\n}\nvars:secret {\n  authHeader: Bearer {{rawToken}}\n  rawToken: literal-secret-123\n}\n")
+		gotNames := environmentVariableNames(prodBru, ".bru")
+		wantNames := []string{"_token", "auth.token", "authHeader", "password", "rawToken", "url"}
+		if strings.Join(gotNames, ",") != strings.Join(wantNames, ",") {
+			t.Fatalf("environmentVariableNames = %v, want %v", gotNames, wantNames)
+		}
+
+		singleEnv, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml":    []byte("opencollection: 1.0.0\ninfo: {name: Bru Braces, uid: bru-brace-1}\n"),
+				"environments/prod.bru": prodBru,
+				"requests/call.yml":     []byte("info: {name: Call, uid: req-1, type: http, seq: 1}\nhttp:\n  method: POST\n  url: https://api.example.test/v1/login\n  headers:\n    - {name: Authorization, value: \"Bearer {{rawToken}}\"}\n    - {name: X-API-Key, value: \"{{_token}}\"}\n    - {name: X-Auth-Token, value: \"{{auth.token}}\"}\n  body:\n    type: json\n    data: '{\"password\":\"{{password}}\"}'\n"),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect single bru env: %v", err)
+		}
+		if len(singleEnv.MissingVariables) != 0 {
+			t.Fatalf("MissingVariables = %v, want none after resolving braced/secret bru vars", singleEnv.MissingVariables)
+		}
+		act := singleEnv.Scripts[0].Script.Actions[0]
+		if act.Headers["Authorization"] != "Bearer literal-secret-123" ||
+			act.Headers["X-API-Key"] != "under-secret" ||
+			act.Headers["X-Auth-Token"] != "dot-secret" ||
+			!strings.Contains(act.Body, `"password":"p}w"`) {
+			t.Fatalf("bru braced env variables were truncated or dropped: headers=%#v body=%q", act.Headers, act.Body)
+		}
+
+		conflictEnv, err := Inspect(Input{
+			ProjectID: "project-a",
+			Files: map[string][]byte{
+				"opencollection.yml":    []byte("opencollection: 1.0.0\ninfo: {name: Bru Multi Conflict, uid: bru-mc-1}\n"),
+				"environments/dev.bru":  []byte("vars:secret {\n  apiToken: dev-tok\n}\n"),
+				"environments/prod.bru": []byte("vars {\n  url: https://{{host}}/v1\n  apiToken: prod-tok\n}\n"),
+				"requests/call.yml":     []byte("info: {name: Call, uid: req-1, type: http, seq: 1}\nhttp:\n  method: GET\n  url: https://api.example.test/v1/items\n  headers:\n    - {name: X-Custom-Key, value: \"{{apiToken}}\"}\n"),
+			},
+			Options: InspectOptions{OutputMode: OutputModeNativeRequests},
+		})
+		if err != nil {
+			t.Fatalf("Inspect multi bru conflict: %v", err)
+		}
+		conflictAct := conflictEnv.Scripts[0].Script.Actions[0]
+		if got := conflictAct.Headers["X-Custom-Key"]; got == "dev-tok" || got == "prod-tok" {
+			t.Fatalf("multi-env .bru conflict after {{host}} silently baked %q", got)
+		}
+	})
 }

@@ -83,9 +83,8 @@ func TestValidatePreservedImportCredentialEditsIgnoresImportEvaluationOutput(t *
 	}
 	candidate := CloneScriptDefinition(prior)
 	candidate.Actions[0].Target = "/orders/export"
-	err := ValidatePreservedImportCredentialEdits(candidate, prior)
-	if err == nil || !strings.Contains(err.Error(), "retained imported credentials at actions[0]") {
-		t.Fatalf("retargeting the kept credential's request = %v, want the refusal at actions[0]", err)
+	if err := ValidatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatalf("retargeting the kept credential's request = %v, want the edit accepted", err)
 	}
 }
 

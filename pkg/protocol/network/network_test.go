@@ -3,6 +3,8 @@ package network
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net"
 	"strings"
@@ -456,5 +458,75 @@ func TestNetworkProtocolAssertionFailureCapturesEvidence(t *testing.T) {
 	}
 	if records, ok := result.ProtocolEvidence["records"].(map[string]any); !ok || records["record_count"] == nil {
 		t.Fatalf("protocol records = %#v, want record_count", result.ProtocolEvidence["records"])
+	}
+}
+
+func TestNetworkSMTPSASLBase64AuthEchoRedactedInResponseAndErrors(t *testing.T) {
+	const (
+		smtpUser = "mailer@example.test"
+		smtpPwd  = "synth-smtp-wire-pwd-9501"
+	)
+	authPlain := base64.StdEncoding.EncodeToString([]byte("\x00" + smtpUser + "\x00" + smtpPwd))
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer listener.Close()
+
+	go func() {
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		defer conn.Close()
+		_, _ = conn.Write([]byte("220 smtp.example.test ESMTP\r\n"))
+		buf := make([]byte, 1024)
+		// EHLO
+		_, _ = conn.Read(buf)
+		_, _ = conn.Write([]byte("250-smtp.example.test\r\n250 AUTH PLAIN\r\n"))
+		// AUTH PLAIN
+		_, _ = conn.Read(buf)
+		_, _ = conn.Write([]byte("535 5.7.8 rejected credential " + authPlain + " and " + smtpPwd + "\r\n"))
+	}()
+
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{
+		"network_timeout_ms": float64(2000),
+		"network_username":   smtpUser,
+		"network_password":   smtpPwd,
+		"network_from":       smtpUser,
+		"network_to":         []any{"dest@example.test"},
+	}); err != nil {
+		t.Fatalf("init network: %v", err)
+	}
+	const dynSecret = "synth-net-redactor-secret-9502"
+	netProto.SetRuntimeTextRedactor(func(s string) string {
+		return strings.ReplaceAll(s, dynSecret, "[REDACTED]")
+	})
+	result, err := netProto.Execute(context.Background(), &protocol.Action{
+		Name:    "smtp-auth-echo",
+		Type:    "smtp_send",
+		Target:  listener.Addr().String(),
+		Headers: map[string]string{"X-AccPassword": "short-net-hdr-pwd", "X-Trace": dynSecret},
+		Params: map[string]any{
+			"tags": map[string]string{
+				"password": "short-net-param-pwd",
+				"trace":    dynSecret,
+				"smtp":     smtpPwd,
+				"env":      "staging",
+			},
+		},
+		Body: []byte("hello " + smtpPwd + " " + dynSecret),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	snapJSON, _ := json.Marshal(result.Snapshot)
+	evJSON, _ := json.Marshal(result.ProtocolEvidence)
+	for _, secret := range []string{smtpPwd, authPlain, dynSecret, "short-net-hdr-pwd", "short-net-param-pwd"} {
+		if strings.Contains(result.ResponseBody, secret) || strings.Contains(result.ErrorMessage, secret) || strings.Contains(string(snapJSON), secret) || strings.Contains(string(evJSON), secret) {
+			t.Fatalf("SMTP response/error/snapshot leaked %q: body=%q err=%q snap=%s ev=%s", secret, result.ResponseBody, result.ErrorMessage, snapJSON, evJSON)
+		}
 	}
 }

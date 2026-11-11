@@ -75,6 +75,17 @@ func importExecutionGateError(script *dsl.Script, operation string) error {
 	return fmt.Errorf("script %s is blocked: %s", operation, strings.Join(issues, "; "))
 }
 
+func nonBlockingCredentialExecutionCode(code string) bool {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "import_credentials_unmanaged",
+		"import_credential_preserved",
+		"import_credential_review_incomplete":
+		return true
+	default:
+		return false
+	}
+}
+
 func executionBlockerCodes(metadata map[string]any) []string {
 	if len(metadata) == 0 {
 		return nil
@@ -82,9 +93,10 @@ func executionBlockerCodes(metadata map[string]any) []string {
 	seen := make(map[string]struct{})
 	add := func(value string) {
 		value = strings.TrimSpace(value)
-		// Advisory callouts (encrypted_proxy_password) never block, including
-		// on scripts stored while they were still written as blockers.
-		if value != "" && !dsl.AdvisoryExecutionBlockerCode(value) {
+		// Advisory callouts (encrypted_proxy_password) and preserved literal
+		// credential markers never block execution; runtime output redaction
+		// scrubs literal credentials unconditionally.
+		if value != "" && !dsl.AdvisoryExecutionBlockerCode(value) && !nonBlockingCredentialExecutionCode(value) {
 			seen[value] = struct{}{}
 		}
 	}

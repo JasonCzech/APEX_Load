@@ -155,7 +155,7 @@ func TestConvertJMXPreservesCredentialsInActionReviewMetadata(t *testing.T) {
 	}
 }
 
-func TestSanitizeJMeterResultReviewTextUsesExecutableCredentialSource(t *testing.T) {
+func TestSanitizeJMeterResultReviewTextPreservesReviewTextVerbatim(t *testing.T) {
 	const password = "jmeter-review-label-canary-a124"
 	result := &ConvertResult{
 		Scripts: []*dsl.Script{{
@@ -191,15 +191,15 @@ func TestSanitizeJMeterResultReviewTextUsesExecutableCredentialSource(t *testing
 	if err != nil {
 		t.Fatalf("json.Marshal() error = %v", err)
 	}
-	if strings.Contains(string(payload), password) {
-		t.Fatalf("projected review response retained credential: %s", payload)
+	if !strings.Contains(string(payload), password) {
+		t.Fatalf("review response lost authored text: %s", payload)
 	}
 	if result.Scripts[0].Config.HTTP.Auth.Password != password {
 		t.Fatalf("review projection changed executable password to %q", result.Scripts[0].Config.HTTP.Auth.Password)
 	}
 }
 
-func TestSanitizeDisplayLabelsPreservesCredentialEqualToRedactionSentinel(t *testing.T) {
+func TestSanitizeDisplayLabelsPreservesCredentialAndSentinelLabels(t *testing.T) {
 	script := &dsl.Script{
 		Name:     credential.Redacted,
 		Protocol: "http",
@@ -234,8 +234,8 @@ func TestSanitizeDisplayLabelsPreservesCredentialEqualToRedactionSentinel(t *tes
 		draft.Groups[0].Name,
 		draft.Groups[0].ScriptName,
 	} {
-		if label == credential.Redacted {
-			t.Fatalf("credential-valued display label was not replaced: %q", label)
+		if label != credential.Redacted {
+			t.Fatalf("authored display label was unexpectedly altered: %q", label)
 		}
 	}
 	if draft.Groups[0].ScriptName != script.Name {

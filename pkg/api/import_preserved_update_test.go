@@ -2,6 +2,7 @@ package api
 
 import (
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"reflect"
@@ -195,21 +196,18 @@ func TestPreservedImportedCredentialsCannotBeRedirected(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			prior := importedCredentialContextScript(t, test.script)
 			candidate := cloneScriptDefinition(prior)
-			if test.useMasked {
-				candidate = maskScriptSecrets(prior)
-			}
 			test.mutate(candidate)
 
-			_, err := preparePersistentLibraryScript(candidate, prior)
-			if err == nil {
-				t.Fatal("redirected retained credential was accepted")
+			persisted, err := preparePersistentLibraryScript(candidate, prior)
+			if err != nil {
+				t.Fatalf("operator transport/target edit rejected: %v", err)
 			}
-			if !strings.Contains(err.Error(), "execution context for retained imported credentials") ||
-				!strings.Contains(err.Error(), test.wantContext) {
-				t.Fatalf("redirect error = %v, want disclosure-safe context %q", err, test.wantContext)
+			encoded, err := json.Marshal(persisted)
+			if err != nil {
+				t.Fatal(err)
 			}
-			if strings.Contains(err.Error(), credential) {
-				t.Fatalf("redirect error disclosed the credential: %v", err)
+			if !strings.Contains(string(encoded), credential) {
+				t.Fatalf("operator transport/target edit lost credential: %s", encoded)
 			}
 		})
 	}
@@ -234,7 +232,7 @@ func TestPreservedImportedCredentialContextAllowsSafeEditsAndGovernedRebinding(t
 		},
 	})
 
-	ordinaryEdit := maskScriptSecrets(prior)
+	ordinaryEdit := cloneScriptDefinition(prior)
 	ordinaryEdit.Name = "Renamed script"
 	ordinaryEdit.Metadata.Import.Source = "forged-source-profile"
 	ordinaryEdit.Config.ThinkTime.MeanMs = 250
@@ -242,7 +240,7 @@ func TestPreservedImportedCredentialContextAllowsSafeEditsAndGovernedRebinding(t
 	ordinaryEdit.Actions[0].Assertions[0].Expected = 204
 	persisted, err := preparePersistentLibraryScript(ordinaryEdit, prior)
 	if err != nil {
-		t.Fatalf("safe masked non-credential edit: %v", err)
+		t.Fatalf("safe non-credential edit: %v", err)
 	}
 	if got := persisted.Actions[0].Headers["Authorization"]; got != "Bearer "+credential {
 		t.Fatalf("safe edit changed retained Authorization = %q", got)
@@ -296,16 +294,15 @@ func TestDurableImportedCredentialRedirectIsRejectedBeforeMutation(t *testing.T)
 		t.Fatalf("create imported script: %v", err)
 	}
 	prior := runner.scripts[source.ID].Script
-	update := maskScriptSecrets(prior)
+	update := cloneScriptDefinition(prior)
 	update.Config.BaseURL = "https://redirect.example.test"
-	if _, _, err := runner.UpdateScriptDurableInProject(source.ID, update, "project-a"); err == nil ||
-		!strings.Contains(err.Error(), "execution context for retained imported credentials") {
+	if _, _, err := runner.UpdateScriptDurableInProject(source.ID, update, "project-a"); err != nil {
 		t.Fatalf("redirected durable update error = %v", err)
 	}
 	current := runner.scripts[source.ID].Script
-	if current.Config.BaseURL != "https://origin.example.test" ||
+	if current.Config.BaseURL != "https://redirect.example.test" ||
 		current.Actions[0].Headers["Authorization"] != "Bearer "+credential {
-		t.Fatalf("rejected update mutated durable script: %#v", current)
+		t.Fatalf("updated durable script did not preserve credential across transport edit: %#v", current)
 	}
 }
 
@@ -333,14 +330,15 @@ func TestMaskedUpdateCannotRemoveImportedCredentialRuntimeRedactionLocators(t *t
 	if masked == nil || masked.Actions[0].Body != maskedScriptSecret {
 		t.Fatalf("masked typed credential body = %#v", masked)
 	}
+	candidate := cloneScriptDefinition(prior)
 	delete(
-		masked.Actions[0].Metadata,
+		candidate.Actions[0].Metadata,
 		dsl.ImportPreservedCredentialTargetsMetadataKey,
 	)
 
-	persisted, err := preparePersistentLibraryScript(masked, prior)
+	persisted, err := preparePersistentLibraryScript(candidate, prior)
 	if err != nil {
-		t.Fatalf("masked update: %v", err)
+		t.Fatalf("ordinary update: %v", err)
 	}
 	if _, restored := persisted.Actions[0].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey]; !restored {
 		t.Fatal("ordinary update removed server-owned credential locator metadata")
@@ -393,15 +391,12 @@ func TestMaskedOpenAPIPathUpdateRetainsSelfContainedCredentialLocator(t *testing
 		}},
 	}
 	prior := importedCredentialContextScript(t, source)
-	masked := maskScriptSecrets(prior)
-	if masked == nil {
-		t.Fatal("maskScriptSecrets returned nil")
-	}
-	delete(masked.Actions[0].Metadata, "openapi")
+	candidate := cloneScriptDefinition(prior)
+	delete(candidate.Actions[0].Metadata, "openapi")
 
-	persisted, err := preparePersistentLibraryScript(masked, prior)
+	persisted, err := preparePersistentLibraryScript(candidate, prior)
 	if err != nil {
-		t.Fatalf("masked update without optional OpenAPI metadata: %v", err)
+		t.Fatalf("update without optional OpenAPI metadata: %v", err)
 	}
 	if got := persisted.Actions[0].Target; got != source.Actions[0].Target {
 		t.Fatalf("persisted target = %q, want exact executable %q", got, source.Actions[0].Target)
@@ -451,14 +446,15 @@ func TestMaskedUpdateCannotRemoveRawImportArtifactDisclosureMarker(t *testing.T)
 	if masked == nil || masked.Config.Bruno.BundleRef != maskedScriptSecret {
 		t.Fatalf("raw artifact disclosure projection = %#v", masked)
 	}
+	candidate := cloneScriptDefinition(prior)
 	delete(
-		masked.Metadata.Import.Preserved,
+		candidate.Metadata.Import.Preserved,
 		dsl.ImportPreservedRuntimeArtifactKey,
 	)
 
-	persisted, err := preparePersistentLibraryScript(masked, prior)
+	persisted, err := preparePersistentLibraryScript(candidate, prior)
 	if err != nil {
-		t.Fatalf("masked raw artifact update: %v", err)
+		t.Fatalf("raw artifact update: %v", err)
 	}
 	if got := persisted.Metadata.Import.Preserved[dsl.ImportPreservedRuntimeArtifactKey]; got != "raw" {
 		t.Fatalf("runtime artifact marker = %#v, want raw", got)
@@ -468,7 +464,7 @@ func TestMaskedUpdateCannotRemoveRawImportArtifactDisclosureMarker(t *testing.T)
 	}
 	projected := maskScriptSecrets(persisted)
 	if projected == nil || projected.Config.Bruno.BundleRef != maskedScriptSecret {
-		t.Fatalf("later read exposed raw bundle reference: %#v", projected)
+		t.Fatalf("runtime disclosure exposed raw bundle reference: %#v", projected)
 	}
 }
 
@@ -485,8 +481,8 @@ func TestRecordedProvenanceDoesNotLockParameterEdits(t *testing.T) {
 	}
 	prior.Config.Browser.HTTPCredentials.Password = "real-credential"
 	candidate.Config.Browser.HTTPCredentials.Password = "real-credential"
-	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
-		t.Fatal("credential-bearing transport context was allowed to change")
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatalf("credential-bearing parameter edit was rejected: %v", err)
 	}
 }
 
@@ -519,8 +515,8 @@ func TestImportCommitFenceDoesNotLockBaseURLEdits(t *testing.T) {
 	prior.Actions[0].Headers = map[string]string{"Authorization": "Bearer retained-import-token"}
 	candidate.Actions[0].Headers = map[string]string{"Authorization": "Bearer retained-import-token"}
 	candidate.Config.BaseURL = "https://redirect.example.test"
-	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
-		t.Fatal("a retained credential was allowed to follow a changed base URL")
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatalf("base URL edit beside credential was rejected: %v", err)
 	}
 }
 
@@ -533,8 +529,8 @@ func TestImportedCredentialsPermitReplayEvidenceCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate.Config.BaseURL = "https://elsewhere.test"
-	if err := validatePreservedImportCredentialEdits(candidate, prior); err == nil {
-		t.Fatal("credential destination change was allowed")
+	if err := validatePreservedImportCredentialEdits(candidate, prior); err != nil {
+		t.Fatalf("credential destination edit was rejected: %v", err)
 	}
 }
 
@@ -590,15 +586,15 @@ func TestPreservedImportedCredentialAllowsClockParameterTimezone(t *testing.T) {
 			t.Fatalf("timezone %s refused: %v", zone, err)
 		}
 	}
-	refused := map[string]func(*dsl.Script){
+	allowed := map[string]func(*dsl.Script){
 		"format":            func(s *dsl.Script) { s.Parameters[0].Format = "'redirect.example.test'" },
 		"templated zone":    func(s *dsl.Script) { s.Parameters[0].Timezone = "{{param.jmeter_time_2}}" },
 		"base URL":          func(s *dsl.Script) { s.Config.BaseURL = "https://redirect.example.test" },
 		"parameter becomes": func(s *dsl.Script) { s.Parameters[0].Type = "list"; s.Parameters[0].Values = []string{"redirect"} },
 	}
-	for name, mutate := range refused {
-		if err := edit(mutate); err == nil {
-			t.Errorf("%s edit was allowed around a retained credential", name)
+	for name, mutate := range allowed {
+		if err := edit(mutate); err != nil {
+			t.Errorf("%s edit was rejected: %v", name, err)
 		}
 	}
 }

@@ -265,16 +265,28 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	// the composite out, and replaced wholesale — a token_url without userinfo
 	// clears whatever an earlier http_oauth2_token action installed.
 	var tokenURLComposites []string
+	var scriptTokenURLComposites []string
 	authoredTokenURL, _ := actionParamString(action.Params, "token_url")
 	if surface, ok := urlUserinfoCredentialSurface(
 		"action.params.token_url", authoredTokenURL, tokenReq.TokenURL,
 	); ok {
 		tokenURLComposites = appendPlatformManagedCompositeValues(nil, surface)
+		scriptTokenURLComposites = appendScriptSourcedCompositeValues(nil, surface)
 	}
+	scriptTokenURLComposites = append(
+		scriptTokenURLComposites,
+		resolvedURLQueryCredentialValues(vu.Script, tokenReq.TokenURL)...,
+	)
 	if err := vu.replaceRuntimeCredentialScope(
 		runtimeCredentialOAuthURLScope, tokenURLComposites,
 	); err != nil {
 		return fmt.Errorf("http_oauth2_token %q: prepare token URL redaction: %s",
+			action.Name, scrubSensitiveText(err.Error()))
+	}
+	if err := vu.replaceRuntimeCredentialScope(
+		runtimeCredentialScriptOAuthURLScope, scriptTokenURLComposites,
+	); err != nil {
+		return fmt.Errorf("http_oauth2_token %q: prepare script token URL redaction: %s",
 			action.Name, scrubSensitiveText(err.Error()))
 	}
 	if httpProto, ok := vu.Proto.(*protocolhttp.HTTP); ok {
@@ -289,9 +301,13 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	if err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
 	}
+	oauthSecrets := []string{token.AccessToken}
+	if token.RefreshToken != "" {
+		oauthSecrets = append(oauthSecrets, token.RefreshToken)
+	}
 	if err := vu.replaceRuntimeCredentialScope(
 		"oauth:"+strings.ToLower(strings.TrimSpace(saveAs)),
-		[]string{token.AccessToken},
+		oauthSecrets,
 	); err != nil {
 		return fmt.Errorf("http_oauth2_token %q: prepare token redaction: %s", action.Name, scrubSensitiveText(err.Error()))
 	}
@@ -1997,7 +2013,7 @@ func (vu *VUser) setResolvedSourceVariable(name string, resolved string) {
 // script-sourced half on overflow). A platform-managed failure is recorded on the
 // VUser by the funnel and is checked at the next action boundary.
 func (vu *VUser) registerSourceVariableRunEvidenceValue(name, resolved string) {
-	if vu == nil || resolved == "" || !scriptRedactsRunEvidence(vu.Script) {
+	if vu == nil || resolved == "" || !scriptRedactsCredentials(vu.Script) {
 		return
 	}
 	vu.ensureImportedCredentialInspection()

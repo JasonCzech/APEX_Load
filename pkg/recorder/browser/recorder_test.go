@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/mxschmitt/playwright-go"
 )
 
@@ -877,8 +879,22 @@ func TestRecordWSFrameOptIn(t *testing.T) {
 		t.Errorf("no-opt-in WS = %+v, want count only", got)
 	}
 
-	// With opt-in + a scrubber, payloads are captured and redacted.
-	scrubbed := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true,
+	// Default (ScrubSensitive=false): even when a Scrubber func is supplied by
+	// a caller, WS payloads stay unredacted unless ScrubSensitive is enabled.
+	unredacted := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true,
+		Scrubber: func(s string) string { return strings.ReplaceAll(s, "abc", "REDACTED") }})
+	unredacted.session.WebSockets = append(unredacted.session.WebSockets, WebSocketSummary{URL: "wss://x"})
+	unredacted.recordWSFrame(0, "received", []byte(`{"token":"abc"}`))
+	wsDefault := unredacted.Snapshot().WebSockets[0]
+	if len(wsDefault.Frames) != 1 || wsDefault.FramesReceived != 1 {
+		t.Fatalf("default opt-in WS = %+v", wsDefault)
+	}
+	if wsDefault.Frames[0].Payload != `{"token":"abc"}` {
+		t.Errorf("default WS payload was scrubbed: %q", wsDefault.Frames[0].Payload)
+	}
+
+	// With ScrubSensitive=true + a scrubber, payloads are captured and redacted.
+	scrubbed := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true, ScrubSensitive: true,
 		Scrubber: func(s string) string { return strings.ReplaceAll(s, "abc", "REDACTED") }})
 	scrubbed.session.WebSockets = append(scrubbed.session.WebSockets, WebSocketSummary{URL: "wss://x"})
 	scrubbed.recordWSFrame(0, "received", []byte(`{"token":"abc"}`))
@@ -887,14 +903,27 @@ func TestRecordWSFrameOptIn(t *testing.T) {
 		t.Fatalf("opt-in WS = %+v", ws)
 	}
 	if !strings.Contains(ws.Frames[0].Payload, "REDACTED") {
-		t.Errorf("payload not scrubbed: %q", ws.Frames[0].Payload)
+		t.Errorf("payload not scrubbed when ScrubSensitive=true: %q", ws.Frames[0].Payload)
 	}
 }
 
 func TestRecordWSFrameScrubsBinaryPayloads(t *testing.T) {
-	// A payload with a control byte fails the printable check; the scrubber must
-	// still run before base64 so secrets are redacted, not stored verbatim.
-	r := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true,
+	// Default (ScrubSensitive=false) keeps binary payloads verbatim even if a scrubber is wired.
+	unredacted := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true,
+		Scrubber: func(s string) string { return strings.ReplaceAll(s, "SECRET", "***") }})
+	unredacted.session.WebSockets = append(unredacted.session.WebSockets, WebSocketSummary{URL: "wss://x"})
+	unredacted.recordWSFrame(0, "received", []byte("SECRET\x00token"))
+	rawDecoded, err := base64decode(unredacted.Snapshot().WebSockets[0].Frames[0].Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rawDecoded != "SECRET\x00token" {
+		t.Fatalf("default binary payload = %q, want unredacted bytes", rawDecoded)
+	}
+
+	// With ScrubSensitive=true, a payload with a control byte fails the printable check;
+	// the scrubber must still run before base64 so secrets are redacted, not stored verbatim.
+	r := New(Options{StartURL: "https://app.example/", CaptureWSPayloads: true, ScrubSensitive: true,
 		Scrubber: func(s string) string { return strings.ReplaceAll(s, "SECRET", "***") }})
 	r.session.WebSockets = append(r.session.WebSockets, WebSocketSummary{URL: "wss://x"})
 	r.recordWSFrame(0, "received", []byte("SECRET\x00token"))
@@ -1532,9 +1561,150 @@ func TestConfigScriptReflectsSidebarOption(t *testing.T) {
 	if !strings.Contains(on, `"sidebar":true`) || !strings.Contains(on, "__apexloadRecorderConfig") {
 		t.Errorf("config script (enabled) = %q", on)
 	}
+	if !strings.Contains(on, `window.__apexloadScrubSensitive = false;`) || !strings.Contains(on, `"scrubSensitive":false`) {
+		t.Errorf("default config script must leave scrubSensitive false: %q", on)
+	}
 	off := New(Options{StartURL: "https://app.example/", Sidebar: false}).configScript()
 	if !strings.Contains(off, `"sidebar":false`) {
 		t.Errorf("config script (disabled) = %q", off)
+	}
+	scrub := New(Options{StartURL: "https://app.example/", ScrubSensitive: true}).configScript()
+	if !strings.Contains(scrub, `window.__apexloadScrubSensitive = true;`) || !strings.Contains(scrub, `"scrubSensitive":true`) {
+		t.Errorf("scrubSensitive config script = %q", scrub)
+	}
+}
+
+func TestCaptureScriptMasksSensitiveInputsOnlyWhenScrubSensitiveEnabled(t *testing.T) {
+	nodePath, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+
+	runHarness := func(t *testing.T, initConfig string) []capturedEvent {
+		t.Helper()
+		harness := `
+const vm = require('vm');
+const listeners = {};
+const recorded = [];
+const doc = {
+  readyState: 'loading',
+  documentElement: { scrollLeft: 0, scrollTop: 0 },
+  body: { scrollLeft: 0, scrollTop: 0 },
+  addEventListener() {},
+  querySelectorAll() { return []; },
+};
+const win = {
+  location: { href: 'https://acme.my.salesforce.com/_ui/identity/verification/method/SmsVerificationFinish', pathname: '/_ui/identity/verification/method/SmsVerificationFinish', hash: '' },
+  document: doc,
+  top: null,
+  innerWidth: 1280,
+  innerHeight: 720,
+  scrollX: 0,
+  scrollY: 0,
+  CSS: { escape: (s) => String(s) },
+  addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
+  __apexloadRecord(json) { recorded.push(JSON.parse(json)); },
+  setTimeout,
+  clearTimeout,
+};
+win.top = win;
+win.window = win;
+const ctx = vm.createContext({
+  window: win,
+  document: doc,
+  location: win.location,
+  CSS: win.CSS,
+  WeakMap,
+  Map,
+  Set,
+  Date,
+  Math,
+  JSON,
+  Array,
+  Object,
+  String,
+  Number,
+  Boolean,
+  RegExp,
+  Promise,
+  setTimeout,
+  clearTimeout,
+});
+vm.runInContext(process.env.CAPTURE_INIT + '\n' + process.env.CAPTURE_SRC, ctx);
+function makeInput(id, attrs, value) {
+  return {
+    nodeType: 1,
+    tagName: 'INPUT',
+    id,
+    value,
+    isContentEditable: false,
+    attributes: Object.entries(attrs).map(([name, val]) => ({ name, value: val })),
+    getAttribute(k) { return Object.prototype.hasOwnProperty.call(attrs, k) ? attrs[k] : null; },
+    closest() { return null; },
+    getRootNode() { return doc; },
+    parentElement: null,
+  };
+}
+const pw = makeInput('pw', { id: 'pw', name: 'pw', type: 'password' }, 'S3cretPw!');
+const otp = makeInput('otp', { id: 'otp', name: 'otp', type: 'text', autocomplete: 'one-time-code' }, '654321');
+const sfVerify = makeInput('smc', { id: 'smc', name: 'smc', type: 'text' }, '112233');
+for (const el of [pw, otp, sfVerify]) {
+  for (const fn of (listeners['change'] || [])) {
+    fn({ isTrusted: true, target: el, composedPath: () => [el] });
+  }
+}
+process.stdout.write(JSON.stringify(recorded));
+`
+		cmd := exec.Command(nodePath, "-e", harness)
+		cmd.Env = append(os.Environ(), "CAPTURE_INIT="+initConfig, "CAPTURE_SRC="+captureScript)
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			t.Fatalf("node harness failed: %v\nstderr: %s", err, stderr.String())
+		}
+		var events []capturedEvent
+		if err := json.Unmarshal(stdout.Bytes(), &events); err != nil {
+			t.Fatalf("unmarshal recorded events (%s): %v", stdout.String(), err)
+		}
+		return events
+	}
+
+	// Default (unset window.__apexloadScrubSensitive AND default configScript): unmasked literal values.
+	for label, cfg := range map[string]string{
+		"unset":          "",
+		"default_config": New(Options{StartURL: "https://acme.my.salesforce.com/"}).configScript(),
+	} {
+		events := runHarness(t, cfg)
+		if len(events) != 3 {
+			t.Fatalf("%s: recorded %d events, want 3: %+v", label, len(events), events)
+		}
+		want := []string{"S3cretPw!", "654321", "112233"}
+		for i, ev := range events {
+			if ev.Masked || ev.Value != want[i] {
+				t.Fatalf("%s event[%d] = {Value:%q Masked:%v}, want {Value:%q Masked:false}", label, i, ev.Value, ev.Masked, want[i])
+			}
+		}
+	}
+
+	// ScrubSensitive=true (via configScript or Profile): masks all 3 sensitive inputs.
+	scrubProfile := New(Options{
+		StartURL: "https://acme.my.salesforce.com/",
+		Profile:  &recordingprofile.Profile{ID: "strict", Name: "Strict", ScrubSensitive: true},
+	}).configScript()
+	for label, cfg := range map[string]string{
+		"global_flag":    "window.__apexloadScrubSensitive = true;",
+		"profile_config": scrubProfile,
+	} {
+		events := runHarness(t, cfg)
+		if len(events) != 3 {
+			t.Fatalf("%s: recorded %d events, want 3: %+v", label, len(events), events)
+		}
+		for i, ev := range events {
+			if !ev.Masked || ev.Value != "" {
+				t.Fatalf("%s event[%d] = {Value:%q Masked:%v}, want {Value:\"\" Masked:true}", label, i, ev.Value, ev.Masked)
+			}
+		}
 	}
 }
 

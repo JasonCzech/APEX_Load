@@ -135,7 +135,7 @@ func (vu *VUser) loadDataRow() error {
 
 // makeLogger creates a logger for this VUser based on the log config.
 func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
-	if vu.runtimeCredentialRedactionErr != nil {
+	if vu.runtimePublicationUnavailable() {
 		// No complete matcher exists; outcome sinks retain the fixed failure.
 		cfg.Level = "disabled"
 	}
@@ -256,9 +256,34 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 	return attrs
 }
 
+func (vu *VUser) ensureDynamicRedactionRegistry() {
+	if vu == nil {
+		return
+	}
+	if vu.RedactionConfig != nil && vu.RedactionConfig.findDynamicRegistry() != nil {
+		return
+	}
+	if vu.runtimeCredentialStateReady {
+		vu.runtimeCredentialBase = ensureDynamicSecretRegistry(vu.runtimeCredentialBase)
+		if vu.RedactionConfig == nil {
+			vu.RedactionConfig = vu.runtimeCredentialBase
+		} else {
+			vu.RedactionConfig = attachDynamicSecretRegistry(
+				vu.RedactionConfig,
+				vu.runtimeCredentialBase.findDynamicRegistry(),
+			)
+		}
+		return
+	}
+	vu.RedactionConfig = ensureDynamicSecretRegistry(vu.RedactionConfig)
+}
+
 func (vu *VUser) bindRuntimeTextRedactor() {
 	if vu == nil || vu.Proto == nil {
 		return
+	}
+	if _, ok := vu.Proto.(protocol.RuntimeSecretRegistrarSetter); ok {
+		vu.ensureDynamicRedactionRegistry()
 	}
 	vu.runtimeRedaction.Store(vu.resultPublicationRedactionConfig())
 	bindProtocolRuntimeRedaction(vu.Proto, vu.runtimeRedaction.Load, vu.runtimeRedaction.snapshot)
@@ -293,6 +318,13 @@ func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *Reda
 	if setter, ok := proto.(protocol.RuntimeSecretActivitySetter); ok {
 		setter.SetRuntimeSecretActivity(func() bool {
 			return currentRedactionConfig(provider).HasRuntimeSecretMaterial()
+		})
+	}
+	if setter, ok := proto.(protocol.RuntimeSecretRegistrarSetter); ok {
+		setter.SetRuntimeSecretRegistrar(func(scope string, values []string) {
+			if cfg := currentRedactionConfig(provider); cfg != nil {
+				cfg.RegisterDynamicSecrets(scope, values)
+			}
 		})
 	}
 }
@@ -418,7 +450,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	}
 	vu.actionCredentialComposites = resolvedActionCredentialComposites{
 		action: resolved,
-		values: runtimeActionCompositeValues(&action, resolved),
+		values: runtimeActionCompositeValuesForScript(vu.Script, &action, resolved, vu.SecretResolver),
 	}
 	vu.prepareLLMConversationAction(action, resolved)
 	return resolved

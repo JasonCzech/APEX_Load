@@ -25764,11 +25764,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "default": {
         content?: never;
       };
@@ -35888,7 +35883,8 @@ export interface operations {
                 "oauth"?: ({
                   "authentication_method"?: string;
                   "client_id": string;
-                  "client_secret_ref": string;
+                  "client_secret"?: string;
+                  "client_secret_ref"?: string;
                   "mode": string;
                   "scope"?: string;
                   "token_url": string;
@@ -50254,6 +50250,7 @@ export interface operations {
                 "oauth"?: ({
                   "authentication_method"?: string;
                   "client_id"?: string;
+                  "client_secret"?: string;
                   "client_secret_ref"?: string;
                   "mode"?: string;
                   "scope"?: string;
@@ -75064,6 +75061,9 @@ export interface operations {
     parameters: {
       "path": {
         "id": string;
+      };
+      "query"?: {
+        "scrub"?: boolean;
       };
     };
     requestBody?: never;
@@ -121093,11 +121093,6 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
-      "503": {
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
       "default": {
         content?: never;
       };
@@ -123040,6 +123035,7 @@ export interface operations {
     parameters: {
       "query"?: {
         "project_id"?: string;
+        "scrub"?: boolean;
       };
     };
     requestBody?: never;
@@ -186571,6 +186567,7 @@ export interface operations {
           "name"?: string;
           "project_id"?: string;
           "quic_mode"?: string;
+          "scrub_sensitive"?: boolean;
           "section"?: string;
           "sidebar"?: (boolean) | null;
           "start_url"?: string;
@@ -216865,6 +216862,7 @@ export interface operations {
                 "oauth"?: ({
                   "authentication_method"?: string;
                   "client_id"?: string;
+                  "client_secret"?: string;
                   "client_secret_ref"?: string;
                   "mode"?: string;
                   "scope"?: string;
@@ -223908,6 +223906,7 @@ export interface operations {
                 "oauth"?: ({
                   "authentication_method"?: string;
                   "client_id"?: string;
+                  "client_secret"?: string;
                   "client_secret_ref"?: string;
                   "mode"?: string;
                   "scope"?: string;
@@ -226323,6 +226322,7 @@ export interface operations {
                 "oauth"?: ({
                   "authentication_method"?: string;
                   "client_id"?: string;
+                  "client_secret"?: string;
                   "client_secret_ref"?: string;
                   "mode"?: string;
                   "scope"?: string;

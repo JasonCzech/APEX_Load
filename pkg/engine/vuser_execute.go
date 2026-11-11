@@ -413,11 +413,20 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 		detached := *tx
 		debugTransaction = &detached
 	}
-	if vu.runtimeCredentialRedactionErr != nil {
+	if vu.runtimePublicationUnavailable() {
 		clearUnredactableResultEvidence(tx)
+	} else if vu.concurrentPublicationUnavailable {
+		omitConcurrentPublicEvidence(tx)
+		tx.Extractions = nil
+		tx.ExtractionsIncomplete = true
+		if tx.ProtocolEvidence == nil {
+			tx.ProtocolEvidence = make(map[string]any)
+		}
+		tx.ProtocolEvidence["concurrent_group_extractions_omitted"] = true
 	}
-	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
-	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
+	publicationConfig := vu.resultPublicationRedactionConfig()
+	scrubSensitiveStructuredResult(tx, publicationConfig)
+	scrubSensitiveResultWithOptions(tx, publicationConfig, false)
 	boundResultEvidence(tx)
 	tx.PropertyDimensions = vu.resultPropertyDimensions(tx.Extractions)
 	tx.Interrupted = !tx.Success && vu.interruptedFailure()

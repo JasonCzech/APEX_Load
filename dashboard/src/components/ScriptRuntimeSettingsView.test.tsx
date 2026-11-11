@@ -676,6 +676,7 @@ describe('ScriptRuntimeSettingsView run-evidence redaction', () => {
     renderLogSection({ level: 'standard' })
     expect(redactionCheckbox().checked).toBe(false)
     expect(container.textContent).toContain('run logs, snapshots, reports, archives and debugger evidence')
+    expect(container.textContent).toContain('project secrets and DSL credentials are always redacted')
     expect(container.textContent).toContain('Does not change the script itself')
   })
 

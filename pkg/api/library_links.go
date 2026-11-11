@@ -29,10 +29,23 @@ func normalizeLibraryKind(value string) string {
 }
 
 func hashLibraryScript(script *dsl.Script) string {
+	return hashLibraryScriptWithProjection(script, false)
+}
+
+func legacyMaskedHashLibraryScript(script *dsl.Script) string {
+	return hashLibraryScriptWithProjection(script, true)
+}
+
+func hashLibraryScriptWithProjection(script *dsl.Script, maskSecrets bool) string {
 	if script == nil {
 		return hashCanonical(nil)
 	}
-	copied := maskScriptSecrets(script)
+	var copied *dsl.Script
+	if maskSecrets {
+		copied = maskScriptSecrets(script)
+	} else {
+		copied = cloneScriptDefinition(script)
+	}
 	if copied == nil {
 		return hashCanonical(nil)
 	}
@@ -69,18 +82,15 @@ func hashLibraryScript(script *dsl.Script) string {
 	return hashCanonical(copied)
 }
 
-// libraryScriptHashMatches accepts the current canonical hash and the bounded
-// pre-import-value-policy hash for known legacy importer output. Older
-// library.sync_links.v1 rows captured the latter before durable reads began
-// injecting the server-owned preservation marker. The compatibility candidate
-// is used only for comparisons; newly written links and modern marker-bearing
-// scripts keep the current canonical hash.
+// libraryScriptHashMatches accepts the current canonical unmasked hash, the
+// legacy maskScriptSecrets hash, and the bounded pre-import-value-policy hash
+// for known legacy importer output.
 func libraryScriptHashMatches(script *dsl.Script, expected string) bool {
 	expected = strings.TrimSpace(expected)
 	if expected == "" {
 		return false
 	}
-	if hashLibraryScript(script) == expected {
+	if hashLibraryScript(script) == expected || legacyMaskedHashLibraryScript(script) == expected {
 		return true
 	}
 	for _, candidate := range legacyImportLibraryScriptHashCandidates(script) {
@@ -154,10 +164,19 @@ func legacyImportLibraryScriptHashCandidates(script *dsl.Script) []string {
 }
 
 func canonicalLibraryScriptHashCopy(script *dsl.Script) *dsl.Script {
+	return canonicalLibraryScriptHashCopyWithProjection(script, true)
+}
+
+func canonicalLibraryScriptHashCopyWithProjection(script *dsl.Script, maskSecrets bool) *dsl.Script {
 	if script == nil {
 		return nil
 	}
-	copied := maskScriptSecrets(script)
+	var copied *dsl.Script
+	if maskSecrets {
+		copied = maskScriptSecrets(script)
+	} else {
+		copied = cloneScriptDefinition(script)
+	}
 	if copied == nil {
 		return nil
 	}

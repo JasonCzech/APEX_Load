@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -44,7 +45,8 @@ func (s *Server) releaseEnterpriseImportSlot() { <-s.enterpriseImportGateChan() 
 // mergedArchiveEntryKey normalizes an archive entry name for MATCHING only.
 // The original name is what gets written back out.
 func mergedArchiveEntryKey(name string) string {
-	cleaned := path.Clean(strings.TrimPrefix(name, "./"))
+	normalized := strings.ReplaceAll(name, `\`, "/")
+	cleaned := path.Clean(strings.TrimSuffix(strings.TrimPrefix(normalized, "./"), "/"))
 	if cleaned == "." || cleaned == "" {
 		return ""
 	}
@@ -346,6 +348,12 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			supplementalNames = append(supplementalNames, name)
 		}
 	}
+	stripped, stripErr := stripVuGenNonSourceZipEntries(data)
+	if stripErr != nil {
+		writeError(w, http.StatusUnprocessableEntity, stripErr.Error())
+		return nil, false
+	}
+	data = stripped
 	var supplementalManifest *enterpriseSupplementalArchiveManifest
 	if len(supplementalData) > 0 {
 		if _, collection, _ := readEnterpriseArchiveCollection(data); collection {
@@ -402,12 +410,192 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	}, true
 }
 
+// isVuGenResultDirSegment reports whether a path segment names a VuGen local
+// replay result directory ("results", "result1", "result2", ...).
+func isVuGenResultDirSegment(seg string) bool {
+	lower := strings.ToLower(strings.TrimSpace(seg))
+	if lower == "results" {
+		return true
+	}
+	if !strings.HasPrefix(lower, "result") || len(lower) <= len("result") {
+		return false
+	}
+	for i := len("result"); i < len(lower); i++ {
+		if lower[i] < '0' || lower[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// vuGenScriptDirs returns the set of archive directories that directly contain
+// VuGen .usr or .c source files (outside any result* output directory).
+func vuGenScriptDirs(cleanedPaths []string) map[string]struct{} {
+	if len(cleanedPaths) == 0 {
+		return nil
+	}
+	var dirs map[string]struct{}
+	for _, p := range cleanedPaths {
+		if p == "" {
+			continue
+		}
+		parts := strings.Split(p, "/")
+		if len(parts) == 0 {
+			continue
+		}
+		inResultDir := false
+		for i := 0; i < len(parts)-1; i++ {
+			if isVuGenResultDirSegment(parts[i]) {
+				inResultDir = true
+				break
+			}
+		}
+		if inResultDir {
+			continue
+		}
+		ext := strings.ToLower(path.Ext(parts[len(parts)-1]))
+		if ext == ".usr" || ext == ".c" {
+			if dirs == nil {
+				dirs = make(map[string]struct{})
+			}
+			dirs[path.Dir(p)] = struct{}{}
+		}
+	}
+	return dirs
+}
+
+const (
+	enterpriseArchiveRetainedMaxDepth = 33
+	vuGenSkippedArchiveMaxDepth       = 256
+)
+
+func validateEnterpriseZipEntryPath(file *zip.File, maxDepth int) (string, bool, error) {
+	if file == nil {
+		return "", false, nil
+	}
+	if file.NonUTF8 || file.Flags&1 != 0 {
+		return "", false, fmt.Errorf("archive entry %q contains unsupported name encoding or encryption", file.Name)
+	}
+	modeType := file.Mode().Type()
+	if modeType != 0 && modeType != fs.ModeDir {
+		return "", false, fmt.Errorf("archive entry %q is not a regular file or directory", file.Name)
+	}
+	hasDirSuffix := strings.HasSuffix(file.Name, "/") || strings.HasSuffix(file.Name, `\`)
+	if modeType == fs.ModeDir && !hasDirSuffix {
+		return "", false, fmt.Errorf("archive entry %q directory metadata does not match its path", file.Name)
+	}
+	isDir := modeType == fs.ModeDir || hasDirSuffix
+	normalized := strings.ReplaceAll(file.Name, `\`, "/")
+	candidate := strings.TrimPrefix(normalized, "./")
+	if isDir {
+		candidate = strings.TrimSuffix(candidate, "/")
+		if candidate == "" || candidate == "." {
+			return "", true, nil
+		}
+	}
+	validated, err := archiveingest.ValidateFilePath(candidate, maxDepth)
+	if err != nil {
+		return "", isDir, fmt.Errorf("archive entry %q is not a safe relative path: %w", file.Name, err)
+	}
+	return validated, isDir, nil
+}
+
+// isVuGenNonSourceArtifactInDirs reports whether cleaned (a validated,
+// slash-separated regular-file path) is inside a VuGen replay output directory
+// (result1/**, results/**) or is a replay.har sitting directly inside a VuGen
+// script directory.
+func isVuGenNonSourceArtifactInDirs(cleaned string, scriptDirs map[string]struct{}) bool {
+	return isVuGenNonSourceEntryInDirs(cleaned, false, scriptDirs)
+}
+
+// isVuGenNonSourceEntryInDirs reports whether cleaned (a validated,
+// slash-separated archive path for a file or directory) belongs to a VuGen
+// replay output directory (result1/**, results/**) or is a replay.har sitting
+// directly inside a VuGen script directory. Skipping these before per-entry
+// size and entry-count guards prevents >64 MiB local replay captures and large
+// result1/ trees from rejecting valid VuGen uploads.
+func isVuGenNonSourceEntryInDirs(cleaned string, isDir bool, scriptDirs map[string]struct{}) bool {
+	if len(scriptDirs) == 0 || cleaned == "" {
+		return false
+	}
+	parts := strings.Split(cleaned, "/")
+	if len(parts) == 0 {
+		return false
+	}
+	if !isDir && strings.EqualFold(parts[len(parts)-1], "replay.har") {
+		if _, ok := scriptDirs[path.Dir(cleaned)]; ok {
+			return true
+		}
+	}
+	limit := len(parts) - 1
+	if isDir {
+		limit = len(parts)
+	}
+	for i := 0; i < limit; i++ {
+		if !isVuGenResultDirSegment(parts[i]) {
+			continue
+		}
+		parentDir := "."
+		if i > 0 {
+			parentDir = strings.Join(parts[:i], "/")
+		}
+		if _, ok := scriptDirs[parentDir]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func stripVuGenNonSourceZipEntries(data []byte) ([]byte, error) {
+	if err := archiveingest.ValidateZIPDirectory(data, enterprisearchive.MaxArchiveEntries*8); err != nil {
+		return data, nil
+	}
+	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil || len(reader.File) > enterprisearchive.MaxArchiveEntries*8 {
+		return data, nil
+	}
+	type parsedEntry struct {
+		key   string
+		isDir bool
+	}
+	entries := make([]parsedEntry, 0, len(reader.File))
+	regularKeys := make([]string, 0, len(reader.File))
+	for _, file := range reader.File {
+		if file == nil {
+			continue
+		}
+		key, isDir, pathErr := validateEnterpriseZipEntryPath(file, vuGenSkippedArchiveMaxDepth)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		entries = append(entries, parsedEntry{key: key, isDir: isDir})
+		if !isDir && key != "" {
+			regularKeys = append(regularKeys, key)
+		}
+	}
+	scriptDirs := vuGenScriptDirs(regularKeys)
+	if len(scriptDirs) == 0 {
+		return data, nil
+	}
+	needsStrip := false
+	for _, entry := range entries {
+		if isVuGenNonSourceEntryInDirs(entry.key, entry.isDir, scriptDirs) {
+			needsStrip = true
+			break
+		}
+	}
+	if !needsStrip {
+		return data, nil
+	}
+	return mergeEnterpriseArchiveZipWithPreparedFiles(data, nil)
+}
+
 // zipEnterpriseFolderUpload turns browser directory selection into the same
 // bounded archive consumed by the existing converter. Logical paths travel in
 // multipart field names because multipart filenames discard directory paths.
 func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byte, error) {
-	var names []string
-	headers := make(map[string]*multipart.FileHeader)
+	var rawNames []string
+	rawHeaders := make(map[string]*multipart.FileHeader)
 	for field, files := range fields {
 		if !strings.HasPrefix(field, "file:") {
 			continue
@@ -424,25 +612,38 @@ func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byt
 		if archiveingest.JunkReason(name) != "" {
 			continue
 		}
-		names = append(names, name)
-		headers[name] = files[0]
+		rawNames = append(rawNames, name)
+		rawHeaders[name] = files[0]
 	}
-	if len(names) == 0 {
+	if len(rawNames) == 0 {
 		return nil, fmt.Errorf("select a VuGen folder containing a .usr project file")
 	}
-	if len(names) > enterprisearchive.MaxArchiveEntries {
-		return nil, fmt.Errorf("folder has %d files; limit is %d", len(names), enterprisearchive.MaxArchiveEntries)
-	}
-	sort.Strings(names)
-	validated, err := archiveingest.ValidateFilePaths(names, 33)
+	sort.Strings(rawNames)
+	allValidated, err := archiveingest.ValidateFilePaths(rawNames, 33)
 	if err != nil {
 		return nil, fmt.Errorf("unsafe or duplicate folder path: %w", err)
 	}
-	root := strings.SplitN(validated[0], "/", 2)[0]
-	for _, name := range validated {
+	root := strings.SplitN(allValidated[0], "/", 2)[0]
+	for _, name := range allValidated {
 		if !strings.HasPrefix(name, root+"/") {
 			return nil, fmt.Errorf("folder files must share one root directory")
 		}
+	}
+	scriptDirs := vuGenScriptDirs(allValidated)
+	var validated []string
+	var keptRawNames []string
+	for index, name := range allValidated {
+		if isVuGenNonSourceArtifactInDirs(name, scriptDirs) {
+			continue
+		}
+		validated = append(validated, name)
+		keptRawNames = append(keptRawNames, rawNames[index])
+	}
+	if len(validated) == 0 {
+		return nil, fmt.Errorf("select a VuGen folder containing a .usr project file")
+	}
+	if len(validated) > enterprisearchive.MaxArchiveEntries {
+		return nil, fmt.Errorf("folder has %d files; limit is %d", len(validated), enterprisearchive.MaxArchiveEntries)
 	}
 	var out bytes.Buffer
 	writer := zip.NewWriter(&out)
@@ -452,7 +653,7 @@ func zipEnterpriseFolderUpload(fields map[string][]*multipart.FileHeader) ([]byt
 		if strings.HasSuffix(strings.ToLower(name), ".usr") {
 			projectFiles++
 		}
-		header := headers[names[index]]
+		header := rawHeaders[keptRawNames[index]]
 		if header.Size > enterprisearchive.MaxArchiveEntryBytes {
 			return nil, fmt.Errorf("%q exceeds the per-file size limit", name)
 		}
@@ -502,11 +703,15 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 }
 
 func mergeEnterpriseArchiveZipWithSupplementalEvidence(baseZip []byte, names []string, contents [][]byte) ([]byte, *enterpriseSupplementalArchiveManifest, error) {
-	merged, manifest, err := prepareEnterpriseSupplementalArchives(baseZip, names, contents)
+	stripped, err := stripVuGenNonSourceZipEntries(baseZip)
 	if err != nil {
 		return nil, nil, err
 	}
-	data, err := mergeEnterpriseArchiveZipWithPreparedFiles(baseZip, merged)
+	merged, manifest, err := prepareEnterpriseSupplementalArchives(stripped, names, contents)
+	if err != nil {
+		return nil, nil, err
+	}
+	data, err := mergeEnterpriseArchiveZipWithPreparedFiles(stripped, merged)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -514,33 +719,56 @@ func mergeEnterpriseArchiveZipWithSupplementalEvidence(baseZip []byte, names []s
 }
 
 func mergeEnterpriseArchiveZipWithPreparedFiles(baseZip []byte, supplemental []enterpriseSupplementalArchiveFile) ([]byte, error) {
+	if err := archiveingest.ValidateZIPDirectory(baseZip, enterprisearchive.MaxArchiveEntries*8); err != nil {
+		return nil, err
+	}
 	reader, err := zip.NewReader(bytes.NewReader(baseZip), int64(len(baseZip)))
 	if err != nil {
 		return nil, err
 	}
-	if len(reader.File) > enterprisearchive.MaxArchiveEntries {
+	if len(reader.File) > enterprisearchive.MaxArchiveEntries*8 {
 		return nil, fmt.Errorf("archive contains %d entries, limit is %d", len(reader.File), enterprisearchive.MaxArchiveEntries)
 	}
 	// This function deliberately writes entries back under their ORIGINAL names
 	// (see the comment on the copy loop below), so it cannot adopt the
 	// normalizing archiveingest reader. Apply the shared path policy up front
-	// instead: mergedArchiveEntryKey uses path.Clean, which preserves "..", so
-	// without this a traversal entry would round-trip through the merge and
-	// reach ConvertZip. Fail loudly rather than silently dropping the entry.
+	// instead: mergedArchiveEntryKey uses path.Clean, which resolves "..", so
+	// validateEnterpriseZipEntryPath checks the uncleaned path first.
+	type validatedZipEntry struct {
+		file  *zip.File
+		key   string
+		isDir bool
+	}
+	validatedEntries := make([]validatedZipEntry, 0, len(reader.File))
+	cleanedKeys := make([]string, 0, len(reader.File))
 	for _, file := range reader.File {
-		if file == nil || file.FileInfo().IsDir() {
+		if file == nil {
 			continue
 		}
-		// Validate the matching key, not the raw name: a leading "./" is a
-		// benign and common zip spelling that mergedArchiveEntryKey already
-		// strips, while ".." survives path.Clean and must be rejected.
-		key := mergedArchiveEntryKey(file.Name)
-		if key == "" {
+		key, isDir, pathErr := validateEnterpriseZipEntryPath(file, vuGenSkippedArchiveMaxDepth)
+		if pathErr != nil {
+			return nil, pathErr
+		}
+		validatedEntries = append(validatedEntries, validatedZipEntry{file: file, key: key, isDir: isDir})
+		if !isDir && key != "" {
+			cleanedKeys = append(cleanedKeys, key)
+		}
+	}
+	scriptDirs := vuGenScriptDirs(cleanedKeys)
+	keptEntryCount := 0
+	for _, entry := range validatedEntries {
+		if isVuGenNonSourceEntryInDirs(entry.key, entry.isDir, scriptDirs) {
 			continue
 		}
-		if _, err := archiveingest.ValidateFilePath(key, 0); err != nil {
-			return nil, fmt.Errorf("archive entry %q is not a safe relative path: %w", file.Name, err)
+		if entry.key != "" {
+			if _, _, depthErr := validateEnterpriseZipEntryPath(entry.file, enterpriseArchiveRetainedMaxDepth); depthErr != nil {
+				return nil, depthErr
+			}
 		}
+		keptEntryCount++
+	}
+	if keptEntryCount > enterprisearchive.MaxArchiveEntries {
+		return nil, fmt.Errorf("archive contains %d entries, limit is %d", keptEntryCount, enterprisearchive.MaxArchiveEntries)
 	}
 
 	overrides := make(map[string][]byte, len(supplemental))
@@ -556,13 +784,11 @@ func mergeEnterpriseArchiveZipWithPreparedFiles(baseZip []byte, supplemental []e
 	// instead would make ConvertZip see two entries that normalize to the same
 	// name and abort the whole import.
 	baseNameCounts := map[string]int{}
-	for _, file := range reader.File {
-		if file == nil || file.FileInfo().IsDir() {
+	for _, entry := range validatedEntries {
+		if entry.isDir || entry.key == "" || isVuGenNonSourceEntryInDirs(entry.key, false, scriptDirs) {
 			continue
 		}
-		if cleaned := mergedArchiveEntryKey(file.Name); cleaned != "" {
-			baseNameCounts[strings.ToLower(path.Base(cleaned))]++
-		}
+		baseNameCounts[strings.ToLower(path.Base(entry.key))]++
 	}
 
 	// Resolve supplemental names to archive entries in a DETERMINISTIC order:
@@ -582,14 +808,12 @@ func mergeEnterpriseArchiveZipWithPreparedFiles(baseZip []byte, supplemental []e
 			continue // Bundle members are additions; they never replace primary source.
 		}
 		target := ""
-		for _, file := range reader.File {
-			if file == nil || file.FileInfo().IsDir() {
+		for _, entry := range validatedEntries {
+			if entry.isDir || entry.key == "" || isVuGenNonSourceEntryInDirs(entry.key, false, scriptDirs) {
 				continue
 			}
-			cleaned := mergedArchiveEntryKey(file.Name)
-			if cleaned == "" {
-				continue
-			}
+			cleaned := entry.key
+			file := entry.file
 			if cleaned == name {
 				target = file.Name
 				break
@@ -637,19 +861,21 @@ func mergeEnterpriseArchiveZipWithPreparedFiles(baseZip []byte, supplemental []e
 		return writeErr
 	}
 
-	for _, file := range reader.File {
-		if file == nil || file.FileInfo().IsDir() {
+	for _, entry := range validatedEntries {
+		if entry.isDir || entry.key == "" {
 			continue
 		}
-		if mergedArchiveEntryKey(file.Name) == "" {
-			continue
-		}
+		file := entry.file
+		cleanedKey := entry.key
 		// Preserve the ORIGINAL entry name. Rewriting it to the cleaned form
 		// changes which leading segment ConvertZip strips (it removes the first
 		// path segment), so every nested file would silently move up one level
 		// purely because a supplemental file was attached.
 		fileName := file.Name
 		body, ok := replacements[fileName]
+		if !ok && isVuGenNonSourceEntryInDirs(cleanedKey, false, scriptDirs) {
+			continue
+		}
 		if !ok {
 			src, openErr := file.Open()
 			if openErr != nil {

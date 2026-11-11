@@ -312,16 +312,8 @@ func TestAuthoringJavaClasspathAssetsUpdateChecksChangedBindings(t *testing.T) {
 			valid := cloneScriptDefinition(persisted.Draft)
 			valid.Config.JavaVuser.ClasspathAssets = append(valid.Config.JavaVuser.ClasspathAssets, added)
 			response := authoringSecretRequest(t, server, http.MethodPut, route, map[string]any{"project_id": "project-a", "source": "enterprise_script_archive", "status": "editing", "draft": valid})
-			if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "execution context for retained imported credentials") {
-				t.Fatalf("retained-credential execution context guard changed: %d %s", response.Code, response.Body.String())
-			}
-			// A verified asset does not authorize redirecting a retained literal
-			// credential into new Java code. Governed runtime binding permits the
-			// ordinary authoring edit without weakening that existing boundary.
-			valid.Actions[0].HeaderList[0].Value = "Bearer {{secret.JAVA_REVIEW_TOKEN}}"
-			response = authoringSecretRequest(t, server, http.MethodPut, route, map[string]any{"project_id": "project-a", "source": "enterprise_script_archive", "status": "editing", "draft": valid})
 			if response.Code != http.StatusOK {
-				t.Fatalf("runtime-bound verified update=%d %s", response.Code, response.Body.String())
+				t.Fatalf("verified classpath asset update=%d %s", response.Code, response.Body.String())
 			}
 			persisted, err = store.GetAuthoringSession(session.ID)
 			if err != nil {

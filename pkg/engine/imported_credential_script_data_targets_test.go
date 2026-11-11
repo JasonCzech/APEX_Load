@@ -118,20 +118,47 @@ func TestDataSourceInlineDataLocatorResolvesFoldedColumn(t *testing.T) {
 	}
 }
 
-// A locator with no column resolves to nothing, but it must still RESOLVE: an
-// error here refuses the run, which is exactly the failure this contract fixed.
+// A locator with no column resolves to nothing for non-sensitive columns, while
+// still resolving cleanly without failing the run.
 func TestDataSourceInlineDataLocatorWithoutColumnResolvesToNothing(t *testing.T) {
 	t.Parallel()
-	script := scriptDataTargetScript(scriptDataTarget("data_sources[0].inline_data", ""))
+	script := &dsl.Script{
+		Name:     "unscoped-inline-data-locator",
+		Protocol: "stub",
+		Parameters: []dsl.Parameter{{
+			Name:       "order_code",
+			Type:       "file",
+			DataSource: "orders",
+			Column:     "order_code",
+		}},
+		DataSources: []dsl.DataSource{{
+			Name:           "orders",
+			Type:           "csv",
+			Strategy:       "sequential",
+			FirstRowHeader: true,
+			InlineData: "user,order_code,retries\n" +
+				scriptDataTargetNeighbour + ",ORD-1001,3\n" +
+				"bob,ORD-1002,4\n",
+		}},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "requestimport",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey:          dsl.ImportPreservedCredentialPolicyPreserve,
+				dsl.ImportPreservedCredentialTargetsMetadataKey: scriptDataTarget("data_sources[0].inline_data", ""),
+			},
+		}},
+	}
 
 	values, err := ImportedCredentialValues(script)
 	if err != nil {
 		t.Fatalf("ImportedCredentialValues: %v", err)
 	}
 	for _, unwanted := range []string{
-		scriptDataTargetColumnValue,
-		scriptDataTargetSecondRow,
+		"ORD-1001",
+		"ORD-1002",
 		scriptDataTargetNeighbour,
+		"3",
+		"4",
 	} {
 		if containsExactString(values, unwanted) {
 			t.Fatalf("retained runtime values = %#v, want no unscoped inline-data cell (%q)",
@@ -166,9 +193,12 @@ func TestScriptDataLocatorsFailClosedWhenTheyNoLongerMatch(t *testing.T) {
 			t.Parallel()
 			script := scriptDataTargetScript(scriptDataTarget(testCase.field, testCase.pointer))
 
-			_, err := ImportedCredentialValues(script)
+			_, err := ImportedCredentialValuesForDisclosure(script)
 			if err == nil || !strings.Contains(err.Error(), testCase.want) {
-				t.Fatalf("ImportedCredentialValues = %v, want %q", err, testCase.want)
+				t.Fatalf("ImportedCredentialValuesForDisclosure = %v, want %q", err, testCase.want)
+			}
+			if _, runtimeErr := ImportedCredentialValues(script); runtimeErr != nil {
+				t.Fatalf("ImportedCredentialValues failed on stale script-data locator: %v", runtimeErr)
 			}
 		})
 	}
@@ -214,9 +244,9 @@ func TestScriptDataLocatorsReachTheRunChokepointInBothModes(t *testing.T) {
 					platformManaged)
 			}
 			for _, value := range []string{scriptDataTargetListValue, scriptDataTargetColumnValue} {
-				if containsExactString(scriptSourced, value) != redact {
-					t.Fatalf("script-sourced values = %#v, want %q registered=%t",
-						scriptSourced, value, redact)
+				if !containsExactString(scriptSourced, value) {
+					t.Fatalf("script-sourced values = %#v, want %q registered",
+						scriptSourced, value)
 				}
 			}
 		})

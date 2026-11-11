@@ -14,6 +14,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -81,6 +83,148 @@ type RedactionConfig struct {
 	// Per-VUser session/dynamic overlays point at that base instead of copying a
 	// potentially large imported matcher after every cookie or extraction update.
 	runtimeParent *RedactionConfig
+	// dynamic holds an atomic, lock-free overlay for secrets minted by protocol
+	// adapters at runtime (such as OAuth2 access/refresh tokens or session
+	// exchange URLs) without mutating immutable matcher layers or increasing
+	// runtimeParent depth.
+	dynamic *dynamicSecretRegistry
+}
+
+type dynamicSecretRegistry struct {
+	mu      sync.Mutex
+	fence   sync.RWMutex
+	gen     atomic.Uint64
+	scopes  map[string][]string
+	overlay atomic.Pointer[RedactionConfig]
+}
+
+func ensureDynamicSecretRegistry(config *RedactionConfig) *RedactionConfig {
+	if config.publicationUnavailable() {
+		return unavailableRuntimePublicationConfig
+	}
+	existing := config.findDynamicRegistry()
+	if existing != nil && config != nil && config.dynamic == existing {
+		return config
+	}
+	detached := &RedactionConfig{}
+	if config != nil {
+		*detached = *config
+		detached.Rules = append([]RedactionRule(nil), config.Rules...)
+		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
+	}
+	if existing != nil {
+		detached.dynamic = existing
+	} else {
+		detached.dynamic = &dynamicSecretRegistry{}
+	}
+	return detached
+}
+
+func attachDynamicSecretRegistry(config *RedactionConfig, reg *dynamicSecretRegistry) *RedactionConfig {
+	if config.publicationUnavailable() {
+		return unavailableRuntimePublicationConfig
+	}
+	if reg == nil || (config != nil && config.findDynamicRegistry() != nil) {
+		return config
+	}
+	detached := &RedactionConfig{}
+	if config != nil {
+		*detached = *config
+		detached.Rules = append([]RedactionRule(nil), config.Rules...)
+		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
+	}
+	detached.dynamic = reg
+	return detached
+}
+
+func (c *RedactionConfig) findDynamicRegistry() *dynamicSecretRegistry {
+	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if c.dynamic != nil {
+			return c.dynamic
+		}
+		c = c.runtimeParent
+	}
+	return nil
+}
+
+func (c *RedactionConfig) dynamicOverlay() *RedactionConfig {
+	if reg := c.findDynamicRegistry(); reg != nil {
+		return reg.overlay.Load()
+	}
+	return nil
+}
+
+func (c *RedactionConfig) dynamicGeneration() uint64 {
+	if reg := c.findDynamicRegistry(); reg != nil {
+		return reg.gen.Load()
+	}
+	return 0
+}
+
+// RegisterDynamicSecrets records runtime-minted platform secrets (e.g., OAuth
+// bearer/refresh tokens) into the run's dynamic redaction overlay.
+func (c *RedactionConfig) RegisterDynamicSecrets(scope string, values []string) {
+	reg := c.findDynamicRegistry()
+	if reg == nil {
+		return
+	}
+	scope = strings.TrimSpace(scope)
+	if scope == "" {
+		scope = "dynamic"
+	}
+	cleaned := uniqueSortedRuntimeCredentialValues(values)
+	if len(cleaned) == 0 {
+		return
+	}
+
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	if cur := reg.overlay.Load(); cur != nil && cur.runtimePublicationUnavailable {
+		return
+	}
+	if reg.scopes == nil {
+		reg.scopes = make(map[string][]string)
+	}
+	prev := reg.scopes[scope]
+	combined := uniqueSortedRuntimeCredentialValues(append(append([]string(nil), prev...), cleaned...))
+	if len(prev) == len(combined) {
+		same := true
+		for i := range prev {
+			if prev[i] != combined[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return
+		}
+	}
+	reg.scopes[scope] = combined
+	flatSet := make(map[string]struct{})
+	for _, list := range reg.scopes {
+		for _, v := range list {
+			if v != "" {
+				flatSet[v] = struct{}{}
+			}
+		}
+	}
+	var compiled *RedactionConfig
+	if len(flatSet) > 0 {
+		flat := make([]string, 0, len(flatSet))
+		for v := range flatSet {
+			flat = append(flat, v)
+		}
+		sort.Strings(flat)
+		var err error
+		compiled, err = WithSecretValueRedactionChecked(nil, flat)
+		if err != nil {
+			compiled = unavailableRuntimePublicationConfig
+		}
+	}
+	reg.fence.Lock()
+	reg.overlay.Store(compiled)
+	reg.gen.Add(1)
+	reg.fence.Unlock()
 }
 
 var unavailableRuntimePublicationConfig = &RedactionConfig{runtimePublicationUnavailable: true}
@@ -208,7 +352,29 @@ func (c *RedactionConfig) ApplyPatterns(value string) string {
 //
 // runtimeScriptSourcedValues is a subset of runtimeSecretValues on each layer, so
 // the comparison stays O(1) per layer.
+func (c *RedactionConfig) publicationUnavailable() bool {
+	if c == nil {
+		return false
+	}
+	if dyn := c.dynamicOverlay(); dyn != nil && dyn.runtimePublicationUnavailable {
+		return true
+	}
+	for depth := 0; c != nil; depth++ {
+		if depth >= maxRuntimeSecretRedactionLayers || c.runtimePublicationUnavailable {
+			return true
+		}
+		c = c.runtimeParent
+	}
+	return false
+}
+
 func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
+	if c.publicationUnavailable() {
+		return true
+	}
+	if dyn := c.dynamicOverlay(); dyn != nil && dyn.HasRuntimeSecretMaterial() {
+		return true
+	}
 	for depth := 0; c != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		if c.runtimePublicationUnavailable || len(c.runtimeSecretValues) > len(c.runtimeScriptSourcedValues) {
 			return true
@@ -457,6 +623,7 @@ func cloneRedactionPolicy(config *RedactionConfig) *RedactionConfig {
 	if config != nil {
 		detached.Rules = append([]RedactionRule(nil), config.Rules...)
 		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
+		detached.dynamic = config.findDynamicRegistry()
 	}
 	return detached
 }
@@ -500,6 +667,13 @@ func withRuntimeSecretValueOverlay(
 
 func allRuntimeSecretValues(config *RedactionConfig) map[string]struct{} {
 	values := make(map[string]struct{})
+	if dyn := config.dynamicOverlay(); dyn != nil {
+		for value := range dyn.runtimeSecretValues {
+			if value != "" {
+				values[value] = struct{}{}
+			}
+		}
+	}
 	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		for value := range config.runtimeSecretValues {
 			if value != "" {
@@ -518,6 +692,17 @@ func allRuntimeSecretValues(config *RedactionConfig) map[string]struct{} {
 func allRuntimeScriptSourcedValues(config *RedactionConfig) map[string]struct{} {
 	scriptSourced := make(map[string]struct{})
 	var platformManaged map[string]struct{}
+	if dyn := config.dynamicOverlay(); dyn != nil {
+		for value := range dyn.runtimeSecretValues {
+			if value == "" {
+				continue
+			}
+			if platformManaged == nil {
+				platformManaged = make(map[string]struct{})
+			}
+			platformManaged[value] = struct{}{}
+		}
+	}
 	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		for value := range config.runtimeSecretValues {
 			if value == "" {
@@ -549,6 +734,9 @@ func runtimeSecretRawValueBytes(values map[string]struct{}) int {
 }
 
 func hasRuntimeSecretReplacers(config *RedactionConfig) bool {
+	if dyn := config.dynamicOverlay(); dyn != nil && len(dyn.secretReplacers) > 0 {
+		return true
+	}
 	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
 		if len(config.secretReplacers) > 0 {
 			return true
@@ -644,10 +832,13 @@ func runtimeSecretValueSetKey(sets ...[]string) [sha256.Size]byte {
 // attachRuntimeSecretRedaction keeps custom policy state detached per group
 // while sharing the immutable exact-secret matcher for identical value sets.
 func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionConfig {
+	if config.publicationUnavailable() || runtime.publicationUnavailable() {
+		return unavailableRuntimePublicationConfig
+	}
 	if runtime == nil {
 		return config
 	}
-	if config == nil || (len(config.Rules) == 0 && len(config.compiled) == 0) {
+	if config == nil || (len(config.Rules) == 0 && len(config.compiled) == 0 && config.findDynamicRegistry() == nil) {
 		return runtime
 	}
 	detached := &RedactionConfig{
@@ -661,6 +852,7 @@ func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionCo
 		runtimeMatcherComplete:     runtime.runtimeMatcherComplete,
 		runtimeScriptSourcedValues: runtime.runtimeScriptSourcedValues,
 		runtimeParent:              runtime.runtimeParent,
+		dynamic:                    config.findDynamicRegistry(),
 	}
 	return detached
 }
@@ -832,13 +1024,17 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	scrubSensitiveResultMetadata(result, config)
 	result.ErrorMessage = scrubSensitiveTextWithConfig(result.ErrorMessage, config)
 	if retainResponseBody {
-		result.ResponseBody = scrubSensitiveTextWithConfig(result.ResponseBody, config)
+		if strings.EqualFold(strings.TrimSpace(result.DependencyType), "java_http") && javaBinaryPayloadContainsSecret(result.ResponseBody, config) {
+			result.ResponseBody = redactedPayloadValue
+		} else {
+			result.ResponseBody = scrubSensitiveBodyTextWithConfig(result.ResponseBody, config)
+		}
 	} else {
 		result.ResponseBody = ""
 	}
 	result.PageURL = scrubSensitiveTextWithConfig(result.PageURL, config)
 	result.PageTitle = scrubSensitiveTextWithConfig(result.PageTitle, config)
-	result.HTML = scrubSensitiveTextWithConfig(result.HTML, config)
+	result.HTML = scrubSensitiveBodyTextWithConfig(result.HTML, config)
 	result.ConsoleEntries = scrubSensitiveConsoleEntries(result.ConsoleEntries, config)
 	result.NetworkEntries = scrubSensitiveNetworkEntries(result.NetworkEntries, config)
 	result.NetworkTrace = scrubSensitiveNetworkTrace(result.NetworkTrace, config)
@@ -866,10 +1062,18 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		redactGRPCBinaryMetadata(result.Snapshot.ResponseHeaders)
 	}
 	result.Snapshot.RequestHeaders = scrubSensitiveHeaders(result.Snapshot.RequestHeaders, config)
-	result.Snapshot.RequestBody = scrubSensitiveTextWithConfig(result.Snapshot.RequestBody, config)
+	if strings.EqualFold(strings.TrimSpace(result.DependencyType), "java_http") && javaBinaryPayloadContainsSecret(result.Snapshot.RequestBody, config) {
+		result.Snapshot.RequestBody = redactedPayloadValue
+	} else {
+		result.Snapshot.RequestBody = scrubSensitiveBodyTextWithConfig(result.Snapshot.RequestBody, config)
+	}
 	result.Snapshot.ResponseHeaders = scrubSensitiveHeaders(result.Snapshot.ResponseHeaders, config)
 	previousResponseBody := result.Snapshot.ResponseBody
-	result.Snapshot.ResponseBody = scrubSensitiveTextWithConfig(result.Snapshot.ResponseBody, config)
+	if strings.EqualFold(strings.TrimSpace(result.DependencyType), "java_http") && javaBinaryPayloadContainsSecret(result.Snapshot.ResponseBody, config) {
+		result.Snapshot.ResponseBody = redactedPayloadValue
+	} else {
+		result.Snapshot.ResponseBody = scrubSensitiveBodyTextWithConfig(result.Snapshot.ResponseBody, config)
+	}
 	if previousResponseBody != result.Snapshot.ResponseBody {
 		result.Snapshot.ResponseBodyState = "redacted"
 	}
@@ -879,14 +1083,14 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 		r.RequestHeaders = scrubSensitiveHeaders(r.RequestHeaders, config)
 		r.ResponseHeaders = scrubSensitiveHeaders(r.ResponseHeaders, config)
 		previous := r.ResponseBody
-		r.ResponseBody = scrubSensitiveTextWithConfig(r.ResponseBody, config)
+		r.ResponseBody = scrubSensitiveBodyTextWithConfig(r.ResponseBody, config)
 		if previous != r.ResponseBody {
 			r.ResponseBodyState = "redacted"
 		}
 	}
 	result.Snapshot.PageURL = scrubSensitiveTextWithConfig(result.Snapshot.PageURL, config)
 	result.Snapshot.PageTitle = scrubSensitiveTextWithConfig(result.Snapshot.PageTitle, config)
-	result.Snapshot.HTML = scrubSensitiveTextWithConfig(result.Snapshot.HTML, config)
+	result.Snapshot.HTML = scrubSensitiveBodyTextWithConfig(result.Snapshot.HTML, config)
 	result.Snapshot.ConsoleEntries = scrubSensitiveConsoleEntries(result.Snapshot.ConsoleEntries, config)
 	result.Snapshot.NetworkEntries = scrubSensitiveNetworkEntries(result.Snapshot.NetworkEntries, config)
 	result.Snapshot.DOMSummary = scrubSensitiveDOMSummary(result.Snapshot.DOMSummary, config)
@@ -902,6 +1106,51 @@ func redactGRPCBinaryMetadata(headers map[string]string) {
 			headers[key] = redactedPayloadValue
 		}
 	}
+}
+
+func javaBinaryPayloadContainsSecret(payload string, config *RedactionConfig) bool {
+	if payload == "" || config == nil {
+		return false
+	}
+	if config.ScrubText(payload) != payload {
+		return true
+	}
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(payload))
+	if err != nil {
+		raw = []byte(payload)
+	}
+	if len(raw) == 0 {
+		return false
+	}
+	rawText := string(raw)
+	if config.ScrubText(rawText) != rawText {
+		return true
+	}
+	start := -1
+	for index, b := range raw {
+		if b >= 0x20 && b <= 0x7e {
+			if start < 0 {
+				start = index
+			}
+			continue
+		}
+		if start >= 0 {
+			if index-start >= 4 {
+				segment := string(raw[start:index])
+				if config.ScrubText(segment) != segment {
+					return true
+				}
+			}
+			start = -1
+		}
+	}
+	if start >= 0 && len(raw)-start >= 4 {
+		segment := string(raw[start:])
+		if config.ScrubText(segment) != segment {
+			return true
+		}
+	}
+	return false
 }
 
 // scrubSensitiveResultMetadata covers the scalar dimensions copied into live
@@ -1029,8 +1278,8 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 				if body != nil {
 					body.MimeType = scrubSensitiveTextWithConfig(body.MimeType, config)
 				}
-				if body != nil && body.State == "retained" {
-					body.Text = scrub.BodyText(scrubSensitiveTextWithConfig(body.Text, config))
+				if body != nil && (body.State == "retained" || body.Text != "") {
+					body.Text = scrubSensitiveBodyTextWithConfig(body.Text, config)
 				}
 			}
 			entries[i].HAR = har
@@ -1038,7 +1287,7 @@ func scrubSensitiveNetworkEntries(entries []protocol.NetworkEntry, config *Redac
 		entries[i].Trace = scrubSensitiveNetworkTrace(entries[i].Trace, config)
 		entries[i].URL = scrubSensitiveTextWithConfig(entries[i].URL, config)
 		entries[i].RequestHeaders = scrubSensitiveHeaders(entries[i].RequestHeaders, config)
-		entries[i].RequestBody = scrubSensitiveTextWithConfig(entries[i].RequestBody, config)
+		entries[i].RequestBody = scrubSensitiveBodyTextWithConfig(entries[i].RequestBody, config)
 		entries[i].ResponseHeaders = scrubSensitiveHeaders(entries[i].ResponseHeaders, config)
 	}
 	return entries
@@ -1213,6 +1462,9 @@ func scrubSensitiveHeaders(headers map[string]string, config *RedactionConfig) m
 }
 
 func isSensitiveHeaderName(key string) bool {
+	if (scrub.Policy{}).SensitiveHeader(key) {
+		return true
+	}
 	normalized := strings.ToLower(strings.TrimSpace(key))
 	if _, ok := sensitiveSnapshotHeaderNames[normalized]; ok {
 		return true
@@ -1240,7 +1492,7 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	if value == "" {
 		return ""
 	}
-	if config != nil && config.runtimePublicationUnavailable {
+	if config.publicationUnavailable() {
 		return "runtime evidence detail unavailable"
 	}
 	if strings.TrimSpace(value) == "" {
@@ -1262,6 +1514,19 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 	// values in explicitly sensitive fields and URL credentials without applying
 	// generic high-entropy or JWT guesses to unrelated evidence.
 	return scrub.ValueLabel(redacted, scrub.Policy{})
+}
+
+func scrubSensitiveBodyTextWithConfig(value string, config *RedactionConfig) string {
+	if value == "" {
+		return ""
+	}
+	if config.publicationUnavailable() {
+		return "runtime evidence detail unavailable"
+	}
+	if strings.TrimSpace(value) == "" {
+		return value
+	}
+	return scrub.BodyText(scrubSensitiveTextWithConfig(value, config))
 }
 
 // scrubSensitiveIdentityWithConfig marks an explicit no-redaction boundary for
@@ -1309,6 +1574,50 @@ func scrubStructurallyValidJWTs(value string) string {
 	})
 }
 
+func applyRuntimeSecretLayer(original string, layer *RedactionConfig, matchedOffsets []bool) bool {
+	if layer == nil {
+		return false
+	}
+	matched := false
+	for _, replacer := range layer.secretReplacers {
+		candidate := replacer.Replace(original)
+		if len(candidate) != len(original) {
+			// Runtime replacements are constructed same-width. Ignore an
+			// impossible malformed layer rather than indexing mismatched
+			// evidence; the ordinary scrubbers still run afterwards.
+			continue
+		}
+		for index := range candidate {
+			if candidate[index] != 0 || original[index] == 0 {
+				continue
+			}
+			matchedOffsets[index] = true
+			matched = true
+		}
+	}
+	// A same-width zero placeholder cannot distinguish an authored NUL from
+	// a NUL inside the matched secret. Resolve only those unusual variants by
+	// exact offsets; ordinary evidence NULs remain untouched.
+	for variant := range layer.runtimeSecretVariants {
+		if !strings.ContainsRune(variant, '\x00') {
+			continue
+		}
+		for offset := 0; offset <= len(original)-len(variant); {
+			index := strings.Index(original[offset:], variant)
+			if index < 0 {
+				break
+			}
+			index += offset
+			for matchIndex := index; matchIndex < index+len(variant); matchIndex++ {
+				matchedOffsets[matchIndex] = true
+			}
+			matched = true
+			offset = index + 1
+		}
+	}
+	return matched
+}
+
 func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	if value == "" || !hasRuntimeSecretReplacers(config) {
 		return value
@@ -1321,42 +1630,14 @@ func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
 	original := value
 	matchedOffsets := make([]bool, len(value))
 	matched := false
-	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
-		for _, replacer := range config.secretReplacers {
-			candidate := replacer.Replace(original)
-			if len(candidate) != len(original) {
-				// Runtime replacements are constructed same-width. Ignore an
-				// impossible malformed layer rather than indexing mismatched
-				// evidence; the ordinary scrubbers still run afterwards.
-				continue
-			}
-			for index := range candidate {
-				if candidate[index] != 0 || original[index] == 0 {
-					continue
-				}
-				matchedOffsets[index] = true
-				matched = true
-			}
+	if dyn := config.dynamicOverlay(); dyn != nil {
+		if applyRuntimeSecretLayer(original, dyn, matchedOffsets) {
+			matched = true
 		}
-		// A same-width zero placeholder cannot distinguish an authored NUL from
-		// a NUL inside the matched secret. Resolve only those unusual variants by
-		// exact offsets; ordinary evidence NULs remain untouched.
-		for variant := range config.runtimeSecretVariants {
-			if !strings.ContainsRune(variant, '\x00') {
-				continue
-			}
-			for offset := 0; offset <= len(original)-len(variant); {
-				index := strings.Index(original[offset:], variant)
-				if index < 0 {
-					break
-				}
-				index += offset
-				for matchIndex := index; matchIndex < index+len(variant); matchIndex++ {
-					matchedOffsets[matchIndex] = true
-				}
-				matched = true
-				offset = index + 1
-			}
+	}
+	for depth := 0; config != nil && depth < maxRuntimeSecretRedactionLayers; depth++ {
+		if applyRuntimeSecretLayer(original, config, matchedOffsets) {
+			matched = true
 		}
 		config = config.runtimeParent
 	}

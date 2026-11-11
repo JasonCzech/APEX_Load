@@ -705,3 +705,32 @@ func actionTypes(actions []dsl.Action) []string {
 	}
 	return out
 }
+
+func TestConvertNeutralizesInvalidDSLTemplatesInChromeAndPlaywright(t *testing.T) {
+	chromeRes, err := Convert([]byte(`{
+  "title": "Chrome {{run.id}} {{run.name}} {{file.undeclared}}",
+  "steps": [
+    {"type": "navigate", "url": "https://shop.example/login?run={{run.name}}&file={{file.undeclared}}"},
+    {"type": "change", "selectors": [["#user-{{run.id}}"]], "value": "val-{{run.name}}-{{file.undeclared}}"},
+    {"type": "waitForElement", "selectors": [["#el-{{run.id}}"]], "properties": {"value": "{{run.id}}"}, "attributes": {"data-x": "{{run.name}}"}}
+  ]
+}`), ConvertOptions{ScriptName: "Chrome {{run.id}}"})
+	if err != nil {
+		t.Fatalf("Convert Chrome: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(chromeRes.Script); len(issues) != 0 {
+		t.Fatalf("Chrome ValidateScriptIssues = %#v, want empty", issues)
+	}
+
+	pwRes, err := Convert([]byte(`
+await page.goto('https://shop.example/?run={{run.name}}&file={{file.undeclared}}');
+await page.getByText('Hello {{run.id}} {{run.name}}').click();
+await page.locator('#password').fill('secret-{{run.id}}-{{run.name}}-{{file.undeclared}}');
+`), ConvertOptions{ScriptName: "Playwright {{run.id}} {{run.name}}"})
+	if err != nil {
+		t.Fatalf("Convert Playwright: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(pwRes.Script); len(issues) != 0 {
+		t.Fatalf("Playwright ValidateScriptIssues = %#v, want empty", issues)
+	}
+}

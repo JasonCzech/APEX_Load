@@ -1233,25 +1233,27 @@ func TestPortableHashesStayStableWhileLibraryAndGitHubPayloadsStayRunnable(t *te
 	first := seedLegacySecretScript(server, secretBearingScript("portable", "project-a"))
 	second := secretBearingScript("portable-2", "project-a")
 	second.Config.HTTP.Auth.Password = "different-password"
-	if hashLibraryScript(first.Script) != hashLibraryScript(second) {
-		t.Fatal("portable script hash changed when only an inline secret changed")
+	if hashLibraryScript(first.Script) == hashLibraryScript(second) {
+		t.Fatal("canonical unmasked script hash did not reflect changed inline credential")
+	}
+	if legacyMaskedHashLibraryScript(first.Script) != legacyMaskedHashLibraryScript(second) {
+		t.Fatal("legacy masked script hash changed when only an inline secret changed")
+	}
+	if !libraryScriptHashMatches(first.Script, legacyMaskedHashLibraryScript(second)) {
+		t.Fatal("libraryScriptHashMatches did not accept legacy masked hash fallback")
 	}
 	item, err := server.libraryScriptBundleItem(first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	// A library bundle crosses an instance boundary and the receiver imports it,
-	// so like a download/export it must carry the runnable script. Masking here
-	// meant an instance-to-instance transfer silently produced a script that
-	// could not execute.
+	// so like a download/export it must carry the runnable script.
 	itemJSON, _ := json.Marshal(item)
 	if !strings.Contains(string(itemJSON), "global-password") {
 		t.Fatalf("library item dropped executable credentials: %s", itemJSON)
 	}
-	// The hash is still the masked, portable one (hashLibraryScript masks
-	// internally), so shipping the executable body does not change link identity.
-	if item.ContentHash != hashLibraryScript(second) {
-		t.Fatalf("library item hash = %q, want the portable masked hash %q", item.ContentHash, hashLibraryScript(second))
+	if item.ContentHash != hashLibraryScript(first.Script) {
+		t.Fatalf("library item hash = %q, want canonical unmasked hash %q", item.ContentHash, hashLibraryScript(first.Script))
 	}
 	// The GitHub envelope is the same artifact as a download/export: it must be
 	// importable back into a runnable script, and drift detection hashes these

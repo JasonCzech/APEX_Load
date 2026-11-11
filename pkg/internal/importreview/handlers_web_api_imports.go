@@ -6,6 +6,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/llmapi"
 	"github.com/jasonczech/apexload/pkg/convert/mulesoft"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"net/http"
 	"strings"
 )
@@ -185,7 +186,59 @@ func AttachLLMAPIReview(script *dsl.Script, source string, sections []ScriptImpo
 	}
 	var changes []llmapi.Change
 	if transform && script != nil {
+		type headerSnapshot struct {
+			headers    map[string]string
+			headerList dsl.HeaderList
+		}
+		snapshots := make(map[string]headerSnapshot)
+		_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+			if ref.Action == nil {
+				return nil
+			}
+			var headersCopy map[string]string
+			if len(ref.Action.Headers) > 0 {
+				headersCopy = make(map[string]string, len(ref.Action.Headers))
+				for k, v := range ref.Action.Headers {
+					headersCopy[k] = v
+				}
+			}
+			var listCopy dsl.HeaderList
+			if len(ref.Action.HeaderList) > 0 {
+				listCopy = append(dsl.HeaderList(nil), ref.Action.HeaderList...)
+			}
+			snapshots[ref.Path] = headerSnapshot{headers: headersCopy, headerList: listCopy}
+			return nil
+		})
 		changes = llmapi.Transform(script)
+		_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+			snap, ok := snapshots[ref.Path]
+			if !ok || ref.Action == nil {
+				return nil
+			}
+			for k, priorVal := range snap.headers {
+				if strings.TrimSpace(priorVal) != "" && strings.Contains(ref.Action.Headers[k], "{{secret.llm_api_key}}") && !strings.Contains(priorVal, "{{secret.llm_api_key}}") {
+					ref.Action.Headers[k] = priorVal
+				}
+			}
+			for i := range ref.Action.HeaderList {
+				if i < len(snap.headerList) &&
+					strings.EqualFold(ref.Action.HeaderList[i].Name, snap.headerList[i].Name) &&
+					strings.TrimSpace(snap.headerList[i].Value) != "" &&
+					strings.Contains(ref.Action.HeaderList[i].Value, "{{secret.llm_api_key}}") &&
+					!strings.Contains(snap.headerList[i].Value, "{{secret.llm_api_key}}") {
+					ref.Action.HeaderList[i].Value = snap.headerList[i].Value
+				}
+			}
+			return nil
+		})
+		filtered := changes[:0]
+		for _, ch := range changes {
+			if ch.Step == "scrub_llm_auth" {
+				continue
+			}
+			filtered = append(filtered, ch)
+		}
+		changes = filtered
 	}
 	if script != nil {
 		preserved := EnsureScriptImportPreserved(script, source)
@@ -211,7 +264,7 @@ func LLMAPIReviewSection(review *llmapi.Review, changes []llmapi.Change) ScriptI
 	}
 	summary := fmt.Sprintf("Detected %d LLM inference call(s) across dialect(s) %s.", len(review.Calls), strings.Join(review.Dialects, ", "))
 	if len(changes) > 0 {
-		summary += fmt.Sprintf(" Applied %d llm_request upgrade/redaction change(s).", len(changes))
+		summary += fmt.Sprintf(" Applied %d llm_request upgrade change(s).", len(changes))
 	}
 	return ScriptImportReviewSection{
 		Key:      "llm_api_review",

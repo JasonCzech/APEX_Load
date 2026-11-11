@@ -1,8 +1,6 @@
 package wsdl
 
 import (
-	"encoding/xml"
-	"io"
 	"sort"
 	"strings"
 
@@ -10,7 +8,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/credential"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // wsdlCredentialProjectionOptions contains provenance only. Credential values
@@ -20,14 +17,6 @@ type wsdlCredentialProjectionOptions struct {
 	SourcePath string
 	Pointer    string
 	Registry   *credentialpolicy.NameRegistry
-}
-
-// wsdlProjectedSecret retains source values only for the duration of Convert,
-// so source-review copies can be scrubbed. Its public requirement is cleared of
-// migration material because WSDL does not expose a protected import session.
-type wsdlProjectedSecret struct {
-	Requirement  credentialpolicy.Requirement
-	SourceValues []string
 }
 
 // isGovernedWSDLXMLValue recognizes only exact runtime values emitted by the
@@ -236,6 +225,10 @@ func wsdlImportReviewMetadata(findings []importreview.Finding, sourcePath, point
 func wsdlExecutionGatingFindings(findings []importreview.Finding) []importreview.Finding {
 	out := make([]importreview.Finding, 0, len(findings))
 	for _, finding := range findings {
+		if finding.Code == "import_credential_preserved" ||
+			finding.Code == "import_credential_source_unavailable" {
+			continue
+		}
 		if finding.Gate == importreview.GateExecution || finding.Severity == diag.Blocker {
 			out = append(out, finding)
 		}
@@ -254,115 +247,6 @@ func sourceLocation(path, pointer string) string {
 	default:
 		return path + "#" + pointer
 	}
-}
-
-func redactWSDLProjectedSecrets(files map[string]string, secrets []wsdlProjectedSecret) map[string]string {
-	if len(files) == 0 {
-		return nil
-	}
-	values := make([]string, 0)
-	for _, secret := range secrets {
-		values = append(values, secret.SourceValues...)
-	}
-	values = uniqueNonEmptyStrings(values...)
-	sort.SliceStable(values, func(i, j int) bool {
-		if len(values[i]) == len(values[j]) {
-			return values[i] < values[j]
-		}
-		return len(values[i]) > len(values[j])
-	})
-	replacements := make([]string, 0, len(values)*2)
-	for _, value := range values {
-		replacements = append(replacements, value, credential.Redacted)
-	}
-	var replacer *strings.Replacer
-	if len(replacements) > 0 {
-		// A single trie-backed replacement pass avoids O(source-bytes ×
-		// requirement-count) work for schemas containing many distinct authored
-		// credential defaults.
-		replacer = strings.NewReplacer(replacements...)
-	}
-	out := make(map[string]string, len(files))
-	for name, content := range files {
-		if replacer != nil {
-			content = replacer.Replace(content)
-		}
-		if wsdlXMLContainsDecodedProtectedValue(content, replacer) ||
-			wsdlXMLContainsSensitiveURL(content) {
-			content = "<!-- [WSDL SOURCE OMITTED: ENCODED CREDENTIAL VALUE CANNOT BE SAFELY REDACTED IN PLACE] -->"
-		}
-		// Source review is a disclosure surface, including for unused schema
-		// branches that never contribute a generated request and therefore never
-		// create a projection requirement. Apply the irreversible shared scrubber
-		// after exact projected-value removal so those dormant credentials cannot
-		// survive in API JSON.
-		content = scrub.Value(content, scrub.Policy{})
-		out[name] = content
-	}
-	return out
-}
-
-func wsdlXMLContainsSensitiveURL(content string) bool {
-	decoder := xml.NewDecoder(strings.NewReader(content))
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			// Conversion already parsed the source document. If the public copy
-			// cannot be decoded, omit it rather than risk overlooking an
-			// alternate XML spelling of a credential-bearing URL.
-			return err != io.EOF
-		}
-		start, ok := token.(xml.StartElement)
-		if !ok {
-			continue
-		}
-		for _, attribute := range start.Attr {
-			value := strings.TrimSpace(attribute.Value)
-			if value != "" && scrub.ValueURL(value, scrub.Policy{}) != value {
-				// Re-serializing the XML merely to redact a decoded attribute
-				// would change the operator-facing source review and can miss
-				// entity spellings. Omit this review copy while retaining the
-				// exact credential-bearing URL in the destination script.
-				return true
-			}
-		}
-	}
-}
-
-func wsdlXMLContainsDecodedProtectedValue(content string, replacer *strings.Replacer) bool {
-	if replacer == nil {
-		return false
-	}
-	decoder := xml.NewDecoder(strings.NewReader(content))
-	for {
-		token, err := decoder.Token()
-		if err != nil {
-			// The source parsed before conversion. If redaction makes the
-			// public copy ambiguous, fail closed instead of assuming an entity
-			// or alternate XML spelling no longer discloses a credential.
-			return err != io.EOF
-		}
-		switch typed := token.(type) {
-		case xml.CharData:
-			if containsWSDLProtectedValue(string(typed), replacer) {
-				return true
-			}
-		case xml.StartElement:
-			for _, attribute := range typed.Attr {
-				if containsWSDLProtectedValue(attribute.Value, replacer) {
-					return true
-				}
-			}
-		}
-	}
-}
-
-func containsWSDLProtectedValue(value string, replacer *strings.Replacer) bool {
-	return replacer != nil && replacer.Replace(value) != value
-}
-
-func uniqueNonEmptyStrings(values ...string) []string {
-	return uniqueSortedStrings(values)
 }
 
 func uniqueSortedStrings(values []string) []string {

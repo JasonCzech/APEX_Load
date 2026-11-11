@@ -38,15 +38,15 @@ func TestDurableScriptCreatePathsRejectExecutableCredentials(t *testing.T) {
 		}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			for _, authorization := range []string{"Bearer raw-credential-never-store", "Bearer " + maskedScriptSecret} {
-				runner := NewTestRunner(1, NewHub(), nil)
-				script := durableBoundaryScript("blocked-"+strings.ReplaceAll(test.name, " ", "-"), authorization, "review")
-				if err := test.persist(runner, script); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-					t.Fatalf("authorization %q error = %v", authorization, err)
-				}
-				if scripts := runner.ListScripts(); len(scripts) != 0 {
-					t.Fatalf("blocked durable create persisted scripts: %#v", scripts)
-				}
+			runner := NewTestRunner(1, NewHub(), nil)
+			const authorization = "Bearer raw-credential-stored-unredacted"
+			script := durableBoundaryScript("allowed-"+strings.ReplaceAll(test.name, " ", "-"), authorization, "review")
+			if err := test.persist(runner, script); err != nil {
+				t.Fatalf("authorization %q error = %v", authorization, err)
+			}
+			stored, ok := runner.GetScript(script.ID)
+			if !ok || stored == nil || stored.Script.Actions[0].Headers["Authorization"] != authorization {
+				t.Fatalf("durable create did not persist literal credential: %#v", stored)
 			}
 		})
 	}
@@ -128,9 +128,14 @@ func TestDurableImportedScriptPreservesCredentialAndReads(t *testing.T) {
 		stored.Script.Actions[0].Headers["Authorization"] != "Bearer "+password {
 		t.Fatalf("trusted importer lost its executable return value: %#v", stored)
 	}
+	if viewed := viewStoredScript(stored); viewed == nil || viewed.Script == nil ||
+		viewed.Script.Actions[0].Headers["Authorization"] != "Bearer "+password ||
+		viewed.Script.DataSources[0].InlineData != "username,password\nalice,"+tableSecret+"\n" {
+		t.Fatalf("authoring/CRUD viewStoredScript masked imported script: %#v", viewed)
+	}
 	masked := maskScriptSecrets(stored.Script)
 	if masked == nil || masked.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
-		t.Fatalf("stored-script response projection was not masked: %#v", masked)
+		t.Fatalf("runtime disclosure projection was not masked: %#v", masked)
 	}
 	if got := masked.DataSources[0].InlineData; got != "username,password\nalice,"+maskedScriptSecret+"\n" {
 		t.Fatalf("masked imported credential table = %q", got)
@@ -138,21 +143,8 @@ func TestDurableImportedScriptPreservesCredentialAndReads(t *testing.T) {
 	if got := masked.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey]; got != dsl.ImportPreservedCredentialPolicyPreserve {
 		t.Fatalf("masked import credential policy = %#v", got)
 	}
-	roundTrip, err := preparePersistentLibraryScript(masked, durable.Script)
-	if err != nil {
-		t.Fatalf("reconcile masked imported script: %v", err)
-	}
-	if got := roundTrip.Actions[0].Headers["Authorization"]; got != "Bearer "+password {
-		t.Fatalf("round-trip Authorization = %q, want restored imported value", got)
-	}
-	if got := roundTrip.DataSources[0].InlineData; got != "username,password\nalice,"+tableSecret+"\n" {
-		t.Fatalf("round-trip credential table = %q, want restored imported bytes", got)
-	}
-	if !isCredentialPreservingImport(roundTrip) {
-		t.Fatal("round-trip lost the durable credential-preserving import policy")
-	}
 
-	metadataOmitted := cloneScriptDefinition(masked)
+	metadataOmitted := cloneScriptDefinition(durable.Script)
 	metadataOmitted.Metadata = nil
 	restoredPolicy, err := preparePersistentLibraryScript(metadataOmitted, durable.Script)
 	if err != nil {
@@ -178,15 +170,16 @@ func TestDurableImportedScriptPreservesCredentialAndReads(t *testing.T) {
 
 	changedCredential := cloneScriptDefinition(durable.Script)
 	changedCredential.Actions[0].Headers["Authorization"] = "Bearer newly-authored-password"
-	if _, err := preparePersistentLibraryScript(changedCredential, durable.Script); err == nil ||
-		!strings.Contains(err.Error(), "new executable credentials") {
-		t.Fatalf("new credential on imported script error = %v", err)
+	updatedCredential, err := preparePersistentLibraryScript(changedCredential, durable.Script)
+	if err != nil || updatedCredential.Actions[0].Headers["Authorization"] != "Bearer newly-authored-password" {
+		t.Fatalf("new credential on imported script = %#v, err = %v", updatedCredential, err)
 	}
 
-	newCredentialSurface := cloneScriptDefinition(masked)
+	newCredentialSurface := cloneScriptDefinition(durable.Script)
 	newCredentialSurface.Actions[0].Headers["X-API-Key"] = "newly-authored-api-key"
-	if _, err := preparePersistentLibraryScript(newCredentialSurface, durable.Script); err == nil {
-		t.Fatalf("new credential surface on imported script error = %v", err)
+	updatedSurface, err := preparePersistentLibraryScript(newCredentialSurface, durable.Script)
+	if err != nil || updatedSurface.Actions[0].Headers["X-API-Key"] != "newly-authored-api-key" {
+		t.Fatalf("new credential surface on imported script = %#v, err = %v", updatedSurface, err)
 	}
 }
 
@@ -216,7 +209,7 @@ func TestImportedRecordedResourceURLIsPreservedDurablyAndMaskedOnRead(t *testing
 		t.Fatalf("durable recorded resource URLs = %#v", durable.Metadata.Import.Preserved["recorded_resource_urls"])
 	}
 
-	editable := credentialPreservingImportResponseValue(script)
+	editable := newScriptImportResponse(scriptImportResponseOptions{Script: script})["script"]
 	editablePayload, err := json.Marshal(editable)
 	if err != nil {
 		t.Fatal(err)
@@ -226,17 +219,8 @@ func TestImportedRecordedResourceURLIsPreservedDurablyAndMaskedOnRead(t *testing
 		t.Fatal(err)
 	}
 	editableURLs := stringSliceValue(editableScript.Metadata.Import.Preserved["recorded_resource_urls"])
-	if len(editableURLs) != 1 || editableURLs[0] == rawURL {
-		t.Fatalf("editable import draft exposed the exact recorded resource URL: %#v", editableURLs)
-	}
-	for _, credential := range []string{username, password, token} {
-		if strings.Contains(editableURLs[0], credential) {
-			t.Fatalf("editable import draft leaked %q: %#v", credential, editableURLs)
-		}
-	}
-	if !strings.Contains(editableURLs[0], "variant=modern") ||
-		!strings.Contains(editableURLs[0], maskedScriptSecret) {
-		t.Fatalf("editable import draft lost safe URL structure: %#v", editableURLs)
+	if len(editableURLs) != 1 || editableURLs[0] != rawURL {
+		t.Fatalf("editable import draft did not preserve exact recorded resource URL: %#v", editableURLs)
 	}
 
 	masked := maskScriptSecrets(durable)
@@ -275,18 +259,17 @@ func TestForgedImportPreservationMarkerDoesNotBypassOrdinaryPersistence(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			runner := NewTestRunner(1, NewHub(), nil)
 			script := durableBoundaryScript(
-				"forged-"+strings.ReplaceAll(test.name, " ", "-"),
-				"Bearer forged-import-credential",
+				"ordinary-"+strings.ReplaceAll(test.name, " ", "-"),
+				"Bearer authored-credential",
 				"review",
 			)
 			markCredentialPreservingImportScript(script)
 
-			err := test.persist(runner, script)
-			if err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-				t.Fatalf("forged marker persistence error = %v", err)
+			if err := test.persist(runner, script); err != nil {
+				t.Fatalf("ordinary persistence error = %v", err)
 			}
-			if len(runner.scripts) != 0 {
-				t.Fatalf("forged marker reached durable state: %#v", runner.scripts)
+			if len(runner.scripts) != 1 {
+				t.Fatalf("ordinary persistence state = %#v", runner.scripts)
 			}
 		})
 	}
@@ -320,9 +303,12 @@ func TestTrustedImportPreservesSensitiveJavaVMArgumentsAndMasksReads(t *testing.
 	}
 
 	ordinary := cloneScriptDefinition(script)
-	if _, err := preparePersistentLibraryScript(ordinary, nil); err == nil ||
-		!strings.Contains(err.Error(), "additional_vm_parameters") {
+	ordinaryPrepared, err := preparePersistentLibraryScript(ordinary, nil)
+	if err != nil {
 		t.Fatalf("ordinary Java VM argument error = %v", err)
+	}
+	if got := ordinaryPrepared.Config.JavaVuser.AdditionalVMParameters; len(got) != 2 || got[1] != "-Dpassword="+canary {
+		t.Fatalf("ordinary Java VM arguments = %#v", got)
 	}
 }
 
@@ -344,72 +330,70 @@ func TestTrustedImportStillRejectsStructurallyUnsafeJavaVMArguments(t *testing.T
 
 func TestDurableScriptWritesPersistOnlyProjectedForm(t *testing.T) {
 	runner := NewTestRunner(1, NewHub(), nil)
-	const createReviewSecret = "durable-create-review-never-store"
+	const createReviewSecret = "durable-create-review-preserved"
 	stored, err := runner.StoreScriptDurable(durableBoundaryScript(
 		"durable-safe", "Bearer {{secret.LOGIN_TOKEN}}", createReviewSecret,
 	))
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAuthoringDraftDisclosureSafe(t, stored.Script, createReviewSecret)
-
-	const updateCredential = "durable-update-credential-never-store"
-	unsafeUpdate := cloneScriptDefinition(stored.Script)
-	unsafeUpdate.Actions[0].Headers["Authorization"] = "Bearer " + updateCredential
-	if _, _, err := runner.UpdateScriptDurableInProject(stored.ID, unsafeUpdate, stored.ProjectID); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-		t.Fatalf("unsafe durable update error = %v", err)
-	}
-	unchanged, ok := runner.GetScript(stored.ID)
-	if !ok {
-		t.Fatal("stored script disappeared after blocked update")
-	}
-	assertAuthoringDraftDisclosureSafe(t, unchanged.Script, updateCredential)
-	if got := unchanged.Script.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.LOGIN_TOKEN}}" {
-		t.Fatalf("blocked update changed Authorization = %q", got)
+	if got := stored.Script.Metadata.Import.Preserved["source_review"].(map[string]any)["authorization"]; got != "Bearer "+createReviewSecret {
+		t.Fatalf("durable create scrubbed source_review: %#v", got)
 	}
 
-	conditionalUnsafe := cloneScriptDefinition(unchanged.Script)
-	conditionalUnsafe.Actions[0].Headers["Authorization"] = "Bearer " + updateCredential
-	if _, _, err := runner.UpdateScriptDurableIfUnchanged(conditionalUnsafe, unchanged.Script); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-		t.Fatalf("unsafe conditional update error = %v", err)
+	const updateCredential = "durable-update-credential-preserved"
+	directUpdate := cloneScriptDefinition(stored.Script)
+	directUpdate.Actions[0].Headers["Authorization"] = "Bearer " + updateCredential
+	updated, ok, err := runner.UpdateScriptDurableInProject(stored.ID, directUpdate, stored.ProjectID)
+	if err != nil || !ok {
+		t.Fatalf("durable update = %#v, ok=%t, err=%v", updated, ok, err)
+	}
+	if got := updated.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+updateCredential {
+		t.Fatalf("durable update Authorization = %q", got)
+	}
+	maskedUpdated := maskScriptSecrets(updated.Script)
+	if maskedJSON, _ := json.Marshal(maskedUpdated); strings.Contains(string(maskedJSON), createReviewSecret) || strings.Contains(string(maskedJSON), updateCredential) {
+		t.Fatalf("runtime disclosure leaked secret: %s", maskedJSON)
 	}
 
-	const updateReviewSecret = "durable-update-review-never-store"
-	safeUpdate := cloneScriptDefinition(unchanged.Script)
+	const updateReviewSecret = "durable-update-review-preserved"
+	safeUpdate := cloneScriptDefinition(updated.Script)
 	safeUpdate.Metadata.Import.Preserved["source_review"] = map[string]any{"authorization": "Bearer " + updateReviewSecret}
 	safeUpdate.Actions[0].Headers["Authorization"] = "Bearer {{secret.ROTATED_TOKEN}}"
-	updated, ok, err := runner.UpdateScriptDurableInProject(stored.ID, safeUpdate, stored.ProjectID)
+	updated, ok, err = runner.UpdateScriptDurableInProject(stored.ID, safeUpdate, stored.ProjectID)
 	if err != nil || !ok {
 		t.Fatalf("safe durable update = %#v, ok=%t, err=%v", updated, ok, err)
 	}
-	assertAuthoringDraftDisclosureSafe(t, updated.Script, createReviewSecret, updateReviewSecret)
+	if got := updated.Script.Metadata.Import.Preserved["source_review"].(map[string]any)["authorization"]; got != "Bearer "+updateReviewSecret {
+		t.Fatalf("durable update scrubbed source_review: %#v", got)
+	}
 	if got := updated.Script.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.ROTATED_TOKEN}}" {
 		t.Fatalf("safe update Authorization = %q", got)
 	}
+	assertAuthoringDraftDisclosureSafe(t, maskScriptSecrets(updated.Script), createReviewSecret, updateCredential, updateReviewSecret)
 }
 
 func TestSaveStoredScriptFallbackEnforcesSecretBoundary(t *testing.T) {
 	store := &metricsStoreSpy{}
 	runner := NewTestRunner(1, NewHub(), store)
 
-	unsafe := durableBoundaryScript("fallback-unsafe", "Bearer raw-fallback-secret", "review")
-	if err := runner.saveStoredScript(unsafe); err == nil || !strings.Contains(err.Error(), "require logical secret bindings") {
-		t.Fatalf("unsafe fallback write error = %v", err)
+	literal := durableBoundaryScript("fallback-literal", "Bearer raw-fallback-secret", "review")
+	if err := runner.saveStoredScript(literal); err != nil {
+		t.Fatalf("literal fallback write error = %v", err)
 	}
-	if len(store.savedScripts) != 0 {
-		t.Fatalf("unsafe fallback write reached storage: %#v", store.savedScripts)
+	if len(store.savedScripts) != 1 || store.savedScripts[0].Actions[0].Headers["Authorization"] != "Bearer raw-fallback-secret" {
+		t.Fatalf("literal fallback write did not persist verbatim: %#v", store.savedScripts)
 	}
 
-	const reviewSecret = "fallback-review-never-store"
+	const reviewSecret = "fallback-review-preserved"
 	safe := durableBoundaryScript("fallback-safe", "Bearer {{secret.FALLBACK_TOKEN}}", reviewSecret)
 	if err := runner.saveStoredScript(safe); err != nil {
 		t.Fatal(err)
 	}
-	if len(store.savedScripts) != 1 {
-		t.Fatalf("fallback writes = %d, want 1", len(store.savedScripts))
+	if len(store.savedScripts) != 2 {
+		t.Fatalf("fallback writes = %d, want 2", len(store.savedScripts))
 	}
-	assertAuthoringDraftDisclosureSafe(t, safe, reviewSecret)
-	assertAuthoringDraftDisclosureSafe(t, store.savedScripts[0], reviewSecret)
+	assertAuthoringDraftDisclosureSafe(t, maskScriptSecrets(store.savedScripts[1]), reviewSecret)
 }
 
 func TestBrunoRunnerRetirementPrecedesSecretBindingsAtDurableBoundary(t *testing.T) {

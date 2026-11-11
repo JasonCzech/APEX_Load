@@ -423,8 +423,13 @@ func TestConvertSession_UsesRawHeadersAndKeepsRecordedCredentials(t *testing.T) 
 	if corr.RuleID == "" || corr.Confidence <= 0 || len(corr.Reasons) == 0 || corr.FoundInSeq != 1 || len(corr.UsedInSeqs) != 1 || corr.UsedInSeqs[0] != 2 || !corr.PreApplied {
 		t.Fatalf("correlation = %#v, want rule ranking and recorder sequences", corr)
 	}
-	if corr.Value != "" || corr.SampleValue != "" {
-		t.Fatalf("correlation discloses its value: %#v", corr)
+	if corr.Value != "tok-abcdef123456" || corr.SampleValue != "tok-abcdef123456" {
+		t.Fatalf("default correlation blanked value/sample: %#v", corr)
+	}
+
+	scrubbed := ConvertSessionWithOptions(s, "", ConvertOptions{ScrubSensitive: true})
+	if len(scrubbed.Correlations) != 1 || scrubbed.Correlations[0].Value != "" || scrubbed.Correlations[0].SampleValue != "" {
+		t.Fatalf("scrub_sensitive correlation disclosed its value: %#v", scrubbed.Correlations)
 	}
 }
 
@@ -464,8 +469,12 @@ func TestConvertSession_UsesRepeatedRawResponseHeadersWithoutDisclosingSamples(t
 		t.Fatalf("correlations = %#v, want reused raw response header", result.Correlations)
 	}
 	corr := result.Correlations[0]
-	if corr.Name != "corr_x_session_token" || corr.Value != "" || corr.SampleValue != "" {
-		t.Fatalf("public correlation must retain structure but omit samples: %#v", corr)
+	if corr.Name != "corr_x_session_token" || corr.Value != token || corr.SampleValue != token {
+		t.Fatalf("default correlation must retain value and sample: %#v", corr)
+	}
+	scrubbed := ConvertSessionWithOptions(s, "", ConvertOptions{ScrubSensitive: true})
+	if len(scrubbed.Correlations) != 1 || scrubbed.Correlations[0].Value != "" || scrubbed.Correlations[0].SampleValue != "" {
+		t.Fatalf("scrub_sensitive correlation must omit samples: %#v", scrubbed.Correlations)
 	}
 	if len(result.Script.Actions[0].Extractors) != 1 || !strings.Contains(result.Script.Actions[0].Extractors[0].Expression, "{1}") {
 		t.Fatalf("source extractor = %#v, want second repeated header", result.Script.Actions[0].Extractors)
@@ -786,9 +795,15 @@ func TestConvertSessionWithOptions_Parameterize(t *testing.T) {
 		t.Fatalf("generated data source still requires password re-entry: %q", ds.InlineData)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
-	secretColumns, ok := preserved["recorded_input_secret_columns"].([]string)
+	if _, exists := preserved["recorded_input_secret_columns"]; exists {
+		t.Fatalf("recorded_input_secret_columns = %#v, want omitted when scrub_sensitive=false", preserved["recorded_input_secret_columns"])
+	}
+
+	scrubbed := ConvertSessionWithOptions(s, "", ConvertOptions{Parameterize: true, ScrubSensitive: true})
+	scrubbedPreserved := scrubbed.Script.Metadata.Import.Preserved
+	secretColumns, ok := scrubbedPreserved["recorded_input_secret_columns"].([]string)
 	if !ok || len(secretColumns) != 1 || secretColumns[0] != "password" {
-		t.Fatalf("recorded_input_secret_columns = %#v, want [password]", preserved["recorded_input_secret_columns"])
+		t.Fatalf("recorded_input_secret_columns with scrub_sensitive=true = %#v, want [password]", scrubbedPreserved["recorded_input_secret_columns"])
 	}
 
 	bodies := result.Script.Actions[0].Body + result.Script.Actions[1].Target
@@ -1189,5 +1204,63 @@ func TestConvertSessionKeepsRequestNotes(t *testing.T) {
 	}
 	if _, ok := result.Script.Actions[1].Metadata["note"]; ok {
 		t.Fatalf("second step has a note: %v", result.Script.Actions[1].Metadata["note"])
+	}
+}
+
+func TestConvertSessionWebSocketOnlyAndDeferredParameterizeNeutralizeDSLTemplates(t *testing.T) {
+	wsSession := &Session{
+		ID:      "ws-tpl",
+		Name:    "WS {{run.id}} {{run.name}} {{file.undeclared}}",
+		BaseURL: "https://ws.example.test/{{run.name}}",
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "wss://ws.example.test/socket?bad={{run.name}}&file={{file.undeclared}}",
+				Path:       "/socket",
+				Host:       "ws.example.test",
+				StatusCode: http.StatusSwitchingProtocols,
+				Headers:    map[string]string{"X-Hdr": "{{run.name}}"},
+				WebSocketMessages: []RecordedWebSocketMessage{
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeText, Payload: `{"run":"{{run.name}}","file":"{{file.undeclared}}"}`},
+					{Direction: webSocketDirectionServerToClient, Opcode: webSocketOpcodeText, Payload: `{"ack":"{{run.name}}"}`},
+				},
+			},
+		},
+	}
+	wsResult := ConvertSession(wsSession, "")
+	if issues := dsl.ValidateScriptIssues(wsResult.Script); len(issues) != 0 {
+		t.Fatalf("WebSocket ValidateScriptIssues = %#v, want empty", issues)
+	}
+
+	emptySession := &Session{
+		ID:      "empty-tpl",
+		Name:    "Empty {{run.id}} {{run.name}}",
+		BaseURL: "https://empty.example.test/{{run.id}}",
+	}
+	emptyResult := ConvertSession(emptySession, "")
+	if strings.Contains(emptyResult.Script.Name, "{{run.") || strings.Contains(emptyResult.Script.Config.BaseURL, "{{run.") {
+		t.Fatalf("Empty session left run.* template in Name=%q or BaseURL=%q", emptyResult.Script.Name, emptyResult.Script.Config.BaseURL)
+	}
+
+	httpSession := &Session{
+		ID:      "defer-param-tpl",
+		Name:    "Defer {{run.id}}",
+		BaseURL: "https://app.example.test",
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Method:     "GET",
+				URL:        "https://app.example.test/search?query=%7B%7Brun.id%7D%7D&filter=%7B%7Brun.name%7D%7D",
+				Path:       "/search?query=%7B%7Brun.id%7D%7D&filter=%7B%7Brun.name%7D%7D",
+				Host:       "app.example.test",
+				StatusCode: 200,
+			},
+		},
+	}
+	deferred := ConvertSessionWithOptions(httpSession, "", ConvertOptions{Parameterize: true, DeferParameterize: true})
+	_ = ParameterizeRecordingInputs(deferred.Script, "Source {{run.id}}")
+	if issues := dsl.ValidateScriptIssues(deferred.Script); len(issues) != 0 {
+		t.Fatalf("Deferred ParameterizeRecordingInputs ValidateScriptIssues = %#v, want empty", issues)
 	}
 }

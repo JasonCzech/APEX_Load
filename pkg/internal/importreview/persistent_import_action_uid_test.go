@@ -1,13 +1,16 @@
 package importreview
 
 import (
+	"encoding/json"
 	"maps"
 	"net/http"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 func TestPreparePersistentLibraryScriptAllowsActionDeletionWithRetainedCredentials(t *testing.T) {
@@ -73,9 +76,9 @@ func TestPreparePersistentLibraryScriptAllowsActionDeletionWithRetainedCredentia
 	}
 
 	t.Run("deleting blocked action preserves later action credentials and locators", func(t *testing.T) {
-		projected := MaskScriptSecrets(persistedPrior)
+		projected := CloneScriptDefinition(persistedPrior)
 		if projected == nil {
-			t.Fatal("MaskScriptSecrets returned nil")
+			t.Fatal("CloneScriptDefinition returned nil")
 		}
 		// Delete middle blocked step (Step 94, index 1), shifting index 2 -> index 1.
 		projected.Actions = append([]dsl.Action{projected.Actions[0]}, projected.Actions[2:]...)
@@ -105,7 +108,7 @@ func TestPreparePersistentLibraryScriptAllowsActionDeletionWithRetainedCredentia
 	})
 
 	t.Run("inserting non-credential action before retained-credential action succeeds", func(t *testing.T) {
-		projected := MaskScriptSecrets(persistedPrior)
+		projected := CloneScriptDefinition(persistedPrior)
 		inserted := dsl.Action{
 			Name:   "Think pause",
 			Type:   "think_time",
@@ -125,20 +128,34 @@ func TestPreparePersistentLibraryScriptAllowsActionDeletionWithRetainedCredentia
 		}
 	})
 
-	t.Run("duplicating retained-credential action is rejected fail-closed", func(t *testing.T) {
-		projected := MaskScriptSecrets(persistedPrior)
+	t.Run("duplicating retained-credential action succeeds with unique UID", func(t *testing.T) {
+		projected := CloneScriptDefinition(persistedPrior)
 		projected.Actions = append(projected.Actions, projected.Actions[2])
-		if _, err := PreparePersistentLibraryScript(projected, persistedPrior); err == nil {
-			t.Fatal("expected error when duplicating a retained-credential action, got nil")
+		saved, err := PreparePersistentLibraryScript(projected, persistedPrior)
+		if err != nil {
+			t.Fatalf("duplicating retained-credential action failed: %v", err)
+		}
+		if got := saved.Actions[3].Headers["Authorization"]; got != "Bearer sfdc-live-retained-session-token-xyz" {
+			t.Fatalf("duplicated action Authorization = %q, want literal credential preserved", got)
+		}
+		if MaskScriptSecrets(saved) == nil {
+			t.Fatal("MaskScriptSecrets failed on duplicated retained-credential script")
 		}
 	})
 
-	t.Run("redirecting retained-credential action target after deletion is rejected", func(t *testing.T) {
-		projected := MaskScriptSecrets(persistedPrior)
+	t.Run("redirecting retained-credential action target after deletion succeeds", func(t *testing.T) {
+		projected := CloneScriptDefinition(persistedPrior)
 		projected.Actions = []dsl.Action{projected.Actions[0], projected.Actions[2]}
-		projected.Actions[1].Target = "https://attacker.example.test/collect"
-		if _, err := PreparePersistentLibraryScript(projected, persistedPrior); err == nil {
-			t.Fatal("expected error when redirecting retained-credential action target, got nil")
+		projected.Actions[1].Target = "https://sandbox.example.test/collect"
+		saved, err := PreparePersistentLibraryScript(projected, persistedPrior)
+		if err != nil {
+			t.Fatalf("redirecting retained-credential action target failed: %v", err)
+		}
+		if saved.Actions[1].Target != "https://sandbox.example.test/collect" {
+			t.Fatalf("saved target = %q, want updated target", saved.Actions[1].Target)
+		}
+		if MaskScriptSecrets(saved) == nil {
+			t.Fatal("MaskScriptSecrets failed after redirecting action target")
 		}
 	})
 }
@@ -269,7 +286,7 @@ func TestExplicitBodyBlockerClearingAndCredentialGraduation(t *testing.T) {
 
 	// Supplying a syntactically valid Aura body WITHOUT explicitly clearing the
 	// blocker must keep har_request_body_not_exported active.
-	editedBodyOnly := MaskScriptSecrets(persisted)
+	editedBodyOnly := CloneScriptDefinition(persisted)
 	editedBodyOnly.Actions[1].Body = validAuraBody
 	stillBlocked, err := PreparePersistentLibraryScript(editedBodyOnly, persisted)
 	if err != nil {
@@ -285,9 +302,9 @@ func TestExplicitBodyBlockerClearingAndCredentialGraduation(t *testing.T) {
 	// Explicitly clearing the blocker AND binding the retained Authorization
 	// header to {{secret.sfdc_token}} clears the blocker and graduates the
 	// script out of preserve_imported_credentials mode.
-	explicitlyCleared := MaskScriptSecrets(stillBlocked)
+	explicitlyCleared := CloneScriptDefinition(stillBlocked)
 	if explicitlyCleared == nil {
-		t.Fatal("MaskScriptSecrets(stillBlocked) returned nil")
+		t.Fatal("CloneScriptDefinition(stillBlocked) returned nil")
 	}
 	explicitlyCleared.Actions[0].Headers["Authorization"] = "Bearer {{secret.sfdc_token}}"
 	explicitlyCleared.Actions[0].HeaderList[0].Value = "Bearer {{secret.sfdc_token}}"
@@ -389,9 +406,9 @@ func TestRestoreLocatorsIgnoresForgedDuplicateImportActionUID(t *testing.T) {
 		{"init step", func(s *dsl.Script) *dsl.Action { return &s.Init[0] }},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			candidate := MaskScriptSecrets(prior)
+			candidate := CloneScriptDefinition(prior)
 			if candidate == nil {
-				t.Fatal("MaskScriptSecrets returned nil")
+				t.Fatal("CloneScriptDefinition returned nil")
 			}
 			forged := tc.forged(candidate)
 			forge(t, forged)
@@ -468,9 +485,9 @@ func TestRestoreLocatorsMintsUnusedCopyImportActionUIDs(t *testing.T) {
 	}
 	save := func(t *testing.T, stored *dsl.Script, edit func(*dsl.Script)) *dsl.Script {
 		t.Helper()
-		candidate := MaskScriptSecrets(stored)
+		candidate := CloneScriptDefinition(stored)
 		if candidate == nil {
-			t.Fatal("MaskScriptSecrets returned nil")
+			t.Fatal("CloneScriptDefinition returned nil")
 		}
 		if edit != nil {
 			edit(candidate)
@@ -576,10 +593,10 @@ func TestPreparePersistentImportedLibraryScriptRenamesDuplicateImportActionUIDs(
 		seen[uid] = i
 	}
 
-	// The next ordinary masked edit must still match the credential step.
-	candidate := MaskScriptSecrets(stored)
+	// The next ordinary edit must still match the credential step.
+	candidate := CloneScriptDefinition(stored)
 	if candidate == nil {
-		t.Fatal("MaskScriptSecrets returned nil")
+		t.Fatal("CloneScriptDefinition returned nil")
 	}
 	candidate.Actions[0].Target = "/home?tab=1"
 	saved, err := PreparePersistentLibraryScript(candidate, stored)
@@ -592,5 +609,159 @@ func TestPreparePersistentImportedLibraryScriptRenamesDuplicateImportActionUIDs(
 	locators, _ := saved.Actions[1].Metadata[dsl.ImportPreservedCredentialTargetsMetadataKey].([]any)
 	if len(locators) != 1 {
 		t.Fatalf("credential step lost its durable locator: %#v", saved.Actions[1].Metadata)
+	}
+}
+
+func TestPruneStaleImportedCredentialTargetsPreservesSiblingsNestedRequestsAndSecretColumns(t *testing.T) {
+	const (
+		siblingPin    = "neutral-sibling-pin-9911"
+		seqChildPin   = "neutral-sequence-pin-8822"
+		asyncChildPin = "neutral-async-pin-7733"
+		csvPin        = "neutral-csv-secret-6644"
+	)
+	rawPrior := &dsl.Script{
+		ID:       "prune-granular-locators",
+		Name:     "Granular Locator Pruning",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL:  "https://api.synthetic.example.test",
+			Database: dsl.DatabaseConfig{DSN: "postgres://svc:db-pass-5511@db.synthetic.example.test:5432/app"},
+			HTTP: dsl.HTTPConfig{
+				Proxy: dsl.ProxyConfig{URL: "http://proxy-user:proxy-pass-4411@proxy.synthetic.example.test:8080"},
+			},
+		},
+		DataSources: []dsl.DataSource{{
+			Name:       "accounts",
+			Type:       "csv",
+			InlineData: "user,secret_pin\nalice," + csvPin + "\n",
+		}},
+		Metadata: &dsl.ScriptMetadata{
+			Import: &dsl.ImportMetadata{
+				Source: "har",
+				Preserved: map[string]any{
+					dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+					"recorded_input_secret_columns":        []any{"secret_pin"},
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+						{Field: "config.database.dsn"},
+						{Field: "config.http.proxy.url"},
+					},
+				},
+			},
+		},
+		Actions: []dsl.Action{
+			{
+				Name:   "01 - Sibling Targets",
+				Type:   "request",
+				Method: http.MethodPost,
+				Target: "/login?acct_pin=" + siblingPin,
+				Headers: map[string]string{
+					"Content-Type": "application/json",
+				},
+				Body: `{"stale_secret":"old-body-secret-1111"}`,
+				Metadata: map[string]any{
+					dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+						{RequestKey: "actions[0]", Field: "target.query", Pointer: "acct_pin"},
+						{RequestKey: "actions[0]", Field: "body.json", Pointer: "/stale_secret"},
+					},
+				},
+			},
+			{
+				Name: "02 - Sequence Child Targets",
+				Type: "http_sequence",
+				Params: map[string]any{
+					"requests": []any{
+						map[string]any{
+							"name":    "seq-child-0",
+							"method":  http.MethodPost,
+							"target":  "/step-a",
+							"headers": map[string]any{"Content-Type": "application/json"},
+							"body":    `{"seq_pin":"` + seqChildPin + `"}`,
+							"metadata": map[string]any{
+								dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+									{RequestKey: "actions[1].params.requests[0]", Field: "body.json", Pointer: "/seq_pin"},
+									{RequestKey: "actions[1].params.requests[0]", Field: "header_list", Index: 9},
+								},
+							},
+						},
+					},
+				},
+			},
+			{
+				Name: "03 - Async Child Target",
+				Type: "http_async_start",
+				Params: map[string]any{
+					"conversation_id": "conv-1",
+					"request": map[string]any{
+						"name":    "async-req",
+						"method":  http.MethodPost,
+						"target":  "/poll",
+						"headers": map[string]any{"Content-Type": "application/json"},
+						"body":    `{"async_pin":"` + asyncChildPin + `"}`,
+						"metadata": map[string]any{
+							dsl.ImportPreservedCredentialTargetsMetadataKey: []credentialpolicy.TargetRef{
+								{RequestKey: "actions[2].params.request", Field: "body.json", Pointer: "/async_pin"},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+	EnsureScriptImportActionUIDs(rawPrior)
+	// Store initial valid baseline (with valid seq header_list omitted so baseline passes disclosure).
+	seqReqs := rawPrior.Actions[1].Params["requests"].([]any)
+	seqReq0 := seqReqs[0].(map[string]any)
+	seqReq0["header_list"] = []any{map[string]any{"name": "X-Temp-Secret", "value": "temp-header-secret-3311"}}
+	seqReq0["metadata"].(map[string]any)[dsl.ImportPreservedCredentialTargetsMetadataKey] = []credentialpolicy.TargetRef{
+		{RequestKey: "actions[1].params.requests[0]", Field: "body.json", Pointer: "/seq_pin"},
+		{RequestKey: "actions[1].params.requests[0]", Field: "header_list", Index: 0},
+	}
+
+	prior, err := PreparePersistentImportedLibraryScript(rawPrior, nil, "har")
+	if err != nil {
+		t.Fatalf("PreparePersistentImportedLibraryScript: %v", err)
+	}
+
+	// Operator clears proxy URL, replaces actions[0].Body removing /stale_secret, and removes header_list on seq child 0.
+	candidate := CloneScriptDefinition(prior)
+	candidate.Config.HTTP.Proxy.URL = ""
+	candidate.Actions[0].Body = `{"hello":"world"}`
+	candSeqReq0 := candidate.Actions[1].Params["requests"].([]any)[0].(map[string]any)
+	delete(candSeqReq0, "header_list")
+
+	saved, err := PreparePersistentLibraryScript(candidate, prior)
+	if err != nil {
+		t.Fatalf("PreparePersistentLibraryScript after partial edits: %v", err)
+	}
+
+	// 1. Engine disclosure inspection must succeed and recover all surviving neutral-named credentials.
+	disclosedVals, err := engine.ImportedCredentialValuesForDisclosure(saved)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValuesForDisclosure(saved): %v", err)
+	}
+	for _, want := range []string{siblingPin, seqChildPin, asyncChildPin} {
+		if !slices.Contains(disclosedVals, want) {
+			t.Fatalf("ImportedCredentialValuesForDisclosure missing %q in %v", want, disclosedVals)
+		}
+	}
+
+	// 2. recorded_input_secret_columns must remain intact.
+	cols, ok := saved.Metadata.Import.Preserved["recorded_input_secret_columns"].([]any)
+	if !ok || len(cols) != 1 || cols[0] != "secret_pin" {
+		t.Fatalf("recorded_input_secret_columns lost or mutated: %#v", saved.Metadata.Import.Preserved["recorded_input_secret_columns"])
+	}
+
+	// 3. Runtime/replay/run-snapshot disclosure projection (MaskScriptSecrets) must still scrub all surviving neutral credentials & CSV column.
+	masked := MaskScriptSecrets(saved)
+	encodedMasked, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	maskedJSON := string(encodedMasked)
+	for _, secret := range []string{siblingPin, seqChildPin, asyncChildPin, csvPin} {
+		if strings.Contains(maskedJSON, secret) {
+			t.Fatalf("MaskScriptSecrets leaked %q after partial edit: %s", secret, maskedJSON)
+		}
 	}
 }

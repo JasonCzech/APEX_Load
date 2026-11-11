@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 	playwright "github.com/mxschmitt/playwright-go"
@@ -57,7 +58,8 @@ type salesforceJWTSession struct {
 	unredactedDebug bool
 	// allowedHosts is the script's target policy, which the token endpoint,
 	// the instance and the frontdoor URL must all satisfy.
-	allowedHosts []string
+	allowedHosts    []string
+	registerSecrets protocol.RuntimeSecretRegistrar
 }
 
 // salesforceBridgeHTTPClient asks for frontdoor URLs: no cookies, no
@@ -94,6 +96,7 @@ func (b *Browser) configureSalesforceJWTSession(config map[string]any) error {
 		username:        strings.TrimSpace(protocol.ConfigString(config, "browser_identity_username")),
 		unredactedDebug: b.debugDisclosureEnabled(),
 		allowedHosts:    append([]string(nil), b.allowedTargetHosts...),
+		registerSecrets: b.registerRuntimeSecrets,
 	}
 	switch {
 	case session.username == "":
@@ -226,6 +229,16 @@ func (s *salesforceJWTSession) tokenRequest() httpprotocol.OAuthTokenRequest {
 		PrivateKey:            s.privateKey,
 		Audience:              s.audience,
 		UnredactedDebugErrors: s.unredactedDebug,
+		OnToken: func(token httpprotocol.OAuthToken) {
+			if s.registerSecrets == nil {
+				return
+			}
+			values := []string{token.AccessToken}
+			if token.RefreshToken != "" {
+				values = append(values, token.RefreshToken)
+			}
+			s.registerSecrets("oauth:browser_jwt_token", values)
+		},
 	}
 }
 
@@ -243,6 +256,32 @@ func (s *salesforceJWTSession) frontdoorURL(ctx context.Context) (string, error)
 		if rejected && attempt == 0 {
 			httpprotocol.ForgetOAuth2Token(request)
 			continue
+		}
+		if frontdoor != "" && s.registerSecrets != nil {
+			secrets := []string{frontdoor}
+			if parsed, parseErr := url.Parse(frontdoor); parseErr == nil {
+				for key, values := range parsed.Query() {
+					lowerKey := strings.ToLower(strings.TrimSpace(key))
+					if lowerKey == "starturl" || lowerKey == "returl" || lowerKey == salesforceSingleAccessRedirectParam {
+						continue
+					}
+					isSID := lowerKey == "sid"
+					isOTP := lowerKey == "otp"
+					if !isSID && !isOTP && !credential.SensitiveName(key) {
+						continue
+					}
+					for _, val := range values {
+						trimmed := strings.TrimSpace(val)
+						if trimmed == "" {
+							continue
+						}
+						if isOTP || credential.MatchableNamedValue(key, trimmed) || (isSID && len(trimmed) >= credential.MinNamedValueBytes) {
+							secrets = append(secrets, trimmed)
+						}
+					}
+				}
+			}
+			s.registerSecrets("oauth:browser_jwt_frontdoor", secrets)
 		}
 		return frontdoor, err
 	}

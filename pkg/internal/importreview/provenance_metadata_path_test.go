@@ -1,7 +1,6 @@
 package importreview
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -62,11 +61,21 @@ func TestReconcileRejectsOrphanSentinelUnderParamsProvenanceLookalike(t *testing
 	edited := CloneScriptDefinition(prior)
 	body := edited.Actions[0].Params["map_body"].(map[string]any)
 	body["metadata"].(map[string]any)["source_uid"] = map[string]any{"token": MaskedScriptSecret}
-	_, err := PreparePersistentLibraryScript(edited, prior)
-	if err == nil {
-		t.Fatal("expected the masked params value to be rejected, got a successful save")
+	if reqs := DiscoverSecretBindingRequirements(edited, 0); len(reqs) != 1 {
+		t.Fatalf("DiscoverSecretBindingRequirements = %#v, want 1 requirement for params lookalike", reqs)
 	}
-	if !errors.Is(err, ErrScriptCredentialBindingsRequired) && !strings.Contains(err.Error(), "orphan") {
-		t.Fatalf("expected a binding or orphan-sentinel rejection, got %v", err)
+	err := ReconcileMaskedScriptSecrets(edited, nil)
+	if err == nil || !strings.Contains(err.Error(), "orphan") {
+		t.Fatalf("expected orphan-sentinel rejection from ReconcileMaskedScriptSecrets(edited, nil), got %v", err)
+	}
+
+	unredacted := CloneScriptDefinition(prior)
+	saved, err := PreparePersistentLibraryScript(unredacted, prior)
+	if err != nil {
+		t.Fatalf("expected unredacted params value save to succeed, got %v", err)
+	}
+	savedBody := saved.Actions[0].Params["map_body"].(map[string]any)
+	if got := savedBody["metadata"].(map[string]any)["source_uid"].(map[string]any)["token"]; got != "recorded-wire-value" {
+		t.Fatalf("saved token = %#v, want recorded-wire-value", got)
 	}
 }

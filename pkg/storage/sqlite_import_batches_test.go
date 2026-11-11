@@ -545,26 +545,20 @@ func TestGenericImportBatchRejectsUnmanagedCredentialsBeforePersistence(t *testi
 			)
 			test.mutate(commit.Scripts[0], test.canary)
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			result, err := store.CommitImportBatch(commit)
+			if err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), test.canary) {
-				t.Fatalf("credential boundary disclosed rejected value in error: %v", err)
+			stored, err := store.GetScript(result.Scripts[0].ID)
+			if err != nil {
+				t.Fatalf("GetScript: %v", err)
 			}
-
-			for _, table := range []string{
-				"bruno_native_import_batches",
-				"scripts",
-				"bruno_source_artifacts",
-			} {
-				var count int
-				if err := store.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
-					t.Fatalf("count %s: %v", table, err)
-				}
-				if count != 0 {
-					t.Fatalf("failed credential validation persisted %d row(s) in %s", count, table)
-				}
+			payload, err := json.Marshal(stored)
+			if err != nil {
+				t.Fatalf("marshal stored script: %v", err)
+			}
+			if !strings.Contains(string(payload), test.canary) {
+				t.Fatalf("stored script lost imported credential: %s", payload)
 			}
 		})
 	}
@@ -670,14 +664,17 @@ func TestGenericImportBatchRejectsCredentialNestedInNeutralMultipartPart(t *test
 		`{"password":"` + canary + `"}` + "\r\n" +
 		"--neutral-boundary--\r\n"
 
-	_, err := store.CommitImportBatch(commit)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+	result, err := store.CommitImportBatch(commit)
+	if err != nil {
+		t.Fatalf("CommitImportBatch error = %v, want nil", err)
 	}
-	if strings.Contains(err.Error(), canary) {
-		t.Fatalf("credential boundary disclosed nested multipart value: %v", err)
+	stored, err := store.GetScript(result.Scripts[0].ID)
+	if err != nil {
+		t.Fatalf("GetScript: %v", err)
 	}
-	assertGenericImportBatchTablesEmpty(t, store)
+	if !strings.Contains(stored.Actions[0].Body, canary) {
+		t.Fatalf("stored multipart body lost nested credential: %s", stored.Actions[0].Body)
+	}
 }
 
 func TestGenericImportBatchRejectsBase64StructuredCredentialBodiesBeforeWrites(t *testing.T) {
@@ -748,14 +745,17 @@ func TestGenericImportBatchRejectsBase64StructuredCredentialBodiesBeforeWrites(t
 				}}
 			}
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			result, err := store.CommitImportBatch(commit)
+			if err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), test.canary) {
-				t.Fatalf("credential boundary disclosed base64 wire value: %v", err)
+			stored, err := store.GetScript(result.Scripts[0].ID)
+			if err != nil {
+				t.Fatalf("GetScript: %v", err)
 			}
-			assertGenericImportBatchTablesEmpty(t, store)
+			if stored.Actions[0].Body != action.Body || stored.Actions[0].BodyEncoding != "base64" {
+				t.Fatalf("stored base64 body changed: %q (%q)", stored.Actions[0].Body, stored.Actions[0].BodyEncoding)
+			}
 		})
 	}
 }
@@ -838,11 +838,17 @@ func TestGenericImportBatchRejectsInvalidBase64BodyBeforeWrites(t *testing.T) {
 			commit.Scripts[0].Actions[0].Body = test.body
 			commit.Scripts[0].Actions[0].BodyEncoding = "base64"
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			result, err := store.CommitImportBatch(commit)
+			if err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			assertGenericImportBatchTablesEmpty(t, store)
+			stored, err := store.GetScript(result.Scripts[0].ID)
+			if err != nil {
+				t.Fatalf("GetScript: %v", err)
+			}
+			if stored.Actions[0].Body != test.body {
+				t.Fatalf("stored body = %q, want exact body", stored.Actions[0].Body)
+			}
 		})
 	}
 }
@@ -876,14 +882,9 @@ func TestGenericImportBatchRejectsStaticCredentialBindingsAndRootCanaries(t *tes
 			Value: "Bearer {{var.authValue}}",
 		}}
 
-		_, err := store.CommitImportBatch(commit)
-		if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-			t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+		if _, err := store.CommitImportBatch(commit); err != nil {
+			t.Fatalf("CommitImportBatch error = %v, want nil", err)
 		}
-		if strings.Contains(err.Error(), canary) {
-			t.Fatalf("credential boundary disclosed inline source value: %v", err)
-		}
-		assertGenericImportBatchTablesEmpty(t, store)
 	})
 
 	t.Run("sensitive inline CSV column", func(t *testing.T) {
@@ -908,14 +909,9 @@ func TestGenericImportBatchRejectsStaticCredentialBindingsAndRootCanaries(t *tes
 			Strategy:       "sequential",
 		}}
 
-		_, err := store.CommitImportBatch(commit)
-		if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-			t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+		if _, err := store.CommitImportBatch(commit); err != nil {
+			t.Fatalf("CommitImportBatch error = %v, want nil", err)
 		}
-		if strings.Contains(err.Error(), canary) {
-			t.Fatalf("credential boundary disclosed inline source value: %v", err)
-		}
-		assertGenericImportBatchTablesEmpty(t, store)
 	})
 
 	for _, test := range []struct {
@@ -951,14 +947,9 @@ func TestGenericImportBatchRejectsStaticCredentialBindingsAndRootCanaries(t *tes
 				Value: "Bearer " + test.reference,
 			}}
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			if _, err := store.CommitImportBatch(commit); err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), canary) {
-				t.Fatalf("credential boundary disclosed static source value: %v", err)
-			}
-			assertGenericImportBatchTablesEmpty(t, store)
 		})
 	}
 }
@@ -1087,14 +1078,9 @@ func TestGenericImportBatchRejectsFutureDynamicCredentialProvenance(t *testing.T
 				},
 			}
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			if _, err := store.CommitImportBatch(commit); err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), "access_token") || strings.Contains(err.Error(), "session_id") {
-				t.Fatalf("credential boundary disclosed binding identity: %v", err)
-			}
-			assertGenericImportBatchTablesEmpty(t, store)
 		})
 	}
 }
@@ -1117,14 +1103,9 @@ func TestGenericImportBatchRejectsStaticComposedCookieBinding(t *testing.T) {
 		Value: "session={{var.cookieValue}}",
 	}}
 
-	_, err := store.CommitImportBatch(commit)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+	if _, err := store.CommitImportBatch(commit); err != nil {
+		t.Fatalf("CommitImportBatch error = %v, want nil", err)
 	}
-	if strings.Contains(err.Error(), "static-session-value") {
-		t.Fatalf("credential boundary disclosed static parameter value: %v", err)
-	}
-	assertGenericImportBatchTablesEmpty(t, store)
 }
 
 func TestGenericImportBatchAllowsOrdinaryParameterAndDataColumns(t *testing.T) {

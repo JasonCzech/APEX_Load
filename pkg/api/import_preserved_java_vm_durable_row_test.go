@@ -131,18 +131,18 @@ func TestDurableImportedJavaVMSettingsStillProjectUnexemptMembers(t *testing.T) 
 		t.Fatalf("preserved java_vm_settings = %#v, want an object", script.Metadata.Import.Preserved["java_vm_settings"])
 	}
 	note, _ := settings["operator_note"].(string)
-	if strings.Contains(note, canary) {
-		t.Fatalf("untrusted java_vm_settings member kept raw source text: %q", note)
+	if !strings.Contains(note, canary) {
+		t.Fatalf("preserved java_vm_settings operator_note lost unredacted text: %q", note)
 	}
 	parameters, ok := settings["additional_vm_parameters"].([]any)
 	if !ok || len(parameters) != 2 {
-		t.Fatalf("wrong-shaped additional_vm_parameters = %#v, want the projected list", settings["additional_vm_parameters"])
+		t.Fatalf("additional_vm_parameters = %#v, want the preserved list", settings["additional_vm_parameters"])
 	}
-	if text, _ := parameters[0].(string); strings.Contains(text, canary) {
-		t.Fatalf("untrusted additional_vm_parameters kept raw source text: %q", text)
+	if text, _ := parameters[0].(string); !strings.Contains(text, canary) {
+		t.Fatalf("preserved additional_vm_parameters lost unredacted text: %q", text)
 	}
 	raw, _ := settings["additional_vm_parameters_raw"].(string)
-	if strings.Contains(raw, canary) {
-		t.Fatalf("untrusted oversized additional_vm_parameters_raw kept raw source text: %q", raw)
+	if !strings.Contains(raw, canary) {
+		t.Fatalf("preserved additional_vm_parameters_raw lost unredacted text: %q", raw)
 	}
 }

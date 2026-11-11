@@ -196,8 +196,8 @@ Scope = the **Web + Mobile Web** step toolbox (classic TruClient and TruClient 2
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `supported` | 30 | Translated to an executable browser/engine DSL action. |
-| `review_only` | 17 | Preserved as a review-gated placeholder; embeds arbitrary code or has no browser-replay equivalent, so it is not executed (never fabricated). |
+| `supported` | 31 | Translated to an executable browser/engine DSL action. |
+| `review_only` | 16 | Preserved as a review-gated placeholder; embeds arbitrary code or has no browser-replay equivalent, so it is not executed (never fabricated). |
 | `planned` | 0 | Recognized; conversion path planned. |
 | `out_of_scope` | 0 | Outside the browser import scope. |
 
@@ -214,10 +214,10 @@ Every published step resolves to one of the dispositions above — none is silen
 | `Click` | click | `supported` | browser_click | Direct object clicks, submit actions, and checkbox/radio selection actions map to browser click actions with the captured selector. |
 | `Close Tab` | switch_tab | `supported` | browser_switch_window / browser_close_window | Activate / Activate Tab change focus via browser_switch_window, and Close Tab closes the target or active tab via browser_close_window. Add Tab switches focus and warns that blank tab creation requires a navigation or popup trigger. |
 | `Continue` | control_transfer | `supported` | control_break / control_continue | Break and continue convert to native control_break / control_continue engine actions; the nearest enclosing control_loop consumes them (break stops the loop, continue skips to the next pass). |
-| `Dialog - Authenticate` | dialog_secure | `review_only` | source_review | Authentication and password dialogs carry credentials; they are preserved for review with parameter references intact rather than baking secrets into a replayed dialog. |
-| `Dialog - Confirm` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm and Dialog - Prompt map to browser_handle_dialog (accept/dismiss + prompt text). Dialog - Authenticate and Dialog - Prompt Password carry credentials and remain review_only with preserved parameter references. |
-| `Dialog - Prompt Password` | dialog_secure | `review_only` | source_review | Authentication and password dialogs carry credentials; they are preserved for review with parameter references intact rather than baking secrets into a replayed dialog. |
-| `Dialog Prompt` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm and Dialog - Prompt map to browser_handle_dialog (accept/dismiss + prompt text). Dialog - Authenticate and Dialog - Prompt Password carry credentials and remain review_only with preserved parameter references. |
+| `Dialog - Authenticate` | dialog_secure | `review_only` | source_review | Dialog - Authenticate targets HTTP authentication challenges outside Playwright JS dialog events; preserved as a review-gated placeholder with raw arguments and parameter references intact. |
+| `Dialog - Confirm` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm, Dialog - Prompt, and Dialog - Prompt Password map to browser_handle_dialog (accept/dismiss + prompt text/password). Dialog - Authenticate targets HTTP authentication challenges outside standard JS dialog events and remains review_only with raw arguments preserved. |
+| `Dialog - Prompt Password` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm, Dialog - Prompt, and Dialog - Prompt Password map to browser_handle_dialog (accept/dismiss + prompt text/password). Dialog - Authenticate targets HTTP authentication challenges outside standard JS dialog events and remains review_only with raw arguments preserved. |
+| `Dialog Prompt` | handle_dialog | `supported` | browser_handle_dialog | Dialog - Confirm, Dialog - Prompt, and Dialog - Prompt Password map to browser_handle_dialog (accept/dismiss + prompt text/password). Dialog - Authenticate targets HTTP authentication challenges outside standard JS dialog events and remains review_only with raw arguments preserved. |
 | `Double Click` | double_click | `supported` | browser_dblclick | Selector-backed double clicks map to the executable browser double-click action; coordinate-only captures remain review-gated. |
 | `Drag` | drag_and_drop | `supported` | browser_drag_and_drop | Drag and Drag To map to a native browser_drag_and_drop using the source selector and the resolved drop-target selector; a missing selector preserves a review-gated placeholder. |
 | `Drag To` | drag_and_drop | `supported` | browser_drag_and_drop | Drag and Drag To map to a native browser_drag_and_drop using the source selector and the resolved drop-target selector; a missing selector preserves a review-gated placeholder. |

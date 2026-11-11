@@ -1,7 +1,6 @@
 package sharedvalue
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -169,20 +168,19 @@ func TestApplyWritesLiteralIntoBaseURL(t *testing.T) {
 	}
 }
 
-func TestApplyRejectsCredentialShapedCandidate(t *testing.T) {
+func TestApplyAllowsCredentialShapedCandidate(t *testing.T) {
 	candidate := Candidate{ID: "sv_test", Kind: KindSourceVariable, Name: "password",
 		CredentialShaped: true, ScriptIndexes: []int{0}, ScriptNames: []string{"only"}}
-	scripts := []*dsl.Script{{Name: "only"}}
-	_, err := Apply(scripts, []Candidate{candidate}, map[string]string{"sv_test": "hunter2"})
-	if !errors.Is(err, ErrCredentialShaped) {
-		t.Fatalf("err = %v, want ErrCredentialShaped", err)
+	scripts := []*dsl.Script{{Name: "only", Actions: []dsl.Action{httpAction("one", "/login?pw={{var.password}}")}}}
+	if _, err := Apply(scripts, []Candidate{candidate}, map[string]string{"sv_test": "hunter2"}); err != nil {
+		t.Fatalf("Apply returned unexpected error: %v", err)
+	}
+	if len(scripts[0].Parameters) != 1 || scripts[0].Parameters[0].Values[0] != "hunter2" {
+		t.Fatalf("parameters = %+v, want literal password parameter", scripts[0].Parameters)
 	}
 }
 
-// A credential-shaped name must never carry a value out of Detect, because the
-// disclosure-safe projection would mask a parameter of that name and the value
-// would be lost on the next save.
-func TestDetectStripsCredentialShapedValues(t *testing.T) {
+func TestDetectPreservesCredentialShapedValues(t *testing.T) {
 	scripts := []*dsl.Script{
 		{Name: "a", Parameters: []dsl.Parameter{listParam("password", "hunter2")},
 			Actions: []dsl.Action{httpAction("one", "{{var.password}}")}},
@@ -193,8 +191,8 @@ func TestDetectStripsCredentialShapedValues(t *testing.T) {
 	if !candidate.CredentialShaped {
 		t.Fatal("password must be flagged credential-shaped")
 	}
-	if candidate.CurrentValue != "" {
-		t.Fatalf("credential-shaped candidate leaked a value: %+v", candidate)
+	if candidate.CurrentValue != "hunter2" {
+		t.Fatalf("credential-shaped candidate CurrentValue = %q, want %q", candidate.CurrentValue, "hunter2")
 	}
 }
 
@@ -652,17 +650,28 @@ func TestApplyMintsNoParameterWhenNoFieldRewritten(t *testing.T) {
 // next save. A trace or business identifier is an ordinary input.
 func TestCredentialShapedKeepsSessionNames(t *testing.T) {
 	for name, want := range map[string]bool{
-		"sessionId":          true,
-		"jsessionid":         true,
-		"userSessionId":      true,
-		"csrf":               true,
-		"sessionCookie":      true,
-		"csrfToken":          true,
-		"apiToken":           true,
-		"password":           true,
-		"traceId":            false,
-		"orderId":            false,
-		"sessionIdleTimeout": false,
+		"sessionId":           true,
+		"jsessionid":          true,
+		"userSessionId":       true,
+		"csrf":                true,
+		"sessionCookie":       true,
+		"csrfToken":           true,
+		"apiToken":            true,
+		"myApiToken":          true,
+		"sessionToken":        true,
+		"id_token":            true,
+		"api_secret":          true,
+		"password":            true,
+		"traceId":             false,
+		"orderId":             false,
+		"sessionIdleTimeout":  false,
+		"tokenUrl":            false,
+		"tokenEndpointUrl":    false,
+		"sharedAccessKeyName": false,
+		"tokenType":           false,
+		"maxTokens":           false,
+		"tokenExpiry":         false,
+		"cookieDomain":        false,
 	} {
 		if got := CredentialShaped(name); got != want {
 			t.Errorf("CredentialShaped(%q) = %v, want %v", name, got, want)

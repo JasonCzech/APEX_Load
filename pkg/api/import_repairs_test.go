@@ -56,8 +56,8 @@ func TestProtectedImportRepairPreviewApplyAndRetry(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("preview %d: %s", code, b)
 	}
-	if bytes.Contains(b, []byte("protected-value")) || bytes.Contains(b, []byte("also-protected")) {
-		t.Fatal("restored body leaked")
+	if !bytes.Contains(b, []byte("protected-value")) || !bytes.Contains(b, []byte("also-protected")) || bytes.Contains(b, []byte("[REDACTED]")) {
+		t.Fatalf("restored body was unexpectedly redacted in import repair preview: %s", b)
 	}
 	var preview ImportRepairResponse
 	if err = json.Unmarshal(b, &preview); err != nil {

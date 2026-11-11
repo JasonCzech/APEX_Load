@@ -112,9 +112,45 @@ func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResol
 // credential can still be read; resolved is what resolveAction produced from it,
 // which is the only place a registrable value exists.
 func runtimeActionCompositeValues(authored *dsl.Action, resolved *protocol.Action) []string {
+	return runtimeActionCompositeValuesForScript(nil, authored, resolved, nil)
+}
+
+func runtimeActionCompositeValuesForScript(
+	script *dsl.Script,
+	authored *dsl.Action,
+	resolved *protocol.Action,
+	resolver SecretResolver,
+) []string {
+	surfaces := actionCredentialCompositeSurfaces(authored, resolved)
+	if script != nil && authored != nil && resolved != nil {
+		_, hasParamUser := actionParamString(authored.Params, "username")
+		_, hasParamPass := actionParamString(authored.Params, "password")
+		if (hasParamUser || hasParamPass) && (script.Config.Network.Username != "" || script.Config.Network.Password != "") {
+			authoredUser, _ := actionParamString(authored.Params, "username")
+			resolvedUser, _ := actionParamString(resolved.Params, "username")
+			if resolvedUser == "" {
+				authoredUser = script.Config.Network.Username
+				resolvedUser, _ = resolveProtoConfigSecrets(script.Config.Network.Username, resolver).(string)
+			}
+			authoredPass, _ := actionParamString(authored.Params, "password")
+			resolvedPass, _ := actionParamString(resolved.Params, "password")
+			if resolvedPass == "" {
+				authoredPass = script.Config.Network.Password
+				resolvedPass, _ = resolveProtoConfigSecrets(script.Config.Network.Password, resolver).(string)
+			}
+			surfaces = append(surfaces, platformManagedCredentialSurface{
+				name:             "action.params.network_auth",
+				authoredUsername: authoredUser,
+				authoredPassword: authoredPass,
+				resolvedUsername: resolvedUser,
+				resolvedPassword: resolvedPass,
+				saslMail:         true,
+			})
+		}
+	}
 	return appendPlatformManagedCompositeValues(
 		make([]string, 0, 8),
-		actionCredentialCompositeSurfaces(authored, resolved)...,
+		surfaces...,
 	)
 }
 

@@ -8,9 +8,9 @@ package llmapi
 import (
 	"encoding/json"
 	"net/url"
+	"sort"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -72,8 +72,8 @@ func Analyze(script *dsl.Script) *Review {
 }
 
 // Transform upgrades detected http_request LLM calls in script to llm_request
-// actions in place and replaces captured API keys or Bearer tokens with
-// {{secret.llm_api_key}}. It is idempotent.
+// actions in place and populates empty/missing LLM auth header values with
+// {{secret.llm_api_key}} while preserving non-empty literal credentials. It is idempotent.
 func Transform(script *dsl.Script) []Change {
 	var changes []Change
 	if script == nil {
@@ -111,7 +111,7 @@ func Transform(script *dsl.Script) []Change {
 			changes = append(changes, Change{
 				Step:       "scrub_llm_auth",
 				ActionName: action.Name,
-				Detail:     "Replaced captured LLM API credential with " + llmSecretRef + ".",
+				Detail:     "Populated empty LLM API credential header with " + llmSecretRef + ".",
 			})
 		}
 	}
@@ -177,14 +177,23 @@ func detectLLMCall(a dsl.Action, baseURL string) (DetectedCall, bool) {
 	if dialect == "" {
 		return DetectedCall{}, false
 	}
-	for k, v := range a.Headers {
-		if strings.EqualFold(k, "Accept") && strings.Contains(strings.ToLower(v), "text/event-stream") {
-			stream = true
+	sawAcceptInList := false
+	for _, h := range a.HeaderList {
+		if strings.EqualFold(strings.TrimSpace(h.Name), "Accept") {
+			sawAcceptInList = true
+			if h.Enabled != nil && !*h.Enabled {
+				continue
+			}
+			if strings.Contains(strings.ToLower(h.Value), "text/event-stream") {
+				stream = true
+			}
 		}
 	}
-	for _, h := range a.HeaderList {
-		if strings.EqualFold(h.Name, "Accept") && strings.Contains(strings.ToLower(h.Value), "text/event-stream") {
-			stream = true
+	if !sawAcceptInList {
+		for k, v := range a.Headers {
+			if strings.EqualFold(strings.TrimSpace(k), "Accept") && strings.Contains(strings.ToLower(v), "text/event-stream") {
+				stream = true
+			}
 		}
 	}
 	if a.Type == "llm_request" && a.Params != nil {
@@ -207,26 +216,74 @@ func detectLLMCall(a dsl.Action, baseURL string) (DetectedCall, bool) {
 	}, true
 }
 
-// referenceProviderKeys points the action's model-provider key headers at
-// llmSecretRef (the replacement rule is credentialpolicy's).
+// referenceProviderKeys populates empty/missing model-provider key headers with
+// llmSecretRef while preserving non-empty literal credentials and templates.
 func referenceProviderKeys(a *dsl.Action) bool {
 	if a == nil {
 		return false
 	}
 	changed := false
-	for k, v := range a.Headers {
-		if replacement, ok := credentialpolicy.ProviderKeyHeaderReference(k, v, llmSecretRef); ok {
-			a.Headers[k] = replacement
-			changed = true
-		}
-	}
+	shadowed := make(map[string]bool, len(a.HeaderList))
 	for i := range a.HeaderList {
-		if replacement, ok := credentialpolicy.ProviderKeyHeaderReference(a.HeaderList[i].Name, a.HeaderList[i].Value, llmSecretRef); ok {
+		canon := strings.ToLower(strings.TrimSpace(a.HeaderList[i].Name))
+		if canon != "" {
+			shadowed[canon] = true
+		}
+		if a.HeaderList[i].Enabled != nil && !*a.HeaderList[i].Enabled {
+			continue
+		}
+		if replacement, ok := emptyProviderKeyHeaderReference(a.HeaderList[i].Name, a.HeaderList[i].Value, llmSecretRef); ok {
 			a.HeaderList[i].Value = replacement
 			changed = true
 		}
 	}
+	authoredAuth := shadowed["authorization"]
+	if len(a.Headers) > 0 {
+		keys := make([]string, 0, len(a.Headers))
+		for k := range a.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			canon := strings.ToLower(strings.TrimSpace(k))
+			if shadowed[canon] {
+				continue
+			}
+			if canon == "authorization" {
+				authoredAuth = true
+			}
+			if replacement, ok := emptyProviderKeyHeaderReference(k, a.Headers[k], llmSecretRef); ok {
+				a.Headers[k] = replacement
+				changed = true
+			}
+		}
+	}
+	if !authoredAuth && a.Auth != nil && strings.EqualFold(strings.TrimSpace(a.Auth.Type), "bearer") && strings.TrimSpace(a.Auth.Token) == "" {
+		a.Auth.Token = llmSecretRef
+		changed = true
+	}
 	return changed
+}
+
+func emptyProviderKeyHeaderReference(name, value, ref string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "authorization":
+		if trimmed == "" || strings.EqualFold(trimmed, "bearer") {
+			return "Bearer " + ref, true
+		}
+		if strings.EqualFold(trimmed, "apikey") || strings.EqualFold(trimmed, "key") {
+			return trimmed + " " + ref, true
+		}
+		return value, false
+	case "api-key", "x-api-key", "ocp-apim-subscription-key", "anthropic-api-key", "xi-api-key":
+		if trimmed == "" {
+			return ref, true
+		}
+		return value, false
+	default:
+		return value, false
+	}
 }
 
 func extractPath(target, baseURL string) string {

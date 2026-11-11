@@ -148,7 +148,7 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 		SessionID:       session.ID,
 		Applied:         req.Apply,
 		Extractor:       extractor,
-		Draft:           maskScriptSecrets(draft),
+		Draft:           cloneScriptDefinition(draft),
 		Changes:         sanitizeAuthoringCorrelationDiffs(changes),
 		AuthoringHealth: validation.AuthoringHealth,
 	})
@@ -257,7 +257,7 @@ func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r
 	writeJSON(w, http.StatusOK, authoringCorrelationPreviewResponse{
 		SessionID:       session.ID,
 		Applied:         req.Apply && appliedCount > 0,
-		Draft:           maskScriptSecrets(draft),
+		Draft:           cloneScriptDefinition(draft),
 		Changes:         sanitizeAuthoringCorrelationDiffs(allChanges),
 		AuthoringHealth: validation.AuthoringHealth,
 		Items:           sanitizeAuthoringCorrelationPreviewItems(items),
@@ -272,9 +272,7 @@ func sanitizeAuthoringCorrelationDiffs(changes []authoringCorrelationDiff) []aut
 		return changes
 	}
 	out := make([]authoringCorrelationDiff, len(changes))
-	for index, change := range changes {
-		out[index] = authoringCorrelationDiff{Kind: change.Kind, Path: change.Path}
-	}
+	copy(out, changes)
 	return out
 }
 

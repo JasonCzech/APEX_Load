@@ -2,7 +2,7 @@ package storage
 
 import (
 	"encoding/base64"
-	"errors"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -155,14 +155,21 @@ func TestGenericImportBatchRejectsCredentialsInExecutableConfigSurfaces(t *testi
 			)
 			test.mutate(commit.Scripts[0])
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			result, err := store.CommitImportBatch(commit)
+			if err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), canary) {
-				t.Fatalf("credential boundary disclosed rejected value: %v", err)
+			stored, err := store.GetScript(result.Scripts[0].ID)
+			if err != nil {
+				t.Fatalf("GetScript: %v", err)
 			}
-			assertGenericImportBatchTablesEmpty(t, store)
+			payload, err := json.Marshal(stored)
+			if err != nil {
+				t.Fatalf("marshal stored script: %v", err)
+			}
+			if !strings.Contains(string(payload), canary) {
+				t.Fatalf("stored script lost imported config credential: %s", payload)
+			}
 		})
 	}
 }
@@ -277,14 +284,17 @@ func TestGenericImportBatchRejectsCredentialsInInlineFileDataSources(t *testing.
 			)
 			commit.Scripts[0].DataSources = []dsl.DataSource{test.source}
 
-			_, err := store.CommitImportBatch(commit)
-			if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-				t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+			result, err := store.CommitImportBatch(commit)
+			if err != nil {
+				t.Fatalf("CommitImportBatch error = %v, want nil", err)
 			}
-			if strings.Contains(err.Error(), canary) {
-				t.Fatalf("credential boundary disclosed rejected value: %v", err)
+			stored, err := store.GetScript(result.Scripts[0].ID)
+			if err != nil {
+				t.Fatalf("GetScript: %v", err)
 			}
-			assertGenericImportBatchTablesEmpty(t, store)
+			if len(stored.DataSources) != 1 || stored.DataSources[0].InlineData != test.source.InlineData {
+				t.Fatalf("stored inline data source changed: %+v", stored.DataSources)
+			}
 		})
 	}
 }

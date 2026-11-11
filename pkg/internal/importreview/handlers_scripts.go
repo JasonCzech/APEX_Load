@@ -50,12 +50,8 @@ func ApplyParameterizationSelectionsToScript(script *dsl.Script, scriptIndex int
 		trustedByID[suggestion.ID] = suggestion
 	}
 	for id := range selected {
-		suggestion, ok := trustedByID[id]
-		if !ok {
+		if _, ok := trustedByID[id]; !ok {
 			return nil, fmt.Errorf("selected parameterization suggestion %q is stale or unavailable", id)
-		}
-		if suggestion.Kind == paramize.KindSecret {
-			return nil, fmt.Errorf("secret parameterization must use guided credential bindings")
 		}
 	}
 	applied, _, err := paramize.ApplySuggestions(script, trusted.Suggestions, selected)
@@ -87,11 +83,7 @@ func ApplySecretBindingsToImportDraft(
 			ClearCredentialRequirementValues(reqs)
 		}
 	}
-	resolver := ApplySecretBindings
-	if IsCredentialPreservingImport(script) {
-		resolver = ApplyCredentialPreservingSecretBindings
-	}
-	resolved, remaining, err := resolver(script, scriptIndex, bindings)
+	resolved, remaining, err := ApplyCredentialPreservingSecretBindings(script, scriptIndex, bindings)
 	if err != nil {
 		return nil, nil, false, err
 	}

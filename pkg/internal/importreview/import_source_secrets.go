@@ -39,6 +39,8 @@ func SourceSecretValuesForImportNodes(rawValue, projectedValue any, requirements
 			projected, projectedOK := JsonPointerString(projectedNodes[requirement.ScriptIndex], requirement.Path)
 			if rawOK && projectedOK {
 				segments, _ = ExtractProjectedRedactions(raw, projected)
+			} else if matched, scalarValues := NonStringScalarProjectedRedaction(rawNodes[requirement.ScriptIndex], projectedNodes[requirement.ScriptIndex], requirement.Path); matched {
+				segments = scalarValues
 			}
 			byPath[requirement.Path] = segments
 		}
@@ -72,10 +74,10 @@ func ImportResponseRawScriptValue(value any) any {
 	return raw
 }
 
-func JsonPointerString(root any, path string) (string, bool) {
+func JsonPointerNode(root any, path string) (any, bool) {
 	tokens, err := SplitJSONPointer(path)
 	if err != nil {
-		return "", false
+		return nil, false
 	}
 	current := root
 	for _, token := range tokens {
@@ -83,21 +85,52 @@ func JsonPointerString(root any, path string) (string, bool) {
 		case map[string]any:
 			child, ok := typed[token]
 			if !ok {
-				return "", false
+				return nil, false
 			}
 			current = child
 		case []any:
 			index, ok := DecimalTokenIndex(token, len(typed))
 			if !ok {
-				return "", false
+				return nil, false
 			}
 			current = typed[index]
 		default:
-			return "", false
+			return nil, false
 		}
 	}
-	value, ok := current.(string)
+	return current, true
+}
+
+func JsonPointerString(root any, path string) (string, bool) {
+	node, ok := JsonPointerNode(root, path)
+	if !ok {
+		return "", false
+	}
+	value, ok := node.(string)
 	return value, ok
+}
+
+func NonStringScalarProjectedRedaction(rawRoot, projectedRoot any, path string) (bool, []string) {
+	projected, projOK := JsonPointerString(projectedRoot, path)
+	if !projOK || projected != MaskedScriptSecret {
+		return false, nil
+	}
+	rawNode, rawOK := JsonPointerNode(rawRoot, path)
+	if !rawOK {
+		return false, nil
+	}
+	switch rawNode.(type) {
+	case string:
+		return false, nil
+	case nil, bool, map[string]any, []any:
+		return true, nil
+	default:
+		payload, err := json.Marshal(rawNode)
+		if err != nil || string(payload) == "null" {
+			return true, nil
+		}
+		return true, []string{string(payload)}
+	}
 }
 
 func DecimalTokenIndex(value string, length int) (int, bool) {

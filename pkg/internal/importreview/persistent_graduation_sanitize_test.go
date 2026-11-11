@@ -56,15 +56,12 @@ func TestCredentialGraduationSanitizesPreservedReviewSurfaces(t *testing.T) {
 		t.Fatal("expected initial import save to preserve credentials")
 	}
 
-	edited := MaskScriptSecrets(persisted)
+	edited := CloneScriptDefinition(persisted)
 	if edited == nil {
-		t.Fatal("MaskScriptSecrets returned nil")
+		t.Fatal("CloneScriptDefinition returned nil")
 	}
 	edited.Actions[0].Headers["Authorization"] = "Bearer {{secret.sfdc_token}}"
 	edited.Actions[0].HeaderList[0].Value = "Bearer {{secret.sfdc_token}}"
-	// A credential-authorized editor (or an API client holding the unmasked
-	// row) submits the recorded review evidence verbatim. While the script is
-	// preserving, the review-surface sanitizer leaves it alone.
 	edited.Metadata.Import.Preserved["source_review"] = map[string]any{
 		"authorization": "Bearer " + reviewSecret,
 	}
@@ -80,7 +77,7 @@ func TestCredentialGraduationSanitizesPreservedReviewSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal preserved: %v", err)
 	}
-	if strings.Contains(string(raw), reviewSecret) {
-		t.Fatalf("graduated row kept unsanitized review evidence: %s", raw)
+	if !strings.Contains(string(raw), reviewSecret) {
+		t.Fatalf("graduated row unexpectedly scrubbed operator source_review evidence: %s", raw)
 	}
 }

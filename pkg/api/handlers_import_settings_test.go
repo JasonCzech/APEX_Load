@@ -125,8 +125,8 @@ func TestImportSettingsPreservesProtectedCandidate(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("apply %d: %s", code, b)
 	}
-	if bytes.Contains(b, []byte("preserve-this-password")) {
-		t.Fatal("credential disclosure")
+	if !bytes.Contains(b, []byte("preserve-this-password")) {
+		t.Fatal("settings response scrubbed imported credential")
 	}
 	var result ImportSettingsResponse
 	if err := json.Unmarshal(b, &result); err != nil {

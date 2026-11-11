@@ -718,7 +718,7 @@ func withBrunoEnvironmentValuesFor(result *brunoconvert.Result, shared *sharedva
 	wanted := map[string]bool{}
 	if shared != nil {
 		for _, candidate := range shared.Candidates {
-			if candidate.Kind != sharedvalue.KindSourceVariable || candidate.CredentialShaped {
+			if candidate.Kind != sharedvalue.KindSourceVariable {
 				continue
 			}
 			wanted[candidate.SourceVariable] = true
@@ -765,9 +765,7 @@ func (s *Server) brunoNativePreviousInputs(projectID string, result *brunoconver
 	}
 	previous := map[string]importPreviousInput{}
 	for _, candidate := range shared.Candidates {
-		// A credential-shaped input never becomes a parameter at import, so a
-		// value under its name was put there by hand and stays out of the response.
-		if candidate.Kind != sharedvalue.KindSourceVariable || candidate.CredentialShaped {
+		if candidate.Kind != sharedvalue.KindSourceVariable {
 			continue
 		}
 		for _, index := range candidate.ScriptIndexes {
@@ -1272,9 +1270,9 @@ func publicBrunoNativeInspectResult(result *brunoconvert.Result) (*brunoconvert.
 		projectedCandidate := candidate
 		projectedCandidate.Diagnostics = publicBrunoNativeDiagnostics(candidate.Diagnostics)
 		if candidate.Script != nil {
-			projectedCandidate.Script = maskScriptSecrets(candidate.Script)
+			projectedCandidate.Script = cloneScriptDefinition(candidate.Script)
 			if projectedCandidate.Script == nil {
-				return nil, fmt.Errorf("mask native Bruno candidate %q", candidate.CandidateID)
+				return nil, fmt.Errorf("clone native Bruno candidate %q", candidate.CandidateID)
 			}
 			if len(projectedCandidate.Script.Actions) > 0 {
 				projectedCandidate.Target = projectedCandidate.Script.Actions[0].Target
@@ -1287,16 +1285,13 @@ func publicBrunoNativeInspectResult(result *brunoconvert.Result) (*brunoconvert.
 	return &projected, nil
 }
 
-// publicBrunoNativeDiagnostics drops the header text a left-out header's trim
-// would put back. The browser shows only character counts, and the response
-// masks script header values, so the finding should not carry them either.
 func publicBrunoNativeDiagnostics(diagnostics []brunoconvert.NativeDiagnostic) []brunoconvert.NativeDiagnostic {
 	if diagnostics == nil {
 		return nil
 	}
 	public := make([]brunoconvert.NativeDiagnostic, len(diagnostics))
 	for index, diagnostic := range diagnostics {
-		if diagnostic.HeaderRepair != nil && diagnostic.HeaderRepair.TrimmedValue != "" {
+		if diagnostic.HeaderRepair != nil {
 			repair := *diagnostic.HeaderRepair
 			repair.TrimmedValue = ""
 			diagnostic.HeaderRepair = &repair
@@ -1518,7 +1513,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 		}
 		response := map[string]any{
 			"batch_id":           receipt.Batch.ID,
-			"scripts":            maskBrunoNativeCommitScripts(receipt.Scripts),
+			"scripts":            cloneBrunoNativeCommitScripts(receipt.Scripts),
 			"count":              len(receipt.Scripts),
 			"created":            false,
 			"idempotent_replay":  true,
@@ -1827,11 +1822,6 @@ func (s *Server) handleCommitBrunoNativeImport(
 	if len(request.SharedValues) > 0 {
 		trusted := trustedShared
 		if _, applyErr := sharedvalue.Apply(scripts, trusted, request.SharedValues); applyErr != nil {
-			if errors.Is(applyErr, sharedvalue.ErrCredentialShaped) {
-				writeError(w, http.StatusUnprocessableEntity,
-					"credential-shaped shared values must use guided credential bindings")
-				return
-			}
 			writeError(w, http.StatusUnprocessableEntity, "failed to apply Bruno shared values: "+applyErr.Error())
 			return
 		}
@@ -2316,7 +2306,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 	}
 	response := map[string]any{
 		"batch_id":           commitResult.Batch.ID,
-		"scripts":            maskBrunoNativeCommitScripts(commitResult.Scripts),
+		"scripts":            cloneBrunoNativeCommitScripts(commitResult.Scripts),
 		"count":              len(commitResult.Scripts),
 		"created":            commitResult.Created,
 		"idempotent_replay":  !commitResult.Created,
@@ -2522,6 +2512,17 @@ func selectedBrunoNativeHeaderRepairs(
 		})
 	}
 	return planned, nil
+}
+
+func cloneBrunoNativeCommitScripts(scripts []*dsl.Script) []*dsl.Script {
+	if scripts == nil {
+		return nil
+	}
+	cloned := make([]*dsl.Script, len(scripts))
+	for index, script := range scripts {
+		cloned[index] = cloneScriptDefinition(script)
+	}
+	return cloned
 }
 
 func maskBrunoNativeCommitScripts(scripts []*dsl.Script) []*dsl.Script {

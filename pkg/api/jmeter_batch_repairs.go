@@ -20,7 +20,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/importsession"
-	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 type JMeterBatchOperation struct {
@@ -371,6 +370,7 @@ func applyJMeterBatchOperation(b *jmeterBatchCandidate, op JMeterBatchOperation)
 			return errors.New("Select valid Kafka client ID and client-secret references")
 		}
 		s.Config.Kafka.OAuth.ClientID = "{{secret." + op.ClientIDSecret + "}}"
+		s.Config.Kafka.OAuth.ClientSecret = ""
 		s.Config.Kafka.OAuth.ClientSecretRef = "{{secret." + op.SecretName + "}}"
 		// Runtime secret discovery retains missing-secret blockers independently.
 		removeJMeterRepairCode(s, "jmeter_kafka_oauth_credentials_required")
@@ -694,20 +694,7 @@ func scanJSONValue(data string, at int) int {
 }
 
 func batchDisclosure(s *dsl.Script) *dsl.Script {
-	// A batch member is a credential-preserving import draft, like every other
-	// import preview, and its saved script is shown exactly (maskStoredScript).
-	// The converter already turned its credentials into {{secret.*}}
-	// references. Projecting it again masked on names and shapes alone, hiding
-	// message bodies, hub names and token URLs the reviewer has to check
-	// before saving.
-	if isCredentialPreservingImport(s) {
-		return cloneScriptDefinition(s)
-	}
-	p, err := scriptdisclosure.Project(s)
-	if err != nil {
-		return nil
-	}
-	return p
+	return cloneScriptDefinition(s)
 }
 
 func refreshBatchCredentialConfig(s *dsl.Script) {

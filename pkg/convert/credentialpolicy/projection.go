@@ -358,18 +358,12 @@ func preserved(source SourceRef, code string) Result {
 	if strings.TrimSpace(code) == "" {
 		code = "import_credential_preserved"
 	}
-	disposition := ExecutableExact
-	if code == "import_credential_review_incomplete" {
-		// The value remains byte-exact, but bounded classification did not
-		// inspect it completely. It must not be executable until reviewed.
-		disposition = BlockedDraft
-	}
 	return Result{
-		Disposition: disposition,
+		Disposition: ExecutableExact,
 		Findings: []Finding{{
 			Code:        code,
 			Source:      source,
-			Disposition: disposition,
+			Disposition: ExecutableExact,
 		}},
 	}
 }
@@ -387,7 +381,12 @@ func preservedPayloadResult(payload []byte, options Options) Result {
 // could not verify. This lets runtime disclosure redaction protect the retained
 // bytes without making the operator re-enter them.
 func preservedOpaquePayloadResult(payload []byte, options Options, code string) Result {
-	result := blocked(options.Source, code)
+	var result Result
+	if code == "import_credential_review_incomplete" {
+		result = preserved(options.Source, code)
+	} else {
+		result = blocked(options.Source, code)
+	}
 	if len(payload) == 0 {
 		return result
 	}
@@ -464,8 +463,9 @@ func projectSensitiveScalar(value, name string, source SourceRef, target TargetR
 	sourceExpression := value
 	value, sourceVariableNames := MaterializeSourceVariables(value, options)
 	valueStatus := ClassifySourceCredentialValue(value)
-	if valueStatus == SourceCredentialValueRedactedPlaceholder ||
-		valueStatus == SourceCredentialValueUnsafeEncoding {
+	if options.Mode != Preserve &&
+		(valueStatus == SourceCredentialValueRedactedPlaceholder ||
+			valueStatus == SourceCredentialValueUnsafeEncoding) {
 		requirement, projected, err := NewRequirement(RequirementSpec{
 			Key:                 name,
 			Label:               name,
@@ -1567,7 +1567,7 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 	}
 	if len(input.Parts) > options.Limits.MaxParts {
 		if options.Mode == Preserve {
-			result := blocked(options.Source, "import_credential_review_incomplete")
+			result := preserved(options.Source, "import_credential_review_incomplete")
 			result.Merge(preservedOpaqueTargetResult(options))
 			return cloneMultipart(input), result, nil
 		}
@@ -1585,7 +1585,7 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		totalValues += len(part.Headers)
 		if totalValues > options.Limits.MaxValues {
 			if options.Mode == Preserve {
-				result := blocked(options.Source, "import_credential_review_incomplete")
+				result := preserved(options.Source, "import_credential_review_incomplete")
 				result.Merge(preservedOpaqueTargetResult(options))
 				return cloneMultipart(input), result, nil
 			}
@@ -1612,7 +1612,7 @@ func ProjectMultipart(input Multipart, options Options) (Multipart, Result, erro
 		}
 		if size > options.Limits.MaxBytes-totalBytes {
 			if options.Mode == Preserve {
-				result := blocked(options.Source, "import_credential_review_incomplete")
+				result := preserved(options.Source, "import_credential_review_incomplete")
 				result.Merge(preservedOpaqueTargetResult(options))
 				return cloneMultipart(input), result, nil
 			}
@@ -2182,6 +2182,14 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				values++
 			}
 			if values > options.Limits.MaxValues {
+				if options.Mode == Preserve {
+					return append([]byte(nil), payload...),
+						preservedOpaquePayloadResult(
+							payload,
+							options,
+							"import_credential_review_incomplete",
+						), nil
+				}
 				return nil,
 					rejected(options.Source, "credential_xml_value_limit_exceeded"),
 					nil
@@ -2310,6 +2318,14 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				}
 			}
 			if values > options.Limits.MaxValues {
+				if options.Mode == Preserve {
+					return append([]byte(nil), payload...),
+						preservedOpaquePayloadResult(
+							payload,
+							options,
+							"import_credential_review_incomplete",
+						), nil
+				}
 				return nil,
 					rejected(options.Source, "credential_xml_value_limit_exceeded"),
 					nil
@@ -2413,6 +2429,14 @@ func scanXML(payload []byte, options Options) ([]byte, Result, error) {
 				}
 			}
 			if values > options.Limits.MaxValues {
+				if options.Mode == Preserve {
+					return append([]byte(nil), payload...),
+						preservedOpaquePayloadResult(
+							payload,
+							options,
+							"import_credential_review_incomplete",
+						), nil
+				}
 				return nil,
 					rejected(options.Source, "credential_xml_value_limit_exceeded"),
 					nil

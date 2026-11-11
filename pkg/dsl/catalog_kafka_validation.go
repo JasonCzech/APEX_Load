@@ -52,7 +52,7 @@ func validateKafkaScriptIssues(script *Script) []string {
 		if o.AuthenticationMethod != "" && o.AuthenticationMethod != "client_secret_post" && o.AuthenticationMethod != "client_secret_basic" && o.AuthenticationMethod != "kafka_3_3_1_basic" {
 			issues = append(issues, "unsupported Kafka OAuth authentication_method")
 		}
-		if !isBlockedJMeterMessagingDraft(script) && (o.ClientID == "" || o.ClientSecretRef == "" || strings.Contains(o.ClientID, "***") || strings.Contains(o.ClientSecretRef, "***")) {
+		if !isBlockedJMeterMessagingDraft(script) && (o.ClientID == "" || (o.ClientSecret == "" && o.ClientSecretRef == "")) {
 			issues = append(issues, "Kafka OAuth credentials are unresolved")
 		}
 		if err := kafkaprotocol.ValidateOAuthTokenEndpoint(o.TokenURL); err != nil && !isBlockedJMeterMessagingDraft(script) {

@@ -11,10 +11,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/convert/convertresult"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/convert/convertresult"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
@@ -23,6 +25,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 	"gopkg.in/yaml.v3"
 )
 
@@ -111,6 +114,7 @@ type server struct {
 	Protocol  string                    `json:"protocol,omitempty" yaml:"protocol,omitempty"`
 	Variables map[string]serverVariable `json:"variables,omitempty" yaml:"variables,omitempty"`
 	Security  []map[string][]string     `json:"security,omitempty" yaml:"security,omitempty"`
+	Bindings  bindings                  `json:"bindings,omitempty" yaml:"bindings,omitempty"`
 }
 
 type serverVariable struct {
@@ -171,11 +175,18 @@ type bindings struct {
 }
 
 type kafkaBinding struct {
-	Topic      string `json:"topic,omitempty" yaml:"topic,omitempty"`
-	Key        string `json:"key,omitempty" yaml:"key,omitempty"`
-	GroupID    string `json:"groupId,omitempty" yaml:"groupId,omitempty"`
-	ClientID   string `json:"clientId,omitempty" yaml:"clientId,omitempty"`
-	Partitions int    `json:"partitions,omitempty" yaml:"partitions,omitempty"`
+	Topic            string `json:"topic,omitempty" yaml:"topic,omitempty"`
+	Key              string `json:"key,omitempty" yaml:"key,omitempty"`
+	GroupID          string `json:"groupId,omitempty" yaml:"groupId,omitempty"`
+	ClientID         string `json:"clientId,omitempty" yaml:"clientId,omitempty"`
+	ClientSecret     string `json:"clientSecret,omitempty" yaml:"clientSecret,omitempty"`
+	TokenURL         string `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+	Scope            string `json:"scope,omitempty" yaml:"scope,omitempty"`
+	SASLMechanism    string `json:"saslMechanism,omitempty" yaml:"saslMechanism,omitempty"`
+	SASLUsername     string `json:"saslUsername,omitempty" yaml:"saslUsername,omitempty"`
+	SASLPassword     string `json:"saslPassword,omitempty" yaml:"saslPassword,omitempty"`
+	ConnectionString string `json:"connectionString,omitempty" yaml:"connectionString,omitempty"`
+	Partitions       int    `json:"partitions,omitempty" yaml:"partitions,omitempty"`
 	// Partition is a pointer so an explicit `partition: 0` (a valid, pinnable
 	// partition index) is distinguishable from absence and not silently dropped.
 	Partition *int `json:"partition,omitempty" yaml:"partition,omitempty"`
@@ -206,9 +217,34 @@ type components struct {
 }
 
 type securityScheme struct {
-	Type         string `json:"type,omitempty" yaml:"type,omitempty"`
-	Scheme       string `json:"scheme,omitempty" yaml:"scheme,omitempty"`
-	BearerFormat string `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
+	Type              string      `json:"type,omitempty" yaml:"type,omitempty"`
+	Scheme            string      `json:"scheme,omitempty" yaml:"scheme,omitempty"`
+	BearerFormat      string      `json:"bearerFormat,omitempty" yaml:"bearerFormat,omitempty"`
+	Flows             *oauthFlows `json:"flows,omitempty" yaml:"flows,omitempty"`
+	TokenURL          string      `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+	XTokenURL         string      `json:"x-token-url,omitempty" yaml:"x-token-url,omitempty"`
+	ClientID          string      `json:"clientId,omitempty" yaml:"clientId,omitempty"`
+	XClientID         string      `json:"x-client-id,omitempty" yaml:"x-client-id,omitempty"`
+	ClientSecret      string      `json:"clientSecret,omitempty" yaml:"clientSecret,omitempty"`
+	XClientSecret     string      `json:"x-client-secret,omitempty" yaml:"x-client-secret,omitempty"`
+	Scope             string      `json:"scope,omitempty" yaml:"scope,omitempty"`
+	XScope            string      `json:"x-scope,omitempty" yaml:"x-scope,omitempty"`
+	Username          string      `json:"username,omitempty" yaml:"username,omitempty"`
+	Password          string      `json:"password,omitempty" yaml:"password,omitempty"`
+	ConnectionString  string      `json:"connectionString,omitempty" yaml:"connectionString,omitempty"`
+	XUsername         string      `json:"x-sasl-username,omitempty" yaml:"x-sasl-username,omitempty"`
+	XPassword         string      `json:"x-sasl-password,omitempty" yaml:"x-sasl-password,omitempty"`
+	XConnectionString string      `json:"x-connection-string,omitempty" yaml:"x-connection-string,omitempty"`
+}
+
+type oauthFlows struct {
+	ClientCredentials *oauthFlow `json:"clientCredentials,omitempty" yaml:"clientCredentials,omitempty"`
+}
+
+type oauthFlow struct {
+	TokenURL        string            `json:"tokenUrl,omitempty" yaml:"tokenUrl,omitempty"`
+	Scopes          map[string]string `json:"scopes,omitempty" yaml:"scopes,omitempty"`
+	AvailableScopes map[string]string `json:"availableScopes,omitempty" yaml:"availableScopes,omitempty"`
 }
 
 type schema struct {
@@ -297,6 +333,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	brokers, protocols, securityProtocol, brokerWarnings := deriveBrokers(doc, req.Options.Brokers)
 	kafkaSASLMechanism := deriveKafkaSASLMechanism(doc)
+	brokerCreds := deriveBrokerUserPass(doc)
 
 	// Azure Event Hubs exposes a Kafka-protocol endpoint; when the bootstrap host
 	// is *.servicebus.windows.net, pre-set the Event Hubs profile and its
@@ -306,6 +343,18 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if detectEventHubsProfile(brokers) {
 		kafkaProfile = "eventhubs"
 		securityProtocol = "sasl_ssl"
+	}
+
+	var kafkaOAuth *dsl.KafkaOAuthConfig
+	unconfiguredKafkaOAuth := false
+	if kafkaProfile == "" && kafkaSASLMechanism == "oauthbearer" {
+		kafkaOAuth = deriveKafkaClientFlow(doc, brokerCreds)
+		if kafkaOAuth != nil {
+			securityProtocol = "sasl_ssl"
+		} else {
+			kafkaSASLMechanism = ""
+			unconfiguredKafkaOAuth = true
+		}
 	}
 
 	// When the servers are AMQP/JMS (and not Kafka), target the JMS family instead
@@ -347,8 +396,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 	result.Warnings = append(result.Warnings, brokerWarnings...)
-	if kafkaProfile == "eventhubs" {
+	if kafkaProfile == "eventhubs" && brokerCreds.kafkaPassword == "" && kafkaSASLMechanism != "oauthbearer" {
 		result.Warnings = append(result.Warnings, "an Azure Event Hubs Kafka endpoint was detected; config.kafka.profile was set to eventhubs (sasl_ssl). Supply sasl_username \"$ConnectionString\" and sasl_password_secret (the namespace connection string), or use Entra ID, before running against the live namespace")
+	}
+	if unconfiguredKafkaOAuth && (hasTarget(ops, targetKafka) || !useJMS) {
+		result.Warnings = append(result.Warnings, "Kafka OAUTHBEARER authentication was declared without complete HTTPS client_credentials OAuth settings (token_url, client_id, and client secret); configure config.kafka.oauth with security_protocol sasl_ssl (or profile eventhubs) before live replay")
 	}
 	result.Warnings = append(result.Warnings, opWarnings...)
 	result.Warnings = append(result.Warnings, jmsWarnings...)
@@ -375,7 +427,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(groupOps) == 0 {
 			continue
 		}
-		script := buildScriptForOps(scriptName, target, groupOps, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, len(grouped) > 1)
+		script := buildScriptForOps(scriptName, target, groupOps, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, kafkaOAuth, unconfiguredKafkaOAuth, jmsBroker, brokerCreds, mock, len(grouped) > 1)
 		if target == targetKafka && script.Config.Kafka.AutoOffsetReset == "earliest" {
 			result.Warnings = append(result.Warnings, "config.kafka.auto_offset_reset was set to earliest because the imported script produces and consumes records; this lets real-broker replay observe records produced earlier in the same run")
 		}
@@ -416,7 +468,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		uniquify.DeduplicateScriptNames(result.Scripts)
 		result.Script = result.Scripts[0]
 	} else {
-		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker, mock, false)
+		result.Script = buildScriptForOps(scriptName, defaultTarget, nil, req.Options, brokers, kafkaProfile, securityProtocol, kafkaSASLMechanism, kafkaOAuth, unconfiguredKafkaOAuth, jmsBroker, brokerCreds, mock, false)
 		stampAsyncAPISourceIdentity(result.Script, doc.Info.Title, req.Name, string(defaultTarget))
 		result.Scripts = []*dsl.Script{result.Script}
 	}
@@ -451,6 +503,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	result.Unsupported = diagnostics.Items()
 	result.SourceReview = sourceview.Build(map[string]string{sourceFile: content}, mappings)
+	for _, script := range result.Scripts {
+		convertutil.SanitizeScriptDSLTemplates(script, nil)
+	}
+	if result.Script != nil {
+		convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
+	}
 	return result, nil
 }
 
@@ -479,7 +537,14 @@ func decodeDocument(data []byte) (*document, []srcparse.Finding, error) {
 	return &doc, findings, nil
 }
 
-func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker string, mock bool, suffix bool) *dsl.Script {
+type brokerCredentials struct {
+	kafkaUsername string
+	kafkaPassword string
+	jmsUsername   string
+	jmsPassword   string
+}
+
+func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, kafkaSASLMechanism string, kafkaOAuth *dsl.KafkaOAuthConfig, unconfiguredKafkaOAuth bool, jmsBroker string, creds brokerCredentials, mock bool, suffix bool) *dsl.Script {
 	name := sanitizeName(scriptName)
 	protocolName := "kafka"
 	if target == targetJMS {
@@ -493,6 +558,8 @@ func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts C
 		cfg.JMS = dsl.JMSConfig{
 			BrokerURL: jmsBroker,
 			Provider:  "solace",
+			Username:  creds.jmsUsername,
+			Password:  creds.jmsPassword,
 			Mock:      mock,
 		}
 		if opNeedsTopicSubscription(ops) {
@@ -510,13 +577,38 @@ func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts C
 			Mock:             mock,
 		}
 		if kafkaProfile == "eventhubs" {
-			cfg.Kafka.SASLMechanism = "plain"
-			cfg.Kafka.SASLUsername = "$ConnectionString"
-			cfg.Kafka.SASLPasswordSecret = "{{secret.EVENTHUBS_CONNECTION_STRING}}"
-		} else if kafkaSASLMechanism != "" {
-			cfg.Kafka.SASLMechanism = kafkaSASLMechanism
-			if cfg.Kafka.SecurityProtocol == "" || cfg.Kafka.SecurityProtocol == "plaintext" {
-				cfg.Kafka.SecurityProtocol = "sasl_plaintext"
+			if kafkaSASLMechanism == "oauthbearer" && creds.kafkaPassword == "" {
+				cfg.Kafka.SASLMechanism = "oauthbearer"
+			} else {
+				cfg.Kafka.SASLMechanism = "plain"
+				cfg.Kafka.SASLUsername = convertutil.FirstNonEmpty(creds.kafkaUsername, "$ConnectionString")
+				if creds.kafkaPassword != "" {
+					if strings.HasPrefix(creds.kafkaPassword, "{{secret.") {
+						cfg.Kafka.SASLPasswordSecret = creds.kafkaPassword
+					} else {
+						cfg.Kafka.SASLPassword = creds.kafkaPassword
+					}
+				} else {
+					cfg.Kafka.SASLPasswordSecret = "{{secret.EVENTHUBS_CONNECTION_STRING}}"
+				}
+			}
+		} else if kafkaSASLMechanism == "oauthbearer" && kafkaOAuth != nil {
+			cfg.Kafka.SASLMechanism = "oauthbearer"
+			cfg.Kafka.SecurityProtocol = "sasl_ssl"
+			oauthCopy := *kafkaOAuth
+			cfg.Kafka.OAuth = &oauthCopy
+		} else if !unconfiguredKafkaOAuth {
+			if kafkaSASLMechanism != "" || creds.kafkaPassword != "" || creds.kafkaUsername != "" {
+				cfg.Kafka.SASLMechanism = convertutil.FirstNonEmpty(kafkaSASLMechanism, "plain")
+				if cfg.Kafka.SecurityProtocol == "" || cfg.Kafka.SecurityProtocol == "plaintext" {
+					cfg.Kafka.SecurityProtocol = "sasl_plaintext"
+				}
+			}
+			cfg.Kafka.SASLUsername = creds.kafkaUsername
+			if strings.HasPrefix(creds.kafkaPassword, "{{secret.") {
+				cfg.Kafka.SASLPasswordSecret = creds.kafkaPassword
+			} else {
+				cfg.Kafka.SASLPassword = creds.kafkaPassword
 			}
 		}
 		if opsNeedReplayFromStart(ops) {
@@ -735,9 +827,9 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 		if proto == "kafka" {
 			plain = true
 		}
-		host := serverEndpoint(srv)
+		host := stripKafkaBrokerAuth(serverEndpoint(srv))
 		if srv.Host != "" && srv.Pathname != "" {
-			host = srv.Host + srv.Pathname
+			host = stripKafkaBrokerAuth(applyServerVariables(srv.Host+srv.Pathname, srv.Variables))
 		}
 		if host != "" && len(override) == 0 {
 			brokers = append(brokers, host)
@@ -757,30 +849,53 @@ func deriveBrokers(doc *document, override []string) (brokers []string, protocol
 }
 
 func deriveKafkaSASLMechanism(doc *document) string {
-	if doc == nil || len(doc.Components.SecuritySchemes) == 0 {
+	if doc == nil {
 		return ""
 	}
-	referenced := map[string]struct{}{}
-	for _, srv := range doc.Servers {
-		if serverProtocolFamily(srv.Protocol) != targetKafka {
-			continue
-		}
-		for _, requirement := range srv.Security {
-			for name := range requirement {
-				referenced[name] = struct{}{}
+	hasKafkaServer := false
+	var bindingMechanism string
+	referencedKafkaSchemes := map[string]struct{}{}
+	referencedJMSSchemes := map[string]struct{}{}
+	for _, name := range sortedServerKeys(doc.Servers) {
+		srv := doc.Servers[name]
+		switch serverProtocolFamily(srv.Protocol) {
+		case targetKafka:
+			hasKafkaServer = true
+			if bindingMechanism == "" && srv.Bindings.Kafka != nil && strings.TrimSpace(srv.Bindings.Kafka.SASLMechanism) != "" {
+				bindingMechanism = saslMechanismForScheme(securityScheme{Scheme: srv.Bindings.Kafka.SASLMechanism})
+			}
+			for _, requirement := range srv.Security {
+				for schemeName := range requirement {
+					referencedKafkaSchemes[schemeName] = struct{}{}
+				}
+			}
+		case targetJMS:
+			for _, requirement := range srv.Security {
+				for schemeName := range requirement {
+					referencedJMSSchemes[schemeName] = struct{}{}
+				}
 			}
 		}
 	}
-	if len(referenced) > 0 {
-		for _, name := range sortedKeysFromSet(referenced) {
+	if bindingMechanism != "" {
+		return bindingMechanism
+	}
+	if len(referencedKafkaSchemes) > 0 {
+		for _, name := range sortedKeysFromSet(referencedKafkaSchemes) {
 			if mechanism := saslMechanismForScheme(doc.Components.SecuritySchemes[name]); mechanism != "" {
 				return mechanism
 			}
 		}
+		return ""
 	}
-	for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
-		if mechanism := saslMechanismForScheme(doc.Components.SecuritySchemes[name]); mechanism != "" {
-			return mechanism
+	if hasKafkaServer || len(doc.Servers) == 0 {
+		for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
+			if _, usedByJMS := referencedJMSSchemes[name]; usedByJMS {
+				continue
+			}
+			if mechanism := saslMechanismForScheme(doc.Components.SecuritySchemes[name]); mechanism != "" {
+				return mechanism
+			}
 		}
 	}
 	return ""
@@ -821,6 +936,296 @@ func detectEventHubsProfile(brokers []string) bool {
 	return false
 }
 
+func stripKafkaBrokerAuth(endpoint string) string {
+	clean, _, _ := stripURLUserInfo(endpoint)
+	if idx := strings.Index(clean, "://"); idx >= 0 {
+		if parsed, err := url.Parse(clean); err == nil && parsed.Host != "" {
+			if parsed.Path != "" && parsed.Path != "/" {
+				return parsed.Host + parsed.Path
+			}
+			return parsed.Host
+		}
+		rest := clean[idx+3:]
+		if qIdx := strings.IndexAny(rest, "?#"); qIdx >= 0 {
+			rest = rest[:qIdx]
+		}
+		return strings.TrimSuffix(rest, "/")
+	}
+	return clean
+}
+
+func stripURLUserInfo(endpoint string) (clean string, username string, password string) {
+	trimmed := strings.TrimSpace(endpoint)
+	schemePrefix := ""
+	rest := trimmed
+	if idx := strings.Index(trimmed, "://"); idx >= 0 {
+		if parsed, err := url.Parse(trimmed); err == nil {
+			if parsed.User == nil {
+				return trimmed, "", ""
+			}
+			username = parsed.User.Username()
+			password, _ = parsed.User.Password()
+			parsed.User = nil
+			return parsed.String(), username, password
+		}
+		schemePrefix = trimmed[:idx+3]
+		rest = trimmed[idx+3:]
+	}
+	authority := rest
+	suffix := ""
+	if idx := strings.IndexAny(rest, "/?#"); idx >= 0 {
+		authority = rest[:idx]
+		suffix = rest[idx:]
+	}
+	if !strings.Contains(authority, "@") {
+		return trimmed, "", ""
+	}
+	if schemePrefix == "" {
+		if parsed, err := url.Parse("asyncapi://" + rest); err == nil && parsed.Host != "" && parsed.User != nil {
+			username = parsed.User.Username()
+			password, _ = parsed.User.Password()
+			parsed.User = nil
+			return strings.TrimPrefix(parsed.String(), "asyncapi://"), username, password
+		}
+	}
+	lastAt := strings.LastIndexByte(authority, '@')
+	hostPort := strings.TrimSpace(authority[lastAt+1:])
+	if hostPort == "" {
+		return trimmed, "", ""
+	}
+	rawUser, rawPass, hasPass := strings.Cut(authority[:lastAt], ":")
+	if u, err := url.PathUnescape(rawUser); err == nil {
+		username = u
+	} else {
+		username = rawUser
+	}
+	if hasPass {
+		if p, err := url.PathUnescape(rawPass); err == nil {
+			password = p
+		} else {
+			password = rawPass
+		}
+	}
+	return schemePrefix + hostPort + suffix, username, password
+}
+
+func deriveKafkaClientFlow(doc *document, creds brokerCredentials) *dsl.KafkaOAuthConfig {
+	if doc == nil {
+		return nil
+	}
+	var tokenURL, clientID, clientSecret, scope string
+	hasKafkaServer := false
+	referencedKafkaSchemes := map[string]struct{}{}
+	referencedJMSSchemes := map[string]struct{}{}
+	var securityScopes []string
+	seenSecurityScopes := map[string]struct{}{}
+	for _, name := range sortedServerKeys(doc.Servers) {
+		srv := doc.Servers[name]
+		switch serverProtocolFamily(srv.Protocol) {
+		case targetKafka:
+			hasKafkaServer = true
+			if srv.Bindings.Kafka != nil {
+				tokenURL = convertutil.FirstNonEmpty(tokenURL, strings.TrimSpace(srv.Bindings.Kafka.TokenURL))
+				clientID = convertutil.FirstNonEmpty(clientID, strings.TrimSpace(srv.Bindings.Kafka.ClientID))
+				clientSecret = convertutil.FirstNonEmpty(clientSecret, strings.TrimSpace(srv.Bindings.Kafka.ClientSecret))
+				scope = convertutil.FirstNonEmpty(scope, strings.TrimSpace(srv.Bindings.Kafka.Scope))
+			}
+			tokenURL = convertutil.FirstNonEmpty(tokenURL, serverVarAuthoredString(srv.Variables, "tokenurl", "oauthtokenurl", "tokenendpointurl"))
+			clientID = convertutil.FirstNonEmpty(clientID, serverVarAuthoredString(srv.Variables, "clientid", "oauthclientid"))
+			clientSecret = convertutil.FirstNonEmpty(clientSecret, serverVarAuthoredString(srv.Variables, "clientsecret", "oauthclientsecret"))
+			scope = convertutil.FirstNonEmpty(scope, serverVarAuthoredString(srv.Variables, "scope", "oauthscope"))
+			for _, req := range srv.Security {
+				schemeNames := make([]string, 0, len(req))
+				for schemeName := range req {
+					schemeNames = append(schemeNames, schemeName)
+				}
+				sort.Strings(schemeNames)
+				for _, schemeName := range schemeNames {
+					referencedKafkaSchemes[schemeName] = struct{}{}
+					for _, s := range req[schemeName] {
+						trimmed := strings.TrimSpace(s)
+						if trimmed == "" {
+							continue
+						}
+						if _, exists := seenSecurityScopes[trimmed]; exists {
+							continue
+						}
+						seenSecurityScopes[trimmed] = struct{}{}
+						securityScopes = append(securityScopes, trimmed)
+					}
+				}
+			}
+		case targetJMS:
+			for _, req := range srv.Security {
+				for schemeName := range req {
+					referencedJMSSchemes[schemeName] = struct{}{}
+				}
+			}
+		}
+	}
+	applyScheme := func(scheme securityScheme) {
+		if scheme.Flows != nil && scheme.Flows.ClientCredentials != nil {
+			tokenURL = convertutil.FirstNonEmpty(tokenURL, strings.TrimSpace(scheme.Flows.ClientCredentials.TokenURL))
+			if scope == "" {
+				flowScopeSet := map[string]struct{}{}
+				for k := range scheme.Flows.ClientCredentials.Scopes {
+					if trimmed := strings.TrimSpace(k); trimmed != "" {
+						flowScopeSet[trimmed] = struct{}{}
+					}
+				}
+				for k := range scheme.Flows.ClientCredentials.AvailableScopes {
+					if trimmed := strings.TrimSpace(k); trimmed != "" {
+						flowScopeSet[trimmed] = struct{}{}
+					}
+				}
+				flowScopes := sortedKeysFromSet(flowScopeSet)
+				if len(flowScopes) > 0 {
+					scope = strings.Join(flowScopes, " ")
+				}
+			}
+		}
+		tokenURL = convertutil.FirstNonEmpty(tokenURL, strings.TrimSpace(scheme.TokenURL), strings.TrimSpace(scheme.XTokenURL))
+		clientID = convertutil.FirstNonEmpty(clientID, strings.TrimSpace(scheme.ClientID), strings.TrimSpace(scheme.XClientID))
+		clientSecret = convertutil.FirstNonEmpty(clientSecret, strings.TrimSpace(scheme.ClientSecret), strings.TrimSpace(scheme.XClientSecret))
+		scope = convertutil.FirstNonEmpty(scope, strings.TrimSpace(scheme.Scope), strings.TrimSpace(scheme.XScope))
+	}
+	if len(securityScopes) > 0 && scope == "" {
+		scope = strings.Join(securityScopes, " ")
+	}
+	for _, name := range sortedKeysFromSet(referencedKafkaSchemes) {
+		applyScheme(doc.Components.SecuritySchemes[name])
+	}
+	if (hasKafkaServer || len(doc.Servers) == 0) && len(referencedKafkaSchemes) == 0 {
+		for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
+			if _, usedByJMS := referencedJMSSchemes[name]; usedByJMS {
+				continue
+			}
+			applyScheme(doc.Components.SecuritySchemes[name])
+		}
+	}
+	clientID = convertutil.FirstNonEmpty(clientID, creds.kafkaUsername)
+	clientSecret = convertutil.FirstNonEmpty(clientSecret, creds.kafkaPassword)
+	if tokenURL == "" || clientID == "" || clientSecret == "" ||
+		strings.Contains(clientID, "***") || strings.Contains(clientSecret, "***") ||
+		kafkaprotocol.ValidateOAuthTokenEndpoint(tokenURL) != nil {
+		return nil
+	}
+	return &dsl.KafkaOAuthConfig{
+		Mode:            "client_credentials",
+		TokenURL:        tokenURL,
+		ClientID:        clientID,
+		ClientSecretRef: clientSecret,
+		Scope:           scope,
+	}
+}
+
+func serverVarAuthoredString(variables map[string]serverVariable, names ...string) string {
+	if len(variables) == 0 {
+		return ""
+	}
+	keys := make([]string, 0, len(variables))
+	for key := range variables {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, want := range names {
+		for _, key := range keys {
+			v := variables[key]
+			normalized := strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(strings.TrimSpace(key)))
+			if normalized != want {
+				continue
+			}
+			if val := firstNonNil(v.Default, firstAny(v.Enum)); val != nil {
+				if text := strings.TrimSpace(fmt.Sprint(val)); text != "" {
+					return text
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func deriveBrokerUserPass(doc *document) brokerCredentials {
+	if doc == nil {
+		return brokerCredentials{}
+	}
+	var creds brokerCredentials
+	hasKafkaServer := false
+	hasJMSServer := false
+	referencedKafkaSchemes := map[string]struct{}{}
+	referencedJMSSchemes := map[string]struct{}{}
+	for _, name := range sortedServerKeys(doc.Servers) {
+		srv := doc.Servers[name]
+		family := serverProtocolFamily(srv.Protocol)
+		_, uUser, uPass := stripURLUserInfo(serverEndpoint(srv))
+		varUser := serverVarAuthoredString(srv.Variables, "saslusername", "username", "user")
+		varPass := serverVarAuthoredString(srv.Variables, "saslpassword", "password", "connectionstring", "saslpasswordsecret")
+		switch family {
+		case targetKafka:
+			hasKafkaServer = true
+			var bindUser, bindPass string
+			if srv.Bindings.Kafka != nil {
+				bindUser = strings.TrimSpace(srv.Bindings.Kafka.SASLUsername)
+				bindPass = convertutil.FirstNonEmpty(strings.TrimSpace(srv.Bindings.Kafka.SASLPassword), strings.TrimSpace(srv.Bindings.Kafka.ConnectionString))
+			}
+			creds.kafkaUsername = convertutil.FirstNonEmpty(creds.kafkaUsername, bindUser, uUser, varUser)
+			creds.kafkaPassword = convertutil.FirstNonEmpty(creds.kafkaPassword, bindPass, uPass, varPass)
+			for _, req := range srv.Security {
+				for schemeName := range req {
+					referencedKafkaSchemes[schemeName] = struct{}{}
+				}
+			}
+		case targetJMS:
+			hasJMSServer = true
+			creds.jmsUsername = convertutil.FirstNonEmpty(creds.jmsUsername, uUser, varUser)
+			creds.jmsPassword = convertutil.FirstNonEmpty(creds.jmsPassword, uPass, varPass)
+			for _, req := range srv.Security {
+				for schemeName := range req {
+					referencedJMSSchemes[schemeName] = struct{}{}
+				}
+			}
+		}
+	}
+	applySchemeCreds := func(scheme securityScheme, userOut, passOut *string) {
+		u := convertutil.FirstNonEmpty(strings.TrimSpace(scheme.Username), strings.TrimSpace(scheme.XUsername))
+		p := convertutil.FirstNonEmpty(
+			strings.TrimSpace(scheme.Password),
+			strings.TrimSpace(scheme.XPassword),
+			strings.TrimSpace(scheme.ConnectionString),
+			strings.TrimSpace(scheme.XConnectionString),
+		)
+		if *userOut == "" && u != "" {
+			*userOut = u
+		}
+		if *passOut == "" && p != "" {
+			*passOut = p
+		}
+	}
+	for _, name := range sortedKeysFromSet(referencedKafkaSchemes) {
+		applySchemeCreds(doc.Components.SecuritySchemes[name], &creds.kafkaUsername, &creds.kafkaPassword)
+	}
+	for _, name := range sortedKeysFromSet(referencedJMSSchemes) {
+		applySchemeCreds(doc.Components.SecuritySchemes[name], &creds.jmsUsername, &creds.jmsPassword)
+	}
+	if (hasKafkaServer || len(doc.Servers) == 0) && len(referencedKafkaSchemes) == 0 {
+		for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
+			if _, usedByJMS := referencedJMSSchemes[name]; usedByJMS {
+				continue
+			}
+			applySchemeCreds(doc.Components.SecuritySchemes[name], &creds.kafkaUsername, &creds.kafkaPassword)
+		}
+	}
+	if hasJMSServer && len(referencedJMSSchemes) == 0 {
+		for _, name := range sortedSecuritySchemeKeys(doc.Components.SecuritySchemes) {
+			if _, usedByKafka := referencedKafkaSchemes[name]; usedByKafka {
+				continue
+			}
+			applySchemeCreds(doc.Components.SecuritySchemes[name], &creds.jmsUsername, &creds.jmsPassword)
+		}
+	}
+	return creds
+}
+
 func serverEndpoint(srv server) string {
 	host := convertutil.FirstNonEmpty(srv.Host, srv.URL)
 	if srv.Host != "" && srv.Pathname != "" {
@@ -851,7 +1256,7 @@ func detectJMSTarget(doc *document) (isJMS bool, brokerURL string, warnings []st
 	for _, name := range sortedServerKeys(doc.Servers) {
 		srv := doc.Servers[name]
 		proto := strings.ToLower(strings.TrimSpace(srv.Protocol))
-		host := serverEndpoint(srv)
+		host, _, _ := stripURLUserInfo(serverEndpoint(srv))
 		switch proto {
 		case "amqp", "amqps", "jms", "solace":
 			return true, host, nil
@@ -1311,7 +1716,7 @@ func buildAction(op kafkaOp, includeAssertion bool, doc *document) (dsl.Action, 
 }
 
 func applyDeclaredHeaders(action *dsl.Action, op kafkaOp, doc *document) []string {
-	if op.kind == "consume" || len(op.headers.Properties) == 0 {
+	if op.kind == "consume" || (len(op.headers.Properties) == 0 && !schemaHasAuthoredValue(op.headers)) {
 		return nil
 	}
 	value, columns := sampleForSchema(doc, op.headers, map[string]bool{}, "header")
@@ -1329,10 +1734,10 @@ func applyDeclaredHeaders(action *dsl.Action, op kafkaOp, doc *document) []strin
 }
 
 // applyCorrelationID wires the message's declared correlation id into the
-// generated action: produced messages send a unique {{fn.uuid()}} value at the
-// declared location, and consumed messages extract the value into
-// {{var.<name>}} so later actions can reuse it. Returns the data columns with
-// the correlation field removed (it must not come from a shared CSV row).
+// generated action: produced messages preserve an authored example/default/enum
+// value when present in the spec and otherwise send a unique {{fn.uuid()}}
+// value at the declared location, while consumed messages extract the value
+// into {{var.<name>}} so later actions can reuse it.
 func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []string {
 	location := op.correlationLocation
 	if location == "" {
@@ -1346,6 +1751,18 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 	switch op.kind {
 	case "produce", "request_reply":
 		if source == "payload" && action.Body != "" {
+			if hasAuthoredSchemaValueAtPointer(op.payload, path) {
+				if val, exists := getJSONPointerValue(action.Body, path); exists {
+					action.Metadata["asyncapi_correlation_id"] = location
+					if op.kind == "request_reply" {
+						if action.Params == nil {
+							action.Params = map[string]any{}
+						}
+						action.Params["correlation_id"] = fmt.Sprint(val)
+					}
+					return removeColumn(columns, sanitizeColumnName(lastPathSegment(path)))
+				}
+			}
 			if updated, ok := setJSONPointerValue(action.Body, path, correlationTemplate); ok {
 				action.Body = updated
 				action.Metadata["asyncapi_correlation_id"] = location
@@ -1363,10 +1780,21 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 			// action.Headers map by both the Kafka (buildRecord) and JMS
 			// (buildMessage) runtimes; params["headers"] is read by neither, so a
 			// correlation id written there would be silently dropped on send.
+			headerKey := lastPathSegment(path)
+			if hasAuthoredSchemaValueAtPointer(op.headers, path) && action.Headers != nil && action.Headers[headerKey] != "" {
+				action.Metadata["asyncapi_correlation_id"] = location
+				if op.kind == "request_reply" {
+					if action.Params == nil {
+						action.Params = map[string]any{}
+					}
+					action.Params["correlation_id"] = action.Headers[headerKey]
+				}
+				return removeColumn(columns, sanitizeColumnName(columnName("header", headerKey)))
+			}
 			if action.Headers == nil {
 				action.Headers = map[string]string{}
 			}
-			action.Headers[lastPathSegment(path)] = correlationTemplate
+			action.Headers[headerKey] = correlationTemplate
 			action.Metadata["asyncapi_correlation_id"] = location
 			if op.kind == "request_reply" {
 				if action.Params == nil {
@@ -1374,7 +1802,7 @@ func applyCorrelationID(action *dsl.Action, op kafkaOp, columns []string) []stri
 				}
 				action.Params["correlation_id"] = correlationTemplate
 			}
-			return removeColumn(columns, sanitizeColumnName(columnName("header", lastPathSegment(path))))
+			return removeColumn(columns, sanitizeColumnName(columnName("header", headerKey)))
 		}
 	case "consume":
 		extractorName := sanitizeName(op.name) + "_correlation_id"
@@ -1467,6 +1895,78 @@ func lastPathSegment(path string) string {
 	return segments[len(segments)-1]
 }
 
+func schemaHasAuthoredValue(s schema) bool {
+	return s.Example != nil || len(s.Examples) > 0 || s.Default != nil || len(s.Enum) > 0
+}
+
+func hasAuthoredSchemaValueAtPointer(root schema, path string) bool {
+	segments := splitPointerPath(path)
+	if len(segments) == 0 {
+		return false
+	}
+	current := root
+	for i, segment := range segments {
+		if schemaHasAuthoredValue(current) {
+			return true
+		}
+		if prop, ok := current.Properties[segment]; ok {
+			current = prop
+			continue
+		}
+		matchedAvro := false
+		for _, field := range current.Fields {
+			if field.Name != segment {
+				continue
+			}
+			if field.Default != nil {
+				return true
+			}
+			if i == len(segments)-1 {
+				if m, ok := field.Type.(map[string]any); ok {
+					return schemaHasAuthoredValue(schemaFromMap(m))
+				}
+				return false
+			}
+			if m, ok := field.Type.(map[string]any); ok {
+				current = schemaFromMap(m)
+				matchedAvro = true
+				break
+			}
+		}
+		if !matchedAvro {
+			return false
+		}
+	}
+	return schemaHasAuthoredValue(current)
+}
+
+func getJSONPointerValue(document string, path string) (any, bool) {
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(document), &parsed); err != nil {
+		return nil, false
+	}
+	segments := splitPointerPath(path)
+	if len(segments) == 0 {
+		return nil, false
+	}
+	current := parsed
+	for _, segment := range segments[:len(segments)-1] {
+		next, ok := current[segment].(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current = next
+	}
+	val, exists := current[segments[len(segments)-1]]
+	if !exists || val == nil {
+		return nil, false
+	}
+	if str, ok := val.(string); ok && strings.HasPrefix(str, "{{data.asyncapi.") {
+		return nil, false
+	}
+	return val, true
+}
+
 // setJSONPointerValue sets a nested field of a JSON document to value,
 // following the given slash-separated pointer path. Returns ok=false when the
 // document is not an object or the path's parents are missing.
@@ -1542,6 +2042,9 @@ func sampleForSchema(doc *document, s schema, seen map[string]bool, prefix strin
 	if len(s.Examples) > 0 {
 		return s.Examples[0], nil
 	}
+	if s.Default != nil {
+		return s.Default, nil
+	}
 	if len(s.Enum) > 0 {
 		return s.Enum[0], nil
 	}
@@ -1550,7 +2053,7 @@ func sampleForSchema(doc *document, s schema, seen map[string]bool, prefix strin
 		var columns []string
 		for _, name := range sortedSchemaKeys(s.Properties) {
 			prop := s.Properties[name]
-			if scalarSchema(prop) {
+			if scalarSchema(prop) && !schemaHasAuthoredValue(prop) {
 				column := columnName(prefix, name)
 				result[name] = "{{data.asyncapi." + column + "}}"
 				columns = append(columns, column)

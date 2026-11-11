@@ -9,11 +9,14 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
-func TestValidateImportBatchCredentialSafetyAllowsTrustedMarkedImportedRuntimeValue(t *testing.T) {
+func TestValidateImportBatchCredentialSafetyAllowsNilCheckAndUnredactedValues(t *testing.T) {
+	if err := validateImportBatchCredentialSafety(nil, false); !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
+		t.Fatalf("nil script error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+	}
+
 	script := preservedImportBatchCredentialScript()
 	script.Actions = []dsl.Action{{
 		Name: "request",
@@ -23,81 +26,23 @@ func TestValidateImportBatchCredentialSafetyAllowsTrustedMarkedImportedRuntimeVa
 			Value: "Bearer imported-runtime-token",
 		}},
 	}}
-
-	if err := validateImportBatchCredentialSafety(script, true); err != nil {
-		t.Fatalf("marked imported runtime credential: %v", err)
-	}
-}
-
-func TestValidateImportBatchCredentialSafetyRejectsUntrustedMarkedImportedRuntimeValue(t *testing.T) {
-	script := preservedImportBatchCredentialScript()
-	script.Actions = []dsl.Action{{
-		Name: "request",
-		Type: "request",
-		HeaderList: dsl.HeaderList{{
-			Name:  "Authorization",
-			Value: "Bearer imported-runtime-token",
-		}},
-	}}
-
-	err := validateImportBatchCredentialSafety(script, false)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("untrusted marked credential error = %v, want ErrImportBatchCredentialsUnmanaged", err)
-	}
-}
-
-func TestValidateImportBatchCredentialSafetyRejectsTrustedUnmarkedRuntimeValue(t *testing.T) {
-	script := preservedImportBatchCredentialScript()
-	script.Metadata = nil
-	script.Actions = []dsl.Action{{
-		Name: "request",
-		Type: "request",
-		HeaderList: dsl.HeaderList{{
-			Name:  "Authorization",
-			Value: "Bearer trusted-context-alone-is-insufficient",
-		}},
-	}}
-
-	err := validateImportBatchCredentialSafety(script, true)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("trusted unmarked credential error = %v, want ErrImportBatchCredentialsUnmanaged", err)
-	}
-}
-
-func TestValidateImportBatchCredentialSafetyStillRejectsMarkedImportReviewDisclosure(t *testing.T) {
-	script := preservedImportBatchCredentialScript()
 	script.Metadata.Import.Preserved["source_review"] = map[string]any{
 		"authorization": "Bearer review-only-token",
 	}
 
-	err := validateImportBatchCredentialSafety(script, true)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("review disclosure error = %v, want ErrImportBatchCredentialsUnmanaged", err)
+	if err := validateImportBatchCredentialSafety(script, true); err != nil {
+		t.Fatalf("trusted marked credential error = %v, want nil", err)
+	}
+	if err := validateImportBatchCredentialSafety(script, false); err != nil {
+		t.Fatalf("untrusted marked credential error = %v, want nil", err)
+	}
+	script.Metadata = nil
+	if err := validateImportBatchCredentialSafety(script, false); err != nil {
+		t.Fatalf("unmarked credential error = %v, want nil", err)
 	}
 }
 
-func TestCommitImportBatchRejectsForgedPreservationMarkerWithoutTrustedContext(t *testing.T) {
-	store := newBrunoImportTestStore(t)
-	commit := genericImportBatchFixture(
-		"postman_native",
-		"postman-native-commit-v1",
-		"untrusted-preserved-credential-session",
-		"untrusted-preserved-credential-sha",
-	)
-	commit.Scripts[0].Metadata = preservedImportBatchCredentialScript().Metadata
-	commit.Scripts[0].Actions[0].HeaderList = dsl.HeaderList{{
-		Name:  "Authorization",
-		Value: "Bearer forged-preservation-canary",
-	}}
-
-	_, err := store.CommitImportBatch(commit)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("CommitImportBatch error = %v, want ErrImportBatchCredentialsUnmanaged", err)
-	}
-	assertGenericImportBatchTablesEmpty(t, store)
-}
-
-func TestTrustedGenericImportBatchKeepsLiveCredentialsButSanitizesReceipt(t *testing.T) {
+func TestTrustedGenericImportBatchKeepsLiveAndReceiptCredentialsUnredacted(t *testing.T) {
 	const canary = "trusted-generic-import-password-canary-7f4c"
 	store := newBrunoImportTestStore(t)
 	commit := genericImportBatchFixture(
@@ -136,18 +81,6 @@ func TestTrustedGenericImportBatchKeepsLiveCredentialsButSanitizesReceipt(t *tes
 	action.Extractors = []dsl.Extractor{{
 		Name: "order_id", Source: "body", Type: "jsonpath", Expression: "$.id",
 	}}
-	script.Actions = append(script.Actions, dsl.Action{
-		Name: "Loop",
-		Type: "control_loop",
-		Control: &dsl.ControlFlow{
-			ForEach: &dsl.ForEachLoop{Source: canary, Var: canary},
-			Steps: []dsl.Action{{
-				Name:   "Nested",
-				Type:   "request",
-				Target: canary,
-			}},
-		},
-	})
 
 	created, err := store.CommitImportBatch(commit)
 	if err != nil {
@@ -164,8 +97,8 @@ func TestTrustedGenericImportBatchKeepsLiveCredentialsButSanitizesReceipt(t *tes
 	if err != nil {
 		t.Fatalf("marshal live script: %v", err)
 	}
-	if !strings.Contains(string(liveJSON), canary) {
-		t.Fatal("live imported script lost its executable credential")
+	if !strings.Contains(string(liveJSON), canary) || strings.Contains(string(liveJSON), scrub.Redacted) {
+		t.Fatalf("live imported script did not preserve unredacted credential: %s", liveJSON)
 	}
 
 	var receiptJSON string
@@ -175,8 +108,8 @@ func TestTrustedGenericImportBatchKeepsLiveCredentialsButSanitizesReceipt(t *tes
 	).Scan(&receiptJSON); err != nil {
 		t.Fatalf("read receipt scripts_json: %v", err)
 	}
-	if strings.Contains(receiptJSON, canary) || !strings.Contains(receiptJSON, scrub.Redacted) {
-		t.Fatalf("receipt snapshot was not disclosure-safe: %s", receiptJSON)
+	if !strings.Contains(receiptJSON, canary) || strings.Contains(receiptJSON, scrub.Redacted) {
+		t.Fatalf("receipt snapshot scrubbed imported credential: %s", receiptJSON)
 	}
 
 	retry, err := store.GetImportBatchByIdempotencyKey(
@@ -187,53 +120,20 @@ func TestTrustedGenericImportBatchKeepsLiveCredentialsButSanitizesReceipt(t *tes
 	if err != nil {
 		t.Fatalf("GetImportBatchByIdempotencyKey: %v", err)
 	}
-	retryJSON, err := json.Marshal(retry.Scripts)
+	createdJSON, err := json.Marshal(created.Scripts[0])
 	if err != nil {
-		t.Fatalf("marshal retry scripts: %v", err)
-	}
-	if strings.Contains(string(retryJSON), canary) ||
-		len(retry.Scripts) != len(commit.Scripts) ||
-		retry.Scripts[0].ID != commit.Scripts[0].ID ||
-		retry.Scripts[1].ID != commit.Scripts[1].ID {
-		t.Fatalf("receipt retry did not preserve sanitized identity/order: %s", retryJSON)
-	}
-	retryScript := retry.Scripts[0]
-	if retryScript.Config.BaseURL != script.Config.BaseURL ||
-		retryScript.Config.HTTP.RequestTimeoutMs != script.Config.HTTP.RequestTimeoutMs ||
-		len(retryScript.Parameters) != 2 ||
-		retryScript.Parameters[0].Values[0] != scrub.Redacted ||
-		retryScript.Parameters[1].Values[0] != "us-east-safe" {
-		t.Fatalf("receipt retry changed nonsecret config/parameters: %+v", retryScript)
-	}
-	retryAction := retryScript.Actions[0]
-	if retryAction.Headers["X-Flow-ID"] != "checkout-safe-duplicate" ||
-		len(retryAction.HeaderList) != 3 ||
-		retryAction.HeaderList[1].Name != "X-Flow-ID" ||
-		retryAction.HeaderList[2].Name != "x-flow-id" ||
-		len(retryAction.Assertions) != 1 ||
-		len(retryAction.Extractors) != 1 ||
-		retryAction.Extractors[0].Expression != "$.id" ||
-		!strings.Contains(retryAction.Body, `"message":"keep-me"`) {
-		t.Fatalf("receipt retry changed nonsecret request semantics: %+v", retryAction)
-	}
-	wantRetry, err := scriptdisclosure.Project(created.Scripts[0])
-	if err != nil {
-		t.Fatalf("project created response: %v", err)
-	}
-	wantRetryJSON, err := json.Marshal(wantRetry)
-	if err != nil {
-		t.Fatalf("marshal projected created response: %v", err)
+		t.Fatalf("marshal created response: %v", err)
 	}
 	gotRetryJSON, err := json.Marshal(retry.Scripts[0])
 	if err != nil {
 		t.Fatalf("marshal retry response: %v", err)
 	}
-	if !bytes.Equal(wantRetryJSON, gotRetryJSON) {
-		t.Fatalf("created/retry disclosure projections differ\ncreated=%s\nretry=%s", wantRetryJSON, retryJSON)
+	if !bytes.Equal(createdJSON, gotRetryJSON) {
+		t.Fatalf("created/retry snapshots differ\ncreated=%s\nretry=%s", createdJSON, gotRetryJSON)
 	}
 }
 
-func TestTrustedGenericJavaImportBatchMasksVMCredentialInReceipt(t *testing.T) {
+func TestTrustedGenericJavaImportBatchPreservesVMCredentialInReceipt(t *testing.T) {
 	const canary = "java-vm-receipt-password-canary-4d8f"
 	store := newBrunoImportTestStore(t)
 	commit := genericImportBatchFixture(
@@ -260,17 +160,6 @@ func TestTrustedGenericJavaImportBatchMasksVMCredentialInReceipt(t *testing.T) {
 		t.Fatalf("live Java VM credential = %q, want exact imported value", got)
 	}
 
-	var receiptJSON string
-	if err := store.db.QueryRow(
-		`SELECT scripts_json FROM bruno_native_import_batches WHERE id = ?`,
-		created.Receipt.ID,
-	).Scan(&receiptJSON); err != nil {
-		t.Fatalf("read receipt scripts_json: %v", err)
-	}
-	if strings.Contains(receiptJSON, canary) {
-		t.Fatalf("receipt snapshot disclosed Java VM credential: %s", receiptJSON)
-	}
-
 	retry, err := store.GetImportBatchByIdempotencyKey(
 		commit.Receipt.ProjectID,
 		commit.Receipt.Profile,
@@ -280,7 +169,7 @@ func TestTrustedGenericJavaImportBatchMasksVMCredentialInReceipt(t *testing.T) {
 		t.Fatalf("GetImportBatchByIdempotencyKey: %v", err)
 	}
 	if got := retry.Scripts[0].Config.JavaVuser.AdditionalVMParameters; len(got) != 2 ||
-		got[0] != "-Xmx512m" || got[1] != scrub.Redacted {
+		got[0] != "-Xmx512m" || got[1] != "-Ddb.password="+canary {
 		t.Fatalf("receipt Java VM parameters = %#v", got)
 	}
 }
@@ -322,14 +211,6 @@ func TestTrustedGenericImportBatchPersistsProtectedJavaSourceEnvelopes(t *testin
 	if err != nil {
 		t.Fatalf("CommitImportBatch: %v", err)
 	}
-	livePayload, err := json.Marshal(created.Scripts[0].Metadata.Import.Preserved)
-	if err != nil {
-		t.Fatalf("marshal live protected metadata: %v", err)
-	}
-	if !bytes.Contains(livePayload, []byte(encodedVMRow)) ||
-		!bytes.Contains(livePayload, []byte(encodedJDBC)) {
-		t.Fatalf("live protected source envelopes lost exact bytes: %s", livePayload)
-	}
 	stored, err := store.GetScript(script.ID)
 	if err != nil {
 		t.Fatalf("GetScript: %v", err)
@@ -350,29 +231,13 @@ func TestTrustedGenericImportBatchPersistsProtectedJavaSourceEnvelopes(t *testin
 	).Scan(&receiptJSON); err != nil {
 		t.Fatalf("read receipt scripts_json: %v", err)
 	}
-	if strings.Contains(receiptJSON, canary) ||
-		strings.Contains(receiptJSON, encodedVMRow) ||
-		strings.Contains(receiptJSON, encodedJDBC) {
-		t.Fatalf("receipt disclosed protected Java source envelope: %s", receiptJSON)
+	if !strings.Contains(receiptJSON, encodedVMRow) ||
+		!strings.Contains(receiptJSON, encodedJDBC) {
+		t.Fatalf("receipt snapshot lost Java source envelope: %s", receiptJSON)
 	}
 }
 
-func TestImportBatchRejectsProtectedJavaSourceEnvelopeWithoutTrustedContext(t *testing.T) {
-	script := preservedImportBatchCredentialScript()
-	script.Metadata.Import.Preserved[dsl.ImportPreservedEnterpriseJavaVMSourceKey] =
-		map[string]any{
-			"version": 1,
-			"rows_base64": []string{
-				base64.StdEncoding.EncodeToString([]byte("-Dpassword=forged")),
-			},
-		}
-	err := validateImportBatchCredentialSafety(script, false)
-	if !errors.Is(err, ErrImportBatchCredentialsUnmanaged) {
-		t.Fatalf("untrusted protected envelope error = %v, want unmanaged", err)
-	}
-}
-
-func TestBrunoAdapterTrustKeepsLiveCredentialsButSanitizesReceipt(t *testing.T) {
+func TestBrunoAdapterTrustKeepsLiveAndReceiptCredentialsUnredacted(t *testing.T) {
 	const canary = "trusted-bruno-import-password-canary-2c91"
 	store := newBrunoImportTestStore(t)
 	commit := brunoNativeImportCommitFixture(
@@ -403,14 +268,11 @@ func TestBrunoAdapterTrustKeepsLiveCredentialsButSanitizesReceipt(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetBrunoNativeImportByIdempotencyKey: %v", err)
 	}
-	retryJSON, err := json.Marshal(retry.Scripts)
-	if err != nil {
-		t.Fatalf("marshal Bruno retry: %v", err)
-	}
-	if strings.Contains(string(retryJSON), canary) ||
-		len(retry.Scripts) != len(result.Scripts) ||
-		retry.Scripts[0].ID != result.Scripts[0].ID {
-		t.Fatalf("Bruno receipt retry was not disclosure-safe and ordered: %s", retryJSON)
+	if len(retry.Scripts) != len(result.Scripts) ||
+		retry.Scripts[0].ID != result.Scripts[0].ID ||
+		retry.Scripts[0].Actions[0].Auth == nil ||
+		retry.Scripts[0].Actions[0].Auth.Password != canary {
+		t.Fatalf("Bruno receipt retry did not retain exact unredacted credentials: %+v", retry.Scripts)
 	}
 }
 

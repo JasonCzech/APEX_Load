@@ -2290,7 +2290,7 @@ func TestConvertOpenAPIPreservesAuthoredComposedCredentialHeader(t *testing.T) {
 	assertOpenAPISourceReviewRedacted(t, result, canary)
 }
 
-func TestConvertOpenAPIRedactionSentinelsAreUnconfiguredRatherThanPreserved(t *testing.T) {
+func TestConvertOpenAPIPreservesLiteralRedactionSentinelExamples(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
@@ -2316,18 +2316,14 @@ func TestConvertOpenAPIRedactionSentinelsAreUnconfiguredRatherThanPreserved(t *t
 				t.Fatalf("Convert returned error: %v", err)
 			}
 			action := openAPIActionFull(result, "listItems")
-			if got := action.Headers["X-Api-Key"]; !strings.HasPrefix(got, "{{secret.") {
-				t.Fatalf("sentinel destination = %q, want unconfigured secret reference", got)
+			if got := action.Headers["X-Api-Key"]; got != test.value {
+				t.Fatalf("sentinel destination = %q, want literal %q preserved", got, test.value)
 			}
-			requirements := result.ProtectedRequirements.Take()
-			if len(requirements) != 1 {
-				t.Fatalf("requirements = %#v", requirements)
+			if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+				t.Fatalf("requirements = %#v, want zero secret requirements for literal example", requirements)
 			}
-			if requirements[0].SourceValueAvailable || requirements[0].Value != "" {
-				t.Fatalf("sentinel was offered as a recoverable source value: %#v", requirements[0])
-			}
-			if action.Metadata["execution_blocker"] == nil {
-				t.Fatalf("sentinel action is not durably replay-blocked: %#v", action.Metadata)
+			if action.Metadata["execution_blocker"] != nil {
+				t.Fatalf("unexpected execution_blocker on literal OpenAPI example: %#v", action.Metadata)
 			}
 		})
 	}

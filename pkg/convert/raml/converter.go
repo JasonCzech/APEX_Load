@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -60,8 +62,19 @@ type PolicyHint struct {
 
 // applyOptions controls per-action auth/policy decoration during resource walk.
 type applyOptions struct {
-	oauth    bool
-	clientID bool
+	oauth               bool
+	oauthSchemes        []string
+	clientID            bool
+	clientIDSchemes     []string
+	requireClientID     bool
+	requireClientSecret bool
+	clientIDName        string
+	clientIDInQuery     bool
+	clientIDValue       string
+	clientSecretName    string
+	clientSecretInQuery bool
+	clientSecretValue   string
+	inheritedSecuredBy  any
 }
 
 type ConvertResult struct {
@@ -119,34 +132,42 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 
-	if tokenURL, schemes := oauth2TokenURL(doc); tokenURL != "" {
-		result.Stats.AuthSchemesDetected = schemes
-		result.Summary.AuthSchemes = schemes
+	oauthCfg, oauthSchemes := oauth2Config(doc)
+	if oauthCfg.tokenURL != "" {
+		result.Stats.AuthSchemesDetected = oauthSchemes
+		result.Summary.AuthSchemes = oauthSchemes
 		script.Init = append(script.Init, dsl.Action{
 			Name: "Get OAuth2 Token",
 			Type: "http_oauth2_token",
 			Params: map[string]any{
-				"token_url":     tokenURL,
+				"token_url":     oauthCfg.tokenURL,
 				"grant_type":    "client_credentials",
-				"client_id":     "{{env.RAML_CLIENT_ID}}",
-				"client_secret": "{{secret.RAML_CLIENT_SECRET}}",
-				"scope":         "{{env.RAML_SCOPE}}",
+				"client_id":     oauthCfg.clientID,
+				"client_secret": oauthCfg.clientSecret,
+				"scope":         oauthCfg.scope,
 				"save_as":       "access_token",
 			},
 		})
 	}
 
-	clientIDEnforced, policySchemes := detectClientIDEnforcement(doc)
-	if clientIDEnforced {
-		result.Summary.Policies = append(result.Summary.Policies, PolicyHint{
-			Policy: "client_id_enforcement",
-			Detail: "Anypoint Client ID Enforcement detected; client_id/client_secret mapped to env/secret placeholders on each request.",
-			Scheme: strings.Join(policySchemes, ", "),
-		})
-		result.Warnings = append(result.Warnings, "Anypoint Client ID Enforcement: supply client_id via {{env.RAML_CLIENT_ID}} and client_secret via {{secret.RAML_CLIENT_SECRET}} before running; do not embed live credentials.")
+	clientPolicy := detectClientIDEnforcementWithDefaults(doc)
+	clientIDEnforced := clientPolicy.enforced
+	policySchemes := clientPolicy.schemes
+	apply := applyOptions{
+		oauth:               len(script.Init) > 0,
+		oauthSchemes:        oauthSchemes,
+		clientID:            clientPolicy.enforced,
+		clientIDSchemes:     clientPolicy.schemes,
+		requireClientID:     clientPolicy.requireClientID,
+		requireClientSecret: clientPolicy.requireClientSecret,
+		clientIDName:        clientPolicy.clientIDName,
+		clientIDInQuery:     clientPolicy.clientIDInQuery,
+		clientIDValue:       clientPolicy.clientIDValue,
+		clientSecretName:    clientPolicy.clientSecretName,
+		clientSecretInQuery: clientPolicy.clientSecretInQuery,
+		clientSecretValue:   clientPolicy.clientSecretValue,
+		inheritedSecuredBy:  doc["securedBy"],
 	}
-
-	apply := applyOptions{oauth: len(script.Init) > 0, clientID: clientIDEnforced}
 	resources := sortedResourceKeys(doc)
 	for _, resource := range resources {
 		node, _ := doc[resource].(map[string]any)
@@ -155,14 +176,34 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(script.Actions) == 0 {
 		return nil, fmt.Errorf("RAML document did not contain HTTP resources or methods")
 	}
-	if !clientIDEnforced {
-		for _, action := range script.Actions {
-			if action.Headers["client_secret"] == "{{secret.RAML_CLIENT_SECRET}}" || strings.Contains(action.Target, "{{secret.RAML_CLIENT_SECRET}}") {
-				result.Summary.Policies = append(result.Summary.Policies, PolicyHint{Policy: "client_id_enforcement", Detail: "Client credentials declared by applied RAML traits or request fields; bind env/secret placeholders before replay."})
-				result.Warnings = append(result.Warnings, "Applied RAML request fields require client credentials; supply RAML_CLIENT_ID and bind RAML_CLIENT_SECRET before replay.")
-				break
-			}
+	hasClientCredentials := false
+	hasPlaceholderClientCreds := false
+	for _, action := range script.Actions {
+		if actionHasClientIDPair(action) {
+			hasClientCredentials = true
 		}
+		if actionHasPlaceholderClientCreds(action) {
+			hasPlaceholderClientCreds = true
+		}
+	}
+	if clientIDEnforced {
+		detail := "Anypoint Client ID Enforcement detected; authored client credentials preserved on each request."
+		if hasPlaceholderClientCreds {
+			detail = "Anypoint Client ID Enforcement detected; unauthored client_id/client_secret fields mapped to env/secret placeholders on each request."
+			result.Warnings = append(result.Warnings, "Anypoint Client ID Enforcement: supply unauthored client_id via {{env.RAML_CLIENT_ID}} and client_secret via {{secret.RAML_CLIENT_SECRET}} before running.")
+		}
+		result.Summary.Policies = append(result.Summary.Policies, PolicyHint{
+			Policy: "client_id_enforcement",
+			Detail: detail,
+			Scheme: strings.Join(policySchemes, ", "),
+		})
+	} else if hasClientCredentials {
+		detail := "Client credentials declared by applied RAML traits or request fields; authored values preserved."
+		if hasPlaceholderClientCreds {
+			detail = "Client credentials declared by applied RAML traits or request fields; bind env/secret placeholders before replay."
+			result.Warnings = append(result.Warnings, "Applied RAML request fields require client credentials; supply RAML_CLIENT_ID and bind RAML_CLIENT_SECRET before replay.")
+		}
+		result.Summary.Policies = append(result.Summary.Policies, PolicyHint{Policy: "client_id_enforcement", Detail: detail})
 	}
 	result.Script = script
 	// A re-import of the same API (by its declared title) can update this
@@ -172,6 +213,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	} else {
 		dsl.SetImportSourceIdentity(script, req.Name, false, "")
 	}
+	convertutil.SanitizeScriptDSLTemplates(script, nil)
 	result.Stats.ConvertedActions = len(script.Actions)
 	result.SecretRequirements, err = ramlGeneratedCredentialRequirements(
 		script,
@@ -196,16 +238,9 @@ func ramlGeneratedCredentialRequirements(
 		return nil, nil
 	}
 	const reference = "{{secret.RAML_CLIENT_SECRET}}"
-	payload, err := json.Marshal(script)
-	if err != nil {
-		return nil, err
-	}
-	if !strings.Contains(string(payload), reference) {
-		return nil, nil
-	}
 	targets := make([]credentialpolicy.TargetRef, 0, len(script.Init)+len(script.Actions))
 	for index, action := range script.Init {
-		if value, _ := action.Params["client_secret"].(string); value == reference {
+		if value, _ := action.Params["client_secret"].(string); strings.Contains(value, reference) {
 			targets = append(targets, credentialpolicy.TargetRef{
 				RequestKey: action.Name,
 				Field:      fmt.Sprintf("init[%d].params.client_secret", index),
@@ -213,8 +248,8 @@ func ramlGeneratedCredentialRequirements(
 		}
 	}
 	for index, action := range script.Actions {
-		for name, value := range action.Headers {
-			if value == reference {
+		for _, name := range sortedHeaderNames(action.Headers) {
+			if strings.Contains(action.Headers[name], reference) {
 				targets = append(targets, credentialpolicy.TargetRef{
 					RequestKey: action.Name,
 					Field:      fmt.Sprintf("actions[%d].headers.%s", index, name),
@@ -224,15 +259,18 @@ func ramlGeneratedCredentialRequirements(
 		if strings.Contains(action.Target, reference) {
 			targets = append(targets, credentialpolicy.TargetRef{RequestKey: action.Name, Field: fmt.Sprintf("actions[%d].target", index)})
 		}
+		if strings.Contains(action.Body, reference) {
+			targets = append(targets, credentialpolicy.TargetRef{RequestKey: action.Name, Field: fmt.Sprintf("actions[%d].body", index)})
+		}
 	}
 	if len(targets) == 0 {
-		return nil, fmt.Errorf("RAML client-secret reference has no target")
+		return nil, nil
 	}
 	requirement, replacement, err := credentialpolicy.NewRequirement(
 		credentialpolicy.RequirementSpec{
 			Key:      "raml_client_secret",
 			Label:    "RAML client secret",
-			Context:  "OAuth 2.0 token acquisition or Anypoint Client ID Enforcement generated this client-secret placeholder. This generated binding does not contain a credential value; source credential examples are not used for authentication.",
+			Context:  "OAuth 2.0 token acquisition or Anypoint Client ID Enforcement generated this client-secret placeholder when no value was authored in the RAML specification. This generated binding does not contain a credential value.",
 			NameHint: "RAML_CLIENT_SECRET",
 			Source: credentialpolicy.SourceRef{
 				Format:  "raml",
@@ -270,12 +308,7 @@ func bindRAMLBaseURI(baseURI string, doc map[string]any) (string, []string) {
 		}
 		if value == "" {
 			declaration := mapValue(declarations[name])
-			value = convertutil.FirstNonEmpty(stringValue(declaration["example"]), stringValue(declaration["default"]))
-			if value == "" {
-				if values, ok := declaration["enum"].([]any); ok && len(values) > 0 {
-					value = fmt.Sprint(values[0])
-				}
-			}
+			value = scalarRAMLDeclaredString(declaration)
 		}
 		if value != "" {
 			if index := strings.Index(baseURI, token); index > 0 && baseURI[index-1] == '/' {
@@ -300,6 +333,9 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 		return
 	}
 	node = effectiveRAMLResource(node, resourcePath, doc)
+	if _, hasSecuredBy := node["securedBy"]; hasSecuredBy {
+		apply.inheritedSecuredBy = node["securedBy"]
+	}
 	result.Stats.TotalResources++
 	result.Summary.Resources = append(result.Summary.Resources, resourcePath)
 	uriParameters := mergeRAMLURIParameters(inheritedURIParameters, mapValue(node["uriParameters"]))
@@ -310,6 +346,10 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 			continue
 		}
 		child := effectiveRAMLMethod(node, mapValue(node[key]), resourcePath, lower, doc)
+		effectiveSecuredBy := apply.inheritedSecuredBy
+		if _, hasMethodSecuredBy := child["securedBy"]; hasMethodSecuredBy {
+			effectiveSecuredBy = child["securedBy"]
+		}
 		result.Stats.TotalMethods++
 		action := dsl.Action{
 			Name:   convertutil.FirstNonEmpty(stringValue(child["displayName"]), stringValue(child["description"]), strings.ToUpper(lower)+" "+resourcePath),
@@ -323,14 +363,29 @@ func walkResource(resourcePath string, node map[string]any, result *ConvertResul
 		}
 		methodURIParameters := mergeRAMLURIParameters(uriParameters, mapValue(child["uriParameters"]))
 		bindRAMLURIParameters(&action, script, methodURIParameters, result)
-		if apply.oauth {
+		if apply.oauth && ramlSecuritySchemeApplies(effectiveSecuredBy, apply.oauthSchemes) {
 			action.Headers["Authorization"] = "Bearer {{var.access_token}}"
 		}
-		if apply.clientID {
-			action.Headers["client_id"] = "{{env.RAML_CLIENT_ID}}"
-			action.Headers["client_secret"] = "{{secret.RAML_CLIENT_SECRET}}"
+		schemeClientIDApplies := apply.clientID && ramlSecuritySchemeApplies(effectiveSecuredBy, apply.clientIDSchemes)
+		bindRAMLRequestParameters(&action, child, apply, schemeClientIDApplies, result)
+		if schemeClientIDApplies {
+			if apply.requireClientID && !actionHasNormalizedClientParam(action, "clientid") {
+				appendRAMLClientField(
+					&action,
+					convertutil.FirstNonEmpty(apply.clientIDName, "client_id"),
+					apply.clientIDInQuery,
+					convertutil.FirstNonEmpty(apply.clientIDValue, "{{env.RAML_CLIENT_ID}}"),
+				)
+			}
+			if apply.requireClientSecret && !actionHasNormalizedClientParam(action, "clientsecret") {
+				appendRAMLClientField(
+					&action,
+					convertutil.FirstNonEmpty(apply.clientSecretName, "client_secret"),
+					apply.clientSecretInQuery,
+					convertutil.FirstNonEmpty(apply.clientSecretValue, "{{secret.RAML_CLIENT_SECRET}}"),
+				)
+			}
 		}
-		bindRAMLRequestParameters(&action, child, result)
 		if body, contentType, ok := ramlResolvedMethodBody(child, doc, &action, result); ok {
 			action.Body = body
 			action.Headers["Content-Type"] = contentType
@@ -372,12 +427,7 @@ func bindRAMLURIParameters(action *dsl.Action, script *dsl.Script, declarations 
 	for _, match := range matches {
 		name := match[1]
 		declaration := mapValue(declarations[name])
-		value := convertutil.FirstNonEmpty(stringValue(declaration["example"]), stringValue(declaration["default"]))
-		if value == "" {
-			if values, ok := declaration["enum"].([]any); ok && len(values) > 0 {
-				value = fmt.Sprint(values[0])
-			}
-		}
+		value := scalarRAMLDeclaredString(declaration)
 		if value == "" {
 			if action.Metadata == nil {
 				action.Metadata = make(map[string]any)
@@ -517,43 +567,60 @@ func includeIsStructured(name string) bool {
 		strings.HasSuffix(lower, ".json")
 }
 
-// detectClientIDEnforcement reports whether the spec applies Anypoint Client ID
-// Enforcement, inferred from securitySchemes that require client_id/client_secret
-// credentials or are explicitly named/typed for client-id enforcement.
-func detectClientIDEnforcement(doc map[string]any) (bool, []string) {
-	securitySchemes, _ := doc["securitySchemes"].(map[string]any)
-	schemes := make([]string, 0)
-	for name, raw := range securitySchemes {
-		scheme, _ := raw.(map[string]any)
-		if len(scheme) == 0 {
-			continue
-		}
-		typeLower := strings.ToLower(stringValue(scheme["type"]))
-		nameLower := strings.ToLower(name)
-		isClientScheme := schemeRequiresClientCredentials(scheme) ||
-			strings.Contains(typeLower, "client") ||
-			(strings.Contains(nameLower, "client") && strings.Contains(nameLower, "id"))
-		if isClientScheme {
-			schemes = append(schemes, name)
-		}
-	}
-	sort.Strings(schemes)
-	return len(schemes) > 0, schemes
+type ramlOAuth2Config struct {
+	tokenURL     string
+	clientID     string
+	clientSecret string
+	scope        string
 }
 
-func schemeRequiresClientCredentials(scheme map[string]any) bool {
-	describedBy, _ := scheme["describedBy"].(map[string]any)
-	if len(describedBy) == 0 {
+func ramlClientFieldKind(raw string) string {
+	switch credential.NormalizeName(strings.TrimSuffix(strings.TrimSpace(raw), "?")) {
+	case "clientid", "xclientid":
+		return "clientid"
+	case "clientsecret", "xclientsecret":
+		return "clientsecret"
+	default:
+		return ""
+	}
+}
+
+func isSingleWholeDSLTemplate(value string) bool {
+	return strings.HasPrefix(value, "{{") &&
+		strings.HasSuffix(value, "}}") &&
+		!strings.Contains(value[2:len(value)-2], "}}") &&
+		!strings.Contains(value[2:len(value)-2], "{{")
+}
+
+func ramlSecuritySchemeApplies(securedBy any, schemeNames []string) bool {
+	if securedBy == nil {
+		return true
+	}
+	list, ok := securedBy.([]any)
+	if !ok {
+		return true
+	}
+	var active []string
+	for _, item := range list {
+		if item == nil {
+			continue
+		}
+		name, _ := ramlAssetRef(item)
+		name = strings.TrimSpace(name)
+		if name == "" || strings.EqualFold(name, "null") {
+			continue
+		}
+		active = append(active, name)
+	}
+	if len(active) == 0 {
 		return false
 	}
-	for _, key := range []string{"headers", "queryParameters"} {
-		params, _ := describedBy[key].(map[string]any)
-		for paramName := range params {
-			normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "").Replace(paramName))
-			// Only client_id/client_secret indicate Anypoint Client ID
-			// Enforcement. A bare api-key credential is a different scheme and must
-			// not be mislabeled (nor injected with client_id/client_secret headers).
-			if normalized == "clientid" || normalized == "clientsecret" {
+	if len(schemeNames) == 0 {
+		return true
+	}
+	for _, candidate := range active {
+		for _, scheme := range schemeNames {
+			if candidate == scheme {
 				return true
 			}
 		}
@@ -561,11 +628,217 @@ func schemeRequiresClientCredentials(scheme map[string]any) bool {
 	return false
 }
 
-func oauth2TokenURL(doc map[string]any) (string, []string) {
-	securitySchemes, _ := doc["securitySchemes"].(map[string]any)
+func appendRAMLClientField(action *dsl.Action, name string, inQuery bool, value string) {
+	if action == nil {
+		return
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return
+	}
+	if !inQuery {
+		if action.Headers == nil {
+			action.Headers = make(map[string]string)
+		}
+		action.Headers[name] = value
+		return
+	}
+	separator := "?"
+	if strings.Contains(action.Target, "?") {
+		separator = "&"
+	}
+	encoded := value
+	if !isSingleWholeDSLTemplate(value) {
+		encoded = url.QueryEscape(value)
+	}
+	action.Target += separator + url.QueryEscape(name) + "=" + encoded
+}
+
+func actionHasClientIDPair(action dsl.Action) bool {
+	return actionHasNormalizedClientParam(action, "clientid") || actionHasNormalizedClientParam(action, "clientsecret")
+}
+
+func actionHasPlaceholderClientCreds(action dsl.Action) bool {
+	for header, headerVal := range action.Headers {
+		if kind := ramlClientFieldKind(header); kind != "" &&
+			(strings.Contains(headerVal, "{{secret.RAML_CLIENT_SECRET}}") || strings.Contains(headerVal, "{{env.RAML_CLIENT_ID}}")) {
+			return true
+		}
+	}
+	if _, query, ok := strings.Cut(action.Target, "?"); ok {
+		for _, pair := range strings.Split(query, "&") {
+			key, val, _ := strings.Cut(pair, "=")
+			if decoded, err := url.QueryUnescape(key); err == nil {
+				key = decoded
+			}
+			if kind := ramlClientFieldKind(key); kind != "" &&
+				(strings.Contains(val, "{{secret.RAML_CLIENT_SECRET}}") || strings.Contains(val, "{{env.RAML_CLIENT_ID}}")) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func actionHasNormalizedClientParam(action dsl.Action, target string) bool {
+	for header := range action.Headers {
+		if ramlClientFieldKind(header) == target {
+			return true
+		}
+	}
+	if _, query, ok := strings.Cut(action.Target, "?"); ok {
+		for _, pair := range strings.Split(query, "&") {
+			key, _, _ := strings.Cut(pair, "=")
+			if decoded, err := url.QueryUnescape(key); err == nil {
+				key = decoded
+			}
+			if ramlClientFieldKind(key) == target {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func scalarRAMLDeclaredString(raw any) string {
+	value, ok := ramlDeclaredValue(raw)
+	if !ok {
+		return ""
+	}
+	switch value.(type) {
+	case map[string]any, map[any]any, []any:
+		return ""
+	default:
+		return stringValue(value)
+	}
+}
+
+type clientIDPolicySpec struct {
+	enforced            bool
+	schemes             []string
+	requireClientID     bool
+	requireClientSecret bool
+	clientIDName        string
+	clientIDInQuery     bool
+	clientIDValue       string
+	clientSecretName    string
+	clientSecretInQuery bool
+	clientSecretValue   string
+}
+
+// detectClientIDEnforcementWithDefaults reports whether the spec applies Anypoint
+// Client ID Enforcement and returns authored client_id/client_secret names,
+// header/query locations, and values when declared on the scheme, falling back
+// to env/secret placeholders only when unauthored.
+func detectClientIDEnforcementWithDefaults(doc map[string]any) clientIDPolicySpec {
+	securitySchemes := mapValue(doc["securitySchemes"])
+	var spec clientIDPolicySpec
+	spec.schemes = make([]string, 0)
+	clientIDDeclared := false
+	clientSecretDeclared := false
+	for _, name := range sortedMapKeys(securitySchemes) {
+		scheme := mapValue(securitySchemes[name])
+		if len(scheme) == 0 {
+			continue
+		}
+		typeLower := strings.ToLower(stringValue(scheme["type"]))
+		if strings.Contains(typeLower, "oauth") {
+			continue
+		}
+		nameLower := strings.ToLower(name)
+		isClientScheme := schemeRequiresClientCredentials(scheme) ||
+			strings.Contains(typeLower, "client") ||
+			(strings.Contains(nameLower, "client") && strings.Contains(nameLower, "id"))
+		if !isClientScheme {
+			continue
+		}
+		spec.schemes = append(spec.schemes, name)
+		describedBy := mapValue(scheme["describedBy"])
+		for _, key := range []string{"headers", "queryParameters"} {
+			inQuery := key == "queryParameters"
+			params := mapValue(describedBy[key])
+			for _, paramName := range sortedMapKeys(params) {
+				cleanName := strings.TrimSpace(strings.TrimSuffix(paramName, "?"))
+				switch ramlClientFieldKind(cleanName) {
+				case "clientid":
+					if !clientIDDeclared && cleanName != "" {
+						clientIDDeclared = true
+						spec.clientIDName = cleanName
+						spec.clientIDInQuery = inQuery
+					}
+					if spec.clientIDValue == "" {
+						spec.clientIDValue = scalarRAMLDeclaredString(params[paramName])
+					}
+				case "clientsecret":
+					if !clientSecretDeclared && cleanName != "" {
+						clientSecretDeclared = true
+						spec.clientSecretName = cleanName
+						spec.clientSecretInQuery = inQuery
+					}
+					if spec.clientSecretValue == "" {
+						spec.clientSecretValue = scalarRAMLDeclaredString(params[paramName])
+					}
+				}
+			}
+		}
+	}
+	sort.Strings(spec.schemes)
+	spec.enforced = len(spec.schemes) > 0
+	if spec.enforced {
+		if clientIDDeclared || clientSecretDeclared {
+			spec.requireClientID = clientIDDeclared
+			spec.requireClientSecret = clientSecretDeclared
+		} else {
+			spec.requireClientID = true
+			spec.requireClientSecret = true
+		}
+	}
+	if !clientIDDeclared && clientSecretDeclared {
+		spec.clientIDInQuery = spec.clientSecretInQuery
+	}
+	if !clientSecretDeclared && clientIDDeclared {
+		spec.clientSecretInQuery = spec.clientIDInQuery
+	}
+	if spec.clientIDName == "" {
+		spec.clientIDName = "client_id"
+	}
+	if spec.clientSecretName == "" {
+		spec.clientSecretName = "client_secret"
+	}
+	spec.clientIDValue = convertutil.FirstNonEmpty(spec.clientIDValue, "{{env.RAML_CLIENT_ID}}")
+	spec.clientSecretValue = convertutil.FirstNonEmpty(spec.clientSecretValue, "{{secret.RAML_CLIENT_SECRET}}")
+	return spec
+}
+
+func schemeRequiresClientCredentials(scheme map[string]any) bool {
+	describedBy := mapValue(scheme["describedBy"])
+	if len(describedBy) == 0 {
+		return false
+	}
+	for _, key := range []string{"headers", "queryParameters"} {
+		params := mapValue(describedBy[key])
+		for paramName := range params {
+			// Only client_id/client_secret (including hyphen/dot/X-Client-* spellings)
+			// indicate Anypoint Client ID Enforcement. A bare api-key credential is a
+			// different scheme and must not be mislabeled or injected with client headers.
+			if ramlClientFieldKind(paramName) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func oauth2Config(doc map[string]any) (ramlOAuth2Config, []string) {
+	securitySchemes := mapValue(doc["securitySchemes"])
 	schemes := make([]string, 0)
-	for name, raw := range securitySchemes {
-		scheme, _ := raw.(map[string]any)
+	cfg := ramlOAuth2Config{
+		clientID:     "{{env.RAML_CLIENT_ID}}",
+		clientSecret: "{{secret.RAML_CLIENT_SECRET}}",
+		scope:        "{{env.RAML_SCOPE}}",
+	}
+	for _, name := range sortedMapKeys(securitySchemes) {
+		scheme := mapValue(securitySchemes[name])
 		if len(scheme) == 0 {
 			continue
 		}
@@ -573,14 +846,32 @@ func oauth2TokenURL(doc map[string]any) (string, []string) {
 			continue
 		}
 		schemes = append(schemes, name)
-		settings, _ := scheme["settings"].(map[string]any)
-		if tokenURL := stringValue(settings["accessTokenUri"]); tokenURL != "" {
-			sort.Strings(schemes)
-			return tokenURL, schemes
+		settings := mapValue(scheme["settings"])
+		if tokenURL := convertutil.FirstNonEmpty(scalarOnlyString(settings["accessTokenUri"]), scalarRAMLDeclaredString(settings["accessTokenUri"])); tokenURL != "" && cfg.tokenURL == "" {
+			cfg.tokenURL = tokenURL
+			if cid := convertutil.FirstNonEmpty(scalarOnlyString(settings["client_id"]), scalarOnlyString(settings["clientId"]), scalarRAMLDeclaredString(settings["client_id"]), scalarRAMLDeclaredString(settings["clientId"])); cid != "" {
+				cfg.clientID = cid
+			}
+			if csec := convertutil.FirstNonEmpty(scalarOnlyString(settings["client_secret"]), scalarOnlyString(settings["clientSecret"]), scalarRAMLDeclaredString(settings["client_secret"]), scalarRAMLDeclaredString(settings["clientSecret"])); csec != "" {
+				cfg.clientSecret = csec
+			}
+			if sc := convertutil.FirstNonEmpty(scalarOnlyString(settings["scope"]), scalarRAMLDeclaredString(settings["scope"])); sc != "" {
+				cfg.scope = sc
+			} else if scopes, ok := settings["scopes"].([]any); ok && len(scopes) > 0 {
+				parts := make([]string, 0, len(scopes))
+				for _, item := range scopes {
+					if s := convertutil.FirstNonEmpty(scalarOnlyString(item), scalarRAMLDeclaredString(item)); s != "" {
+						parts = append(parts, s)
+					}
+				}
+				if len(parts) > 0 {
+					cfg.scope = strings.Join(parts, " ")
+				}
+			}
 		}
 	}
 	sort.Strings(schemes)
-	return "", schemes
+	return cfg, schemes
 }
 
 func sortedResourceKeys(values map[string]any) []string {
@@ -608,6 +899,17 @@ func joinRAMLPath(base, child string) string {
 		return path.Clean("/" + strings.TrimPrefix(child, "/"))
 	}
 	return path.Clean(strings.TrimRight(base, "/") + "/" + strings.TrimPrefix(child, "/"))
+}
+
+func scalarOnlyString(value any) string {
+	switch typed := value.(type) {
+	case nil, map[string]any, map[any]any, []any:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	default:
+		return strings.TrimSpace(fmt.Sprint(typed))
+	}
 }
 
 func stringValue(value any) string {

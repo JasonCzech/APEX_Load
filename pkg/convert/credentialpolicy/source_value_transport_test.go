@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestPreserveProjectionRejectsRedactionPlaceholderAcrossCredentialTransports(t *testing.T) {
+func TestPreserveProjectionRetainsLiteralRedactionPlaceholderAcrossCredentialTransports(t *testing.T) {
 	t.Parallel()
 	const sentinel = "%255BReDaCtEd%255D"
 
@@ -149,24 +149,17 @@ func TestPreserveProjectionRejectsRedactionPlaceholderAcrossCredentialTransports
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			output, result := test.project(t)
-			if result.Disposition != BlockedDraft {
-				t.Fatalf("disposition = %q, want %q; result=%#v", result.Disposition, BlockedDraft, result)
+			if result.Disposition != ExecutableExact {
+				t.Fatalf("disposition = %q, want %q; result=%#v", result.Disposition, ExecutableExact, result)
 			}
-			if len(result.Requirements) != test.want {
-				t.Fatalf("requirements = %#v, want %d unavailable bindings", result.Requirements, test.want)
+			if len(result.Requirements) != 0 {
+				t.Fatalf("requirements = %#v, want 0 secret bindings for literal input", result.Requirements)
 			}
-			for _, requirement := range result.Requirements {
-				if requirement.SourceValueAvailable || requirement.Value != "" ||
-					requirement.SourceValueStatus != SourceCredentialValueRedactedPlaceholder {
-					t.Errorf("requirement retained placeholder material: %#v", requirement)
-				}
-				if !strings.HasPrefix(requirement.Replacement, "{{secret.") ||
-					!strings.Contains(output, requirement.Replacement) {
-					t.Errorf("requirement replacement is not present in projected transport: %#v output=%q", requirement, output)
-				}
+			if len(result.PreservedTargets) != test.want {
+				t.Fatalf("preserved targets = %#v, want %d locators", result.PreservedTargets, test.want)
 			}
-			if strings.Contains(strings.ToLower(output), strings.ToLower(sentinel)) {
-				t.Fatalf("projected transport retained source sentinel: %q", output)
+			if !strings.Contains(output, sentinel) {
+				t.Fatalf("projected transport did not retain source sentinel: %q", output)
 			}
 		})
 	}

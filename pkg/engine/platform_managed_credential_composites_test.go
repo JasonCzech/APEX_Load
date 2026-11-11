@@ -83,6 +83,7 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 		"http.ProxyURL userinfo -> Proxy-Authorization"),
 	"config.browser.proxy.server": covered("config.browser.proxy.server",
 		"Playwright proxy server userinfo"),
+	"config.kafka.oauth.client_secret":          covered("config.kafka.oauth", "OAuth Basic credential pair"),
 	"config.kafka.oauth.client_secret_ref":      covered("config.kafka.oauth", "OAuth Basic credential pair"),
 	"config.eventhubs.checkpoint_container_url": excluded("processor validation and identitypolicy reject URL userinfo and query credentials before constructing the Blob HTTP client; no Basic composite is synthesized"),
 	"config.kafka.oauth.token_url":              excluded("runtime rejects endpoint userinfo; token endpoint never synthesizes Basic from a URL"),
@@ -113,10 +114,10 @@ var credentialSurfaceDispositions = map[string]credentialSurfaceDisposition{
 		"selects text vs digest; carries no credential"),
 
 	// --- excluded: no wire form reachable from this matcher -----------------
-	"config.network.username": excluded(
-		"read into pkg/protocol/network at network.go:75-76 and never used"),
-	"config.network.password": excluded(
-		"read into pkg/protocol/network at network.go:75-76 and never used"),
+	"config.network.username": covered("config.network",
+		"SMTP SASL AUTH PLAIN / AUTH LOGIN base64 composites"),
+	"config.network.password": covered("config.network",
+		"SMTP SASL AUTH PLAIN / AUTH LOGIN base64 composites"),
 	"config.network.address": excluded(
 		"host:port for a raw socket; no userinfo grammar and no HTTP dialer"),
 	"config.jms.broker_url": excluded(
@@ -307,7 +308,7 @@ func emittedCredentialSurfaceNames() map[string]struct{} {
 				TLS: &dsl.JMSTLSConfig{CACertSecret: "JMS_CA"},
 			},
 			Kafka: dsl.KafkaConfig{
-				OAuth:             &dsl.KafkaOAuthConfig{ClientID: "u", ClientSecretRef: "{{secret.P}}", AuthenticationMethod: "client_secret_basic"},
+				OAuth:             &dsl.KafkaOAuthConfig{ClientID: "u", ClientSecret: "{{secret.P}}", ClientSecretRef: "{{secret.P}}", AuthenticationMethod: "client_secret_basic"},
 				SchemaRegistryURL: "https://u:{{secret.P}}@registry.test",
 				SASLUsername:      "u", SASLPassword: "{{secret.P}}", SASLPasswordSecret: "KAFKA_PASSWORD",
 			},
@@ -505,12 +506,13 @@ func TestScriptCredentialCompositeSurfacesCoversEveryConfigSurface(t *testing.T)
 			},
 			Kafka:    dsl.KafkaConfig{SchemaRegistryURL: "https://u:{{secret.P}}@registry.test"},
 			Database: dsl.DatabaseConfig{DSN: "postgres://u:{{secret.P}}@db.test/app"},
+			Network:  dsl.NetworkConfig{Username: "u", Password: "{{secret.P}}"},
 		},
 	}
 	resolver := SecretResolverFunc(func(name string) (string, bool) { return "pw", name == "P" })
 	config := buildProtoConfigWithSecretResolver(script, resolver)
 
-	names := make([]string, 0, 9)
+	names := make([]string, 0, 11)
 	for _, surface := range scriptCredentialCompositeSurfaces(script, config) {
 		names = append(names, surface.name)
 	}
@@ -526,6 +528,7 @@ func TestScriptCredentialCompositeSurfacesCoversEveryConfigSurface(t *testing.T)
 		"config.http.proxy",
 		"config.http.proxy.url",
 		"config.kafka.schema_registry_url",
+		"config.network",
 	}
 	if !reflect.DeepEqual(names, want) {
 		t.Fatalf("scriptCredentialCompositeSurfaces names = %v, want %v", names, want)
@@ -585,20 +588,25 @@ func containsString(values []string, want string) bool {
 
 func TestKafkaOAuthCredentialComposites(t *testing.T) {
 	for _, method := range []string{"client_secret_basic", "kafka_3_3_1_basic"} {
-		t.Run(method, func(t *testing.T) {
-			script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{OAuth: &dsl.KafkaOAuthConfig{ClientID: " client+id ", ClientSecretRef: "{{secret.oauth}}", AuthenticationMethod: method}}}}
-			resolver := SecretResolverFunc(func(name string) (string, bool) { return " secret/? ", name == "oauth" })
-			values := runtimeProtocolAuthCompositeValues(script, resolver)
-			pair := url.QueryEscape(" client+id ") + ":" + url.QueryEscape(" secret/? ")
-			encoding := base64.StdEncoding
-			if method == "kafka_3_3_1_basic" {
-				pair = "client+id:secret/?"
-				encoding = base64.URLEncoding
-			}
-			if !containsString(values, encoding.EncodeToString([]byte(pair))) {
-				t.Fatal("missing encoded OAuth credential composite")
-			}
-		})
+		for _, oauthCfg := range []*dsl.KafkaOAuthConfig{
+			{ClientID: " client+id ", ClientSecretRef: "{{secret.oauth}}", AuthenticationMethod: method},
+			{ClientID: " client+id ", ClientSecret: "{{secret.oauth}}", AuthenticationMethod: method},
+		} {
+			t.Run(method, func(t *testing.T) {
+				script := &dsl.Script{Config: dsl.ScriptConfig{Kafka: dsl.KafkaConfig{OAuth: oauthCfg}}}
+				resolver := SecretResolverFunc(func(name string) (string, bool) { return " secret/? ", name == "oauth" })
+				values := runtimeProtocolAuthCompositeValues(script, resolver)
+				pair := url.QueryEscape(" client+id ") + ":" + url.QueryEscape(" secret/? ")
+				encoding := base64.StdEncoding
+				if method == "kafka_3_3_1_basic" {
+					pair = "client+id:secret/?"
+					encoding = base64.URLEncoding
+				}
+				if !containsString(values, encoding.EncodeToString([]byte(pair))) {
+					t.Fatal("missing encoded OAuth credential composite")
+				}
+			})
+		}
 	}
 }
 
@@ -609,5 +617,110 @@ func TestMissingKafkaOAuthLogicalSecretNeverBecomesLiteral(t *testing.T) {
 		if cfg["kafka_oauth_client_secret"] != "{{secret.missing_oauth}}" {
 			t.Fatal("unresolved logical name became a credential")
 		}
+	}
+}
+
+func TestKafkaOAuthLiteralClientSecretResolutionAndRedaction(t *testing.T) {
+	const literalSecret = "SynthKafkaLiteralSecret_2026"
+	for _, method := range []string{"client_secret_basic", "kafka_3_3_1_basic"} {
+		t.Run(method, func(t *testing.T) {
+			script := &dsl.Script{
+				Protocol: "kafka",
+				Config: dsl.ScriptConfig{
+					Kafka: dsl.KafkaConfig{
+						OAuth: &dsl.KafkaOAuthConfig{
+							Mode:                 "client_credentials",
+							TokenURL:             "https://identity.example.test/oauth2/token",
+							ClientID:             " client+id ",
+							ClientSecretRef:      "  ",
+							ClientSecret:         literalSecret,
+							AuthenticationMethod: method,
+						},
+					},
+				},
+			}
+			refs, err := ReferencedSecretNames(script)
+			if err != nil {
+				t.Fatalf("ReferencedSecretNames: %v", err)
+			}
+			if len(refs) != 0 {
+				t.Fatalf("ReferencedSecretNames = %v, want empty for literal client_secret", refs)
+			}
+			cfg := buildProtoConfigWithSecretResolver(script, nil)
+			if got := cfg["kafka_oauth_client_secret"]; got != literalSecret {
+				t.Fatalf("kafka_oauth_client_secret = %#v, want %q", got, literalSecret)
+			}
+			if _, exists := cfg["kafka_oauth_client_secret_literal"]; exists {
+				t.Fatal("kafka_oauth_client_secret_literal leaked into resolved proto config")
+			}
+
+			redactionCfg := buildTestRedactionForScript(t, script, nil)
+			if redactionCfg.HasRuntimeSecretMaterial() {
+				t.Fatal("HasRuntimeSecretMaterial() = true for literal-only Kafka OAuth client_secret, want false")
+			}
+			if got := scrubSensitiveTextWithConfig("a  b", redactionCfg); got != "a  b" {
+				t.Fatalf("whitespace-only client_secret_ref polluted redaction matcher: got %q, want %q", got, "a  b")
+			}
+			pair := url.QueryEscape(" client+id ") + ":" + url.QueryEscape(literalSecret)
+			encoding := base64.StdEncoding
+			if method == "kafka_3_3_1_basic" {
+				pair = "client+id:" + literalSecret
+				encoding = base64.URLEncoding
+			}
+			encodedComposite := encoding.EncodeToString([]byte(pair))
+			for _, candidate := range []string{literalSecret, encodedComposite} {
+				if got := scrubSensitiveTextWithConfig("err "+candidate, redactionCfg); strings.Contains(got, candidate) {
+					t.Fatalf("scrubSensitiveTextWithConfig failed to redact %q in %q", candidate, got)
+				}
+			}
+		})
+	}
+
+	logicalRefScript := &dsl.Script{
+		Protocol: "kafka",
+		Config: dsl.ScriptConfig{
+			Kafka: dsl.KafkaConfig{
+				OAuth: &dsl.KafkaOAuthConfig{
+					Mode:                 "client_credentials",
+					TokenURL:             "https://identity.example.test/oauth2/token",
+					ClientID:             "client-id",
+					ClientSecretRef:      "OAUTH_SECRET",
+					AuthenticationMethod: "client_secret_basic",
+				},
+			},
+		},
+	}
+	logicalRefCfg := buildTestRedactionForScript(t, logicalRefScript, SecretResolverFunc(func(name string) (string, bool) {
+		return "resolved-oauth-secret-value", name == "OAUTH_SECRET"
+	}))
+	if got := scrubSensitiveTextWithConfig("OAUTH_SECRET", logicalRefCfg); got != "OAUTH_SECRET" {
+		t.Fatalf("logical secret name was redacted as a credential value: got %q, want %q", got, "OAUTH_SECRET")
+	}
+
+	const (
+		resolvedToken  = "eyJhbGci.abc-def_123"
+		nestedPassword = "NestedPw-12345"
+	)
+	resolvedValues, err := resolvedActionCredentialValues(
+		&dsl.Script{Protocol: "http"},
+		&protocol.Action{
+			Name: "step",
+			Type: "http_request",
+			Params: map[string]any{
+				"client_secret_ref": resolvedToken,
+				"nested": map[string]any{
+					"client_secret_ref": map[string]any{"password": nestedPassword},
+				},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("resolvedActionCredentialValues: %v", err)
+	}
+	if !containsString(resolvedValues, resolvedToken) {
+		t.Fatalf("resolvedActionCredentialValues = %v, missing resolved client_secret_ref token %q", resolvedValues, resolvedToken)
+	}
+	if !containsString(resolvedValues, nestedPassword) {
+		t.Fatalf("resolvedActionCredentialValues = %v, missing nested client_secret_ref password %q", resolvedValues, nestedPassword)
 	}
 }

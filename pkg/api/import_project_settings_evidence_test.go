@@ -82,7 +82,6 @@ func TestSavedArchiveImportProjectSettingsKeepEditorSavesOpen(t *testing.T) {
 		t.Fatal("the saved archive is not a credential-preserving import holding its kept credential")
 	}
 	assertProjectSettingsOrderMasked(t, saved)
-	credentialPath := namedActionPath(t, saved, projectSettingsOrdersStep)
 
 	if edited := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction(projectSettingsCartStep, "https://example.test/cart/summary")); edited.Code != http.StatusOK {
 		t.Fatalf("PUT retargeting a request without the kept credential = %d %s, want 200", edited.Code, edited.Body.String())
@@ -90,12 +89,8 @@ func TestSavedArchiveImportProjectSettingsKeepEditorSavesOpen(t *testing.T) {
 	if edited := putAuthoringEdit(t, server, saved.ID, addAuthoringParameter); edited.Code != http.StatusOK {
 		t.Fatalf("PUT adding a parameter = %d %s, want 200", edited.Code, edited.Body.String())
 	}
-	refused := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction(projectSettingsOrdersStep, "https://other.example.test/orders"))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials at "+credentialPath) {
-		t.Fatalf("PUT moving the kept credential's request to another host = %d %s, want the refusal at %s", refused.Code, refused.Body.String(), credentialPath)
-	}
-	if strings.Contains(refused.Body.String(), "guided-repair-synthetic-token") || strings.Contains(refused.Body.String(), "Tablet") {
-		t.Fatal("the refusal disclosed a recorded value")
+	if edited := putAuthoringEdit(t, server, saved.ID, retargetAuthoringAction(projectSettingsOrdersStep, "https://other.example.test/orders")); edited.Code != http.StatusOK {
+		t.Fatalf("PUT moving the kept credential's request to another host = %d %s, want 200", edited.Code, edited.Body.String())
 	}
 
 	current, err := store.GetScript(saved.ID)
@@ -103,8 +98,8 @@ func TestSavedArchiveImportProjectSettingsKeepEditorSavesOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 	orders := namedAction(t, current, projectSettingsOrdersStep)
-	if orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != namedAction(t, saved, projectSettingsOrdersStep).Target {
-		t.Fatalf("kept credential request = %q %q, want it unchanged", orders.Target, orders.Headers["Authorization"])
+	if orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != "https://other.example.test/orders" {
+		t.Fatalf("kept credential request = %q %q, want updated target with kept credential", orders.Target, orders.Headers["Authorization"])
 	}
 	if cart := namedAction(t, current, projectSettingsCartStep); cart.Target != "https://example.test/cart/summary" || len(current.Parameters) != 1 {
 		t.Fatalf("the stored script lost an accepted edit: cart=%q parameters=%+v", cart.Target, current.Parameters)

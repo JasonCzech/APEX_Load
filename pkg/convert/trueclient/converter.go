@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
@@ -179,7 +180,36 @@ func ConvertArchive(files map[string]string, opts ConvertOptions) (*ConvertResul
 		applyTruClientSemanticGate(&gate, "truclient_ambiguous_source_xml_requires_review", "Multiple source default.xml documents are present; the deterministic authoring draft requires an explicit source-project selection.")
 		result.Script.Init = append(result.Script.Init, gate)
 	}
+	convertutil.SanitizeScriptDSLTemplates(result.Script, func(action *dsl.Action) {
+		gateTruClientInvalidTemplateAction(result, action)
+	})
 	return result, nil
+}
+
+func gateTruClientInvalidTemplateAction(result *ConvertResult, action *dsl.Action) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	srcAction, _ := action.Metadata["source_action"].(string)
+	action.Type = "source_review"
+	action.Target = ""
+	action.Selector = ""
+	action.Value = ""
+	action.WaitFor = nil
+	action.Sync = nil
+	action.Params = map[string]any{
+		"function": firstNonEmptyString(srcAction, action.Name),
+	}
+	applyTruClientSemanticGate(action, "truclient_template_syntax_requires_review", "Step contains foreign or undeclared template syntax requiring manual replacement before replay.")
+	if result != nil {
+		if result.Stats.ConvertedActions > 0 {
+			result.Stats.ConvertedActions--
+		}
+		result.Stats.ReviewOnlySteps++
+	}
 }
 
 func executionSteps(steps []truXMLStep) []truXMLStep {

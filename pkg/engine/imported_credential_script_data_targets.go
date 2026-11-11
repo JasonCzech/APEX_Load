@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 )
 
 // Retained-credential locators for the two executable surfaces an import can
@@ -96,17 +97,22 @@ func (collector *importedCredentialCollector) collectScriptDataSourceTarget(
 	return nil
 }
 
-// importedDataSourceColumnValues returns the runtime values one inline data
-// source column supplies. Column naming and cell trimming mirror loadDataSource
-// and DataProvider.GetColumnValues so the matcher sees the same strings a
-// parameter substitutes on the wire.
-func importedDataSourceColumnValues(source dsl.DataSource, column string) []string {
-	if len(source.InlineData) == 0 ||
-		len(source.InlineData) > maxImportedDataSourceLocatorBytes {
-		return nil
+func parseImportedDataSourceRecords(source dsl.DataSource, allowFileAsset bool) ([]string, [][]string) {
+	rawData := source.InlineData
+	if len(rawData) == 0 && allowFileAsset && strings.TrimSpace(source.Path) != "" && !strings.EqualFold(strings.TrimSpace(source.Type), "jsonl") && !strings.EqualFold(strings.TrimSpace(source.Type), "file") {
+		if readerSource, err := openDataSourceReader(source, nil); err == nil {
+			content, readErr := fileasset.ReadAllLimited(readerSource)
+			_ = readerSource.Close()
+			if readErr == nil && len(content) <= maxImportedDataSourceLocatorBytes {
+				rawData = string(content)
+			}
+		}
 	}
-	reader := csv.NewReader(strings.NewReader(source.InlineData))
-	reader.Comma = resolveDataSourceDelimiter(source, source.InlineData)
+	if len(rawData) == 0 || len(rawData) > maxImportedDataSourceLocatorBytes {
+		return nil, nil
+	}
+	reader := csv.NewReader(strings.NewReader(rawData))
+	reader.Comma = resolveDataSourceDelimiter(source, rawData)
 	// Ragged rows are tolerated here even though the runtime loader rejects
 	// them: a source that fails to load never runs, but while it is being
 	// inspected the rows that did parse are still real imported values.
@@ -128,7 +134,7 @@ func importedDataSourceColumnValues(source dsl.DataSource, column string) []stri
 		records = append(records, record)
 	}
 	if len(records) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	var columns []string
@@ -145,6 +151,14 @@ func importedDataSourceColumnValues(source dsl.DataSource, column string) []stri
 			columns[index] = fmt.Sprintf("col_%d", index+1)
 		}
 	}
+	return columns, rows
+}
+
+func importedDataSourceColumnValuesWithOptions(source dsl.DataSource, column string, allowFileAsset bool) []string {
+	columns, rows := parseImportedDataSourceRecords(source, allowFileAsset)
+	if len(columns) == 0 || len(rows) == 0 {
+		return nil
+	}
 	columnIndex := importedDataSourceColumnIndex(columns, column)
 	if columnIndex < 0 {
 		return nil
@@ -159,6 +173,14 @@ func importedDataSourceColumnValues(source dsl.DataSource, column string) []stri
 		}
 	}
 	return values
+}
+
+// importedDataSourceColumnValues returns the runtime values one inline data
+// source column supplies. Column naming and cell trimming mirror loadDataSource
+// and DataProvider.GetColumnValues so the matcher sees the same strings a
+// parameter substitutes on the wire.
+func importedDataSourceColumnValues(source dsl.DataSource, column string) []string {
+	return importedDataSourceColumnValuesWithOptions(source, column, false)
 }
 
 // importedDataSourceColumnIndex resolves a column name the way both sides of

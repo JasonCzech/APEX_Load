@@ -351,6 +351,7 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 		reviewFiles[name] = fileContent
 	}
 	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result, nil
 }
 

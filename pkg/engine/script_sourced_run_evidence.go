@@ -35,24 +35,34 @@ const scriptSourcedRedactionDroppedWarning = "script-sourced run-evidence redact
 	"the credential values retained by this script exceed the runtime matcher limit; " +
 	"platform-managed secrets remain redacted"
 
-// ScriptRedactsRunEvidence exposes the operator setting to the one caller
-// outside this package — the generator RPC staging boundary — so the
-// default-false reading is written down exactly once.
+// ScriptRedactsRunEvidence exposes the explicit operator setting
+// script.Config.Log.RedactRunEvidence (default false when nil) for non-secret
+// run-evidence policy consumers such as business-key digest-only archiving.
+// Literal and script-sourced credentials are redacted unconditionally via
+// scriptRedactsCredentials regardless of this flag.
 func ScriptRedactsRunEvidence(script *dsl.Script) bool {
-	return scriptRedactsRunEvidence(script)
-}
-
-// scriptRedactsRunEvidence reports whether script-sourced credential values
-// participate in run-output redaction. Absent configuration does not redact.
-func scriptRedactsRunEvidence(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
 	return logConfigRedactsRunEvidence(script.Config.Log)
 }
 
+// scriptRedactsCredentials reports whether script-sourced credential values
+// participate in run-output redaction. Every non-nil script participates.
+func scriptRedactsCredentials(script *dsl.Script) bool {
+	return script != nil
+}
+
 func logConfigRedactsRunEvidence(logCfg dsl.LogConfig) bool {
 	return logCfg.RedactRunEvidence != nil && *logCfg.RedactRunEvidence
+}
+
+// RuntimeProtocolAuthCompositeValues exposes derived protocol auth composite
+// spellings (such as Basic auth, SASL PLAIN/LOGIN, DSN passwords, and browser
+// storage-state secrets) so distributed staging can attach them to preflight
+// redaction before building VUsers.
+func RuntimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResolver) []string {
+	return runtimeProtocolAuthCompositeValues(script, resolver)
 }
 
 // runtimeSecretValuesForScript is the one static, per-run credential chokepoint.
@@ -61,19 +71,14 @@ func logConfigRedactsRunEvidence(logCfg dsl.LogConfig) bool {
 //
 // platformManaged carries whatever the caller already snapshotted from the secret
 // resolver. The returned platform-managed slice adds the composite spellings that
-// only exist once protocol config is built. The returned script-sourced slice is
-// empty unless the setting is on.
+// only exist once protocol config is built. The returned script-sourced slice
+// includes all literal credentials extracted from the script.
 //
 // The third return is the value-free result of the same locator walk, and every
 // caller MUST pass it to each VUser it builds (VUser.importedCredentialInspection).
 // The walk is the only source of the authored template expressions that the
 // run-time producers resolve, and a VUser that is not handed it would repeat the
-// whole walk per VUser. It is returned regardless of the operator setting: it
-// holds no values, and the producers that read it apply the setting themselves.
-//
-// The walk runs unconditionally: a locator that no longer matches its executable
-// field means the import is corrupted, which must fail closed whether or not
-// anything is redacted.
+// whole walk per VUser.
 func runtimeSecretValuesForScript(
 	script *dsl.Script,
 	resolver SecretResolver,
@@ -85,7 +90,7 @@ func runtimeSecretValuesForScript(
 		return nil, nil, nil, err
 	}
 	inspection := &importedCredentialInspection{plan: plan}
-	if !scriptRedactsRunEvidence(script) {
+	if !scriptRedactsCredentials(script) {
 		return platformManaged, nil, inspection, nil
 	}
 	return platformManaged, scriptSourced, inspection, nil

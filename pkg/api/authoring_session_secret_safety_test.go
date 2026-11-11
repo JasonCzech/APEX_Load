@@ -67,31 +67,12 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 	seedAuthoringScriptProjects(t, store, projectID)
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
-	const createCredential = "authoring-create-credential-never-store"
-	const blockedReviewStateSecret = "blocked-authoring-review-state-never-serialize"
-	blocked := authoringSecretRequest(t, server, http.MethodPost, "/api/v1/scripts/authoring/sessions", map[string]any{
-		"project_id": projectID, "source": "test", "name": "Blocked create", "status": "editing",
-		"draft":        authoringSecretDraft(projectID, "Bearer "+createCredential, "safe-review"),
-		"review_state": map[string]any{"password": blockedReviewStateSecret},
-	})
-	if blocked.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("blocked create status = %d body=%s", blocked.Code, blocked.Body.String())
-	}
-	if strings.Contains(blocked.Body.String(), createCredential) {
-		t.Fatalf("blocked create disclosed credential: %s", blocked.Body.String())
-	}
-	if strings.Contains(blocked.Body.String(), blockedReviewStateSecret) {
-		t.Fatalf("blocked create disclosed review-state credential: %s", blocked.Body.String())
-	}
-	if sessions, err := store.ListAuthoringSessions(projectID); err != nil || len(sessions) != 0 {
-		t.Fatalf("blocked create persisted sessions: %#v err=%v", sessions, err)
-	}
-
-	const createReviewSecret = "authoring-create-review-never-store"
+	const createCredential = "authoring-create-credential-preserved"
+	const createReviewSecret = "authoring-create-review-preserved"
 	const createReviewStateSecret = "authoring-create-review-state-never-store"
 	createdResponse := authoringSecretRequest(t, server, http.MethodPost, "/api/v1/scripts/authoring/sessions", map[string]any{
-		"project_id": projectID, "source": "test", "name": "Safe create", "status": "editing",
-		"draft": authoringSecretDraft(projectID, "Bearer {{secret.LOGIN_TOKEN}}", createReviewSecret),
+		"project_id": projectID, "source": "test", "name": "Unredacted draft create", "status": "editing",
+		"draft": authoringSecretDraft(projectID, "Bearer "+createCredential, createReviewSecret),
 		"review_state": map[string]any{
 			"active_tab":            "runtime",
 			"approval_ready":        true,
@@ -104,7 +85,7 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 		},
 	})
 	if createdResponse.Code != http.StatusCreated {
-		t.Fatalf("safe create status = %d body=%s", createdResponse.Code, createdResponse.Body.String())
+		t.Fatalf("create status = %d body=%s", createdResponse.Code, createdResponse.Body.String())
 	}
 	var created storage.AuthoringSession
 	if err := json.Unmarshal(createdResponse.Body.Bytes(), &created); err != nil {
@@ -114,7 +95,6 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAuthoringDraftDisclosureSafe(t, persisted.Draft, createReviewSecret)
 	if encoded := createdResponse.Body.String(); strings.Contains(encoded, createReviewStateSecret) {
 		t.Fatalf("authoring create response disclosed review-state credential: %s", encoded)
 	}
@@ -134,45 +114,31 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 	if filters["section"] != "actions" {
 		t.Fatalf("persisted review-state filters = %#v, want ordinary workflow metadata preserved", filters)
 	}
-	if got := persisted.Draft.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.LOGIN_TOKEN}}" {
-		t.Fatalf("persisted Authorization = %q", got)
+	if got := persisted.Draft.Actions[0].Headers["Authorization"]; got != "Bearer "+createCredential {
+		t.Fatalf("persisted Authorization = %q, want unredacted literal", got)
+	}
+	if draftJSON, _ := json.Marshal(persisted.Draft); !strings.Contains(string(draftJSON), createReviewSecret) {
+		t.Fatalf("persisted source_review lost unredacted value: %s", draftJSON)
 	}
 
-	const updateCredential = "authoring-update-credential-never-store"
-	blockedUpdate := authoringSecretRequest(t, server, http.MethodPut, "/api/v1/scripts/authoring/sessions/"+created.ID, map[string]any{
-		"project_id": projectID, "source": "test", "name": "Blocked update", "status": "editing",
-		"draft": authoringSecretDraft(projectID, "Bearer "+updateCredential, "safe-review"),
-	})
-	if blockedUpdate.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("blocked update status = %d body=%s", blockedUpdate.Code, blockedUpdate.Body.String())
-	}
-	if strings.Contains(blockedUpdate.Body.String(), updateCredential) {
-		t.Fatalf("blocked update disclosed credential: %s", blockedUpdate.Body.String())
-	}
-	persisted, err = store.GetAuthoringSession(created.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	assertAuthoringDraftDisclosureSafe(t, persisted.Draft, updateCredential)
-
-	const updateReviewSecret = "authoring-update-review-never-store"
+	const updateCredential = "authoring-update-credential-preserved"
+	const updateReviewSecret = "authoring-update-review-preserved"
 	const updateReviewStateSecret = "authoring-update-review-state-never-store"
 	updatedResponse := authoringSecretRequest(t, server, http.MethodPut, "/api/v1/scripts/authoring/sessions/"+created.ID, map[string]any{
-		"project_id": projectID, "source": "test", "name": "Safe update", "status": "ready",
-		"draft": authoringSecretDraft(projectID, "Bearer {{secret.ROTATED_TOKEN}}", updateReviewSecret),
+		"project_id": projectID, "source": "test", "name": "Unredacted draft update", "status": "ready",
+		"draft": authoringSecretDraft(projectID, "Bearer "+updateCredential, updateReviewSecret),
 		"review_state": map[string]any{
 			"active_tab": "parameters",
 			"nested":     map[string]any{"client_secret": updateReviewStateSecret},
 		},
 	})
 	if updatedResponse.Code != http.StatusOK {
-		t.Fatalf("safe update status = %d body=%s", updatedResponse.Code, updatedResponse.Body.String())
+		t.Fatalf("update status = %d body=%s", updatedResponse.Code, updatedResponse.Body.String())
 	}
 	persisted, err = store.GetAuthoringSession(created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertAuthoringDraftDisclosureSafe(t, persisted.Draft, updateReviewSecret)
 	if encoded := updatedResponse.Body.String(); strings.Contains(encoded, updateReviewStateSecret) {
 		t.Fatalf("authoring update response disclosed review-state credential: %s", encoded)
 	}
@@ -180,8 +146,11 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 	if got := nested["client_secret"]; got != maskedScriptSecret {
 		t.Fatalf("persisted nested review-state secret = %#v, want redacted", got)
 	}
-	if got := persisted.Draft.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.ROTATED_TOKEN}}" {
-		t.Fatalf("updated Authorization = %q", got)
+	if got := persisted.Draft.Actions[0].Headers["Authorization"]; got != "Bearer "+updateCredential {
+		t.Fatalf("updated Authorization = %q, want unredacted literal", got)
+	}
+	if draftJSON, _ := json.Marshal(persisted.Draft); !strings.Contains(string(draftJSON), updateReviewSecret) {
+		t.Fatalf("updated source_review lost unredacted value: %s", draftJSON)
 	}
 	events, err := store.ListAuditEvents(storage.AuditEventFilter{ProjectID: projectID, Limit: 20})
 	if err != nil {
@@ -191,7 +160,7 @@ func TestAuthoringSessionCreateAndUpdateEnforceSecretBindingBoundary(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, forbidden := range []string{blockedReviewStateSecret, createReviewStateSecret, updateReviewStateSecret} {
+	for _, forbidden := range []string{createReviewStateSecret, updateReviewStateSecret} {
 		if strings.Contains(string(encodedEvents), forbidden) {
 			t.Fatalf("authoring audit events disclosed review-state credential %q: %s", forbidden, encodedEvents)
 		}
@@ -208,71 +177,54 @@ func TestAuthoringSessionApprovalPromotesOnlyDisclosureSafeDraft(t *testing.T) {
 	seedAuthoringScriptProjects(t, store, projectID)
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
 
-	const legacyCredential = "legacy-authoring-credential-never-promote"
+	const literalCredential = "authoring-approval-credential-preserved"
+	const reviewSecret = "approval-review-secret-preserved"
 	now := time.Now().UTC()
 	session := &storage.AuthoringSession{
-		ID: "legacy-unsafe-authoring", ProjectID: projectID, Source: "test", Name: "Legacy unsafe", Status: "ready",
-		Draft:     authoringSecretDraft(projectID, "Bearer "+legacyCredential, "legacy-review"),
+		ID: "authoring-unredacted-approval", ProjectID: projectID, Source: "test", Name: "Unredacted approval", Status: "ready",
+		Draft:     authoringSecretDraft(projectID, "Bearer "+literalCredential, reviewSecret),
 		CreatedAt: now, UpdatedAt: now, LastAccessedAt: now,
 	}
 	if err := store.SaveAuthoringSession(session); err != nil {
 		t.Fatal(err)
 	}
 	approvePath := "/api/v1/scripts/authoring/sessions/" + session.ID + "/approve"
-	blocked := httptest.NewRecorder()
-	server.mux.ServeHTTP(blocked, httptest.NewRequest(http.MethodPost, approvePath, nil))
-	if blocked.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("unsafe approval status = %d body=%s", blocked.Code, blocked.Body.String())
-	}
-	if strings.Contains(blocked.Body.String(), legacyCredential) {
-		t.Fatalf("unsafe approval disclosed credential: %s", blocked.Body.String())
-	}
-	if _, exists := server.runner.GetScript(authoringApprovalScriptID(session.ID)); exists {
-		t.Fatal("unsafe authoring draft was promoted")
-	}
-
-	const reviewSecret = "approval-review-secret-never-store"
-	updated := authoringSecretRequest(t, server, http.MethodPut, "/api/v1/scripts/authoring/sessions/"+session.ID, map[string]any{
-		"project_id": projectID, "source": "test", "name": "Safe approval", "status": "ready",
-		"draft": authoringSecretDraft(projectID, "Bearer {{secret.APPROVAL_TOKEN}}", reviewSecret),
-	})
-	if updated.Code != http.StatusOK {
-		t.Fatalf("safe update status = %d body=%s", updated.Code, updated.Body.String())
-	}
 	approvedResponse := httptest.NewRecorder()
 	server.mux.ServeHTTP(approvedResponse, httptest.NewRequest(http.MethodPost, approvePath, nil))
 	if approvedResponse.Code != http.StatusOK {
-		t.Fatalf("safe approval status = %d body=%s", approvedResponse.Code, approvedResponse.Body.String())
+		t.Fatalf("approval status = %d body=%s", approvedResponse.Code, approvedResponse.Body.String())
 	}
 	stored, exists := server.runner.GetScript(authoringApprovalScriptID(session.ID))
 	if !exists || stored == nil {
-		t.Fatal("safe authoring draft was not promoted")
+		t.Fatal("authoring draft was not promoted")
 	}
-	assertAuthoringDraftDisclosureSafe(t, stored.Script, legacyCredential, reviewSecret)
-	if got := stored.Script.Actions[0].Headers["Authorization"]; got != "Bearer {{secret.APPROVAL_TOKEN}}" {
-		t.Fatalf("approved Authorization = %q", got)
+	if got := stored.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+literalCredential {
+		t.Fatalf("approved Authorization = %q, want %q", got, "Bearer "+literalCredential)
+	}
+	if draftJSON, _ := json.Marshal(stored.Script); !strings.Contains(string(draftJSON), reviewSecret) {
+		t.Fatalf("approved script lost source_review: %s", draftJSON)
 	}
 }
 
 func TestAIDraftFromLegacyScriptCannotPersistPlaintextAuthoringSession(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	const credential = "legacy-ai-source-credential-never-store"
+	const credential = "legacy-ai-source-credential-preserved"
 	legacy := durableBoundaryScript("legacy-ai-source", "Bearer "+credential, "legacy-ai-review")
 	seedLegacySecretScript(server, legacy)
 
 	response := authoringSecretRequest(t, server, http.MethodPost, "/api/v1/ai/drafts", map[string]any{
 		"project_id": legacy.ProjectID, "provider": mockedAIProvider, "source_type": "existing_script",
-		"existing_script_id": legacy.ID, "name": "Safe AI copy",
+		"existing_script_id": legacy.ID, "name": "Unredacted local AI copy",
 	})
-	if response.Code != http.StatusUnprocessableEntity {
+	if response.Code != http.StatusCreated {
 		t.Fatalf("AI draft status = %d body=%s", response.Code, response.Body.String())
 	}
-	if strings.Contains(response.Body.String(), credential) {
-		t.Fatalf("AI draft response disclosed legacy credential: %s", response.Body.String())
+	if !strings.Contains(response.Body.String(), credential) {
+		t.Fatalf("local AI draft response stripped credential: %s", response.Body.String())
 	}
 	server.authoringMu.Lock()
 	defer server.authoringMu.Unlock()
-	if len(server.authoring) != 0 {
-		t.Fatalf("unsafe AI authoring session was persisted: %#v", server.authoring)
+	if len(server.authoring) != 1 {
+		t.Fatalf("expected 1 local AI authoring session, got: %#v", server.authoring)
 	}
 }

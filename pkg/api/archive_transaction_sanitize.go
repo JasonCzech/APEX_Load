@@ -327,12 +327,38 @@ func sanitizeArchivedConsoleEntries(entries []protocol.ConsoleEntry, policy scru
 func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scrub.Policy) []protocol.NetworkEntry {
 	out := protocol.CloneNetworkEntries(entries)
 	for index := range out {
+		if evidence := out[index].BrowserEvidence.Clone(); evidence != nil {
+			evidence.Origin = scrub.ValueURL(evidence.Origin, policy)
+			if evidence.InitiatorOrigin != "" && scrub.ValueURL(evidence.InitiatorOrigin, policy) != evidence.InitiatorOrigin {
+				evidence.InitiatorOrigin = ""
+			}
+			out[index].BrowserEvidence = evidence.Clone()
+		} else {
+			out[index].BrowserEvidence = nil
+		}
+		if har := out[index].HAR.Clone(); har != nil {
+			har.ID = scrub.ValueLabel(har.ID, policy)
+			for _, body := range []*protocol.ReplayHARBody{har.RequestBody, har.ResponseBody} {
+				if body != nil {
+					body.MimeType = scrub.ValueLabel(body.MimeType, policy)
+				}
+				if body != nil && (body.State == "retained" || body.Text != "") {
+					body.Text = scrub.BodyText(scrub.ValueLabel(body.Text, policy))
+				}
+			}
+			out[index].HAR = har
+		}
+		if out[index].Trace != nil {
+			out[index].Trace = out[index].Trace.TransformStrings(func(text string) string {
+				return scrub.ValueLabel(text, policy)
+			})
+		}
 		out[index].FailureKind = sanitizeArchivedNetworkFailureKind(out[index].FailureKind)
 		out[index].URL = scrub.ValueURL(out[index].URL, policy)
 		out[index].Method = scrub.ValueLabel(out[index].Method, policy)
 		out[index].ResourceType = scrub.ValueLabel(out[index].ResourceType, policy)
 		out[index].RequestHeaders = sanitizeArchivedHeaders(out[index].RequestHeaders, policy)
-		out[index].RequestBody = scrub.ValueLabel(out[index].RequestBody, policy)
+		out[index].RequestBody = scrub.BodyText(scrub.ValueLabel(out[index].RequestBody, policy))
 		out[index].ResponseHeaders = sanitizeArchivedHeaders(out[index].ResponseHeaders, policy)
 		if batch := out[index].Aura; batch != nil {
 			for action := range batch.Actions {
@@ -378,10 +404,10 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 	out.RequestMethod = scrub.ValueLabel(out.RequestMethod, policy)
 	out.RequestURL = scrub.ValueURL(out.RequestURL, policy)
 	out.RequestHeaders = sanitizeArchivedHeaders(out.RequestHeaders, policy)
-	out.RequestBody = scrub.ValueLabel(out.RequestBody, policy)
+	out.RequestBody = scrub.BodyText(scrub.ValueLabel(out.RequestBody, policy))
 	out.ResponseHeaders = sanitizeArchivedHeaders(out.ResponseHeaders, policy)
 	previousResponseBody := out.ResponseBody
-	out.ResponseBody = scrub.ValueLabel(out.ResponseBody, policy)
+	out.ResponseBody = scrub.BodyText(scrub.ValueLabel(out.ResponseBody, policy))
 	if previousResponseBody != out.ResponseBody {
 		out.ResponseBodyState = "redacted"
 	}
@@ -392,14 +418,14 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 		r.RequestHeaders = sanitizeArchivedHeaders(r.RequestHeaders, policy)
 		r.ResponseHeaders = sanitizeArchivedHeaders(r.ResponseHeaders, policy)
 		previous := r.ResponseBody
-		r.ResponseBody = scrub.ValueLabel(r.ResponseBody, policy)
+		r.ResponseBody = scrub.BodyText(scrub.ValueLabel(r.ResponseBody, policy))
 		if previous != r.ResponseBody {
 			r.ResponseBodyState = "redacted"
 		}
 	}
 	out.PageURL = scrub.ValueURL(out.PageURL, policy)
 	out.PageTitle = scrub.ValueLabel(out.PageTitle, policy)
-	out.HTML = scrub.ValueLabel(out.HTML, policy)
+	out.HTML = scrub.BodyText(scrub.ValueLabel(out.HTML, policy))
 	out.ConsoleEntries = sanitizeArchivedConsoleEntries(out.ConsoleEntries, policy)
 	out.NetworkEntries = sanitizeArchivedNetworkEntries(out.NetworkEntries, policy)
 	out.DOMSummary = sanitizeArchivedDOMSummary(out.DOMSummary, policy)

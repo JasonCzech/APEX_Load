@@ -1278,7 +1278,7 @@ describe('EnterpriseArchiveImport', () => {
     const preview = reviewChildren.find(element => element.classList.contains('script-import-review-preview')) as HTMLDetailsElement | undefined
     expect(preview?.tagName).toBe('DETAILS')
     expect(preview?.open).toBe(true)
-    expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview — redacted, read-only')
+    expect(preview?.querySelector('summary h4')?.textContent).toBe('DSL Preview — read-only')
     const dslPreview = preview?.querySelector('pre')?.textContent || ''
     expect(dslPreview).toContain('"name": "Demo Enterprise Script Archive"')
     expect(dslPreview).toContain('"actions": [')
@@ -7603,7 +7603,7 @@ describe('EnterpriseArchiveImport', () => {
 
     await clickButton(findButton(container, 'DSL Preview')!)
     expect(reviewTabs.find(tab => tab.textContent === 'DSL Preview')?.getAttribute('aria-selected')).toBe('true')
-    expect(container.querySelector('.script-import-review-preview summary h4')?.textContent).toBe('DSL Preview — redacted, read-only')
+    expect(container.querySelector('.script-import-review-preview summary h4')?.textContent).toBe('DSL Preview — read-only')
     expect(container.querySelector('.script-import-review-preview-aside')).toBeNull()
 
     await clickButton(findButton(container, 'Source Mapping')!)
@@ -7613,7 +7613,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.querySelector('.script-import-review-preview-aside .source-map-review')).not.toBeNull()
   })
 
-  it('keeps the nested Salesforce native preview review-only until it is separately attested', async () => {
+  it('opens the nested Salesforce native preview candidate draft directly in the editor with unredacted values', async () => {
     const onEdit = vi.fn()
     const nativeScript = {
       name: 'Demo Salesforce Native Preview',
@@ -7626,7 +7626,7 @@ describe('EnterpriseArchiveImport', () => {
           type: 'request',
           method: 'POST',
           target: '/login',
-          body: 'password=[REDACTED]',
+          body: 'password=literal-sf-pass',
         },
         {
           name: 'Open Account',
@@ -7774,14 +7774,14 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Exact Replay')
     expect(container.textContent).toContain('Salesforce Native Preview')
     expect(container.textContent).toContain('2/2 matched (100.0%)')
-    expect(container.textContent).toContain('Review Only')
+    expect(container.textContent).toContain('Candidate Draft')
     expect(container.textContent).toContain('Salesforce Review')
     expect(container.textContent).toContain('Logical actions')
     expect(container.textContent).toContain('Raw requests')
     expect(container.textContent).toContain('Collapsed')
     expect(container.textContent).toContain('Transaction markers')
 
-    const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Review Native Preview Limitation'))
+    const openNativePreview = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open Native Preview'))
     expect(openNativePreview).toBeTruthy()
     if (!openNativePreview) {
       return
@@ -7790,9 +7790,7 @@ describe('EnterpriseArchiveImport', () => {
       openNativePreview.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    expect(onEdit).not.toHaveBeenCalled()
-    expect(container.textContent).toContain('separately attested import candidate')
-    expect(container.textContent).toContain('without re-entry')
+    expect(onEdit).toHaveBeenCalledWith(nativeScript)
   })
 
   it('disables saving while migration readiness is blocked by the active policy', async () => {

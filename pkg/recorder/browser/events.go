@@ -229,8 +229,9 @@ type WebSocketSummary struct {
 	OpenedAt       time.Time `json:"opened_at"`
 	FramesSent     int       `json:"frames_sent"`
 	FramesReceived int       `json:"frames_received"`
-	// Frames holds size-capped, scrubbed frame payloads when payload capture is
-	// opted in (off by default); otherwise only the counts above are recorded.
+	// Frames holds size-capped frame payloads when payload capture is opted in
+	// (off by default; scrubbed only when ScrubSensitive is enabled); otherwise
+	// only the counts above are recorded.
 	Frames []WebSocketFrame `json:"frames,omitempty"`
 }
 
@@ -278,6 +279,7 @@ type Session struct {
 	Annotations []Annotation `json:"annotations,omitempty"`
 	// DeviceProfile is the emulated device preset applied at launch, if any.
 	DeviceProfile        string                `json:"device_profile,omitempty"`
+	ScrubSensitive       bool                  `json:"scrub_sensitive,omitempty"`
 	RecordingEnvironment *RecordingEnvironment `json:"recording_environment,omitempty"`
 	HARPath              string                `json:"har_path,omitempty"`
 	HAR                  []byte                `json:"-"`

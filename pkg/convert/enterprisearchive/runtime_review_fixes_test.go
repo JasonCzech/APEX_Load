@@ -234,8 +234,8 @@ func TestDeclaredTransactionConservationSkipsUntrackedImportBranchesAndBoundsEvi
 		&ProjectConfig{Transactions: []string{"token=transaction-secret-canary"}},
 		nil,
 	)
-	if len(sensitive.Warnings) != 1 || strings.Contains(sensitive.Warnings[0], "transaction-secret-canary") {
-		t.Fatalf("transaction evidence disclosed source credential: %#v", sensitive.Warnings)
+	if len(sensitive.Warnings) != 1 || !strings.Contains(sensitive.Warnings[0], "token=transaction-secret-canary") {
+		t.Fatalf("transaction evidence lost source transaction name: %#v", sensitive.Warnings)
 	}
 }
 

@@ -83,6 +83,7 @@ type DiffClassification struct {
 type ComparisonRecording struct {
 	correlations []sample.Correlation
 	observations []sample.HARSourceObservation
+	redacted     bool
 }
 
 // PrepareComparison converts a comparison HAR once so it can be classified
@@ -111,7 +112,14 @@ func PrepareComparisonContext(ctx context.Context, comparison []byte, opts Conve
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	prepared := &ComparisonRecording{correlations: result.Correlations}
+	comparisonCorrelations := result.Correlations
+	if len(result.rawCorrelations) > 0 {
+		comparisonCorrelations = result.rawCorrelations
+	}
+	prepared := &ComparisonRecording{
+		correlations: comparisonCorrelations,
+		redacted:     result.Governance != nil && result.Governance.RedactionEnabled,
+	}
 	if result.Document != nil {
 		// Without observations every correlation falls back to name pairing.
 		prepared.observations, _ = result.Document.SourceObservations(true)
@@ -176,19 +184,24 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 	for _, corr := range comparison.correlations {
 		comparisonByKey[correlationDiffKey(corr)] = corr
 	}
+	baselineCorrelations := baseline.Correlations
+	if len(baseline.rawCorrelations) > 0 {
+		baselineCorrelations = baseline.rawCorrelations
+	}
+	redactSamples := (baseline.Governance != nil && baseline.Governance.RedactionEnabled) || comparison.redacted
 	var baselineObservations []sample.HARSourceObservation
 	if baseline.Document != nil {
 		baselineObservations, _ = baseline.Document.SourceObservations(true)
 	}
-	aligner := newDiffAligner(baselineObservations, comparison.observations, baseline.Correlations, comparison.correlations)
+	aligner := newDiffAligner(baselineObservations, comparison.observations, baselineCorrelations, comparison.correlations)
 
 	report := &DiffReport{
 		ArtifactMode:           ArtifactModeDesignHARPair,
 		Compared:               true,
-		BaselineCorrelations:   len(baseline.Correlations),
+		BaselineCorrelations:   len(baselineCorrelations),
 		ComparisonCorrelations: len(comparison.correlations),
 	}
-	for _, corr := range baseline.Correlations {
+	for _, corr := range baselineCorrelations {
 		if err := ctx.Err(); err != nil {
 			return nil, aligner, err
 		}
@@ -231,6 +244,11 @@ func diffPrepared(ctx context.Context, baseline *ConvertResult, comparison *Comp
 			classification.Match = DiffMatchCorrelationName
 			classification.ComparisonValue = publicCorrelationValue(namePaired)
 			classifyDiffValues(report, &classification, baselineValue, correlationValue(namePaired))
+		}
+		if redactSamples {
+			classification.SampleValue = ""
+			classification.BaselineValue = ""
+			classification.ComparisonValue = ""
 		}
 		if classification.Classification == DiffClassificationCandidate {
 			report.UnmatchedCandidates++

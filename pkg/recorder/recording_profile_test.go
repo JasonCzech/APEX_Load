@@ -96,3 +96,147 @@ func TestConvertSessionCookieCaptureFollowsTheSession(t *testing.T) {
 		t.Fatalf("a different profile that drops cookies: Cookie = %q", got)
 	}
 }
+
+func TestRecordingProfileScrubSensitivePropagatesToFiltersAndConversion(t *testing.T) {
+	profile := &recordingprofile.Profile{
+		ID:             "scrub-on",
+		Name:           "Scrub On",
+		ScrubSensitive: true,
+	}
+	var filters FilterConfig
+	filters.ApplyProfile(profile)
+	if !filters.ScrubSensitive || filters.RecordingProfileID != "scrub-on" {
+		t.Fatalf("ApplyProfile = %+v, want ScrubSensitive=true and RecordingProfileID=scrub-on", filters)
+	}
+
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	session := &Session{
+		ID:      "p-scrub",
+		Name:    "Profile Scrub",
+		BaseURL: "https://shop.test",
+		Requests: []RecordedRequest{
+			{
+				Seq:          1,
+				Timestamp:    t0,
+				Method:       "POST",
+				URL:          "https://shop.test/login",
+				Path:         "/login",
+				Host:         "shop.test",
+				StatusCode:   200,
+				ContentType:  "application/x-www-form-urlencoded",
+				Body:         "username=ada&password=s3cret%2Bvalue",
+				ResponseBody: `{"auth":{"access_token":"tok-abcdef123456"}}`,
+			},
+			{
+				Seq:        2,
+				Timestamp:  t0.Add(time.Second),
+				Method:     "GET",
+				URL:        "https://shop.test/account",
+				Path:       "/account",
+				Host:       "shop.test",
+				StatusCode: 200,
+				Headers:    map[string]string{"Authorization": "Bearer tok-abcdef123456"},
+			},
+		},
+	}
+
+	unredacted := ConvertSessionWithOptions(session, "", ConvertOptions{
+		Parameterize: true,
+		Profile:      &recordingprofile.Profile{ID: "default", Name: "Default"},
+	})
+	if len(unredacted.Correlations) != 1 || unredacted.Correlations[0].SampleValue != "tok-abcdef123456" {
+		t.Fatalf("default profile correlations = %#v, want unredacted sample", unredacted.Correlations)
+	}
+	if _, exists := unredacted.Script.Metadata.Import.Preserved["recorded_input_secret_columns"]; exists {
+		t.Fatalf("default profile unexpectedly marked recorded_input_secret_columns: %#v", unredacted.Script.Metadata.Import.Preserved)
+	}
+
+	scrubbed := ConvertSessionWithOptions(session, "", ConvertOptions{
+		Parameterize: true,
+		Profile:      profile,
+	})
+	if len(scrubbed.Correlations) != 1 || scrubbed.Correlations[0].Value != "" || scrubbed.Correlations[0].SampleValue != "" {
+		t.Fatalf("scrub_sensitive profile correlations = %#v, want blanked value and sample", scrubbed.Correlations)
+	}
+	cols, ok := scrubbed.Script.Metadata.Import.Preserved["recorded_input_secret_columns"].([]string)
+	if !ok || len(cols) != 1 || cols[0] != "password" {
+		t.Fatalf("scrub_sensitive profile recorded_input_secret_columns = %#v, want [password]", scrubbed.Script.Metadata.Import.Preserved["recorded_input_secret_columns"])
+	}
+}
+
+func TestWebSocketOnlySessionHonorsScrubSensitiveAndRedactHeaders(t *testing.T) {
+	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	wsSession := &Session{
+		ID:      "ws-scrub",
+		Name:    "WS Scrub",
+		BaseURL: "https://ws.example.test",
+		Filters: FilterConfig{
+			RedactHeaders: []string{"X-Custom-Secret"},
+		},
+		Requests: []RecordedRequest{
+			{
+				Seq:        1,
+				Timestamp:  t0,
+				Method:     "GET",
+				URL:        "wss://ws.example.test/realtime",
+				Path:       "/realtime",
+				Host:       "ws.example.test",
+				StatusCode: 101,
+				Headers: map[string]string{
+					"Authorization":   "[redacted]",
+					"X-Api-Key":       "[redacted]",
+					"X-Custom-Secret": "[redacted]",
+					"X-Trace":         "trace-123",
+				},
+				RawHeaders: map[string]string{
+					"Authorization":   "Bearer ws-secret-token",
+					"X-Api-Key":       "ws-api-key-123",
+					"X-Custom-Secret": "custom-secret-val",
+					"X-Trace":         "trace-123",
+				},
+				WebSocketMessages: []RecordedWebSocketMessage{
+					{Direction: webSocketDirectionClientToServer, Opcode: webSocketOpcodeText, Payload: `{"ping":1}`},
+				},
+			},
+		},
+	}
+
+	// Default (ScrubSensitive=false): preserves Authorization and X-Api-Key from RawHeaders while honoring explicit RedactHeaders.
+	unredacted := ConvertSession(wsSession, "WS Default")
+	wsConnect := unredacted.Script.Actions[0]
+	if wsConnect.Headers["Authorization"] != "Bearer ws-secret-token" || wsConnect.Headers["X-Api-Key"] != "ws-api-key-123" {
+		t.Fatalf("default WS headers = %#v, want raw Authorization and X-Api-Key", wsConnect.Headers)
+	}
+	if wsConnect.Headers["X-Custom-Secret"] != "[redacted]" {
+		t.Fatalf("default WS headers ignored explicit RedactHeaders: %#v", wsConnect.Headers)
+	}
+
+	// ScrubSensitive=true via Profile: redacts Authorization and X-Api-Key on WebSocket-only sessions.
+	scrubbedByProfile := ConvertSessionWithOptions(wsSession, "WS Profile Scrub", ConvertOptions{
+		Profile: &recordingprofile.Profile{ID: "strict", Name: "Strict", ScrubSensitive: true},
+	})
+	scrubConnect := scrubbedByProfile.Script.Actions[0]
+	if scrubConnect.Headers["Authorization"] != "[redacted]" || scrubConnect.Headers["X-Api-Key"] != "[redacted]" || scrubConnect.Headers["X-Custom-Secret"] != "[redacted]" {
+		t.Fatalf("scrubbed WS headers leaked sensitive credentials: %#v", scrubConnect.Headers)
+	}
+	if scrubConnect.Headers["X-Trace"] != "trace-123" {
+		t.Fatalf("scrubbed WS headers altered non-sensitive header: %#v", scrubConnect.Headers)
+	}
+
+	// ScrubSensitive=true on SessionFilters at capture time is also honored by default ConvertSession.
+	capturedScrubSession := &Session{
+		ID:      wsSession.ID,
+		Name:    wsSession.Name,
+		BaseURL: wsSession.BaseURL,
+		Filters: FilterConfig{
+			RedactHeaders:  []string{"X-Custom-Secret"},
+			ScrubSensitive: true,
+		},
+		Requests: wsSession.Requests,
+	}
+	scrubbedByFilter := ConvertSession(capturedScrubSession, "WS Filter Scrub")
+	if scrubbedByFilter.Script.Actions[0].Headers["Authorization"] != "[redacted]" ||
+		scrubbedByFilter.Script.Actions[0].Headers["X-Api-Key"] != "[redacted]" {
+		t.Fatalf("session-filter ScrubSensitive WS headers leaked credentials: %#v", scrubbedByFilter.Script.Actions[0].Headers)
+	}
+}

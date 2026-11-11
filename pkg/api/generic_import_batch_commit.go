@@ -368,10 +368,11 @@ func (s *Server) handleCommitGenericImportBatch(w http.ResponseWriter, r *http.R
 				return
 			}
 		}
-		if claims[index] == nil && (fingerprint.HasRawCredentials || scriptHasUnavailableImportCredentialValues(draft)) {
+		if claims[index] == nil && scriptHasUnavailableImportCredentialValues(draft) {
 			writeError(w, http.StatusConflict, fmt.Sprintf("imported script %d is missing its server capability; run the conversion again", index+1))
 			return
 		}
+		_ = fingerprint
 		draft.Name = requestedName
 		if err := bindDraftScriptProject(draft, projectID); err != nil {
 			writeError(w, http.StatusBadRequest, fmt.Sprintf("script %d: %v", index+1, err))

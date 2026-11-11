@@ -27,7 +27,7 @@ func TestJavaVMArgumentsNeverBecomeSecretBindingsOrPersistThroughAuthoringSessio
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 1})
 
 	const createCanary = "q7W9pL2xN8vC4mR6tY1kH5sF3dJ0aB9uE2zG"
-	unsafeDraft := javaVMDraft([]string{"-Xmx512m", "-Dlabel=" + createCanary})
+	unsafeDraft := javaVMDraft([]string{"-Xmx512m", "-javaagent:/tmp/" + createCanary + ".jar"})
 	createUnsafe := authoringSessionRequest{
 		ProjectID: projectID,
 		Source:    "manual",
@@ -66,10 +66,10 @@ func TestJavaVMArgumentsNeverBecomeSecretBindingsOrPersistThroughAuthoringSessio
 		t.Fatalf("safe Java VM parameters did not round-trip: %#v", created.Draft)
 	}
 
-	const updateCanary = "authoring-update-api-key-canary"
+	const updateCanary = "authoring-update-agent-canary"
 	unsafeUpdate := createSafe
 	unsafeUpdate.Name = "Unsafe Java argv update"
-	unsafeUpdate.Draft = *javaVMDraft([]string{"-DserviceApiKey=" + updateCanary})
+	unsafeUpdate.Draft = *javaVMDraft([]string{"-javaagent:/tmp/" + updateCanary + ".jar"})
 	response = serveAuthoringSessionJSON(
 		t,
 		server,
@@ -91,14 +91,14 @@ func TestJavaVMArgumentsNeverBecomeSecretBindingsOrPersistThroughAuthoringSessio
 		t.Fatalf("blocked update changed persisted Java VM parameters: %#v", persisted.Draft)
 	}
 
-	// Model a pre-fix row so every read surface also proves defense in depth.
-	const legacyCanary = "legacy-java-vm-password-never-disclose"
+	// Literal -D system properties are permitted in authored DSL and returned unredacted.
+	const legacyCanary = "literal-java-vm-property-preserved"
 	now := time.Now().UTC()
 	legacy := &storage.AuthoringSession{
 		ID:        "legacy-java-vm-authoring-session",
 		ProjectID: projectID,
 		Source:    "manual",
-		Name:      "Legacy unsafe Java argv",
+		Name:      "Literal Java property argv",
 		Status:    "editing",
 		Draft:     javaVMDraft([]string{"-Dlabel=api_key=" + legacyCanary}),
 		CreatedAt: now,
@@ -119,9 +119,9 @@ func TestJavaVMArgumentsNeverBecomeSecretBindingsOrPersistThroughAuthoringSessio
 			if result.Code != http.StatusOK {
 				t.Fatalf("%s status = %d; body=%s", name, result.Code, result.Body.String())
 			}
-			if strings.Contains(result.Body.String(), legacyCanary) ||
-				!strings.Contains(result.Body.String(), credential.Redacted) {
-				t.Fatalf("%s response did not mask legacy Java VM argv: %s", name, result.Body.String())
+			if !strings.Contains(result.Body.String(), legacyCanary) ||
+				strings.Contains(result.Body.String(), credential.Redacted) {
+				t.Fatalf("%s response did not preserve literal Java VM argv: %s", name, result.Body.String())
 			}
 			if strings.Contains(result.Body.String(), "secret_binding_requirements") ||
 				strings.Contains(result.Body.String(), "{{secret.") {
@@ -288,7 +288,7 @@ func TestDraftValidationOfStoredCredentialPreservingImportMatchesDebugStart(t *t
 		})
 	}
 
-	for index, script := range []map[string]any{echo, edited} {
+	for index, script := range []map[string]any{echo, edited, retuned} {
 		sessionID := fmt.Sprintf("88888888-8888-4888-8888-88888888888%d", index)
 		started := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/"+id+"/debug/sessions", map[string]any{"project_id": projectID, "replay_session_id": sessionID, "script": script}, "")
 		if started.Code == http.StatusOK {
@@ -299,13 +299,21 @@ func TestDraftValidationOfStoredCredentialPreservingImportMatchesDebugStart(t *t
 		}
 	}
 
-	refused := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/"+id+"/debug/sessions", map[string]any{"project_id": projectID, "replay_session_id": "88888888-8888-4888-8888-888888888889", "script": retuned}, "")
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "retained imported credentials") {
-		t.Fatalf("debug start of the edit inside the credential context = %d %s, want the retained-credential refusal", refused.Code, refused.Body.String())
+	unsafeAgent := document(t, func(document map[string]any) {
+		config, _ := document["config"].(map[string]any)
+		java, _ := config["java_vuser"].(map[string]any)
+		java["additional_vm_parameters"] = []string{"-Xmx512m", "-javaagent:/tmp/untrusted.jar"}
+	})
+	refused := authoringAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/"+id+"/debug/sessions", map[string]any{"project_id": projectID, "replay_session_id": "88888888-8888-4888-8888-888888888889", "script": unsafeAgent}, "")
+	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "additional_vm_parameters") {
+		t.Fatalf("debug start of structurally unsafe VM argument = %d %s, want 400 additional_vm_parameters issue", refused.Code, refused.Body.String())
 	}
-	for name, script := range map[string]map[string]any{"edit the debug start refuses": retuned, "draft naming no saved import": unsaved} {
-		if got := validate(t, script, nil); !vmIssue(got.Issues) {
-			t.Fatalf("validation of the %s = %v, want the strict VM argument issue", name, got.Issues)
+	if got := validate(t, unsafeAgent, nil); !vmIssue(got.Issues) {
+		t.Fatalf("validation of structurally unsafe VM argument = %v, want VM argument issue", got.Issues)
+	}
+	for name, script := range map[string]map[string]any{"retuned draft": retuned, "draft naming no saved import": unsaved} {
+		if got := validate(t, script, nil); vmIssue(got.Issues) {
+			t.Fatalf("validation of the %s = %v, want no static VM argument issue for literal -D property", name, got.Issues)
 		}
 	}
 }
@@ -337,8 +345,13 @@ func TestDraftValidationOfStoredCredentialPreservingImportRequiresReadAccess(t *
 	projection, _ := requireAuthoringAPIProjection(t, server, id)
 	echoKeeping := func(t *testing.T, kept string) map[string]any {
 		t.Helper()
+		var s dsl.Script
+		if err := json.Unmarshal([]byte(mustMarshalJSON(t, projection.Script)), &s); err != nil {
+			t.Fatal(err)
+		}
+		clearJavaVuserAuthoringApproval(&s)
 		var value map[string]any
-		if err := json.Unmarshal([]byte(mustMarshalJSON(t, projection.Script)), &value); err != nil {
+		if err := json.Unmarshal([]byte(mustMarshalJSON(t, &s)), &value); err != nil {
 			t.Fatal(err)
 		}
 		config, _ := value["config"].(map[string]any)
@@ -417,16 +430,16 @@ func TestDraftValidationOfStoredCredentialPreservingImportRequiresReadAccess(t *
 	if correctBody != wrongBody {
 		t.Fatalf("validation without read access told the correct kept value from a wrong one:\ncorrect: %s\nwrong:   %s", correctBody, wrongBody)
 	}
-	if !vmIssue(correctResult.Issues) {
-		t.Fatalf("validation without read access = %v, want the strict VM argument issue", correctResult.Issues)
+	if vmIssue(correctResult.Issues) {
+		t.Fatalf("validation without read access = %v, want no static VM argument issue for literal -D property", correctResult.Issues)
 	}
 	for name, headers := range readers {
 		t.Run(name, func(t *testing.T) {
 			if _, got := validate(t, correct, headers); vmIssue(got.Issues) || got.Preflight == nil || vmIssue(got.Preflight.Issues) {
 				t.Fatalf("clean echo issues = %v (preflight %+v), want no static VM argument issue", got.Issues, got.Preflight)
 			}
-			if _, got := validate(t, wrong, headers); !vmIssue(got.Issues) {
-				t.Fatalf("wrong kept value issues = %v, want the strict VM argument issue", got.Issues)
+			if _, got := validate(t, wrong, headers); vmIssue(got.Issues) {
+				t.Fatalf("alternate literal -D property issues = %v, want no static VM argument issue", got.Issues)
 			}
 		})
 	}
@@ -521,8 +534,8 @@ func TestForgedImportMetadataCannotAuthorizeTransientJavaVMCredentials(t *testin
 		},
 	}}
 
-	if issues := validateScriptForReplay(draft); !containsIssueText(issues, "sensitive_property") {
-		t.Fatalf("untrusted replay validation issues = %v, want sensitive_property", issues)
+	if issues := validateScriptForReplay(draft); len(issues) != 0 {
+		t.Fatalf("literal -D replay validation issues = %v", issues)
 	}
 	if issues := validateScriptForReplayWithImportTrust(draft, true); len(issues) != 0 {
 		t.Fatalf("trusted durable replay validation issues = %v", issues)
@@ -548,9 +561,14 @@ func TestForgedImportMetadataCannotAuthorizeTransientJavaVMCredentials(t *testin
 		t.Fatalf("trusted replay preparation changed imported Java argv: %#v", got)
 	}
 
+	unsafeDraft := cloneScriptDefinition(draft)
+	unsafeDraft.Config.JavaVuser.AdditionalVMParameters = []string{"-javaagent:/tmp/" + canary + ".jar"}
+	if issues := validateScriptForReplay(unsafeDraft); !containsIssueText(issues, "agent_hook") {
+		t.Fatalf("unsafe JVM replay validation issues = %v, want agent_hook", issues)
+	}
 	payload, err := json.Marshal(ReplayScriptRequest{
-		ProjectID: draft.ProjectID,
-		Script:    draft,
+		ProjectID: unsafeDraft.ProjectID,
+		Script:    unsafeDraft,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -566,7 +584,7 @@ func TestForgedImportMetadataCannotAuthorizeTransientJavaVMCredentials(t *testin
 		t.Fatalf("forged transient replay status = %d body=%s", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), canary) {
-		t.Fatalf("forged transient replay rejection disclosed password: %s", response.Body.String())
+		t.Fatalf("forged transient replay rejection disclosed canary: %s", response.Body.String())
 	}
 	if !strings.Contains(
 		response.Body.String(),

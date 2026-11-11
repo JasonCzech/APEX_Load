@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -63,7 +64,7 @@ var (
 	// not misclassify the file.
 	mqscCommandLineRe = regexp.MustCompile(`(?i)^\s*(?:DEFINE|ALTER)\s+(?:QLOCAL|QREMOTE|QALIAS|QMODEL|TOPIC)\b`)
 	// jndiKeyLineRe anchors on a JNDI property key at line start.
-	jndiKeyLineRe = regexp.MustCompile(`(?i)^\s*(?:queue|topic|connectionfactory)\.`)
+	jndiKeyLineRe = regexp.MustCompile(`(?i)^\s*(?:queue|topic|connectionfactory|java\.naming)\.`)
 )
 
 // DetectFormat infers the artifact format from its content. Detection is
@@ -106,6 +107,8 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		protocol     string
 		brokerURL    string
 		messageVPN   string
+		username     string
+		password     string
 		warnings     []string
 	)
 	switch format {
@@ -114,7 +117,7 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 		provider, protocol = "ibmmq", "jms-ibmmq"
 		warnings = append(warnings, "IBM MQ runtime adapter is not built into APEX Load (review-only execution); the script imports in mock mode — author the produce/consume bodies and supply MQ connectivity before promoting")
 	case FormatJNDI:
-		destinations, brokerURL, messageVPN, warnings = parseJNDI(req.Data)
+		destinations, brokerURL, messageVPN, username, password, warnings = parseJNDI(req.Data)
 		provider, protocol = "solace", "jms-solace"
 		warnings = append(warnings, "JNDI bindings do not record the JMS provider; the script defaults to jms-solace (executable via -tags jms_solace_real). Confirm the provider/broker before running")
 	default:
@@ -185,12 +188,15 @@ func Convert(req ConvertRequest) (*ConvertResult, error) {
 				Provider:    provider,
 				BrokerURL:   brokerURL,
 				MessageVPN:  messageVPN,
+				Username:    username,
+				Password:    password,
 				Destination: destinations[0].Name,
 				Mock:        true,
 			},
 		},
 		Actions: actions,
 	}
+	convertutil.SanitizeScriptDSLTemplates(script, nil)
 
 	return &ConvertResult{
 		Script:   script,
@@ -254,7 +260,7 @@ func mqscJoinContinuations(text string) string {
 	return strings.Join(out, "\n")
 }
 
-func parseJNDI(data []byte) (dests []Destination, brokerURL, messageVPN string, warnings []string) {
+func parseJNDI(data []byte) (dests []Destination, brokerURL, messageVPN, username, password string, warnings []string) {
 	for _, raw := range strings.Split(string(data), "\n") {
 		line := strings.TrimSpace(raw)
 		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "!") {
@@ -270,6 +276,14 @@ func parseJNDI(data []byte) (dests []Destination, brokerURL, messageVPN string, 
 			dests = append(dests, Destination{Name: value, Kind: "queue"})
 		case strings.HasPrefix(lowerKey, "topic."):
 			dests = append(dests, Destination{Name: value, Kind: "topic"})
+		case lowerKey == "java.naming.security.principal":
+			if username == "" {
+				username = value
+			}
+		case lowerKey == "java.naming.security.credentials":
+			if password == "" {
+				password = value
+			}
 		case strings.HasPrefix(lowerKey, "connectionfactory") && strings.Contains(value, "://"):
 			// Only accept a URI-shaped value, and prefer the first one — an
 			// enumeration line like `connectionFactory.names = cf1` is skipped.
@@ -284,7 +298,7 @@ func parseJNDI(data []byte) (dests []Destination, brokerURL, messageVPN string, 
 			}
 		}
 	}
-	return dests, brokerURL, messageVPN, warnings
+	return dests, brokerURL, messageVPN, username, password, warnings
 }
 
 // splitProperty splits a Java .properties line on the first '=' or ':' separator

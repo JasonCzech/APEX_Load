@@ -52,11 +52,17 @@ func NewMemoryDraftPorts(owner *importreview.MemoryDraftOwner, scope DraftScopeR
 			}
 		}
 		if !opts.SkipDraftAttestation {
-			for _, script := range importreview.UniqueImportDraftScripts(importreview.ImportDraftScriptPointers(opts.Script, opts.Scripts)) {
+			allScripts := importreview.UniqueImportDraftScripts(importreview.ImportDraftScriptPointers(opts.Script, opts.Scripts))
+			for _, script := range allScripts {
 				expiry, projection, err := owner.Attach(script, importreview.DraftAttachOptions{Scope: scope(r, script), DisableExpiration: opts.DisableDraftExpiration, RecordingSessionID: opts.RecordingSessionID, RecordingSnapshotDigest: opts.RecordingSnapshotDigest, RecordingBaseline: opts.RecordingBaseline, TextMemo: opts.TextMemo})
 				if err != nil {
 					rollback()
-					return map[string]any{draftResponseFailureKey: true, draftResponseFailureErrorKey: err}
+					for _, candidate := range allScripts {
+						importreview.StripImportDraftAttestation(candidate)
+					}
+					opts.DraftAttestationExpiresAt = time.Time{}
+					opts.AttestedProjections = nil
+					break
 				}
 				if importreview.ImportDraftAttestationToken(script) != "" {
 					attached = append(attached, script)
@@ -83,11 +89,10 @@ func NewMemoryDraftPorts(owner *importreview.MemoryDraftOwner, scope DraftScopeR
 		if !importreview.IsCredentialPreservingImport(script) {
 			return nil, nil
 		}
-		fingerprint, err := importreview.FingerprintImportDraftCredentials(script)
-		if err != nil {
+		if _, err := importreview.FingerprintImportDraftCredentials(script); err != nil {
 			return nil, err
 		}
-		if !fingerprint.HasRawCredentials && importreview.ImportDraftAttestationToken(script) == "" {
+		if importreview.ImportDraftAttestationToken(script) == "" {
 			return nil, nil
 		}
 		claim, err := owner.Claim(scope(r, script), script, nil)

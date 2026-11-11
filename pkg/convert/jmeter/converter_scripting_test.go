@@ -3,6 +3,8 @@ package jmeter
 import (
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestTranslateJSR223Script(t *testing.T) {
@@ -126,6 +128,9 @@ func TestConvertJMXTranslatesScriptAndPreservesArbitrary(t *testing.T) {
 	if script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
 		t.Fatalf("review placeholder metadata = %#v", script.Actions[0].Metadata)
 	}
+	if !strings.Contains(script.Actions[0].Value, `def token = api.fetch(); vars.put("kept", token)`) {
+		t.Fatalf("review_required action Value omitted JSR223 source text: %q", script.Actions[0].Value)
+	}
 	preserved, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
 	if len(preserved) == 0 || !strings.Contains(strings.Join(preserved, "\n"), `def token = api.fetch(); vars.put("kept", token)`) {
 		t.Fatalf("expected exact gated JSR223 source, got %#v", script.Metadata.Import.Preserved["jsr223_sources"])
@@ -176,5 +181,117 @@ func TestConvertJMXListenersArePreservedNotBlocked(t *testing.T) {
 		if item.Element == "JMeter ResultCollector" && string(item.Severity) != "info" {
 			t.Fatalf("ResultCollector diagnostic severity = %q, want info", item.Severity)
 		}
+	}
+}
+
+func TestConvertJMXPreservesScriptSamplerWithFileTemplateWithoutValidationFailure(t *testing.T) {
+	rawGroovy := `vars.put("a", "1")` + "\n" + `def tpl = "{{file.template_var}}"; api.render(tpl)`
+	jmx := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <JSR223Sampler testname="RenderTpl" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">` + rawGroovy + `</stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "tpl.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on script sampler with {{file.template_var}}, got %v", issues)
+	}
+	if got, _ := script.Actions[0].Metadata["source_script"].(string); got != rawGroovy {
+		t.Fatalf("action.Metadata[source_script] = %q, want verbatim %q", got, rawGroovy)
+	}
+	preserved, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
+	if len(preserved) == 0 || !strings.Contains(preserved[0], `{{file.template_var}}`) {
+		t.Fatalf("expected verbatim {{file.template_var}} in import.preserved, got %#v", preserved)
+	}
+}
+
+func TestConvertJMXSafeSubsetAndRunTemplateScriptSamplersPassDSLValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		rawGroovy string
+	}{
+		{
+			name:      "safe_subset_undeclared_file_template",
+			rawGroovy: `vars.put("tpl", "{{file.template_var}}")`,
+		},
+		{
+			name:      "safe_subset_unsupported_run_template",
+			rawGroovy: `log.info("{{run.name}}")`,
+		},
+		{
+			name:      "unrecognized_run_id_and_run_name_in_metadata",
+			rawGroovy: `def ctx = "{{run.id}}:{{run.name}}:{{file.template_var}}"; customClient.send(ctx)`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			jmx := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <JSR223Sampler testname="ScriptStep" enabled="true">
+          <stringProp name="scriptLanguage">groovy</stringProp>
+          <stringProp name="script">` + tc.rawGroovy + `</stringProp>
+        </JSR223Sampler>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+			result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "script.jmx"})
+			if err != nil {
+				t.Fatalf("ConvertJMX returned error: %v", err)
+			}
+			script := result.Scripts[0]
+			if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+				t.Fatalf("expected zero ValidateScriptIssues, got %v (actions=%#v)", issues, script.Actions)
+			}
+		})
+	}
+
+	jmxPlanTemplates := `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan {{run.id}} {{run.name}}" enabled="true">
+      <stringProp name="TestPlan.comments">Comment {{run.id}} {{run.name}}</stringProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Users {{run.id}}" enabled="true"/>
+      <hashTree>
+        <HTTPSamplerProxy testname="Req {{run.id}}" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.test</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/items</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+	resPlan, err := ConvertJMX([]byte(jmxPlanTemplates), ConvertOptions{FileName: "plan_{{run.id}}.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX plan templates: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(resPlan.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on plan templates, got %v", issues)
 	}
 }

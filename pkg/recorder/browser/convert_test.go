@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -348,6 +349,56 @@ func TestConvertMaskedFillEmitsEnvPlaceholder(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("warnings = %v, want masked-secret guidance", result.Warnings)
+	}
+}
+
+func TestConvertPreservesUnmaskedSensitiveFillsByDefaultAndScrubsOnOptIn(t *testing.T) {
+	passwordInput := &selector.ElementMetadata{Tag: "input", Name: "user_password", Type: "password", CSSPath: "form > input[type=password]"}
+	otpInput := &selector.ElementMetadata{Tag: "input", ID: "smc", Attributes: map[string]string{"autocomplete": "one-time-code"}, CSSPath: "#smc"}
+	session := &Session{ID: "rec_literal_pw", StartURL: "https://shop.example/login", StartedAt: ts(0)}
+	session.appendStep(Step{Kind: StepFill, Value: "S3cretLiteral!", Masked: false, Timestamp: ts(1000), Element: passwordInput, Candidates: selector.Candidates(*passwordInput)})
+	session.appendStep(Step{Kind: StepFill, Value: "482913", Masked: false, URL: "https://shop.example/_ui/identity/verification/method/SmsVerificationFinish", Timestamp: ts(2000), Element: otpInput, Candidates: selector.Candidates(*otpInput)})
+
+	// Default (ScrubSensitive=false): literal password and OTP values stay intact in DSL.
+	defaultRes := Convert(session, ConvertOptions{})
+	if len(defaultRes.Script.Actions) != 3 {
+		t.Fatalf("actions = %+v, want navigate + 2 fills", actionTypes(defaultRes.Script.Actions))
+	}
+	pwFill := defaultRes.Script.Actions[1]
+	otpFill := defaultRes.Script.Actions[2]
+	if pwFill.Value != "S3cretLiteral!" {
+		t.Fatalf("default password fill value = %q, want literal S3cretLiteral!", pwFill.Value)
+	}
+	if pwFill.Metadata["source_masked_secret"] == true {
+		t.Fatalf("default password fill set source_masked_secret: %+v", pwFill.Metadata)
+	}
+	if otpFill.Value != "482913" {
+		t.Fatalf("default OTP fill value = %q, want literal 482913", otpFill.Value)
+	}
+	if otpFill.Metadata["source_masked_secret"] == true {
+		t.Fatalf("default OTP fill set source_masked_secret: %+v", otpFill.Metadata)
+	}
+
+	// Also verify a step with Masked=true and non-empty Value preserves Value when !ScrubSensitive.
+	withValue := &Session{ID: "rec_masked_nonempty", StartURL: "https://shop.example/login", StartedAt: ts(0)}
+	withValue.appendStep(Step{Kind: StepFill, Value: "KeptValue!", Masked: true, Timestamp: ts(1000), Element: passwordInput, Candidates: selector.Candidates(*passwordInput)})
+	if got := Convert(withValue, ConvertOptions{}).Script.Actions[1].Value; got != "KeptValue!" {
+		t.Fatalf("Masked=true with non-empty Value under default options = %q, want KeptValue!", got)
+	}
+
+	// With ScrubSensitive=true (directly or via Profile), both password and OTP rewrite to {{env.*}}.
+	scrubbedRes := Convert(session, ConvertOptions{Profile: &recordingprofile.Profile{ID: "strict", Name: "Strict", ScrubSensitive: true}})
+	if got := scrubbedRes.Script.Actions[1].Value; got != "{{env.USER_PW}}" {
+		t.Fatalf("scrub_sensitive password fill = %q, want {{env.USER_PW}}", got)
+	}
+	if scrubbedRes.Script.Actions[1].Metadata["source_masked_secret"] != true {
+		t.Fatalf("scrub_sensitive password fill missing source_masked_secret: %+v", scrubbedRes.Script.Actions[1].Metadata)
+	}
+	if got := scrubbedRes.Script.Actions[2].Value; !strings.HasPrefix(got, "{{env.") {
+		t.Fatalf("scrub_sensitive OTP fill = %q, want {{env.*}}", got)
+	}
+	if scrubbedRes.Script.Actions[2].Metadata["source_masked_secret"] != true || scrubbedRes.Script.Actions[2].Metadata["source_one_time_code"] != true {
+		t.Fatalf("scrub_sensitive OTP metadata = %+v", scrubbedRes.Script.Actions[2].Metadata)
 	}
 }
 

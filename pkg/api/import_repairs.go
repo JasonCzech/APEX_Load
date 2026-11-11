@@ -535,22 +535,18 @@ func hasExecutionCode(metadata map[string]any, code string) bool {
 }
 
 func repairDisclosure(script *dsl.Script) *dsl.Script {
-	value := credentialPreservingImportResponseValue(script)
-	b, _ := json.Marshal(value)
-	defer clear(b)
-	var projected dsl.Script
-	_ = json.Unmarshal(b, &projected)
-	_ = dslwalk.Walk(&projected, func(ref dslwalk.SurfaceRef) error {
-		if dslwalk.MetadataBool(ref.Metadata(), "restored_body_protected") {
-			if ref.Action != nil {
-				ref.Action.Body = "[REDACTED]"
-			} else if ref.Request != nil {
-				ref.Request["body"] = "[REDACTED]"
-			}
-		}
+	cloned := cloneScriptDefinition(script)
+	if cloned == nil {
 		return nil
-	})
-	return &projected
+	}
+	if cloned.Metadata != nil && cloned.Metadata.Import != nil && strings.TrimSpace(cloned.Metadata.Import.Source) != "" {
+		if cloned.Metadata.Import.Preserved == nil {
+			cloned.Metadata.Import.Preserved = map[string]any{}
+		}
+		cloned.Metadata.Import.Preserved[dsl.ImportPreservedCredentialPolicyKey] = dsl.ImportPreservedCredentialPolicyPreserve
+	}
+	stripProtectedImportCredentialMetadata(cloned)
+	return cloned
 }
 
 // retainIgnoredProxyDisclosureSource keeps disclosure protection independent of
@@ -928,6 +924,7 @@ func bindJMeterMessagingCredentials(script *dsl.Script, req ImportRepairRequest)
 			return errors.New("Select valid Kafka client ID and client-secret references")
 		}
 		script.Config.Kafka.OAuth.ClientID = "{{secret." + op.ClientIDSecret + "}}"
+		script.Config.Kafka.OAuth.ClientSecret = ""
 		script.Config.Kafka.OAuth.ClientSecretRef = "{{secret." + op.SecretName + "}}"
 	case "bind_eventhubs_credentials":
 		if script.Protocol != "eventhubs" || !logicalSecretNamePattern.MatchString(op.SecretName) {

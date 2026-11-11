@@ -77,10 +77,8 @@ func validateJavaVuserScriptIssuesWithPolicy(script *Script, allowPreservedCrede
 			issues = append(issues, fmt.Sprintf("config.java_vuser.classpath[%d] is invalid (%s)", issue.Index, issue.Category))
 		}
 	}
-	vmParameterIssues := javarunner.ValidateVMParameters(cfg.AdditionalVMParameters)
-	if allowPreservedCredentials {
-		vmParameterIssues = javarunner.ValidateVMParametersForExecution(cfg.AdditionalVMParameters)
-	}
+	_ = allowPreservedCredentials
+	vmParameterIssues := javarunner.ValidateVMParametersForExecution(cfg.AdditionalVMParameters)
 	for _, issue := range vmParameterIssues {
 		if issue.Index < 0 {
 			issues = append(issues, fmt.Sprintf("config.java_vuser.additional_vm_parameters is invalid (%s)", issue.Category))

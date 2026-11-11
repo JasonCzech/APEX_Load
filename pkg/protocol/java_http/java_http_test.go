@@ -479,3 +479,53 @@ func TestJavaHTTPClearCacheAndCookiesNilInnerAreSafe(t *testing.T) {
 		t.Fatalf("ClearCookies on uninitialized protocol: %v", err)
 	}
 }
+
+func TestJavaHTTPRedactsBase64SerializedPayloadsContainingRuntimeSecretsAfterExtraction(t *testing.T) {
+	const embeddedSecret = "synth-java-bin-secret-9201"
+	reqRaw := append([]byte{0xac, 0xed, 0x00, 0x05}, []byte("req:"+embeddedSecret)...)
+	respRaw := append([]byte{0xac, 0xed, 0x00, 0x05}, []byte("session=sess-442;pwd="+embeddedSecret)...)
+	reqB64 := base64.StdEncoding.EncodeToString(reqRaw)
+	respB64 := base64.StdEncoding.EncodeToString(respRaw)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/x-java-serialized-object")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write(respRaw)
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	p.SetRuntimeTextRedactor(func(s string) string {
+		return strings.ReplaceAll(s, embeddedSecret, "[REDACTED]")
+	})
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":                   ts.URL,
+		"java_http_codec":            supportedCodec,
+		"java_http_body_encoding":    "base64",
+		"java_http_response_mapping": map[string]any{"session_id": `session=(sess-[0-9]+)`},
+	}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer func() { _ = p.Teardown(context.Background()) }()
+
+	res, err := p.Execute(context.Background(), &protocol.Action{
+		Name:   "invoke-java",
+		Method: "POST",
+		Target: "/invoker",
+		Body:   []byte(reqB64),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if got := res.Extractions["session_id"]; got != "sess-442" {
+		t.Fatalf("response_mapping extraction = %q, want sess-442 before binary redaction", got)
+	}
+	if res.ResponseBody != "[REDACTED]" || strings.Contains(res.ResponseBody, respB64) {
+		t.Fatalf("ResponseBody retained secret-bearing base64 stream: %q", res.ResponseBody)
+	}
+	if res.Snapshot != nil {
+		if strings.Contains(res.Snapshot.RequestBody, reqB64) || strings.Contains(res.Snapshot.ResponseBody, respB64) {
+			t.Fatalf("Snapshot retained secret-bearing base64 stream: req=%q resp=%q", res.Snapshot.RequestBody, res.Snapshot.ResponseBody)
+		}
+	}
+}

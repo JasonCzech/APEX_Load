@@ -182,3 +182,40 @@ func TestProjectMasksConnectionStringUnderMessagingIdentifierKeys(t *testing.T) 
 		}
 	}
 }
+
+func TestProjectMasksKafkaOAuthLiteralClientSecret(t *testing.T) {
+	const (
+		tokenURL      = "https://login.example.test/tenant-0001/oauth2/v2.0/token"
+		literalSecret = "fixture-KafkaOAuthClientSecret-0123456789"
+	)
+	script := &dsl.Script{
+		ID: "kafka-oauth", Name: "Kafka OAuth", Version: "1", Protocol: "kafka",
+		Config: dsl.ScriptConfig{
+			Kafka: dsl.KafkaConfig{
+				OAuth: &dsl.KafkaOAuthConfig{
+					Mode:         "client_credentials",
+					TokenURL:     tokenURL,
+					ClientID:     "kafka-client-id",
+					ClientSecret: literalSecret,
+				},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name: "produce", Type: "kafka_produce", Target: "orders",
+			Params: map[string]any{"echo": "secret=" + literalSecret},
+		}},
+	}
+	projected, err := Project(script)
+	if err != nil {
+		t.Fatalf("Project: %v", err)
+	}
+	if got := projected.Config.Kafka.OAuth.ClientSecret; got != credential.Redacted {
+		t.Fatalf("config.kafka.oauth.client_secret = %q, want %q", got, credential.Redacted)
+	}
+	if got := projected.Config.Kafka.OAuth.TokenURL; got != tokenURL {
+		t.Fatalf("config.kafka.oauth.token_url = %q, want %q", got, tokenURL)
+	}
+	if got, _ := projected.Actions[0].Params["echo"].(string); strings.Contains(got, literalSecret) {
+		t.Fatalf("params.echo = %q disclosed literal client_secret", got)
+	}
+}

@@ -741,6 +741,9 @@ func appendKafkaConfig(cfg map[string]any, script *dsl.Script) {
 		cfg["kafka_oauth_token_url"] = o.TokenURL
 		cfg["kafka_oauth_client_id"] = o.ClientID
 		cfg["kafka_oauth_client_secret"] = o.ClientSecretRef
+		if strings.TrimSpace(o.ClientSecretRef) == "" && o.ClientSecret != "" {
+			cfg["kafka_oauth_client_secret_literal"] = o.ClientSecret
+		}
 		cfg["kafka_oauth_client_scope"] = o.Scope
 		cfg["kafka_oauth_authentication_method"] = o.AuthenticationMethod
 	}

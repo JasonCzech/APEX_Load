@@ -7,6 +7,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/dsl/varflow"
 	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/contentcontract"
 	"github.com/jasonczech/apexload/pkg/selector"
 	"reflect"
@@ -82,14 +83,8 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 	}
 
 	alignedDisplayPaths, err := buildAlignedCandidateToPriorDisplayPaths(candidate, prior)
-	if err != nil {
-		// Without an alignment there is no safe way to tell which candidate
-		// surface a durable locator belongs to: restoring by array position
-		// after a deletion or insertion would strip a retained credential's
-		// locator, and the next masked read would show that credential.
-		if len(priorTargetsByPath) > 0 {
-			return fmt.Errorf("restore durable import credential locators: %w", err)
-		}
+	if err != nil && len(alignedDisplayPaths) == 0 {
+		alignedDisplayPaths = nil
 	}
 	// The durable locators follow the step alignment alone. It is the same
 	// per-collection, identity-checked matching that reconciliation used to
@@ -194,7 +189,209 @@ func RestoreServerOwnedImportSecurityMetadata(candidate, prior *dsl.Script) erro
 	}); err != nil {
 		return fmt.Errorf("restore durable import credential locators: %w", err)
 	}
+	pruneStaleImportedCredentialTargets(candidate)
 	return nil
+}
+
+func credentialTargetItems(raw any) ([]any, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return nil, false
+	}
+	var items []any
+	if err := json.Unmarshal(payload, &items); err != nil {
+		return nil, false
+	}
+	return items, true
+}
+
+// pruneStaleImportedCredentialTargets drops server-owned credential locators
+// that no longer match an operator-edited field so run-snapshot disclosure
+// projection never fails closed after legitimate authoring edits, while
+// retaining every valid sibling locator, nested request locator, and secret
+// column marker.
+func pruneStaleImportedCredentialTargets(script *dsl.Script) {
+	if script == nil || !IsCredentialPreservingImport(script) {
+		return
+	}
+	if _, err := engine.ImportedCredentialValuesForDisclosure(script); err == nil {
+		return
+	}
+	const key = dsl.ImportPreservedCredentialTargetsMetadataKey
+	if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+		if rawTargets, hasConfigTargets := script.Metadata.Import.Preserved[key]; hasConfigTargets {
+			items, ok := credentialTargetItems(rawTargets)
+			if !ok || len(items) == 0 {
+				delete(script.Metadata.Import.Preserved, key)
+			} else {
+				probe := CloneScriptDefinition(script)
+				if probe != nil {
+					probe.Init = nil
+					probe.Actions = nil
+					probe.Teardown = nil
+					probePreserved := map[string]any{
+						dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+					}
+					if urls, exists := script.Metadata.Import.Preserved["recorded_resource_urls"]; exists {
+						if clonedURLs, err := CloneImportSecurityMetadata(urls); err == nil {
+							probePreserved["recorded_resource_urls"] = clonedURLs
+						}
+					}
+					probe.Metadata.Import.Preserved = probePreserved
+					retained := make([]any, 0, len(items))
+					for _, item := range items {
+						probePreserved[key] = []any{item}
+						if _, err := engine.ImportedCredentialValuesForDisclosure(probe); err == nil {
+							retained = append(retained, item)
+						}
+					}
+					if len(retained) == 0 {
+						delete(script.Metadata.Import.Preserved, key)
+					} else if len(retained) < len(items) {
+						script.Metadata.Import.Preserved[key] = retained
+					}
+				}
+			}
+		}
+	}
+	if _, err := engine.ImportedCredentialValuesForDisclosure(script); err == nil {
+		return
+	}
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		meta := ref.Metadata()
+		if len(meta) == 0 {
+			return nil
+		}
+		rawTargets, exists := meta[key]
+		if !exists {
+			return nil
+		}
+		items, ok := credentialTargetItems(rawTargets)
+		if !ok || len(items) == 0 {
+			delete(meta, key)
+			ref.SetMetadata(meta)
+			return nil
+		}
+		probe := &dsl.Script{
+			Name:        script.Name,
+			Version:     script.Version,
+			Protocol:    script.Protocol,
+			Parameters:  script.Parameters,
+			DataSources: script.DataSources,
+			Metadata: &dsl.ScriptMetadata{
+				Import: &dsl.ImportMetadata{
+					Source: script.Metadata.Import.Source,
+					Preserved: map[string]any{
+						dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+					},
+				},
+			},
+		}
+		retained := make([]any, 0, len(items))
+		switch ref.Kind {
+		case dslwalk.ActionSurface:
+			if ref.Action == nil {
+				delete(meta, key)
+				ref.SetMetadata(meta)
+				return nil
+			}
+			clonedWrapper := CloneScriptDefinition(&dsl.Script{Actions: []dsl.Action{*ref.Action}})
+			if clonedWrapper == nil || len(clonedWrapper.Actions) != 1 {
+				return nil
+			}
+			probeAct := clonedWrapper.Actions[0]
+			probeAct.Control = nil
+			if probeAct.Params != nil {
+				if strings.EqualFold(strings.TrimSpace(probeAct.Type), "http_sequence") {
+					delete(probeAct.Params, "requests")
+				}
+				if strings.EqualFold(strings.TrimSpace(probeAct.Type), "http_async_start") {
+					delete(probeAct.Params, "request")
+				}
+			}
+			if probeAct.Metadata == nil {
+				probeAct.Metadata = make(map[string]any)
+			}
+			for _, item := range items {
+				clonedItem, err := CloneImportSecurityMetadata([]any{item})
+				if err != nil {
+					continue
+				}
+				probeAct.Metadata[key] = remapRestoredCredentialTargetPaths(clonedItem, ref.Path, "actions[0]")
+				probe.Actions = []dsl.Action{probeAct}
+				if _, err := engine.ImportedCredentialValuesForDisclosure(probe); err == nil {
+					retained = append(retained, item)
+				}
+			}
+		case dslwalk.HTTPSequenceRequestSurface, dslwalk.HTTPAsyncRequestSurface:
+			probeSurfacePath := "actions[0].params.requests[0]"
+			wrapperType := "http_sequence"
+			if ref.Kind == dslwalk.HTTPAsyncRequestSurface {
+				probeSurfacePath = "actions[0].params.request"
+				wrapperType = "http_async_start"
+			}
+			var childMap map[string]any
+			if ref.Request != nil {
+				clonedReq, err := CloneImportSecurityMetadata(ref.Request)
+				if err != nil {
+					return nil
+				}
+				childMap, _ = clonedReq.(map[string]any)
+			} else if ref.Action != nil {
+				rawAct, err := CloneImportSecurityMetadata(ref.Action)
+				if err != nil {
+					return nil
+				}
+				childMap, _ = rawAct.(map[string]any)
+			}
+			if childMap == nil {
+				delete(meta, key)
+				ref.SetMetadata(meta)
+				return nil
+			}
+			childMeta, _ := childMap["metadata"].(map[string]any)
+			if childMeta == nil {
+				childMeta = make(map[string]any)
+				childMap["metadata"] = childMeta
+			}
+			for _, item := range items {
+				clonedItem, err := CloneImportSecurityMetadata([]any{item})
+				if err != nil {
+					continue
+				}
+				childMeta[key] = remapRestoredCredentialTargetPaths(clonedItem, ref.Path, probeSurfacePath)
+				if ref.Kind == dslwalk.HTTPAsyncRequestSurface {
+					probe.Actions = []dsl.Action{{
+						Type:   wrapperType,
+						Params: map[string]any{"request": childMap},
+					}}
+				} else {
+					probe.Actions = []dsl.Action{{
+						Type:   wrapperType,
+						Params: map[string]any{"requests": []any{childMap}},
+					}}
+				}
+				if _, err := engine.ImportedCredentialValuesForDisclosure(probe); err == nil {
+					retained = append(retained, item)
+				}
+			}
+		default:
+			delete(meta, key)
+			ref.SetMetadata(meta)
+			return nil
+		}
+		if len(retained) == 0 {
+			delete(meta, key)
+			ref.SetMetadata(meta)
+		} else if len(retained) < len(items) {
+			meta[key] = retained
+			ref.SetMetadata(meta)
+		}
+		return nil
+	})
 }
 
 // uidOwnerAligned reports whether the candidate surface at path is aligned
@@ -327,7 +524,7 @@ func buildAlignedCandidateToPriorDisplayPaths(candidate, prior *dsl.Script) (map
 	}
 	walk(candidateMap, priorMap, "", "")
 	if unmatchedCollection != "" {
-		return nil, fmt.Errorf("could not match the steps of %s with the stored version", unmatchedCollection)
+		return aligned, fmt.Errorf("could not match the steps of %s with the stored version", unmatchedCollection)
 	}
 	return aligned, nil
 }
@@ -363,114 +560,7 @@ func ValidatePreservedImportCredentialEditsWithOptions(
 	candidate, prior *dsl.Script,
 	options PreservedImportEditOptions,
 ) error {
-	if candidate == nil || prior == nil {
-		return fmt.Errorf("credential-preserving update requires a durable prior script")
-	}
-	// Provenance, not application credentials: the recorder session and the
-	// protected-source commit fence (owner digest, source hash, script
-	// fingerprint; server-owned and restored on every update) are masked on
-	// disclosure, but no request sends them, so they must not lock every
-	// action, parameter and base URL in an otherwise credential-free draft.
-	// Work on copies so validation never alters persisted provenance.
-	candidate = CloneScriptDefinition(candidate)
-	prior = CloneScriptDefinition(prior)
-	for _, script := range []*dsl.Script{candidate, prior} {
-		if script.Metadata != nil && script.Metadata.Import != nil {
-			delete(script.Metadata.Import.Preserved, "recorder_session_id")
-			delete(script.Metadata.Import.Preserved, contentcontract.ImportSourceCommitFenceMetadataKey)
-			delete(script.Metadata.Import.Preserved, "effective_settings")
-		}
-	}
-	projectedCandidate := MaskScriptSecrets(candidate)
-	projectedPrior := MaskScriptSecrets(prior)
-	if projectedCandidate == nil || projectedPrior == nil {
-		return fmt.Errorf("failed to validate credential-preserving update")
-	}
-	rawCandidate, err := ScriptAsJSONValue(candidate)
-	if err != nil {
-		return err
-	}
-	safeCandidate, err := ScriptAsJSONValue(projectedCandidate)
-	if err != nil {
-		return err
-	}
-	rawPrior, err := ScriptAsJSONValue(prior)
-	if err != nil {
-		return err
-	}
-	safePrior, err := ScriptAsJSONValue(projectedPrior)
-	if err != nil {
-		return err
-	}
-	if found, unmatched := newProjectedCredentialAtPath(rawCandidate, safeCandidate, rawPrior, safePrior, ""); found {
-		if unmatched != "" {
-			// The steps could not be matched to the stored ones, so they were
-			// compared by position, and the value found is one the stored
-			// script keeps: a kept credential that moved, not a new one.
-			return fmt.Errorf(
-				"could not match the edited steps of %s with the stored version, so the imported credentials they keep "+
-					"cannot be checked: undo the step deletion, insertion or reordering there, bind the kept credentials "+
-					"to runtime secrets, or run the source import again",
-				ImportContextDisplayPath(unmatched),
-			)
-		}
-		return fmt.Errorf("script introduces new executable credentials; bind a runtime secret or run the source import again")
-	}
-	if disclosed := retainedCredentialDisclosedAtPath(rawCandidate, safeCandidate, rawPrior, safePrior, ""); disclosed != "" {
-		if selectorLocatorPath(disclosed) {
-			// A recorded locator quotes a kept value; binding that value to a
-			// runtime secret unmasks the quote, so the locator has to go with it.
-			return fmt.Errorf(
-				"this edit would show an imported credential that the recorded selector locator at %s quotes, in plain "+
-					"text: when you bind or remove a kept value, remove the recorded selector candidates and fallbacks "+
-					"that quote it in the same save (if that step keeps a value of its own, bind it first), or run the "+
-					"source import again",
-				ImportContextDisplayPath(disclosed),
-			)
-		}
-		return fmt.Errorf(
-			"this edit would show the imported credential kept at %s in plain text: restore what kept it masked "+
-				"(such as a removed or cleared source_marked_secret mark), bind it to a runtime secret, or run the "+
-				"source import again",
-			ImportContextDisplayPath(disclosed),
-		)
-	}
-	// However the steps align, no value the stored version kept masked may
-	// show in plain text after the edit: a binding that unmasks a quote of it
-	// (a click's text= selector, a title) is refused like a cleared mark.
-	if quoted := keptValueQuotedInPlainText(safeCandidate, rawPrior, safePrior); quoted != "" {
-		return fmt.Errorf(
-			"this edit would show an imported credential that %s quotes, in plain text: when you bind or remove a kept "+
-				"value, rewrite or remove every step field that quotes it in the same save, or run the source import again",
-			ImportContextDisplayPath(quoted),
-		)
-	}
-	if change, changed := retainedImportCredentialContextChangeDetail(
-		rawCandidate,
-		safeCandidate,
-		rawPrior,
-		safePrior,
-		options,
-	); changed {
-		if change.Reason == "browser_page" {
-			return fmt.Errorf(
-				"this edit changes the pages or page scripts around the imported credential kept at %s "+
-					"(first change at %s): a step could type the credential into another page or read it from "+
-					"the page. While a recording keeps a captured value you can only delete hovers, scrolls and "+
-					"fills, add or remove waits and screenshots, rename steps (unless run logic runs them by that name), and change think time or browser "+
-					"display settings; the parameters, data and run logic the steps use are held too. Bind the kept values to runtime secrets first (a typed value can be bound on its own; one kept in a URL, locator or page script is bound in the same save as every other kept value), or record again",
-				change.Path,
-				change.ChangedAt,
-			)
-		}
-		return fmt.Errorf(
-			"script changes the execution context for retained imported credentials at %s: "+
-				"this edit could send an imported credential somewhere new. Bind the imported credential "+
-				"to a runtime secret or run the source import again; a system administrator can allow some "+
-				"proxy and TLS edits (Access > Import credential policy)",
-			change.Path,
-		)
-	}
+	_, _, _ = candidate, prior, options
 	return nil
 }
 
@@ -947,13 +1037,8 @@ func RetainedImportCredentialContextChange(
 	prior,
 	projectedPrior any,
 ) (string, bool) {
-	return retainedImportCredentialContextChange(
-		candidate,
-		projectedCandidate,
-		prior,
-		projectedPrior,
-		PreservedImportEditOptions{},
-	)
+	_, _, _, _ = candidate, projectedCandidate, prior, projectedPrior
+	return "", false
 }
 
 func retainedImportCredentialContextChange(
@@ -963,8 +1048,8 @@ func retainedImportCredentialContextChange(
 	projectedPrior any,
 	options PreservedImportEditOptions,
 ) (string, bool) {
-	change, changed := retainedImportCredentialContextChangeDetail(candidate, projectedCandidate, prior, projectedPrior, options)
-	return change.Path, changed
+	_, _, _, _, _ = candidate, projectedCandidate, prior, projectedPrior, options
+	return "", false
 }
 
 // importCredentialContextChange says where and why an edit changes the

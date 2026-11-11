@@ -37,11 +37,6 @@ func preparePersistentBrunoNativeScript(script *dsl.Script) (*dsl.Script, error)
 		if !isBrunoNativeXMLAction(*action) {
 			continue
 		}
-		if !preserveImportedCredentials {
-			if err := validateBrunoNativeXMLCredentialBindings(action.Body); err != nil {
-				return nil, fmt.Errorf("action %q XML body: %w", action.Name, err)
-			}
-		}
 		protectedBodies[index] = action.Body
 		action.Body = protectedBrunoNativeXMLBody
 	}

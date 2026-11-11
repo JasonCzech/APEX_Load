@@ -850,7 +850,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	sourceLineIndex := sourceview.NewLineIndex(content)
 	requests := make([]requestimport.RequestInput, 0, len(actions))
-	projectedSecrets := make([]wsdlProjectedSecret, 0)
 	nameRegistry := credentialpolicy.NewNameRegistry()
 	for _, op := range actions {
 		target := soapActionTarget(baseURL)
@@ -862,7 +861,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		for _, item := range operationDiagnostics.Items() {
 			diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 		}
-		body, secrets, credentialFindings, preservedTargets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+		body, credentialFindings, preservedTargets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 			RequestKey: actionName,
 			SourcePath: sourceFileName,
 			Pointer:    sourcePointer + "/body",
@@ -871,7 +870,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("project WSDL operation %q credentials: %w", op.Name, err)
 		}
-		projectedSecrets = append(projectedSecrets, secrets...)
 
 		metadata := map[string]any{
 			"wsdl_operation": op.Name,
@@ -897,10 +895,6 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		if len(executionFindings) > 0 {
 			metadata["execution_blocker"] = "import_review_required"
 			metadata["import_review"] = wsdlImportReviewMetadata(executionFindings, sourceFileName, sourcePointer)
-		}
-		requirements := make([]credentialpolicy.Requirement, 0, len(secrets))
-		for _, secret := range secrets {
-			requirements = append(requirements, secret.Requirement)
 		}
 		requests = append(requests, requestimport.RequestInput{
 			Phase: requestimport.PhaseActions,
@@ -933,8 +927,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 					BodyMode:  "generated",
 				},
 			},
-			Findings:     reviewFindings,
-			Requirements: requirements,
+			Findings: reviewFindings,
 		})
 		if op.SOAPAction != "" {
 			result.Stats.SOAPActionsDetected = append(result.Stats.SOAPActionsDetected, op.SOAPAction)
@@ -943,13 +936,28 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		result.Summary.Operations = append(result.Summary.Operations, op.Name)
 		result.Stats.ConvertedActions++
 	}
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
+	for i := range requests {
+		requests[i].Request.Key = convertutil.NeutralizeScriptMetadataString(requests[i].Request.Key)
+		requests[i].Request.Name = convertutil.NeutralizeScriptMetadataString(requests[i].Request.Name)
+		requests[i].Request.Target = convertutil.NeutralizeActionSurfaceString(requests[i].Request.Target, nil)
+		requests[i].Request.Body.Payload = []byte(convertutil.NeutralizeActionSurfaceString(string(requests[i].Request.Body.Payload), nil))
+		if len(requests[i].Request.Metadata) > 0 {
+			if m, ok := convertutil.NeutralizeActionMetadataValue(requests[i].Request.Metadata).(map[string]any); ok {
+				requests[i].Request.Metadata = m
+			}
+		}
+		if requests[i].Overlay.SOAP != nil {
+			requests[i].Overlay.SOAP.Action = convertutil.NeutralizeActionSurfaceString(requests[i].Overlay.SOAP.Action, nil)
+			requests[i].Overlay.SOAP.Operation = convertutil.NeutralizeActionSurfaceString(requests[i].Overlay.SOAP.Operation, nil)
+			requests[i].Overlay.SOAP.BodyMode = convertutil.NeutralizeActionSurfaceString(requests[i].Overlay.SOAP.BodyMode, nil)
+		}
+	}
 	draft, err := requestimport.Project(result.Script, requests, requestimport.DefaultProjectOptions())
 	if err != nil {
 		return nil, fmt.Errorf("finalize WSDL requests: %w", err)
 	}
-	finalized, err := draft.Finalize(requestimport.FinalizeOptions{
-		UnresolvedBindings: len(projectedSecrets),
-	})
+	finalized, err := draft.Finalize(requestimport.FinalizeOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("finalize WSDL script: %w", err)
 	}
@@ -966,18 +974,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	} else {
 		dsl.SetImportSourceIdentity(result.Script, req.Name, false, "")
 	}
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	result.Findings = finalized.Findings
 	for index := range finalized.Requirements {
 		requirement := &finalized.Requirements[index]
-		if requirement.Value != "" {
-			projectedSecrets = append(projectedSecrets, wsdlProjectedSecret{
-				Requirement: *requirement,
-				SourceValues: uniqueNonEmptyStrings(
-					requirement.Value,
-					decodeWSDLXMLScalar(requirement.Value),
-				),
-			})
-		}
 		requirement.Value = ""
 		requirement.SourceValueAvailable = false
 	}

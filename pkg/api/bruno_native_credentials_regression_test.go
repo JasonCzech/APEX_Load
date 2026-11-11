@@ -60,8 +60,9 @@ http:
 	}
 	created := decodeBrunoNativeBatchTestResponse(t, response)
 	responseBody := created.Scripts[0].Actions[0].Body
-	if strings.Contains(responseBody, "source-xml-variable-credential") {
-		t.Fatalf("commit response disclosed imported XML credential: %q", responseBody)
+	if responseBody != "<Envelope><password>source-xml-variable-credential</password></Envelope>" ||
+		strings.Contains(responseBody, "[REDACTED]") {
+		t.Fatalf("commit response XML body = %q, want unredacted imported XML body", responseBody)
 	}
 	stored, err := store.GetScript(candidate.PlannedScriptID)
 	if err != nil {

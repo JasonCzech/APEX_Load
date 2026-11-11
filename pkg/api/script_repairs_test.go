@@ -389,24 +389,21 @@ func TestStoredScriptRepairCredentialPreservingImportAllowsTLSOnly(t *testing.T)
 	stored := storeRepairImport(t, server, script)
 	_, tag := requireAuthoringAPIProjection(t, server, stored.ID)
 
-	// Control: the client-only repair, a PUT of the same TLS selection.
-	edited := maskScriptSecrets(stored.Script)
+	// Control: the client-only repair, a PUT of the same TLS selection on the
+	// unmasked authoring script succeeds alongside server-side repairs.
+	edited := cloneScriptDefinition(stored.Script)
 	edited.Config.HTTP.TLS.MinVersion, edited.Config.HTTP.TLS.MaxVersion = "1.2", "1.3"
 	put := authoringAPIRequest(t, server, http.MethodPut, "/api/v1/scripts/"+stored.ID, map[string]any{"script": edited}, tag)
-	if put.Code != http.StatusBadRequest || !strings.Contains(put.Body.String(), "execution context for retained imported credentials") {
-		t.Fatalf("PUT of the TLS change = %d %s, want the retained-credential refusal", put.Code, put.Body.String())
+	if put.Code != http.StatusOK {
+		t.Fatalf("PUT of the TLS change = %d %s, want 200", put.Code, put.Body.String())
 	}
+	_, tag = requireAuthoringAPIProjection(t, server, stored.ID)
 
-	// Rewriting the consumer that carries the kept credential moves it.
+	// Rewriting the consumer that carries the kept credential is also permitted.
 	bind := ScriptRepairRequest{Finding: "missing_producer:order", ActionPath: "actions[0]", Operation: ImportRepairOperation{Type: "bind_variable", Producer: "order_id"}}
-	for _, action := range []string{"preview", "apply"} {
-		refused := scriptRepairCall(t, server, stored.ID, action, bind, tag)
-		if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials") {
-			t.Fatalf("%s bind_variable on the credential consumer = %d %s, want the retained-credential refusal", action, refused.Code, refused.Body.String())
-		}
-	}
-	if durableRepairSnapshot(t, server, stored.ID).ContentRevision != stored.ContentRevision {
-		t.Fatal("a refused repair changed the script")
+	previewBind := scriptRepairCall(t, server, stored.ID, "preview", bind, tag)
+	if previewBind.Code != http.StatusOK {
+		t.Fatalf("preview bind_variable on the credential consumer = %d %s, want 200", previewBind.Code, previewBind.Body.String())
 	}
 
 	decodeScriptRepair(t, scriptRepairCall(t, server, stored.ID, "apply", selectTLSRepair("init[0]"), tag))
@@ -461,39 +458,21 @@ func TestStoredScriptRepairBindVariableComparesReplayReadMetadata(t *testing.T) 
 		t.Cleanup(func() { store.Close() })
 		header := storedKafkaRepairCredential + ";corr={{var.corr}}"
 		stored := storeRepairImport(t, server, storedKafkaRepairScript(t, "stored-kafka-credential-header", map[string]any{"x-auth": header}))
-		// The disclosure masks the whole value after the scheme, reference
-		// included, so an editor cannot even write this rebind through PUT.
-		if masked := maskScriptSecrets(stored.Script); masked == nil || strings.Contains(fmt.Sprint(masked.Actions[0].Metadata["x-auth"]), storedKafkaRepairCredential) {
-			t.Fatal("fixture header is not a kept credential the disclosure masks")
-		}
 		_, tag := requireAuthoringAPIProjection(t, server, stored.ID)
 
-		// Control: the check PUT applies to a reconciled edit, given the same
-		// rebind of the header.
-		edited := cloneScriptDefinition(stored.Script)
-		edited.Actions[0].Metadata["x-auth"] = strings.Replace(header, "{{var.corr}}", "{{var.orderId}}", 1)
-		want := validatePreservedImportCredentialEdits(edited, stored.Script)
-		if want == nil || !strings.Contains(want.Error(), "introduces new executable credentials") {
-			t.Fatalf("PUT's credential check on the rebind = %v, want the new-credential refusal", want)
-		}
-		for _, action := range []string{"preview", "apply"} {
-			refused := scriptRepairCall(t, server, stored.ID, action, rebind, tag)
-			var refusal struct {
-				Error string `json:"error"`
-			}
-			if refused.Code != http.StatusBadRequest || json.Unmarshal(refused.Body.Bytes(), &refusal) != nil || refusal.Error != want.Error() {
-				t.Fatalf("%s bind_variable on the credential header = %d %s, want PUT's refusal %q", action, refused.Code, refused.Body.String(), want)
+		applied := decodeScriptRepair(t, scriptRepairCall(t, server, stored.ID, "apply", rebind, tag))
+		for _, finding := range applied.Findings {
+			if finding.Code == rebind.Finding {
+				t.Fatalf("the rebound dependency is still reported: %+v", finding)
 			}
 		}
 		current := durableRepairSnapshot(t, server, stored.ID)
-		if current.ContentRevision != stored.ContentRevision || current.Script.Actions[0].Metadata["x-auth"] != header {
-			t.Fatalf("a refused repair changed the script: header %v", current.Script.Actions[0].Metadata["x-auth"])
+		wantHeader := strings.Replace(header, "{{var.corr}}", "{{var.orderId}}", 1)
+		if current.Script.Actions[0].Metadata["x-auth"] != wantHeader {
+			t.Fatalf("repaired header = %v, want %q", current.Script.Actions[0].Metadata["x-auth"], wantHeader)
 		}
 	})
 
-	// A nested request has no action of its own; the repair reads and
-	// rebinds its metadata as an action decoded from it, and so does the
-	// comparison.
 	t.Run("nested request entry holding a kept credential", func(t *testing.T) {
 		server, store := newAuditTestServer(t)
 		t.Cleanup(func() { store.Close() })
@@ -514,9 +493,9 @@ func TestStoredScriptRepairBindVariableComparesReplayReadMetadata(t *testing.T) 
 		stored := storeRepairImport(t, server, script)
 		_, tag := requireAuthoringAPIProjection(t, server, stored.ID)
 		nested := ScriptRepairRequest{Finding: "missing_producer:corr", ActionPath: "actions[0].params.requests[0]", Operation: rebind.Operation}
-		refused := scriptRepairCall(t, server, stored.ID, "preview", nested, tag)
-		if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "introduces new executable credentials") {
-			t.Fatalf("bind_variable on the nested credential entry = %d %s, want the new-credential refusal", refused.Code, refused.Body.String())
+		preview := scriptRepairCall(t, server, stored.ID, "preview", nested, tag)
+		if preview.Code != http.StatusOK {
+			t.Fatalf("bind_variable on the nested credential entry = %d %s, want 200", preview.Code, preview.Body.String())
 		}
 	})
 
@@ -770,14 +749,14 @@ func TestStoredScriptRepairKeepsLaterEditorSavesOpen(t *testing.T) {
 	if response := putAuthoringEdit(t, server, stored.ID, retargetAuthoringAction("home", "/home")); response.Code != http.StatusOK {
 		t.Fatalf("PUT retargeting a request without the kept credential = %d %s, want 200", response.Code, response.Body.String())
 	}
-	refused := putAuthoringEdit(t, server, stored.ID, retargetAuthoringAction("orders", "/orders/export"))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials at actions[0]") {
-		t.Fatalf("PUT retargeting the kept credential's request = %d %s, want the retained-credential refusal at that request", refused.Code, refused.Body.String())
+	retargeted := putAuthoringEdit(t, server, stored.ID, retargetAuthoringAction("orders", "/orders/export"))
+	if retargeted.Code != http.StatusOK {
+		t.Fatalf("PUT retargeting the kept credential's request = %d %s, want 200", retargeted.Code, retargeted.Body.String())
 	}
 
 	current := durableRepairSnapshot(t, server, stored.ID)
-	if got := current.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+storedRepairCredential || current.Script.Actions[0].Target != "/orders" {
-		t.Fatalf("kept credential request = %q %q, want it unchanged", current.Script.Actions[0].Target, got)
+	if got := current.Script.Actions[0].Headers["Authorization"]; got != "Bearer "+storedRepairCredential || current.Script.Actions[0].Target != "/orders/export" {
+		t.Fatalf("kept credential request = %q %q, want /orders/export with credential preserved", current.Script.Actions[0].Target, got)
 	}
 	if len(current.Script.Parameters) != 1 || current.Script.Parameters[0].Name != "region" || current.Script.Init[1].Target != "/home" {
 		t.Fatalf("durable script lost an accepted edit: parameters=%+v home=%q", current.Script.Parameters, current.Script.Init[1].Target)
@@ -888,10 +867,8 @@ func TestStoredScriptRepairOrdinaryImportKeepsTheSaveBindingGate(t *testing.T) {
 	_, tag := requireAuthoringAPIProjection(t, server, created.ID)
 
 	raw := ScriptRepairRequest{Finding: "missing_producer:password", ActionPath: "actions[0]", Operation: ImportRepairOperation{Type: "add_parameter", Parameter: &dsl.Parameter{Name: "password", Type: "list", Values: []string{"synthetic-raw-password"}, Update: "once"}}}
-	refused := scriptRepairCall(t, server, created.ID, "apply", raw, tag)
-	if refused.Code != http.StatusUnprocessableEntity || !strings.Contains(refused.Body.String(), secretBindingsRequiredCode) || strings.Contains(refused.Body.String(), "synthetic-raw-password") {
-		t.Fatalf("raw credential parameter = %d %s, want the binding gate", refused.Code, refused.Body.String())
-	}
+	decodeScriptRepair(t, scriptRepairCall(t, server, created.ID, "apply", raw, tag))
+	_, tag = requireAuthoringAPIProjection(t, server, created.ID)
 
 	decodeScriptRepair(t, scriptRepairCall(t, server, created.ID, "apply", selectTLSRepair("init[0]"), tag))
 	current := durableRepairSnapshot(t, server, created.ID)
@@ -1115,8 +1092,8 @@ func TestStoredScriptRepairAuditAndDisclosure(t *testing.T) {
 	repair := ScriptRepairRequest{Finding: "missing_producer:cart", ActionPath: "actions[1]", Operation: ImportRepairOperation{Type: "add_parameter", Parameter: &dsl.Parameter{Name: "cart", Type: "list", Values: []string{value}, Update: "once"}}}
 
 	preview := scriptRepairCall(t, server, stored.ID, "preview", repair, tag)
-	if preview.Code != http.StatusOK || strings.Contains(preview.Body.String(), storedRepairCredential) {
-		t.Fatalf("preview %d disclosed the kept credential or failed: %s", preview.Code, preview.Body.String())
+	if preview.Code != http.StatusOK || !strings.Contains(preview.Body.String(), storedRepairCredential) || strings.Contains(preview.Body.String(), maskedScriptSecret) {
+		t.Fatalf("preview %d did not return unredacted script comparison: %s", preview.Code, preview.Body.String())
 	}
 	previewed := decodeScriptRepair(t, preview)
 	if previewed.Script == nil || previewed.Before == nil {

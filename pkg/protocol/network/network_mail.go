@@ -67,6 +67,9 @@ func (n *Network) runSMTP(ctx context.Context, action *protocol.Action) (*operat
 	}
 	lines = append(lines, mustReadResponse(tp, 250))
 	lines = append(lines, smtpCommandResponse(tp, "QUIT", 221))
+	for i := range lines {
+		lines[i] = n.redactActionText(action, lines[i])
+	}
 	payload := encodePayload(map[string]any{"protocol": "smtp", "target": target, "from": from, "to": to, "responses": compactLines(lines)})
 	return &operationResult{
 		payload:       payload,
@@ -113,6 +116,9 @@ func (n *Network) runPOP3(ctx context.Context, action *protocol.Action) (*operat
 	}
 	lines = append(lines, n.commandResponse(tp, command))
 	lines = append(lines, n.commandResponse(tp, "QUIT"))
+	for i := range lines {
+		lines[i] = n.redactActionText(action, lines[i])
+	}
 	payload := encodePayload(map[string]any{"protocol": "pop3", "target": target, "responses": compactLines(lines)})
 	return &operationResult{
 		payload:       payload,
@@ -175,6 +181,9 @@ func (n *Network) runIMAP(ctx context.Context, action *protocol.Action) (*operat
 	_ = tp.PrintfLine("%s LOGOUT", logoutTag)
 	logoutLines, _ := readIMAPTaggedResponse(tp, logoutTag)
 	lines = append(lines, logoutLines...)
+	for i := range lines {
+		lines[i] = n.redactActionText(action, lines[i])
+	}
 	payload := encodePayload(map[string]any{"protocol": "imap", "target": target, "responses": compactLines(lines)})
 	return &operationResult{
 		payload:       payload,

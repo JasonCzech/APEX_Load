@@ -485,12 +485,12 @@ describe('filterScriptPhaseActionRows', () => {
       expect(duplicateActionInList(original, 9)).toBe(original)
     })
 
-    it('strips import_action_uid, import_credential_targets, and [REDACTED] placeholders recursively from clones', () => {
+    it('strips import_action_uid and import_credential_targets recursively while preserving action values', () => {
       const imported: ScriptActionDefinition[] = [{
         name: 'Auth Block',
         type: 'control_if',
-        headers: { Authorization: '[REDACTED]', Accept: 'application/json' },
-        body: '[REDACTED]',
+        headers: { Authorization: 'Bearer literal-token', Accept: 'application/json' },
+        body: 'password=literal-pass',
         metadata: {
           import_action_uid: 'har-act-0001',
           import_credential_targets: ['headers.Authorization'],
@@ -501,7 +501,7 @@ describe('filterScriptPhaseActionRows', () => {
           steps: [{
             name: 'Nested Post',
             type: 'http_request',
-            headers: [{ name: 'X-Api-Key', value: '[REDACTED]' }, { name: 'Content-Type', value: 'application/json' }] as unknown as Record<string, string>,
+            headers: [{ name: 'X-Api-Key', value: 'literal-key' }, { name: 'Content-Type', value: 'application/json' }] as unknown as Record<string, string>,
             metadata: {
               import_action_uid: 'har-act-0002',
               import_credential_targets: ['headers.X-Api-Key'],
@@ -514,16 +514,16 @@ describe('filterScriptPhaseActionRows', () => {
       expect(next).toHaveLength(2)
       // Source retains its provenance untouched.
       expect(next[0].metadata?.import_action_uid).toBe('har-act-0001')
-      // Clone loses import_action_uid, import_credential_targets, and [REDACTED] values while keeping user metadata.
+      // Clone loses import_action_uid and import_credential_targets while keeping action values and user metadata.
       expect(next[1].metadata).toEqual({ source_transaction: 'Login' })
-      expect(next[1].headers).toEqual({ Accept: 'application/json' })
-      expect(next[1].body).toBe('')
+      expect(next[1].headers).toEqual({ Authorization: 'Bearer literal-token', Accept: 'application/json' })
+      expect(next[1].body).toBe('password=literal-pass')
       const nestedClone = (next[1].control as { steps: ScriptActionDefinition[] }).steps[0]
       expect(nestedClone.metadata).toBeUndefined()
-      expect(nestedClone.headers).toEqual([{ name: 'Content-Type', value: 'application/json' }])
+      expect(nestedClone.headers).toEqual([{ name: 'X-Api-Key', value: 'literal-key' }, { name: 'Content-Type', value: 'application/json' }])
     })
 
-    it('strips provenance and [REDACTED] values from http_sequence params.requests and http_async_start params.request', () => {
+    it('strips provenance from http_sequence params.requests and http_async_start params.request while preserving literal request fields', () => {
       const imported: ScriptActionDefinition[] = [
         {
           name: 'Parallel Aura Sequence',
@@ -535,17 +535,17 @@ describe('filterScriptPhaseActionRows', () => {
               {
                 name: 'Aura Child 1',
                 type: 'request',
-                target: 'https://example.test/login?pw=[REDACTED]',
-                headers: { Authorization: '[REDACTED]', Accept: 'application/json' },
+                target: 'https://example.test/login?pw=literal-pw',
+                headers: { Authorization: 'Bearer literal-auth', Accept: 'application/json' },
                 header_list: [
-                  { name: 'Authorization', value: 'Bearer [REDACTED]' },
+                  { name: 'Authorization', value: 'Bearer literal-auth' },
                   { name: 'Accept', value: 'application/json' },
                 ],
-                body: 'un=alice&pw=[REDACTED]',
+                body: 'un=alice&pw=literal-pw',
                 metadata: {
                   import_action_uid: 'har-entry-10',
                   import_credential_targets: ['headers.Authorization'],
-                  import_header_fidelity: { redacted: true },
+                  import_header_fidelity: { redacted: false },
                   import_multipart_fidelity: { parts: 1 },
                   script_projection_response_gate_v1: { version: 1 },
                   restored_body_protected: true,
@@ -566,8 +566,8 @@ describe('filterScriptPhaseActionRows', () => {
             request: {
               name: 'Async Inner Request',
               type: 'request',
-              headers: [{ name: 'Authorization', value: '[REDACTED]' }, { name: 'Accept', value: '*/*' }],
-              body: '[REDACTED]',
+              headers: [{ name: 'Authorization', value: 'Bearer async-token' }, { name: 'Accept', value: '*/*' }],
+              body: 'token=async-token',
               metadata: {
                 import_action_uid: 'har-entry-20',
                 import_credential_targets: ['headers[0]'],
@@ -582,32 +582,33 @@ describe('filterScriptPhaseActionRows', () => {
       // Original http_sequence child keeps its provenance untouched.
       const origSeqChild = ((afterSeqDup[0].params as { requests: ScriptActionDefinition[] }).requests)[0]
       expect(origSeqChild.metadata?.import_action_uid).toBe('har-entry-10')
-      // Cloned http_sequence child has provenance and [REDACTED] values stripped.
+      // Cloned http_sequence child has provenance stripped while preserving literal fields.
       const clonedSeqChild = ((afterSeqDup[1].params as { requests: ScriptActionDefinition[] }).requests)[0]
-      // The read projection's transient gate goes with its marker, as the
-      // server's WithoutTransientScriptProjectionGate drops it; other blockers stay.
       expect(clonedSeqChild.metadata).toEqual({ note: 'keep-child', execution_blockers: ['keep_blocker'] })
-      expect(clonedSeqChild.target).toBe('https://example.test/login?pw=')
-      expect(clonedSeqChild.headers).toEqual({ Accept: 'application/json' })
-      expect((clonedSeqChild as unknown as { header_list?: unknown }).header_list).toEqual([{ name: 'Accept', value: 'application/json' }])
-      expect(clonedSeqChild.body).toBe('un=alice&pw=')
+      expect(clonedSeqChild.target).toBe('https://example.test/login?pw=literal-pw')
+      expect(clonedSeqChild.headers).toEqual({ Authorization: 'Bearer literal-auth', Accept: 'application/json' })
+      expect((clonedSeqChild as unknown as { header_list?: unknown }).header_list).toEqual([
+        { name: 'Authorization', value: 'Bearer literal-auth' },
+        { name: 'Accept', value: 'application/json' },
+      ])
+      expect(clonedSeqChild.body).toBe('un=alice&pw=literal-pw')
 
       const afterAsyncDup = duplicateActionInList(afterSeqDup, 2)
       expect(afterAsyncDup).toHaveLength(4)
       const clonedAsyncChild = (afterAsyncDup[3].params as { request: ScriptActionDefinition }).request
       expect(clonedAsyncChild.metadata).toBeUndefined()
-      expect(clonedAsyncChild.headers).toEqual([{ name: 'Accept', value: '*/*' }])
-      expect(clonedAsyncChild.body).toBe('')
+      expect(clonedAsyncChild.headers).toEqual([{ name: 'Authorization', value: 'Bearer async-token' }, { name: 'Accept', value: '*/*' }])
+      expect(clonedAsyncChild.body).toBe('token=async-token')
     })
 
-    it('strips steps nested in control_parallel branches and masked HAR metadata', () => {
+    it('strips provenance nested in control_parallel branches while keeping HAR metadata and request fields intact', () => {
       const parallel = [{
         name: 'Parallel login',
         type: 'control_parallel',
-        metadata: { 'har.request.query_string': [{ name: 'pw', value: '[REDACTED]' }, { name: 'q', value: 'shoes' }], import_action_uid: 'har-entry-4' },
+        metadata: { 'har.request.query_string': [{ name: 'pw', value: 'literal-pw' }, { name: 'q', value: 'shoes' }], import_action_uid: 'har-entry-4' },
         control: {
           branches: [
-            { name: 'A', steps: [{ name: 'Login', type: 'POST', target: '/login', body: 'pw=[REDACTED]', headers: [{ name: 'Authorization', value: '[REDACTED]' }], metadata: { import_action_uid: 'har-entry-5', import_credential_targets: ['body'], import_header_fidelity: { omitted: 1 } } }] },
+            { name: 'A', steps: [{ name: 'Login', type: 'POST', target: '/login', body: 'pw=literal-pw', headers: [{ name: 'Authorization', value: 'Bearer literal' }], metadata: { import_action_uid: 'har-entry-5', import_credential_targets: ['body'], import_header_fidelity: { omitted: 1 } } }] },
             { name: 'B', steps: [{ name: 'Search', type: 'GET', target: '/search', metadata: { import_action_uid: 'har-entry-6', note: 'keep' } }] },
           ],
         },
@@ -615,34 +616,35 @@ describe('filterScriptPhaseActionRows', () => {
       const { actions, removedMaskedValues } = duplicateActionInListWithReport(parallel, 0)
       const branches = (actions[1].control as { branches: Array<{ steps: ScriptActionDefinition[] }> }).branches
       expect(branches[0].steps[0].metadata).toBeUndefined()
-      expect(branches[0].steps[0].body).toBe('pw=')
-      expect(branches[0].steps[0].headers).toEqual([])
+      expect(branches[0].steps[0].body).toBe('pw=literal-pw')
+      expect(branches[0].steps[0].headers).toEqual([{ name: 'Authorization', value: 'Bearer literal' }])
       expect(branches[1].steps[0].metadata).toEqual({ note: 'keep' })
-      expect(actions[1].metadata).toEqual({ 'har.request.query_string': [{ name: 'pw', value: '' }, { name: 'q', value: 'shoes' }] })
-      expect(removedMaskedValues).toEqual(['body', 'header Authorization'])
+      expect(actions[1].metadata).toEqual({ 'har.request.query_string': [{ name: 'pw', value: 'literal-pw' }, { name: 'q', value: 'shoes' }] })
+      expect(removedMaskedValues).toEqual([])
       // The source keeps its provenance.
       expect((parallel[0].control as { branches: Array<{ steps: ScriptActionDefinition[] }> }).branches[0].steps[0].metadata?.import_action_uid).toBe('har-entry-5')
     })
 
-    it('reports the masked values a copy leaves out and keeps unmasked cookies', () => {
+    it('preserves cookies, authorization headers, and bodies when duplicating actions', () => {
       const login = [{
         name: 'Login',
         type: 'POST',
         target: '/login',
-        body: 'un=alice&pw=[REDACTED]',
+        body: 'un=alice&pw=literal-pw',
         header_list: [
-          { name: 'Authorization', value: 'Bearer [REDACTED]' },
-          { name: 'Cookie', value: 'sid=[REDACTED]; theme=dark' },
+          { name: 'Authorization', value: 'Bearer literal-token' },
+          { name: 'Cookie', value: 'sid=session-123; theme=dark' },
           { name: 'Accept', value: '*/*' },
         ],
       }] as unknown as ScriptActionDefinition[]
       const { actions, removedMaskedValues } = duplicateActionInListWithReport(login, 0)
       expect((actions[1] as unknown as { header_list: unknown }).header_list).toEqual([
-        { name: 'Cookie', value: 'theme=dark' },
+        { name: 'Authorization', value: 'Bearer literal-token' },
+        { name: 'Cookie', value: 'sid=session-123; theme=dark' },
         { name: 'Accept', value: '*/*' },
       ])
-      expect(actions[1].body).toBe('un=alice&pw=')
-      expect(removedMaskedValues).toEqual(['body', 'cookie sid', 'header Authorization'])
+      expect(actions[1].body).toBe('un=alice&pw=literal-pw')
+      expect(removedMaskedValues).toEqual([])
       expect(duplicateActionInListWithReport([{ name: 'Plain', type: 'GET', target: '/' }] as ScriptActionDefinition[], 0).removedMaskedValues).toEqual([])
     })
   })

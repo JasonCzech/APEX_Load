@@ -1197,8 +1197,8 @@ func TestDurableLibraryImportClaimMasksRollbackSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(raw, "claim-must-not-persist-this-password") || !strings.Contains(raw, maskedScriptSecret) {
-		t.Fatalf("durable rollback claim was not projected: %s", raw)
+	if !strings.Contains(raw, "claim-must-not-persist-this-password") || strings.Contains(raw, maskedScriptSecret) {
+		t.Fatalf("durable rollback claim did not preserve runnable script: %s", raw)
 	}
 	if err := claims.complete(); err != nil {
 		t.Fatal(err)

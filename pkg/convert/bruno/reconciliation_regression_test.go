@@ -27,7 +27,7 @@ http:
 	}
 }
 
-func TestInspectNativeScrubsAuthoredQueryByNameAfterManagedParamProjection(t *testing.T) {
+func TestInspectNativePreservesAuthoredQueryAndResolvesManagedParamProjection(t *testing.T) {
 	const sourcePart = "managed-query-secret-part"
 	result, err := Inspect(Input{
 		Filename: "request.yml",
@@ -46,20 +46,15 @@ http:
 		t.Fatal(err)
 	}
 	sanitized := tarFile(t, result.SanitizedArchive, "request.yml")
-	if !bytes.Contains(sanitized, []byte("debug=1&token={{secret.")) {
-		t.Fatalf("credential query pair was not scrubbed in authored position:\n%s", sanitized)
+	if !bytes.Contains(sanitized, []byte("debug=1&token=abc-{{tokenSuffix}}")) ||
+		!bytes.Contains(sanitized, []byte(sourcePart)) {
+		t.Fatalf("authored source was unexpectedly scrubbed:\n%s", sanitized)
 	}
-	for _, forbidden := range []string{
-		"debug={{secret.",
-		"abc-{{tokenSuffix}}",
-		sourcePart,
-	} {
-		if bytes.Contains(sanitized, []byte(forbidden)) {
-			t.Fatalf("sanitized source retained or misplaced %q:\n%s", forbidden, sanitized)
-		}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("unexpected secret requirements = %#v", result.SecretRequirements)
 	}
 	if got := result.Scripts[0].Script.Actions[0].Target; strings.Contains(got, "debug=") ||
-		!strings.Contains(got, "token={{secret.") {
+		got != "https://api.test/login?token=abc-"+sourcePart {
 		t.Fatalf("projected target = %q", got)
 	}
 }

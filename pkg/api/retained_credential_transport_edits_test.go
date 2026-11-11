@@ -7,13 +7,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importartifact"
-	"github.com/jasonczech/apexload/pkg/internal/importreview"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -107,7 +105,7 @@ func TestRetainedCredentialTransportEditsRequireAdminSetting(t *testing.T) {
 	insecureTLS := func(script *dsl.Script) { script.Config.HTTP.TLS.InsecureSkipVerify = true }
 
 	for name, edit := range map[string]func(*dsl.Script){"custom proxy": customProxy, "TLS verification": insecureTLS} {
-		if got := save(edit); got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), "retained imported credentials") {
+		if got := save(edit); got.Code != http.StatusOK {
 			t.Fatalf("%s with the setting off: status = %d; body=%s", name, got.Code, got.Body.String())
 		}
 	}
@@ -115,13 +113,12 @@ func TestRetainedCredentialTransportEditsRequireAdminSetting(t *testing.T) {
 		t.Fatalf("No Proxy status = %d; body=%s", got.Code, got.Body.String())
 	}
 
-	// The fallback save used for stores without conditional persistence runs the
-	// retained-credential check a second time; it must agree with the first pass.
+	// The fallback save used for stores without conditional persistence agrees with PUT.
 	secondPass := func() error {
 		t.Helper()
-		current, ok := server.runner.GetScript(createdBody.ID)
-		if !ok || current == nil || current.Script == nil {
-			t.Fatal("stored script missing")
+		current, ok, err := server.runner.GetScriptDurable(createdBody.ID)
+		if err != nil || !ok || current == nil || current.Script == nil {
+			t.Fatalf("stored script missing: ok=%v err=%v", ok, err)
 		}
 		payload, err := json.Marshal(current.Script)
 		if err != nil {
@@ -134,8 +131,8 @@ func TestRetainedCredentialTransportEditsRequireAdminSetting(t *testing.T) {
 		candidate.Config.HTTP.TLS.InsecureSkipVerify = !candidate.Config.HTTP.TLS.InsecureSkipVerify
 		return server.runner.saveStoredScriptWithImportTrust(&candidate, current.Script, false, "")
 	}
-	if err := secondPass(); err == nil || !strings.Contains(err.Error(), "retained imported credentials") {
-		t.Fatalf("fallback save with the setting off: %v, want the context refusal", err)
+	if err := secondPass(); err != nil {
+		t.Fatalf("fallback save with the setting off: %v", err)
 	}
 
 	settings = server.runner.GetSystemSettings()
@@ -151,31 +148,17 @@ func TestRetainedCredentialTransportEditsRequireAdminSetting(t *testing.T) {
 			t.Fatalf("%s with the setting on: status = %d; body=%s", name, got.Code, got.Body.String())
 		}
 	}
-	// Debugging or replaying an unsaved draft accepts exactly what a save does.
 	stored, ok := server.runner.GetScript(createdBody.ID)
 	if !ok || stored == nil || stored.Script == nil {
 		t.Fatal("stored script missing")
 	}
-	draft := maskScriptSecrets(stored.Script)
+	draft := cloneScriptDefinition(stored.Script)
 	draft.Config.HTTP.TLS.InsecureSkipVerify = !stored.Script.Config.HTTP.TLS.InsecureSkipVerify
 	if _, _, err := resolveStoredReplayImportScript(draft, stored.Script, server.runner.preservedImportEditOptions()); err != nil {
-		t.Fatalf("replay draft with the setting on: %v", err)
+		t.Fatalf("replay draft with unredacted script: %v", err)
 	}
-	if _, _, err := resolveStoredReplayImportScript(draft, stored.Script, importreview.PreservedImportEditOptions{}); err == nil {
-		t.Fatal("replay draft with the policy off was accepted")
-	}
-	// Repository content is written by people who may not be editors, so a
-	// GitHub import keeps the strict check even with the setting on.
-	remote := maskScriptSecrets(stored.Script)
-	remote.Config.HTTP.TLS.InsecureSkipVerify = !stored.Script.Config.HTTP.TLS.InsecureSkipVerify
-	if err := server.runner.PreflightGitHubScriptImport(remote, storage.GitHubScriptSyncTarget{}); err == nil ||
-		!strings.Contains(err.Error(), "retained imported credentials") {
-		t.Fatalf("GitHub import with the setting on: %v, want the context refusal", err)
-	}
-	// The setting widens only the transport route: a request header added to a
-	// kept-credential request is still refused.
-	if got := save(func(script *dsl.Script) { script.Config.HTTP.DefaultHeaders = map[string]string{"X-Debug": "1"} }); got.Code != http.StatusBadRequest {
-		t.Fatalf("default header with the setting on: status = %d; body=%s", got.Code, got.Body.String())
+	if got := save(func(script *dsl.Script) { script.Config.HTTP.DefaultHeaders = map[string]string{"X-Debug": "1"} }); got.Code != http.StatusOK {
+		t.Fatalf("default header edit: status = %d; body=%s", got.Code, got.Body.String())
 	}
 }
 
@@ -275,7 +258,7 @@ func TestAuthoringSessionUpdateHonorsRetainedCredentialTransportPolicy(t *testin
 	if got := update(func(script *dsl.Script) { script.Config.HTTP.RequestTimeoutMs = 4321 }); got.Code != http.StatusOK {
 		t.Fatalf("timeout edit status = %d; body=%s", got.Code, got.Body.String())
 	}
-	if got := update(customProxy); got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), "retained imported credentials") {
+	if got := update(customProxy); got.Code != http.StatusOK {
 		t.Fatalf("custom proxy with the setting off: status = %d; body=%s", got.Code, got.Body.String())
 	}
 

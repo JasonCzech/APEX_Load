@@ -277,7 +277,7 @@ func DiscoverRedactedValues(value any, path string, ctx RedactionTraversalContex
 			// secret cannot stand in for a multi-row table, so offering a
 			// binding here would let an operator clear the gate without
 			// restoring the data. Discovery-only, like the skips above.
-			if IsRuntimeDataTableJSONPath(childPath) {
+			if IsRuntimeDataTableJSONPath(childPath) || IsDataSourceSchemaJSONPath(childPath) {
 				continue
 			}
 			// Import provenance recorded in action metadata (original_url,
@@ -340,6 +340,14 @@ func IsRuntimeDataTableJSONPath(path string) bool {
 		return false
 	}
 	return tokens[0] == "data_sources" && tokens[2] == "inline_data"
+}
+
+func IsDataSourceSchemaJSONPath(path string) bool {
+	tokens, err := SplitJSONPointer(path)
+	if err != nil || len(tokens) < 3 {
+		return false
+	}
+	return tokens[0] == "data_sources" && (tokens[2] == "columns" || tokens[2] == "fields")
 }
 
 func IsJavaVMParameterJSONPath(path string) bool {
@@ -1247,6 +1255,16 @@ func ApplyPreservedRedactedSecretBindings(
 		rawValue, rawOK := JsonPointerString(rawRoot, path)
 		projectedValue, projectedOK := JsonPointerString(projectedRoot, path)
 		if !rawOK || !projectedOK {
+			if matched, _ := NonStringScalarProjectedRedaction(rawRoot, projectedRoot, path); matched {
+				refreshed := AnnotateSingleScriptSecretBindingRequirements(
+					append([]SecretBindingRequirement(nil), requirements...), scriptIndex, rawRoot, projectedRoot, false,
+				)
+				return nil, refreshed, &SecretBindingRebindUnavailableError{
+					requirement:  FirstSelectedRequirementAt(path, selected, known),
+					location:     SecretBindingLocation(projectedRoot, path),
+					requirements: refreshed,
+				}
+			}
 			return nil, requirements, &StaleSecretBindingRequirementsError{requirements: requirements}
 		}
 		// The field is rebuilt from the projection's text around each
@@ -1546,14 +1564,28 @@ func AnnotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		script int
 		path   string
 	}
+	type occurrenceKey struct {
+		script     int
+		path       string
+		occurrence int
+	}
+	suggestedByOccurrence := make(map[occurrenceKey]string, len(requirements))
+	for _, req := range requirements {
+		if req.SuggestedName != "" {
+			suggestedByOccurrence[occurrenceKey{req.ScriptIndex, req.Path, req.Occurrence}] = req.SuggestedName
+		}
+	}
 	// One field's alignment, shared by its occurrences. linear reports the
 	// byte-exact alignment that binding splices with; values come from it or
 	// from the structural JSON fallback.
 	type fieldAlignment struct {
-		found       bool
-		linear      bool
-		values      []string
-		placeholder bool
+		found          bool
+		linear         bool
+		rawHasRedacted bool
+		projectedParts []string
+		parts          []string
+		values         []string
+		placeholder    bool
 	}
 	alignments := make(map[location]fieldAlignment)
 	annotate := func(requirement *SecretBindingRequirement) {
@@ -1569,12 +1601,22 @@ func AnnotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 			projectedValue, projectedOK := JsonPointerString(projectedNodes[scriptIndex], requirement.Path)
 			if rawOK && projectedOK {
 				alignment.found = true
+				alignment.rawHasRedacted = strings.Contains(rawValue, MaskedScriptSecret)
+				alignedProjected := ProjectedMessageIDsAsRecorded(rawValue, projectedValue)
+				alignment.projectedParts = strings.Split(alignedProjected, MaskedScriptSecret)
 				alignment.values, alignment.linear = ExtractLinearlyProjectedRedactions(rawValue, projectedValue)
-				if !alignment.linear {
+				if alignment.linear && len(alignment.projectedParts) == len(alignment.values)+1 {
+					alignment.parts = alignment.projectedParts
+				} else if !alignment.linear {
 					alignment.values, _ = ExtractStructurallyProjectedJSONRedactions(rawValue, projectedValue)
 				}
 				alignment.placeholder = len(alignment.values) == 0 &&
 					RecordedPlaceholdersCoverProjection(rawValue, projectedValue)
+			} else if matched, scalarValues := NonStringScalarProjectedRedaction(rawNodes[scriptIndex], projectedNodes[scriptIndex], requirement.Path); matched {
+				alignment.found = true
+				alignment.linear = false
+				alignment.projectedParts = strings.Split(projectedValue, MaskedScriptSecret)
+				alignment.values = scalarValues
 			}
 			alignments[key] = alignment
 		}
@@ -1584,6 +1626,39 @@ func AnnotateSecretBindingDestinationValuesWithPolicy(requirements []SecretBindi
 		if !alignment.linear {
 			requirement.RebindUnavailableReason = SecretBindingRebindUnavailableReason
 			requirement.RebindUnavailableDescription = SecretBindingRebindUnavailableDescription
+			if !alignment.rawHasRedacted && strings.Contains(requirement.Replacement, MaskedScriptSecret) && len(alignment.projectedParts) > 1 {
+				var rebuilt strings.Builder
+				rebuilt.WriteString(alignment.projectedParts[0])
+				for occ := 0; occ < len(alignment.projectedParts)-1; occ++ {
+					nameForOcc := suggestedByOccurrence[occurrenceKey{scriptIndex, requirement.Path, occ}]
+					if occ == requirement.Occurrence && requirement.SuggestedName != "" {
+						nameForOcc = requirement.SuggestedName
+					}
+					if nameForOcc == "" {
+						nameForOcc = "SECRET_" + strconv.Itoa(occ+1)
+					}
+					rebuilt.WriteString("{{secret." + nameForOcc + "}}")
+					rebuilt.WriteString(alignment.projectedParts[occ+1])
+				}
+				requirement.Replacement = rebuilt.String()
+			}
+		} else if len(alignment.parts) == len(alignment.values)+1 &&
+			requirement.Occurrence >= 0 && requirement.Occurrence < len(alignment.values) &&
+			requirement.SuggestedName != "" {
+			var rebuilt strings.Builder
+			rebuilt.WriteString(alignment.parts[0])
+			for occ := range alignment.values {
+				nameForOcc := suggestedByOccurrence[occurrenceKey{scriptIndex, requirement.Path, occ}]
+				if occ == requirement.Occurrence {
+					nameForOcc = requirement.SuggestedName
+				}
+				if nameForOcc == "" {
+					nameForOcc = "SECRET_" + strconv.Itoa(occ+1)
+				}
+				rebuilt.WriteString("{{secret." + nameForOcc + "}}")
+				rebuilt.WriteString(alignment.parts[occ+1])
+			}
+			requirement.Replacement = rebuilt.String()
 		}
 		if len(alignment.values) == 0 {
 			// No exact alignment isolates this occurrence, but the field still

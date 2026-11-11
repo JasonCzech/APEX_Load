@@ -1425,7 +1425,7 @@ func TestReconcileProtectedScriptCredentialSourcesIgnoresProvenanceOnlyParameter
 	}
 }
 
-func TestProjectScriptCredentialsRetainsProtectedSnapshotOnTraversalFailure(t *testing.T) {
+func TestProjectScriptCredentialsPreservesActionsOnTraversalLimit(t *testing.T) {
 	t.Parallel()
 	const credential = "traversal-fallback-password-canary"
 	requests := make([]any, dsl.MaxScriptActionDefinitions)
@@ -1440,6 +1440,65 @@ func TestProjectScriptCredentialsRetainsProtectedSnapshotOnTraversalFailure(t *t
 		Source:    "test_import",
 		Preserved: map[string]any{},
 	}}
+	script.Init = []dsl.Action{{Name: "init", Type: "GET", Method: "GET", Target: "/init"}}
+	script.Actions = []dsl.Action{{
+		Name:   "sequence",
+		Type:   "http_sequence",
+		Params: map[string]any{"requests": requests},
+	}}
+	script.Teardown = []dsl.Action{{Name: "teardown", Type: "POST", Method: "POST", Target: "/teardown"}}
+
+	result, err := ProjectScriptCredentials(script, ScriptCredentialProjectionOptions{
+		SourceProfile: "test_import",
+		CandidateKey:  "candidate",
+		NamePrefix:    "TEST_IMPORT",
+		AdditionalURLs: []ScriptCredentialURL{{
+			Value: "https://cdn.example.test/app.js",
+		}},
+	})
+	if err != nil || result.FallbackDraft {
+		t.Fatalf("ProjectScriptCredentials = %#v, %v; want preserved actions without fallback replacement", result, err)
+	}
+	if len(script.Init) != 1 || len(script.Actions) != 1 || script.Actions[0].Type != "http_sequence" || len(script.Teardown) != 1 {
+		t.Fatalf("actions were wiped on traversal limit: init=%#v actions=%#v teardown=%#v", script.Init, script.Actions, script.Teardown)
+	}
+	if script.Actions[0].Metadata["execution_blocker"] != nil {
+		t.Fatalf("unexpected execution_blocker on preserved action: %#v", script.Actions[0].Metadata)
+	}
+	firstReq, _ := script.Actions[0].Params["requests"].([]any)[0].(map[string]any)
+	if body, _ := firstReq["body"].(string); !strings.Contains(body, credential) {
+		t.Fatalf("first request body = %q, want literal credential preserved", body)
+	}
+	if len(result.AdditionalURLs) != 1 || result.AdditionalURLs[0] != "https://cdn.example.test/app.js" {
+		t.Fatalf("additional URLs = %#v, want preserved", result.AdditionalURLs)
+	}
+	if script.Config.BaseURL != "https://example.test" {
+		t.Fatalf("base URL = %q, want the authored base URL retained", script.Config.BaseURL)
+	}
+	encoded, _ := script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"].(string)
+	snapshot, decodeErr := base64.StdEncoding.DecodeString(encoded)
+	if decodeErr != nil {
+		t.Fatalf("decode fallback snapshot: %v", decodeErr)
+	}
+	if !strings.Contains(string(snapshot), credential) ||
+		!strings.Contains(string(snapshot), `"type":"http_sequence"`) {
+		t.Fatalf("fallback snapshot omitted original request/credential: %s", snapshot)
+	}
+}
+
+func TestProjectScriptCredentialsRetainsExecutionGatesOnTraversalLimit(t *testing.T) {
+	t.Parallel()
+	requests := make([]any, dsl.MaxScriptActionDefinitions)
+	requests[0] = map[string]any{
+		"name":   "corrupted_request",
+		"method": "POST",
+		"target": "https://api.example.test/login",
+		// Non-string body triggers an execution-gating credential_request_corrupted
+		// finding prior to hitting the traversal cap on the full sequence.
+		"body": map[string]any{"password": "secret-value"},
+	}
+	script := validBaseScript()
+	script.Config.BaseURL = "https://{{var.dynamic_host}}/v1"
 	script.Actions = []dsl.Action{{
 		Name:   "sequence",
 		Type:   "http_sequence",
@@ -1451,31 +1510,19 @@ func TestProjectScriptCredentialsRetainsProtectedSnapshotOnTraversalFailure(t *t
 		CandidateKey:  "candidate",
 		NamePrefix:    "TEST_IMPORT",
 	})
-	if err == nil || !result.FallbackDraft {
-		t.Fatalf("ProjectScriptCredentials = %#v, %v; want fallback traversal error", result, err)
+	if err != nil || result.FallbackDraft {
+		t.Fatalf("ProjectScriptCredentials = %#v, %v; want preserved actions with attached gates", result, err)
 	}
-	if len(script.Actions) != 1 || script.Actions[0].Type != "source_review" ||
-		script.Actions[0].Metadata["execution_blocker"] != "credential_request_traversal_failed" {
-		t.Fatalf("fallback actions = %#v, want one blocked review placeholder", script.Actions)
+	if len(script.Actions) != 1 || script.Actions[0].Type != "http_sequence" {
+		t.Fatalf("actions were wiped on traversal limit: %#v", script.Actions)
 	}
-	// The request tree exceeds dsl.MaxScriptActionDefinitions and can never be
-	// stored as a valid script, which is why this one fallback still replaces
-	// the actions. The base URL is not part of that limit, so it must survive:
-	// substituting an .invalid host destroyed an executable value for no reason.
-	if script.Config.BaseURL != "https://example.test" {
-		t.Fatalf("fallback base URL = %q, want the authored base URL retained", script.Config.BaseURL)
+	if !findingsContainExecutionGate(result.Findings) {
+		t.Fatalf("result.Findings = %#v, want execution gate retained", result.Findings)
 	}
-	encoded, _ := script.Metadata.Import.Preserved["credential_traversal_source_snapshot_base64"].(string)
-	snapshot, decodeErr := base64.StdEncoding.DecodeString(encoded)
-	if decodeErr != nil {
-		t.Fatalf("decode fallback snapshot: %v", decodeErr)
-	}
-	if !strings.Contains(string(snapshot), credential) ||
-		!strings.Contains(string(snapshot), `"type":"http_sequence"`) {
-		t.Fatalf("fallback snapshot omitted original request/credential: %s", snapshot)
-	}
-	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
-		t.Fatalf("fallback draft validation issues = %#v", issues)
+	blocker, _ := script.Actions[0].Metadata["execution_blocker"].(string)
+	blockers, _ := script.Actions[0].Metadata["execution_blockers"].([]string)
+	if blocker == "" && len(blockers) == 0 {
+		t.Fatalf("top-level action metadata lost execution gate on traversal limit: %#v", script.Actions[0].Metadata)
 	}
 }
 

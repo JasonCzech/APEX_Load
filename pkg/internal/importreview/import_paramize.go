@@ -29,7 +29,7 @@ func BuildTrustedImportParameterization(script *dsl.Script) *paramize.Result {
 	result := BuildImportParameterization(script, nil)
 	trusted := make([]paramize.Suggestion, 0, len(result.Suggestions))
 	for _, suggestion := range result.Suggestions {
-		if (suggestion.Kind != paramize.KindDataParam && suggestion.Kind != paramize.KindGenerated) || ParameterizationSuggestionContainsMaskedSecret(suggestion) {
+		if ParameterizationSuggestionContainsMaskedSecret(suggestion) {
 			continue
 		}
 		trusted = append(trusted, suggestion)

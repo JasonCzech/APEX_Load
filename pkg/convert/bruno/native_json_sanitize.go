@@ -149,28 +149,9 @@ func sanitizeNativeJSONStringBody(sourcePath, body string) (string, []SecretRequ
 					nativeCredentialContainerContext(context) {
 					secretField = true
 				}
-				if secretField && !nativeJSONCredentialContainerKey(key) {
-					switch child.(type) {
-					case map[string]any, []any:
-						walkErr = fmt.Errorf(
-							"composite JSON credential field %q cannot be governed without changing its wire shape",
-							nativeJSONPointer(nextContext),
-						)
-						return
-					}
-				}
 				sensitive := scalarValue && secretField &&
 					shouldSanitizeCredentialValue(scalar)
-				if sensitive {
-					if _, stringValue := child.(string); !stringValue {
-						walkErr = fmt.Errorf(
-							"non-string JSON credential field %q cannot be governed without changing its wire type",
-							nativeJSONPointer(nextContext),
-						)
-						return
-					}
-				}
-				if sensitive &&
+				if _, stringValue := child.(string); sensitive && stringValue &&
 					!isExactGovernedSecretReference(scalar) &&
 					!brunoTemplatePattern.MatchString(scalar) {
 					identity := nativeJSONPointer(nextContext)
@@ -211,7 +192,12 @@ func sanitizeNativeJSONStringBody(sourcePath, body string) (string, []SecretRequ
 func nativeJSONCredentialContainerKey(key string) bool {
 	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.TrimSpace(key)))
 	switch normalized {
-	case "auth", "authentication", "credential", "credentials", "secret", "secrets":
+	case "auth", "authentication", "credential", "credentials", "secret", "secrets",
+		"password", "passwords", "passwd", "passwds", "token", "tokens",
+		"accesstoken", "accesstokens", "refreshtoken", "refreshtokens",
+		"apikey", "apikeys", "clientsecret", "clientsecrets",
+		"privatekey", "privatekeys", "secretkey", "secretkeys",
+		"accesskey", "accesskeys", "passphrase", "passphrases":
 		return true
 	default:
 		return false
@@ -224,18 +210,22 @@ func rewriteNativeJSONCredentialTemplates(
 	sourceRequirements map[string][]SecretRequirement,
 	bodyPointer string,
 	embeddedJSON bool,
+	explicitJSON bool,
 ) (string, error) {
-	if !brunoTemplatePattern.MatchString(body) {
+	if !explicitJSON && !brunoTemplatePattern.MatchString(body) {
 		return body, nil
 	}
 	value, err := decodeNativeJSONBody(body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("JSON could not be safely parsed: %w", err)
+	}
+	if !brunoTemplatePattern.MatchString(body) {
+		return body, nil
 	}
 	changed := false
 	occurrence := 0
-	var walk func(any, []string)
-	walk = func(current any, context []string) {
+	var walk func(any, []string, bool, string)
+	walk = func(current any, context []string, enclosingSecretField bool, enclosingSecretKey string) {
 		switch typed := current.(type) {
 		case map[string]any:
 			namedCredential := structuredNamedCredential(typed)
@@ -280,15 +270,55 @@ func rewriteNativeJSONCredentialTemplates(
 					}
 					continue
 				}
-				walk(child, nextContext)
+				if ok && brunoTemplatePattern.MatchString(text) {
+					rewritten := resolveDefinedJSONVariables(text, state)
+					if rewritten != text {
+						typed[key] = rewritten
+						changed = true
+					}
+					continue
+				}
+				walk(child, nextContext, secretField, secretKey)
 			}
 		case []any:
 			for index, child := range typed {
-				walk(child, append(append([]string(nil), context...), strconv.Itoa(index)))
+				nextContext := append(append([]string(nil), context...), strconv.Itoa(index))
+				if text, ok := child.(string); ok && brunoTemplatePattern.MatchString(text) {
+					var rewritten string
+					if enclosingSecretField {
+						occurrence++
+						rewritten = rewriteNativeJSONCredentialValue(
+							text,
+							nativeJSONPointer(nextContext),
+							enclosingSecretKey,
+							occurrence,
+							state,
+							sourceRequirements,
+							bodyPointer,
+							embeddedJSON,
+						)
+					} else {
+						rewritten = resolveDefinedJSONVariables(text, state)
+					}
+					if rewritten != text {
+						typed[index] = rewritten
+						changed = true
+					}
+					continue
+				}
+				walk(child, nextContext, enclosingSecretField, enclosingSecretKey)
 			}
 		}
 	}
-	walk(value, nil)
+	if scalarText, ok := value.(string); ok && brunoTemplatePattern.MatchString(scalarText) {
+		rewritten := resolveDefinedJSONVariables(scalarText, state)
+		if rewritten != scalarText {
+			value = rewritten
+			changed = true
+		}
+	} else {
+		walk(value, nil, false, "")
+	}
 	if !changed {
 		return body, nil
 	}
@@ -297,6 +327,36 @@ func rewriteNativeJSONCredentialTemplates(
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func resolveDefinedJSONVariables(value string, state *nativeTemplateState) string {
+	return brunoTemplatePattern.ReplaceAllStringFunc(value, func(template string) string {
+		match := brunoTemplatePattern.FindStringSubmatch(template)
+		if len(match) < 2 {
+			return template
+		}
+		expression := strings.TrimSpace(match[1])
+		if !nativeTemplateRequiresSecret(expression, nativeTemplateBody, "") {
+			return template
+		}
+		if _, defined := lookupNativeVariable(state, expression, true); !defined {
+			return template
+		}
+		beforeMissing := make(map[string]struct{}, len(state.missing))
+		for missing := range state.missing {
+			beforeMissing[missing] = struct{}{}
+		}
+		resolution := resolveNativeVariableWithScope(expression, state, true)
+		for missing := range state.missing {
+			if _, existed := beforeMissing[missing]; !existed {
+				delete(state.missing, missing)
+			}
+		}
+		if resolution.Complete && !hasNonGovernedBrunoTemplate(resolution.Value) {
+			return resolution.Value
+		}
+		return template
+	})
 }
 
 func rewriteNativeJSONCredentialValue(
@@ -343,6 +403,11 @@ func rewriteNativeJSONCredentialValue(
 		lower := strings.ToLower(expression)
 		for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
 			if strings.HasPrefix(lower, prefix) {
+				if prefix == "secret." {
+					if secretName, isSecret, err := canonicalBrunoSecretExpression(expression); err == nil && isSecret {
+						return "{{secret." + secretName + "}}"
+					}
+				}
 				complete = false
 				return template
 			}
@@ -351,11 +416,12 @@ func rewriteNativeJSONCredentialValue(
 			complete = false
 			return template
 		}
-		if _, exists := state.defined[expression]; !exists {
+		variable, exists := lookupNativeVariable(state, expression, true)
+		if !exists {
 			complete = false
 			return template
 		}
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, true)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
 			if composedCredential && usageRequirementAvailable {
@@ -365,7 +431,7 @@ func rewriteNativeJSONCredentialValue(
 			if !composedCredential {
 				context := "Bruno JSON body credential " + name
 				projected := nativeVariableSecretRequirement(
-					state.defined[expression],
+					variable,
 					state.sourcePath,
 					context,
 				)
@@ -377,13 +443,14 @@ func rewriteNativeJSONCredentialValue(
 			if sourceValue, available := nativeSourceSecretValue(secretReference, sourceRequirements); available {
 				return sourceValue
 			}
+			return secretReference
 		}
 		if !resolution.Complete {
 			complete = false
 		}
 		return resolution.Value
 	})
-	if brunoTemplatePattern.MatchString(resolved) {
+	if hasNonGovernedBrunoTemplate(resolved) {
 		complete = false
 	}
 	if projectedWholeCredential && len(dependencies) > 0 {
@@ -393,6 +460,9 @@ func rewriteNativeJSONCredentialValue(
 		if _, existed := beforeMissing[missing]; !existed {
 			delete(state.missing, missing)
 		}
+	}
+	if complete && !hasNonGovernedBrunoTemplate(resolved) {
+		return resolved
 	}
 
 	context := "Bruno JSON body credential " + name
@@ -456,15 +526,10 @@ func rewriteNativeJSONCredentialValue(
 	if hasExactSourceVariable {
 		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 		requirement.SourceVariable = sourceVariable
+		requirement.UnresolvedSourceVariable = true
 		requirement.AffectedPaths = nativeSecretRequirementPaths(
 			append(requirement.AffectedPaths, state.sourcePath)...,
 		)
-	}
-	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = recoverableBrunoCredentialValue(resolved)
-	}
-	if hasExactSourceVariable {
-		requirement.UnresolvedSourceVariable = requirement.Value == ""
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement)

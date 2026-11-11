@@ -319,26 +319,6 @@ func annotateOpaqueTransformArgs(action *dsl.Action, fn ParsedFunction) []string
 		fn.Filename, fn.LineNumber, fn.Name, fn.StepName, strings.Join(uniqueSourceStrings(names), ", "), protection, bodyNote)}
 }
 
-func redactOpaqueTransformMetadata(action *dsl.Action) {
-	if action == nil || action.Metadata == nil {
-		return
-	}
-	functionName := metadataString(action.Metadata, "masked_body_function")
-	if functionName == "" {
-		functionName = metadataString(action.Metadata, "source_secret_function")
-	}
-	if functionName == "" {
-		return
-	}
-	redacted := functionName + `("[REDACTED]")`
-	if _, ok := action.Metadata["masked_body_raw"]; ok {
-		action.Metadata["masked_body_raw"] = redacted
-	}
-	if _, ok := action.Metadata["masked_body_calls"]; ok {
-		action.Metadata["masked_body_calls"] = []string{redacted}
-	}
-}
-
 func uniqueSourceStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	out := make([]string, 0, len(values))

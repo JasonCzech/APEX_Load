@@ -579,7 +579,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			}
 			runtimeRedactionSets[key] = runtimeConfig
 		}
-		cfg.Groups[i].RedactionConfig = attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig)
+		cfg.Groups[i].RedactionConfig = ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig))
 	}
 	runtimeResources, resourceErr := newEngineRuntimeResources(cfg.Groups)
 	if resourceErr != nil {
@@ -632,6 +632,16 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		mge.metrics.SetJointProjection(cfg.JointProjection, protocols)
 	}
 	return mge, nil
+}
+
+// GroupRedactionConfig returns the compiled runtime RedactionConfig (including
+// protocol auth composites and the shared dynamic secret registry) for the
+// group at index, or nil if out of range.
+func (mge *MultiGroupEngine) GroupRedactionConfig(index int) *RedactionConfig {
+	if mge == nil || index < 0 || index >= len(mge.groups) {
+		return nil
+	}
+	return mge.groups[index].RedactionConfig
 }
 
 // Ready is closed once Run has initialized the internal contexts required by

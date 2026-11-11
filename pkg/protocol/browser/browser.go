@@ -118,6 +118,7 @@ type Browser struct {
 	wsProjectionManaged        bool
 	wsProjectionRevision       uint64
 	runtimeSecretsActive       func() bool
+	runtimeSecretRegistrar     protocol.RuntimeSecretRegistrar
 	unredactedDebug            bool
 	mobile                     bool
 	touchMode                  bool
@@ -351,6 +352,24 @@ func (b *Browser) hasRuntimeSecretMaterial() bool {
 	active := b.runtimeSecretsActive
 	b.mu.Unlock()
 	return active != nil && active()
+}
+
+// SetRuntimeSecretRegistrar installs a callback so runtime-minted browser
+// credentials (such as Salesforce JWT OAuth tokens and one-time frontdoor URLs)
+// are registered into engine runtime redaction.
+func (b *Browser) SetRuntimeSecretRegistrar(registrar protocol.RuntimeSecretRegistrar) {
+	b.mu.Lock()
+	b.runtimeSecretRegistrar = registrar
+	b.mu.Unlock()
+}
+
+func (b *Browser) registerRuntimeSecrets(scope string, values []string) {
+	b.mu.Lock()
+	registrar := b.runtimeSecretRegistrar
+	b.mu.Unlock()
+	if registrar != nil {
+		registrar(scope, values)
+	}
 }
 
 func (b *Browser) redactRuntimeText(value string) string {

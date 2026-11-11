@@ -182,38 +182,10 @@ func (s *Server) processScriptRepair(w http.ResponseWriter, r *http.Request, app
 	}
 
 	trustedImport := isCredentialPreservingImport(stored.Script)
-	persisted := draft
-	if trustedImport {
-		// A save through PUT refuses a proxy or TLS change while imported
-		// credentials are kept, unless a system admin allows it; a repair stays
-		// strict either way. The repair may change only what its own
-		// operation owns; anything else, such as a consumer edit that moves a
-		// kept credential, is refused exactly as PUT would refuse it.
-		candidate, allowance := storedRepairCredentialComparison(stored.Script, draft, req.Operation.Type)
-		if err := validatePreservedImportCredentialEdits(candidate, allowance); err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-	} else {
-		// The same disclosure-safe binding gate as an ordinary save: a repair
-		// cannot introduce a raw credential into durable storage. Like a save
-		// (removeSubmittedDependencyCodes), the repair is judged and written
-		// without the dependency codes evaluateRepairedScript just stamped on
-		// it, and the write stamps them again once its own binding gate has
-		// passed (UpdateScriptGuidedRepairDurable): disclosure may mask a long
-		// variable name in one, and that server output is not a credential.
-		persisted = cloneScriptDefinition(draft)
+	persisted := cloneScriptDefinition(draft)
+	if !trustedImport {
 		if err := importreview.RemoveDependencyCodes(persisted); err != nil {
 			writeError(w, http.StatusBadRequest, errRepairTraversal.Error())
-			return
-		}
-		projected := maskScriptSecrets(persisted)
-		if projected == nil {
-			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-			return
-		}
-		if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
-			writeSecretBindingsRequired(w, unresolved)
 			return
 		}
 	}
@@ -405,6 +377,7 @@ func storedRepairCredentialComparison(prior, draft *dsl.Script, operation string
 	case "bind_kafka_credentials":
 		if allowance.Config.Kafka.OAuth != nil && draft.Config.Kafka.OAuth != nil {
 			allowance.Config.Kafka.OAuth.ClientID = draft.Config.Kafka.OAuth.ClientID
+			allowance.Config.Kafka.OAuth.ClientSecret = draft.Config.Kafka.OAuth.ClientSecret
 			allowance.Config.Kafka.OAuth.ClientSecretRef = draft.Config.Kafka.OAuth.ClientSecretRef
 		}
 	case "bind_eventhubs_credentials":

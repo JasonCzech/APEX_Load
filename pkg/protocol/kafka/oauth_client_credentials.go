@@ -68,7 +68,7 @@ func explicitOAuthTokenWithClient(ctx context.Context, c config, client *http.Cl
 // Constructing the request in one place keeps the debug disclosure flag on
 // the same singleflight boundary as the ordinary credential request.
 func explicitOAuthTokenRequest(c config, client *http.Client) httpprotocol.OAuthTokenRequest {
-	return httpprotocol.OAuthTokenRequest{TokenURL: c.OAuthTokenURL, GrantType: httpprotocol.OAuthGrantClientCredentials, ClientID: c.OAuthClientID, ClientSecret: c.OAuthClientSecret, Scope: c.OAuthClientScope, ClientAuthentication: c.OAuthAuthenticationMethod, HTTPClient: client, UnredactedDebugErrors: c.UnredactedDebugErrors}
+	return httpprotocol.OAuthTokenRequest{TokenURL: c.OAuthTokenURL, GrantType: httpprotocol.OAuthGrantClientCredentials, ClientID: c.OAuthClientID, ClientSecret: c.OAuthClientSecret, Scope: c.OAuthClientScope, ClientAuthentication: c.OAuthAuthenticationMethod, HTTPClient: client, UnredactedDebugErrors: c.UnredactedDebugErrors, OnToken: c.OnOAuthToken}
 }
 
 // ValidateOAuthTokenEndpoint checks the structural contract without resolving

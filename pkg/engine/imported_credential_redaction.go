@@ -22,6 +22,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/internal/templatedjson"
 	"github.com/jasonczech/apexload/pkg/javarunner"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // One structured request may contain up to credentialpolicy.DefaultLimits'
@@ -120,14 +122,15 @@ func ImportedCredentialValues(script *dsl.Script) ([]string, error) {
 // credential.RecordedStateHeader): they are not credentials, and nothing an
 // imported script holds is a secret.
 func ImportedCredentialValuesForDisclosure(script *dsl.Script) ([]string, error) {
-	values, _, err := inspectImportedCredentialsShowing(script, true)
+	values, _, err := inspectImportedCredentialsWithOptions(script, true, true)
 	if err != nil {
 		return nil, err
 	}
 	collector := importedCredentialCollector{
-		resolved: true,
-		seen:     make(map[string]struct{}, len(values)),
-		values:   append([]string(nil), values...),
+		resolved:       true,
+		strictLocators: true,
+		seen:           make(map[string]struct{}, len(values)),
+		values:         append([]string(nil), values...),
 	}
 	for _, value := range values {
 		collector.seen[value] = struct{}{}
@@ -161,7 +164,7 @@ type disclosureJavaJDBCSourceEnvelope struct {
 func inspectImportedCredentials(
 	script *dsl.Script,
 ) ([]string, *importedCredentialTemplatePlan, error) {
-	return inspectImportedCredentialsShowing(script, false)
+	return inspectImportedCredentialsWithOptions(script, false, false)
 }
 
 // inspectImportedCredentialsShowing is inspectImportedCredentials, leaving
@@ -171,7 +174,27 @@ func inspectImportedCredentialsShowing(
 	script *dsl.Script,
 	showRecordedState bool,
 ) ([]string, *importedCredentialTemplatePlan, error) {
-	if !scriptPreservesImportedCredentialValues(script) {
+	return inspectImportedCredentialsWithOptions(script, showRecordedState, showRecordedState)
+}
+
+func isUnsupportedCredentialLocatorFieldError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "unsupported executable config field") ||
+		strings.Contains(msg, "unsupported executable field")
+}
+
+func inspectImportedCredentialsWithOptions(
+	script *dsl.Script,
+	showRecordedState bool,
+	strictLocators bool,
+) ([]string, *importedCredentialTemplatePlan, error) {
+	if script == nil {
+		return nil, nil, nil
+	}
+	if strictLocators && !scriptPreservesImportedCredentialValues(script) {
 		return nil, nil, nil
 	}
 	plan := &importedCredentialTemplatePlan{
@@ -182,23 +205,38 @@ func inspectImportedCredentialsShowing(
 		templatePlan:      plan,
 		seen:              make(map[string]struct{}),
 		showRecordedState: showRecordedState,
+		strictLocators:    strictLocators,
 	}
 
 	if err := collector.collectSensitiveConfig(script.Config); err != nil {
-		return nil, nil, fmt.Errorf("inspect imported credential config: %w", err)
+		if strictLocators {
+			return nil, nil, fmt.Errorf("inspect imported credential config: %w", err)
+		}
 	}
 	collector.collectURL(script.Config.BaseURL, nil)
-	if preserved := script.Metadata.Import.Preserved; preserved != nil {
+	collector.collectLiteralURLBasicComposites(script.Config.BaseURL)
+	if !strictLocators {
+		collector.collectScriptSensitiveParametersAndDataSources()
+	}
+	if script.Metadata != nil && script.Metadata.Import != nil && script.Metadata.Import.Preserved != nil {
+		preserved := script.Metadata.Import.Preserved
 		collector.collectPreservedResourceURLs(preserved["recorded_resource_urls"])
+		collector.collectPreservedCredentialParameters(preserved[dsl.ImportPreservedCredentialParameterNamesKey])
+		collector.collectPreservedSecretDataColumns(preserved["recorded_input_secret_columns"])
 		targets, err := decodeImportedCredentialTargets(
 			preserved[dsl.ImportPreservedCredentialTargetsMetadataKey],
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("inspect imported credential locators: %w", err)
+			if strictLocators {
+				return nil, nil, fmt.Errorf("inspect imported credential locators: %w", err)
+			}
+			targets = nil
 		}
 		for _, target := range targets {
 			if err := collector.collectScriptConfigTarget(target); err != nil {
-				return nil, nil, err
+				if strictLocators || isUnsupportedCredentialLocatorFieldError(err) {
+					return nil, nil, err
+				}
 			}
 		}
 	}
@@ -208,17 +246,24 @@ func inspectImportedCredentialsShowing(
 			ref.Metadata()[dsl.ImportPreservedCredentialTargetsMetadataKey],
 		)
 		if err != nil {
-			return fmt.Errorf("%s: %w", ref.Path, err)
+			if strictLocators {
+				return fmt.Errorf("%s: %w", ref.Path, err)
+			}
+			targets = nil
 		}
 		collector.collectSurfaceKnownCredentials(ref)
-		if len(targets) == 0 {
+		if !strictLocators || len(targets) == 0 {
 			if err := collector.collectLegacySurfaceBodyCredentials(ref); err != nil {
-				return fmt.Errorf("%s: %w", ref.Path, err)
+				if strictLocators {
+					return fmt.Errorf("%s: %w", ref.Path, err)
+				}
 			}
 		}
 		for _, target := range targets {
 			if err := collector.collectSurfaceTarget(ref, target); err != nil {
-				return fmt.Errorf("%s: %w", ref.Path, err)
+				if strictLocators || isUnsupportedCredentialLocatorFieldError(err) {
+					return fmt.Errorf("%s: %w", ref.Path, err)
+				}
 			}
 		}
 		return nil
@@ -426,12 +471,31 @@ type importedCredentialCollector struct {
 	// cookie, session, anti-forgery or tracing state, which a script view
 	// shows (run evidence still treats them as credentials).
 	showRecordedState bool
+	strictLocators    bool
 }
 
 // shownRecordedState reports whether a header's value stays out because it
 // is recorded state a script view shows.
 func (collector *importedCredentialCollector) shownRecordedState(name string) bool {
 	return collector.showRecordedState && credential.RecordedStateHeader(name)
+}
+
+func (collector *importedCredentialCollector) isSensitiveName(name string) bool {
+	if collector != nil && collector.strictLocators {
+		return credential.SensitiveName(name)
+	}
+	return scrub.SensitiveName(name)
+}
+
+func (collector *importedCredentialCollector) isSensitiveXMLName(name string) bool {
+	if collector != nil && collector.strictLocators {
+		return credential.SensitiveXMLName(name)
+	}
+	return scrub.SensitiveXMLName(name)
+}
+
+func (collector *importedCredentialCollector) isSensitiveHeader(name string) bool {
+	return credential.SensitiveHeader(name) || collector.isSensitiveName(name)
 }
 
 func (collector *importedCredentialCollector) add(value string) {
@@ -453,6 +517,8 @@ func (collector *importedCredentialCollector) add(value string) {
 					collector.collectParameterValues(strings.TrimSpace(strings.TrimPrefix(expression, "var.")))
 				case strings.HasPrefix(expression, "param."):
 					collector.collectParameterValues(strings.TrimSpace(strings.TrimPrefix(expression, "param.")))
+				case strings.HasPrefix(expression, "data."):
+					collector.collectDataTemplateValues(strings.TrimSpace(strings.TrimPrefix(expression, "data.")))
 				}
 			}
 			// Runtime templates are protected from their resolved values. Keeping
@@ -501,6 +567,10 @@ func (collector *importedCredentialCollector) collectParameterValues(name string
 		matched = parameter
 	}
 	if matched == nil {
+		if !collector.strictLocators {
+			collector.collectDataSourceColumnByName("", name)
+			collector.collectSingleColumnDataSourceValues(name)
+		}
 		return
 	}
 	for _, value := range matched.Values {
@@ -513,12 +583,356 @@ func (collector *importedCredentialCollector) collectParameterValues(name string
 		collector.seen[value] = struct{}{}
 		collector.values = append(collector.values, value)
 	}
+	if column := strings.TrimSpace(matched.Column); column != "" {
+		collector.collectDataSourceColumnByName(matched.DataSource, column)
+	} else if !collector.strictLocators {
+		collector.collectDataSourceColumnByName(matched.DataSource, matched.Name)
+		if strings.TrimSpace(matched.DataSource) != "" {
+			collector.collectSingleColumnDataSourceValues(matched.DataSource)
+		}
+	}
+}
+
+func (collector *importedCredentialCollector) collectDataTemplateValues(reference string) {
+	if collector.script == nil || reference == "" {
+		return
+	}
+	if source, column, found := strings.Cut(reference, "."); found {
+		collector.collectDataSourceColumnByName(source, column)
+		return
+	}
+	collector.collectDataSourceColumnByName("", reference)
+}
+
+func (collector *importedCredentialCollector) collectDataSourceColumnByName(sourceName, column string) {
+	if collector.script == nil || strings.TrimSpace(column) == "" {
+		return
+	}
+	sourceName = strings.TrimSpace(sourceName)
+	for _, ds := range collector.script.DataSources {
+		if sourceName != "" && !strings.EqualFold(strings.TrimSpace(ds.Name), sourceName) {
+			continue
+		}
+		for _, value := range importedDataSourceColumnValuesWithOptions(ds, column, !collector.strictLocators) {
+			if value == "" || value == credential.Redacted {
+				continue
+			}
+			if _, exists := collector.seen[value]; exists {
+				continue
+			}
+			collector.seen[value] = struct{}{}
+			collector.values = append(collector.values, value)
+		}
+		if sourceName != "" {
+			return
+		}
+	}
+}
+
+func (collector *importedCredentialCollector) collectSingleColumnDataSourceValues(sourceName string) {
+	sourceName = strings.TrimSpace(sourceName)
+	if collector == nil || collector.script == nil || sourceName == "" {
+		return
+	}
+	for _, ds := range collector.script.DataSources {
+		if !strings.EqualFold(strings.TrimSpace(ds.Name), sourceName) {
+			continue
+		}
+		columns, rows := parseImportedDataSourceRecords(ds, !collector.strictLocators)
+		if len(columns) != 1 {
+			return
+		}
+		for _, row := range rows {
+			if len(row) == 0 {
+				continue
+			}
+			value := strings.TrimSpace(row[0])
+			if value == "" || value == credential.Redacted {
+				continue
+			}
+			if _, exists := collector.seen[value]; exists {
+				continue
+			}
+			collector.seen[value] = struct{}{}
+			collector.values = append(collector.values, value)
+		}
+		return
+	}
+}
+
+func (collector *importedCredentialCollector) collectScriptSensitiveParametersAndDataSources() {
+	if collector == nil || collector.script == nil {
+		return
+	}
+	for _, parameter := range collector.script.Parameters {
+		name := strings.TrimSpace(parameter.Name)
+		col := strings.TrimSpace(parameter.Column)
+		if !collector.isSensitiveName(name) && !collector.isSensitiveName(col) {
+			continue
+		}
+		collector.collectParameterValues(name)
+		if collector.templatePlan != nil && name != "" {
+			collector.templatePlan.expressions["param."+name] = struct{}{}
+			collector.templatePlan.expressions["var."+name] = struct{}{}
+		}
+	}
+	for _, ds := range collector.script.DataSources {
+		columns, rows := parseImportedDataSourceRecords(ds, !collector.strictLocators)
+		if len(columns) == 0 || len(rows) == 0 {
+			continue
+		}
+		sourceName := strings.TrimSpace(ds.Name)
+		singleSensitiveSource := len(columns) == 1 && collector.isSensitiveName(sourceName)
+		for colIdx, colName := range columns {
+			colTrimmed := strings.TrimSpace(colName)
+			colSensitive := collector.isSensitiveName(colTrimmed)
+			if !colSensitive && !singleSensitiveSource {
+				continue
+			}
+			matchName := colTrimmed
+			if !colSensitive {
+				matchName = sourceName
+			}
+			for _, row := range rows {
+				if colIdx >= len(row) {
+					continue
+				}
+				value := strings.TrimSpace(row[colIdx])
+				if value == "" || value == credential.Redacted || !credential.MatchableNamedValue(matchName, value) {
+					continue
+				}
+				collector.add(value)
+			}
+			if collector.templatePlan != nil && sourceName != "" && colTrimmed != "" {
+				collector.templatePlan.expressions["data."+sourceName+"."+colTrimmed] = struct{}{}
+			}
+		}
+	}
+}
+
+func (collector *importedCredentialCollector) collectPreservedCredentialParameters(raw any) {
+	if collector == nil || collector.script == nil || raw == nil {
+		return
+	}
+	addName := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		collector.collectParameterValues(name)
+		if collector.templatePlan != nil {
+			collector.templatePlan.expressions["param."+name] = struct{}{}
+			collector.templatePlan.expressions["var."+name] = struct{}{}
+		}
+	}
+	switch names := raw.(type) {
+	case []string:
+		for _, name := range names {
+			addName(name)
+		}
+	case []any:
+		for _, item := range names {
+			if name, ok := item.(string); ok {
+				addName(name)
+			}
+		}
+	}
+}
+
+func (collector *importedCredentialCollector) collectPreservedSecretDataColumns(raw any) {
+	if collector == nil || collector.script == nil || raw == nil {
+		return
+	}
+	addCol := func(column string) {
+		column = strings.TrimSpace(column)
+		if column == "" {
+			return
+		}
+		collector.collectDataSourceColumnByName("", column)
+		if collector.templatePlan != nil {
+			for _, ds := range collector.script.DataSources {
+				if strings.TrimSpace(ds.Name) != "" {
+					collector.templatePlan.expressions["data."+strings.TrimSpace(ds.Name)+"."+column] = struct{}{}
+				}
+			}
+		}
+	}
+	switch cols := raw.(type) {
+	case []string:
+		for _, col := range cols {
+			addCol(col)
+		}
+	case []any:
+		for _, item := range cols {
+			if col, ok := item.(string); ok {
+				addCol(col)
+			}
+		}
+	}
+}
+
+func (collector *importedCredentialCollector) collectLiteralBasicComposites(username, password, oauthMethod string) {
+	if username == "" && password == "" {
+		return
+	}
+	if password != "" {
+		collector.add(password)
+	}
+	if templatePattern.MatchString(username) || templatePattern.MatchString(password) {
+		collector.collectTemplateReferences(username)
+		collector.collectTemplateReferences(password)
+		return
+	}
+	pair := username + ":" + password
+	switch oauthMethod {
+	case "client_secret_basic":
+		pair = url.QueryEscape(username) + ":" + url.QueryEscape(password)
+	case "kafka_3_3_1_basic":
+		pair = strings.TrimFunc(username, func(r rune) bool { return r <= 0x20 }) + ":" + strings.TrimFunc(password, func(r rune) bool { return r <= 0x20 })
+		collector.add(base64.URLEncoding.EncodeToString([]byte(pair)))
+	}
+	payload := base64.StdEncoding.EncodeToString([]byte(pair))
+	collector.add(pair)
+	collector.add(payload)
+	collector.add("Basic " + payload)
+}
+
+func (collector *importedCredentialCollector) collectLiteralURLBasicComposites(raw string) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return
+	}
+	rawUser, rawPass, ok := splitURLUserinfo(raw)
+	if !ok {
+		if rawAuthUser, hasAt := splitURLAuthorityUser(raw); hasAt && templatePattern.MatchString(rawAuthUser) {
+			collector.add(rawAuthUser)
+		}
+		return
+	}
+	username := rawUser
+	if !templatePattern.MatchString(rawUser) {
+		username = unescapeURLUserinfoComponent(rawUser)
+	}
+	password := rawPass
+	if !templatePattern.MatchString(rawPass) {
+		password = unescapeURLUserinfoComponent(rawPass)
+	}
+	collector.collectLiteralBasicComposites(username, password, "")
+}
+
+func (collector *importedCredentialCollector) collectLiteralMailSASLComposites(username, password string) {
+	if username == "" && password == "" {
+		return
+	}
+	if password != "" {
+		collector.add(password)
+	}
+	if templatePattern.MatchString(username) || templatePattern.MatchString(password) {
+		collector.collectTemplateReferences(username)
+		collector.collectTemplateReferences(password)
+		return
+	}
+	for _, value := range appendMailSASLComposites(nil, username, password) {
+		collector.add(value)
+	}
 }
 
 func (collector *importedCredentialCollector) collectSensitiveConfig(config dsl.ScriptConfig) error {
 	collector.collectDSN(config.Database.DSN)
+	collector.collectDSN(config.EventHubs.ConnectionString)
+	collector.collectDSN(config.SAPGUI.ConnectionString)
+	for _, rawURL := range []string{
+		config.HTTP.Proxy.URL,
+		config.Browser.Proxy.Server,
+		config.Kafka.SchemaRegistryURL,
+		config.Appium.ServerURL,
+		config.JMS.BrokerURL,
+	} {
+		collector.collectURL(rawURL, nil)
+		collector.collectLiteralURLBasicComposites(rawURL)
+	}
+	for name, value := range config.HTTP.DefaultHeaders {
+		if collector.isSensitiveHeader(name) {
+			collector.collectHeaderCredential(name, value)
+		}
+	}
+	for _, header := range config.HTTP.DefaultHeaderList {
+		if collector.isSensitiveHeader(header.Name) {
+			collector.collectHeaderCredential(header.Name, header.Value)
+		}
+	}
+	for name, value := range config.GRPC.Metadata {
+		if collector.isSensitiveHeader(name) {
+			collector.collectHeaderCredential(name, value)
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(config.HTTP.Auth.Type), "basic") {
+		collector.collectLiteralBasicComposites(config.HTTP.Auth.Username, config.HTTP.Auth.Password, "")
+	}
+	if config.HTTP.Proxy.Username != "" || config.HTTP.Proxy.Password != "" {
+		collector.collectLiteralBasicComposites(config.HTTP.Proxy.Username, config.HTTP.Proxy.Password, "")
+	}
+	if config.Browser.HTTPCredentials.Username != "" || config.Browser.HTTPCredentials.Password != "" {
+		collector.collectLiteralBasicComposites(config.Browser.HTTPCredentials.Username, config.Browser.HTTPCredentials.Password, "")
+	}
+	if config.Browser.Proxy.Username != "" || config.Browser.Proxy.Password != "" {
+		collector.collectLiteralBasicComposites(config.Browser.Proxy.Username, config.Browser.Proxy.Password, "")
+	}
+	if config.Kafka.OAuth != nil {
+		for _, candidate := range []struct {
+			secret   string
+			explicit bool
+		}{
+			{secret: config.Kafka.OAuth.ClientSecretRef, explicit: false},
+			{secret: config.Kafka.OAuth.ClientSecret, explicit: true},
+		} {
+			oauthSecret := candidate.secret
+			if !candidate.explicit && strings.TrimSpace(oauthSecret) == "" {
+				continue
+			}
+			if oauthSecret != "" && !containsPlatformSecretReference(oauthSecret) && !templatePattern.MatchString(oauthSecret) {
+				if candidate.explicit || !ValidLogicalSecretName(strings.TrimSpace(oauthSecret)) {
+					collector.add(oauthSecret)
+					if config.Kafka.OAuth.AuthenticationMethod == "client_secret_basic" || config.Kafka.OAuth.AuthenticationMethod == "kafka_3_3_1_basic" {
+						collector.collectLiteralBasicComposites(config.Kafka.OAuth.ClientID, oauthSecret, config.Kafka.OAuth.AuthenticationMethod)
+					}
+				}
+			} else if templatePattern.MatchString(oauthSecret) {
+				collector.collectTemplateReferences(oauthSecret)
+			}
+		}
+	}
+	if config.Network.Username != "" || config.Network.Password != "" {
+		collector.collectLiteralMailSASLComposites(config.Network.Username, config.Network.Password)
+	}
+	if state := strings.TrimSpace(config.Browser.StorageState); state != "" && !containsPlatformSecretReference(state) && !templatePattern.MatchString(state) {
+		for _, secret := range browserprotocol.StorageStateSecretValues(state) {
+			collector.add(secret)
+		}
+	}
+	if collector.script != nil {
+		for _, identity := range dsl.BrowserSessionIdentities(collector.script) {
+			state := strings.TrimSpace(identity.StorageState)
+			if state != "" && !containsPlatformSecretReference(state) && !templatePattern.MatchString(state) {
+				for _, secret := range browserprotocol.StorageStateSecretValues(state) {
+					collector.add(secret)
+				}
+			}
+		}
+	}
 	for _, argument := range config.JavaVuser.AdditionalVMParameters {
-		if !javarunner.ContainsSensitiveVMParameterValue(argument) {
+		sensitive := javarunner.ContainsSensitiveVMParameterValue(argument)
+		if !sensitive && len(argument) > 2 && strings.EqualFold(argument[:2], "-D") {
+			if propName, _, ok := strings.Cut(argument[2:], "="); ok {
+				for _, seg := range strings.Split(propName, ".") {
+					if collector.isSensitiveName(seg) {
+						sensitive = true
+						break
+					}
+				}
+			}
+		}
+		if !sensitive {
 			continue
 		}
 		// Preserve both forms in the matcher. Runtime and runner diagnostics
@@ -686,7 +1100,7 @@ func (collector *importedCredentialCollector) collectDSN(raw string) {
 		return r == ';' || r == '\r' || r == '\n' || r == '\t' || r == ' '
 	}) {
 		name, value, found := strings.Cut(segment, "=")
-		if !found || !credential.SensitiveName(strings.TrimLeft(name, "-/")) {
+		if !found || !collector.isSensitiveName(strings.TrimLeft(name, "-/")) {
 			continue
 		}
 		collector.add(strings.Trim(value, `"'`))
@@ -756,14 +1170,24 @@ func (collector *importedCredentialCollector) collectSensitiveTree(value any, ke
 			if strings.EqualFold(strings.TrimSpace(childKey), "token_url") {
 				if scalar, ok := child.(string); ok {
 					collector.collectURL(scalar, nil)
+					collector.collectLiteralURLBasicComposites(scalar)
 				}
 				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(childKey), "client_secret_ref") {
+				if scalar, ok := child.(string); ok {
+					trimmed := strings.TrimSpace(scalar)
+					if trimmed != "" && (collector.resolved || !ValidLogicalSecretName(trimmed)) {
+						collector.add(scalar)
+					}
+					continue
+				}
 			}
 			if _, scalar := child.(string); scalar && nextHeaderMap && collector.shownRecordedState(childKey) {
 				continue
 			}
-			sensitive := credential.SensitiveName(childKey) ||
-				(nextHeaderMap && credential.SensitiveHeader(childKey))
+			sensitive := collector.isSensitiveName(childKey) ||
+				(nextHeaderMap && collector.isSensitiveHeader(childKey))
 			if scalar, ok := child.(string); ok && sensitive {
 				if credential.MatchableNamedValue(childKey, scalar) {
 					collector.add(scalar)
@@ -784,21 +1208,42 @@ func (collector *importedCredentialCollector) collectSurfaceKnownCredentials(ref
 		action := ref.Action
 		collector.collectMarkedBrowserActionValues(action)
 		collector.collectURL(action.Target, nil)
+		collector.collectLiteralURLBasicComposites(action.Target)
+		if baseURL, ok := action.Metadata["effective_base_url"].(string); ok && baseURL != "" {
+			collector.collectURL(baseURL, nil)
+			collector.collectLiteralURLBasicComposites(baseURL)
+		}
 		for _, header := range action.HeaderList {
-			if credential.SensitiveHeader(header.Name) {
+			if collector.isSensitiveHeader(header.Name) {
 				collector.collectHeaderCredential(header.Name, header.Value)
 			}
 		}
 		for name, value := range action.Headers {
-			if credential.SensitiveHeader(name) {
+			if collector.isSensitiveHeader(name) {
 				collector.collectHeaderCredential(name, value)
 			}
 		}
 		if action.Auth != nil {
 			collector.add(action.Auth.Password)
 			collector.add(action.Auth.Token)
+			if strings.EqualFold(strings.TrimSpace(action.Auth.Type), "basic") {
+				collector.collectLiteralBasicComposites(action.Auth.Username, action.Auth.Password, "")
+			}
 		}
 		collector.collectSensitiveTree(action.Params, "params", false)
+		paramUser, hasUser := actionParamString(action.Params, "username")
+		paramPass, hasPass := actionParamString(action.Params, "password")
+		if hasUser || hasPass {
+			effectiveUser := paramUser
+			effectivePass := paramPass
+			if effectiveUser == "" && collector.script != nil {
+				effectiveUser = collector.script.Config.Network.Username
+			}
+			if effectivePass == "" && collector.script != nil {
+				effectivePass = collector.script.Config.Network.Password
+			}
+			collector.collectLiteralMailSASLComposites(effectiveUser, effectivePass)
+		}
 		return
 	}
 	request := ref.Request
@@ -807,37 +1252,99 @@ func (collector *importedCredentialCollector) collectSurfaceKnownCredentials(ref
 	}
 	if target, _ := request["target"].(string); target != "" {
 		collector.collectURL(target, nil)
+		collector.collectLiteralURLBasicComposites(target)
 	}
 	collector.collectRequestHeaders(request)
 	switch auth := request["auth"].(type) {
 	case map[string]any:
-		if password, _ := auth["password"].(string); password != "" {
+		username, _ := auth["username"].(string)
+		password, _ := auth["password"].(string)
+		authType, _ := auth["type"].(string)
+		if password != "" {
 			collector.add(password)
 		}
 		if token, _ := auth["token"].(string); token != "" {
 			collector.add(token)
 		}
+		if strings.EqualFold(strings.TrimSpace(authType), "basic") {
+			collector.collectLiteralBasicComposites(username, password, "")
+		}
 	case *dsl.AuthConfig:
 		if auth != nil {
 			collector.add(auth.Password)
 			collector.add(auth.Token)
+			if strings.EqualFold(strings.TrimSpace(auth.Type), "basic") {
+				collector.collectLiteralBasicComposites(auth.Username, auth.Password, "")
+			}
 		}
 	case dsl.AuthConfig:
 		collector.add(auth.Password)
 		collector.add(auth.Token)
+		if strings.EqualFold(strings.TrimSpace(auth.Type), "basic") {
+			collector.collectLiteralBasicComposites(auth.Username, auth.Password, "")
+		}
 	}
 	if params, ok := request["params"]; ok {
 		collector.collectSensitiveTree(params, "params", false)
 	}
 }
 
-func (collector *importedCredentialCollector) collectMarkedBrowserActionValues(action *dsl.Action) {
-	if action == nil || !strings.HasPrefix(strings.ToLower(strings.TrimSpace(action.Type)), "browser_") {
-		return
+func browserSelectorIndicatesSecretInput(raw string) bool {
+	lower := strings.ToLower(strings.TrimSpace(raw))
+	if lower == "" {
+		return false
 	}
-	marked, _ := action.Metadata["source_marked_secret"].(bool)
-	masked, _ := action.Metadata["source_masked_secret"].(bool)
-	if !marked && !masked {
+	for _, needle := range []string{
+		`type="password"`, `type='password'`, `type=password`,
+		`autocomplete="current-password"`, `autocomplete='current-password'`, `autocomplete=current-password`,
+		`autocomplete="new-password"`, `autocomplete='new-password'`, `autocomplete=new-password`,
+		`autocomplete="one-time-code"`, `autocomplete='one-time-code'`, `autocomplete=one-time-code`,
+		`#password`, `[name="password"]`, `[name='password']`, `[id="password"]`, `[id='password']`,
+		`[name*="password"`, `[name*='password'`, `[id*="password"`, `[id*='password'`,
+		`[name="pass"]`, `[name='pass']`, `[name="passwd"]`, `[name='passwd']`,
+		`[name="otp"]`, `[name='otp']`, `[name="totp"]`, `[name='totp']`, `[name="mfa_code"]`,
+	} {
+		if strings.Contains(lower, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSensitiveBrowserActionInput(actionType, actionName, selector, target string, metadata, params map[string]any) bool {
+	lowerType := strings.ToLower(strings.TrimSpace(actionType))
+	if !strings.HasPrefix(lowerType, "browser_") {
+		return false
+	}
+	marked, _ := metadata["source_marked_secret"].(bool)
+	masked, _ := metadata["source_masked_secret"].(bool)
+	if marked || masked {
+		return true
+	}
+	switch lowerType {
+	case "browser_fill", "browser_type":
+		if browserSelectorIndicatesSecretInput(selector) || browserSelectorIndicatesSecretInput(target) {
+			return true
+		}
+		if credential.SensitiveName(actionName) {
+			return true
+		}
+	case "browser_handle_dialog":
+		if kind, _ := metadata["source_dialog_kind"].(string); strings.Contains(strings.ToLower(kind), "password") {
+			return true
+		}
+		if credential.SensitiveName(actionName) || strings.Contains(strings.ToLower(actionName), "password") {
+			return true
+		}
+		if promptText, _ := params["prompt"].(string); strings.Contains(strings.ToLower(promptText), "password") {
+			return true
+		}
+	}
+	return false
+}
+
+func (collector *importedCredentialCollector) collectMarkedBrowserActionValues(action *dsl.Action) {
+	if action == nil || !isSensitiveBrowserActionInput(action.Type, action.Name, action.Selector, action.Target, action.Metadata, action.Params) {
 		return
 	}
 
@@ -860,13 +1367,13 @@ func (collector *importedCredentialCollector) collectRequestHeaders(request map[
 	switch headers := request["headers"].(type) {
 	case map[string]any:
 		for name, raw := range headers {
-			if value, ok := raw.(string); ok && credential.SensitiveHeader(name) {
+			if value, ok := raw.(string); ok && collector.isSensitiveHeader(name) {
 				collector.collectHeaderCredential(name, value)
 			}
 		}
 	case map[string]string:
 		for name, value := range headers {
-			if credential.SensitiveHeader(name) {
+			if collector.isSensitiveHeader(name) {
 				collector.collectHeaderCredential(name, value)
 			}
 		}
@@ -875,7 +1382,7 @@ func (collector *importedCredentialCollector) collectRequestHeaders(request map[
 		for _, header := range list {
 			name := header.Name
 			value := header.Value
-			if credential.SensitiveHeader(name) {
+			if collector.isSensitiveHeader(name) {
 				collector.collectHeaderCredential(name, value)
 			}
 		}
@@ -914,7 +1421,7 @@ func (collector *importedCredentialCollector) addNamed(name, value string) {
 
 func (collector *importedCredentialCollector) addCookieValue(cookie *stdhttp.Cookie) {
 	if len(cookie.Value) >= minImportedCookieCredentialBytes ||
-		credential.SensitiveName(cookie.Name) && credential.MatchableNamedValue(cookie.Name, cookie.Value) {
+		collector.isSensitiveName(cookie.Name) && credential.MatchableNamedValue(cookie.Name, cookie.Value) {
 		collector.add(cookie.Value)
 	}
 }
@@ -1170,17 +1677,48 @@ func (budget *legacyCredentialBodyBudget) consumeBytes(count int) error {
 	return nil
 }
 
+func actionCarriesExecutablePayload(actionType, method string) bool {
+	if strings.TrimSpace(method) != "" {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(actionType)) {
+	case "",
+		"review_required",
+		"source_review",
+		"comment",
+		"think_time",
+		"sleep",
+		"wait",
+		"log",
+		"set_variable",
+		"source_parameter",
+		"source_transaction",
+		"transaction",
+		"control_if",
+		"control_loop",
+		"control_foreach",
+		"control_switch",
+		"control_while",
+		"http_sync",
+		"http_async_stop":
+		return false
+	default:
+		return true
+	}
+}
+
 func (collector *importedCredentialCollector) collectLegacySurfaceBodyCredentials(
 	ref dslwalk.SurfaceRef,
 ) error {
 	if ref.Action != nil {
-		if strings.TrimSpace(ref.Action.Method) == "" || ref.Action.Body == "" {
+		if ref.Action.Body == "" || !actionCarriesExecutablePayload(ref.Action.Type, ref.Action.Method) {
 			return nil
 		}
 	} else {
+		actionType, _ := ref.Request["type"].(string)
 		method, _ := ref.Request["method"].(string)
 		body, _ := ref.Request["body"].(string)
-		if strings.TrimSpace(method) == "" || body == "" {
+		if body == "" || !actionCarriesExecutablePayload(actionType, method) {
 			return nil
 		}
 	}
@@ -1223,7 +1761,7 @@ func (collector *importedCredentialCollector) collectLegacyRequestBodyCredential
 	declaredMediaType := baseMediaType != ""
 	trimmed := bytes.TrimSpace(payload)
 	scanResult := func(err error) error {
-		if err == nil || legacyBodyHasSensitiveNameHint(payload) {
+		if err == nil || legacyBodyHasSensitiveNameHint(payload, collector.strictLocators) {
 			return err
 		}
 		// A historical load test may intentionally send malformed structured
@@ -1273,17 +1811,21 @@ func (collector *importedCredentialCollector) collectLegacyRequestBodyCredential
 	case looksLikeLegacyGraphQLBody(trimmed):
 		_, err := collector.collectLegacyGraphQLCredentialLiterals(string(payload), budget)
 		return scanResult(err)
-	case legacyFormBodyHasSensitiveName(trimmed):
+	case legacyFormBodyHasSensitiveName(trimmed, collector.strictLocators):
 		return scanResult(collector.collectLegacyFormBodyCredentials(payload, budget))
 	default:
 		return nil
 	}
 }
 
-func legacyBodyHasSensitiveNameHint(payload []byte) bool {
+func legacyBodyHasSensitiveNameHint(payload []byte, strictLocators bool) bool {
 	check := func(candidate string) bool {
-		return credential.SensitiveName(candidate) ||
-			credential.SensitiveXMLName(candidate)
+		if strictLocators {
+			return credential.SensitiveName(candidate) ||
+				credential.SensitiveXMLName(candidate)
+		}
+		return scrub.SensitiveName(candidate) ||
+			scrub.SensitiveXMLName(candidate)
 	}
 	for start := 0; start < len(payload); {
 		for start < len(payload) && !legacyCredentialNameByte(payload[start]) {
@@ -1328,14 +1870,14 @@ func legacyCredentialNameByte(value byte) bool {
 		strings.ContainsRune("_-.[]:%", rune(value))
 }
 
-func legacyFormBodyHasSensitiveName(payload []byte) bool {
+func legacyFormBodyHasSensitiveName(payload []byte, strictLocators bool) bool {
 	for _, pair := range bytes.Split(payload, []byte("&")) {
 		rawName, _, found := bytes.Cut(pair, []byte("="))
 		if !found {
 			continue
 		}
 		name, err := url.QueryUnescape(string(rawName))
-		if err == nil && credential.SensitiveName(name) {
+		if err == nil && ((strictLocators && credential.SensitiveName(name)) || (!strictLocators && scrub.SensitiveName(name))) {
 			return true
 		}
 	}
@@ -1374,12 +1916,18 @@ func (collector *importedCredentialCollector) collectLegacyJSONBodyCredentials(
 	payload []byte,
 	budget *legacyCredentialBodyBudget,
 ) error {
+	scanPayload := payload
+	if !collector.resolved && bytes.Contains(payload, []byte("{{")) {
+		if readable, ok := templatedjson.NullExpressions(payload, nil); ok {
+			scanPayload = readable
+		}
+	}
 	scan := legacyJSONCredentialScan{
 		collector:       collector,
 		budget:          budget,
 		variableScalars: make(map[string][]string),
 	}
-	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder := json.NewDecoder(bytes.NewReader(scanPayload))
 	decoder.UseNumber()
 	if err := scan.walk(decoder, 0, false, "", "", ""); err != nil {
 		return errors.New("legacy credential JSON body is malformed or exceeds runtime limits")
@@ -1445,7 +1993,7 @@ func (scan *legacyJSONCredentialScan) walk(
 				if err := scan.walk(
 					decoder,
 					depth+1,
-					sensitive || credential.SensitiveName(key),
+					sensitive || scan.collector.isSensitiveName(key),
 					childTopField,
 					childVariable,
 					key,
@@ -1539,12 +2087,12 @@ func (collector *importedCredentialCollector) collectLegacyXMLBodyCredentials(
 			if len(stack) >= maxLegacyCredentialBodyDepth {
 				return errors.New("legacy credential XML body exceeds the nesting limit")
 			}
-			sensitive := credential.SensitiveXMLName(typed.Name.Local)
+			sensitive := collector.isSensitiveXMLName(typed.Name.Local)
 			if len(stack) > 0 && stack[len(stack)-1].sensitive {
 				sensitive = true
 			}
 			for _, attr := range typed.Attr {
-				if credential.SensitiveXMLName(attr.Name.Local) {
+				if collector.isSensitiveXMLName(attr.Name.Local) {
 					collector.addNamed(attr.Name.Local, attr.Value)
 				} else if sensitive {
 					collector.addNamed(typed.Name.Local, attr.Value)
@@ -1592,7 +2140,7 @@ func (collector *importedCredentialCollector) collectLegacyFormBodyCredentials(
 		if nameErr != nil || valueErr != nil {
 			return errors.New("legacy credential form body has invalid encoding")
 		}
-		if credential.SensitiveName(name) {
+		if collector.isSensitiveName(name) {
 			collector.addNamed(name, value)
 		}
 	}
@@ -1620,7 +2168,7 @@ func (collector *importedCredentialCollector) collectLegacyMultipartBodyCredenti
 		filePart := false
 		partName := ""
 		for _, header := range part.headers {
-			if credential.SensitiveHeader(header.name) {
+			if collector.isSensitiveHeader(header.name) {
 				collector.collectHeaderCredential(header.name, header.value)
 			}
 			if !strings.EqualFold(header.name, "Content-Disposition") {
@@ -1631,7 +2179,7 @@ func (collector *importedCredentialCollector) collectLegacyMultipartBodyCredenti
 				return errors.New("legacy credential multipart disposition is malformed")
 			}
 			partName = params["name"]
-			sensitivePart = credential.SensitiveName(partName)
+			sensitivePart = collector.isSensitiveName(partName)
 			filePart = strings.TrimSpace(params["filename"]) != ""
 		}
 		if sensitivePart {
@@ -1676,7 +2224,7 @@ func (collector *importedCredentialCollector) collectLegacyGraphQLCredentialLite
 	eligible := legacyGraphQLCredentialContexts(tokens)
 	for index := 0; index+1 < len(tokens); index++ {
 		if tokens[index].kind != legacyGraphQLNameToken ||
-			!credential.SensitiveName(tokens[index].text) ||
+			!collector.isSensitiveName(tokens[index].text) ||
 			!eligible[index] ||
 			tokens[index+1].text != ":" {
 			continue
@@ -2001,17 +2549,66 @@ func importedRequestHeaderList(raw any) (dsl.HeaderList, bool) {
 	}
 }
 
+func unescapeURLUserinfoComponent(raw string) string {
+	if decoded, err := url.PathUnescape(raw); err == nil {
+		return decoded
+	}
+	return raw
+}
+
+func splitURLAuthorityUser(raw string) (string, bool) {
+	authority := strings.TrimSpace(raw)
+	if scheme := strings.Index(authority, "://"); scheme >= 0 {
+		authority = authority[scheme+len("://"):]
+	} else if strings.HasPrefix(authority, "//") {
+		authority = authority[len("//"):]
+	} else {
+		return "", false
+	}
+	if end := strings.IndexAny(authority, "/?#"); end >= 0 {
+		authority = authority[:end]
+	}
+	at := strings.LastIndex(authority, "@")
+	if at < 0 {
+		return "", false
+	}
+	return authority[:at], true
+}
+
+func (collector *importedCredentialCollector) collectURLRawUserinfo(raw string) bool {
+	rawUser, rawPass, hasUserPass := splitURLUserinfo(raw)
+	parsed, err := url.Parse(raw)
+	if err == nil && parsed.User != nil && !(hasUserPass && (templatePattern.MatchString(rawUser) || templatePattern.MatchString(rawPass))) {
+		collector.collectURLUserinfo(parsed.User)
+		return true
+	}
+	if hasUserPass {
+		if templatePattern.MatchString(rawUser) || templatePattern.MatchString(rawPass) {
+			collector.collectTemplateReferences(rawUser)
+			if rawPass != "" {
+				if !templatePattern.MatchString(rawPass) {
+					collector.add(unescapeURLUserinfoComponent(rawPass))
+				} else {
+					collector.add(rawPass)
+				}
+			}
+		} else {
+			collector.collectURLUserinfo(url.UserPassword(unescapeURLUserinfoComponent(rawUser), unescapeURLUserinfoComponent(rawPass)))
+		}
+		return true
+	}
+	if rawAuthUser, hasAt := splitURLAuthorityUser(raw); hasAt && templatePattern.MatchString(rawAuthUser) {
+		collector.add(rawAuthUser)
+		return true
+	}
+	return err == nil && parsed.User != nil
+}
+
 func (collector *importedCredentialCollector) collectURL(raw string, target *importedCredentialTarget) {
 	if raw == "" {
 		return
 	}
-	parsed, err := url.Parse(raw)
-	if err != nil {
-		return
-	}
-	if parsed.User != nil {
-		collector.collectURLUserinfo(parsed.User)
-	}
+	collector.collectURLRawUserinfo(raw)
 	queryStart := strings.IndexByte(raw, '?')
 	if queryStart < 0 {
 		return
@@ -2027,9 +2624,14 @@ func (collector *importedCredentialCollector) collectURL(raw string, target *imp
 		if nameErr != nil || valueErr != nil {
 			continue
 		}
-		if (credential.SensitiveName(decodedName) || target != nil && index == target.Index) &&
-			credential.MatchableNamedValue(decodedName, decodedValue) {
-			collector.add(decodedValue)
+		if collector.isSensitiveName(decodedName) || target != nil && index == target.Index {
+			if !collector.resolved && templatePattern.MatchString(decodedValue) {
+				collector.add(decodedValue)
+				continue
+			}
+			if credential.MatchableNamedValue(decodedName, decodedValue) {
+				collector.add(decodedValue)
+			}
 		}
 	}
 }
@@ -2060,23 +2662,32 @@ func (collector *importedCredentialCollector) collectURLTarget(
 		if err != nil {
 			return errors.New("retained credential query encoding is invalid")
 		}
+		if !collector.resolved && templatePattern.MatchString(value) {
+			collector.add(value)
+			return nil
+		}
 		if name, _ := url.QueryUnescape(rawName); credential.MatchableNamedValue(name, value) {
 			collector.add(value)
 		}
 		return nil
 	case strings.HasSuffix(field, ".userinfo"):
-		parsed, err := url.Parse(raw)
-		if err != nil || parsed.User == nil {
+		if !collector.collectURLRawUserinfo(raw) {
 			return errors.New("retained credential userinfo locator no longer matches the executable request")
 		}
-		collector.collectURLUserinfo(parsed.User)
 		return nil
 	case strings.HasSuffix(field, ".fragment"):
-		parsed, err := url.Parse(raw)
-		if err != nil || parsed.Fragment == "" {
+		if parsed, err := url.Parse(raw); err == nil {
+			if parsed.Fragment == "" {
+				return errors.New("retained credential fragment locator no longer matches the executable request")
+			}
+			collector.add(parsed.Fragment)
+			return nil
+		}
+		fragStart := strings.IndexByte(raw, '#')
+		if fragStart < 0 || fragStart+1 >= len(raw) {
 			return errors.New("retained credential fragment locator no longer matches the executable request")
 		}
-		collector.add(parsed.Fragment)
+		collector.add(unescapeURLUserinfoComponent(raw[fragStart+1:]))
 		return nil
 	default:
 		collector.collectURL(raw, &target)

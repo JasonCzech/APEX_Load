@@ -69,6 +69,19 @@ func (vu *VUser) runtimeSnapshotProjector() *replayRuntimeProjector {
 				}
 			}
 		}
+		if dyn := config.dynamicOverlay(); dyn != nil {
+			if dyn.runtimePublicationUnavailable || len(dyn.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(dyn.runtimeSecretValues) > 0 && len(dyn.secretReplacers) == 0) {
+				p.publicationUnavailable = true
+				return p
+			}
+			for _, replacer := range dyn.secretReplacers {
+				if replacer == nil {
+					p.publicationUnavailable = true
+					return p
+				}
+			}
+			p.configs = append(p.configs, dyn)
+		}
 		for depth := 0; config != nil; depth++ {
 			if depth >= maxRuntimeSecretRedactionLayers || config.runtimePublicationUnavailable || len(config.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(config.runtimeSecretValues) > 0 && len(config.secretReplacers) == 0) {
 				p.publicationUnavailable = true

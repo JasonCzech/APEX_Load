@@ -1379,8 +1379,8 @@ http:
 	}
 	created := decodeBrunoNativeBatchTestResponse(t, response)
 	responseBody := created.Scripts[0].Actions[0].Body
-	if strings.Contains(responseBody, "source-password-value") {
-		t.Fatalf("commit response disclosed the imported credential: %q", responseBody)
+	if responseBody != "<password>source-password-value</password>" || strings.Contains(responseBody, "[REDACTED]") {
+		t.Fatalf("commit response body = %q, want unredacted imported body", responseBody)
 	}
 	stored, err := store.GetScript(candidate.PlannedScriptID)
 	if err != nil {

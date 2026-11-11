@@ -84,23 +84,71 @@ func readEnterpriseArchiveCollection(data []byte) ([]archiveingest.File, bool, e
 		if len(members) > maxEnterpriseArchiveCollectionMembers {
 			return nil, true, fmt.Errorf("script archive collection must contain at most %d archives", maxEnterpriseArchiveCollectionMembers)
 		}
-		if err := archiveingest.ValidateZIPDirectory(file.Data, enterprisearchive.MaxArchiveEntries); err != nil {
+		if err := archiveingest.ValidateZIPDirectory(file.Data, enterprisearchive.MaxArchiveEntries*8); err != nil {
 			continue // Invalid members are reviewed individually without allocating their directory.
 		}
 		child, childErr := zip.NewReader(bytes.NewReader(file.Data), int64(len(file.Data)))
 		if childErr != nil {
 			continue // Preserve a per-member conversion error beside valid reviews.
 		}
-		entries += len(child.File)
-		if entries > enterprisearchive.MaxArchiveEntries {
-			return nil, true, fmt.Errorf("script archive collection exceeds the maximum combined entry count of %d", enterprisearchive.MaxArchiveEntries)
+		type parsedChildEntry struct {
+			entry *zip.File
+			key   string
+			isDir bool
 		}
-		for _, entry := range child.File {
-			if entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveEntryBytes) ||
-				entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveTotalBytes)-total {
-				return nil, true, fmt.Errorf("script archive collection exceeds the combined decompression limit of %d bytes", enterprisearchive.MaxArchiveTotalBytes)
+		parsedChild := make([]parsedChildEntry, 0, len(child.File))
+		childKeys := make([]string, 0, len(child.File))
+		childPathsSafe := len(child.File) <= enterprisearchive.MaxArchiveEntries*8
+		if childPathsSafe {
+			for _, entry := range child.File {
+				if entry == nil {
+					continue
+				}
+				key, isDir, pathErr := validateEnterpriseZipEntryPath(entry, vuGenSkippedArchiveMaxDepth)
+				if pathErr != nil {
+					childPathsSafe = false
+					break
+				}
+				parsedChild = append(parsedChild, parsedChildEntry{entry: entry, key: key, isDir: isDir})
+				if !isDir && key != "" {
+					childKeys = append(childKeys, key)
+				}
 			}
-			total += entry.UncompressedSize64
+		}
+		var childScriptDirs map[string]struct{}
+		if childPathsSafe {
+			childScriptDirs = vuGenScriptDirs(childKeys)
+		}
+		if childPathsSafe {
+			for _, parsed := range parsedChild {
+				if isVuGenNonSourceEntryInDirs(parsed.key, parsed.isDir, childScriptDirs) {
+					continue
+				}
+				entries++
+				if entries > enterprisearchive.MaxArchiveEntries {
+					return nil, true, fmt.Errorf("script archive collection exceeds the maximum combined entry count of %d", enterprisearchive.MaxArchiveEntries)
+				}
+				if parsed.entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveEntryBytes) ||
+					parsed.entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveTotalBytes)-total {
+					return nil, true, fmt.Errorf("script archive collection exceeds the combined decompression limit of %d bytes", enterprisearchive.MaxArchiveTotalBytes)
+				}
+				total += parsed.entry.UncompressedSize64
+			}
+		} else {
+			for _, entry := range child.File {
+				if entry == nil {
+					continue
+				}
+				entries++
+				if entries > enterprisearchive.MaxArchiveEntries {
+					return nil, true, fmt.Errorf("script archive collection exceeds the maximum combined entry count of %d", enterprisearchive.MaxArchiveEntries)
+				}
+				if entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveEntryBytes) ||
+					entry.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveTotalBytes)-total {
+					return nil, true, fmt.Errorf("script archive collection exceeds the combined decompression limit of %d bytes", enterprisearchive.MaxArchiveTotalBytes)
+				}
+				total += entry.UncompressedSize64
+			}
 		}
 	}
 	// ZIP entry order is packaging metadata, not script execution order.
@@ -229,12 +277,20 @@ func (s *Server) writeEnterpriseArchiveCollectionResponse(w http.ResponseWriter,
 			return true
 		}
 		item := enterpriseArchiveCollectionMember{SourceName: member.Name, SourceSize: len(member.Data)}
-		if err := archiveingest.ValidateZIPDirectory(member.Data, enterprisearchive.MaxArchiveEntries); err != nil {
+		memberData := member.Data
+		stripped, stripErr := stripVuGenNonSourceZipEntries(memberData)
+		if stripErr != nil {
+			item.Error = scrub.Value("invalid script archive member: "+stripErr.Error(), scrub.Policy{})
+			archives = append(archives, item)
+			continue
+		}
+		memberData = stripped
+		if err := archiveingest.ValidateZIPDirectory(memberData, enterprisearchive.MaxArchiveEntries); err != nil {
 			item.Error = scrub.Value("invalid script archive member: "+err.Error(), scrub.Policy{})
 			archives = append(archives, item)
 			continue
 		}
-		if child, err := zip.NewReader(bytes.NewReader(member.Data), int64(len(member.Data))); err == nil && enterpriseArchiveCollectionCandidate(child) {
+		if child, err := zip.NewReader(bytes.NewReader(memberData), int64(len(memberData))); err == nil && enterpriseArchiveCollectionCandidate(child) {
 			item.Error = "Nested archive collections require a separate import; each collection member must contain one script project."
 			archives = append(archives, item)
 			continue
@@ -242,7 +298,7 @@ func (s *Server) writeEnterpriseArchiveCollectionResponse(w http.ResponseWriter,
 		opts := req.Opts
 		// A package name override must never rename every child to the same name.
 		opts.ScriptName = ""
-		result, conversionErr := enterprisearchive.ConvertZip(member.Data, opts)
+		result, conversionErr := enterprisearchive.ConvertZip(memberData, opts)
 		if conversionErr != nil {
 			item.Error = scrub.Value("conversion failed: "+conversionErr.Error(), scrub.Policy{})
 			archives = append(archives, item)

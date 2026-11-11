@@ -107,8 +107,12 @@ traffic:
 - **Correlation.** Under both `legacy` and `unified_v1`, only high-confidence
   correlations are rewritten automatically; the rest stay review candidates.
 
-A recording keeps the credentials its requests carried, as every import does.
-Correlation still replaces the values that a response supplied.
+By default (`scrub_sensitive: false`), a recording keeps the credentials and
+typed inputs its requests carried, as every import does, while replay and
+load-test outputs redact secrets automatically. Setting `scrub_sensitive: true`
+on the profile opts in to scrubbing sensitive headers, cookies, password/OTP
+inputs, and WebSocket frame payloads during capture and conversion. Correlation
+still replaces the values that a response supplied.
 
 An exported recording HAR carries the same `_apexload_*` entry fields. If it
 is imported again, its steps, transactions, think times and resource
@@ -129,6 +133,7 @@ classification are kept.
 | Recording filters | `exclude_content_types` | Response media types (`image/*` wildcards allowed) not recorded as steps |
 | Recording filters | `excluded_aura_descriptors` | Salesforce Aura sub-action descriptors or Apex `classname.method` targets (case-insensitive substring match, such as `ComponentLogger.saveComponentLogEntries`) omitted when every sub-action in an `/aura` POST matches; the import warning counts these apart from host and content-type drops and names the patterns that matched |
 | Recording filters | `body_capture_limit_bytes`, `capture_cookies` | Proxy capture limit, and whether recorded `Cookie` headers are kept instead of being left to the cookie jar |
+| Recording filters | `scrub_sensitive` | Off by default (`false`), keeping recorded headers, cookies, typed password/OTP inputs, and WebSocket payloads unredacted in the session and converted script; when `true`, scrubs sensitive credentials during capture and conversion |
 | Correlations: configuration | `correlation.disabled` | Turns the automatic correlation scan off |
 | Correlations: configuration | `correlation.disabled_rules` | Rule IDs from the catalog, or whole families (`json`, `html`, `xml`, `header`, `cookie`, `form`, `messaging`), that the scan skips |
 | Correlations: configuration | `correlation.excluded_values`, `correlation.excluded_content_types` | Values never correlated, and response types the scan ignores |
@@ -155,7 +160,7 @@ recording.
 | HTTP properties: `web_reg_find` for page titles | `page_title_checks` | |
 | HTTP properties: generate `web_add_cookie` | `capture_cookies` | Off: replay's cookie jar sends cookies, the equivalent of not generating cookie steps. On: the recorded `Cookie` headers are kept |
 | HTTP properties: WebSocket steps | Always on | The proxy recorder and HAR import place WebSocket connect, send, receive and close steps on the timeline. Values from received frames that later steps send are correlated |
-| HTTP properties: replace passwords with masked parameters | Conversion credential review | Recorded credentials go through the conversion's secret-binding review, not through a profile switch |
+| HTTP properties: replace passwords with masked parameters | Opt-in sensitive scrubbing | Off by default so recorded credentials remain literal in the converted script (and are optionally bindable to `{{secret.*}}`); setting `scrub_sensitive` on the profile scrubs sensitive headers, cookies, password/OTP inputs, and WebSocket payloads during capture and conversion |
 | HTTP properties: parameterize server names | Script `base_url` | The recorded origin becomes `config.base_url`, and step targets are relative to it |
 | HTTP properties: reset context per action | Not a recording option | This is a runtime behavior: the new-user-each-iteration runtime setting |
 | HTTP properties: UTF-8 and EUC-JP charsets | Not applicable | Recorders keep request bodies as exact bytes, base64 when they are not text, so no charset conversion step is needed |

@@ -163,11 +163,16 @@ ProxyPassword=` + proxyPassword + `
 			proxyConfig,
 		)
 	}
-	if proxyConfig.Username != proxyUsername || proxyConfig.Password != proxyPassword {
+	if !reflect.DeepEqual(proxyConfig, dsl.ProxyConfig{}) {
 		t.Fatalf(
-			"disabled proxy record lost exact source credentials: %#v",
+			"disabled proxy retained stale executable proxy fields: %#v",
 			proxyConfig,
 		)
+	}
+	preservedFiles, _ := result.Script.Metadata.Import.Preserved["runtime_files"].(map[string]map[string]map[string]string)
+	if preservedFiles["default.cfg"]["Proxy"]["ProxyUserName"] != proxyUsername ||
+		preservedFiles["default.cfg"]["Proxy"]["ProxyPassword"] != proxyPassword {
+		t.Fatalf("disabled proxy source cfg lost exact source credentials: %#v", preservedFiles)
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
 		t.Fatalf("disabled proxy draft is not valid DSL: %#v", issues)
@@ -243,8 +248,8 @@ func TestConvertZipDisabledProxyDropsEncryptedPasswordSecret(t *testing.T) {
 				strings.Contains(string(payload), enterpriseProxyPasswordSecretName) {
 				t.Fatalf("executable draft retained the encrypted proxy password or its secret: %s", payload)
 			}
-			if httpConfig.Proxy.Username != "proxy-user" {
-				t.Fatalf("plaintext proxy username review record = %q, want retained", httpConfig.Proxy.Username)
+			if !reflect.DeepEqual(httpConfig.Proxy, dsl.ProxyConfig{}) {
+				t.Fatalf("disabled proxy retained stale executable proxy fields: %#v", httpConfig.Proxy)
 			}
 			row := encryptedProxyMarkerDisposition(t, result.Script, test.section)
 			if row.Status == RuntimeSettingDispositionMapped ||
@@ -633,35 +638,24 @@ func TestConvertZipEncryptedProxyMarkerWithoutPassword(t *testing.T) {
 	}
 }
 
-// A disclosure-exported cfg (ProxyPassword=[REDACTED]) with a false marker
-// under Custom imports an unbound ENTERPRISE_PROXY_PASSWORD secret that the
-// live required-secret check blocks on. The marker row must point at that
-// secret, not claim that no proxy secret is needed.
-func TestConvertZipFalseProxyMarkerBesideRedactedPasswordPointsAtSecret(t *testing.T) {
-	result := falseMarkerProxyPasswordCase(t, "ProxyUseProxy=1\nProxyUseProxyServer=1\nProxyHTTPHost=proxy.example.test\nProxyHTTPPort=8080\n", "[REDACTED]", "custom")
+func TestConvertZipFalseProxyMarkerBesideLiteralSentinelPreservesPassword(t *testing.T) {
+	result := falseMarkerProxyPasswordCase(t, "ProxyUseProxy=1\nProxyUseProxyServer=1\nProxyHTTPHost=proxy.example.test\nProxyHTTPPort=8080\n", "[REDACTED]", "custom", "[REDACTED]")
 	row := encryptedProxyMarkerDisposition(t, result.Script, "WEB")
-	const want = "Credential encoding marker consumed by the importer. The source proxy password could not be imported; bind the secret ENTERPRISE_PROXY_PASSWORD, or change Proxy mode to No proxy, System or PAC."
-	if row.Status != RuntimeSettingDispositionMapped || row.ParityID != "proxy" || row.Reason != "" ||
-		!reflect.DeepEqual(row.Fields, []string{"config.http.proxy.password"}) || row.Note != want {
-		t.Fatalf("custom false-marker redacted-password row = %#v, want mapped to config.http.proxy.password with note %q", row, want)
-	}
-	if strings.Contains(row.Note, "no protected proxy secret is needed") {
-		t.Fatalf("row contradicts the custom required-secret blocker: %#v", row)
+	if row.Status == RuntimeSettingDispositionMapped ||
+		strings.Contains(row.Note, "provision") || strings.Contains(row.Note, "has no proxy password") ||
+		!strings.Contains(row.Note, "not encrypted") || row.Reason != "source_tool_metadata" {
+		t.Fatalf("custom false-marker literal-password row = %#v, want non-applicable source_tool_metadata", row)
 	}
 
-	// System keeps the reference without sending it.
-	result = falseMarkerProxyPasswordCase(t, "ProxyUseBrowser=1\nProxyUseProxy=1\nProxyUseProxyServer=0\nProxyUseAutoConfigScript=0\n", "[REDACTED]", "system")
+	// System proxy keeps the literal password in config (ready if switched to Custom) without sending it.
+	result = falseMarkerProxyPasswordCase(t, "ProxyUseBrowser=1\nProxyUseProxy=1\nProxyUseProxyServer=0\nProxyUseAutoConfigScript=0\n", "[REDACTED]", "system", "[REDACTED]")
 	row = encryptedProxyMarkerDisposition(t, result.Script, "WEB")
-	const wantSystem = "Credential encoding marker consumed by the importer. The source proxy password is kept as the secret ENTERPRISE_PROXY_PASSWORD, which Proxy mode System does not send; it is needed only if you switch Proxy mode to Custom."
-	if row.Status != RuntimeSettingDispositionMapped || !reflect.DeepEqual(row.Fields, []string{"config.http.proxy.password"}) || row.Note != wantSystem {
-		t.Fatalf("system false-marker redacted-password row = %#v, want note %q", row, wantSystem)
+	if row.Status == RuntimeSettingDispositionMapped || row.Reason == "" {
+		t.Fatalf("system false-marker row = %#v, want non-applicable row", row)
 	}
 }
 
-// falseMarkerProxyPasswordCase imports a [WEB] proxy under flags with a
-// ProxyPasswordIsEncrypted=false marker beside password, and checks that the
-// draft keeps the password as the ENTERPRISE_PROXY_PASSWORD reference.
-func falseMarkerProxyPasswordCase(t *testing.T, flags, password, wantMode string) *ConvertResult {
+func falseMarkerProxyPasswordCase(t *testing.T, flags, password, wantMode, wantPassword string) *ConvertResult {
 	t.Helper()
 	archive := buildSourceZip(t, map[string]string{
 		"MarkerProxy.usr": "[General]\nType=Web\nRuntimeSettings=default.cfg\n[Actions]\nAction1=Action.c\n",
@@ -673,8 +667,8 @@ func falseMarkerProxyPasswordCase(t *testing.T, flags, password, wantMode string
 		t.Fatalf("ConvertZip: %v", err)
 	}
 	httpConfig := result.Script.Config.HTTP
-	if httpConfig.ProxyMode != wantMode || httpConfig.Proxy.Password != "{{secret.ENTERPRISE_PROXY_PASSWORD}}" {
-		t.Fatalf("proxy = %#v, want mode %q with the ENTERPRISE_PROXY_PASSWORD reference", httpConfig, wantMode)
+	if httpConfig.ProxyMode != wantMode || httpConfig.Proxy.Password != wantPassword {
+		t.Fatalf("proxy = %#v, want mode %q with password %q", httpConfig, wantMode, wantPassword)
 	}
 	return result
 }
@@ -933,16 +927,17 @@ func TestEnterpriseCredentialProjectionRequirementValuesRemainJSONExcluded(t *te
 	}
 }
 
-func TestEnterpriseRuntimeBindingsNeverRestoreDisclosurePlaceholderAsCredential(t *testing.T) {
+func TestEnterpriseRuntimeBindingsPreserveLiteralPlaceholderStringsAndClearDisabledProxy(t *testing.T) {
 	for _, value := range []string{
 		credential.Redacted,
+		"***",
 		"Bearer [redacted]",
 		"%5BREDACTED%5D",
 		"W1JFREFDVEVEXQ==",
 	} {
 		t.Run(value, func(t *testing.T) {
 			script := &dsl.Script{
-				Name:     "runtime-sentinel",
+				Name:     "runtime-literal",
 				Protocol: "http",
 				Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{
 					Auth: dsl.AuthConfig{Type: "basic", Password: value},
@@ -958,26 +953,74 @@ func TestEnterpriseRuntimeBindingsNeverRestoreDisclosurePlaceholderAsCredential(
 				archiveFinalizationContext{RuntimeConfig: &RuntimeConfig{AuthPass: value}},
 			)
 
-			password := script.Config.HTTP.Auth.Password
-			if name, ok := credential.ParseReference(password); !ok || name != enterpriseHTTPAuthPasswordSecretName {
-				t.Fatalf("password = %q, want unconfigured governed reference", password)
+			if got := script.Config.HTTP.Auth.Password; got != value {
+				t.Fatalf("password = %q, want literal value %q preserved", got, value)
 			}
-			requirements := result.ProtectedRequirements.Take()
-			if len(requirements) != 1 {
-				t.Fatalf("requirements = %#v, want unavailable-value guidance", requirements)
-			}
-			requirement := requirements[0]
-			if requirement.Value != "" || requirement.SourceValueAvailable ||
-				requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-				requirement.Label != "HTTP authentication password" ||
-				!strings.Contains(requirement.Context, "disclosure placeholder") ||
-				!strings.Contains(requirement.Context, "cannot be preserved") ||
-				len(requirement.Targets) != 1 ||
-				requirement.Targets[0].Field != "config.http.auth.password" {
-				t.Fatalf("unavailable runtime credential lacks descriptive reason/provenance: %#v", requirement)
+			if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+				t.Fatalf("requirements = %#v, want zero secret requirements for literal source value", requirements)
 			}
 		})
 	}
+
+	t.Run("disabled_proxy_with_auto_config_flag_clears_stale_proxy_fields", func(t *testing.T) {
+		archive := buildSourceZip(t, map[string]string{
+			"DisabledPAC.usr": "[General]\nType=Web\nRuntimeSettings=default.cfg\n[Actions]\nAction1=Action.c\n",
+			"Action.c":        "Action()\n{\n\tweb_url(\"request\", \"URL=https://example.test/orders\", LAST);\n\treturn 0;\n}\n",
+			"default.cfg": `[WEB]
+ProxyUseProxy=0
+ProxyUseAutoConfigScript=1
+ProxyAutoConfigScriptURL=http://pac.example.test/proxy.pac
+ProxyHTTPHost=proxy.example.test
+ProxyHTTPPort=8080
+ProxyUserName=stale-user
+ProxyPassword=stale-pass
+ProxyBypass=*.internal.example.test
+`,
+		})
+		result, err := ConvertZip(archive, ConvertOptions{})
+		if err != nil {
+			t.Fatalf("ConvertZip: %v", err)
+		}
+		if result.Script.Config.HTTP.ProxyMode != "none" {
+			t.Fatalf("ProxyMode = %q, want none", result.Script.Config.HTTP.ProxyMode)
+		}
+		if !reflect.DeepEqual(result.Script.Config.HTTP.Proxy, dsl.ProxyConfig{}) {
+			t.Fatalf("disabled proxy retained stale fields: %#v", result.Script.Config.HTTP.Proxy)
+		}
+		if got := runtimeSettingEvidenceValue("ProxyPassword", "stale-pass"); got != "stale-pass" {
+			t.Fatalf("runtimeSettingEvidenceValue = %q, want unredacted stale-pass", got)
+		}
+	})
+
+	t.Run("source_review_action_preserves_target_value_body_headers_auth", func(t *testing.T) {
+		action := dsl.Action{
+			Name:   "custom_review",
+			Type:   "source_review",
+			Target: "https://user:pass@example.test/api?token=abc",
+			Value:  "raw-expression-value",
+			Body:   "secret-body-payload",
+			Headers: map[string]string{
+				"Authorization": "Bearer literal-token",
+			},
+			Auth:   &dsl.AuthConfig{Type: "basic", Username: "u", Password: "p"},
+			Params: map[string]any{"custom_key": "custom_val"},
+		}
+		fn := ParsedFunction{
+			Name:       "web_custom_request",
+			Filename:   "Action.c",
+			LineNumber: 12,
+			RawArgs:    []string{"arg-one"},
+		}
+		makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
+		if action.Target != "https://user:pass@example.test/api?token=abc" ||
+			action.Value != "raw-expression-value" ||
+			action.Body != "secret-body-payload" ||
+			action.Headers["Authorization"] != "Bearer literal-token" ||
+			action.Auth == nil || action.Auth.Password != "p" ||
+			action.Params["custom_key"] != "custom_val" {
+			t.Fatalf("source_review action dropped preserved fields: %#v", action)
+		}
+	})
 }
 
 func TestEnterpriseMalformedBase64BodyRetainsExactSourceInValidBlockedDraft(t *testing.T) {
@@ -1305,5 +1348,134 @@ func assertEnterpriseInvalidGlobalAuthGate(
 	}
 	if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
 		t.Fatalf("protected requirements = %#v, invalid auth must not request re-entry", requirements)
+	}
+}
+
+func TestConvertZipReviewActionsAndRuntimeMetadataNeutralizeInvalidDSLTemplates(t *testing.T) {
+	t.Parallel()
+	archive := buildSourceZip(t, map[string]string{
+		"TemplateGuard.usr": `[General]
+Type=Web
+RuntimeSettings=default.cfg
+[Actions]
+vuser_init=vuser_init.c
+Action=Action.c
+`,
+		"vuser_init.c": `vuser_init()
+{
+	return 0;
+}
+`,
+		"Action.c": `Action()
+{
+	lr_eval_string("{{file.undeclared_tpl}}");
+	custom_vendor_call("{{run.name}}", "{{run.id}}");
+	web_url("orders", "URL=https://example.test/orders", LAST);
+	return 0;
+}
+`,
+		"default.cfg": `[General]
+CustomNote={{run.name}}/{{run.id}}
+`,
+	})
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues, got %v", issues)
+	}
+	foundVerbatimSourceReview := false
+	for _, sf := range result.SourceReview.SourceFiles {
+		if strings.Contains(sf.Content, `custom_vendor_call("{{run.name}}", "{{run.id}}")`) {
+			foundVerbatimSourceReview = true
+		}
+	}
+	if !foundVerbatimSourceReview {
+		t.Fatalf("expected result.SourceReview to remain verbatim, got %+v", result.SourceReview)
+	}
+
+	tcResult := &ConvertResult{
+		Script: &dsl.Script{
+			Name:     "TruClientPrefsGuard",
+			Version:  "1.0.0",
+			Protocol: "browser",
+			Actions: []dsl.Action{{
+				Name:   "Open",
+				Type:   "browser_navigate",
+				Target: "https://example.test",
+			}},
+		},
+	}
+	applyTruClientBrowserProfileReview(tcResult, map[string]string{
+		"profiles/interactive/user.js": `user_pref("app.custom.banner", "{{run.id}}:{{run.name}}");`,
+	})
+	if issues := dsl.ValidateScriptIssues(tcResult.Script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on TruClient browser profile metadata, got %v", issues)
+	}
+
+	httpVer, err := dsl.NewHTTPVersionOverride("2")
+	if err != nil {
+		t.Fatalf("NewHTTPVersionOverride: %v", err)
+	}
+	embedded := dsl.Action{
+		Name:         "Embedded {{run.name}}",
+		Type:         "POST",
+		Method:       "POST",
+		Target:       "https://example.test/{{file.undeclared_tpl}}",
+		BodyFile:     "payload.bin",
+		BodyEncoding: "base64",
+		HTTPVersion:  httpVer,
+		Extractors:   []dsl.Extractor{{Name: "tok", Source: "body", Type: "regex", Expression: "tok=(.+)"}},
+	}
+	makeEmbeddedTransactionConsumerDisclosureSafe(
+		&embedded,
+		ParsedFunction{
+			Name:    "web_custom_request",
+			Args:    map[string]string{"URL": "{{file.undeclared_tpl}}", "Body": "{{run.name}}"},
+			RawArgs: []string{"{{file.undeclared_tpl}}", "{{run.id}}"},
+		},
+		SourceFunctionSupportReviewOnly,
+	)
+	embeddedScript := &dsl.Script{
+		Name:     "EmbeddedCheck",
+		Version:  "1.0.0",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:  []dsl.Action{embedded},
+	}
+	if issues := dsl.ValidateScriptIssues(embeddedScript); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on embedded transaction consumer review action, got %v", issues)
+	}
+
+	// Verify HTTP request actions with {{run.name}} / undeclared {{file.*}} are gated and neutralized,
+	// while valid .prm file-backed {{file.*}} references remain executable.
+	archiveWithHTTPAndPrm := buildSourceZip(t, map[string]string{
+		"test.usr":     "[General]\nType=Multi\nDefaultCfg=default.cfg\nParameterFile=test.prm\n[Actions]\nvuser_init=vuser_init.c\nAction=Action.c\nvuser_end=vuser_end.c\n",
+		"default.cfg":  "[General]\n",
+		"test.prm":     "[parameter:declared_prm]\nType=\"File\"\nFileName=\"declared.dat\"\n",
+		"declared.dat": "val1\nval2\n",
+		"vuser_init.c": "vuser_init() { return 0; }\n",
+		"Action.c": `Action() {
+	web_custom_request("bad_req_{{run.id}}",
+		"URL=https://app.example.test/api/{{run.name}}",
+		"Method=POST",
+		"Body={{file.missing_asset}}",
+		LAST);
+	web_custom_request("good_req",
+		"URL=https://app.example.test/api/ok",
+		"Method=POST",
+		"Body=id={{run.id}}",
+		LAST);
+	return 0;
+}`,
+		"vuser_end.c": "vuser_end() { return 0; }\n",
+	})
+	httpPrmRes, err := ConvertZip(archiveWithHTTPAndPrm, ConvertOptions{ScriptName: "Archive {{run.id}} {{run.name}}"})
+	if err != nil {
+		t.Fatalf("ConvertZip http+prm: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(httpPrmRes.Script); len(issues) != 0 {
+		t.Fatalf("expected zero ValidateScriptIssues on http+prm archive, got %v", issues)
 	}
 }

@@ -25,6 +25,7 @@ func snapshotBoundedRuntimeDiagnosticText(provider func() *RedactionConfig) (pro
 		return nil, nil
 	}
 	config := provider()
+	dynGen := config.dynamicGeneration()
 	project = func(value string) (string, bool) {
 		return boundedRuntimeDiagnosticText(value, func() *RedactionConfig { return config })
 	}
@@ -34,7 +35,14 @@ func snapshotBoundedRuntimeDiagnosticText(provider func() *RedactionConfig) (pro
 				ok = false
 			}
 		}()
-		return commit != nil && provider() == config && commit()
+		if commit == nil {
+			return false
+		}
+		if reg := config.findDynamicRegistry(); reg != nil {
+			reg.fence.RLock()
+			defer reg.fence.RUnlock()
+		}
+		return provider() == config && config.dynamicGeneration() == dynGen && commit()
 	}
 	return project, guard
 }
@@ -85,6 +93,17 @@ func boundedRuntimeDiagnosticText(value string, provider func() *RedactionConfig
 	p := &replayRuntimeProjector{}
 	if config != nil && (len(config.compiled) > MaxRedactionRules || len(config.Rules) != len(config.compiled)) {
 		return "", false
+	}
+	if dyn := config.dynamicOverlay(); dyn != nil {
+		if dyn.runtimePublicationUnavailable || len(dyn.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(dyn.runtimeSecretValues) > 0 && len(dyn.secretReplacers) == 0) {
+			return "", false
+		}
+		for _, replacer := range dyn.secretReplacers {
+			if replacer == nil {
+				return "", false
+			}
+		}
+		p.configs = append(p.configs, dyn)
 	}
 	for depth, layer := 0, config; layer != nil; depth, layer = depth+1, layer.runtimeParent {
 		if depth >= maxRuntimeSecretRedactionLayers || layer.runtimePublicationUnavailable || len(layer.secretReplacers) > maxRuntimeSecretRedactionReplacers || (len(layer.runtimeSecretValues) > 0 && len(layer.secretReplacers) == 0) {

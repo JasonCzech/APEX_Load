@@ -1,6 +1,7 @@
 package paramize
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -162,5 +163,48 @@ func TestSecretSuggestionFormLiteralStopsAtCredential(t *testing.T) {
 	}
 	if location.ReplaceText != "&token={{env.TKN}}" {
 		t.Errorf("ReplaceText = %q, want the credential pair only", location.ReplaceText)
+	}
+}
+
+func TestSanitizeNamedFieldsHelpers(t *testing.T) {
+	if got := SanitizeBodySecretsForFields("+f1+=pin123&save=Verify", []string{"f1"}); got != "+f1+={{secret.redacted}}&save=Verify" {
+		t.Fatalf("SanitizeBodySecretsForFields form = %q", got)
+	}
+	if got := SanitizeBodySecretsForFields(`{"smc":"739284","save":"Verify"}`, []string{"smc"}); got != `{"smc":"{{secret.redacted}}","save":"Verify"}` {
+		t.Fatalf("SanitizeBodySecretsForFields json = %q", got)
+	}
+	if got := SanitizeURLQueryFields("https://org.my.salesforce.com/_ui/identity/verification/?smc=739284&save=Verify#step", []string{"smc"}); got != "https://org.my.salesforce.com/_ui/identity/verification/?smc=[REDACTED]&save=Verify#step" {
+		t.Fatalf("SanitizeURLQueryFields = %q", got)
+	}
+	harRaw := `{"time":739284,"params":[{"name":"smc","value":"739284"},{"value":"739284","name":"emc"},{"name":"save","value":"Verify"}]}`
+	wantHAR := `{"time":739284,"params":[{"name":"smc","value":"[REDACTED]"},{"value":"[REDACTED]","name":"emc"},{"name":"save","value":"Verify"}]}`
+	if got := SanitizeHARParamFields(harRaw, []string{"smc", "emc"}); got != wantHAR {
+		t.Fatalf("SanitizeHARParamFields = %q, want %q", got, wantHAR)
+	}
+
+	if got := SanitizeBodySecretsForFields("f1=739284\nother=keep", []string{"f1"}); got != "f1={{secret.redacted}}\nother=keep" {
+		t.Fatalf("SanitizeBodySecretsForFields newline-first = %q, want other=keep preserved", got)
+	}
+	if got := SanitizeBodySecretsForFields("other=keep\r\nf1=739284", []string{"f1"}); got != "other=keep\r\nf1={{secret.redacted}}" {
+		t.Fatalf("SanitizeBodySecretsForFields crlf-second = %q", got)
+	}
+	if got := SanitizeBodySecretsForFields("login%5Bpin%5D=739284&f1={{env.F1}}&empty=", []string{"login[pin]", "f1", "empty"}); got != "login%5Bpin%5D={{secret.redacted}}&f1={{env.F1}}&empty=" {
+		t.Fatalf("SanitizeBodySecretsForFields encoded+template+empty = %q", got)
+	}
+	jsonMixed := `{"f1":"{{env.F1}}","empty":"","smc":739284,"keep":"ok"}`
+	gotJSONMixed := SanitizeBodySecretsForFields(jsonMixed, []string{"f1", "empty", "smc"})
+	if strings.Contains(gotJSONMixed, "739284") || !strings.Contains(gotJSONMixed, `"f1":"{{env.F1}}"`) || !strings.Contains(gotJSONMixed, `"empty":""`) || !strings.Contains(gotJSONMixed, `"keep":"ok"`) {
+		t.Fatalf("SanitizeBodySecretsForFields json mixed = %q", gotJSONMixed)
+	}
+	if got := SanitizeBodySecretsForFields("f1=pin123;save=Verify", []string{"f1"}); got != "f1={{secret.redacted}};save=Verify" {
+		t.Fatalf("SanitizeBodySecretsForFields semicolon form = %q, want f1={{secret.redacted}};save=Verify", got)
+	}
+	if got := SanitizeURLQueryFields("https://org.my.salesforce.com/_ui/identity/verification/?smc=739284;save=Verify#step", []string{"smc"}); got != "https://org.my.salesforce.com/_ui/identity/verification/?smc=[REDACTED];save=Verify#step" {
+		t.Fatalf("SanitizeURLQueryFields semicolon query = %q", got)
+	}
+	multipartJSON := "--boundary\r\nContent-Type: application/json\r\n\r\n{\"redirect\":\"https://app.example.test/cb?a=1&f1=secret123\",\"keep\":\"ok\"}\r\n--boundary--"
+	wantMultipartJSON := "--boundary\r\nContent-Type: application/json\r\n\r\n{\"redirect\":\"https://app.example.test/cb?a=1&f1={{secret.redacted}}\",\"keep\":\"ok\"}\r\n--boundary--"
+	if got := SanitizeBodySecretsForFields(multipartJSON, []string{"f1"}); got != wantMultipartJSON {
+		t.Fatalf("SanitizeBodySecretsForFields multipart json = %q, want %q", got, wantMultipartJSON)
 	}
 }

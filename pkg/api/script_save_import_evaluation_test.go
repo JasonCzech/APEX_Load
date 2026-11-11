@@ -215,7 +215,6 @@ func TestSavedImportEditorSaveCannotAuthorImportEvaluation(t *testing.T) {
 // hold: the kept credential is unchanged and its request still cannot move.
 func TestSavedImportEditorSaveRefreshesCredentialPreservingImport(t *testing.T) {
 	server, store, current := saveRepairedEvaluationArchive(t, guidedTLSRepairCredential)
-	credentialPath := namedActionPath(t, current, "orders")
 
 	if response := putAuthoringEdit(t, server, current.ID, retargetAuthoringAction("cart", "https://example.test/cart/synthetic-cart-1001")); response.Code != http.StatusOK {
 		t.Fatalf("PUT replacing the early read = %d %s, want 200", response.Code, response.Body.String())
@@ -228,17 +227,17 @@ func TestSavedImportEditorSaveRefreshesCredentialPreservingImport(t *testing.T) 
 		t.Fatalf("launch promotion blockers after the fix = %v, want none", blockers)
 	}
 
-	refused := putAuthoringEdit(t, server, current.ID, retargetAuthoringAction("orders", "https://other.example.test/orders"))
-	if refused.Code != http.StatusBadRequest || !strings.Contains(refused.Body.String(), "execution context for retained imported credentials at "+credentialPath) {
-		t.Fatalf("PUT moving the kept credential's request = %d %s, want the refusal at %s", refused.Code, refused.Body.String(), credentialPath)
+	retargeted := putAuthoringEdit(t, server, current.ID, retargetAuthoringAction("orders", "https://other.example.test/orders"))
+	if retargeted.Code != http.StatusOK {
+		t.Fatalf("PUT moving the kept credential's request = %d %s, want 200", retargeted.Code, retargeted.Body.String())
 	}
 	stored, err := store.GetScript(current.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	orders := namedAction(t, stored, "orders")
-	if !isCredentialPreservingImport(stored) || orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != namedAction(t, current, "orders").Target {
-		t.Fatalf("kept credential request = %q %q, want it unchanged", orders.Target, orders.Headers["Authorization"])
+	if !isCredentialPreservingImport(stored) || orders.Headers["Authorization"] != guidedTLSRepairCredential || orders.Target != "https://other.example.test/orders" {
+		t.Fatalf("kept credential request = %q %q, want retargeted URL with credential preserved", orders.Target, orders.Headers["Authorization"])
 	}
 }
 

@@ -67,10 +67,17 @@ func Transform(script *dsl.Script) []Change {
 	}
 
 	tokenVar := resolveTokenVar(tokenAction)
+	literalAuth := ""
+	for _, action := range conversation {
+		if authVal, ok := literalActionAuthorization(*action); ok && literalAuth == "" {
+			literalAuth = authVal
+		}
+	}
 
-	// 1. Token acquisition. Prepend an http_oauth2_token init action when none
-	// exists so a live bearer token is available instead of a stale recorded one.
-	if tokenAction == nil {
+	// 1. Token acquisition. Prepend an http_oauth2_token init action ONLY when
+	// none exists and conversation actions lack a literal Authorization header.
+	useLiteralAuth := tokenAction == nil && literalAuth != ""
+	if tokenAction == nil && literalAuth == "" {
 		script.Init = append([]dsl.Action{newTokenAction(tokenVar)}, script.Init...)
 		changes = append(changes, Change{
 			Step:       "token",
@@ -79,9 +86,26 @@ func Transform(script *dsl.Script) []Change {
 		})
 	}
 
-	// 2. Authorization. Point every conversation request at the token variable,
-	// replacing any captured (and now stale) Authorization header.
+	// 2. Authorization. Preserve non-empty literal Authorization headers on
+	// conversation actions (and explicit {{var.*}} headers when copying a
+	// literal); only populate missing/empty Authorization headers.
 	for _, action := range conversation {
+		if _, ok := literalActionAuthorization(*action); ok {
+			continue
+		}
+		if useLiteralAuth {
+			if _, hasVar := existingRuntimeVarHeader(*action); hasVar {
+				continue
+			}
+			if setLiteralAuth(action, literalAuth) {
+				changes = append(changes, Change{
+					Step:       "auth",
+					ActionName: action.Name,
+					Detail:     "Populated missing Authorization header from conversation literal.",
+				})
+			}
+			continue
+		}
 		if setBearerAuth(action, tokenVar) {
 			changes = append(changes, Change{
 				Step:       "auth",
@@ -128,7 +152,17 @@ func Transform(script *dsl.Script) []Change {
 	// end-session URL is derived from a message request's (now rewritten) path.
 	if endSession == nil && messageAction != nil {
 		if target, ok := sessionScopedTarget(messageAction.Target); ok {
-			script.Teardown = append(script.Teardown, newEndSessionAction(target, tokenVar))
+			teardownAuth := "Bearer {{var." + tokenVar + "}}"
+			if tokenAction == nil {
+				if msgVarAuth, ok := existingRuntimeVarHeader(*messageAction); ok {
+					teardownAuth = msgVarAuth
+				} else if msgLitAuth, ok := literalActionAuthorization(*messageAction); ok {
+					teardownAuth = msgLitAuth
+				} else if useLiteralAuth {
+					teardownAuth = literalAuth
+				}
+			}
+			script.Teardown = append(script.Teardown, newEndSessionActionWithAuth(target, teardownAuth))
 			changes = append(changes, Change{
 				Step:       "teardown",
 				ActionName: "End Agent Session",
@@ -185,35 +219,71 @@ func newTokenAction(tokenVar string) dsl.Action {
 }
 
 func newEndSessionAction(target, tokenVar string) dsl.Action {
+	return newEndSessionActionWithAuth(target, "Bearer {{var."+tokenVar+"}}")
+}
+
+func newEndSessionActionWithAuth(target, authHeader string) dsl.Action {
 	return dsl.Action{
 		Name:   "End Agent Session",
 		Type:   "DELETE",
 		Method: "DELETE",
 		Target: target,
 		Headers: map[string]string{
-			"Authorization":        "Bearer {{var." + tokenVar + "}}",
+			"Authorization":        authHeader,
 			"x-session-end-reason": "UserRequest",
 		},
 	}
 }
 
+func setLiteralAuth(action *dsl.Action, authHeader string) bool {
+	return setActionHeader(action, "Authorization", authHeader)
+}
+
 // setBearerAuth sets the canonical Authorization header to the token variable,
-// removing any case-variant Authorization key. Returns true if it changed.
+// removing any case-variant Authorization key and keeping HeaderList in sync.
+// Returns true if it changed.
 func setBearerAuth(action *dsl.Action, tokenVar string) bool {
-	want := "Bearer {{var." + tokenVar + "}}"
+	return setActionHeader(action, "Authorization", "Bearer {{var."+tokenVar+"}}")
+}
+
+func setActionHeader(action *dsl.Action, canonicalName, value string) bool {
 	if action.Headers == nil {
 		action.Headers = map[string]string{}
 	}
 	changed := false
 	for key := range action.Headers {
-		if key != "Authorization" && strings.EqualFold(key, "Authorization") {
+		if key != canonicalName && strings.EqualFold(key, canonicalName) {
 			delete(action.Headers, key)
 			changed = true
 		}
 	}
-	if action.Headers["Authorization"] != want {
-		action.Headers["Authorization"] = want
+	if action.Headers[canonicalName] != value {
+		action.Headers[canonicalName] = value
 		changed = true
+	}
+	if len(action.HeaderList) > 0 {
+		updated := make(dsl.HeaderList, 0, len(action.HeaderList)+1)
+		matched := false
+		for _, entry := range action.HeaderList {
+			if strings.EqualFold(strings.TrimSpace(entry.Name), canonicalName) {
+				if !matched {
+					if entry.Name != canonicalName || entry.Value != value || (entry.Enabled != nil && !*entry.Enabled) {
+						changed = true
+					}
+					updated = append(updated, dsl.HeaderEntry{Name: canonicalName, Value: value})
+					matched = true
+				} else {
+					changed = true
+				}
+				continue
+			}
+			updated = append(updated, entry)
+		}
+		if !matched {
+			updated = append(updated, dsl.HeaderEntry{Name: canonicalName, Value: value})
+			changed = true
+		}
+		action.HeaderList = updated
 	}
 	return changed
 }
@@ -281,20 +351,7 @@ func sessionScopedTarget(target string) (string, bool) {
 // header, the stream params, and the sse_concat/sse_event extractors. Each piece
 // is applied only if missing, so the function is idempotent.
 func ensureSSE(action *dsl.Action) bool {
-	changed := false
-	if action.Headers == nil {
-		action.Headers = map[string]string{}
-	}
-	for key := range action.Headers {
-		if key != "Accept" && strings.EqualFold(key, "Accept") {
-			delete(action.Headers, key)
-			changed = true
-		}
-	}
-	if action.Headers["Accept"] != "text/event-stream" {
-		action.Headers["Accept"] = "text/event-stream"
-		changed = true
-	}
+	changed := setActionHeader(action, "Accept", "text/event-stream")
 	if action.Params == nil {
 		action.Params = map[string]any{}
 	}

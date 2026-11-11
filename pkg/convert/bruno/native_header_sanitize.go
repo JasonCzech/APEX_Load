@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/credential"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // sanitizeNativePolicyHeaders extends the native-only source scrub to every
@@ -60,15 +59,6 @@ func sanitizeNativePolicyHeaders(
 				pointer := "/" + nativeJSONPointerEscape(containerName) +
 					"/headers/" + strconv.Itoa(index) + "/value"
 				if nativeBool(nativeLookup(header, "disabled")) {
-					if _, err := setNativeJSONPointerWithAliasPeers(
-						document,
-						file.nativeAliasGroups,
-						pointer,
-						scrub.Redacted,
-					); err != nil {
-						return nil, nil, 0, fmt.Errorf("scrub disabled native header in %q: %w", file.Path, err)
-					}
-					changed = true
 					continue
 				}
 				if brunoTemplatePattern.MatchString(value) || !shouldSanitizeCredentialValue(value) {

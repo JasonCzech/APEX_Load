@@ -9,9 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -99,6 +101,9 @@ type ConvertOptions struct {
 	// content-type filters, think-time threshold and correlation settings
 	// apply, and it supplies the options above that are left unset.
 	Profile *recordingprofile.Profile
+	// ScrubSensitive opts into blanking correlation values/samples and marking
+	// secret-like parameterized input columns for masking. Off by default.
+	ScrubSensitive bool `json:"scrub_sensitive,omitempty"`
 	// HTTPVersionMode maps captured HTTP versions to leaf policies (see
 	// sample.ConvertOptions.HTTPVersionMode). The proxy's client leg never
 	// carries h3, so it matters for advertisements only through the mode's
@@ -143,6 +148,12 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		if opts.AsyncScan == nil {
 			opts.AsyncScan = profile.AsyncScan
 		}
+		if profile.ScrubSensitive {
+			opts.ScrubSensitive = true
+		}
+	}
+	if session.Filters.ScrubSensitive && (profile == nil || strings.EqualFold(profile.ID, session.Filters.RecordingProfileID)) {
+		opts.ScrubSensitive = true
 	}
 	// The session's cookie capture already reflects the profile it was
 	// started with (or an explicit choice over it); converting with a
@@ -155,25 +166,28 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	webSocketRequests := includedWebSocketRequests(session.Requests)
 	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)
 	if len(webSocketRequests) > 0 && !hasHTTPRequests {
-		result.Script = convertWebSocketSession(session, name, webSocketRequests)
+		result.Script = convertWebSocketSession(session, name, webSocketRequests, policy, opts.ScrubSensitive)
 		if len(session.Markers) > 0 {
 			result.Warnings = append(result.Warnings, "The transactions and notes marked while recording attach to HTTP steps; this WebSocket-only recording has none, so its script carries neither.")
 		}
+		convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 		return result
 	}
 	if !hasHTTPRequests {
 		result.Warnings = append(result.Warnings, "no non-static requests found in recording")
 		result.Script = emptyRecordingScript(session, name)
+		convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 		return result
 	}
 
 	convertThroughSharedPipeline(session, name, opts, policy, result)
 	script := result.Script
 	if len(script.Actions) == 0 {
+		convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 		return result
 	}
 	if opts.Parameterize && !opts.DeferParameterize {
-		result.Warnings = append(result.Warnings, parameterizeInputs(script, session.Name)...)
+		result.Warnings = append(result.Warnings, parameterizeInputsForOptions(script, session.Name, opts.ScrubSensitive)...)
 	}
 	preserved := make(map[string]any)
 	if urls := recordedResourceURLs(session.Requests); len(urls) > 0 {
@@ -190,6 +204,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			target[key] = value
 		}
 	}
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result
 }
 
@@ -312,7 +327,7 @@ func hasIncludedHTTPRequests(requests []RecordedRequest) bool {
 	return false
 }
 
-func convertWebSocketSession(session *Session, name string, requests []RecordedRequest) *dsl.Script {
+func convertWebSocketSession(session *Session, name string, requests []RecordedRequest, policy headerPolicy, scrubSensitive bool) *dsl.Script {
 	baseURL := webSocketBaseURL(requests[0].URL, session.BaseURL)
 	script := &dsl.Script{
 		Name:        name,
@@ -333,6 +348,13 @@ func convertWebSocketSession(session *Session, name string, requests []RecordedR
 		CreatedAt: time.Now(),
 	}
 
+	explicitRedact := make(map[string]bool, len(session.Filters.RedactHeaders))
+	for _, h := range session.Filters.RedactHeaders {
+		if trimmed := strings.ToLower(strings.TrimSpace(h)); trimmed != "" {
+			explicitRedact[trimmed] = true
+		}
+	}
+
 	actionSeq := 1
 	for _, req := range requests {
 		target := webSocketActionTarget(req.URL, baseURL)
@@ -341,7 +363,31 @@ func convertWebSocketSession(session *Session, name string, requests []RecordedR
 			Type:   "ws_connect",
 			Target: target,
 		}
-		headers := filterRecordedHeaders(req.Headers, headerPolicy{cookies: session.Filters.CaptureCookies})
+		reqHeaders := req.RawHeaders
+		if len(reqHeaders) == 0 {
+			reqHeaders = req.Headers
+		}
+		headers := filterRecordedHeaders(reqHeaders, policy)
+		for k := range headers {
+			lower := strings.ToLower(strings.TrimSpace(k))
+			if explicitRedact[lower] {
+				headers[k] = "[redacted]"
+				continue
+			}
+			if !scrubSensitive {
+				continue
+			}
+			if redactedInHeadersMap(req.Headers, lower) {
+				headers[k] = "[redacted]"
+				continue
+			}
+			if policy.cookies && (lower == "cookie" || lower == "set-cookie") {
+				continue
+			}
+			if paramize.SensitiveHeaderKey(k) || lower == "cookie" || lower == "set-cookie" {
+				headers[k] = "[redacted]"
+			}
+		}
 		if len(headers) > 0 {
 			connect.Headers = headers
 		}
@@ -564,15 +610,24 @@ func ParameterizeRecordingInputs(script *dsl.Script, sourceName string) []string
 }
 
 func parameterizeInputs(script *dsl.Script, sourceName string) []string {
-	return parameterizeInputsWithLimits(
+	return parameterizeInputsForOptions(script, sourceName, false)
+}
+
+func parameterizeInputsForOptions(script *dsl.Script, sourceName string, scrubSensitive bool) []string {
+	return parameterizeInputsWithLimitsAndScrub(
 		script,
 		sourceName,
 		maxRecorderParameterizationScanBytes,
 		maxRecorderParameterizationMatches,
+		scrubSensitive,
 	)
 }
 
 func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByteLimit int64, matchLimit int) []string {
+	return parameterizeInputsWithLimitsAndScrub(script, sourceName, scanByteLimit, matchLimit, false)
+}
+
+func parameterizeInputsWithLimitsAndScrub(script *dsl.Script, sourceName string, scanByteLimit int64, matchLimit int, scrubSensitive bool) []string {
 	if script == nil {
 		return nil
 	}
@@ -715,12 +770,15 @@ func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByt
 			names = append(names, name)
 		}
 		sort.Strings(names)
-		ensureRecorderImportPreserved(script, sourceName)["recorded_input_secret_columns"] = names
+		if scrubSensitive {
+			ensureRecorderImportPreserved(script, sourceName)["recorded_input_secret_columns"] = names
+		}
 		warnings = append(warnings, fmt.Sprintf(
 			"Secret-like recorded input field(s) retain their captured values for replay and should be reviewed (%s).",
 			strings.Join(names, ", "),
 		))
 	}
+	convertutil.SanitizeScriptDSLTemplates(script, nil)
 	return warnings
 }
 
@@ -758,6 +816,15 @@ func filterRecordedHeaders(headers map[string]string, policy headerPolicy) map[s
 		}
 	}
 	return filtered
+}
+
+func redactedInHeadersMap(headers map[string]string, lowerName string) bool {
+	for k, v := range headers {
+		if strings.ToLower(strings.TrimSpace(k)) == lowerName && v == "[redacted]" {
+			return true
+		}
+	}
+	return false
 }
 
 // headerPolicy decides which recorded request headers a script keeps: the

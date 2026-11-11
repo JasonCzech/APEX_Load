@@ -85,7 +85,7 @@ func lifecycleFixtures() []lifecycleFixture {
 		{Name: "templates_secrets", Class: "Templates and secrets", Clean: true, Script: script("http", base, dsl.Action{Name: "orders", Type: "request", Method: "GET", Target: "/orders/{{param.order}}",
 			Headers: map[string]string{"Authorization": "Bearer {{secret.api_token}}"}})},
 		{Name: "java_credential_vm_argument", Class: "Java VM arguments", Unstorable: true, ImportTrust: true, Script: func() *dsl.Script {
-			script := javaVMDraft([]string{"-Ddatabase.password=lifecycle-matrix"})
+			script := javaVMDraft([]string{"-javaagent:/tmp/untrusted-lifecycle-matrix.jar"})
 			script.Actions[0].Target = "Actions"
 			return script
 		}},
@@ -264,15 +264,18 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 	for _, fixture := range lifecycleFixtures() {
 		t.Run(fixture.Name, func(t *testing.T) {
 			expected := append([]string{}, validateScript(fixture.Script())...)
-			if fixture.ImportTrust {
-				expected = []string{}
-			}
-			persistent, err := preparePersistentImportedLibraryScript(fixture.Script(), nil, "har")
-			if err != nil {
-				t.Fatalf("import save refused to prepare: %v", err)
-			}
-			if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
-				t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+			persistent, prepErr := preparePersistentImportedLibraryScript(fixture.Script(), nil, "har")
+			if prepErr != nil {
+				if !fixture.Unstorable || !strings.HasPrefix(prepErr.Error(), strings.Join(expected, "; ")) {
+					t.Fatalf("import save refused to prepare: %v (want prefix %q)", prepErr, expected)
+				}
+			} else {
+				if fixture.ImportTrust {
+					expected = []string{}
+				}
+				if issues := append([]string{}, validateStoredExecutionScript(persistent)...); !reflect.DeepEqual(issues, expected) {
+					t.Fatalf("import save copy: issues %q, want %q", issues, expected)
+				}
 			}
 			for _, save := range []struct {
 				name, path, profile string
@@ -287,7 +290,7 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 				draft.Name = fmt.Sprintf("Lifecycle %s %s", save.name, fixture.Name)
 				ensureScriptImportPreserved(draft, save.profile)
 				var payloadScript any = draft
-				if fixture.ImportTrust {
+				if fixture.ImportTrust && prepErr == nil {
 					preview := server.newScriptImportResponseWithSourceSecrets(
 						httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har", nil),
 						scriptImportResponseOptions{Script: draft, Scripts: []*dsl.Script{draft}},
@@ -332,12 +335,19 @@ func TestLifecycleParityImportSavesReportTheSameFindings(t *testing.T) {
 				if err := json.Unmarshal(rec.Body.Bytes(), &errPayload); err != nil {
 					t.Fatal(err)
 				}
-				if got, _ := errPayload["error"].(string); got != wantMsg {
+				got, _ := errPayload["error"].(string)
+				if prepErr != nil {
+					if !strings.Contains(got, strings.Join(expected, "; ")) {
+						t.Fatalf("%s: error %q, want substring %q", save.name, got, strings.Join(expected, "; "))
+					}
+				} else if got != wantMsg {
 					t.Fatalf("%s: error %q, want %q", save.name, got, wantMsg)
 				}
 			}
 			if fixture.ImportTrust {
-				attested := fixture.Script()
+				attested := javaVMDraft([]string{"-Ddatabase.password=lifecycle-matrix"})
+				attested.Actions[0].Target = "Actions"
+				ensureScriptImportPreserved(attested, enterpriseArchiveSaveProfile)
 				ensureScriptImportPreserved(attested, enterpriseArchiveSaveProfile)
 				_ = server.newScriptImportResponseWithSourceSecrets(
 					httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive", nil),
@@ -717,16 +727,16 @@ func TestLifecycleParityMatrixDocumentIsFresh(t *testing.T) {
 }
 
 // Debug and replay judge what they would execute: a recorded resource URL
-// whose credential the executed copy masks cannot be executed, although the
-// submitted content alone has no finding.
+// containing the redaction sentinel cannot be executed when live network
+// fallback is not allowed.
 func TestTransientReplayRefusesAMaskedRecordedResourceURL(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	script := &dsl.Script{Name: "Recorded resources", Version: "1.0.0", Protocol: "browser",
 		Config:   dsl.ScriptConfig{BaseURL: "https://lifecycle.example.test", Browser: dsl.BrowserConfig{Engine: "chromium", DownloadResources: "recorded"}},
-		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorded_resource_urls_available": true, "recorded_resource_urls": []any{"https://user:pass@cdn.lifecycle.example.test/app.js"}}}},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorded_resource_urls_available": true, "recorded_resource_urls": []any{"https://user:[REDACTED]@cdn.lifecycle.example.test/app.js"}}}},
 		Actions:  []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
-	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
-		t.Fatalf("fixture: the submitted content has findings %q", issues)
+	if issues := dsl.ValidateScriptIssues(script); len(issues) == 0 {
+		t.Fatal("fixture: expected ValidateScriptIssues to report the masked recorded_resource_urls entry")
 	}
 	body, err := json.Marshal(map[string]any{"script": script})
 	if err != nil {

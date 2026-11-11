@@ -248,12 +248,11 @@ func TestJavaVuserApprovalEvidenceProjectionPreservesOnlyGovernanceEnvelope(t *t
 	if !ok || evidence.SessionID != sessionID || evidence.ContentHash == "" {
 		t.Fatalf("approval evidence = %#v, want intact server governance envelope", evidence)
 	}
-	if exactHash, projectedHash := hashLibraryScript(script), hashLibraryScript(projected); exactHash != projectedHash {
-		t.Fatalf(
-			"Java approval hash is not projection-idempotent: exact=%q projected=%q",
-			exactHash,
-			projectedHash,
-		)
+	if evidence.ContentHash != hashLibraryScript(script) {
+		t.Fatalf("approval ContentHash = %q, want canonical hash %q", evidence.ContentHash, hashLibraryScript(script))
+	}
+	if !libraryScriptHashMatches(script, hashLibraryScript(projected)) {
+		t.Fatalf("libraryScriptHashMatches did not accept legacy masked hash %q", hashLibraryScript(projected))
 	}
 	ordinary, _ := projected.Metadata.Import.Preserved["ordinary"].(map[string]any)
 	if ordinary["session_id"] != maskedScriptSecret {

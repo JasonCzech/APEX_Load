@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	eventhubsprotocol "github.com/jasonczech/apexload/pkg/protocol/eventhubs"
 	kafkaprotocol "github.com/jasonczech/apexload/pkg/protocol/kafka"
 	"github.com/jasonczech/apexload/pkg/protocol/kafkacontract"
 )
@@ -369,16 +370,26 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	*cfg = dsl.KafkaConfig{} // Each source configuration is independent, including absent optional fields.
 	cfg.Brokers = strings.Split(effective["bootstrap.servers"], ",")
 	cfg.ClientID = effective["client.id"]
-	cfg.SecurityProtocol = strings.ToLower(effective["security.protocol"])
-	cfg.SASLMechanism = strings.ToLower(effective["sasl.mechanism"])
-	cfg.Acks = effective["acks"]
+	cfg.SecurityProtocol = strings.ToLower(strings.TrimSpace(effective["security.protocol"]))
+	cfg.SASLMechanism = strings.ToLower(strings.TrimSpace(effective["sasl.mechanism"]))
+	acksInvalid := false
+	cfg.Acks = strings.ToLower(strings.TrimSpace(effective["acks"]))
 	switch cfg.Acks {
+	case "", "none", "leader", "all":
 	case "-1":
 		cfg.Acks = "all"
 	case "1":
 		cfg.Acks = "leader"
 	case "0":
 		cfg.Acks = "none"
+	default:
+		if strings.Contains(effective["acks"], "${") || strings.Contains(effective["acks"], "{{var.") {
+			block("jmeter_messaging_variable_unresolved")
+		} else {
+			block("jmeter_kafka_producer_setting_invalid")
+		}
+		cfg.Acks = ""
+		acksInvalid = true
 	}
 	// Java reads a boolean setting trimmed and ignoring case, and a present key
 	// counts as set by the user even when it is neither true nor false (the
@@ -393,6 +404,11 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 		default:
 			block("jmeter_kafka_producer_setting_invalid")
 		}
+	}
+	if cfg.Idempotence == "enabled" && cfg.Acks != "" && cfg.Acks != "all" {
+		block("jmeter_kafka_producer_setting_invalid")
+		cfg.Idempotence = ""
+		acksInvalid = true
 	}
 	cfg.Producer = &dsl.KafkaProducerConfig{}
 	// safe is the disclosure-safe effective settings evidence. Defaults the
@@ -411,7 +427,7 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 		diagnostics.Add(diag.Info, "JMeter "+diKafkaConfig, jmeterElementLocation(c), "the Kafka producer leaves enable.idempotence unset and sets "+conflict+", so the Java client turns idempotence off rather than failing; APEX matches it with config.kafka.idempotence: disabled.")
 	}
 	tuning := map[string]any{}
-	invalidTuning := false
+	invalidTuning := acksInvalid
 	for _, setting := range []struct {
 		source   string
 		target   **int
@@ -528,53 +544,112 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 	for key, value := range effective {
 		switch key {
 		case "sasl.jaas.config":
-			safe[key] = "[credential options withheld]"
-			options, err := parseMessagingOAuthJAAS(value)
-			if err != nil {
-				block("jmeter_kafka_jaas_unsupported_or_malformed")
-			}
-			if err == nil {
-				names := make([]string, 0, len(options))
-				for name := range options {
-					names = append(names, name)
+			safe[key] = value
+			trimmedJAAS := strings.TrimSpace(value)
+			switch {
+			case strings.HasPrefix(trimmedJAAS, "org.apache.kafka.common.security.plain.PlainLoginModule"),
+				strings.HasPrefix(trimmedJAAS, "org.apache.kafka.common.security.scram.ScramLoginModule"):
+				module, options, err := parseMessagingSASLLoginJAAS(value)
+				if err != nil {
+					block("jmeter_kafka_jaas_unsupported_or_malformed")
+					break
 				}
-				sort.Strings(names)
-				oauthSource["option_names"] = names
-				oauthSource["scope"] = options["scope"]
-				oauthSource["credentials"] = "protected binding required"
-				if err := kafkaprotocol.ValidateOAuthTokenEndpoint(effective["sasl.oauthbearer.token.endpoint.url"]); err != nil {
-					block("jmeter_kafka_oauth_endpoint_invalid")
-				}
-				cfg.OAuth = &dsl.KafkaOAuthConfig{Mode: "client_credentials", TokenURL: effective["sasl.oauthbearer.token.endpoint.url"], Scope: options["scope"], AuthenticationMethod: "kafka_3_3_1_basic"}
-				for _, binding := range []struct {
-					key, field  string
-					destination *string
-				}{{"clientId", "config.kafka.oauth.client_id", &cfg.OAuth.ClientID}, {"clientSecret", "config.kafka.oauth.client_secret_ref", &cfg.OAuth.ClientSecretRef}} {
-					value := options[binding.key]
-					target := credentialpolicy.TargetRef{RequestKey: script.Name, Field: binding.field}
-					if secondary {
-						target.RequestKey = a.Name
-						target.Field = strings.Replace(binding.field, "config.kafka.", "metadata.jmeter_kafka.native_config.", 1)
+				switch module {
+				case "org.apache.kafka.common.security.plain.PlainLoginModule":
+					if cfg.SASLMechanism == "" {
+						cfg.SASLMechanism = "plain"
+					} else if cfg.SASLMechanism != "plain" {
+						block("jmeter_kafka_jaas_unsupported_or_malformed")
 					}
-					requirement, replacement, bindingErr := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "kafka_oauth_" + binding.key, Label: "Kafka OAuth " + binding.key, NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_KAFKA_" + strings.ToUpper(binding.key), Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, c), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: value, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
-					if bindingErr != nil {
-						if ctx.importErr != nil {
-							*ctx.importErr = bindingErr
-						}
+				case "org.apache.kafka.common.security.scram.ScramLoginModule":
+					if cfg.SASLMechanism != "scram-sha-256" && cfg.SASLMechanism != "scram-sha-512" {
+						block("jmeter_kafka_jaas_unsupported_or_malformed")
+					}
+				}
+				cfg.SASLUsername = options["username"]
+				cfg.SASLPassword = options["password"]
+				if strings.TrimSpace(cfg.SASLUsername) == "" || strings.TrimSpace(cfg.SASLPassword) == "" {
+					block("jmeter_kafka_jaas_unsupported_or_malformed")
+				}
+				if strings.Contains(cfg.SASLUsername, "{{var.") || strings.Contains(cfg.SASLUsername, "${") ||
+					strings.Contains(cfg.SASLPassword, "{{var.") || strings.Contains(cfg.SASLPassword, "${") {
+					block("jmeter_messaging_variable_unresolved")
+				}
+				if cfg.SASLMechanism == "plain" &&
+					strings.TrimSpace(cfg.SASLPassword) != "" &&
+					(cfg.SecurityProtocol == "" || cfg.SecurityProtocol == "sasl_ssl") &&
+					(strings.EqualFold(strings.TrimSpace(cfg.SASLUsername), "$ConnectionString") || hasEventHubsKafkaBroker(cfg.Brokers)) {
+					cfg.Profile = "eventhubs"
+				}
+			default:
+				options, err := parseMessagingOAuthJAAS(value)
+				if err != nil {
+					block("jmeter_kafka_jaas_unsupported_or_malformed")
+					if strings.EqualFold(cfg.SASLMechanism, "oauthbearer") || strings.Contains(trimmedJAAS, "OAuthBearerLoginModule") {
 						block("jmeter_kafka_oauth_credentials_required")
-						continue
 					}
-					*binding.destination = replacement
-					ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
 				}
-
+				if err == nil {
+					names := make([]string, 0, len(options))
+					for name := range options {
+						names = append(names, name)
+					}
+					sort.Strings(names)
+					oauthSource["option_names"] = names
+					oauthSource["scope"] = options["scope"]
+					oauthSource["options"] = options
+					tokenEndpoint := effective["sasl.oauthbearer.token.endpoint.url"]
+					if err := kafkaprotocol.ValidateOAuthTokenEndpoint(tokenEndpoint); err != nil {
+						block("jmeter_kafka_oauth_endpoint_invalid")
+					}
+					for _, oauthField := range []string{options["clientId"], options["clientSecret"], options["scope"], tokenEndpoint} {
+						if strings.Contains(oauthField, "{{var.") || strings.Contains(oauthField, "${") {
+							block("jmeter_messaging_variable_unresolved")
+							break
+						}
+					}
+					if strings.TrimSpace(options["clientId"]) == "" || strings.TrimSpace(options["clientSecret"]) == "" {
+						block("jmeter_kafka_oauth_credentials_required")
+					}
+					if cfg.Profile != "" || !strings.EqualFold(cfg.SASLMechanism, "oauthbearer") || !strings.EqualFold(cfg.SecurityProtocol, "sasl_ssl") {
+						block("jmeter_kafka_jaas_unsupported_or_malformed")
+					} else {
+						cfg.OAuth = &dsl.KafkaOAuthConfig{Mode: "client_credentials", TokenURL: tokenEndpoint, Scope: options["scope"], AuthenticationMethod: "kafka_3_3_1_basic"}
+						for _, binding := range []struct {
+							key, field               string
+							literalDst, secretRefDst *string
+						}{
+							{"clientId", "config.kafka.oauth.client_id", &cfg.OAuth.ClientID, &cfg.OAuth.ClientID},
+							{"clientSecret", "config.kafka.oauth.client_secret_ref", &cfg.OAuth.ClientSecret, &cfg.OAuth.ClientSecretRef},
+						} {
+							optValue := options[binding.key]
+							if strings.TrimSpace(optValue) != "" {
+								*binding.literalDst = optValue
+								continue
+							}
+							target := credentialpolicy.TargetRef{RequestKey: script.Name, Field: binding.field}
+							if secondary {
+								target.RequestKey = a.Name
+								target.Field = strings.Replace(binding.field, "config.kafka.", "metadata.jmeter_kafka.native_config.", 1)
+							}
+							requirement, replacement, bindingErr := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "kafka_oauth_" + binding.key, Label: "Kafka OAuth " + binding.key, NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_KAFKA_" + strings.ToUpper(binding.key), Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, c), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: optValue, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
+							if bindingErr != nil {
+								if ctx.importErr != nil {
+									*ctx.importErr = bindingErr
+								}
+								continue
+							}
+							*binding.secretRefDst = replacement
+							ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
+						}
+					}
+				}
+				_, legacyID := options["cid"]
+				_, legacySecret := options["cs"]
+				if legacyID || legacySecret {
+					block("jmeter_kafka_nonstandard_oauth_options")
+				}
 			}
-			_, legacyID := options["cid"]
-			_, legacySecret := options["cs"]
-			if legacyID || legacySecret {
-				block("jmeter_kafka_nonstandard_oauth_options")
-			}
-			block("jmeter_kafka_oauth_credentials_required")
 		case "group", "session.timeout.ms", "heartbeat.interval.ms":
 			ignored = append(ignored, key)
 		default:
@@ -588,6 +663,37 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 				block("jmeter_kafka_effective_property_unsupported")
 			}
 		}
+	}
+	if cfg.SecurityProtocol != "" {
+		switch cfg.SecurityProtocol {
+		case "plaintext", "ssl", "sasl_ssl", "sasl_plaintext":
+		default:
+			if strings.Contains(effective["security.protocol"], "${") || strings.Contains(effective["security.protocol"], "{{var.") {
+				block("jmeter_messaging_variable_unresolved")
+			} else {
+				block("jmeter_kafka_effective_property_unsupported")
+			}
+			cfg.SecurityProtocol = ""
+			cfg.OAuth = nil
+		}
+	}
+	if cfg.SASLMechanism != "" {
+		switch cfg.SASLMechanism {
+		case "plain", "scram-sha-256", "scram-sha-512", "oauthbearer":
+		default:
+			if strings.Contains(effective["sasl.mechanism"], "${") || strings.Contains(effective["sasl.mechanism"], "{{var.") {
+				block("jmeter_messaging_variable_unresolved")
+			} else {
+				block("jmeter_kafka_effective_property_unsupported")
+			}
+			cfg.SASLMechanism = ""
+			cfg.OAuth = nil
+		}
+	}
+	if strings.EqualFold(cfg.SASLMechanism, "oauthbearer") && !strings.EqualFold(cfg.Profile, "eventhubs") && !strings.Contains(cfg.SecurityProtocol, "ssl") {
+		block("jmeter_kafka_jaas_unsupported_or_malformed")
+		cfg.SASLMechanism = ""
+		cfg.OAuth = nil
 	}
 	for _, key := range []string{"key.serializer", "value.serializer"} {
 		if effective[key] != "org.apache.kafka.common.serialization.StringSerializer" {
@@ -670,11 +776,29 @@ func convertPNOPEventHubs(e *xmlNode, ctx *convertContext, script *dsl.Script, a
 	if prop(e, "authType") != "Shared access signature" {
 		block("jmeter_eventhubs_authentication_unsupported")
 	}
-	sourceCredential := "***"
-	if key := prop(e, "sharedAccessKey"); credentialpolicy.ClassifySourceCredentialValue(key) == credentialpolicy.SourceCredentialValueAvailable {
-		sourceCredential = "Endpoint=sb://" + cfg.Namespace + "/;SharedAccessKeyName=" + prop(e, "sharedAccessKeyName") + ";SharedAccessKey=" + key + ";EntityPath=" + cfg.EventHub
+	key := strings.TrimSpace(prop(e, "sharedAccessKey"))
+	keyName := strings.TrimSpace(prop(e, "sharedAccessKeyName"))
+	namespace := strings.TrimSpace(cfg.Namespace)
+	if len(namespace) >= 5 && strings.EqualFold(namespace[:5], "sb://") {
+		namespace = strings.TrimSpace(namespace[5:])
 	}
-	requirement, replacement, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "eventhubs_connection_string", Label: "Event Hubs connection for " + script.Name, Context: eventHubsConnectionStringContext(cfg.EventHub), NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_EVENTHUBS", Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, e), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: sourceCredential, Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
+	namespace = strings.TrimSpace(strings.TrimSuffix(namespace, "/"))
+	cfg.Namespace = namespace
+	hasUnresolvedVar := func(s string) bool {
+		return strings.Contains(s, "{{var.") || strings.Contains(s, "${")
+	}
+	if hasUnresolvedVar(namespace) || hasUnresolvedVar(keyName) || hasUnresolvedVar(key) {
+		block("jmeter_messaging_variable_unresolved")
+	}
+	if key != "" && keyName != "" && namespace != "" &&
+		!strings.Contains(namespace, ";") && !strings.Contains(keyName, ";") && !strings.Contains(key, ";") {
+		candidate := "Endpoint=sb://" + namespace + "/;SharedAccessKeyName=" + keyName + ";SharedAccessKey=" + key
+		if _, err := eventhubsprotocol.ResolveConnectionStringEventHub(candidate, cfg.EventHub); err == nil {
+			cfg.ConnectionString = candidate
+			return
+		}
+	}
+	requirement, replacement, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: "eventhubs_connection_string", Label: "Event Hubs connection for " + script.Name, Context: eventHubsConnectionStringContext(cfg.EventHub), NameHint: "JMETER_" + strings.ToUpper(sanitizeName(script.Name)) + "_EVENTHUBS", Source: credentialpolicy.SourceRef{Format: "jmeter", Path: file, Pointer: messagingNodeID(script.Config.JMeter.SourcePlanID, e), ItemID: script.Name}, Targets: []credentialpolicy.TargetRef{target}, Value: "", Mode: credentialpolicy.SecretReference, Registry: ctx.credentialNames})
 	if err != nil {
 		if ctx.importErr != nil {
 			*ctx.importErr = err
@@ -722,4 +846,13 @@ func messagingAdvisories(script *dsl.Script, result *ConvertResult) {
 			result.Warnings = append(result.Warnings, "Counter "+p.Name+" is retained but unused by the messaging actions.")
 		}
 	}
+}
+
+func hasEventHubsKafkaBroker(brokers []string) bool {
+	for _, broker := range brokers {
+		if strings.Contains(strings.ToLower(strings.TrimSpace(broker)), ".servicebus.windows.net") {
+			return true
+		}
+	}
+	return false
 }

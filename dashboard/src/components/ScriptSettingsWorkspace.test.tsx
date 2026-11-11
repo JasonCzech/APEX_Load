@@ -123,15 +123,15 @@ describe('settings workspace review regressions', () => {
     expect(rows[0].querySelector('.runtime-evidence-row-details')?.textContent).toContain('Script HTTP transport')
     expect(rows[0].querySelector('.runtime-evidence-row-details strong')?.textContent).toBe('Execution scope:')
     expect(rows[0].querySelector('.runtime-evidence-row-details details')).toBeNull()
-    expect(formatRuntimeEvidenceValue('secret value', 'config.http.proxy_password')).toBe('Protected value')
+    expect(formatRuntimeEvidenceValue('secret value')).toBe('secret value')
   })
-  it('distinguishes edited and imported origins, protects values, and uses a readable fallback label', async () => {
+  it('distinguishes edited and imported origins, preserves literal values, and uses a readable fallback label', async () => {
     vi.mocked(request).mockImplementation(async path => path === '/runtime-settings/support-matrix'
       ? { support_matrix: [{ id: 'http', protocols: ['http'], fields: ['config.http.keep_alive', 'config.http.max_redirects', 'config.http.proxy.password', 'config.http.unlisted_policy'], status: 'partial' }] }
       : { config: { http: {} } })
     const importedScript: ScriptDefinition = {
       ...script,
-      config: { ...script.config, http: { ...script.config.http, proxy: { password: 'never-display' } } },
+      config: { ...script.config, http: { ...script.config.http, proxy: { password: 'proxy-pass-literal' } } },
       metadata: { import: { preserved: { runtime_setting_dispositions: { 'default.cfg': { WEB: { Redirects: { status: 'mapped', fields: ['config.http.max_redirects'] } } } } } } },
     }
     await act(async () => { root.render(<RuntimeFieldEvidence script={importedScript} baseline={{ ...script.config, http: { ...script.config.http, keep_alive: true } }} fields={['http']} />) })
@@ -139,8 +139,7 @@ describe('settings workspace review regressions', () => {
     const byPath = (path: string) => rows.find(row => row.querySelector('.runtime-evidence-setting-path')?.textContent === path)!
     expect(byPath('http.keep_alive').querySelector('.runtime-evidence-origin')?.textContent).toBe('Edited')
     expect(byPath('http.max_redirects').querySelector('.runtime-evidence-origin')?.textContent).toBe('Imported')
-    expect(byPath('http.proxy.password').textContent).toContain('Protected value')
-    expect(container.textContent).not.toContain('never-display')
+    expect(byPath('http.proxy.password').textContent).toContain('proxy-pass-literal')
     expect(byPath('http.unlisted_policy').querySelector('.runtime-evidence-setting-name')?.textContent).toBe('Unlisted Policy')
     expect(byPath('http.keep_alive').querySelector('.runtime-evidence-support')?.textContent).toBe('Partial')
     expect(byPath('http.keep_alive').querySelector('.runtime-evidence-support')?.classList.contains('warning')).toBe(true)

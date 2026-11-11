@@ -2,21 +2,117 @@ package scrub
 
 import (
 	"fmt"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/jasonczech/apexload/pkg/credential"
 )
 
+var terminalCamelCredentialNouns = map[string]struct{}{
+	"password": {}, "passwd": {}, "passphrase": {}, "passcode": {}, "pwd": {},
+	"token": {}, "secret": {},
+	"apikey": {}, "apitoken": {}, "clientsecret": {}, "apisecret": {},
+	"privatekey": {}, "secretkey": {}, "accesskey": {}, "sharedaccesskey": {},
+	"accesstoken": {}, "refreshtoken": {}, "sessiontoken": {}, "idtoken": {},
+	"csrftoken": {}, "xsrftoken": {}, "authtoken": {}, "authenticationtoken": {},
+	"confirmationtoken": {}, "securitytoken": {}, "bearertoken": {},
+}
+
+var concatenatedCredentialSuffixes = []string{
+	"password", "passwd", "passphrase", "passcode",
+	"authtoken", "authenticationtoken", "confirmationtoken",
+	"accesstoken", "refreshtoken", "sessiontoken", "securitytoken",
+	"bearertoken", "idtoken", "csrftoken", "xsrftoken", "apitoken",
+	"apikey", "clientsecret", "apisecret", "privatekey", "secretkey",
+	"accesskey", "sharedaccesskey",
+}
+
 // SensitiveName reports whether name denotes credential material. It accepts
 // common structured notations (for example credentials[client_secret] and
-// auth.private_key), including percent-encoded names, while deliberately using
-// exact normalized components to avoid substring false positives.
+// auth.private_key), camelCase credential fields (accPassword, emailToken,
+// approverPasswd), and concatenated credential suffixes (_CONFIRMATIONTOKEN,
+// eddauthenticationtoken), including percent-encoded names, while avoiding
+// substring false positives on non-credential descriptors (tokenURL,
+// apiTokenCount, businessTokenLabel).
 func SensitiveName(name string) bool {
-	return credential.SensitiveName(name)
+	if credential.SensitiveName(name) {
+		return true
+	}
+	if credential.NonCredentialName(name) {
+		return false
+	}
+	parts := splitSensitiveIdentifierParts(name)
+	if len(parts) == 0 {
+		return false
+	}
+	last := strings.ToLower(parts[len(parts)-1])
+	if _, ok := terminalCamelCredentialNouns[last]; ok {
+		return true
+	}
+	if len(parts) >= 2 {
+		compound := strings.ToLower(parts[len(parts)-2]) + last
+		if _, ok := terminalCamelCredentialNouns[compound]; ok {
+			return true
+		}
+	}
+	for _, suffix := range concatenatedCredentialSuffixes {
+		if strings.HasSuffix(last, suffix) {
+			return true
+		}
+	}
+	return false
+}
+
+// SensitiveXMLName extends SensitiveName for qualified XML element and
+// attribute names commonly used by SOAP and XML APIs.
+func SensitiveXMLName(name string) bool {
+	if credential.SensitiveXMLName(name) {
+		return true
+	}
+	local := name
+	if separator := strings.LastIndexByte(local, ':'); separator >= 0 {
+		local = local[separator+1:]
+	}
+	return SensitiveName(local)
+}
+
+func splitSensitiveIdentifierParts(name string) []string {
+	name = strings.TrimSpace(name)
+	for range 3 {
+		decoded, err := url.QueryUnescape(name)
+		if err != nil || decoded == name {
+			break
+		}
+		name = decoded
+	}
+	chunks := strings.FieldsFunc(name, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r))
+	})
+	if len(chunks) == 0 {
+		return nil
+	}
+	parts := make([]string, 0, len(chunks)*2)
+	for _, chunk := range chunks {
+		runes := []rune(chunk)
+		start := 0
+		for index := 1; index < len(runes); index++ {
+			prev := runes[index-1]
+			curr := runes[index]
+			split := ((unicode.IsLower(prev) || unicode.IsDigit(prev)) && unicode.IsUpper(curr)) ||
+				(unicode.IsUpper(prev) && unicode.IsUpper(curr) && index+1 < len(runes) && unicode.IsLower(runes[index+1]))
+			if split {
+				parts = append(parts, string(runes[start:index]))
+				start = index
+			}
+		}
+		parts = append(parts, string(runes[start:]))
+	}
+	return parts
 }
 
 // NamedValue scrubs a value with awareness of its field name. A recognized

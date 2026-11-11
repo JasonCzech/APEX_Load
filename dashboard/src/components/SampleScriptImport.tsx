@@ -37,7 +37,7 @@ import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { useImportReviewGeneration } from './importReviewGeneration'
-import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
+import { refreshedSecretBindingRequirements } from './secretBindingUtils'
 import { credentialPreservingImportDraftRequiresSave, earliestImportDraftExpiry } from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
@@ -57,7 +57,6 @@ type SampleImportOptions = {
   base_url: string
   include_assertions: boolean
   infer_extractors: boolean
-  sanitize_sensitive: boolean
   include_static_assets: boolean
   http_version_mode: HTTPVersionImportMode
   auth_type: AuthType
@@ -97,36 +96,6 @@ const formatHelp: Record<SampleFormat, string> = {
   curl: 'Paste a curl command. The importer derives method, URL, headers, and body automatically.',
   rest_json: 'Paste structured JSON with request/response objects or a requests array.',
   har: 'Paste a HAR file or a single HAR entry JSON object.',
-}
-
-const sensitiveDefaultHeaderNames = new Set([
-  'authorization',
-  'proxy-authorization',
-  'x-api-key',
-  'api-key',
-  'x-auth-token',
-  'x-access-token',
-  'x-csrf-token',
-  'x-xsrf-token',
-  'x-session-id',
-  'x-amz-security-token',
-  'cookie',
-  'set-cookie',
-])
-const portableSecretHeaderValuePattern = /^(?:(?:Bearer|Basic|Digest)\s+)?\{\{secret\.[A-Za-z0-9][A-Za-z0-9._-]{0,248}\}\}$/i
-
-function unsafeDefaultHeader(headers: Record<string, string>): string {
-  for (const [name, value] of Object.entries(headers)) {
-    const normalizedName = name.trim().toLowerCase()
-    const normalizedField = normalizedName.replace(/[^a-z0-9]/g, '')
-    const sensitive = sensitiveDefaultHeaderNames.has(normalizedName) ||
-      ['password', 'passwd', 'passphrase', 'secret', 'token', 'apikey', 'credential', 'cookie', 'sessionid', 'privatekey', 'accesskey']
-        .some(suffix => normalizedField.endsWith(suffix))
-    if (sensitive && !portableSecretHeaderValuePattern.test(value.trim())) {
-      return name
-    }
-  }
-  return ''
 }
 
 const sampleTemplates: Record<SampleFormat, { primary: string; secondary?: string }> = {
@@ -390,7 +359,6 @@ const initialOptions: SampleImportOptions = {
   base_url: '',
   include_assertions: true,
   infer_extractors: true,
-  sanitize_sensitive: true,
   include_static_assets: false,
   http_version_mode: 'upgrade',
   auth_type: 'none',
@@ -776,12 +744,12 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
       script.config.http.auth = {
         type: 'basic',
         username: options.auth_username.trim(),
-        password: options.auth_password.trim() ? secretBindingReference(options.auth_password) : '',
+        password: options.auth_password.trim(),
       }
     } else if (options.auth_type === 'bearer') {
       script.config.http.auth = {
         type: 'bearer',
-        token: options.auth_token.trim() ? secretBindingReference(options.auth_token) : '',
+        token: options.auth_token.trim(),
       }
     }
 
@@ -796,22 +764,6 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     const headersValid = parseDefaultHeaders(options.default_headers, true)
     if (headersValid === false) {
       setMessageError('Default headers must be a valid JSON object.')
-      return
-    }
-    const parsedDefaultHeaders = parseDefaultHeaders(options.default_headers)
-    if (parsedDefaultHeaders && parsedDefaultHeaders !== true) {
-      const unsafeHeader = unsafeDefaultHeader(parsedDefaultHeaders)
-      if (unsafeHeader) {
-        setMessageError(`Default header ${unsafeHeader} is sensitive. Use a {{secret.NAME}} reference (optionally prefixed by Bearer, Basic, or Digest) instead of a credential value.`)
-        return
-      }
-    }
-    if (options.auth_type === 'basic' && options.auth_password.trim() && !isValidSecretBindingName(options.auth_password)) {
-      setMessageError('Password secret binding must be a 1–249 character logical name using uppercase letters, numbers, or underscores.')
-      return
-    }
-    if (options.auth_type === 'bearer' && options.auth_token.trim() && !isValidSecretBindingName(options.auth_token)) {
-      setMessageError('Bearer token secret binding must be a 1–249 character logical name using uppercase letters, numbers, or underscores.')
       return
     }
 
@@ -834,7 +786,6 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
               base_url: options.base_url || undefined,
               include_assertions: options.include_assertions,
               infer_extractors: options.infer_extractors,
-              sanitize_sensitive: options.sanitize_sensitive,
               include_static_assets: format === 'har' ? options.include_static_assets : undefined,
               http_version_mode: format === 'har' ? options.http_version_mode : undefined,
             },
@@ -1285,18 +1236,18 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
                 <input value={options.auth_username} onChange={e => updateOption('auth_username', e.target.value)} />
               </label>
               <label className="sample-import-field">
-                <span>Password Secret Binding</span>
-                <input type="text" value={options.auth_password} onChange={e => updateOption('auth_password', e.target.value)} autoComplete="off" spellCheck={false} placeholder="LOGIN_PASSWORD" />
-                <small>Enter a logical binding name, not the password value.</small>
+                <span>Auth password</span>
+                <input type="text" value={options.auth_password} onChange={e => updateOption('auth_password', e.target.value)} autoComplete="off" spellCheck={false} placeholder="Password or {{secret.LOGIN_PASSWORD}}" />
+                <small>Enter a literal password or a <code>{'{{secret.NAME}}'}</code> reference.</small>
               </label>
             </>
           )}
 
           {options.auth_type === 'bearer' && (
             <label className="sample-import-field sample-import-span-2">
-              <span>Bearer Token Secret Binding</span>
-              <input type="text" value={options.auth_token} onChange={e => updateOption('auth_token', e.target.value)} autoComplete="off" spellCheck={false} placeholder="API_TOKEN" />
-              <small>Enter a logical binding name, not the token value.</small>
+              <span>Bearer token</span>
+              <input type="text" value={options.auth_token} onChange={e => updateOption('auth_token', e.target.value)} autoComplete="off" spellCheck={false} placeholder="Token or {{secret.API_TOKEN}}" />
+              <small>Enter a literal token or a <code>{'{{secret.NAME}}'}</code> reference.</small>
             </label>
           )}
 
@@ -1309,7 +1260,6 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
         <div className="sample-import-toggles">
           <label className="sample-toggle"><input type="checkbox" checked={options.include_assertions} onChange={e => updateOption('include_assertions', e.target.checked)} />Infer status assertions</label>
           <label className="sample-toggle"><input type="checkbox" checked={options.infer_extractors} onChange={e => updateOption('infer_extractors', e.target.checked)} />Infer extractors and correlation variables</label>
-          <label className="sample-toggle"><input type="checkbox" checked={options.sanitize_sensitive} onChange={e => updateOption('sanitize_sensitive', e.target.checked)} />Sanitize obvious secrets</label>
           {format === 'har' && <label className="sample-toggle"><input type="checkbox" checked={options.include_static_assets} onChange={e => updateOption('include_static_assets', e.target.checked)} />Include static assets</label>}
           <label className="sample-toggle"><input type="checkbox" checked={options.continue_on_error} onChange={e => updateOption('continue_on_error', e.target.checked)} />Continue on error</label>
         </div>

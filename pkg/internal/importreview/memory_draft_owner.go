@@ -55,8 +55,7 @@ func DraftFingerprintAllowed(
 			fingerprint.FullDigest != "" &&
 			record.FullDigest == fingerprint.FullDigest
 	}
-	if len(record.CredentialDigests) == 0 ||
-		len(fingerprint.CredentialDigests) == 0 {
+	if len(record.CredentialDigests) == 0 {
 		return false
 	}
 	// Credential digests are bound to both the exact value and its executable
@@ -64,14 +63,17 @@ func DraftFingerprintAllowed(
 	// Non-credential authoring changes (pacing, timeout, display metadata,
 	// protocol profile, and similar import-screen options) do not need to be
 	// byte-identical to the inspection response and must not force the operator
-	// to re-import or re-enter a password. A new, moved, or changed credential
-	// produces a different location-bound digest and is still rejected below.
+	// to re-import or re-enter a password. Replacing some or all raw credentials
+	// with {{secret.*}}, {{param.*}}, or {{data.*}} references leaves a valid
+	// (possibly empty) subset of record.CredentialDigests, whereas a new, moved,
+	// or changed credential produces a different location-bound digest and is
+	// still rejected below.
 	for digest, count := range fingerprint.CredentialDigests {
 		if count <= 0 || record.CredentialDigests[digest] < count {
 			return false
 		}
 	}
-	return len(fingerprint.CredentialDigests) > 0
+	return true
 }
 
 // MemoryDraftOwner serializes one-shot draft capabilities for hosts without a
@@ -245,7 +247,9 @@ func (o *MemoryDraftOwner) Claim(scope DraftScope, script *dsl.Script, transform
 			return nil, ErrDraftAttestationInvalid
 		}
 	}
-	credentials := (fingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) && DraftFingerprintAllowed(record, fingerprint)
+	allRawBound := !fingerprint.HasRawCredentials && fingerprint.FullDigest == "" &&
+		(len(record.CredentialDigests) > 0 || record.FullDigest != "") && !record.HasUnavailableCredentialValues
+	credentials := allRawBound || ((fingerprint.HasRawCredentials || record.HasUnavailableCredentialValues) && DraftFingerprintAllowed(record, fingerprint))
 	if record.HasUnavailableCredentialValues && !fingerprint.HasRawCredentials {
 		credentials = fingerprint.FullDigest != "" && fingerprint.FullDigest == record.FullDigest
 	}

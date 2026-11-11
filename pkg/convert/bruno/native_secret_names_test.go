@@ -6,36 +6,36 @@ import (
 	"testing"
 )
 
-// Two requests that each define their own password: two credentials, so the
-// second is numbered. Each request's script and its scrubbed source name the
-// same secret, and no name carries a path or hash.
+// Two requests that each reference distinct unresolved credentials: two
+// requirements per field, so the second is numbered without path/hash noise.
 func TestNativeSecretNamesNumberDistinctCredentialsConsistently(t *testing.T) {
-	request := func(name, value string) []byte {
+	request := func(name, suffix string) []byte {
 		return []byte(`info: {name: ` + name + `, uid: ` + name + `-uid, type: http}
 variables:
+  - name: username
+    value: "user-{{missing_` + suffix + `}}"
   - name: password
-    value: ` + value + `
+    value: "prefix-{{missing_` + suffix + `}}"
 http:
   method: GET
   url: https://example.test
   auth:
     type: basic
-    username: operator
+    username: "{{username}}"
     password: "{{password}}"
 `)
 	}
 	result, err := Inspect(Input{
 		Files: map[string][]byte{
 			"demo/opencollection.yml": []byte("info: {name: Demo}\n"),
-			"demo/a.yml":              request("first", "first-secret-value"),
-			"demo/b.yml":              request("second", "second-secret-value"),
+			"demo/a.yml":              request("first", "one"),
+			"demo/b.yml":              request("second", "two"),
 		},
 		Options: InspectOptions{OutputMode: OutputModeNativeRequests},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Each request's password and basic-auth username are credentials.
 	names := map[string]bool{}
 	for _, requirement := range result.SecretRequirements {
 		names[requirement.SuggestedName] = true
@@ -51,8 +51,8 @@ http:
 		password := candidate.Script.Actions[0].Auth.Password
 		used[password] = true
 		sanitized := tarFile(t, result.SanitizedArchive, "demo/"+strings.TrimPrefix(candidate.SourcePath, "demo/"))
-		if !bytes.Contains(sanitized, []byte(password)) {
-			t.Errorf("%s: scrubbed source does not name %s:\n%s", candidate.SourcePath, password, sanitized)
+		if !bytes.Contains(sanitized, []byte("prefix-{{missing_")) {
+			t.Errorf("%s: archived source did not preserve authored template:\n%s", candidate.SourcePath, sanitized)
 		}
 	}
 	if len(used) != 2 {

@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -97,8 +96,9 @@ func assertImportProjectionFixtureScripts(t *testing.T, label string, recovered 
 		if len(script.Actions) != 12 {
 			t.Fatalf("%s: script %d has %d actions, want 12", label, index, len(script.Actions))
 		}
-		if got := script.Config.HTTP.Auth.Password; got != credential.Redacted {
-			t.Fatalf("%s: script %d auth password = %q, want %q", label, index, got, credential.Redacted)
+		wantPassword := fmt.Sprintf("imported-password-%d", index)
+		if got := script.Config.HTTP.Auth.Password; got != wantPassword {
+			t.Fatalf("%s: script %d auth password = %q, want %q", label, index, got, wantPassword)
 		}
 	}
 }
@@ -111,7 +111,8 @@ func assertImportProjectionFixtureScripts(t *testing.T, label string, recovered 
 func TestImportParameterizationScriptsReusesPreProjectedTree(t *testing.T) {
 	scripts := []*dsl.Script{importProjectionFixtureScript(0), importProjectionFixtureScript(1)}
 	raw := importResponseRawScriptValue(scripts)
-	projection := credentialPreservingImportResponseValue(scripts)
+	projection := importResponseRawScriptValue(scripts)
+	markCredentialPreservingImportJSON(projection)
 
 	fromRaw := importParameterizationScripts(raw)
 	fromProjection := importParameterizationScripts(projectedImportScripts{Value: projection})
@@ -269,8 +270,17 @@ func TestCredentialPreservingImportResponseMasksNeutralLocatedCredential(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(payload), secret) || !strings.Contains(string(payload), credential.Redacted) {
-		t.Fatalf("neutral located credential was disclosed or not represented as masked: %s", payload)
+	if strings.Contains(string(payload), secret) || !strings.Contains(string(payload), maskedScriptSecret) {
+		t.Fatalf("private requirement-discovery projection did not mask neutral located credential: %s", payload)
+	}
+
+	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
+	responsePayload, err := json.Marshal(response["script"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(responsePayload), secret) || strings.Contains(string(responsePayload), maskedScriptSecret) {
+		t.Fatalf("import response redacted neutral located credential instead of preserving it: %s", responsePayload)
 	}
 }
 

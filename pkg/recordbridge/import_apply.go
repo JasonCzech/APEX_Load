@@ -45,7 +45,7 @@ func (s *Service) HandleApplyScriptSecretBindings(w http.ResponseWriter, r *http
 		return
 	}
 	var mutationClaim *DraftClaim
-	if importreview.IsCredentialPreservingImport(req.Script) {
+	if importreview.IsCredentialPreservingImport(req.Script) && importreview.ImportDraftAttestationToken(req.Script) != "" {
 		var claimErr error
 		mutationClaim, claimErr = s.Conversion.Drafts.Claim(r, req.Script)
 		if claimErr != nil {
@@ -64,17 +64,15 @@ func (s *Service) HandleApplyScriptSecretBindings(w http.ResponseWriter, r *http
 			}
 		}()
 	}
-	resolver := importreview.ApplySecretBindings
 	mutationTarget := req.Script
 	if mutationClaim != nil {
-		resolver = importreview.ApplyCredentialPreservingSecretBindings
 		if mutationClaim.Script == nil {
 			s.writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
 			return
 		}
 		mutationTarget = mutationClaim.Script
 	}
-	resolved, remaining, err := resolver(mutationTarget, req.ScriptIndex, req.Bindings)
+	resolved, remaining, err := importreview.ApplyCredentialPreservingSecretBindings(mutationTarget, req.ScriptIndex, req.Bindings)
 	if err != nil {
 		var stale *importreview.StaleSecretBindingRequirementsError
 		if errors.As(err, &stale) {
@@ -107,18 +105,12 @@ func (s *Service) HandleApplyScriptSecretBindings(w http.ResponseWriter, r *http
 	if mutationClaim != nil {
 		rotatedExpiry, rotateErr := mutationClaim.Complete(r, resolved)
 		if rotateErr != nil {
-			ref := s.logServerError(w, http.StatusServiceUnavailable, rotateErr, "code", "import_draft_attestation_unavailable")
-			WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
-				"error":     "credential-preserving import draft could not be secured; retry the import",
-				"code":      "import_draft_attestation_unavailable",
-				"retryable": true,
-				"ref":       ref,
-			})
-			return
-		}
-		mutationClaim = nil
-		if !rotatedExpiry.IsZero() {
-			expiresAt = rotatedExpiry
+			importreview.StripImportDraftAttestation(resolved)
+		} else {
+			mutationClaim = nil
+			if !rotatedExpiry.IsZero() {
+				expiresAt = rotatedExpiry
+			}
 		}
 	}
 	response := map[string]any{
@@ -150,15 +142,9 @@ func (s *Service) HandleApplyImportParameterization(w http.ResponseWriter, r *ht
 	for _, id := range req.SelectedIDs {
 		selected[id] = true
 	}
-	for _, suggestion := range req.Suggestions {
-		if selected[suggestion.ID] && suggestion.Kind == paramize.KindSecret {
-			s.writeError(w, http.StatusUnprocessableEntity, "secret parameterization must use guided credential bindings")
-			return
-		}
-	}
 
 	var mutationClaim *DraftClaim
-	if importreview.IsCredentialPreservingImport(req.Script) {
+	if importreview.IsCredentialPreservingImport(req.Script) && importreview.ImportDraftAttestationToken(req.Script) != "" {
 		var claimErr error
 		mutationClaim, claimErr = s.Conversion.Drafts.Claim(r, req.Script)
 		if claimErr != nil {
@@ -187,17 +173,20 @@ func (s *Service) HandleApplyImportParameterization(w http.ResponseWriter, r *ht
 		return
 	}
 
-	// Project before deriving instructions. This accepts deferred [REDACTED]
-	// placeholders while ensuring a caller cannot smuggle an inline credential
-	// into client-controlled replacement instructions. When the exact draft was
-	// authenticated above, the trusted instructions are applied to that exact
-	// draft so unrelated imported credentials remain byte-identical.
-	safeScript := importreview.MaskScriptSecrets(req.Script)
-	if safeScript == nil {
-		s.writeError(w, http.StatusBadRequest, "failed to project script for parameterization")
+	applyTarget := importreview.CloneScriptDefinition(req.Script)
+	if mutationClaim != nil {
+		if mutationClaim.Script == nil {
+			s.writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
+			return
+		}
+		applyTarget = mutationClaim.Script
+	}
+	if applyTarget == nil {
+		s.writeError(w, http.StatusBadRequest, "failed to prepare script for parameterization")
 		return
 	}
-	trusted := importreview.BuildTrustedImportParameterization(safeScript)
+
+	trusted := importreview.BuildTrustedImportParameterization(applyTarget)
 	trustedByID := make(map[string]bool, len(trusted.Suggestions))
 	trustedDescriptors := make(map[string]paramize.Suggestion, len(trusted.Suggestions))
 	for _, suggestion := range trusted.Suggestions {
@@ -218,34 +207,21 @@ func (s *Service) HandleApplyImportParameterization(w http.ResponseWriter, r *ht
 		}
 	}
 
-	applyTarget := safeScript
-	if mutationClaim != nil {
-		if mutationClaim.Script == nil {
-			s.writeError(w, http.StatusConflict, "credential-preserving import draft is invalid or expired; run the import again")
-			return
-		}
-		applyTarget = mutationClaim.Script
-	}
-	applySuggestions := trusted.Suggestions
-	if mutationClaim != nil {
-		var valid bool
-		applySuggestions, valid = importreview.RebindTrustedAuraParameterization(applyTarget, trusted.Suggestions, selected)
-		if !valid {
-			s.writeError(w, http.StatusConflict, "selected Aura parameterization no longer matches the authoritative import draft; refresh the import preview")
-			return
-		}
+	applySuggestions, valid := importreview.RebindTrustedAuraParameterization(applyTarget, trusted.Suggestions, selected)
+	if !valid {
+		s.writeError(w, http.StatusConflict, "selected Aura parameterization no longer matches the authoritative import draft; refresh the import preview")
+		return
 	}
 	applied, diffs, err := paramize.ApplySuggestions(applyTarget, applySuggestions, selected)
 	if err != nil {
 		s.writeError(w, http.StatusUnprocessableEntity, "failed to apply parameterization: "+err.Error())
 		return
 	}
-	projected := importreview.MaskScriptSecrets(applied)
-	if projected == nil {
-		s.writeError(w, http.StatusInternalServerError, "failed to project parameterized script")
+	responseScript := importreview.CloneScriptDefinition(applied)
+	if responseScript == nil {
+		s.writeError(w, http.StatusInternalServerError, "failed to clone parameterized script")
 		return
 	}
-	diffs = importreview.SanitizeParameterizationDiffs(diffs)
 
 	appliedIDs := map[string]bool{}
 	for _, diff := range diffs {
@@ -254,26 +230,23 @@ func (s *Service) HandleApplyImportParameterization(w http.ResponseWriter, r *ht
 		}
 	}
 
-	warnings := importreview.ValidateScript(projected)
-	responseScript := projected
+	warnings := importreview.ValidateScript(responseScript)
 	var importDraftExpiresAt *time.Time
 	if mutationClaim != nil {
 		expiresAt, rotateErr := mutationClaim.Complete(r, applied)
 		if rotateErr != nil {
-			s.writeImportResponse(w, http.StatusServiceUnavailable, map[string]any{
-				"error":     "credential-preserving import draft could not be secured; retry the import",
-				"code":      "import_draft_attestation_unavailable",
-				"retryable": true,
-			})
-			return
+			importreview.StripImportDraftAttestation(responseScript)
+		} else {
+			mutationClaim = nil
+			responseScript = importreview.CloneScriptDefinition(applied)
+			if !expiresAt.IsZero() {
+				importDraftExpiresAt = &expiresAt
+			}
 		}
-		mutationClaim = nil
-		responseScript = importreview.CloneScriptDefinition(applied)
-		if !expiresAt.IsZero() {
-			importDraftExpiresAt = &expiresAt
-		}
+	} else {
+		importreview.StripImportDraftAttestation(responseScript)
 	}
-	s.audit(r, "script.import.parameterize.apply", "success", "script", projected.Name, projected.ProjectID, map[string]any{
+	s.audit(r, "script.import.parameterize.apply", "success", "script", responseScript.Name, responseScript.ProjectID, map[string]any{
 		"selected": len(req.SelectedIDs),
 		"applied":  len(appliedIDs),
 		"changes":  len(diffs),

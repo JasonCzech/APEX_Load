@@ -19,7 +19,7 @@ import { getErrorMessage } from '../utils/errorUtils';
 import SourceCodeViewer from './SourceCodeViewer';
 import SecretBindingReview, { type PreparedSecretBindings, type RequirementDestinationState, type SecretBindingReviewHandle, } from './SecretBindingReview';
 import BrunoDataReview from './BrunoDataReview';
-import { brunoMissingVariables, brunoCandidateNeedsSecrets, brunoInputBindingComplete, type BrunoInputBinding } from './brunoReviewState';
+import { brunoMissingVariables, brunoCandidateNeedsSecrets, brunoInputBindingComplete, suggestedInputSecretName, unusedSecretName, type BrunoInputBinding } from './brunoReviewState';
 import { formatBytes } from './settingsPageFormatters';
 import { countLabel } from '../utils/numberFormat';
 import { type ImportedSaveResult } from './useScriptsAuthoringState';
@@ -73,6 +73,9 @@ const SKIPPED_FILE_REASONS: Record<string, string> = {
     version_control_file: 'version-control file',
     ignore_list: 'excluded by an ignore list',
 };
+function secretNameFromReference(reference: string | undefined): string {
+    return /^\{\{secret\.([A-Z0-9_]{1,249})\}\}$/.exec(reference?.trim() ?? '')?.[1] ?? '';
+}
 // The error statuses a request's own tests expect. A collection whose
 // requests expect one is a set of negative tests: a run passes when the
 // target answers with that error.
@@ -316,7 +319,7 @@ function BrunoNativeReviewDialog({ candidate, candidateSelected, requirementDest
               <SourceCodeViewer ariaLabel="Source mappings JSON" className="bruno-native-review-code-viewer" sourcePath="source-mappings.json" value={JSON.stringify(candidate.source_mappings, null, 2)}/>
             </section>)}
           <section className="bruno-native-review-section">
-            <h4>Masked APEX Load DSL script</h4>
+            <h4>APEX Load DSL script</h4>
             <BrunoImportPreviewScript script={candidate.script}/>
           </section>
         </div>
@@ -444,7 +447,7 @@ function BrunoDSLPreview({ script }: {
 }) {
     const { metadata, name, actions, ...rest } = script;
     return (<>
-      <p>Redacted inspection draft, starting at the request. Pending input and credential choices apply when saving.</p>
+      <p>Inspection draft, starting at the request. Pending input and credential choices apply when saving.</p>
       <SourceCodeViewer ariaLabel="Bruno DSL preview" semanticMode="apex-dsl" sourcePath="draft.json" value={JSON.stringify({ name, actions, ...rest }, null, 2)}/>
       {metadata && (<details className="bruno-provenance">
           <summary>Import provenance and hashes</summary>
@@ -905,6 +908,40 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
     const selectedNativeMissingVariables = brunoMissingVariables(selectedNativeCandidates, inspection?.shared_values, sharedValueSelections, inputBindings);
     const generatedValueGroups = useMemo(() => brunoGeneratedValueGroups(selectedNativeCandidates), [selectedNativeCandidates]);
     const loadDataPools = useCallback(async () => projectId ? (await api.listDataPools(projectId)).data_pools || [] : [], [api, projectId]);
+    const [projectSecrets, setProjectSecrets] = useState<string[]>([]);
+    const projectSecretsRef = useRef(projectSecrets);
+    projectSecretsRef.current = projectSecrets;
+    const [projectSecretsReloadSeq, setProjectSecretsReloadSeq] = useState(0);
+    const needsSecretNames = Boolean(
+        inspection?.shared_values?.candidates?.some(candidate => candidate.kind === 'source_variable' && candidate.credential_shaped)
+        || Object.values(inspection?.previous_inputs || {}).some(input => input?.mode === 'secret'),
+    );
+    const listProjectSecrets = typeof api.listProjectSecrets === 'function' ? api.listProjectSecrets : undefined;
+    const loadedSecretsProjectIdRef = useRef<string | undefined>(undefined);
+    useEffect(() => {
+        if (!needsSecretNames || !projectId || !listProjectSecrets) {
+            loadedSecretsProjectIdRef.current = undefined;
+            setProjectSecrets(previous => previous.length === 0 ? previous : []);
+            return;
+        }
+        if (loadedSecretsProjectIdRef.current !== projectId) {
+            loadedSecretsProjectIdRef.current = undefined;
+            setProjectSecrets(previous => previous.length === 0 ? previous : []);
+        }
+        let current = true;
+        Promise.resolve(listProjectSecrets(projectId)).then(response => {
+            if (!current)
+                return;
+            loadedSecretsProjectIdRef.current = projectId;
+            setProjectSecrets((response?.secrets || []).map(secret => secret.name));
+        }).catch(() => {
+            if (!current)
+                return;
+            loadedSecretsProjectIdRef.current = undefined;
+            setProjectSecrets(previous => previous.length === 0 ? previous : []);
+        });
+        return () => { current = false; };
+    }, [listProjectSecrets, needsSecretNames, projectId, projectSecretsReloadSeq]);
     // A match from the same collection updates by default. A match on the
     // request path alone may belong to another collection, so it defaults to a copy.
     const nativeSaveMode = (candidate: BrunoNativeScriptCandidate): NativeSaveMode => nativeSaveModes[candidate.candidate_id]
@@ -1055,19 +1092,75 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         if (!sourceMigrationAvailable)
             setMigrateSecrets(false);
     }, [sourceMigrationAvailable]);
+    const touchedInputIdsRef = useRef(new Set<string>());
+    const handleInputBindingsChange = useCallback((next: Record<string, BrunoInputBinding>) => {
+        setInputBindings(previous => {
+            const ids = new Set([...Object.keys(previous), ...Object.keys(next)]);
+            for (const id of ids) {
+                if (JSON.stringify(previous[id]) !== JSON.stringify(next[id])) {
+                    touchedInputIdsRef.current.add(id);
+                }
+            }
+            return next;
+        });
+    }, []);
     useEffect(() => {
         // Candidate IDs are derived from one specific inspection. Carrying a
         // selection into a new session would send IDs the server cannot re-derive.
         // A re-import starts from how the scripts it updates supplied each input.
+        touchedInputIdsRef.current = new Set();
         const previous = Object.entries(inspection?.previous_inputs || {});
+        const candidatesById = new Map((inspection?.shared_values?.candidates || []).map(candidate => [candidate.id, candidate]));
         setSharedValueSelections(Object.fromEntries(previous
             .filter(([, input]) => input.mode === 'value' && input.value)
             .map(([id, input]) => [id, input.value!])));
-        setInputBindings(Object.fromEntries(previous
-            .filter(([, input]) => input.mode === 'data' || input.mode === 'generated')
-            .map(([id, input]) => [id, { mode: input.mode as BrunoInputBinding['mode'], alias: input.alias, column: input.column, generator: input.generator, digits: input.digits }])));
+        const chosenSecrets: string[] = [];
+        setInputBindings(Object.fromEntries(previous.flatMap(([id, input]): Array<[string, BrunoInputBinding]> => {
+            if (input.mode === 'data' || input.mode === 'generated') {
+                return [[id, { mode: input.mode, alias: input.alias, column: input.column, generator: input.generator, digits: input.digits }]];
+            }
+            if (input.mode === 'secret') {
+                const candidate = candidatesById.get(id);
+                const variable = candidate?.source_variable || candidate?.name || id;
+                const secret = secretNameFromReference(input.reference)
+                    || unusedSecretName(suggestedInputSecretName(variable) || 'SECRET_VALUE', [...projectSecretsRef.current, ...chosenSecrets]);
+                chosenSecrets.push(secret);
+                return [[id, { mode: 'secret', secret }]];
+            }
+            return [];
+        })));
         setGeneratedValueChoices({});
-    }, [inspection?.import_session_id, inspection?.previous_inputs]);
+    }, [inspection?.import_session_id, inspection?.previous_inputs, inspection?.shared_values]);
+    useEffect(() => {
+        const previousEntries = Object.entries(inspection?.previous_inputs || {})
+            .filter(([id, input]) => !touchedInputIdsRef.current.has(id) && input?.mode === 'secret' && !secretNameFromReference(input.reference));
+        if (previousEntries.length === 0)
+            return;
+        const candidatesById = new Map((inspection?.shared_values?.candidates || []).map(candidate => [candidate.id, candidate]));
+        const fallbackIds = new Set(previousEntries.map(([id]) => id));
+        setInputBindings(currentBindings => {
+            const chosenSecrets = Object.entries(currentBindings)
+                .flatMap(([id, binding]) => !fallbackIds.has(id) && binding.mode === 'secret' && binding.secret ? [binding.secret] : []);
+            let next: Record<string, BrunoInputBinding> | null = null;
+            for (const [id] of previousEntries) {
+                const current = currentBindings[id];
+                if (current?.mode !== 'secret')
+                    continue;
+                const candidate = candidatesById.get(id);
+                const variable = candidate?.source_variable || candidate?.name || id;
+                const desired = unusedSecretName(
+                    suggestedInputSecretName(variable) || 'SECRET_VALUE',
+                    [...projectSecrets, ...chosenSecrets],
+                );
+                chosenSecrets.push(desired);
+                if (current.secret !== desired) {
+                    next ??= { ...currentBindings };
+                    next[id] = { mode: 'secret', secret: desired };
+                }
+            }
+            return next ?? currentBindings;
+        });
+    }, [inspection?.import_session_id, inspection?.previous_inputs, inspection?.shared_values, projectSecrets]);
     useEffect(() => {
         setProtectedSessionNow(Date.now());
         if (!Number.isFinite(protectedSessionExpiry))
@@ -1398,8 +1491,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
         }).catch(() => undefined);
     };
     const handleProjectSecretsConfigured = useCallback((names: readonly string[]) => {
-        if (names.length > 0)
+        if (names.length > 0) {
             setConfiguredCredentialReviewIdentity(credentialReviewIdentity);
+            setProjectSecretsReloadSeq(previous => previous + 1);
+        }
     }, [credentialReviewIdentity]);
     const close = () => {
         advanceSourceGeneration();
@@ -1915,8 +2010,10 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
                     // Back in the review: the secrets as they are now.
                     if (committed)
                         refreshSecretsStillUnset()
-                    else
+                    else {
                         credentialReviewRef.current?.refreshStatuses()
+                        setProjectSecretsReloadSeq(previous => previous + 1)
+                    }
                   }} />}
                   {keptHeaders.length > 0 && (<details className="bruno-card bruno-kept-headers">
                       <summary>Kept as imported: {countLabel(keptHeaders.length, 'header')}</summary>
@@ -1926,7 +2023,7 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
               </section>
 
               <section className="bruno-tab-panel" id="bruno-inspection-panel-data" hidden={activeInspectionTab !== 'data'}>
-                  {!committed && <BrunoDataReview key={inspection.import_session_id} candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} bindings={inputBindings} onBindingsChange={setInputBindings} previous={inspection.previous_inputs} loadDataPools={loadDataPools} environments={inspection.result.environments} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
+                  {!committed && <BrunoDataReview key={inspection.import_session_id} candidates={selectedNativeCandidates} shared={inspection.shared_values} values={sharedValueSelections} onChange={setSharedValueSelections} bindings={inputBindings} onBindingsChange={handleInputBindingsChange} previous={inspection.previous_inputs} loadDataPools={loadDataPools} projectSecrets={projectSecrets} environments={inspection.result.environments} onInspect={setNativeSourceCandidateId} onCredentials={() => goToReviewTab('credentials')} disabled={loading || protectedSessionExpired}/>}
                   {!committed && <BrunoGeneratedValues groups={generatedValueGroups} choices={generatedValueChoices} onChange={setGeneratedValueChoices} disabled={loading || protectedSessionExpired}/>}
               </section>
               {(['runtime', 'dsl', 'source'] as const).map(section => <section key={section} className="bruno-tab-panel" id={`bruno-inspection-panel-${section}`} hidden={activeInspectionTab !== section}>
@@ -1969,5 +2066,5 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
 export function BrunoImportPreviewScript({ script }: {
     script: ScriptDefinition;
 }) {
-    return (<SourceCodeViewer ariaLabel="Masked APEX Load DSL script JSON" className="bruno-native-review-code-viewer" semanticMode="apex-dsl" sourcePath="apex-load-script.json" value={JSON.stringify(script, null, 2)}/>);
+    return (<SourceCodeViewer ariaLabel="APEX Load DSL script JSON" className="bruno-native-review-code-viewer" semanticMode="apex-dsl" sourcePath="apex-load-script.json" value={JSON.stringify(script, null, 2)}/>);
 }

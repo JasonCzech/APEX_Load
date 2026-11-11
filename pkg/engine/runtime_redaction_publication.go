@@ -36,12 +36,17 @@ func (p *runtimeRedactionPublisher) snapshot() (*RedactionConfig, func(func() bo
 	if publication != nil {
 		config = publication.config
 	}
+	dynGen := config.dynamicGeneration()
 	return config, func(commit func() bool) bool {
 		if commit == nil {
 			return false
 		}
 		p.fence.RLock()
 		defer p.fence.RUnlock()
-		return p.current.Load() == publication && commit()
+		if reg := config.findDynamicRegistry(); reg != nil {
+			reg.fence.RLock()
+			defer reg.fence.RUnlock()
+		}
+		return p.current.Load() == publication && config.dynamicGeneration() == dynGen && commit()
 	}
 }

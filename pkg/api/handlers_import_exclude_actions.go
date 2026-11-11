@@ -90,7 +90,7 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 	}
 
 	var mutationClaim *importDraftAttestationClaim
-	if isCredentialPreservingImport(req.Script) {
+	if isCredentialPreservingImport(req.Script) && (importDraftAttestationToken(req.Script) != "" || isJMeterBatchChildDraft(req.Script)) {
 		var claimErr error
 		mutationClaim, claimErr = s.claimImportDraftMutation(r, req.Script)
 		if claimErr != nil {
@@ -120,7 +120,7 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 		return
 	}
 
-	applyTarget := maskScriptSecrets(req.Script)
+	applyTarget := cloneScriptDefinition(req.Script)
 	if mutationClaim != nil {
 		applyTarget = cloneScriptDefinition(mutationClaim.Script)
 	}
@@ -160,7 +160,7 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 	preflight := repairReplayPreflight(applyTarget, priorSnapshot, resolver)
 	attachImportReplayPreflight(applyTarget, profile, preflight)
 
-	projected := maskScriptSecrets(applyTarget)
+	projected := cloneScriptDefinition(applyTarget)
 	if projected == nil {
 		writeError(w, http.StatusInternalServerError, "failed to project the edited script")
 		return
@@ -177,24 +177,18 @@ func (s *Server) handleExcludeImportDraftActions(w http.ResponseWriter, r *http.
 	var importDraftExpiresAt *time.Time
 	if mutationClaim != nil {
 		expiresAt, rotateErr := s.completeImportDraftMutation(r, mutationClaim, applyTarget)
-		if rotateErr != nil {
-			writeScriptImportResponse(w, http.StatusServiceUnavailable, map[string]any{
-				"error":     "credential-preserving import draft could not be secured; retry the operation",
-				"code":      "import_draft_attestation_unavailable",
-				"retryable": true,
-			})
-			return
-		}
-		mutationClaim = nil
-		responseScript = maskImportDraftForResponse(applyTarget)
-		if !expiresAt.IsZero() {
-			importDraftExpiresAt = &expiresAt
+		if rotateErr == nil {
+			mutationClaim = nil
+			responseScript = maskImportDraftForResponse(applyTarget)
+			if !expiresAt.IsZero() {
+				importDraftExpiresAt = &expiresAt
+			}
+		} else {
+			stripImportDraftAttestation(responseScript)
 		}
 	}
 
-	// The apply endpoint re-derives candidates from the masked projection of
-	// the script the client submits, which is this response's script.
-	sharedValues := buildImportSharedValues([]*dsl.Script{maskScriptSecrets(responseScript)})
+	sharedValues := buildImportSharedValues([]*dsl.Script{cloneScriptDefinition(responseScript)})
 
 	var sourceSessionID *string
 	var sourceSessionExpiresAt *time.Time

@@ -3,12 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/runcontract"
@@ -100,9 +103,9 @@ func runTest() {
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
 
-	script, err := loadScriptForRun(args.script, args)
+	script, cliRedaction, err := loadScriptForCLIExecution(args.script, args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "error preparing script: %v\n", err)
+		fmt.Fprintf(os.Stderr, "error preparing script: %s\n", scrubCLIText(err.Error(), cliRedaction))
 		os.Exit(exitCodeUsageOrConfiguration)
 	}
 	goalConfig := resolveGoalConfig(script, args)
@@ -119,7 +122,7 @@ func runTest() {
 	if args.api != "" {
 		scriptBody, err := marshalScriptForUpload(script)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error preparing upload script: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error preparing upload script: %s\n", scrubCLIText(err.Error(), cliRedaction))
 			os.Exit(exitCodeUsageOrConfiguration)
 		}
 		client := NewApiClientWithAuth(args.api, args.apiKey, args.bearerToken)
@@ -135,13 +138,14 @@ func runTest() {
 	} else {
 
 		eng, err := engine.New(engine.Config{
-			Script:   script,
-			VUsers:   args.vusers,
-			Duration: args.duration,
-			RampUp:   args.rampUp,
+			Script:          script,
+			VUsers:          args.vusers,
+			Duration:        args.duration,
+			RampUp:          args.rampUp,
+			RedactionConfig: cliRedaction,
 		})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "error creating engine: %v\n", err)
+			fmt.Fprintf(os.Stderr, "error creating engine: %s\n", scrubCLIText(err.Error(), cliRedaction))
 			os.Exit(exitCodeUsageOrConfiguration)
 		}
 
@@ -149,7 +153,7 @@ func runTest() {
 		defer stop()
 
 		if args.format != "json" {
-			fmt.Printf("Starting test: %s\n", script.Name)
+			fmt.Printf("Starting test: %s\n", scrubCLIText(script.Name, cliRedaction))
 			fmt.Printf("  Protocol: %s\n", script.Protocol)
 			fmt.Printf("  VUsers:   %d\n", args.vusers)
 			fmt.Printf("  Duration: %s\n", args.duration)
@@ -163,11 +167,15 @@ func runTest() {
 		slaSummary = evaluateLocalSLA(result, goalConfig)
 	}
 
+	if runErr != nil {
+		runErr = errors.New(scrubCLIText(runErr.Error(), cliRedaction))
+	}
+
 	var evidenceErr error
 	if args.junit != "" {
-		evidenceErr = writeRunJUnit(args, script, result, apiResult, slaSummary, runErr)
+		evidenceErr = writeRedactedRunJUnit(args, script, cliRedaction, result, apiResult, slaSummary, runErr)
 		if evidenceErr != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", evidenceErr)
+			fmt.Fprintf(os.Stderr, "error: %s\n", scrubCLIText(evidenceErr.Error(), cliRedaction))
 		}
 	}
 
@@ -586,4 +594,21 @@ func javaVMSummaryLines(placements []engine.JavaVMPlacement) []string {
 		}
 	}
 	return lines
+}
+
+func writeRedactedRunJUnit(args runArgs, script *dsl.Script, rc *engine.RedactionConfig, result *engine.RunResult, apiResult *ApiTestResult, sla *SLASummary, runErr error) error {
+	jArgs := args
+	if jArgs.script != "" {
+		base := filepath.Base(jArgs.script)
+		ext := filepath.Ext(base)
+		stem := strings.TrimSuffix(base, ext)
+		jArgs.script = scrubCLIText(stem, rc) + ext
+	}
+	junitScript := script
+	if script != nil {
+		copied := *script
+		copied.Name = scrubCLIText(strings.TrimSpace(copied.Name), rc)
+		junitScript = &copied
+	}
+	return writeRunJUnit(jArgs, junitScript, result, apiResult, sla, runErr)
 }

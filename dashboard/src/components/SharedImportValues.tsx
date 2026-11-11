@@ -46,6 +46,8 @@ interface Props {
    * Each unset input starts from that choice.
    */
   previousInputs?: Record<string, ImportPreviousInput>
+  projectId?: string
+  secretReloadGeneration?: number
   onApplied?: (
     scripts: ScriptDefinition[],
     diffs: SharedValueDiff[],
@@ -63,7 +65,6 @@ const kindLabels: Record<string, string> = {
 function initialValues(candidates: SharedValueCandidate[]): Record<string, string> {
   const values: Record<string, string> = {}
   for (const candidate of candidates) {
-    if (candidate.credential_shaped) continue
     values[candidate.id] = candidate.current_value ?? ''
   }
   return values
@@ -82,30 +83,68 @@ function secretNameFromReference(reference: string | undefined): string {
 
 // A re-import starts each unset input from how the scripts it updates supplied
 // it: the same value for every user (checked, as the operator chose it before),
-// or the same data pool column or generated value. A credential is seeded only
-// from the project secret or data column it read; otherwise it stays
-// unsupplied until the operator chooses, like every other row.
-function seedFromPrevious(candidates: SharedValueCandidate[], previous: Record<string, ImportPreviousInput> | undefined) {
+// or the same project secret, data pool column, or generated value.
+function seedFromPrevious(
+  candidates: SharedValueCandidate[],
+  previous: Record<string, ImportPreviousInput> | undefined,
+  projectSecrets: readonly string[] = [],
+) {
   const values: Record<string, string> = {}
   const selected: Record<string, boolean> = {}
   const bindings: Record<string, BrunoInputBinding> = {}
+  const chosen: string[] = []
   for (const candidate of candidates) {
     const input = previous?.[candidate.name]
     if (!input || candidate.kind !== 'source_variable') continue
-    const credential = Boolean(candidate.credential_shaped)
-    if (input.mode === 'value' && input.value && !credential) {
+    if (input.mode === 'value' && input.value) {
       values[candidate.id] = input.value
       selected[candidate.id] = true
     } else if (input.mode === 'data') {
       bindings[candidate.id] = { mode: 'data', alias: input.alias ?? '', column: input.column ?? '' }
-    } else if (input.mode === 'generated' && !credential) {
+    } else if (input.mode === 'generated') {
       const generator = input.generator === 'timestamp' || input.generator === 'digits' ? input.generator : 'uuid'
       bindings[candidate.id] = { mode: 'generated', generator, digits: input.digits }
-    } else if (input.mode === 'secret' && credential) {
-      bindings[candidate.id] = { mode: 'secret', secret: secretNameFromReference(input.reference) || suggestedInputSecretName(candidate.name) }
+    } else if (input.mode === 'secret') {
+      const secret = secretNameFromReference(input.reference)
+        || unusedSecretName(suggestedInputSecretName(candidate.name) || 'SECRET_VALUE', [...projectSecrets, ...chosen])
+      chosen.push(secret)
+      bindings[candidate.id] = { mode: 'secret', secret }
     }
   }
   return { values, selected, bindings }
+}
+
+function reconcileFallbackSecretBindings(
+  current: Record<string, BrunoInputBinding>,
+  candidates: SharedValueCandidate[],
+  previous: Record<string, ImportPreviousInput> | undefined,
+  touchedIds: ReadonlySet<string>,
+  projectSecrets: readonly string[],
+): Record<string, BrunoInputBinding> | null {
+  const fallbackCandidates = candidates.filter(candidate => {
+    if (candidate.kind !== 'source_variable' || touchedIds.has(candidate.id)) return false
+    const earlier = previous?.[candidate.name]
+    return earlier?.mode === 'secret' && !secretNameFromReference(earlier.reference)
+  })
+  if (fallbackCandidates.length === 0) return null
+  const fallbackIds = new Set(fallbackCandidates.map(candidate => candidate.id))
+  const chosen = Object.entries(current)
+    .flatMap(([id, binding]) => !fallbackIds.has(id) && binding.mode === 'secret' && binding.secret ? [binding.secret] : [])
+  let next: Record<string, BrunoInputBinding> | null = null
+  for (const candidate of fallbackCandidates) {
+    const existing = current[candidate.id]
+    if (existing?.mode !== 'secret') continue
+    const desired = unusedSecretName(
+      suggestedInputSecretName(candidate.name) || 'SECRET_VALUE',
+      [...projectSecrets, ...chosen],
+    )
+    chosen.push(desired)
+    if (existing.secret !== desired) {
+      next ??= { ...current }
+      next[candidate.id] = { mode: 'secret', secret: desired }
+    }
+  }
+  return next
 }
 
 export default function SharedImportValues({
@@ -121,6 +160,8 @@ export default function SharedImportValues({
   onApplyingChange,
   loadDataPools,
   previousInputs,
+  projectId: projectIdProp,
+  secretReloadGeneration = 0,
   onApplied,
 }: Props) {
   const headingId = useId()
@@ -173,10 +214,14 @@ export default function SharedImportValues({
   // has not touched since the reset.
   const previousInputsRef = useRef(previousInputs)
   previousInputsRef.current = previousInputs
+  const projectSecretsRef = useRef(projectSecrets)
+  projectSecretsRef.current = projectSecrets
+  const bindingsRef = useRef(bindings)
+  bindingsRef.current = bindings
   const previousKey = JSON.stringify(previousInputs ?? {})
   useEffect(() => {
     if (!bindable) return
-    const seeded = seedFromPrevious(candidates, previousInputsRef.current)
+    const seeded = seedFromPrevious(candidates, previousInputsRef.current, projectSecretsRef.current)
     const reseed = candidates.filter(candidate =>
       candidate.kind === 'source_variable' && !touchedRef.current.has(candidate.id))
     if (reseed.length === 0) return
@@ -201,14 +246,35 @@ export default function SharedImportValues({
     // What the panel shows changed, so an earlier apply no longer describes it.
     setAppliedCount(0); setReviewing(false)
   }, [bindable, candidates, reviewGeneration, previousKey])
+  useEffect(() => {
+    if (!bindable) return
+    const changed = reconcileFallbackSecretBindings(
+      bindingsRef.current,
+      candidates,
+      previousInputsRef.current,
+      touchedRef.current,
+      projectSecrets,
+    ) !== null
+    setBindings(previous => reconcileFallbackSecretBindings(
+      previous,
+      candidates,
+      previousInputsRef.current,
+      touchedRef.current,
+      projectSecrets,
+    ) ?? previous)
+    if (changed) {
+      setAppliedCount(0)
+      setReviewing(false)
+    }
+  }, [bindable, candidates, projectSecrets])
   const needsInputs = bindable && candidates.some(candidate => candidate.kind === 'source_variable')
   // Without a loader the panel reads the pools of its scripts' project.
-  const projectId = scripts.find(script => script.project_id)?.project_id
+  const projectId = scripts.find(script => script.project_id)?.project_id || projectIdProp
   const listDataPools = typeof api.listDataPools === 'function' ? api.listDataPools : undefined
   const loadPools = useCallback(async () => {
     if (loadDataPools) return loadDataPools()
     if (!projectId || !listDataPools) return []
-    return (await listDataPools(projectId)).data_pools || []
+    return ((await Promise.resolve(listDataPools(projectId)))?.data_pools) || []
   }, [loadDataPools, listDataPools, projectId])
   useEffect(() => {
     if (!needsInputs) return
@@ -220,16 +286,34 @@ export default function SharedImportValues({
   }, [loadPools, needsInputs])
   // A credential input's suggested project secret avoids the names the
   // project already holds; the list is read only when such an input is shown.
-  const needsSecretNames = needsInputs && candidates.some(candidate => candidate.kind === 'source_variable' && candidate.credential_shaped)
+  const needsSecretNames = needsInputs && (
+    candidates.some(candidate => candidate.kind === 'source_variable' && candidate.credential_shaped)
+    || Object.values(previousInputs ?? {}).some(input => input?.mode === 'secret')
+  )
   const listProjectSecrets = typeof api.listProjectSecrets === 'function' ? api.listProjectSecrets : undefined
+  const loadedSecretsProjectIdRef = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (!needsSecretNames || !projectId || !listProjectSecrets) return
+    if (!needsSecretNames || !projectId || !listProjectSecrets) {
+      loadedSecretsProjectIdRef.current = undefined
+      setProjectSecrets(previous => previous.length === 0 ? previous : [])
+      return
+    }
+    if (loadedSecretsProjectIdRef.current !== projectId) {
+      loadedSecretsProjectIdRef.current = undefined
+      setProjectSecrets(previous => previous.length === 0 ? previous : [])
+    }
     let current = true
-    listProjectSecrets(projectId).then(response => {
-      if (current) setProjectSecrets((response.secrets || []).map(secret => secret.name))
-    }).catch(() => undefined)
+    Promise.resolve(listProjectSecrets(projectId)).then(response => {
+      if (!current) return
+      loadedSecretsProjectIdRef.current = projectId
+      setProjectSecrets((response?.secrets || []).map(secret => secret.name))
+    }).catch(() => {
+      if (!current) return
+      loadedSecretsProjectIdRef.current = undefined
+      setProjectSecrets(previous => previous.length === 0 ? previous : [])
+    })
     return () => { current = false }
-  }, [listProjectSecrets, needsSecretNames, projectId])
+  }, [listProjectSecrets, needsSecretNames, projectId, secretReloadGeneration])
 
   // Collect mode has no apply step, so the caller needs the current selection
   // continuously — it is carried on that importer's own commit request.
@@ -237,7 +321,7 @@ export default function SharedImportValues({
     if (!collectOnly) return
     const collected: Record<string, string> = {}
     for (const candidate of candidates) {
-      if (candidate.credential_shaped || !selected[candidate.id]) continue
+      if (!selected[candidate.id]) continue
       const value = (values[candidate.id] ?? '').trim()
       if (value !== '') collected[candidate.id] = value
     }
@@ -246,15 +330,13 @@ export default function SharedImportValues({
 
   if (candidates.length === 0) return null
 
-  const editable = candidates.filter(candidate => !candidate.credential_shaped)
+  const editable = candidates
   const hasRequiredInputs = candidates.some(candidate => candidate.kind === 'source_variable')
   const selectedIds = editable
     .filter(candidate => !bindings[candidate.id] && selected[candidate.id] && (values[candidate.id] ?? '').trim() !== '')
     .map(candidate => candidate.id)
-  // A credential input is bound only through the supply control (a project
-  // secret or data pool column the operator chose), never given a value.
   const boundIds = candidates
-    .filter(candidate => (!candidate.credential_shaped || (bindable && candidate.kind === 'source_variable')) && brunoInputBindingComplete(bindings[candidate.id]))
+    .filter(candidate => bindable && candidate.kind === 'source_variable' && brunoInputBindingComplete(bindings[candidate.id]))
     .map(candidate => candidate.id)
   const nameErrors = new Map(
     editable
@@ -266,7 +348,7 @@ export default function SharedImportValues({
   const affectedScriptCount = scriptCount ?? scripts.length
 
   const toggle = (candidate: SharedValueCandidate) => {
-    if (candidate.credential_shaped || applying || disabled) return
+    if (applying || disabled) return
     touchedRef.current.add(candidate.id)
     setSelected(previous => ({ ...previous, [candidate.id]: !previous[candidate.id] }))
     setAppliedCount(0); setReviewing(false)
@@ -295,7 +377,7 @@ export default function SharedImportValues({
         next[candidate.id] = {
           mode: 'secret',
           secret: (earlier?.mode === 'secret' && secretNameFromReference(earlier.reference))
-            || unusedSecretName(suggestedInputSecretName(candidate.name), [...projectSecrets, ...chosen]),
+            || unusedSecretName(suggestedInputSecretName(candidate.name) || 'SECRET_VALUE', [...projectSecrets, ...chosen]),
         }
       }
       else next[candidate.id] = mode === 'data' ? { mode: 'data', alias: '', column: '' } : { mode: 'generated', generator: 'uuid' }
@@ -403,12 +485,6 @@ export default function SharedImportValues({
                   />
                   {nameError && <p className="shared-values-name-error">{nameError}</p>}
                 </>
-              ) : candidate.credential_shaped ? (
-                <p className="shared-values-credential">
-                  This looks like a credential. Set it in the Credentials tab — a script
-                  parameter of this name is hidden from every later read, so the value would be
-                  lost the next time the script is saved.
-                </p>
               ) : (
                 <>
                   <div className="shared-values-input">
@@ -439,7 +515,7 @@ export default function SharedImportValues({
           )
         })}
       </ul></details>)}
-      {guided && reviewing && <section aria-label="Substitution preview"><h4>Review selected substitutions</h4><p>Only the detected occurrences will change. Credential-shaped candidates cannot be submitted here.</p><ul>{editable.filter(c => selectedIds.includes(c.id)).map(c => <li key={c.id}><strong>{c.name}</strong> · {reachLabel(c)}<p>Before: <code>{c.current_value ? '[existing value]' : '[empty]'}</code> → After: <code>[replacement supplied]</code></p></li>)}</ul></section>}
+      {guided && reviewing && <section aria-label="Substitution preview"><h4>Review selected substitutions</h4><p>Only the detected occurrences will change.</p><ul>{editable.filter(c => selectedIds.includes(c.id)).map(c => <li key={c.id}><strong>{c.name}</strong> · {reachLabel(c)}<p>Before: <code>{c.current_value ? '[existing value]' : '[empty]'}</code> → After: <code>[replacement supplied]</code></p></li>)}</ul></section>}
       <div className="shared-values-actions">
         {collectOnly ? (
           <small role="status">

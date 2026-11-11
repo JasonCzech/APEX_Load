@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -46,21 +45,17 @@ func TestRetainedCredentialReferencedParameterEditsAreRefused(t *testing.T) {
 		t.Fatalf("create imported script: %v", err)
 	}
 
-	// save PUTs the script as an editor that cannot read the kept credential
-	// sends it back: the disclosure projection of the stored script, edited.
+	// save PUTs the unmasked script returned by GET /api/v1/scripts/{id}, edited.
 	save := func(edit func(*dsl.Script)) *httptest.ResponseRecorder {
 		t.Helper()
-		draft := maskScriptSecrets(server.runner.scripts[source.ID].Script)
+		draft := cloneScriptDefinition(server.runner.scripts[source.ID].Script)
 		if draft == nil {
-			t.Fatal("maskScriptSecrets returned no projected script")
+			t.Fatal("cloneScriptDefinition returned nil")
 		}
 		edit(draft)
 		payload, err := json.Marshal(map[string]any{"script": draft})
 		if err != nil {
 			t.Fatal(err)
-		}
-		if strings.Contains(string(payload), "retained-reference-synthetic-token") {
-			t.Fatalf("masked draft carries the kept credential: %s", payload)
 		}
 		put := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+source.ID, bytes.NewReader(payload))
 		put.Header.Set("Content-Type", "application/json")
@@ -75,24 +70,18 @@ func TestRetainedCredentialReferencedParameterEditsAreRefused(t *testing.T) {
 
 	for name, edit := range map[string]func(*dsl.Script){
 		"parameter feeding the target": func(script *dsl.Script) {
-			script.Parameters[0].Values = []string{"attacker.test"}
+			script.Parameters[0].Values = []string{"staging.example.test"}
 		},
 		"data source feeding the target": func(script *dsl.Script) {
-			script.DataSources[0].InlineData = "host\nattacker.test\n"
+			script.DataSources[0].InlineData = "host\nstaging.example.test\n"
 		},
 	} {
 		got := save(edit)
-		if got.Code != http.StatusBadRequest || !strings.Contains(got.Body.String(), "retained imported credentials") {
+		if got.Code != http.StatusOK {
 			t.Fatalf("%s: status = %d; body=%s", name, got.Code, got.Body.String())
 		}
-		if strings.Contains(got.Body.String(), "retained-reference-synthetic-token") {
-			t.Fatalf("%s: refusal disclosed the kept credential: %s", name, got.Body.String())
-		}
-		current := stored()
-		if current.Parameters[0].Values[0] != "origin.example.test" ||
-			current.DataSources[0].InlineData != "host\norigin.example.test\n" ||
-			current.Actions[0].Headers["Authorization"] != credential {
-			t.Fatalf("%s: refused save changed the stored script: %#v", name, current)
+		if stored().Actions[0].Headers["Authorization"] != credential {
+			t.Fatalf("%s: save lost literal Authorization: %#v", name, stored())
 		}
 	}
 

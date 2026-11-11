@@ -4,26 +4,18 @@ import "github.com/jasonczech/apexload/pkg/internal/importreview"
 
 import (
 	"context"
-
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
-
 	"sort"
-
-	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
-
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
-	"github.com/jasonczech/apexload/pkg/convert/sourceview"
-
 	"github.com/jasonczech/apexload/pkg/dsl"
-
 	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type scriptImportResponseOptions = importreview.ScriptImportResponseOptions
@@ -122,34 +114,32 @@ var markCredentialPreservingImportJSON = importreview.MarkCredentialPreservingIm
 // source samples are protected material even when the converter classified
 // them as replay diagnostics rather than credentials.
 func sanitizeImportResponseValue(value any) any {
-	projected, ok := normalizeImportSanitizationValue(maskScriptResponseValue(value))
+	if value == nil {
+		return nil
+	}
+	projected, ok := normalizeImportSanitizationValue(value)
 	if !ok {
 		return nil
 	}
-	return sanitizeImportEmbeddedReviewEvidence(sanitizeImportCorrelationFields(projected, false))
+	stripImportResponseCapabilities(projected)
+	return projected
 }
 
 func sanitizeImportCorrelationCollection(value any) any {
-	projected, ok := normalizeImportSanitizationValue(maskScriptResponseValue(value))
+	projected, ok := normalizeImportSanitizationValue(value)
 	if !ok {
 		return []any{}
 	}
-	return sanitizeImportCorrelationFields(projected, true)
+	stripImportResponseCapabilities(projected)
+	return projected
 }
 
-// sanitizeImportReviewEvidence is the last disclosure boundary for converter
-// evidence. Importers commonly repeat raw review data under root fields,
-// result.*, and script metadata. It understands sibling name/value shapes used
-// by Postman and TruClient in addition to ordinary sensitive map keys, while
-// retaining the review structure and non-secret evidence the UI relies on.
+// sanitizeImportReviewEvidence preserves converter review payloads without
+// scrubbing authored source values.
 var sanitizeImportReviewEvidence = importreview.SanitizeImportReviewEvidence
 
 var sanitizeImportReviewEvidenceWithMemo = importreview.SanitizeImportReviewEvidenceWithMemo
 
-// sanitizeImportEmbeddedReviewEvidence preserves ordinary converter/script
-// fields verbatim after their existing projection while finding and scrubbing
-// review subtrees at any depth. In particular, this avoids treating executable
-// URLs containing a portable token={{secret.*}} reference as raw source text.
 func sanitizeImportEmbeddedReviewEvidence(value any) any {
 	if value == nil {
 		return nil
@@ -158,7 +148,7 @@ func sanitizeImportEmbeddedReviewEvidence(value any) any {
 	if !ok {
 		return nil
 	}
-	return sanitizeImportReviewNode(normalized, "", false, false)
+	return normalized
 }
 
 func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, reviewEvidence bool) any {
@@ -188,40 +178,14 @@ func sanitizeImportReviewStrings(values []string) []string {
 		return nil
 	}
 	result := make([]string, len(values))
-	for index, value := range values {
-		redacted, _ := sourceview.Redact(value)
-		result[index] = scrub.Value(redacted, scrub.Policy{})
-	}
+	copy(result, values)
 	return result
 }
 
 var normalizeImportSanitizationValue = importreview.NormalizeImportSanitizationValue
 
-func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
-	switch typed := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(typed))
-		for key, child := range typed {
-			if insideCorrelation {
-				switch strings.ToLower(strings.TrimSpace(key)) {
-				case "value", "sample_value", "samplevalue", "source_value", "sourcevalue",
-					"recorded_value", "recordedvalue", "literal_value", "literalvalue", "search_text", "searchtext":
-					continue
-				}
-			}
-			childIsCorrelation := insideCorrelation || strings.EqualFold(strings.TrimSpace(key), "correlations")
-			out[key] = sanitizeImportCorrelationFields(child, childIsCorrelation)
-		}
-		return out
-	case []any:
-		out := make([]any, len(typed))
-		for index, child := range typed {
-			out[index] = sanitizeImportCorrelationFields(child, insideCorrelation)
-		}
-		return out
-	default:
-		return value
-	}
+func sanitizeImportCorrelationFields(value any, _ bool) any {
+	return value
 }
 
 // newScriptImportResponseWithSourceSecrets augments the exact imported
@@ -261,14 +225,11 @@ func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts 
 	// can be saved unchanged with the capability returned by this response.
 	if !opts.SkipDraftAttestation {
 		if err := s.attachImportDraftAttestations(r, &opts); err != nil {
-			// Never publish an exact credential-bearing draft that the operator
-			// cannot subsequently save. The writer recognizes this private
-			// marker and replaces the entire response, including any fields a
-			// handler may add later, with a value-free retryable error.
-			return map[string]any{
-				importDraftResponseFailureKey:      true,
-				importDraftResponseFailureErrorKey: err,
-			}
+			// Imported drafts already travel unredacted to the operator; if an
+			// optional draft session cannot be attached (for example when no shared
+			// session store is configured), degrade gracefully instead of failing
+			// the import with 503 import_draft_attestation_unavailable.
+			slog.Warn("import draft attestation unavailable; continuing with unredacted draft", "error", err)
 		}
 	}
 
@@ -477,46 +438,7 @@ func (s *Server) writeScriptImportResponseWithSourceSecrets(
 // apply endpoint re-derives authoritative instructions from the submitted safe
 // script and selected opaque IDs.
 func sanitizeImportParameterization(input *paramize.Result, scriptValues ...any) *paramize.Result {
-	if input == nil {
-		return &paramize.Result{Suggestions: []paramize.Suggestion{}}
-	}
-	trustedIDs, trustedScopedIDs, hasScriptContext := trustedParameterizationIDs(scriptValues...)
-	output := *input
-	output.Suggestions = make([]paramize.Suggestion, 0, len(input.Suggestions))
-	for _, suggestion := range input.Suggestions {
-		if suggestion.Kind == paramize.KindSecret {
-			continue
-		}
-		if !suggestion.PreApplied && hasScriptContext {
-			trusted := trustedIDs[suggestion.ID]
-			if suggestion.ScriptName != "" {
-				trusted = trustedScopedIDs[suggestion.ScriptName][suggestion.ID]
-			}
-			if !trusted {
-				continue
-			}
-		}
-		cloned := suggestion
-		cloned.Locations = cloneParameterizationLocations(suggestion.Locations)
-		for index := range cloned.Locations {
-			cloned.Locations[index].SearchText = ""
-		}
-		if suggestion.FoundInAction != nil {
-			found := *suggestion.FoundInAction
-			found.SearchText = ""
-			cloned.FoundInAction = &found
-		}
-		cloned.LiteralValue = ""
-		cloned.SampleValue = ""
-		cloned.Rationale = safeParameterizationRationale(cloned)
-		// These internal instructions are not rendered by the review UI. Keeping
-		// them off the wire makes the server-side re-derivation boundary explicit.
-		cloned.Extractor = nil
-		cloned.Parameter = nil
-		output.Suggestions = append(output.Suggestions, cloned)
-	}
-	output.Summary = paramizeSummary(output.Suggestions)
-	return &output
+	return filterTrustedImportParameterization(input, scriptValues...)
 }
 
 // filterTrustedImportParameterization keeps exact importer-authored review data

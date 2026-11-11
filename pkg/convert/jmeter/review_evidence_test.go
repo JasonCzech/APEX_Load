@@ -83,12 +83,17 @@ func TestReviewEvidenceNestedController(t *testing.T) {
 }
 
 func TestReviewEvidenceBindingReasons(t *testing.T) {
-	r, e := ConvertJMX(splitPayFixture(t, "original"), ConvertOptions{TimeMode: "utc", VariableBindings: map[string]string{"client_id": "cid", "client_secret": "cs"}})
+	r, e := ConvertJMX(splitPayFixture(t, "original"), ConvertOptions{VariableBindings: map[string]string{"client_id": "cid"}})
 	if e != nil {
 		t.Fatal(e)
 	}
 	if r.ReviewSummary.BlockingBehaviors != 2 {
 		t.Fatalf("findings=%+v", r.Findings)
+	}
+	for _, o := range r.ReviewOutcomes {
+		if o.Code == "jmeter_masked_source_value" {
+			t.Fatalf("masked header value emitted jmeter_masked_source_value blocker: %+v", o)
+		}
 	}
 }
 

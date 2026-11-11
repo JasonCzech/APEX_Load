@@ -59,12 +59,18 @@ func Analyze(script *dsl.Script) *Review {
 	basePath := basePathOf(script.Config.BaseURL)
 	steps := map[string]bool{}
 	streamingActionMissingSSE := false
+	hasLiteralConversationAuth := false
 	for _, action := range allActions(script) {
 		step := classifyAgentforceStep(action, basePath)
 		if step == "" {
 			continue
 		}
 		steps[step] = true
+		if step == "session_start" || step == "send_message" || step == "receive_stream" || step == "end_session" {
+			if _, ok := literalActionAuthorization(action); ok {
+				hasLiteralConversationAuth = true
+			}
+		}
 		hasSSE := actionHasSSE(action)
 		if hasSSE {
 			review.Streaming = true
@@ -117,7 +123,7 @@ func Analyze(script *dsl.Script) *Review {
 		)
 	}
 
-	if !steps["token"] {
+	if !steps["token"] && !hasLiteralConversationAuth {
 		review.Blockers = append(review.Blockers, "Agent API requires an OAuth2 access token; add an http_oauth2_token init action (client_credentials or jwt_bearer) before the conversation.")
 	}
 	if streamingActionMissingSSE {
@@ -245,4 +251,104 @@ func effectivePath(target, basePath string) string {
 		return targetPath
 	}
 	return strings.TrimRight(basePath, "/") + "/" + strings.TrimLeft(targetPath, "/")
+}
+
+// literalActionAuthorization returns the action's non-empty Authorization header
+// value when it carries a direct credential (not empty, not bare "Bearer", and
+// not referencing a VUser {{var.*}} token variable). HeaderList takes precedence
+// over Headers to match httpcontract.EffectiveAuthoredHeaderList.
+func literalActionAuthorization(action dsl.Action) (string, bool) {
+	sawHeaderList := false
+	for _, h := range action.HeaderList {
+		if strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
+			sawHeaderList = true
+			if h.Enabled != nil && !*h.Enabled {
+				continue
+			}
+			if isDirectBearerString(h.Value) {
+				return strings.TrimSpace(h.Value), true
+			}
+		}
+	}
+	if sawHeaderList {
+		return "", false
+	}
+	if len(action.Headers) > 0 {
+		keys := make([]string, 0, len(action.Headers))
+		for k := range action.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		sawHeadersAuth := false
+		for _, k := range keys {
+			if strings.EqualFold(strings.TrimSpace(k), "Authorization") {
+				sawHeadersAuth = true
+				if isDirectBearerString(action.Headers[k]) {
+					return strings.TrimSpace(action.Headers[k]), true
+				}
+			}
+		}
+		if sawHeadersAuth {
+			return "", false
+		}
+	}
+	if action.Auth != nil && strings.EqualFold(strings.TrimSpace(action.Auth.Type), "bearer") {
+		tok := strings.TrimSpace(action.Auth.Token)
+		if tok != "" && !strings.Contains(tok, "{{var.") {
+			return "Bearer " + tok, true
+		}
+	}
+	return "", false
+}
+
+func existingRuntimeVarHeader(action dsl.Action) (string, bool) {
+	sawHeaderList := false
+	for _, h := range action.HeaderList {
+		if strings.EqualFold(strings.TrimSpace(h.Name), "Authorization") {
+			sawHeaderList = true
+			if h.Enabled != nil && !*h.Enabled {
+				continue
+			}
+			if strings.Contains(h.Value, "{{var.") {
+				return strings.TrimSpace(h.Value), true
+			}
+		}
+	}
+	if sawHeaderList {
+		return "", false
+	}
+	if len(action.Headers) > 0 {
+		keys := make([]string, 0, len(action.Headers))
+		for k := range action.Headers {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		sawHeadersAuth := false
+		for _, k := range keys {
+			if strings.EqualFold(strings.TrimSpace(k), "Authorization") {
+				sawHeadersAuth = true
+				if strings.Contains(action.Headers[k], "{{var.") {
+					return strings.TrimSpace(action.Headers[k]), true
+				}
+			}
+		}
+		if sawHeadersAuth {
+			return "", false
+		}
+	}
+	if action.Auth != nil && strings.EqualFold(strings.TrimSpace(action.Auth.Type), "bearer") {
+		tok := strings.TrimSpace(action.Auth.Token)
+		if strings.Contains(tok, "{{var.") {
+			return "Bearer " + tok, true
+		}
+	}
+	return "", false
+}
+
+func isDirectBearerString(v string) bool {
+	trimmed := strings.TrimSpace(v)
+	if trimmed == "" || strings.EqualFold(trimmed, "bearer") {
+		return false
+	}
+	return !strings.Contains(trimmed, "{{var.")
 }

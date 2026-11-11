@@ -347,6 +347,7 @@ func convertChrome(recording chromeRecording, opts ConvertOptions) (*ConvertResu
 	}
 
 	result.Script = script
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	result.Stats.ConvertedActions = len(script.Actions)
 	result.Unsupported = unsupported.Items()
 	for _, item := range result.Unsupported {

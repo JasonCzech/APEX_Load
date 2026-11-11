@@ -74,6 +74,7 @@ type platformManagedCredentialSurface struct {
 	// substitutes "Digest [REDACTED]" for the whole header in its own snapshots
 	// instead (buildRedactedActionAuthHeader).
 	basic       bool
+	saslMail    bool
 	oauthMethod string
 
 	// connectionString marks a surface whose resolvedPassword is a whole
@@ -159,6 +160,10 @@ func appendPlatformManagedCompositeValues(
 			// which case only the enclosing string was registered.
 			values = append(values, surface.resolvedPassword)
 		}
+		if surface.saslMail {
+			values = appendMailSASLComposites(values, surface.resolvedUsername, surface.resolvedPassword)
+			continue
+		}
 		if !surface.basic {
 			continue
 		}
@@ -171,6 +176,58 @@ func appendPlatformManagedCompositeValues(
 		}
 		payload := base64.StdEncoding.EncodeToString([]byte(pair))
 		values = append(values, pair, payload, "Basic "+payload)
+	}
+	return values
+}
+
+// appendScriptSourcedCompositeValues derives the Basic auth wire spellings for
+// surfaces whose halves resolved from script-sourced literals or non-secret
+// templates rather than {{secret.NAME}}. Callers must file the returned values
+// under a script-sourced runtime scope so HasRuntimeSecretMaterial() stays false.
+func appendScriptSourcedCompositeValues(
+	values []string,
+	surfaces ...platformManagedCredentialSurface,
+) []string {
+	for _, surface := range surfaces {
+		if surface.usernameFromSecretStore() || surface.passwordFromSecretStore() {
+			if !surface.passwordFromSecretStore() && surface.resolvedPassword != "" {
+				values = append(values, surface.resolvedPassword)
+			}
+			continue
+		}
+		if surface.resolvedUsername == "" && surface.resolvedPassword == "" {
+			continue
+		}
+		if surface.resolvedPassword != "" {
+			values = append(values, surface.resolvedPassword)
+		}
+		if !surface.basic {
+			continue
+		}
+		pair := surface.resolvedUsername + ":" + surface.resolvedPassword
+		payload := base64.StdEncoding.EncodeToString([]byte(pair))
+		values = append(values, pair, payload, "Basic "+payload)
+	}
+	return values
+}
+
+// appendMailSASLComposites derives the wire forms that SMTP SASL AUTH PLAIN
+// ("\x00username\x00password" base64) and AUTH LOGIN (base64(username),
+// base64(password)) send when mail credentials are configured.
+func appendMailSASLComposites(values []string, username, password string) []string {
+	if username == "" && password == "" {
+		return values
+	}
+	plain := "\x00" + username + "\x00" + password
+	plainB64 := base64.StdEncoding.EncodeToString([]byte(plain))
+	values = append(values, plain, plainB64, "AUTH PLAIN "+plainB64)
+	if password != "" {
+		passB64 := base64.StdEncoding.EncodeToString([]byte(password))
+		values = append(values, passB64, "AUTH LOGIN "+passB64)
+		if username != "" {
+			userB64 := base64.StdEncoding.EncodeToString([]byte(username))
+			values = append(values, "AUTH LOGIN "+userB64)
+		}
 	}
 	return values
 }
@@ -316,12 +373,22 @@ func scriptCredentialCompositeSurfaces(
 	if oauth := script.Config.Kafka.OAuth; oauth != nil {
 		clientID, _ := config["kafka_oauth_client_id"].(string)
 		clientSecret, _ := config["kafka_oauth_client_secret"].(string)
+		authoredSecret := oauth.ClientSecretRef
+		dedicated := true
+		if strings.TrimSpace(authoredSecret) == "" {
+			if oauth.ClientSecret != "" {
+				authoredSecret = oauth.ClientSecret
+				dedicated = false
+			}
+		} else if !strings.Contains(authoredSecret, "{{") && !ValidLogicalSecretName(strings.TrimSpace(authoredSecret)) {
+			dedicated = false
+		}
 		surfaces = append(surfaces, platformManagedCredentialSurface{
-			name: "config.kafka.oauth", authoredUsername: oauth.ClientID, authoredPassword: oauth.ClientSecretRef,
+			name: "config.kafka.oauth", authoredUsername: oauth.ClientID, authoredPassword: authoredSecret,
 			resolvedUsername: clientID,
 			resolvedPassword: clientSecret,
 			basic:            oauth.AuthenticationMethod == "client_secret_basic" || oauth.AuthenticationMethod == "kafka_3_3_1_basic",
-			oauthMethod:      oauth.AuthenticationMethod, dedicatedSecretField: true,
+			oauthMethod:      oauth.AuthenticationMethod, dedicatedSecretField: dedicated,
 		})
 	}
 	httpAuth := script.Config.HTTP.Auth
@@ -361,6 +428,17 @@ func scriptCredentialCompositeSurfaces(
 		"browser_proxy_username", "browser_proxy_password",
 		protocol.ConfigString(config, "browser_proxy_username") != "" ||
 			protocol.ConfigString(config, "browser_proxy_password") != "")
+	if protocol.ConfigString(config, "network_username") != "" ||
+		protocol.ConfigString(config, "network_password") != "" {
+		surfaces = append(surfaces, platformManagedCredentialSurface{
+			name:             "config.network",
+			authoredUsername: script.Config.Network.Username,
+			authoredPassword: script.Config.Network.Password,
+			resolvedUsername: protocol.ConfigString(config, "network_username"),
+			resolvedPassword: protocol.ConfigString(config, "network_password"),
+			saslMail:         true,
+		})
+	}
 
 	// URL-userinfo twins of the pairs above: every config field the engine hands
 	// to an HTTP-family dialer, which synthesises the Basic header from userinfo
@@ -434,6 +512,20 @@ func actionCredentialCompositeSurfaces(
 		"action.target", authored.Target, resolved.Target,
 	); ok {
 		surfaces = append(surfaces, surface)
+	}
+	authoredParamUser, hasParamUser := actionParamString(authored.Params, "username")
+	authoredParamPass, hasParamPass := actionParamString(authored.Params, "password")
+	if hasParamUser || hasParamPass {
+		resolvedParamUser, _ := actionParamString(resolved.Params, "username")
+		resolvedParamPass, _ := actionParamString(resolved.Params, "password")
+		surfaces = append(surfaces, platformManagedCredentialSurface{
+			name:             "action.params.network_auth",
+			authoredUsername: authoredParamUser,
+			authoredPassword: authoredParamPass,
+			resolvedUsername: resolvedParamUser,
+			resolvedPassword: resolvedParamPass,
+			saslMail:         true,
+		})
 	}
 	return surfaces
 }

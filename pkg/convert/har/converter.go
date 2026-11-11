@@ -130,6 +130,8 @@ type ConvertResult struct {
 	// ID the request's action index in Script (after any reshaping and
 	// transaction markers). It holds source values and must stay private.
 	Baseline []correlate.Observation `json:"-"`
+
+	rawCorrelations []sample.Correlation
 }
 
 func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -149,7 +151,8 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 	artifactMode := normalizeArtifactMode(opts.ArtifactMode)
 	retentionDays := normalizeRetentionDays(opts.RetentionDays)
-	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, convertutil.BoolOption(opts.SanitizeSensitive, false))
+	defaultRedaction := opts.Profile != nil && opts.Profile.ScrubSensitive
+	redactionEnabled := convertutil.BoolOption(opts.RedactSensitive, convertutil.BoolOption(opts.SanitizeSensitive, defaultRedaction))
 	governanceWarnings := []string{}
 	sensitivity := scrub.SensitivityRaw
 	if redactionEnabled {
@@ -211,13 +214,23 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			result.Script.Config.ThinkTime.MeanMs = float64(opts.DefaultThinkTimeMs)
 		}
 	}
+	publicCorrelations := result.Correlations
+	if redactionEnabled && len(result.Correlations) > 0 {
+		publicCorrelations = make([]sample.Correlation, len(result.Correlations))
+		copy(publicCorrelations, result.Correlations)
+		for index := range publicCorrelations {
+			publicCorrelations[index].Value = ""
+			publicCorrelations[index].SampleValue = ""
+		}
+	}
 	converted := &ConvertResult{
 		Document:          result.Document,
 		Script:            result.Script,
 		Warnings:          warnings,
 		Unsupported:       result.Unsupported,
 		Stats:             result.Stats,
-		Correlations:      result.Correlations,
+		Correlations:      publicCorrelations,
+		rawCorrelations:   result.Correlations,
 		SourceReview:      result.SourceReview,
 		ArtifactMode:      artifactMode,
 		EffectiveSettings: result.EffectiveSettings,

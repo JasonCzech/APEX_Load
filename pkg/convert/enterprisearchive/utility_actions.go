@@ -24,6 +24,8 @@ func appendSourceAction(result *ConvertResult, fn ParsedFunction, action dsl.Act
 	} else if sourceSupportModeRequiresDisclosureSafePlaceholder(mode) {
 		makeSourceReviewActionDisclosureSafe(&action, fn, mode)
 		flowFn = disclosureSafeSourceFlow(fn)
+	} else {
+		convertutil.SanitizeActionNonWireDSLTemplates(&action)
 	}
 	tagSourceFlowMetadata(result, flowFn, &action)
 	actionIndex := actionCountForPhase(result.Script, fn.Phase)
@@ -639,26 +641,21 @@ func sourceSupportModeRequiresDisclosureSafePlaceholder(mode SourceFunctionSuppo
 	}
 }
 
-// makeSourceReviewActionDisclosureSafe keeps imported argument values on
-// review-only behavior while retaining its execution gate.
+// makeSourceReviewActionDisclosureSafe keeps imported argument and action
+// values on review-only behavior while retaining its execution gate.
 func makeSourceReviewActionDisclosureSafe(action *dsl.Action, fn ParsedFunction, mode SourceFunctionSupportMode) {
 	if action == nil {
 		return
 	}
 	previousMetadata := action.Metadata
 	action.Name = disclosureSafeSourceReviewActionName(fn)
-	action.Target = ""
-	action.Value = ""
-	action.Body = ""
-	action.BodyFile = ""
-	action.Headers = nil
-	action.HeaderList = nil
-	action.Auth = nil
 
-	params := map[string]any{
-		"function":     fn.Name,
-		"support_mode": string(mode),
+	params := map[string]any{}
+	for key, value := range action.Params {
+		params[key] = value
 	}
+	params["function"] = fn.Name
+	params["support_mode"] = string(mode)
 	if def, ok := lookupSourceFunction(fn.Name); ok && strings.TrimSpace(def.Family) != "" {
 		params["family"] = def.Family
 	}
@@ -691,6 +688,7 @@ func makeSourceReviewActionDisclosureSafe(action *dsl.Action, fn ParsedFunction,
 			action.Metadata[key] = value
 		}
 	}
+	normalizeReviewActionForDSL(action, false)
 }
 
 func makeEmbeddedTransactionConsumerDisclosureSafe(
@@ -704,41 +702,22 @@ func makeEmbeddedTransactionConsumerDisclosureSafe(
 	sourceConsumerType := strings.TrimSpace(action.Type)
 	action.Name = disclosureSafeSourceReviewActionName(fn)
 	action.Type = "source_review"
-	action.Method = ""
-	action.Target = ""
-	action.Selector = ""
-	action.ObjectRef = ""
-	action.Value = ""
-	action.Body = ""
-	action.BodyFile = ""
-	action.BodyEncoding = ""
-	action.Headers = nil
-	action.HeaderList = nil
-	action.Auth = nil
-	action.WaitFor = nil
-	action.Sync = nil
-	action.Capture = nil
-	action.Extractors = nil
-	action.Assertions = nil
-	action.ThinkTime = dsl.ThinkTimeConfig{}
-	action.ThinkTimeAfter = false
-	action.Control = nil
-	action.TimeoutMs = 0
-	action.MaxRedirects = nil
-	action.SOAP = nil
-	action.Params = map[string]any{
-		"function":     fn.Name,
-		"support_mode": string(mode),
+	params := map[string]any{}
+	for key, value := range action.Params {
+		params[key] = value
 	}
+	params["function"] = fn.Name
+	params["support_mode"] = string(mode)
 	if def, ok := lookupSourceFunction(fn.Name); ok && strings.TrimSpace(def.Family) != "" {
-		action.Params["family"] = def.Family
+		params["family"] = def.Family
 	}
 	if args := disclosureSafeSourceReviewArgs(fn); len(args) > 0 {
-		action.Params["args"] = args
+		params["args"] = args
 	}
 	if args := disclosureSafeStructuredCallArgs(fn.CallArgs); len(args) > 0 {
-		action.Params["call_args"] = args
+		params["call_args"] = args
 	}
+	action.Params = params
 	action.Metadata = sourceFunctionMetadata(fn)
 	action.Metadata["support_mode"] = string(mode)
 	if sourceConsumerType != "" {
@@ -752,12 +731,147 @@ func makeEmbeddedTransactionConsumerDisclosureSafe(
 	}
 	action.Metadata["source_argument_count"] = sourceFunctionArgumentCount(fn)
 	action.Metadata["source_call_shape"] = disclosureSafeSourceCallShape(fn)
+	normalizeReviewActionForDSL(action, true)
+}
+
+func normalizeReviewActionForDSL(action *dsl.Action, clearExtractors bool) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	if strings.TrimSpace(action.BodyFile) != "" {
+		action.Metadata["source_body_file"] = convertutil.NeutralizeActionMetadataString(action.BodyFile)
+		action.BodyFile = ""
+	}
+	if action.HTTPVersion.IsPresent() {
+		action.Metadata["source_http_version"] = convertutil.NeutralizeActionMetadataString(action.HTTPVersion.Value())
+		action.HTTPVersion = dsl.OptionalHTTPVersion{}
+	}
+	if strings.TrimSpace(action.BodyEncoding) != "" {
+		action.Metadata["source_body_encoding"] = convertutil.NeutralizeActionMetadataString(action.BodyEncoding)
+		action.BodyEncoding = ""
+	}
+	if strings.TrimSpace(action.BodyTemplateEncoding) != "" {
+		action.Metadata["source_body_template_encoding"] = convertutil.NeutralizeActionMetadataString(action.BodyTemplateEncoding)
+		action.BodyTemplateEncoding = ""
+	}
+	if action.BodyMultipart != nil {
+		action.BodyMultipart = nil
+	}
+	if clearExtractors {
+		action.Extractors = nil
+	}
+	convertutil.SanitizeActionDSLTemplates(action, nil)
+}
+
+func sanitizeEnterpriseArchiveScriptsDSLTemplates(result *ConvertResult, scriptLists ...[]*dsl.Script) {
+	if result == nil {
+		return
+	}
+	var scripts []*dsl.Script
+	for _, list := range scriptLists {
+		scripts = append(scripts, list...)
+	}
+	if len(scripts) == 0 {
+		scripts = append(scripts, result.effectiveScripts()...)
+		if result.Script != nil {
+			seen := false
+			for _, s := range scripts {
+				if s == result.Script {
+					seen = true
+					break
+				}
+			}
+			if !seen {
+				scripts = append(scripts, result.Script)
+			}
+		}
+	}
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		convertutil.SanitizeScriptDSLTemplates(script, func(action *dsl.Action) {
+			gateEnterpriseArchiveInvalidTemplateAction(result, action)
+		})
+	}
+}
+
+func gateEnterpriseArchiveInvalidTemplateAction(result *ConvertResult, action *dsl.Action) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	fnName, _ := action.Metadata["source_function"].(string)
+	fnFile, _ := action.Metadata["source_file"].(string)
+	prevMode, _ := action.Metadata["support_mode"].(string)
+
+	params := map[string]any{
+		"function":               convertutil.FirstNonEmpty(fnName, action.Type),
+		"support_mode":           string(SourceFunctionSupportReviewOnly),
+		"review_placeholder":     true,
+		"source_payload_omitted": true,
+	}
+	if existing, ok := action.Params["function"].(string); ok && strings.TrimSpace(existing) != "" {
+		params["function"] = existing
+	}
+	action.Type = "source_review"
+	action.Method = ""
+	action.Target = ""
+	action.Selector = ""
+	action.Value = ""
+	action.Body = ""
+	action.Headers = nil
+	action.HeaderList = nil
+	action.Auth = nil
+	action.SOAP = nil
+	action.WaitFor = nil
+	action.Sync = nil
+	action.Assertions = nil
+	action.Params = params
+	action.Metadata["support_mode"] = string(SourceFunctionSupportReviewOnly)
+	normalizeReviewActionForDSL(action, true)
+	importreview.ApplyToAction(action, []importreview.Finding{{
+		Code:       "source_template_syntax_requires_review",
+		ReasonCode: "source_template_syntax_requires_review",
+		Element:    convertutil.FirstNonEmpty(fnName, action.Name),
+		Source:     "enterprise_script_archive",
+		SourceRef:  fnFile,
+		Detail:     "Source call contains undeclared {{file.*}} or unsupported {{run.*}} template syntax and requires manual review.",
+		Gate:       importreview.GateExecution,
+	}})
+	if result != nil {
+		if prevMode == string(SourceFunctionSupportExecutable) || prevMode == "" {
+			if result.Stats.NativeFunctions > 0 {
+				result.Stats.NativeFunctions--
+			}
+			result.Stats.ReviewOnlyFunctions++
+		}
+		if result.SourceReview != nil {
+			for i := range result.SourceReview.Mappings {
+				if result.SourceReview.Mappings[i].TargetName == action.Name {
+					result.SourceReview.Mappings[i].Status = statusForSupportMode(SourceFunctionSupportReviewOnly)
+					result.SourceReview.Mappings[i].SupportMode = string(SourceFunctionSupportReviewOnly)
+				}
+			}
+		}
+	}
 }
 
 func disclosureSafeSourceFlow(fn ParsedFunction) ParsedFunction {
 	out := fn
-	out.Conditions = append([]string(nil), fn.Conditions...)
-	out.Loops = append([]string(nil), fn.Loops...)
+	out.Conditions = make([]string, len(fn.Conditions))
+	for i, c := range fn.Conditions {
+		out.Conditions[i] = convertutil.NeutralizeActionMetadataString(c)
+	}
+	out.Loops = make([]string, len(fn.Loops))
+	for i, l := range fn.Loops {
+		out.Loops[i] = convertutil.NeutralizeActionMetadataString(l)
+	}
 	return out
 }
 
@@ -795,11 +909,11 @@ func disclosureSafeSourceReviewArgs(fn ParsedFunction) []any {
 	return args
 }
 
-func disclosureSafeStructuredCallArgs(args []ParsedArgument) []map[string]any {
+func disclosureSafeStructuredCallArgs(args []ParsedArgument) []any {
 	if len(args) == 0 {
 		return nil
 	}
-	out := make([]map[string]any, len(args))
+	out := make([]any, len(args))
 	for index, arg := range args {
 		kind := strings.ToLower(strings.TrimSpace(arg.Kind))
 		switch kind {
@@ -875,11 +989,11 @@ func sourceActionArgs(fn ParsedFunction) []any {
 	return values
 }
 
-func sourceStructuredCallArgs(args []ParsedArgument) []map[string]any {
+func sourceStructuredCallArgs(args []ParsedArgument) []any {
 	if len(args) == 0 {
 		return nil
 	}
-	out := make([]map[string]any, 0, len(args))
+	out := make([]any, 0, len(args))
 	for _, arg := range args {
 		entry := map[string]any{
 			"raw":   arg.Raw,

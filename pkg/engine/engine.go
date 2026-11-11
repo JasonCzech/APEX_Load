@@ -115,10 +115,11 @@ type Config struct {
 	// CompletionObserver runs after protocol cleanup, once per started VUser.
 	CompletionObserver func(int, bool)
 	TerminationMode    string
-	Script             *dsl.Script   // Test script (required)
-	VUsers             int           // Number of virtual users (required, > 0)
-	Duration           time.Duration // Total test duration (required, > 0)
-	RampUp             time.Duration // Ramp-up period (can be 0 for immediate start)
+	Script             *dsl.Script      // Test script (required)
+	VUsers             int              // Number of virtual users (required, > 0)
+	Duration           time.Duration    // Total test duration (required, > 0)
+	RampUp             time.Duration    // Ramp-up period (can be 0 for immediate start)
+	RedactionConfig    *RedactionConfig // Optional caller-supplied runtime redaction rules/values
 	SecretResolver     SecretResolver
 	// TimingObserver receives value-free result timings from the metrics consumer.
 	// It must return promptly. It is intended for controlled evidence collection,
@@ -193,7 +194,7 @@ func New(cfg Config) (*Engine, error) {
 	}
 	dataProvider, err := NewDataProvider(cfg.Script.DataSources)
 	if err != nil {
-		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveTextWithConfig(err.Error(), cfg.RedactionConfig))
 	}
 	if HasAllocatedParameters(cfg.Script) && isOpenWorkload(cfg.Script) {
 		return nil, fmt.Errorf("unique parameter allocation and browser session identities require a closed workload")
@@ -211,22 +212,25 @@ func New(cfg Config) (*Engine, error) {
 	}
 	secretResolver, secretValues, err := snapshotReferencedSecrets(cfg.Script, secretResolver)
 	if err != nil {
-		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveTextWithConfig(err.Error(), cfg.RedactionConfig))
 	}
-	// Values retained from an import join the matcher only when the operator has
-	// left script.Config.Log.RedactRunEvidence on; see script_sourced_run_evidence.go.
-	// The locator walk inside the helper always runs as a fail-closed corruption gate.
 	secretValues, scriptSourcedValues, importedCredentials, err := runtimeSecretValuesForScript(cfg.Script, secretResolver, secretValues)
 	if err != nil {
-		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("inspect retained import credentials: %s", scrubSensitiveTextWithConfig(err.Error(), cfg.RedactionConfig))
 	}
-	redactionConfig, scriptSourcedDropped, err := buildRuntimeSecretRedaction(nil, secretValues, scriptSourcedValues)
+	secretValues, scriptSourcedValues = mergedRuntimeSecretValuesByOrigin(
+		cfg.RedactionConfig,
+		secretValues,
+		scriptSourcedValues,
+	)
+	runtimeRedaction, scriptSourcedDropped, err := buildRuntimeSecretRedaction(nil, secretValues, scriptSourcedValues)
 	if err != nil {
-		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveTextWithConfig(err.Error(), cfg.RedactionConfig))
 	}
 	if scriptSourcedDropped {
 		warnScriptSourcedRedactionDropped("script", cfg.Script.Name)
 	}
+	redactionConfig := ensureDynamicSecretRegistry(attachRuntimeSecretRedaction(cfg.RedactionConfig, runtimeRedaction))
 	runtimeResources, resourceErr := newEngineRuntimeResources([]GroupConfig{{Name: "", Script: cfg.Script, VUsers: cfg.VUsers, RuntimeResourcePeakVUsers: cfg.RuntimeResourcePeakVUsers, RuntimeResourceReservation: cfg.RuntimeResourceReservation}})
 	if resourceErr != nil {
 		return nil, resourceErr

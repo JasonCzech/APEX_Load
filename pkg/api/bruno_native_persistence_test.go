@@ -44,21 +44,25 @@ func TestPreparePersistentBrunoNativeScriptPreservesXMLVerbatim(t *testing.T) {
 }
 
 func TestPreparePersistentBrunoNativeScriptRejectsUngovernedXMLCredential(t *testing.T) {
+	const body = `<Envelope><password>source-password-preserved-verbatim</password></Envelope>`
 	script := &dsl.Script{
 		ID: "native-inline-secret", Name: "Native inline secret", Version: "1", Protocol: "http",
 		GeneratedBy: brunoNativeImporterIdentity,
 		Actions: []dsl.Action{{
 			Name: "SOAP request", Type: "POST", Method: http.MethodPost, Target: "https://example.test/soap",
-			Body: `<Envelope><password>source-password-must-not-persist</password></Envelope>`,
+			Body: body,
 			Metadata: map[string]any{
 				"source_profile": "bruno_native",
 			},
 		}},
 	}
 
-	if _, err := preparePersistentBrunoNativeScript(script); err == nil ||
-		!strings.Contains(err.Error(), "must use a governed") {
-		t.Fatalf("prepare native script error = %v, want governed-secret rejection", err)
+	projected, err := preparePersistentBrunoNativeScript(script)
+	if err != nil {
+		t.Fatalf("prepare native script error = %v, want literal XML credential preserved", err)
+	}
+	if got := projected.Actions[0].Body; got != body {
+		t.Fatalf("projected body = %q, want %q", got, body)
 	}
 }
 
@@ -96,20 +100,24 @@ end`
 }
 
 func TestPreparePersistentBrunoNativeScriptRejectsUngovernedCredentialSuffix(t *testing.T) {
+	const body = `<Envelope><userPassword>source-password-preserved-verbatim</userPassword></Envelope>`
 	script := &dsl.Script{
 		ID: "native-suffixed-secret", Name: "Native suffixed secret", Version: "1", Protocol: "http",
 		GeneratedBy: brunoNativeImporterIdentity,
 		Actions: []dsl.Action{{
 			Name: "SOAP request", Type: "POST", Method: http.MethodPost, Target: "https://example.test/soap",
-			Body: `<Envelope><userPassword>source-password-must-not-persist</userPassword></Envelope>`,
+			Body: body,
 			Metadata: map[string]any{
 				"source_profile": "bruno_native",
 			},
 		}},
 	}
-	if _, err := preparePersistentBrunoNativeScript(script); err == nil ||
-		!strings.Contains(err.Error(), "must use a governed") {
-		t.Fatalf("prepare native script error = %v, want governed suffix rejection", err)
+	projected, err := preparePersistentBrunoNativeScript(script)
+	if err != nil {
+		t.Fatalf("prepare native script error = %v, want literal suffixed XML credential preserved", err)
+	}
+	if got := projected.Actions[0].Body; got != body {
+		t.Fatalf("projected body = %q, want %q", got, body)
 	}
 }
 
@@ -294,14 +302,10 @@ http:
 	if response.Code != http.StatusCreated {
 		t.Fatalf("XML preservation commit status = %d body=%s", response.Code, response.Body.String())
 	}
-	// The session header is recorded state, shown as imported; the password
-	// is a credential and stays masked.
-	if !strings.Contains(response.Body.String(), headerValue) {
-		t.Fatalf("commit response hid the recorded session header: %s", response.Body.String())
-	}
-	for _, canary := range []string{xmlPassword} {
-		if strings.Contains(response.Body.String(), canary) {
-			t.Fatalf("commit response disclosed imported credential %q: %s", canary, response.Body.String())
+	// Both recorded headers and authored XML credentials remain unredacted on commit.
+	for _, expected := range []string{headerValue, xmlUsername, xmlPassword} {
+		if !strings.Contains(response.Body.String(), expected) {
+			t.Fatalf("commit response omitted imported value %q: %s", expected, response.Body.String())
 		}
 	}
 	scripts, err := store.ListScripts(brunoImportTestProject, &folderID)
