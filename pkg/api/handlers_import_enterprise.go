@@ -219,6 +219,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	contentType := r.Header.Get("Content-Type")
 	var data []byte
 	var harData []byte
+	var bundledHARData []byte
 
 	if strings.HasPrefix(contentType, "application/zip") ||
 		strings.HasPrefix(contentType, "application/x-zip-compressed") ||
@@ -260,6 +261,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 				writeError(w, http.StatusBadRequest, "invalid VuGen folder: "+err.Error())
 				return nil, false
 			}
+			bundledHARData = extractBundledEnterpriseFolderHAR(r.MultipartForm.File)
 		}
 		if harFile, _, err := r.FormFile("har_file"); err == nil {
 			defer harFile.Close()
@@ -348,6 +350,9 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			supplementalNames = append(supplementalNames, name)
 		}
 	}
+	if len(harData) == 0 && len(bundledHARData) == 0 {
+		bundledHARData = extractBundledEnterpriseArchiveHAR(data)
+	}
 	stripped, stripErr := stripVuGenNonSourceZipEntries(data)
 	if stripErr != nil {
 		writeError(w, http.StatusBadRequest, stripErr.Error())
@@ -367,6 +372,14 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		}
 		data = mergedData
 		supplementalManifest = manifest
+	}
+	if len(harData) == 0 && len(bundledHARData) == 0 && len(supplementalData) > 0 {
+		bundledHARData = extractBundledEnterpriseArchiveHAR(data)
+	}
+	if len(harData) == 0 && len(bundledHARData) > 0 {
+		if _, collection, _ := readEnterpriseArchiveCollection(data); !collection {
+			harData = bundledHARData
+		}
 	}
 
 	// background_requests (a JSON array of URL path patterns) replaces the
@@ -588,6 +601,165 @@ func stripVuGenNonSourceZipEntries(data []byte) ([]byte, error) {
 		return data, nil
 	}
 	return mergeEnterpriseArchiveZipWithPreparedFiles(data, nil)
+}
+
+func isInVuGenResultDir(cleaned string) bool {
+	parts := strings.Split(cleaned, "/")
+	for i := 0; i < len(parts)-1; i++ {
+		if isVuGenResultDirSegment(parts[i]) {
+			return true
+		}
+	}
+	return false
+}
+
+func looksLikeValidHARJSON(body []byte) bool {
+	var probe struct {
+		Log json.RawMessage `json:"log"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	trimmed := bytes.TrimSpace(probe.Log)
+	return len(trimmed) > 0 && trimmed[0] == '{'
+}
+
+func readValidBundledHARZipEntry(file *zip.File) []byte {
+	if file == nil || file.UncompressedSize64 == 0 || file.UncompressedSize64 > uint64(enterprisearchive.MaxArchiveEntryBytes) {
+		return nil
+	}
+	rc, err := file.Open()
+	if err != nil {
+		return nil
+	}
+	body, readErr := io.ReadAll(io.LimitReader(rc, int64(enterprisearchive.MaxArchiveEntryBytes)+1))
+	_ = rc.Close()
+	if readErr != nil || len(body) == 0 || len(body) > enterprisearchive.MaxArchiveEntryBytes {
+		return nil
+	}
+	if !looksLikeValidHARJSON(body) {
+		return nil
+	}
+	return body
+}
+
+func extractBundledEnterpriseArchiveHAR(zipData []byte) []byte {
+	if err := archiveingest.ValidateZIPDirectory(zipData, enterprisearchive.MaxArchiveEntries*8); err != nil {
+		return nil
+	}
+	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil || len(reader.File) > enterprisearchive.MaxArchiveEntries*8 {
+		return nil
+	}
+	type regularZipEntry struct {
+		file *zip.File
+		key  string
+	}
+	regularEntries := make([]regularZipEntry, 0, len(reader.File))
+	regularKeys := make([]string, 0, len(reader.File))
+	for _, file := range reader.File {
+		if file == nil {
+			continue
+		}
+		key, isDir, pathErr := validateEnterpriseZipEntryPath(file, vuGenSkippedArchiveMaxDepth)
+		if pathErr != nil {
+			return nil
+		}
+		if !isDir && key != "" {
+			regularEntries = append(regularEntries, regularZipEntry{file: file, key: key})
+			regularKeys = append(regularKeys, key)
+		}
+	}
+	scriptDirs := vuGenScriptDirs(regularKeys)
+	var replayCandidates []*zip.File
+	var harCandidates []*zip.File
+	for _, entry := range regularEntries {
+		if isInVuGenResultDir(entry.key) || !strings.EqualFold(path.Ext(entry.key), ".har") {
+			continue
+		}
+		dir := path.Dir(entry.key)
+		_, inScriptDir := scriptDirs[dir]
+		if inScriptDir && strings.EqualFold(path.Base(entry.key), "replay.har") {
+			replayCandidates = append(replayCandidates, entry.file)
+		}
+		if inScriptDir || dir == "." {
+			harCandidates = append(harCandidates, entry.file)
+		}
+	}
+	if len(replayCandidates) == 1 {
+		return readValidBundledHARZipEntry(replayCandidates[0])
+	}
+	if len(replayCandidates) == 0 && len(harCandidates) == 1 {
+		return readValidBundledHARZipEntry(harCandidates[0])
+	}
+	return nil
+}
+
+func readValidBundledHARMultipartHeader(header *multipart.FileHeader) []byte {
+	if header == nil || header.Size <= 0 || header.Size > int64(enterprisearchive.MaxArchiveEntryBytes) {
+		return nil
+	}
+	file, err := header.Open()
+	if err != nil {
+		return nil
+	}
+	body, readErr := io.ReadAll(io.LimitReader(file, int64(enterprisearchive.MaxArchiveEntryBytes)+1))
+	_ = file.Close()
+	if readErr != nil || len(body) == 0 || len(body) > enterprisearchive.MaxArchiveEntryBytes {
+		return nil
+	}
+	if !looksLikeValidHARJSON(body) {
+		return nil
+	}
+	return body
+}
+
+func extractBundledEnterpriseFolderHAR(fields map[string][]*multipart.FileHeader) []byte {
+	var rawNames []string
+	rawHeaders := make(map[string]*multipart.FileHeader)
+	for field, files := range fields {
+		if !strings.HasPrefix(field, "file:") || len(files) != 1 || files[0] == nil {
+			continue
+		}
+		name, err := url.PathUnescape(strings.TrimPrefix(field, "file:"))
+		if err != nil || archiveingest.JunkReason(name) != "" {
+			continue
+		}
+		rawNames = append(rawNames, name)
+		rawHeaders[name] = files[0]
+	}
+	if len(rawNames) == 0 {
+		return nil
+	}
+	sort.Strings(rawNames)
+	allValidated, err := archiveingest.ValidateFilePaths(rawNames, 33)
+	if err != nil {
+		return nil
+	}
+	scriptDirs := vuGenScriptDirs(allValidated)
+	var replayCandidates []*multipart.FileHeader
+	var harCandidates []*multipart.FileHeader
+	for index, name := range allValidated {
+		if isInVuGenResultDir(name) || !strings.EqualFold(path.Ext(name), ".har") {
+			continue
+		}
+		dir := path.Dir(name)
+		_, inScriptDir := scriptDirs[dir]
+		header := rawHeaders[rawNames[index]]
+		if inScriptDir && strings.EqualFold(path.Base(name), "replay.har") {
+			replayCandidates = append(replayCandidates, header)
+		}
+		if inScriptDir || dir == "." {
+			harCandidates = append(harCandidates, header)
+		}
+	}
+	if len(replayCandidates) == 1 {
+		return readValidBundledHARMultipartHeader(replayCandidates[0])
+	}
+	if len(replayCandidates) == 0 && len(harCandidates) == 1 {
+		return readValidBundledHARMultipartHeader(harCandidates[0])
+	}
+	return nil
 }
 
 // zipEnterpriseFolderUpload turns browser directory selection into the same

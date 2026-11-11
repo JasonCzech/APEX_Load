@@ -231,8 +231,28 @@ func DiscoverSecretBindingRequirementsValueWithRegistry(raw any, scriptIndex int
 	// distinct default. Users can still explicitly choose the same logical name
 	// when they know two locations intentionally share one credential.
 	result := make([]SecretBindingRequirement, 0, len(internal))
-	for _, requirement := range internal {
-		suggestedName := registry.Allocate(requirement.SuggestedName)
+	for i, requirement := range internal {
+		suggestedName := ""
+		if scopePrefix, headerName, isHeaderList, ok := headerRequirementScopeAndName(scriptMap, requirement.Path); ok && !isHeaderList {
+			matchedIdx := -1
+			matchCount := 0
+			for j := 0; j < i; j++ {
+				jScope, jHeaderName, jIsHeaderList, jOK := headerRequirementScopeAndName(scriptMap, internal[j].Path)
+				if !jOK || !jIsHeaderList || jScope != scopePrefix || !strings.EqualFold(jHeaderName, headerName) {
+					continue
+				}
+				if internal[j].sourceValue == requirement.sourceValue && internal[j].Occurrence == requirement.Occurrence {
+					matchedIdx = j
+					matchCount++
+				}
+			}
+			if matchCount == 1 && matchedIdx >= 0 && matchedIdx < len(result) {
+				suggestedName = result[matchedIdx].SuggestedName
+			}
+		}
+		if suggestedName == "" {
+			suggestedName = registry.Allocate(requirement.SuggestedName)
+		}
 		if suggestedName != requirement.SuggestedName {
 			requirement.SuggestedName = suggestedName
 			requirement.Replacement = ReplaceRedactedOccurrence(
@@ -744,11 +764,40 @@ func SecretBindingContext(path string, ctx RedactionTraversalContext) string {
 	}
 }
 
+func shortenSuggestedSecretActionPrefix(name string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ""
+	}
+	normalized := NormalizeLogicalSecretName(trimmed)
+	if !strings.Contains(trimmed, "||") && len(normalized) <= 28 {
+		return trimmed
+	}
+	if before, _, ok := strings.Cut(trimmed, "||"); ok {
+		if candidate := strings.TrimSpace(before); candidate != "" && NormalizeLogicalSecretName(candidate) != "" {
+			normalized = NormalizeLogicalSecretName(candidate)
+		}
+	}
+	if len(normalized) > 24 {
+		cut := normalized[:24]
+		if lastUnderscore := strings.LastIndexByte(cut, '_'); lastUnderscore > 0 {
+			normalized = strings.TrimRight(cut[:lastUnderscore], "_")
+		} else {
+			normalized = strings.TrimRight(cut, "_")
+		}
+	}
+	return normalized
+}
+
 func SuggestedSecretName(path, value string, occurrence int, ctx RedactionTraversalContext) string {
 	hint := RedactedValueHint(value, occurrence)
 	tokens, _ := SplitJSONPointer(path)
-	if hint == "" && len(tokens) > 0 {
-		hint = tokens[len(tokens)-1]
+	if hint == "" {
+		if headerName := strings.TrimSpace(ctx.headerName); headerName != "" {
+			hint = headerName
+		} else if len(tokens) > 0 {
+			hint = tokens[len(tokens)-1]
+		}
 	}
 	if strings.EqualFold(hint, "authorization") {
 		prefix := StringBeforeRedactedOccurrence(value, occurrence)
@@ -761,12 +810,17 @@ func SuggestedSecretName(path, value string, occurrence int, ctx RedactionTraver
 	}
 	parts := make([]string, 0, 4)
 	if name := strings.TrimSpace(ctx.actionName); name != "" && !strings.Contains(name, MaskedScriptSecret) {
-		parts = append(parts, name)
+		parts = append(parts, shortenSuggestedSecretActionPrefix(name))
 	} else {
 		for _, token := range tokens {
 			normalized := NormalizeScriptFieldName(token)
 			if normalized == "" || normalized == "config" || normalized == "actions" || normalized == "init" || normalized == "teardown" ||
-				normalized == "metadata" || normalized == "headers" || normalized == "defaultheaders" || IsDecimalToken(token) {
+				normalized == "metadata" || normalized == "headers" || normalized == "defaultheaders" ||
+				normalized == "headerlist" || normalized == "defaultheaderlist" || IsDecimalToken(token) {
+				continue
+			}
+			if normalized == "value" && strings.TrimSpace(ctx.headerName) != "" {
+				parts = append(parts, strings.TrimSpace(ctx.headerName))
 				continue
 			}
 			parts = append(parts, token)
@@ -1166,6 +1220,38 @@ func ApplyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings [
 		}
 		replacements[requirement.Path][requirement.Occurrence] = "{{secret." + name + "}}"
 	}
+	unmaskedRaw, _ := ScriptAsJSONValue(script)
+	initialPaths := make([]string, 0, len(replacements))
+	for path := range replacements {
+		initialPaths = append(initialPaths, path)
+	}
+	sort.Strings(initialPaths)
+	for _, path := range initialPaths {
+		projectedVal, ok1 := JsonPointerString(raw, path)
+		if !ok1 {
+			continue
+		}
+		unmaskedVal, uok1 := JsonPointerString(unmaskedRaw, path)
+		for _, twinPath := range pairedTwinHeaderPaths(raw, path) {
+			if replacements[twinPath] != nil {
+				continue
+			}
+			twinProjectedVal, ok2 := JsonPointerString(raw, twinPath)
+			if !ok2 || twinProjectedVal != projectedVal {
+				continue
+			}
+			if uok1 {
+				if twinUnmaskedVal, uok2 := JsonPointerString(unmaskedRaw, twinPath); !uok2 || twinUnmaskedVal != unmaskedVal {
+					continue
+				}
+			}
+			copied := make(map[int]string, len(replacements[path]))
+			for occ, val := range replacements[path] {
+				copied[occ] = val
+			}
+			replacements[twinPath] = copied
+		}
+	}
 	resolved := ApplySecretBindingReplacements(raw, "", replacements)
 	payload, err := json.Marshal(resolved)
 	if err != nil {
@@ -1300,6 +1386,14 @@ func ApplyPreservedRedactedSecretBindings(
 		if !SetJSONPointerStringValue(rawRoot, path, rebuilt.String()) {
 			return nil, requirements, &StaleSecretBindingRequirementsError{requirements: requirements}
 		}
+		for _, twinPath := range pairedTwinHeaderPaths(rawRoot, path) {
+			if replacementsByPath[twinPath] != nil {
+				continue
+			}
+			if twinRaw, ok := JsonPointerString(rawRoot, twinPath); ok && twinRaw == rawValue {
+				_ = SetJSONPointerStringValue(rawRoot, twinPath, rebuilt.String())
+			}
+		}
 		if name, ok := defaultHeaderNameAt(rawRoot, path); ok {
 			defaultHeaderBindings = append(defaultHeaderBindings, defaultHeaderBinding{name: name, recorded: rawValue, bound: rebuilt.String()})
 		}
@@ -1361,6 +1455,115 @@ func defaultHeaderNameAt(root any, path string) (string, bool) {
 		return name, ok && strings.TrimSpace(name) != ""
 	}
 	return "", false
+}
+
+func joinJSONPointerTokens(tokens []string) string {
+	var out string
+	for _, token := range tokens {
+		out = AppendJSONPointer(out, token)
+	}
+	return out
+}
+
+func headerRequirementScopeAndName(root any, path string) (scopePrefix, headerName string, isHeaderList bool, ok bool) {
+	tokens, err := SplitJSONPointer(path)
+	if err != nil || len(tokens) < 2 {
+		return "", "", false, false
+	}
+	if len(tokens) == 4 && tokens[0] == "config" && tokens[1] == "http" && NormalizeScriptFieldName(tokens[2]) == "defaultheaders" {
+		name := strings.TrimSpace(tokens[3])
+		return "/config/http", name, false, name != ""
+	}
+	if len(tokens) == 5 && tokens[0] == "config" && tokens[1] == "http" && NormalizeScriptFieldName(tokens[2]) == "defaultheaderlist" &&
+		IsDecimalToken(tokens[3]) && NormalizeScriptFieldName(tokens[4]) == "value" {
+		name, found := JsonPointerString(root, "/config/http/"+tokens[2]+"/"+tokens[3]+"/name")
+		name = strings.TrimSpace(name)
+		return "/config/http", name, true, found && name != ""
+	}
+	if len(tokens) >= 3 && NormalizeScriptFieldName(tokens[len(tokens)-2]) == "headers" {
+		scope := joinJSONPointerTokens(tokens[:len(tokens)-2])
+		name := strings.TrimSpace(tokens[len(tokens)-1])
+		return scope, name, false, scope != "" && name != ""
+	}
+	if len(tokens) >= 4 && NormalizeScriptFieldName(tokens[len(tokens)-3]) == "headerlist" &&
+		IsDecimalToken(tokens[len(tokens)-2]) && NormalizeScriptFieldName(tokens[len(tokens)-1]) == "value" {
+		scope := joinJSONPointerTokens(tokens[:len(tokens)-3])
+		namePath := AppendJSONPointer(AppendJSONPointer(AppendJSONPointer(scope, tokens[len(tokens)-3]), tokens[len(tokens)-2]), "name")
+		name, found := JsonPointerString(root, namePath)
+		name = strings.TrimSpace(name)
+		return scope, name, true, found && scope != "" && name != ""
+	}
+	return "", "", false, false
+}
+
+func jsonPointerMapValue(root any, pointer string) (map[string]any, bool) {
+	tokens, err := SplitJSONPointer(pointer)
+	if err != nil {
+		return nil, false
+	}
+	current := root
+	for _, token := range tokens {
+		switch typed := current.(type) {
+		case map[string]any:
+			next, exists := typed[token]
+			if !exists {
+				return nil, false
+			}
+			current = next
+		case []any:
+			index, convErr := strconv.Atoi(token)
+			if convErr != nil || index < 0 || index >= len(typed) {
+				return nil, false
+			}
+			current = typed[index]
+		default:
+			return nil, false
+		}
+	}
+	out, isMap := current.(map[string]any)
+	return out, isMap
+}
+
+func pairedTwinHeaderPaths(root any, path string) []string {
+	scopePrefix, headerName, isHeaderList, ok := headerRequirementScopeAndName(root, path)
+	if !ok {
+		return nil
+	}
+	scopeMap, ok := jsonPointerMapValue(root, scopePrefix)
+	if !ok {
+		return nil
+	}
+	mapField := "headers"
+	listField := "header_list"
+	if scopePrefix == "/config/http" {
+		mapField = "default_headers"
+		listField = "default_header_list"
+	}
+	var twins []string
+	if isHeaderList {
+		if headersMap, ok := scopeMap[mapField].(map[string]any); ok {
+			for key := range headersMap {
+				if strings.EqualFold(strings.TrimSpace(key), headerName) {
+					twins = append(twins, AppendJSONPointer(AppendJSONPointer(scopePrefix, mapField), key))
+				}
+			}
+		}
+	} else {
+		if entries, ok := scopeMap[listField].([]any); ok {
+			for idx, rawEntry := range entries {
+				entry, isMap := rawEntry.(map[string]any)
+				if !isMap {
+					continue
+				}
+				name, _ := entry["name"].(string)
+				if strings.EqualFold(strings.TrimSpace(name), headerName) {
+					twins = append(twins, AppendJSONPointer(AppendJSONPointer(AppendJSONPointer(scopePrefix, listField), strconv.Itoa(idx)), "value"))
+				}
+			}
+		}
+	}
+	sort.Strings(twins)
+	return twins
 }
 
 // bindShadowingActionHeaders gives every action-level copy of a bound default
