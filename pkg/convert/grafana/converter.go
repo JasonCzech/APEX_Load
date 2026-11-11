@@ -335,15 +335,20 @@ func unwrapDashboard(content []byte) (rawDashboard, error) {
 	return top, nil
 }
 
-// CanonicalizeImportSource retains only fields the importer understands. This keeps
-// short-lived commit sessions bounded by relevant source data and drops unrelated
-// export metadata (including plugin-specific fields that may contain credentials).
+// CanonicalizeImportSource validates the Grafana dashboard JSON and returns its
+// canonical JSON encoding with all authored fields preserved.
 func CanonicalizeImportSource(content string) (string, error) {
-	raw, err := unwrapDashboard([]byte(strings.TrimSpace(content)))
-	if err != nil {
+	trimmed := strings.TrimSpace(content)
+	if _, err := unwrapDashboard([]byte(trimmed)); err != nil {
 		return "", err
 	}
-	encoded, err := json.Marshal(raw)
+	dec := json.NewDecoder(strings.NewReader(trimmed))
+	dec.UseNumber()
+	var full map[string]any
+	if err := dec.Decode(&full); err != nil {
+		return "", err
+	}
+	encoded, err := json.Marshal(full)
 	if err != nil {
 		return "", err
 	}

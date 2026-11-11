@@ -915,6 +915,11 @@ func redactExchangeSecrets(content string, exchanges []exchange, outputLimit int
 	// Catch-all for secret fields that did not round-trip through a parsed
 	// exchange verbatim (re-serialized bodies, query strings, ...).
 	content = paramize.SanitizeBodySecrets(content)
+	var protectedFields []string
+	for _, ex := range exchanges {
+		protectedFields = append(protectedFields, ex.ProtectedInputs...)
+	}
+	content = paramize.SanitizeHARParamFields(content, protectedFields)
 	return content, content != original
 }
 
@@ -939,7 +944,7 @@ func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedacti
 		redactions.addSensitiveHeaderValues(ex.Headers)
 		redactions.addSensitiveHeaderListValues(ex.HeaderList)
 		if ex.BodyEncoding == "" {
-			redactions.addBody(ex.Body)
+			redactions.addBody(ex.Body, ex.ProtectedInputs...)
 		}
 		for _, value := range ex.SourceSecrets {
 			if value == "" {
@@ -951,7 +956,7 @@ func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedacti
 			redactions.seenHeaderValues[value] = struct{}{}
 			redactions.headerValues = append(redactions.headerValues, value)
 		}
-		redactions.addURL(ex.URL)
+		redactions.addURL(ex.URL, ex.ProtectedInputs...)
 		if ex.Response != nil {
 			redactions.addSensitiveHeaderValues(ex.Response.Headers)
 			redactions.addSensitiveHeaderListValues(ex.Response.HeaderList)
@@ -961,11 +966,14 @@ func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedacti
 	return redactions
 }
 
-func (redactions *exchangeSecretRedactions) addURL(raw string) {
+func (redactions *exchangeSecretRedactions) addURL(raw string, protectedFields ...string) {
 	if raw == "" {
 		return
 	}
 	sanitized := scrub.ValueURL(raw, scrub.Policy{})
+	if len(protectedFields) > 0 {
+		sanitized = paramize.SanitizeURLQueryFields(sanitized, protectedFields)
+	}
 	if sanitized == raw {
 		return
 	}
@@ -995,14 +1003,14 @@ func (redactions *exchangeSecretRedactions) addSensitiveHeaderValue(name, value 
 	redactions.headerValues = append(redactions.headerValues, value)
 }
 
-func (redactions *exchangeSecretRedactions) addBody(body string) {
+func (redactions *exchangeSecretRedactions) addBody(body string, protectedFields ...string) {
 	if strings.TrimSpace(body) == "" {
 		return
 	}
 	if _, exists := redactions.seenBodies[body]; exists {
 		return
 	}
-	sanitized := paramize.SanitizeBodySecrets(body)
+	sanitized := paramize.SanitizeBodySecretsForFields(body, protectedFields)
 	if sanitized == body {
 		return
 	}

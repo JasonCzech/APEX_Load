@@ -9,10 +9,12 @@ package mulesoft
 import (
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 // Review summarizes the MuleSoft-specific findings for an imported script.
@@ -97,50 +99,162 @@ func Analyze(script *dsl.Script) *Review {
 		review.AuthFindings = append(review.AuthFindings, AuthFinding{Type: authType, Detail: detail})
 	}
 
+	definedVars := definedScriptVars(script)
 	sawOAuthInit := false
-	for _, action := range allActions(script) {
-		addHost(action.Target)
-		actionMuleSoftHost := mulesoftHost(hostOf(action.Target, script.Config.BaseURL)) != ""
-		// Header-based signals.
-		for name, value := range action.Headers {
-			lower := strings.ToLower(strings.TrimSpace(name))
-			if actionMuleSoftHost && clientCredentialKeys[lower] {
-				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement requires client_id/client_secret per request; supply via env/secret placeholders.", "header "+name)
+	sawUnresolvedBearer := false
+	inspectHeaderPair := func(actionMuleSoftHost bool, name, value string) {
+		lower := strings.ToLower(strings.TrimSpace(name))
+		if actionMuleSoftHost && clientCredentialKeys[lower] {
+			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement detected via client_id/client_secret request headers.", "header "+name)
+		}
+		trimmedVal := strings.TrimSpace(value)
+		lowerVal := strings.ToLower(trimmedVal)
+		if actionMuleSoftHost && lower == "authorization" && (lowerVal == "bearer" || strings.HasPrefix(lowerVal, "bearer ")) {
+			addAuth("bearer", "Bearer token required on requests.")
+			tokenPart := strings.TrimSpace(trimmedVal[len("bearer"):])
+			if hasUnboundTemplateVar(tokenPart, definedVars) {
+				sawUnresolvedBearer = true
 			}
-			if actionMuleSoftHost && lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "bearer ") {
+		}
+		if actionMuleSoftHost && lower == "authorization" && strings.HasPrefix(lowerVal, "basic ") {
+			addAuth("basic", "HTTP Basic authentication required on requests.")
+			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement may be using Basic Authorization as its credential origin; confirm the applied policy before replay.", "basic authorization")
+		}
+	}
+
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		target := ref.Target().Value
+		addHost(target)
+		actionMuleSoftHost := mulesoftHost(hostOf(target, script.Config.BaseURL)) != ""
+
+		hdrs := ref.Headers()
+		shadowedByList := map[string]bool{}
+		authoredAuthHeader := false
+		visitListEntry := func(entry dsl.HeaderEntry) {
+			canon := strings.ToLower(strings.TrimSpace(entry.Name))
+			if canon != "" {
+				shadowedByList[canon] = true
+			}
+			if canon == "authorization" {
+				authoredAuthHeader = true
+			}
+			if entry.Enabled != nil && !*entry.Enabled {
+				return
+			}
+			inspectHeaderPair(actionMuleSoftHost, entry.Name, entry.Value)
+		}
+		switch list := hdrs.List.(type) {
+		case dsl.HeaderList:
+			for _, entry := range list {
+				visitListEntry(entry)
+			}
+		case []dsl.HeaderEntry:
+			for _, entry := range list {
+				visitListEntry(entry)
+			}
+		case []any:
+			for _, item := range list {
+				entry, ok := item.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := entry["name"].(string)
+				val, _ := entry["value"].(string)
+				if strings.TrimSpace(name) == "" {
+					continue
+				}
+				he := dsl.HeaderEntry{Name: name, Value: val}
+				if enabled, ok := entry["enabled"].(bool); ok {
+					he.Enabled = &enabled
+				}
+				visitListEntry(he)
+			}
+		}
+		var headerMap map[string]string
+		switch typed := hdrs.Map.(type) {
+		case map[string]string:
+			headerMap = typed
+		case map[string]any:
+			headerMap = make(map[string]string, len(typed))
+			for k, v := range typed {
+				if text, ok := v.(string); ok {
+					headerMap[k] = text
+				}
+			}
+		}
+		if len(headerMap) > 0 {
+			names := make([]string, 0, len(headerMap))
+			for name := range headerMap {
+				names = append(names, name)
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				canon := strings.ToLower(strings.TrimSpace(name))
+				if shadowedByList[canon] {
+					continue
+				}
+				if canon == "authorization" {
+					authoredAuthHeader = true
+				}
+				inspectHeaderPair(actionMuleSoftHost, name, headerMap[name])
+			}
+		}
+
+		for _, key := range queryKeys(target) {
+			if actionMuleSoftHost && clientCredentialKeys[strings.ToLower(key)] {
+				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials detected in query parameters.", "query "+key)
+			}
+		}
+		if key, ok := bodyCredentialKey(ref.Body().Value); ok && actionMuleSoftHost {
+			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials detected in the request body.", "body "+key)
+		}
+
+		var surfaceAuth *dsl.AuthConfig
+		if ref.Kind == dslwalk.ActionSurface && ref.Action != nil {
+			surfaceAuth = ref.Action.Auth
+		} else if ref.Request != nil {
+			switch raw := ref.Request["auth"].(type) {
+			case *dsl.AuthConfig:
+				surfaceAuth = raw
+			case dsl.AuthConfig:
+				copied := raw
+				surfaceAuth = &copied
+			case map[string]any:
+				typ, _ := raw["type"].(string)
+				tok, _ := raw["token"].(string)
+				surfaceAuth = &dsl.AuthConfig{Type: typ, Token: tok}
+			}
+		}
+		if actionMuleSoftHost && surfaceAuth != nil && !authoredAuthHeader {
+			switch strings.ToLower(strings.TrimSpace(surfaceAuth.Type)) {
+			case "bearer":
 				addAuth("bearer", "Bearer token required on requests.")
-			}
-			if actionMuleSoftHost && lower == "authorization" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "basic ") {
+				if hasUnboundTemplateVar(strings.TrimSpace(surfaceAuth.Token), definedVars) {
+					sawUnresolvedBearer = true
+				}
+			case "basic":
 				addAuth("basic", "HTTP Basic authentication required on requests.")
 				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement may be using Basic Authorization as its credential origin; confirm the applied policy before replay.", "basic authorization")
 			}
 		}
-		// Query-string signals on the target.
-		for key := range queryKeys(action.Target) {
-			if actionMuleSoftHost && clientCredentialKeys[strings.ToLower(key)] {
-				addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are passed as query parameters; move to env/secret placeholders.", "query "+key)
+
+		if ref.Kind == dslwalk.ActionSurface && ref.Action != nil {
+			action := ref.Action
+			if strings.EqualFold(action.Type, "http_oauth2_token") {
+				sawOAuthInit = true
+				grant := paramString(action.Params, "grant_type")
+				switch grant {
+				case "jwt_bearer":
+					addAuth("jwt_bearer", "OAuth2 JWT bearer flow wired via http_oauth2_token.")
+				case "", "client_credentials":
+					addAuth("oauth2_client_credentials", "OAuth2 client-credentials flow wired via http_oauth2_token.")
+				default:
+					addAuth("oauth2_"+grant, "OAuth2 "+grant+" flow wired via http_oauth2_token.")
+				}
 			}
 		}
-		// Request-body signals: client credentials carried in a JSON or
-		// form-encoded body (common for token exchanges) would otherwise be
-		// missed by the header/query checks above.
-		if key, ok := bodyCredentialKey(action.Body); ok && actionMuleSoftHost {
-			addPolicy("client_id_enforcement", "Anypoint Client ID Enforcement client credentials are sent in the request body; move to env/secret placeholders.", "body "+key)
-		}
-		// http_oauth2_token init actions reveal the OAuth grant.
-		if strings.EqualFold(action.Type, "http_oauth2_token") {
-			sawOAuthInit = true
-			grant := paramString(action.Params, "grant_type")
-			switch grant {
-			case "jwt_bearer":
-				addAuth("jwt_bearer", "OAuth2 JWT bearer flow wired via http_oauth2_token.")
-			case "", "client_credentials":
-				addAuth("oauth2_client_credentials", "OAuth2 client-credentials flow wired via http_oauth2_token.")
-			default:
-				addAuth("oauth2_"+grant, "OAuth2 "+grant+" flow wired via http_oauth2_token.")
-			}
-		}
-	}
+		return nil
+	})
 
 	review.Detected = len(hostCounts) > 0 || len(review.PolicyFindings) > 0
 
@@ -160,10 +274,7 @@ func Analyze(script *dsl.Script) *Review {
 		return review.AuthFindings[i].Type < review.AuthFindings[j].Type
 	})
 
-	if policySeen["client_id_enforcement"] {
-		review.Blockers = append(review.Blockers, "Provide Anypoint client_id/client_secret via env/secret placeholders before promotion; never embed live credentials in the script.")
-	}
-	if review.Detected && authSeen["bearer"] && !sawOAuthInit {
+	if review.Detected && sawUnresolvedBearer && !sawOAuthInit {
 		review.Blockers = append(review.Blockers, "Bearer tokens are required but no http_oauth2_token init action was found; add one to acquire tokens at runtime.")
 	}
 	if review.Detected {
@@ -175,12 +286,73 @@ func Analyze(script *dsl.Script) *Review {
 	return review
 }
 
-func allActions(script *dsl.Script) []dsl.Action {
-	actions := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
-	actions = append(actions, script.Init...)
-	actions = append(actions, script.Actions...)
-	actions = append(actions, script.Teardown...)
-	return actions
+var dslTemplateVarPattern = regexp.MustCompile(`\{\{\s*(var|param)\.([A-Za-z0-9_.-]+)\s*\}\}`)
+
+func definedScriptVars(script *dsl.Script) map[string]bool {
+	defined := map[string]bool{}
+	if script == nil {
+		return defined
+	}
+	for _, p := range script.Parameters {
+		name := strings.TrimSpace(p.Name)
+		if name != "" && parameterProvidesValue(p) {
+			defined[name] = true
+		}
+	}
+	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+		if ref.Action == nil {
+			return nil
+		}
+		for _, ext := range ref.Action.Extractors {
+			name := strings.TrimSpace(ext.Name)
+			if name == "" {
+				continue
+			}
+			defined[name] = true
+			if strings.EqualFold(strings.TrimSpace(ext.Mode), "all") {
+				defined[name+"_1"] = true
+				defined[name+"_count"] = true
+			}
+		}
+		if strings.EqualFold(ref.Action.Type, "set_var") {
+			name := paramString(ref.Action.Params, "name")
+			if name != "" && paramString(ref.Action.Params, "value") != "" {
+				defined[name] = true
+			}
+		}
+		return nil
+	})
+	return defined
+}
+
+func parameterProvidesValue(p dsl.Parameter) bool {
+	if strings.TrimSpace(p.DataSource) != "" {
+		return true
+	}
+	for _, v := range p.Values {
+		if strings.TrimSpace(v) != "" {
+			return true
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(p.Type)) {
+	case "uuid", "random_string", "random_number", "counter", "timestamp", "date_time", "current_iteration", "vuser_id", "host", "time":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasUnboundTemplateVar(token string, defined map[string]bool) bool {
+	if strings.TrimSpace(token) == "" {
+		return true
+	}
+	matches := dslTemplateVarPattern.FindAllStringSubmatch(token, -1)
+	for _, match := range matches {
+		if len(match) >= 3 && !defined[match[2]] {
+			return true
+		}
+	}
+	return false
 }
 
 func mulesoftHost(host string) string {
@@ -220,23 +392,24 @@ func hostOf(rawURL, baseURL string) string {
 	return strings.ToLower(parsed.Hostname())
 }
 
-func queryKeys(rawURL string) map[string]bool {
-	keys := map[string]bool{}
+func queryKeys(rawURL string) []string {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
-		return keys
+		return nil
 	}
 	idx := strings.IndexByte(rawURL, '?')
 	if idx < 0 {
-		return keys
+		return nil
 	}
 	values, err := url.ParseQuery(rawURL[idx+1:])
-	if err != nil {
-		return keys
+	if err != nil || len(values) == 0 {
+		return nil
 	}
+	keys := make([]string, 0, len(values))
 	for key := range values {
-		keys[key] = true
+		keys = append(keys, key)
 	}
+	sort.Strings(keys)
 	return keys
 }
 

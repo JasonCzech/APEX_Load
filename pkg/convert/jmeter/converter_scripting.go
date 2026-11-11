@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -199,8 +200,9 @@ func jsr223LogLevel(level string) string {
 
 // handleJMeterScriptSampler converts a standalone JSR223/BeanShell/BSF sampler.
 // Fully recognized statements become engine actions. Unrecognized or partially
-// recognized scripting becomes a disclosure-safe blocked placeholder. Raw JVM
-// source is never copied into the generated script or its review metadata.
+// recognized scripting becomes a blocked review_required placeholder that
+// preserves the source script on its metadata and import.preserved for operator
+// replacement before replay.
 func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *ConvertResult, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
 	element := node.Element
 	name := element.Name
@@ -213,24 +215,25 @@ func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *Conve
 		return
 	}
 
+	declaredFiles := convertutil.DeclaredFileDataSources(script)
 	actions, recognized, total := translateJSR223Script(samplerLabel, scriptText)
-	if recognized == 0 {
+	if recognized == 0 || jmeterActionsContainInvalidDSLTemplates(actions, declaredFiles) {
 		preserveJMeterScriptSource(script, name, scriptText)
 		actionIndex := appendJMeterSourceReviewPlaceholder(script, name, samplerLabel, sourceFileName, "unsupported_source_script")
-		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, "scripting could not be safely translated; source text was omitted from the draft and manual replacement is required before replay")
+		script.Actions[actionIndex].Metadata["source_script"] = convertutil.NeutralizeActionMetadataString(scriptText)
+		script.Actions[actionIndex].Value = convertutil.NeutralizeActionSurfaceString(scriptText, declaredFiles)
+		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, "scripting could not be safely translated; source text was preserved on the review action and manual replacement is required before replay")
 		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), samplerLabel, "scripting", "review_only", truncateScriptNote(scriptText)))
 		return
 	}
 
 	if recognized != total {
-		// A partial translation cannot prove which source literals belong to the
-		// safe statement versus the omitted JVM behavior. Keep the draft useful
-		// and structurally valid, but do not copy either subset into API-facing
-		// action fields.
 		preserveJMeterScriptSource(script, name, scriptText)
 		actionIndex := appendJMeterSourceReviewPlaceholder(script, name, samplerLabel, sourceFileName, "partially_translated_source_script")
-		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, fmt.Sprintf("recognized %d of %d JSR223 statement(s); source text was omitted and the behavior must be replaced before replay", recognized, total))
-		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), samplerLabel, "scripting", "review_only", fmt.Sprintf("JMeter %s was partially recognized (%d of %d statements); the source was omitted from the blocked draft.", name, recognized, total)))
+		script.Actions[actionIndex].Metadata["source_script"] = convertutil.NeutralizeActionMetadataString(scriptText)
+		script.Actions[actionIndex].Value = convertutil.NeutralizeActionSurfaceString(scriptText, declaredFiles)
+		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, fmt.Sprintf("recognized %d of %d JSR223 statement(s); source text was preserved on the review action and the behavior must be replaced before replay", recognized, total))
+		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), samplerLabel, "scripting", "review_only", fmt.Sprintf("JMeter %s was partially recognized (%d of %d statements); source text was preserved on the blocked draft.", name, recognized, total)))
 		return
 	}
 
@@ -265,33 +268,56 @@ func preserveJMeterScriptSource(script *dsl.Script, element, scriptText string) 
 		script.Metadata.Import.Preserved = map[string]any{}
 	}
 	existing, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
-	existing = append(existing, fmt.Sprintf("%s: %s", element, scriptText))
+	existing = append(existing, convertutil.NeutralizeScriptMetadataString(fmt.Sprintf("%s: %s", element, scriptText)))
 	script.Metadata.Import.Preserved["jsr223_sources"] = existing
 }
 
 func truncateScriptNote(scriptText string) string {
-	return "JSR223/BeanShell source text was omitted from the public draft; replace the behavior before replay."
+	return "JSR223/BeanShell source text was preserved on the review action; replace the behavior before replay."
+}
+
+func jmeterActionsContainInvalidDSLTemplates(actions []dsl.Action, declaredFiles map[string]bool) bool {
+	for _, action := range actions {
+		if convertutil.HasAnyRunTemplate(action.Name) ||
+			convertutil.HasUnsupportedRunTemplate(action.Value) ||
+			convertutil.HasUndeclaredFileTemplateRef(action.Value, declaredFiles) {
+			return true
+		}
+		if args, ok := action.Params["args"].([]any); ok {
+			for _, raw := range args {
+				if s, ok := raw.(string); ok {
+					if convertutil.HasUnsupportedRunTemplate(s) || convertutil.HasUndeclaredFileTemplateRef(s, declaredFiles) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 func appendJMeterSourceReviewPlaceholder(script *dsl.Script, element, location, sourceFileName, reasonCode string) int {
+	safeElement := convertutil.NeutralizeScriptMetadataString(element)
+	safeLocation := convertutil.NeutralizeActionMetadataString(location)
+	safeSourceFile := convertutil.NeutralizeActionMetadataString(sourceFileName)
 	action := dsl.Action{
-		Name:  "Review " + element,
+		Name:  "Review " + safeElement,
 		Type:  "review_required",
 		Value: "Replace unsupported JMeter source behavior before replay.",
 		Metadata: map[string]any{
 			"source":      "jmeter",
-			"source_type": element,
+			"source_type": safeElement,
 		},
 	}
 	importreview.ApplyToAction(&action, []importreview.Finding{{
 		Code:       "import_review_required",
 		Severity:   diag.Blocker,
-		Element:    "JMeter " + element,
-		Detail:     "source behavior was omitted from the disclosure-safe draft and must be replaced before replay",
-		Location:   location,
+		Element:    "JMeter " + safeElement,
+		Detail:     "unsupported JMeter source behavior must be replaced before replay",
+		Location:   safeLocation,
 		Source:     "jmeter",
 		ReasonCode: reasonCode,
-		SourceRef:  sourceFileName + "#" + location,
+		SourceRef:  safeSourceFile + "#" + safeLocation,
 		Resolution: "replace_behavior_and_remove_gate",
 		Gate:       importreview.GateExecution,
 	}})

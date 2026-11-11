@@ -1006,3 +1006,588 @@ func TestSampleAvroSchemaTerminatesOnRecursiveTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertAsyncAPIPreservesAuthoredCorrelationIDs(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+asyncapi: 3.0.0
+info:
+  title: Authored Correlation
+  version: 1.0.0
+servers:
+  broker:
+    host: kafka:9092
+    protocol: kafka
+channels:
+  reqPayload:
+    address: rpc.payload
+    messages:
+      m:
+        correlationId:
+          location: $message.payload#/correlationId
+        payload:
+          type: object
+          properties:
+            correlationId:
+              type: string
+              example: corr-payload-literal
+            sku:
+              type: string
+  reqHeader:
+    address: rpc.header
+    messages:
+      m:
+        correlationId:
+          location: $message.header#/correlation-id
+        headers:
+          type: object
+          properties:
+            correlation-id:
+              type: string
+              default: corr-header-literal
+        payload:
+          type: object
+          properties:
+            sku:
+              type: string
+  reply:
+    address: rpc.reply
+operations:
+  sendPayloadRPC:
+    action: send
+    channel:
+      $ref: '#/channels/reqPayload'
+    reply:
+      channel:
+        $ref: '#/channels/reply'
+  sendHeaderRPC:
+    action: send
+    channel:
+      $ref: '#/channels/reqHeader'
+    reply:
+      channel:
+        $ref: '#/channels/reply'
+`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
+	}
+	byTarget := map[string]dsl.Action{}
+	for _, action := range result.Script.Actions {
+		byTarget[action.Target] = action
+	}
+	payloadAct := byTarget["rpc.payload"]
+	if !strings.Contains(payloadAct.Body, `"correlationId": "corr-payload-literal"`) {
+		t.Fatalf("payload correlationId overwritten: %s", payloadAct.Body)
+	}
+	if payloadAct.Params["correlation_id"] != "corr-payload-literal" {
+		t.Fatalf("payload request_reply correlation_id = %v, want corr-payload-literal", payloadAct.Params["correlation_id"])
+	}
+	headerAct := byTarget["rpc.header"]
+	if headerAct.Headers["correlation-id"] != "corr-header-literal" {
+		t.Fatalf("header correlation-id = %q, want corr-header-literal", headerAct.Headers["correlation-id"])
+	}
+	if headerAct.Params["correlation_id"] != "corr-header-literal" {
+		t.Fatalf("header request_reply correlation_id = %v, want corr-header-literal", headerAct.Params["correlation_id"])
+	}
+}
+
+func TestConvertEventHubsPreservesAuthoredSASLPasswordBeforePlaceholderFallback(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Content: `
+asyncapi: 3.0.0
+info:
+  title: EH Literal Auth
+  version: 1.0.0
+servers:
+  eh:
+    host: myns.servicebus.windows.net:9093
+    protocol: kafka-secure
+    bindings:
+      kafka:
+        saslPassword: Endpoint=sb://myns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=literal-test-key
+channels:
+  c:
+    address: telemetry
+    messages:
+      m:
+        payload:
+          type: object
+          properties:
+            id:
+              type: string
+operations:
+  send:
+    action: send
+    channel:
+      $ref: '#/channels/c'
+`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Script.Config.Kafka.Profile != "eventhubs" {
+		t.Fatalf("profile = %q, want eventhubs", result.Script.Config.Kafka.Profile)
+	}
+	if result.Script.Config.Kafka.SASLPassword != "Endpoint=sb://myns.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=literal-test-key" {
+		t.Fatalf("sasl_password = %q, want preserved literal connection string", result.Script.Config.Kafka.SASLPassword)
+	}
+	if result.Script.Config.Kafka.SASLPasswordSecret != "" {
+		t.Fatalf("sasl_password_secret = %q, want empty when literal password is present", result.Script.Config.Kafka.SASLPasswordSecret)
+	}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("secret requirements = %#v, want none when literal password is present", result.SecretRequirements)
+	}
+}
+
+func TestAsyncAPIMixedServersDoNotLeakJMSCredentialsToKafkaAndHonorKafkaBindingMechanism(t *testing.T) {
+	t.Run("mixed_unauthenticated_kafka_and_authenticated_solace", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Mixed Spec",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Mixed Broker Spec
+  version: 1.0.0
+servers:
+  kafkaPlain:
+    host: kafka.internal:9092
+    protocol: kafka
+  solaceBus:
+    host: tcps://solace.internal:55443
+    protocol: solace
+    security:
+      - solaceAuth: []
+components:
+  securitySchemes:
+    solaceAuth:
+      type: userPassword
+      username: solace-user
+      password: solace-literal-pass
+channels:
+  orders:
+    address: orders.v1
+    bindings:
+      kafka:
+        topic: orders.v1
+  notifications:
+    address: notify/v1
+    bindings:
+      solace:
+        destinationType: queue
+operations:
+  sendOrder:
+    action: send
+    channel:
+      $ref: '#/channels/orders'
+  sendNotice:
+    action: send
+    channel:
+      $ref: '#/channels/notifications'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		var kafkaScript, jmsScript *dsl.Script
+		for _, s := range res.Scripts {
+			switch s.Protocol {
+			case "kafka":
+				kafkaScript = s
+			case "jms-solace":
+				jmsScript = s
+			}
+		}
+		if kafkaScript == nil || jmsScript == nil {
+			t.Fatalf("scripts = %#v, want both kafka and jms-solace scripts", res.Scripts)
+		}
+		if kafkaScript.Config.Kafka.SecurityProtocol != "plaintext" ||
+			kafkaScript.Config.Kafka.SASLMechanism != "" ||
+			kafkaScript.Config.Kafka.SASLUsername != "" ||
+			kafkaScript.Config.Kafka.SASLPassword != "" {
+			t.Fatalf("kafka config leaked JMS auth: %+v", kafkaScript.Config.Kafka)
+		}
+		if jmsScript.Config.JMS.Username != "solace-user" || jmsScript.Config.JMS.Password != "solace-literal-pass" {
+			t.Fatalf("jms config = %+v, want solace-user / solace-literal-pass", jmsScript.Config.JMS)
+		}
+	})
+
+	t.Run("jms_only_unreferenced_component_security_scheme", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "JMS Component Creds",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: JMS Component Auth
+  version: 1.0.0
+servers:
+  solaceBus:
+    host: tcps://solace.internal:55443
+    protocol: solace
+components:
+  securitySchemes:
+    brokerAuth:
+      type: userPassword
+      username: jms-comp-user
+      password: jms-comp-pass
+channels:
+  events:
+    address: events/v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if res.Script.Protocol != "jms-solace" {
+			t.Fatalf("protocol = %q, want jms-solace", res.Script.Protocol)
+		}
+		if res.Script.Config.JMS.Username != "jms-comp-user" || res.Script.Config.JMS.Password != "jms-comp-pass" {
+			t.Fatalf("jms config = %+v, want jms-comp-user / jms-comp-pass", res.Script.Config.JMS)
+		}
+	})
+
+	t.Run("kafka_binding_sasl_mechanism_without_security_schemes", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Kafka Scram Binding",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Kafka Binding SCRAM
+  version: 1.0.0
+servers:
+  kafkaScram:
+    host: kafka.internal:9093
+    protocol: kafka-secure
+    bindings:
+      kafka:
+        saslMechanism: SCRAM-SHA-512
+        saslUsername: scram-user
+        saslPassword: scram-literal-pass
+channels:
+  events:
+    address: events.v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if res.Script.Config.Kafka.SASLMechanism != "scram-sha-512" {
+			t.Fatalf("sasl_mechanism = %q, want scram-sha-512", res.Script.Config.Kafka.SASLMechanism)
+		}
+		if res.Script.Config.Kafka.SASLUsername != "scram-user" || res.Script.Config.Kafka.SASLPassword != "scram-literal-pass" {
+			t.Fatalf("kafka credentials = %+v, want scram-user / scram-literal-pass", res.Script.Config.Kafka)
+		}
+	})
+}
+
+func TestAsyncAPISchemelessUserInfoAndValidatableOAuthBearer(t *testing.T) {
+	t.Run("schemeless_kafka_userinfo_host_port", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Schemeless Kafka",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Schemeless Kafka
+  version: 1.0.0
+servers:
+  primary:
+    host: alice:sec~ret@kafka.example.test:9092
+    protocol: kafka
+channels:
+  events:
+    address: events.v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if len(res.Script.Config.Kafka.Brokers) != 1 || res.Script.Config.Kafka.Brokers[0] != "kafka.example.test:9092" {
+			t.Fatalf("brokers = %#v, want [kafka.example.test:9092]", res.Script.Config.Kafka.Brokers)
+		}
+		if res.Script.Config.Kafka.SASLUsername != "alice" || res.Script.Config.Kafka.SASLPassword != "sec~ret" {
+			t.Fatalf("kafka credentials = %+v, want alice / sec~ret", res.Script.Config.Kafka)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("schemeless_amqp_userinfo_host_port", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Schemeless AMQP",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Schemeless AMQP
+  version: 1.0.0
+servers:
+  bus:
+    host: jmsuser:jmspass@amqp.example.test:5672/vhost
+    protocol: amqp
+channels:
+  events:
+    address: events/v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if res.Script.Config.JMS.BrokerURL != "amqp.example.test:5672/vhost" {
+			t.Fatalf("broker_url = %q, want amqp.example.test:5672/vhost", res.Script.Config.JMS.BrokerURL)
+		}
+		if res.Script.Config.JMS.Username != "jmsuser" || res.Script.Config.JMS.Password != "jmspass" {
+			t.Fatalf("jms credentials = %+v, want jmsuser / jmspass", res.Script.Config.JMS)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("complete_non_eventhubs_oauthbearer_passes_validation", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Complete OAuth Kafka",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Complete OAuth Kafka
+  version: 1.0.0
+servers:
+  primary:
+    host: kafka.example.test:9093
+    protocol: kafka
+    security:
+      - kafkaOAuth: []
+components:
+  securitySchemes:
+    kafkaOAuth:
+      type: oauth2
+      x-client-id: kafka-app
+      x-client-secret: sec~123
+      flows:
+        clientCredentials:
+          tokenUrl: https://idp.example.test/oauth2/token
+          scopes:
+            kafka.produce: Produce events
+channels:
+  events:
+    address: events.v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		cfg := res.Script.Config.Kafka
+		if cfg.SecurityProtocol != "sasl_ssl" || cfg.SASLMechanism != "oauthbearer" || cfg.OAuth == nil {
+			t.Fatalf("kafka config = %+v, want sasl_ssl + oauthbearer + populated OAuth", cfg)
+		}
+		if cfg.OAuth.TokenURL != "https://idp.example.test/oauth2/token" ||
+			cfg.OAuth.ClientID != "kafka-app" ||
+			cfg.OAuth.ClientSecretRef != "sec~123" ||
+			cfg.OAuth.Scope != "kafka.produce" {
+			t.Fatalf("oauth = %+v, want populated client_credentials settings", cfg.OAuth)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("incomplete_non_eventhubs_oauthbearer_warns_and_passes_validation", func(t *testing.T) {
+		res, err := Convert(ImportRequest{
+			Name: "Incomplete OAuth Kafka",
+			Content: `
+asyncapi: 3.0.0
+info:
+  title: Incomplete OAuth Kafka
+  version: 1.0.0
+servers:
+  primary:
+    host: kafka.example.test:9092
+    protocol: kafka
+    bindings:
+      kafka:
+        saslMechanism: OAUTHBEARER
+channels:
+  events:
+    address: events.v1
+operations:
+  publishEvent:
+    action: send
+    channel:
+      $ref: '#/channels/events'
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if res.Script.Config.Kafka.SASLMechanism != "" || res.Script.Config.Kafka.OAuth != nil {
+			t.Fatalf("kafka config = %+v, want unconfigured oauthbearer omitted so script stays valid", res.Script.Config.Kafka)
+		}
+		warned := false
+		for _, w := range res.Warnings {
+			if strings.Contains(w, "OAUTHBEARER") {
+				warned = true
+				break
+			}
+		}
+		if !warned {
+			t.Fatalf("warnings = %#v, want actionable OAUTHBEARER warning", res.Warnings)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("schemed_urls_with_unescaped_percent_strip_userinfo_and_colliding_server_vars_are_deterministic", func(t *testing.T) {
+		kafkaRes, err := Convert(ImportRequest{
+			Name: "Schemed Percent UserInfo Kafka",
+			Content: `
+asyncapi: 2.6.0
+info:
+  title: Percent UserInfo Kafka
+  version: 1.0.0
+servers:
+  primary:
+    url: kafka://alice:pa%ss@broker.example.test:9093
+    protocol: kafka-secure
+channels:
+  events:
+    publish:
+      message:
+        payload:
+          type: object
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert kafka: %v", err)
+		}
+		if len(kafkaRes.Script.Config.Kafka.Brokers) != 1 || kafkaRes.Script.Config.Kafka.Brokers[0] != "broker.example.test:9093" {
+			t.Fatalf("kafka brokers = %#v, want [broker.example.test:9093] without leaked userinfo", kafkaRes.Script.Config.Kafka.Brokers)
+		}
+		if kafkaRes.Script.Config.Kafka.SASLUsername != "alice" || kafkaRes.Script.Config.Kafka.SASLPassword != "pa%ss" {
+			t.Fatalf("kafka SASL = (%q, %q), want (alice, pa%%ss)", kafkaRes.Script.Config.Kafka.SASLUsername, kafkaRes.Script.Config.Kafka.SASLPassword)
+		}
+
+		jmsRes, err := Convert(ImportRequest{
+			Name: "Schemed Percent UserInfo JMS",
+			Content: `
+asyncapi: 2.6.0
+info:
+  title: Percent UserInfo JMS
+  version: 1.0.0
+servers:
+  primary:
+    url: amqp://alice:pa%ss@broker.example.test:5672/vhost
+    protocol: amqp
+channels:
+  orders:
+    publish:
+      message:
+        payload:
+          type: object
+`,
+		})
+		if err != nil {
+			t.Fatalf("Convert jms: %v", err)
+		}
+		if jmsRes.Script.Config.JMS.BrokerURL != "amqp://broker.example.test:5672/vhost" {
+			t.Fatalf("jms broker_url = %q, want amqp://broker.example.test:5672/vhost without userinfo", jmsRes.Script.Config.JMS.BrokerURL)
+		}
+		if jmsRes.Script.Config.JMS.Username != "alice" || jmsRes.Script.Config.JMS.Password != "pa%ss" {
+			t.Fatalf("jms creds = (%q, %q), want (alice, pa%%ss)", jmsRes.Script.Config.JMS.Username, jmsRes.Script.Config.JMS.Password)
+		}
+
+		vars := map[string]serverVariable{
+			"client_secret": {Default: "underscore-secret"},
+			"client-secret": {Default: "hyphen-secret"},
+		}
+		first := serverVarAuthoredString(vars, "clientsecret")
+		for i := 0; i < 32; i++ {
+			if got := serverVarAuthoredString(vars, "clientsecret"); got != first || got != "hyphen-secret" {
+				t.Fatalf("iter %d serverVarAuthoredString = %q, want deterministic %q", i, got, "hyphen-secret")
+			}
+		}
+
+		// Multi-scheme server security and overlapping Scopes/AvailableScopes must produce deterministic deduplicated OAuth.Scope.
+		multiScopeYAML := `
+asyncapi: 2.6.0
+info:
+  title: Deterministic Kafka OAuth Scopes
+  version: 1.0.0
+servers:
+  primary:
+    url: broker.example.test:9093
+    protocol: kafka-secure
+    security:
+      - schemeB: ["scope.zeta", "scope.shared"]
+        schemeA: ["scope.alpha", "scope.shared"]
+channels:
+  orders:
+    publish:
+      message:
+        payload:
+          type: object
+components:
+  securitySchemes:
+    schemeA:
+      type: oauth2
+      x-client-id: cid-1
+      x-client-secret: csec-1
+      flows:
+        clientCredentials:
+          tokenUrl: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/oauth2/v2.0/token
+          scopes:
+            flow.one: One
+            flow.two: Two
+          availableScopes:
+            flow.one: Duplicate One
+            flow.three: Three
+    schemeB:
+      type: oauth2
+`
+		for i := 0; i < 32; i++ {
+			res, err := Convert(ImportRequest{Content: multiScopeYAML})
+			if err != nil {
+				t.Fatalf("iter %d Convert multiScopeYAML: %v", i, err)
+			}
+			if res.Script.Config.Kafka.OAuth == nil || res.Script.Config.Kafka.OAuth.Scope != "scope.alpha scope.shared scope.zeta" {
+				t.Fatalf("iter %d server security OAuth.Scope = %#v, want 'scope.alpha scope.shared scope.zeta'", i, res.Script.Config.Kafka.OAuth)
+			}
+		}
+		flowOnlyYAML := strings.Replace(multiScopeYAML, "      - schemeB: [\"scope.zeta\", \"scope.shared\"]\n        schemeA: [\"scope.alpha\", \"scope.shared\"]", "      - schemeA: []", 1)
+		flowRes, err := Convert(ImportRequest{Content: flowOnlyYAML})
+		if err != nil {
+			t.Fatalf("Convert flowOnlyYAML: %v", err)
+		}
+		if flowRes.Script.Config.Kafka.OAuth == nil || flowRes.Script.Config.Kafka.OAuth.Scope != "flow.one flow.three flow.two" {
+			t.Fatalf("flow OAuth.Scope = %#v, want deduplicated 'flow.one flow.three flow.two'", flowRes.Script.Config.Kafka.OAuth)
+		}
+	})
+}

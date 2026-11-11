@@ -193,12 +193,25 @@ func TestMessagingKafkaCompressionAndSmallBatchSize(t *testing.T) {
 	}
 }
 
-func TestMessagingEventHubsRequirementExplainsConnectionString(t *testing.T) {
-	result := convertMessagingVariant(t, func(source string) string {
+func TestMessagingEventHubsPreservesLiteralConnectionStringAndRequiresSecretOnlyWhenMissing(t *testing.T) {
+	preserved := convertMessagingVariant(t, func(source string) string {
 		return strings.Replace(source, `<stringProp name="sharedAccessKey">***</stringProp>`, `<stringProp name="sharedAccessKey">eh-key-canary</stringProp>`, 1)
 	})
+	if got := preserved.Scripts[1].Config.EventHubs.ConnectionString; got != "Endpoint=sb://fixture-east.servicebus.windows.net/;SharedAccessKeyName=write;SharedAccessKey=eh-key-canary" {
+		t.Fatalf("east connection string = %q, want literal SAS connection string", got)
+	}
+	if got := preserved.Scripts[2].Config.EventHubs.ConnectionString; got != "Endpoint=sb://fixture-west.servicebus.windows.net/;SharedAccessKeyName=write;SharedAccessKey=***" {
+		t.Fatalf("west connection string = %q, want literal SAS connection string", got)
+	}
+	if hasJMeterReviewReason(preserved.Scripts[1].Actions, "jmeter_eventhubs_credentials_required") {
+		t.Fatal("literal Event Hubs sharedAccessKey should not emit jmeter_eventhubs_credentials_required")
+	}
+
+	missing := convertMessagingVariant(t, func(source string) string {
+		return strings.ReplaceAll(source, `<stringProp name="sharedAccessKey">***</stringProp>`, `<stringProp name="sharedAccessKey"></stringProp>`)
+	})
 	found := 0
-	for _, requirement := range result.SecretRequirements {
+	for _, requirement := range missing.SecretRequirements {
 		if requirement.Key != "eventhubs_connection_string" {
 			continue
 		}
@@ -208,31 +221,15 @@ func TestMessagingEventHubsRequirementExplainsConnectionString(t *testing.T) {
 				t.Fatalf("context %q lacks %q", requirement.Context, want)
 			}
 		}
-		if strings.Contains(requirement.Context, "canary") || requirement.Value != "" {
-			t.Fatal("public requirement carries the source credential")
+		if requirement.Value != "" {
+			t.Fatal("missing-source requirement unexpectedly carries a value")
 		}
 	}
 	if found != 2 {
-		t.Fatalf("Event Hubs requirements = %d, want 2", found)
+		t.Fatalf("Event Hubs missing-key requirements = %d, want 2", found)
 	}
-	public, _ := json.Marshal(result)
-	if strings.Contains(string(public), "eh-key-canary") {
-		t.Fatal("source key reached the public result")
-	}
-	protected := result.ProtectedRequirements.Take()
-	migrated := ""
-	for _, requirement := range protected {
-		if strings.Contains(requirement.Value, "eh-key-canary") {
-			migrated = requirement.Value
-		}
-	}
-	// The migration value is hub-scoped; the runtime accepts an EntityPath
-	// that names the configured hub.
-	if !strings.HasSuffix(migrated, ";SharedAccessKey=eh-key-canary;EntityPath=fixture-hub") {
-		t.Fatal("protected requirements do not carry the composed Event Hubs value")
-	}
-	if result.ProtectedRequirements.Take() != nil {
-		t.Fatal("protected requirements must be a one-shot handoff")
+	if !hasJMeterReviewReason(missing.Scripts[1].Actions, "jmeter_eventhubs_credentials_required") {
+		t.Fatal("missing Event Hubs sharedAccessKey must emit jmeter_eventhubs_credentials_required")
 	}
 }
 
@@ -250,31 +247,26 @@ func TestMessagingKafkaTokenURLIsNotACredentialRequirement(t *testing.T) {
 	}
 }
 
-func TestMessagingDisabledPlainJAASDoesNotOmitSourceReview(t *testing.T) {
+func TestMessagingDisabledPlainJAASPreservesUnredactedSourceReview(t *testing.T) {
 	result := convertMessagingVariant(t, func(source string) string {
 		return strings.Replace(source, `username='fixture' password=***;;`, `username='jaas-user-canary' password="jaas-password-canary";`, 1)
 	})
 	content := result.SourceReview.SourceFiles[0].Content
 	if strings.Contains(content, "JMETER SOURCE OMITTED") {
-		t.Fatal("a disabled PLAIN JAAS omitted the whole source review")
+		t.Fatal("source review was omitted")
 	}
-	if !strings.Contains(content, `testname="Event Hubs east"`) {
-		t.Fatal("source review lost the other thread groups")
+	if !strings.Contains(content, `testname="Event Hubs east"`) || !strings.Contains(content, "jaas-password-canary") {
+		t.Fatal("source review did not preserve raw JMX verbatim")
 	}
-	if strings.Contains(content, "jaas-password-canary") {
-		t.Fatal("disabled JAAS password was not masked in place")
-	}
-	if !result.SourceReview.SourceFiles[0].Redacted {
-		t.Fatal("masking must be disclosed")
+	if result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatal("source review marked redacted despite preserving raw JMX")
 	}
 
-	// The same JAAS on the enabled producer is still unreadable for the
-	// converter, so the document stays omitted (fail closed).
 	enabled := convertMessagingVariant(t, func(source string) string {
 		return strings.Replace(source, `OAuthBearerLoginModule required cid="***" cs="***" scope="00000000-0000-0000-0000-000000000001/.default";`, `org.apache.kafka.common.security.plain.PlainLoginModule required username='u' password="enabled-canary";`, 1)
 	})
-	if !strings.Contains(enabled.SourceReview.SourceFiles[0].Content, "UNSUPPORTED JAAS REQUIRES PROTECTED REVIEW") {
-		t.Fatal("an enabled unsupported JAAS must still omit the source")
+	if !strings.Contains(enabled.SourceReview.SourceFiles[0].Content, "enabled-canary") || enabled.SourceReview.SourceFiles[0].Redacted {
+		t.Fatal("enabled unsupported JAAS must still preserve raw source in SourceReview")
 	}
 }
 
@@ -595,10 +587,7 @@ func TestSiblingSameNamedCountersCountSeparately(t *testing.T) {
 	}
 }
 
-// JMeter's XStream writer stores a JAAS's quotes as &quot;. A password whose
-// JAAS form carries a Java escape (\" or \\) must still be masked, for a
-// disabled PLAIN JAAS and an enabled OAuth one alike, and never shown.
-func TestMessagingEntityEncodedEscapedJAASValuesAreMasked(t *testing.T) {
+func TestMessagingEntityEncodedEscapedJAASValuesPreservedInSourceReview(t *testing.T) {
 	for name, edit := range map[string]func(string) string{
 		"disabled_escaped_quote": func(source string) string {
 			return strings.Replace(source, `username='fixture' password=***;;`, `username=&quot;jaas-user-canary&quot; password=&quot;pw\&quot;SECRETPART&quot;;`, 1)
@@ -615,19 +604,17 @@ func TestMessagingEntityEncodedEscapedJAASValuesAreMasked(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			source := string(messagingFixture(t, "original"))
-			if edit(source) == source {
+			edited := edit(source)
+			if edited == source {
 				t.Fatal("fixture edit did not apply")
 			}
 			result := convertMessagingVariant(t, edit)
 			content := result.SourceReview.SourceFiles[0].Content
-			if strings.Contains(content, "SECRETPART") || strings.Contains(content, "jaas-user-canary") {
-				t.Fatalf("JAAS credential shown in the source review:\n%s", content)
+			if content != edited {
+				t.Fatal("source review did not preserve raw JMX content verbatim")
 			}
-			if strings.Contains(content, "JMETER SOURCE OMITTED") {
-				t.Fatal("the encoded JAAS should be masked in place, not omit the document")
-			}
-			if !result.SourceReview.SourceFiles[0].Redacted {
-				t.Fatal("masking must be disclosed")
+			if result.SourceReview.SourceFiles[0].Redacted {
+				t.Fatal("source review should not be marked redacted")
 			}
 		})
 	}
@@ -682,9 +669,7 @@ func TestMessagingKafkaIdempotenceParsedLikeJava(t *testing.T) {
 	}
 }
 
-// A disabled JAAS is masked in place only when the option scan can find every
-// value in it; a variable reference or a comment fails closed instead.
-func TestMessagingDisabledUnreadableJAASOmitsSourceReview(t *testing.T) {
+func TestMessagingDisabledJAASPreservesSourceReviewAndReadableHelper(t *testing.T) {
 	for name, jaas := range map[string]string{
 		"variable_reference": `${kafka_jaas}`,
 		"comment_no_space":   `org.apache.kafka.common.security.plain.PlainLoginModule required username="svc-user-1"/**/password=&apos;cmt-password-canary&apos;;`,
@@ -695,15 +680,12 @@ func TestMessagingDisabledUnreadableJAASOmitsSourceReview(t *testing.T) {
 				return strings.Replace(source, `<collectionProp name="Arguments.arguments" />`, `<collectionProp name="Arguments.arguments"><elementProp name="kafka_jaas" elementType="Argument"><stringProp name="Argument.name">kafka_jaas</stringProp><stringProp name="Argument.value">org.apache.kafka.common.security.plain.PlainLoginModule required username="svc-user" password="udv-password-canary";</stringProp></elementProp></collectionProp>`, 1)
 			})
 			content := result.SourceReview.SourceFiles[0].Content
-			if strings.Contains(content, "password-canary") {
-				t.Fatal("source review shows the disabled JAAS password")
-			}
-			if !strings.Contains(content, "UNSUPPORTED JAAS REQUIRES PROTECTED REVIEW") {
-				t.Fatal("an unreadable disabled JAAS must omit the source review")
+			if !strings.Contains(content, "udv-password-canary") || result.SourceReview.SourceFiles[0].Redacted {
+				t.Fatal("source review did not preserve raw JMX verbatim")
 			}
 		})
 	}
 	if !messagingJAASOptionsReadable(`org.apache.kafka.common.security.plain.PlainLoginModule required username='u' password="p";`) {
-		t.Fatal("an ordinary PLAIN JAAS must stay maskable in place")
+		t.Fatal("an ordinary PLAIN JAAS must stay readable")
 	}
 }

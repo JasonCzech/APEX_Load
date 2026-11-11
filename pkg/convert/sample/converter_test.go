@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 )
 
 // headerListContentType returns the (last) Content-Type value from an ordered
@@ -3333,4 +3335,261 @@ func TestConvertTelemetryFilterDefaultsByEntryPoint(t *testing.T) {
 			t.Fatalf("%s: filtered assets %d must include filtered telemetry %d", tc.entryPoint, result.Stats.FilteredAssets, result.Stats.FilteredTelemetry)
 		}
 	}
+}
+
+func TestConvertHTMLStepsScrubSensitiveQuotedAttrsEntitiesAndIntermediateIframe(t *testing.T) {
+	loginHTML := `<html><body><form action="/auth" method="post"><input placeholder="type=text name=other" name="f&#x31;" type="password"><input name="code_box" autocomplete="section-mfa one-time-code webauthn"></form></body></html>`
+	harPayload := `{"log":{"entries":[` +
+		`{"request":{"method":"GET","url":"https://app.example.test/login","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":` + strconv.Quote(loginHTML) + `}}},` +
+		`{"request":{"method":"GET","url":"https://app.example.test/widget-frame","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":"<html><body><form><input name=\"benign\" type=\"text\"></form></body></html>"}}},` +
+		`{"request":{"method":"POST","url":"https://app.example.test/auth","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"f1=secret-pin-9876&code_box=654321"}},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/json"}],"content":{"text":"{\"ok\":true}"}}}` +
+		`]}}`
+
+	for _, tc := range []struct {
+		name      string
+		fieldName string
+		fieldVal  string
+	}{
+		{name: "quoted_attr_and_html_entity_password", fieldName: "f1", fieldVal: "secret-pin-9876"},
+		{name: "section_prefixed_otp_autocomplete", fieldName: "code_box", fieldVal: "654321"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			steps := map[int]map[string]any{
+				3: {
+					"kind": "form",
+					"fields": []any{
+						map[string]any{"name": tc.fieldName, "value": tc.fieldVal},
+					},
+				},
+			}
+			// Default ScrubSensitive=false retains the valid HTML form step.
+			unscrubbedRes, err := Convert(ImportRequest{
+				Format:  "har",
+				Content: harPayload,
+				Options: ConvertOptions{
+					EntryPoint: EntryPointBrowserHTTP,
+					HTMLSteps:  steps,
+					Profile:    &recordingprofile.Profile{ScrubSensitive: false},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Convert with ScrubSensitive=false: %v", err)
+			}
+			if unscrubbedRes.Script.Actions[2].Params == nil || unscrubbedRes.Script.Actions[2].Params["html_step"] == nil {
+				t.Fatalf("expected ScrubSensitive=false to retain html_step on POST /auth, got %+v", unscrubbedRes.Script.Actions[2])
+			}
+
+			// Opt-in ScrubSensitive=true downgrades the protected control to a plain URL request.
+			res, err := Convert(ImportRequest{
+				Format:  "har",
+				Content: harPayload,
+				Options: ConvertOptions{
+					EntryPoint: EntryPointBrowserHTTP,
+					HTMLSteps:  steps,
+					Profile:    &recordingprofile.Profile{ScrubSensitive: true},
+				},
+			})
+			if err != nil {
+				t.Fatalf("Convert with ScrubSensitive: %v", err)
+			}
+			for _, action := range res.Script.Actions {
+				if action.Params != nil && action.Params["html_step"] != nil {
+					t.Fatalf("expected sensitive form step to downgrade to plain URL request, got html_step on %+v", action)
+				}
+			}
+			if _, ok := steps[3]; !ok {
+				t.Fatalf("caller HTMLSteps map was mutated")
+			}
+		})
+	}
+
+	// VerifyhtmlInputProtectedControls set-based path with many non-sensitive fields before the protected control.
+	gotSet := htmlInputProtectedControls(loginHTML)
+	if !gotSet["f1"] || !gotSet["code_box"] || len(gotSet) != 2 {
+		t.Fatalf("htmlInputProtectedControls = %#v, want {f1:true, code_box:true}", gotSet)
+	}
+	manyFields := make([]any, 0, 41)
+	for idx := 0; idx < 40; idx++ {
+		manyFields = append(manyFields, map[string]any{"name": fmt.Sprintf("vf_state_%d", idx), "value": "benign"})
+	}
+	manyFields = append(manyFields, map[string]any{"name": "f1", "value": "secret-pin-9876"})
+	kept, notes := retainHTMLStepsForConversion([]exchange{
+		{SourceEntryID: 1, Response: &response{Headers: map[string]string{"Content-Type": "text/html"}, Body: loginHTML}},
+		{SourceEntryID: 2, Response: &response{Headers: map[string]string{"Content-Type": "text/html"}, Body: "<html><body><form><input name=\"other\" type=\"text\"></form></body></html>"}},
+		{SourceEntryID: 3},
+	}, map[int]map[string]any{
+		3: {"kind": "form", "fields": manyFields},
+	})
+	if len(kept) != 0 || len(notes) != 1 || !strings.Contains(notes[0], `field "f1" is sensitive`) {
+		t.Fatalf("retainHTMLStepsForConversion set-based downgrade = (%#v, %#v), want empty map + f1 note", kept, notes)
+	}
+}
+
+func TestConvertHTMLStepsScrubSensitiveSalesforceVerificationAndWhitespaceInputName(t *testing.T) {
+	t.Run("whitespace_padded_input_name_password", func(t *testing.T) {
+		loginHTML := `<html><body><form action="/auth" method="post"><input name="  f1  " type="password"></form></body></html>`
+		secretPin := "ws-padded-secret-9988"
+		harPayload := `{"log":{"entries":[` +
+			`{"request":{"method":"GET","url":"https://app.example.test/login","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":` + strconv.Quote(loginHTML) + `}}},` +
+			`{"request":{"method":"POST","url":"https://app.example.test/auth","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"f1=` + secretPin + `","params":[{"name":"f1","value":"` + secretPin + `"}]}},"response":{"status":200,"headers":[{"name":"Content-Type","value":"application/json"}],"content":{"text":"{\"ok\":true}"}}}` +
+			`]}}`
+		steps := map[int]map[string]any{
+			2: {
+				"kind":   "form",
+				"fields": []any{map[string]any{"name": "  f1  ", "value": secretPin}},
+			},
+		}
+
+		res, err := Convert(ImportRequest{
+			Format:  "har",
+			Content: harPayload,
+			Options: ConvertOptions{
+				EntryPoint: EntryPointBrowserHTTP,
+				HTMLSteps:  steps,
+				Profile:    &recordingprofile.Profile{ScrubSensitive: true},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Convert with ScrubSensitive=true: %v", err)
+		}
+		if res.Script.Actions[1].Params != nil && res.Script.Actions[1].Params["html_step"] != nil {
+			t.Fatalf("expected whitespace-padded password input to downgrade html_step, got %+v", res.Script.Actions[1])
+		}
+		if res.SourceReview == nil || len(res.SourceReview.SourceFiles) == 0 {
+			t.Fatalf("expected SourceReview files, got %#v", res.SourceReview)
+		}
+		for _, sf := range res.SourceReview.SourceFiles {
+			if strings.Contains(sf.Content, secretPin) {
+				t.Fatalf("SourceReview leaked whitespace-padded password secret %q: %s", secretPin, sf.Content)
+			}
+		}
+	})
+
+	t.Run("salesforce_identity_verification_smc_otp", func(t *testing.T) {
+		verifyHTML := `<html><body><form action="/_ui/identity/verification/method/SmsVerificationUi" method="post"><input id="smc" name="smc" type="text"><input name="save" type="submit" value="Verify"></form></body></html>`
+		otpCode := "739284"
+		harPayload := `{"log":{"entries":[` +
+			`{"time":739284,"request":{"method":"GET","url":"https://org.my.salesforce.com/_ui/identity/verification/method/SmsVerificationUi","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":` + strconv.Quote(verifyHTML) + `}}},` +
+			`{"request":{"method":"POST","url":"https://org.my.salesforce.com/_ui/identity/verification/method/SmsVerificationUi","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"smc=` + otpCode + `&save=Verify","params":[{"name":"smc","value":"` + otpCode + `"},{"name":"save","value":"Verify"}]}},"response":{"status":302,"headers":[{"name":"Location","value":"https://org.lightning.force.com/one/one.app"}],"content":{"text":""}}}` +
+			`]}}`
+		steps := map[int]map[string]any{
+			2: {
+				"kind": "form",
+				"fields": []any{
+					map[string]any{"name": "smc", "value": otpCode},
+				},
+			},
+		}
+
+		// Default ScrubSensitive=false preserves recorded html_step and SourceReview verbatim.
+		defaultRes, err := Convert(ImportRequest{
+			Format:  "har",
+			Content: harPayload,
+			Options: ConvertOptions{
+				EntryPoint: EntryPointBrowserHTTP,
+				HTMLSteps:  steps,
+				Profile:    &recordingprofile.Profile{ScrubSensitive: false},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Convert default ScrubSensitive=false: %v", err)
+		}
+		if defaultRes.Script.Actions[1].Params == nil || defaultRes.Script.Actions[1].Params["html_step"] == nil {
+			t.Fatalf("expected default ScrubSensitive=false to retain html_step, got %+v", defaultRes.Script.Actions[1])
+		}
+		if !strings.Contains(defaultRes.SourceReview.SourceFiles[0].Content, "smc="+otpCode) {
+			t.Fatalf("expected default SourceReview to remain unredacted, got %s", defaultRes.SourceReview.SourceFiles[0].Content)
+		}
+
+		// Opt-in ScrubSensitive=true downgrades #smc form step and scrubs OTP from SourceReview without corrupting JSON numbers.
+		scrubbedRes, err := Convert(ImportRequest{
+			Format:  "har",
+			Content: harPayload,
+			Options: ConvertOptions{
+				EntryPoint: EntryPointBrowserHTTP,
+				HTMLSteps:  steps,
+				Profile:    &recordingprofile.Profile{ScrubSensitive: true},
+			},
+		})
+		if err != nil {
+			t.Fatalf("Convert ScrubSensitive=true: %v", err)
+		}
+		for _, action := range scrubbedRes.Script.Actions {
+			if action.Params != nil && action.Params["html_step"] != nil {
+				t.Fatalf("expected Salesforce identity verification #smc step to downgrade, got %+v", action)
+			}
+		}
+		srContent := scrubbedRes.SourceReview.SourceFiles[0].Content
+		if strings.Contains(srContent, "smc="+otpCode) || strings.Contains(srContent, `"value":"`+otpCode+`"`) {
+			t.Fatalf("SourceReview leaked Salesforce verification OTP %q: %s", otpCode, srContent)
+		}
+		if !strings.Contains(srContent, `"time":`+otpCode) {
+			t.Fatalf("SourceReview corrupted unrelated JSON numeric field containing same digits: %s", srContent)
+		}
+	})
+
+	t.Run("percent_encoded_bracket_password_control_with_newline_body_and_no_html_steps", func(t *testing.T) {
+		loginHTML := `<html><body><form action="/auth" method="post"><input name="login[pin]" type="password"><input name="other" type="text"></form></body></html>`
+		pinSecret := "739284"
+		rawBody := "login%5Bpin%5D=" + pinSecret + "\nother=keep"
+		harPayload := `{"log":{"entries":[` +
+			`{"request":{"method":"GET","url":"https://app.example.test/auth","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":` + strconv.Quote(loginHTML) + `}}},` +
+			`{"request":{"method":"POST","url":"https://app.example.test/auth","headers":[{"name":"Content-Type","value":"text/plain"}],"postData":{"mimeType":"text/plain","text":` + strconv.Quote(rawBody) + `}},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}` +
+			`]}}`
+		sanitize := true
+		res, err := Convert(ImportRequest{
+			Format:  "har",
+			Content: harPayload,
+			Options: ConvertOptions{
+				SanitizeSensitive: &sanitize,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Convert SanitizeSensitive=true: %v", err)
+		}
+		postBody := res.Script.Actions[1].Body
+		if postBody != rawBody {
+			t.Fatalf("expected script body to remain verbatim %q, got %q", rawBody, postBody)
+		}
+		srContent := res.SourceReview.SourceFiles[0].Content
+		if strings.Contains(srContent, pinSecret) {
+			t.Fatalf("SourceReview leaked percent-encoded password control value %q: %s", pinSecret, srContent)
+		}
+		if !strings.Contains(srContent, "other=keep") {
+			t.Fatalf("SourceReview truncated trailing newline field other=keep: %s", srContent)
+		}
+	})
+
+	t.Run("semicolon_delimited_pairs_and_multipart_embedded_json_query_preserve_siblings", func(t *testing.T) {
+		loginHTML := `<html><body><form action="/auth" method="post"><input name="f1" type="password"></form></body></html>`
+		pinSecret := "918273"
+		semiBody := "f1=" + pinSecret + ";save=Verify"
+		multipartBody := "--boundary\r\nContent-Type: application/json\r\n\r\n{\"redirect\":\"https://app.example.test/cb?a=1&f1=" + pinSecret + "\",\"keep\":\"ok\"}\r\n--boundary--"
+		harPayload := `{"log":{"entries":[` +
+			`{"request":{"method":"GET","url":"https://app.example.test/auth?f1=` + pinSecret + `;save=Verify","headers":[]},"response":{"status":200,"headers":[{"name":"Content-Type","value":"text/html"}],"content":{"text":` + strconv.Quote(loginHTML) + `}}},` +
+			`{"request":{"method":"POST","url":"https://app.example.test/auth","headers":[{"name":"Content-Type","value":"application/x-www-form-urlencoded"}],"postData":{"mimeType":"application/x-www-form-urlencoded","text":` + strconv.Quote(semiBody) + `}},"response":{"status":200,"headers":[],"content":{"text":"ok"}}},` +
+			`{"request":{"method":"POST","url":"https://app.example.test/upload","headers":[{"name":"Content-Type","value":"multipart/form-data; boundary=boundary"}],"postData":{"mimeType":"multipart/form-data","text":` + strconv.Quote(multipartBody) + `}},"response":{"status":200,"headers":[],"content":{"text":"ok"}}}` +
+			`]}}`
+		sanitize := true
+		res, err := Convert(ImportRequest{
+			Format:  "har",
+			Content: harPayload,
+			Options: ConvertOptions{
+				SanitizeSensitive: &sanitize,
+			},
+		})
+		if err != nil {
+			t.Fatalf("Convert SanitizeSensitive=true: %v", err)
+		}
+		srContent := res.SourceReview.SourceFiles[0].Content
+		if strings.Contains(srContent, pinSecret) {
+			t.Fatalf("SourceReview leaked semicolon/multipart password control value %q: %s", pinSecret, srContent)
+		}
+		if !strings.Contains(srContent, ";save=Verify") {
+			t.Fatalf("SourceReview truncated semicolon sibling ;save=Verify: %s", srContent)
+		}
+		if !strings.Contains(srContent, `\"keep\":\"ok\"`) {
+			t.Fatalf("SourceReview truncated multipart JSON trailing field keep:ok: %s", srContent)
+		}
+	})
 }

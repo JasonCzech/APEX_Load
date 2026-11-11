@@ -231,12 +231,37 @@ func rewriteNativeXMLCredentials(
 // their real source value for governed migration; this projection converts the
 // resolved value to a {{secret.*}} requirement before the general body template
 // pass can turn it into an ordinary parameter.
+var nativeXMLScalarEscaper = strings.NewReplacer(
+	"&", "&amp;",
+	"<", "&lt;",
+	">", "&gt;",
+	`"`, "&quot;",
+	"'", "&apos;",
+)
+
+func escapeNativeXMLScalar(value string) string {
+	return nativeXMLScalarEscaper.Replace(value)
+}
+
 func rewriteNativeXMLCredentialTemplates(
 	body string,
 	state *nativeTemplateState,
 	bodyPointer string,
 	sourceRequirements map[string][]SecretRequirement,
+	explicitXML bool,
 ) (string, error) {
+	if explicitXML {
+		decoder := xml.NewDecoder(strings.NewReader(body))
+		for {
+			_, err := decoder.Token()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return "", fmt.Errorf("XML could not be safely parsed: %w", err)
+			}
+		}
+	}
 	spans, err := scanNativeXMLCredentialSpans(body)
 	if err != nil {
 		return "", err
@@ -281,11 +306,6 @@ func rewriteNativeXMLCredentialValue(
 		return secretReference
 	}
 	if !brunoTemplatePattern.MatchString(value) {
-		// A literal credential the operator authored into the XML body is not a
-		// project secret. Rewriting it to {{secret.NAME}} on import produced a
-		// stored bundle and an exported script that could not replay until the
-		// operator bound a value they never asked to externalize. Preserve the
-		// exact scalar; externalizing it stays an explicit operator action.
 		return value
 	}
 	sourceVariable, hasExactSourceVariable := exactNativeCredentialSourceReference(value)
@@ -322,6 +342,11 @@ func rewriteNativeXMLCredentialValue(
 		lower := strings.ToLower(expression)
 		for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
 			if strings.HasPrefix(lower, prefix) {
+				if prefix == "secret." {
+					if secretName, isSecret, err := canonicalBrunoSecretExpression(expression); err == nil && isSecret {
+						return "{{secret." + secretName + "}}"
+					}
+				}
 				complete = false
 				return template
 			}
@@ -330,11 +355,12 @@ func rewriteNativeXMLCredentialValue(
 			complete = false
 			return template
 		}
-		if _, exists := state.defined[expression]; !exists {
+		variable, exists := lookupNativeVariable(state, expression, true)
+		if !exists {
 			complete = false
 			return template
 		}
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, true)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
 			if composedCredential && usageRequirementAvailable {
@@ -344,7 +370,7 @@ func rewriteNativeXMLCredentialValue(
 			if !composedCredential {
 				context := nativeTemplateContextLabel(nativeTemplateXMLCredential, name)
 				projected := nativeVariableSecretRequirement(
-					state.defined[expression],
+					variable,
 					state.sourcePath,
 					context,
 				)
@@ -354,27 +380,33 @@ func rewriteNativeXMLCredentialValue(
 				}
 			}
 			if sourceValue, available := nativeSourceSecretValue(secretReference, sourceRequirements); available {
-				return sourceValue
+				return escapeNativeXMLScalar(sourceValue)
 			}
+			return secretReference
 		}
 		if !resolution.Complete {
 			complete = false
+			return resolution.Value
+		}
+		if !hasNonGovernedBrunoTemplate(resolution.Value) && !strings.Contains(resolution.Value, "{{secret.") {
+			return escapeNativeXMLScalar(resolution.Value)
 		}
 		return resolution.Value
 	})
-	if brunoTemplatePattern.MatchString(resolved) {
+	if hasNonGovernedBrunoTemplate(resolved) {
 		complete = false
 	}
 	if projectedWholeCredential && len(dependencies) > 0 {
 		complete = true
 	}
 
-	// The entire sensitive XML value is replaced by one governed secret, so
-	// unresolved variables inside it no longer participate in execution.
 	for missing := range state.missing {
 		if _, existed := beforeMissing[missing]; !existed {
 			delete(state.missing, missing)
 		}
+	}
+	if complete && !hasNonGovernedBrunoTemplate(resolved) {
+		return resolved
 	}
 
 	context := nativeXMLCredentialContext(kind, name)
@@ -424,15 +456,10 @@ func rewriteNativeXMLCredentialValue(
 	if hasExactSourceVariable {
 		requirement.DisplayLabel = nativeSourceVariableDisplayLabel(sourceVariable)
 		requirement.SourceVariable = sourceVariable
+		requirement.UnresolvedSourceVariable = true
 		requirement.AffectedPaths = nativeSecretRequirementPaths(
 			append(requirement.AffectedPaths, state.sourcePath)...,
 		)
-	}
-	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = recoverableNativeXMLCredentialValue(resolved)
-	}
-	if hasExactSourceVariable {
-		requirement.UnresolvedSourceVariable = requirement.Value == ""
 	}
 	registerNativeGeneratedRequirement(state, requirement)
 	return nativeCredentialProjectionReplacement(requirement)
@@ -571,13 +598,7 @@ func scanNativeXMLCredentialSpans(body string) ([]nativeXMLCredentialSpan, error
 			}
 			frame := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
-			if frame.sensitive && frame.hasChild && !nativeXMLCredentialContainerName(frame.name) {
-				return nil, fmt.Errorf("sensitive XML element %q contains unsupported child markup", frame.name)
-			}
-			if frame.sensitive && !frame.hasChild {
-				if frame.hasMarkup {
-					return nil, fmt.Errorf("sensitive XML element %q contains unsupported markup", frame.name)
-				}
+			if frame.sensitive && !frame.hasChild && !frame.hasMarkup {
 				valueStart, valueEnd := trimNativeXMLWhitespace(body, frame.contentStart, start)
 				if valueStart < valueEnd {
 					spans = append(spans, nativeXMLCredentialSpan{
@@ -800,9 +821,6 @@ func nativeXMLSecretRequirement(
 }
 
 func recoverableNativeXMLCredentialValue(value string) string {
-	if nativeXMLCredentialValueContainsSentinel(value) {
-		return ""
-	}
 	return value
 }
 

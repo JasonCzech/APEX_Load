@@ -56,12 +56,41 @@ func TestAnalyzeDetectsAnypointHostsPoliciesAndAuth(t *testing.T) {
 	if !auths["oauth2_client_credentials"] || !auths["bearer"] {
 		t.Fatalf("auth findings = %#v, want oauth2 client-credentials + bearer", review.AuthFindings)
 	}
-	if len(review.Blockers) == 0 {
-		t.Fatalf("blockers = %#v, want client-credential blocker", review.Blockers)
+	if len(review.Blockers) != 0 {
+		t.Fatalf("blockers = %#v, want zero credential blockers", review.Blockers)
 	}
 }
 
-func TestAnalyzeFlagsBearerWithoutTokenAcquisition(t *testing.T) {
+func TestAnalyzeAllowsLiteralClientCredentialsAndBearerWithoutBlocker(t *testing.T) {
+	script := &dsl.Script{
+		Config: dsl.ScriptConfig{BaseURL: "https://api.anypoint.mulesoft.com/v1"},
+		Actions: []dsl.Action{{
+			Name:   "Call",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/resource?client_id=literal-client&client_secret=literal-secret",
+			Headers: map[string]string{
+				"Authorization": "Bearer literal-access-token",
+				"client_id":     "literal-client",
+				"client_secret": "literal-secret",
+			},
+		}},
+	}
+	review := Analyze(script)
+	if !review.Detected {
+		t.Fatal("anypoint host not detected")
+	}
+	if len(review.Blockers) != 0 {
+		t.Fatalf("blockers = %#v, want none when literal credentials are present", review.Blockers)
+	}
+	for _, finding := range review.PolicyFindings {
+		if strings.Contains(finding.Detail, "move to env/secret") || strings.Contains(finding.Detail, "supply via env/secret") {
+			t.Fatalf("policy finding demands removing literal credentials: %#v", finding)
+		}
+	}
+}
+
+func TestAnalyzeFlagsUnresolvedBearerWithoutTokenAcquisition(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{BaseURL: "https://api.anypoint.mulesoft.com/v1"},
 		Actions: []dsl.Action{{
@@ -69,7 +98,7 @@ func TestAnalyzeFlagsBearerWithoutTokenAcquisition(t *testing.T) {
 			Type:    "GET",
 			Method:  "GET",
 			Target:  "/resource",
-			Headers: map[string]string{"Authorization": "Bearer abc"},
+			Headers: map[string]string{"Authorization": "Bearer {{var.access_token}}"},
 		}},
 	}
 	review := Analyze(script)
@@ -83,7 +112,7 @@ func TestAnalyzeFlagsBearerWithoutTokenAcquisition(t *testing.T) {
 		}
 	}
 	if !foundBlocker {
-		t.Fatalf("blockers = %#v, want missing-token-acquisition blocker", review.Blockers)
+		t.Fatalf("blockers = %#v, want missing-token-acquisition blocker for unresolved {{var.access_token}}", review.Blockers)
 	}
 }
 
@@ -259,4 +288,208 @@ func TestMixedServiceAuthIsScopedToMuleSoftDestination(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAnalyzeBearerVarBackedByParameterOrExtractorDoesNotBlock(t *testing.T) {
+	t.Run("parameter_backed_bearer_in_header_list_and_auth", func(t *testing.T) {
+		script := &dsl.Script{
+			Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+			Parameters: []dsl.Parameter{{
+				Name:   "access_token",
+				Type:   "list",
+				Values: []string{"eyJ-seeded-token"},
+			}},
+			Actions: []dsl.Action{
+				{
+					Name:   "Get Orders",
+					Type:   "GET",
+					Method: "GET",
+					Target: "/v1/orders",
+					HeaderList: dsl.HeaderList{
+						{Name: "Authorization", Value: "Bearer {{var.access_token}}"},
+					},
+				},
+				{
+					Name:   "Get Account",
+					Type:   "GET",
+					Method: "GET",
+					Target: "/v1/account",
+					Auth:   &dsl.AuthConfig{Type: "bearer", Token: "{{param.access_token}}"},
+				},
+			},
+		}
+		review := Analyze(script)
+		if !review.Detected || len(review.Blockers) != 0 {
+			t.Fatalf("parameter-backed bearer produced unexpected blockers: %#v", review)
+		}
+	})
+
+	t.Run("extractor_backed_bearer_in_nested_branch", func(t *testing.T) {
+		script := &dsl.Script{
+			Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+			Init: []dsl.Action{{
+				Name:   "Exchange Token",
+				Type:   "POST",
+				Method: "POST",
+				Target: "https://anypoint.mulesoft.com/accounts/api/v2/oauth2/token",
+				Extractors: []dsl.Extractor{{
+					Name:       "corr_access_token",
+					Source:     "body",
+					Type:       "jsonpath",
+					Expression: "$.access_token",
+				}},
+			}},
+			Actions: []dsl.Action{{
+				Name: "Conditional Call",
+				Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Steps: []dsl.Action{{
+						Name:    "Nested API",
+						Type:    "GET",
+						Method:  "GET",
+						Target:  "/v1/orders",
+						Headers: map[string]string{"Authorization": "Bearer {{var.corr_access_token}}"},
+					}},
+				},
+			}},
+		}
+		review := Analyze(script)
+		if !review.Detected || len(review.AuthFindings) == 0 || len(review.Blockers) != 0 {
+			t.Fatalf("extractor-backed nested bearer produced unexpected review: %#v", review)
+		}
+	})
+
+	t.Run("unbound_bearer_in_nested_branch_still_blocks", func(t *testing.T) {
+		script := &dsl.Script{
+			Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+			Parameters: []dsl.Parameter{{
+				Name:   "empty_param",
+				Type:   "list",
+				Values: []string{"   "},
+			}},
+			Actions: []dsl.Action{{
+				Name: "Conditional Call",
+				Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Steps: []dsl.Action{{
+						Name:   "Nested API",
+						Type:   "GET",
+						Method: "GET",
+						Target: "/v1/orders",
+						Auth:   &dsl.AuthConfig{Type: "bearer", Token: "{{var.empty_param}}"},
+					}},
+				},
+			}},
+		}
+		review := Analyze(script)
+		if !review.Detected || len(review.Blockers) != 1 {
+			t.Fatalf("expected missing-token blocker on unbound nested bearer, got: %#v", review)
+		}
+	})
+
+	t.Run("mixed_header_list_and_headers_with_disabled_and_shadowed_auth", func(t *testing.T) {
+		disabled := false
+		script := &dsl.Script{
+			Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+			Actions: []dsl.Action{
+				{
+					Name:   "Mixed Headers",
+					Type:   "GET",
+					Method: "GET",
+					Target: "/v1/orders",
+					HeaderList: dsl.HeaderList{
+						{Name: "Accept", Value: "application/json"},
+						{Name: "X-Client-Secret", Value: "disabled-secret", Enabled: &disabled},
+					},
+					Headers: map[string]string{
+						"client_id":     "app-123",
+						"Authorization": "Bearer literal-wire-token",
+					},
+					// Shadowed by authored Headers["Authorization"]: unbound Auth.Token is never sent on the wire.
+					Auth: &dsl.AuthConfig{Type: "bearer", Token: "{{var.unbound_shadowed_token}}"},
+				},
+				{
+					Name:   "Disabled HeaderList Authorization Shadows Auth",
+					Type:   "GET",
+					Method: "GET",
+					Target: "/v1/items",
+					HeaderList: dsl.HeaderList{
+						{Name: "Authorization", Value: "Bearer {{var.disabled_unbound}}", Enabled: &disabled},
+					},
+					Headers: map[string]string{
+						"Authorization": "Bearer {{var.shadowed_map_unbound}}",
+					},
+					Auth: &dsl.AuthConfig{Type: "bearer", Token: "{{var.shadowed_auth_unbound}}"},
+				},
+			},
+		}
+		review := Analyze(script)
+		if !review.Detected {
+			t.Fatalf("expected MuleSoft detection, got: %#v", review)
+		}
+		if len(review.PolicyFindings) != 1 || review.PolicyFindings[0].Policy != "client_id_enforcement" {
+			t.Fatalf("expected client_id from non-shadowed Headers map without disabled HeaderList noise, got: %#v", review.PolicyFindings)
+		}
+		if review.PolicyFindings[0].Evidence != "header client_id" {
+			t.Fatalf("expected only header client_id evidence (disabled X-Client-Secret ignored), got: %q", review.PolicyFindings[0].Evidence)
+		}
+		if len(review.Blockers) != 0 {
+			t.Fatalf("shadowed/disabled unbound bearer should not block when active wire auth is literal, got: %#v", review.Blockers)
+		}
+	})
+
+	t.Run("disabled_before_enabled_header_list_and_case_variant_headers_map", func(t *testing.T) {
+		disabled := false
+		for i := 0; i < 20; i++ {
+			script := &dsl.Script{
+				Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+				Actions: []dsl.Action{
+					{
+						Name:   "Disabled Before Enabled ClientID",
+						Type:   "GET",
+						Method: "GET",
+						Target: "/v1/orders",
+						HeaderList: dsl.HeaderList{
+							{Name: "client_id", Value: "old-app", Enabled: &disabled},
+							{Name: "client_id", Value: "live-app"},
+						},
+					},
+					{
+						Name:   "Case Variant Headers Map",
+						Type:   "GET",
+						Method: "GET",
+						Target: "/v1/items",
+						Headers: map[string]string{
+							"Authorization": "",
+							"authorization": "Bearer literal-active-token",
+						},
+					},
+				},
+			}
+			review := Analyze(script)
+			if !review.Detected || len(review.PolicyFindings) != 1 || len(review.AuthFindings) != 1 || len(review.Blockers) != 0 {
+				t.Fatalf("iter %d unexpected MuleSoft review: %#v", i, review)
+			}
+		}
+	})
+
+	t.Run("query_credentials_evidence_is_deterministic", func(t *testing.T) {
+		script := &dsl.Script{
+			Config: dsl.ScriptConfig{BaseURL: "https://orders-api.us-e2.cloudhub.io"},
+			Actions: []dsl.Action{
+				{
+					Name:   "Query Client Pair",
+					Type:   "GET",
+					Method: "GET",
+					Target: "/v1/orders?client_secret=sec-1&client_id=app-1",
+				},
+			},
+		}
+		for i := 0; i < 32; i++ {
+			review := Analyze(script)
+			if len(review.PolicyFindings) != 1 || review.PolicyFindings[0].Evidence != "query client_id" {
+				t.Fatalf("iter %d query evidence = %#v, want deterministic 'query client_id'", i, review.PolicyFindings)
+			}
+		}
+	})
 }

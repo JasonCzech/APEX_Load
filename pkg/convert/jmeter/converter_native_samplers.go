@@ -489,15 +489,14 @@ func projectJMeterJDBCUnavailableCredential(
 	if cfg == nil || ctx == nil {
 		return false, nil
 	}
-	value, status, unavailable := jmeterJDBCUnavailableCredential(cfg.DSN, element)
-	if !unavailable {
+	if strings.TrimSpace(cfg.DSN) != "" {
 		return false, nil
 	}
 	requirement, replacement, err := credentialpolicy.NewRequirement(
 		credentialpolicy.RequirementSpec{
 			Key:      "jdbc_connection_string",
 			Label:    "JMeter JDBC connection string for " + scriptName,
-			Context:  "The imported JDBC connection contains a disclosure placeholder instead of recoverable credential material. Configure the complete destination connection string before replay.",
+			Context:  "The imported JDBC connection is missing a database connection URL (dbUrl). Configure the complete destination connection string before replay.",
 			NameHint: "JMETER_" + credential.EnvKey(scriptName) + "_JDBC_DSN",
 			Source: credentialpolicy.SourceRef{
 				Format:  "jmeter",
@@ -509,7 +508,7 @@ func projectJMeterJDBCUnavailableCredential(
 				RequestKey: scriptName,
 				Field:      "config.database.dsn",
 			}},
-			Value:    value,
+			Value:    "",
 			Mode:     credentialpolicy.SecretReference,
 			Registry: ctx.credentialNames,
 		},
@@ -517,44 +516,10 @@ func projectJMeterJDBCUnavailableCredential(
 	if err != nil {
 		return false, fmt.Errorf("project JMeter JDBC credential: %w", err)
 	}
-	requirement.SourceValueStatus = status
+	requirement.SourceValueStatus = credentialpolicy.SourceCredentialValueMissing
 	cfg.DSN = replacement
 	ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
 	return true, nil
-}
-
-func jmeterJDBCUnavailableCredential(dsn string, element *xmlNode) (
-	string,
-	credentialpolicy.SourceCredentialValueStatus,
-	bool,
-) {
-	values := jmeterJDBCCredentialValues(dsn)
-	if element != nil {
-		// Inspect authored fields as well as the effective DSN. JMeter ignores a
-		// standalone password when username is empty, and some JDBC properties
-		// cannot be represented by database/sql. A disclosure sentinel in either
-		// place is still unavailable connection material and must not disappear
-		// merely because the native translation omitted that source field.
-		for _, name := range []string{"dbUrl", "username", "password"} {
-			if value, ok := authoredJMeterProperty(element, name); ok {
-				values = append(values, value)
-			}
-		}
-		connectionProperties, _ := authoredJMeterProperty(element, "connectionProperties")
-		for _, property := range parseJMeterJDBCConnectionProperties(connectionProperties) {
-			if jmeterJDBCCredentialPropertyName(property.Name) {
-				values = append(values, property.Value)
-			}
-		}
-	}
-	for _, value := range values {
-		status := credentialpolicy.ClassifySourceCredentialValue(value)
-		if status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-			status == credentialpolicy.SourceCredentialValueUnsafeEncoding {
-			return value, status, true
-		}
-	}
-	return "", credentialpolicy.SourceCredentialValueAvailable, false
 }
 
 func jmeterJDBCCredentialPropertyName(name string) bool {

@@ -1021,21 +1021,49 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 	if !recorded.BodyTruncated || !recorded.ResponseBodyTruncated {
 		t.Fatalf("expected request and response bodies to be marked truncated: %+v", recorded)
 	}
-	if recorded.Headers["Authorization"] != "[redacted]" {
-		t.Fatalf("expected authorization to be redacted, got %q", recorded.Headers["Authorization"])
+	if recorded.Headers["Authorization"] != "Bearer secret" {
+		t.Fatalf("expected authorization to be preserved by default, got %q", recorded.Headers["Authorization"])
 	}
-	if got := recorded.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "[redacted]" || got[1] != "[redacted]" {
-		t.Fatalf("expected redacted multi set-cookie values, got %#v", got)
+	if got := recorded.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "session=secret" || got[1] != "theme=dark" {
+		t.Fatalf("expected unredacted multi set-cookie values by default, got %#v", got)
 	}
-	if recorded.ResponseHeaders["X-Auth-Token"] != "[redacted]" || recorded.RawResponseHeaders["X-Auth-Token"] != "response-secret" {
-		t.Fatalf("response correlation header views = scrubbed:%q raw:%q", recorded.ResponseHeaders["X-Auth-Token"], recorded.RawResponseHeaders["X-Auth-Token"])
+	if recorded.ResponseHeaders["X-Auth-Token"] != "response-secret" || recorded.RawResponseHeaders["X-Auth-Token"] != "response-secret" {
+		t.Fatalf("response header views = public:%q raw:%q, want response-secret", recorded.ResponseHeaders["X-Auth-Token"], recorded.RawResponseHeaders["X-Auth-Token"])
 	}
 	wire, err := json.Marshal(recorded)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(wire), "response-secret") {
-		t.Fatalf("raw response correlation headers leaked through JSON: %s", wire)
+	if !strings.Contains(string(wire), "response-secret") || !strings.Contains(string(wire), "Bearer secret") {
+		t.Fatalf("default JSON omitted unredacted headers: %s", wire)
+	}
+
+	scrubbedRec := New(":0")
+	scrubbedSession, err := scrubbedRec.StartSession("test-scrub", "Metadata Scrub Test", SessionFilters{
+		ExcludeStatic:         true,
+		BodyCaptureLimitBytes: 12,
+		ScrubSensitive:        true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scrubbedRec.recordRequest(scrubbedSession, req, []byte(`{"request":"abcdefghijklmnopqrstuvwxyz"}`), resp, []byte(`{"payload":"abcdefghijklmnopqrstuvwxyz"}`), 10*time.Millisecond)
+	scrubbed := scrubbedSession.Requests[0]
+	if scrubbed.Headers["Authorization"] != "[redacted]" {
+		t.Fatalf("expected authorization to be redacted when scrub_sensitive=true, got %q", scrubbed.Headers["Authorization"])
+	}
+	if got := scrubbed.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "[redacted]" || got[1] != "[redacted]" {
+		t.Fatalf("expected redacted multi set-cookie values when scrub_sensitive=true, got %#v", got)
+	}
+	if scrubbed.ResponseHeaders["X-Auth-Token"] != "[redacted]" || scrubbed.RawResponseHeaders["X-Auth-Token"] != "response-secret" {
+		t.Fatalf("scrubbed response correlation header views = scrubbed:%q raw:%q", scrubbed.ResponseHeaders["X-Auth-Token"], scrubbed.RawResponseHeaders["X-Auth-Token"])
+	}
+	scrubbedWire, err := json.Marshal(scrubbed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(scrubbedWire), "response-secret") {
+		t.Fatalf("raw response correlation headers leaked through JSON when scrub_sensitive=true: %s", scrubbedWire)
 	}
 }
 
@@ -1120,21 +1148,34 @@ func TestRecordRequestCaptureCookiesOptIn(t *testing.T) {
 		},
 	}
 
+	defaultRecorder := New(":0")
+	defaultSession, err := defaultRecorder.StartSession("default", "Default Unredacted Cookies", SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defaultRecorder.recordRequest(defaultSession, req.Clone(req.Context()), nil, resp, []byte(`{}`), 10*time.Millisecond)
+	if got := defaultSession.Requests[0].Headers["Cookie"]; got != "session=sid-123; theme=dark" {
+		t.Fatalf("default cookie header = %q, want unredacted cookie", got)
+	}
+	if got := defaultSession.Requests[0].ResponseHeaders["Set-Cookie"]; got != "session=sid-456; Path=/; HttpOnly" {
+		t.Fatalf("default set-cookie header = %q, want unredacted set-cookie", got)
+	}
+
 	redactingRecorder := New(":0")
-	redactedSession, err := redactingRecorder.StartSession("redacted", "Redacted Cookies", SessionFilters{}, nil)
+	redactedSession, err := redactingRecorder.StartSession("redacted", "Redacted Cookies", SessionFilters{ScrubSensitive: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	redactingRecorder.recordRequest(redactedSession, req.Clone(req.Context()), nil, resp, []byte(`{}`), 10*time.Millisecond)
 	if got := redactedSession.Requests[0].Headers["Cookie"]; got != "[redacted]" {
-		t.Fatalf("default cookie header = %q, want redacted", got)
+		t.Fatalf("scrub_sensitive cookie header = %q, want redacted", got)
 	}
 	if got := redactedSession.Requests[0].ResponseHeaders["Set-Cookie"]; got != "[redacted]" {
-		t.Fatalf("default set-cookie header = %q, want redacted", got)
+		t.Fatalf("scrub_sensitive set-cookie header = %q, want redacted", got)
 	}
 
 	capturingRecorder := New(":0")
-	capturedSession, err := capturingRecorder.StartSession("captured", "Captured Cookies", SessionFilters{CaptureCookies: true}, nil)
+	capturedSession, err := capturingRecorder.StartSession("captured", "Captured Cookies", SessionFilters{CaptureCookies: true, ScrubSensitive: true}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1166,14 +1207,30 @@ func TestRecordRequestKeepsRawHeadersForCorrelationOnly(t *testing.T) {
 	rec.recordRequest(session, req, nil, resp, []byte(`{}`), 10*time.Millisecond)
 
 	recorded := session.Requests[0]
-	if got := recorded.Headers["Authorization"]; got != "[redacted]" {
-		t.Fatalf("public authorization header = %q, want redacted", got)
+	if got := recorded.Headers["Authorization"]; got != "Bearer tok-abcdef123456" {
+		t.Fatalf("default public authorization header = %q, want unredacted value", got)
+	}
+	if got := recorded.Headers["X-Api-Key"]; got != "raw-api-secret" {
+		t.Fatalf("default public X-Api-Key header = %q, want unredacted value", got)
 	}
 	if got := recorded.RawHeaders["Authorization"]; got != "Bearer tok-abcdef123456" {
 		t.Fatalf("raw authorization header = %q", got)
 	}
 	if _, ok := recorded.RawHeaders["Proxy-Authorization"]; ok {
 		t.Fatalf("proxy authorization leaked into raw headers: %#v", recorded.RawHeaders)
+	}
+
+	scrubbedRec := New(":0")
+	scrubbedSession, err := scrubbedRec.StartSession("headers-scrub", "Header Scrub", SessionFilters{ScrubSensitive: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scrubbedRec.recordRequest(scrubbedSession, req, nil, resp, []byte(`{}`), 10*time.Millisecond)
+	if got := scrubbedSession.Requests[0].Headers["Authorization"]; got != "[redacted]" {
+		t.Fatalf("scrubbed public authorization header = %q, want [redacted]", got)
+	}
+	if got := scrubbedSession.Requests[0].RawHeaders["Authorization"]; got != "Bearer tok-abcdef123456" {
+		t.Fatalf("scrubbed raw authorization header = %q, want raw value", got)
 	}
 	for label, headers := range map[string]map[string]string{
 		"sanitized request":   recorded.Headers,
@@ -1962,11 +2019,27 @@ func TestSanitizeHeadersUsesSharedSensitiveHeaderRules(t *testing.T) {
 		"X-Session-Token": {"session-secret"},
 		"X-Credential":    {"credential-secret"},
 		"Set-Cookie":      {"session=captured-cookie"},
+		"X-Custom-Redact": {"custom-secret"},
 		"X-Safe":          {"safe"},
 	}
-	sanitized := sanitizeHeaders(headers, nil, false, true)
+	unredacted := sanitizeHeaders(headers, []string{"X-Custom-Redact"}, false, false, false)
+	if unredacted["X-Session-Token"][0] != "session-secret" || unredacted["X-Credential"][0] != "credential-secret" {
+		t.Fatalf("default sanitizeHeaders scrubbed sensitive headers: %#v", unredacted)
+	}
+	if unredacted["Set-Cookie"][0] != "session=captured-cookie" {
+		t.Fatalf("default sanitizeHeaders scrubbed Set-Cookie: %#v", unredacted["Set-Cookie"])
+	}
+	if unredacted["X-Custom-Redact"][0] != "[redacted]" {
+		t.Fatalf("explicit RedactHeaders was ignored: %#v", unredacted["X-Custom-Redact"])
+	}
+	rawDefault := correlationHeaders(headers, nil, false, false, false)
+	if rawDefault["Set-Cookie"][0] != "session=captured-cookie" || rawDefault["X-Session-Token"][0] != "session-secret" {
+		t.Fatalf("default correlationHeaders scrubbed headers: %#v", rawDefault)
+	}
+
+	sanitized := sanitizeHeaders(headers, nil, false, true, true)
 	if sanitized["X-Session-Token"][0] != "[redacted]" || sanitized["X-Credential"][0] != "[redacted]" {
-		t.Fatalf("custom sensitive headers were disclosed: %#v", sanitized)
+		t.Fatalf("custom sensitive headers were disclosed when scrub_sensitive=true: %#v", sanitized)
 	}
 	if sanitized["Set-Cookie"][0] != "session=captured-cookie" {
 		t.Fatalf("capture_cookies opt-in was ignored: %#v", sanitized["Set-Cookie"])
@@ -1974,9 +2047,17 @@ func TestSanitizeHeadersUsesSharedSensitiveHeaderRules(t *testing.T) {
 	if sanitized["X-Safe"][0] != "safe" {
 		t.Fatalf("safe header changed: %#v", sanitized)
 	}
-	raw := correlationHeaders(headers, nil, false, true)
+	sanitizedNoCookies := sanitizeHeaders(headers, nil, false, false, true)
+	if sanitizedNoCookies["Set-Cookie"][0] != "[redacted]" {
+		t.Fatalf("scrub_sensitive=true without capture_cookies disclosed Set-Cookie: %#v", sanitizedNoCookies["Set-Cookie"])
+	}
+	raw := correlationHeaders(headers, nil, false, true, true)
 	if raw["X-Session-Token"][0] != "session-secret" {
 		t.Fatalf("private correlation view lost the raw token: %#v", raw)
+	}
+	rawNoCookies := correlationHeaders(headers, nil, false, false, true)
+	if rawNoCookies["Set-Cookie"][0] != "[redacted]" {
+		t.Fatalf("scrub_sensitive=true without capture_cookies disclosed Set-Cookie in correlation view: %#v", rawNoCookies["Set-Cookie"])
 	}
 }
 

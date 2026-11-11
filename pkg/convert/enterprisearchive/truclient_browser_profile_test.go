@@ -8,24 +8,28 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
-func TestTruClientBrowserPreferencesRetainDeclarationsWithoutValues(t *testing.T) {
+func TestTruClientBrowserPreferencesRetainDeclarationsWithValues(t *testing.T) {
 	content := "// user_pref(\"commented\", true);\n/* pref(\"also.commented\", 3); */\nuser_pref(\"browser.choice\", \"private-first\");\nuser_pref(\"browser.choice\", \"private-last//value\"); user_pref('network.limit', 3);\n"
 	file := inspectTruClientPreferenceFile("Profile/user.js", content)
 	if file.Declarations != 3 || file.Unparsed || len(file.Settings) != 2 {
 		t.Fatalf("inventory=%+v", file)
 	}
 	row := file.Settings[0]
-	if row.Key != "browser.choice" || len(row.DeclarationLines) != 2 || row.DeclarationLines[0] != 3 || row.LastParsedDeclarationLine != 4 || row.Status != RuntimeSettingDispositionCompatibilityOnly {
+	if row.Key != "browser.choice" || row.Value != "private-last//value" || len(row.DeclarationLines) != 2 || row.DeclarationLines[0] != 3 || row.LastParsedDeclarationLine != 4 || row.Status != RuntimeSettingDispositionCompatibilityOnly {
 		t.Fatalf("declaration evidence=%+v", row)
+	}
+	if file.Settings[1].Key != "network.limit" || file.Settings[1].Value != "3" {
+		t.Fatalf("numeric preference=%+v", file.Settings[1])
 	}
 	encoded, err := json.Marshal(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, sensitive := range []string{"private-first", "private-last", "commented"} {
-		if strings.Contains(string(encoded), sensitive) {
-			t.Fatalf("inventory disclosed a source value or fabricated a commented key")
-		}
+	if strings.Contains(string(encoded), "commented") {
+		t.Fatalf("inventory fabricated a commented key: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), "private-last//value") {
+		t.Fatalf("inventory omitted source preference value: %s", encoded)
 	}
 }
 
@@ -75,8 +79,8 @@ func TestTruClientBrowserProfileRuntimeRowsPreservePerFileScopeAndGate(t *testin
 		for section, keys := range sections {
 			for key, row := range keys {
 				count++
-				if row.Status != RuntimeSettingDispositionCompatibilityOnly || len(row.Fields) > 0 || !strings.HasPrefix(runtimeFiles[name][section][key], "Preserved in source") {
-					t.Fatal("profile evidence incorrectly claims native support")
+				if row.Status != RuntimeSettingDispositionCompatibilityOnly || len(row.Fields) > 0 || runtimeFiles[name][section][key] == "" {
+					t.Fatal("profile evidence incorrectly claims native support or omitted preserved value")
 				}
 			}
 		}
@@ -85,8 +89,8 @@ func TestTruClientBrowserProfileRuntimeRowsPreservePerFileScopeAndGate(t *testin
 		t.Fatalf("rows=%d mappings=%d", count, len(result.SourceReview.Mappings))
 	}
 	encoded, _ := json.Marshal(result.Script)
-	if strings.Contains(string(encoded), "private-policy") {
-		t.Fatal("authentication filter value leaked into inventory")
+	if !strings.Contains(string(encoded), "private-policy") {
+		t.Fatal("authentication filter value omitted from inventory")
 	}
 	var resumed dsl.Script
 	if err := json.Unmarshal(encoded, &resumed); err != nil {
@@ -137,30 +141,31 @@ func TestTruClientOverrideAndAuthenticationProvenanceRetainExactLinesAndDuplicat
 	}
 }
 
-func TestTruClientAuthenticationListsRetainValueFreeUnparsedEntryEvidence(t *testing.T) {
+func TestTruClientAuthenticationListsRetainEntryValuesAndProvenance(t *testing.T) {
 	file := inspectTruClientAuthenticationFilters("TCIEAuthenticationFilters.ini", "[General]\nFilterType=policy\n[AllowList]\nprivatefirst\nprivatesecond\n[DenyList]\nprivatethird\n")
-	if !file.Unparsed || file.Declarations != 1 || len(file.Settings) != 1 || len(file.ListEntries) != 3 {
+	if file.Unparsed || file.Declarations != 1 || len(file.Settings) != 1 || len(file.ListEntries) != 3 {
 		t.Fatalf("list accounting=%+v", file)
 	}
-	if file.ListEntries[0].Section != "AllowList" || file.ListEntries[0].SourceLine != 4 || file.ListEntries[2].Section != "DenyList" || file.ListEntries[2].SourceLine != 7 {
-		t.Fatal("list-entry source provenance missing")
+	if file.ListEntries[0].Section != "AllowList" || file.ListEntries[0].Value != "privatefirst" || file.ListEntries[0].SourceLine != 4 || file.ListEntries[2].Section != "DenyList" || file.ListEntries[2].Value != "privatethird" || file.ListEntries[2].SourceLine != 7 {
+		t.Fatal("list-entry source provenance or value missing")
 	}
 	encoded, _ := json.Marshal(file)
-	if strings.Contains(string(encoded), "private") {
-		t.Fatal("raw source filter entries leaked into public inventory")
+	for _, want := range []string{"privatefirst", "privatesecond", "privatethird"} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("raw source filter entry %q omitted from inventory: %s", want, encoded)
+		}
 	}
 	result := &ConvertResult{Script: &dsl.Script{Protocol: "browser"}}
 	applyTruClientBrowserProfileReview(result, map[string]string{"TCIEAuthenticationFilters.ini": "[General]\nFilterType=policy\n[AllowList]\nprivatefirst\n"})
 	if result.Script.Init[0].Metadata["execution_blocker"] == nil {
-		t.Fatal("unparsed policy entries did not retain replay gate")
+		t.Fatal("browser profile review did not retain replay gate")
 	}
 	file = inspectTruClientAuthenticationFilters("TCIEAuthenticationFilters.ini", "[General]\nFilterType=policy\n[AllowList]\n"+strings.Repeat("private-entry?query=value\n", truClientBrowserProfileMaxDeclarations))
 	if !file.Unparsed || file.Declarations != 1 || len(file.ListEntries) != truClientBrowserProfileMaxDeclarations-1 {
 		t.Fatal("policy assignments and list records escaped the shared record bound")
 	}
-	encoded, _ = json.Marshal(file)
-	if strings.Contains(string(encoded), "private-entry") {
-		t.Fatal("policy record with '=' was mistaken for a disclosed setting key")
+	if len(file.Settings) != 1 || file.Settings[0].Key != "FilterType" {
+		t.Fatal("policy record with '=' was mistaken for a setting key")
 	}
 }
 
@@ -178,8 +183,11 @@ func TestPlannedTruClientProfileSettingsReachRuntimeReviewPayload(t *testing.T) 
 	preserved := result.Script.Metadata.Import.Preserved
 	runtimeFiles := preserved["runtime_files"].(map[string]map[string]map[string]string)
 	dispositions := preserved["runtime_setting_dispositions"].(map[string]map[string]map[string]RuntimeSettingDisposition)
-	if runtimeFiles["user.js"]["Source browser preferences"]["browser.choice"] != "Preserved in source (1 declarations)" || dispositions["user.js"]["Source browser preferences"]["browser.choice"].Status != RuntimeSettingDispositionCompatibilityOnly {
+	if runtimeFiles["user.js"]["Source browser preferences"]["browser.choice"] != "retained-only" || dispositions["user.js"]["Source browser preferences"]["browser.choice"].Status != RuntimeSettingDispositionCompatibilityOnly {
 		t.Fatal("browser preferences missing from existing Runtime review contract")
+	}
+	if !strings.Contains(runtimeFiles["user_modified_perfs.json"]["Source browser preference overrides"]["browser.choice"], "override-only") {
+		t.Fatal("browser preference override value missing from Runtime review contract")
 	}
 	if dispositions["default.cfg"]["TruClient"]["StepTimeout"].Status != RuntimeSettingDispositionMapped {
 		t.Fatal("CFG mapping changed while appending profile evidence")

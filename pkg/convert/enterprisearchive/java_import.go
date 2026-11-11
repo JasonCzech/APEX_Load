@@ -231,6 +231,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	}
 	result.Warnings = uniqueSortedStrings(result.Warnings)
 	result.Scripts = []*dsl.Script{result.Script}
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	return result, nil
 }
 

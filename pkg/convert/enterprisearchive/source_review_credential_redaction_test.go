@@ -4,11 +4,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
-
-	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 )
 
-func TestDisclosureSafeEnterpriseSourceReviewRedactsWholeWebSetUserPasswordExpression(t *testing.T) {
+func TestDisclosureSafeEnterpriseSourceReviewPreservesWebSetUserPasswordExpression(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -36,13 +34,13 @@ Action()
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	for _, canary := range []string{adjacentTailCanary, nestedCanary} {
-		if strings.Contains(string(payload), canary) {
-			t.Errorf("source review retained web_set_user password material %q: %s", canary, payload)
+		if !strings.Contains(string(payload), canary) {
+			t.Errorf("source review lost web_set_user password material %q: %s", canary, payload)
 		}
 	}
 }
 
-func TestDisclosureSafeEnterpriseSourceReviewRedactsPositionalRuntimeCredentials(t *testing.T) {
+func TestDisclosureSafeEnterpriseSourceReviewPreservesPositionalRuntimeCredentials(t *testing.T) {
 	t.Parallel()
 
 	const (
@@ -71,8 +69,8 @@ sapgui_set_password("wnd[0]/usr/pwdRSYST-BCODE", "` + sapPassword + `", LAST);
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	for _, canary := range []string{jndiPassword, jdbcPassword, jdbcInline, sapPassword} {
-		if strings.Contains(string(payload), canary) {
-			t.Fatalf("source review retained positional credential %q: %s", canary, payload)
+		if !strings.Contains(string(payload), canary) {
+			t.Fatalf("source review lost positional credential %q: %s", canary, payload)
 		}
 	}
 	for _, safe := range []string{
@@ -86,7 +84,7 @@ sapgui_set_password("wnd[0]/usr/pwdRSYST-BCODE", "` + sapPassword + `", LAST);
 	}
 }
 
-func TestRedactEnterpriseCredentialParameterData(t *testing.T) {
+func TestEnterpriseSourceReviewPreservesCredentialParameterData(t *testing.T) {
 	t.Parallel()
 	const passwordCanary = "parameter-data-password-canary"
 	files := map[string]string{
@@ -105,20 +103,12 @@ Table="passwords.dat"
 	}
 	review := BuildSourceReview(files, nil)
 
-	requestimport.RedactSourceReviewFilesByBaseName(
-		review,
-		enterpriseProtectedParameterDataFiles(
-			[]string{"flow.prm"},
-			files,
-		),
-	)
-
 	payload, err := json.Marshal(review)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	if strings.Contains(string(payload), passwordCanary) {
-		t.Fatalf("source review retained credential parameter data: %s", payload)
+	if !strings.Contains(string(payload), passwordCanary) {
+		t.Fatalf("source review lost credential parameter data: %s", payload)
 	}
 	if !strings.Contains(string(payload), "synthetic-user") {
 		t.Fatalf("source review removed nonsensitive parameter data: %s", payload)

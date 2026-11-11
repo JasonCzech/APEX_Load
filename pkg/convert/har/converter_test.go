@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -333,6 +334,75 @@ func TestDiffDoesNotExposeCredentialCorrelationValues(t *testing.T) {
 		report.Classifications[0].BaselineValue != baselineToken ||
 		report.Classifications[0].ComparisonValue != comparisonToken {
 		t.Fatalf("classification values = %#v, want exact imported values", report.Classifications)
+	}
+}
+
+func TestConvertHARHonorsProfileScrubSensitiveForReviewGovernanceAndCorrelations(t *testing.T) {
+	token := "tok-profile-scrub-abcdef123456"
+	opts := ConvertOptions{
+		ScriptName: "Profile Scrubbed HAR",
+		Profile:    &recordingprofile.Profile{ScrubSensitive: true},
+	}
+	result, err := Convert([]byte(credentialCorrelationHAR(token)), opts)
+	if err != nil {
+		t.Fatalf("Convert: %v", err)
+	}
+	if result.Governance == nil || !result.Governance.RedactionEnabled || result.Governance.Sensitivity != scrub.SensitivityScrubbed {
+		t.Fatalf("governance = %#v, want RedactionEnabled=true Sensitivity=scrubbed", result.Governance)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 || !result.SourceReview.SourceFiles[0].Redacted {
+		t.Fatalf("source review = %#v, want redacted source file", result.SourceReview)
+	}
+	if strings.Contains(result.SourceReview.SourceFiles[0].Content, token) {
+		t.Fatalf("redacted source review leaked token: %s", result.SourceReview.SourceFiles[0].Content)
+	}
+	if len(result.Correlations) != 1 {
+		t.Fatalf("correlations = %#v, want 1 correlation", result.Correlations)
+	}
+	if result.Correlations[0].Value != "" || result.Correlations[0].SampleValue != "" {
+		t.Fatalf("scrubbed correlation = %+v, want empty Value and SampleValue", result.Correlations[0])
+	}
+	if !strings.Contains(result.Script.Actions[1].Target, "{{var.corr_access_token}}") {
+		t.Fatalf("second action target = %q, want correlation rewrite preserved", result.Script.Actions[1].Target)
+	}
+
+	otherToken := "tok-profile-scrub-999999654321"
+	prepared, err := PrepareComparison([]byte(credentialCorrelationHAR(otherToken)), opts)
+	if err != nil {
+		t.Fatalf("PrepareComparison: %v", err)
+	}
+	diffReport, err := DiffPrepared(result, prepared)
+	if err != nil {
+		t.Fatalf("DiffPrepared: %v", err)
+	}
+	if diffReport.DynamicCandidates != 1 {
+		t.Fatalf("dynamic candidates = %d, want 1 even when ScrubSensitive=true", diffReport.DynamicCandidates)
+	}
+	if diffReport.Classifications[0].SampleValue != "" ||
+		diffReport.Classifications[0].BaselineValue != "" ||
+		diffReport.Classifications[0].ComparisonValue != "" {
+		t.Fatalf("scrubbed diff classification leaked sample values: %+v", diffReport.Classifications[0])
+	}
+
+	// Symmetric mixed-redaction check: an unredacted baseline paired with a
+	// scrubbed ComparisonRecording must also blank sample/comparison values.
+	unredactedBaseline, err := Convert([]byte(credentialCorrelationHAR(token)), ConvertOptions{
+		ScriptName: "Unredacted Baseline",
+	})
+	if err != nil {
+		t.Fatalf("Convert unredacted baseline: %v", err)
+	}
+	mixedReport, err := DiffPrepared(unredactedBaseline, prepared)
+	if err != nil {
+		t.Fatalf("DiffPrepared mixed redaction: %v", err)
+	}
+	if mixedReport.DynamicCandidates != 1 {
+		t.Fatalf("mixed redaction dynamic candidates = %d, want 1", mixedReport.DynamicCandidates)
+	}
+	if mixedReport.Classifications[0].SampleValue != "" ||
+		mixedReport.Classifications[0].BaselineValue != "" ||
+		mixedReport.Classifications[0].ComparisonValue != "" {
+		t.Fatalf("mixed redaction diff classification leaked sample values: %+v", mixedReport.Classifications[0])
 	}
 }
 

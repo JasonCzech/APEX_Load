@@ -146,7 +146,7 @@ func TestFinalizeActionPreserveFormLimitCarriesOpaqueRuntimeLocator(t *testing.T
 	if err != nil {
 		t.Fatalf("FinalizeAction: %v", err)
 	}
-	if action.Body != sourceBody || report.Disposition != BlockedDraft ||
+	if action.Body != sourceBody || report.Disposition != ExecutableExact ||
 		len(report.Requirements) != 0 {
 		t.Fatalf("form action/report = %#v / %#v", action, report)
 	}
@@ -154,8 +154,8 @@ func TestFinalizeActionPreserveFormLimitCarriesOpaqueRuntimeLocator(t *testing.T
 	if len(targets) != 1 || targets[0].Field != "body.form.opaque" {
 		t.Fatalf("form fallback locators = %#v", targets)
 	}
-	if action.Metadata["execution_blocker"] == nil {
-		t.Fatalf("form fallback is not execution-gated: %#v", action.Metadata)
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("form fallback was execution-gated: %#v", action.Metadata)
 	}
 }
 

@@ -23,11 +23,13 @@ func ramlAdditionalHeaderRequirements(script *dsl.Script, source string) ([]cred
 			targets[name] = append(targets[name], credentialpolicy.TargetRef{RequestKey: action.Name, Field: fmt.Sprintf("actions[%d].headers.%s", i, header)})
 		}
 		// Query placeholders are embedded in the request target.
+		seenInTarget := map[string]bool{}
 		for _, match := range ramlSecretReference.FindAllString(action.Target, -1) {
 			name, ok := credential.ParseReference(match)
-			if !ok || name == "RAML_CLIENT_SECRET" {
+			if !ok || name == "RAML_CLIENT_SECRET" || seenInTarget[name] {
 				continue
 			}
+			seenInTarget[name] = true
 			targets[name] = append(targets[name], credentialpolicy.TargetRef{RequestKey: action.Name, Field: fmt.Sprintf("actions[%d].target", i)})
 		}
 	}
@@ -37,7 +39,7 @@ func ramlAdditionalHeaderRequirements(script *dsl.Script, source string) ([]cred
 	}
 	var requirements []credentialpolicy.Requirement
 	for _, name := range sortedMapKeys(keys) {
-		req, _, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: strings.ToLower(name), Label: name, Context: "RAML declares a credential-bearing request field; bind a secret before replay. Source examples are not used as authentication credentials.", NameHint: name, Source: credentialpolicy.SourceRef{Format: "raml", Path: source, Pointer: "/requestFields"}, Targets: targets[name], Mode: credentialpolicy.SecretReference})
+		req, _, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{Key: strings.ToLower(name), Label: name, Context: "RAML declares a credential-bearing request field with no authored example/default/enum value; bind a secret before replay.", NameHint: name, Source: credentialpolicy.SourceRef{Format: "raml", Path: source, Pointer: "/requestFields"}, Targets: targets[name], Mode: credentialpolicy.SecretReference})
 		if err != nil {
 			return nil, err
 		}

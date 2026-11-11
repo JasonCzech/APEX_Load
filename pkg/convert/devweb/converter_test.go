@@ -584,48 +584,51 @@ proxy:
 	}
 }
 
-func TestConvertZipTreatsRuntimeCredentialPlaceholderAsUnavailable(t *testing.T) {
-	var buf bytes.Buffer
-	zw := zip.NewWriter(&buf)
-	writeDevWebZipFile(t, zw, "AOS/main.js", `
+func TestConvertZipPreservesRuntimeProxyPlaceholderStringsWithoutSecretTokenization(t *testing.T) {
+	for _, literalPass := range []string{"%255BReDaCtEd%255D", "[REDACTED]", "***"} {
+		t.Run(literalPass, func(t *testing.T) {
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			writeDevWebZipFile(t, zw, "AOS/main.js", `
 load.action("Action", async function() {
   await new load.WebRequest({url: "https://api.example.test/", method: "GET"}).send();
 });`)
-	writeDevWebZipFile(t, zw, "AOS/rts.yml", `
+			writeDevWebZipFile(t, zw, "AOS/rts.yml", `
 proxy:
   useProxy: true
   proxyServer: http://proxy.example.test:8080
   proxyUser: operator
-  proxyPassword: "%255BReDaCtEd%255D"
+  proxyPassword: "`+literalPass+`"
 `)
-	if err := zw.Close(); err != nil {
-		t.Fatal(err)
-	}
+			if err := zw.Close(); err != nil {
+				t.Fatal(err)
+			}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
-	if err != nil {
-		t.Fatalf("ConvertZip returned error: %v", err)
-	}
-	password := result.Script.Config.HTTP.Proxy.Password
-	if !strings.HasPrefix(password, "{{secret.DEVWEB_PROXY_PASSWORD") {
-		t.Fatalf("runtime placeholder was retained as an executable password: %q", password)
-	}
-	requirements := result.ProtectedRequirements.Take()
-	if len(requirements) != 1 {
-		t.Fatalf("requirements = %#v, want one unavailable runtime credential", requirements)
-	}
-	requirement := requirements[0]
-	if requirement.Label != "DevWeb HTTP proxy password" ||
-		requirement.Context != "HTTP proxy password from rts.yml" ||
-		requirement.Source.Path != "AOS/rts.yml" ||
-		requirement.Source.Pointer != "/proxy/proxyPassword" ||
-		requirement.SourceValueAvailable || requirement.Value != "" ||
-		requirement.SourceValueStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder {
-		t.Fatalf("runtime credential requirement = %#v", requirement)
-	}
-	action := result.Script.Actions[0]
-	if action.Metadata["execution_blocker"] != "import_review_required" {
-		t.Fatalf("unavailable runtime credential did not gate execution: %#v", action.Metadata)
+			result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+			if err != nil {
+				t.Fatalf("ConvertZip returned error: %v", err)
+			}
+			if got := result.Script.Config.HTTP.Proxy.Password; got != literalPass {
+				t.Fatalf("runtime proxy password = %q, want literal %q preserved", got, literalPass)
+			}
+			if got := result.Script.Config.HTTP.Proxy.Username; got != "operator" {
+				t.Fatalf("runtime proxy username = %q, want operator", got)
+			}
+			if requirements := result.ProtectedRequirements.Take(); len(requirements) != 0 {
+				t.Fatalf("requirements = %#v, want zero secret requirements", requirements)
+			}
+			action := result.Script.Actions[0]
+			if blocker := action.Metadata["execution_blocker"]; blocker != nil {
+				t.Fatalf("literal runtime proxy credential unexpectedly gated execution: %#v", action.Metadata)
+			}
+			review, err := json.Marshal(result.SourceReview)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(review), literalPass) {
+				t.Fatalf("source review omitted rts.yml literal %q: %s", literalPass, review)
+			}
+		})
 	}
 }
 
@@ -1330,20 +1333,17 @@ func TestDevWebCredentialBodyReferenceProjectionFailsClosedAtWorkLimit(t *testin
 	}
 }
 
-func TestDevWebCredentialSourceRedactionFailsClosedAtWorkLimit(t *testing.T) {
+func TestDevWebCredentialSourcePreservesTextRegardlessOfWorkBudget(t *testing.T) {
 	const canary = "devweb-redaction-work-canary"
+	input := "first\nAuthorization: " + canary + "\nlast"
 	projected, changed := redactDevWebCredentialValuesWithBudget(
-		"first\nAuthorization: "+canary+"\nlast",
+		input,
 		[]credentialpolicy.Requirement{{Value: canary}},
 		nil,
 		1,
 	)
-	if !changed || strings.Contains(projected, canary) ||
-		!strings.Contains(projected, "WORK LIMIT EXCEEDED") {
-		t.Fatalf("bounded source projection = %q, changed=%v", projected, changed)
-	}
-	if strings.Count(projected, "\n") != 2 {
-		t.Fatalf("bounded source projection changed line coordinates: %q", projected)
+	if changed || projected != input {
+		t.Fatalf("source projection = %q, changed=%v, want verbatim %q", projected, changed, input)
 	}
 }
 

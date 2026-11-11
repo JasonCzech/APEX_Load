@@ -11,9 +11,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browsercontract"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -31,6 +33,11 @@ type ConvertOptions struct {
 	// SplitAtTransactions emits one script per top-level transaction instead of
 	// a single combined script.
 	SplitAtTransactions bool
+	// Profile, when set, supplies saved recording options such as ScrubSensitive.
+	Profile *recordingprofile.Profile `json:"profile,omitempty"`
+	// ScrubSensitive opts into rewriting password and one-time-code fills to
+	// {{env.*}} placeholders during conversion. Off by default.
+	ScrubSensitive bool `json:"scrub_sensitive,omitempty"`
 }
 
 // StepRange is an inclusive 1-based step-sequence window. Zero bounds are open.
@@ -112,6 +119,12 @@ type timelineEntry struct {
 // script generation through pkg/convert/har. With opts.SplitAtTransactions the
 // result carries one script per top-level transaction in result.Scripts.
 func Convert(session *Session, opts ConvertOptions) *ConvertResult {
+	if opts.Profile != nil && opts.Profile.ScrubSensitive {
+		opts.ScrubSensitive = true
+	}
+	if session != nil && session.ScrubSensitive {
+		opts.ScrubSensitive = true
+	}
 	result := &ConvertResult{Stats: ConvertStats{TotalSteps: len(session.Steps)}}
 	name := strings.TrimSpace(opts.ScriptName)
 	if name == "" {
@@ -131,6 +144,9 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 			result.Stats.Scripts = len(scripts)
 			result.Stats.ConvertedActions = countScriptActions(scripts)
 			finalizeConvertWarnings(session, result)
+			for _, s := range result.Scripts {
+				convertutil.SanitizeScriptDSLTemplates(s, nil)
+			}
 			return result
 		}
 		result.Warnings = append(result.Warnings,
@@ -157,6 +173,7 @@ func Convert(session *Session, opts ConvertOptions) *ConvertResult {
 		result.Warnings = append(result.Warnings, warning)
 	}
 	finalizeConvertWarnings(session, result)
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result
 }
 
@@ -1024,16 +1041,16 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		action.Name = "Fill " + stepLabel(step)
 		action.Type = "browser_fill"
 		action.Value = step.Value
-		if salesforceOneTimeCode(step) {
+		if shouldMaskFillStep(step, opts) {
 			key := secretEnvKey(step)
 			action.Value = "{{env." + key + "}}"
-			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"step %d entered a one-time verification code, which was masked at capture and cannot replay: exempt the perf users from identity verification, or give each observer a signed-in session", step.Seq))
-		} else if step.Masked {
-			key := secretEnvKey(step)
-			action.Value = "{{env." + key + "}}"
-			result.Warnings = append(result.Warnings, fmt.Sprintf(
-				"step %d filled a password input; the value was masked at capture. Provide it at runtime as {{env.%s}}: set %s where the script runs (this controller for replay and debugging, every load generator for a test) and add it to APEXLOAD_SCRIPT_ENV_ALLOWLIST. Or replace it with a project secret, {{secret.NAME}}; a run that uses a project secret keeps no screenshots", step.Seq, key, key))
+			if salesforceOneTimeCode(step) {
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"step %d entered a one-time verification code, which was masked at capture and cannot replay: exempt the perf users from identity verification, or give each observer a signed-in session", step.Seq))
+			} else {
+				result.Warnings = append(result.Warnings, fmt.Sprintf(
+					"step %d filled a password input; the value was masked at capture. Provide it at runtime as {{env.%s}}: set %s where the script runs (this controller for replay and debugging, every load generator for a test) and add it to APEXLOAD_SCRIPT_ENV_ALLOWLIST. Or replace it with a project secret, {{secret.NAME}}; a run that uses a project secret keeps no screenshots", step.Seq, key, key))
+			}
 		} else if step.MarkSecret {
 			// Marking a captured value as sensitive is a disclosure/review
 			// instruction, not permission to destroy the executable value. The
@@ -1093,7 +1110,7 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"step %d uploads file(s) %q; bind the recorded names to fixture paths readable by the replay engine during parameterization", step.Seq, step.Value))
 	case StepAssert:
-		return assertAction(step, best, result)
+		return assertAction(step, best, opts, result)
 	case StepSwitchWindow:
 		action.Name = "Switch window"
 		action.Type = "browser_switch_window"
@@ -1119,7 +1136,7 @@ func convertStep(step Step, session *Session, opts ConvertOptions, result *Conve
 		result.Stats.SyncPolicies++
 	}
 	applyRecordedThinkTime(&action, session, stepIndex, opts.MaxThinkTimeMs)
-	attachStepMetadata(&action, step)
+	attachStepMetadata(&action, step, opts)
 	return action, true
 }
 
@@ -1205,7 +1222,7 @@ func pausedDurationBetween(intervals []PauseInterval, from, to time.Time) time.D
 	return total
 }
 
-func assertAction(step Step, best string, result *ConvertResult) (dsl.Action, bool) {
+func assertAction(step Step, best string, opts ConvertOptions, result *ConvertResult) (dsl.Action, bool) {
 	if best == "" {
 		result.Warnings = append(result.Warnings, fmt.Sprintf(
 			"assert step %d has no replayable selector and was skipped", step.Seq))
@@ -1231,14 +1248,33 @@ func assertAction(step Step, best string, result *ConvertResult) (dsl.Action, bo
 		})
 	}
 	result.Stats.Assertions += len(action.Assertions)
-	attachStepMetadata(&action, step)
+	attachStepMetadata(&action, step, opts)
 	return action, true
+}
+
+func isPasswordStep(step Step) bool {
+	return step.Kind == StepFill && step.Element != nil &&
+		strings.EqualFold(strings.TrimSpace(step.Element.Tag), "input") &&
+		strings.EqualFold(strings.TrimSpace(step.Element.Type), "password")
+}
+
+func shouldMaskFillStep(step Step, opts ConvertOptions) bool {
+	if step.Kind != StepFill {
+		return false
+	}
+	if step.Masked && step.Value == "" {
+		return true
+	}
+	if !opts.ScrubSensitive {
+		return false
+	}
+	return step.Masked || isPasswordStep(step) || salesforceOneTimeCode(step)
 }
 
 // attachStepMetadata records the ranked selector candidates and frame context
 // using the same metadata keys the TruClient importer emits and the replay
 // engine reads (frame_selector, source_selector_*).
-func attachStepMetadata(action *dsl.Action, step Step) {
+func attachStepMetadata(action *dsl.Action, step Step, opts ConvertOptions) {
 	if action.Metadata == nil {
 		action.Metadata = map[string]any{}
 	}
@@ -1265,7 +1301,7 @@ func attachStepMetadata(action *dsl.Action, step Step) {
 	if step.Element != nil && step.Element.InShadowDOM {
 		action.Metadata["source_shadow_dom"] = true
 	}
-	if step.Masked {
+	if shouldMaskFillStep(step, opts) {
 		action.Metadata["source_masked_secret"] = true
 	}
 	if salesforceOneTimeCode(step) {

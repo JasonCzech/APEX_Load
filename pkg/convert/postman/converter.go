@@ -595,6 +595,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		protectedRequirements[index].Value = ""
 	}
 	result.SourceReview = sourceview.Build(sources, sourceMappings)
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result, nil
 }
 

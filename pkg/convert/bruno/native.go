@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/requestimport"
+	"github.com/jasonczech/apexload/pkg/convert/sharedvalue"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
@@ -128,12 +129,14 @@ const (
 type nativeTemplateState struct {
 	sourcePath      string
 	defined         map[string]nativeVariable
+	envFallback     map[string]nativeVariable
 	usedParams      map[string]struct{}
 	parameterValues map[string]string
 	missing         map[string]struct{}
 	generatedReq    map[string]SecretRequirement
 	generatedErr    error
 	resolved        map[string]nativeVariableResolution
+	resolvedEnv     map[string]nativeVariableResolution
 	resolving       map[string]int
 	resolutionStack []string
 }
@@ -267,6 +270,8 @@ func nativeRequestScripts(
 			return nil, nil, nil, findings, fmt.Errorf("parse Bruno collection metadata %q: %w", collectionFile.Path, err)
 		}
 	}
+	baseEnvVars := nativeBaseEnvironmentVariables(files)
+	fallbackEnvVars := nativeFallbackEnvironmentVariables(files)
 
 	// Per-request failures are collected rather than returned on the first hit.
 	// The bundle is still rejected as a whole — a partial native import would
@@ -411,6 +416,8 @@ func nativeRequestScripts(
 			file,
 			layers,
 			effective,
+			baseEnvVars,
+			fallbackEnvVars,
 			mergeDiagnostics,
 			requirementsByName,
 			manifestHashes,
@@ -1004,6 +1011,7 @@ func applyNativeHTTPParams(
 					pointer,
 					param.Name,
 					paramIndex+1,
+					false,
 					state,
 					sourceRequirements,
 					nativeSecretScrubTarget{
@@ -1078,6 +1086,7 @@ func applyNativeHTTPParams(
 				pointer,
 				param.Name,
 				sourceIndex+1,
+				false,
 				state,
 				sourceRequirements,
 				nativeSecretScrubTarget{
@@ -1716,13 +1725,12 @@ func buildNativeCandidate(
 	file sourceFile,
 	layers []nativeLayer,
 	effective nativeEffective,
+	baseEnvVars map[string]nativeVariable,
+	fallbackEnvVars map[string]nativeVariable,
 	diagnostics []NativeDiagnostic,
 	sourceRequirements map[string][]SecretRequirement,
 	manifestHashes map[string]string,
 ) (NativeScriptCandidate, []SecurityFinding, error) {
-	if err := validateEffectiveNativeCredentialTypes(effective); err != nil {
-		return NativeScriptCandidate{}, nil, fmt.Errorf("Bruno request %q: %w", item.Path, err)
-	}
 	var document map[string]any
 	if err := yaml.Unmarshal(file.Data, &document); err != nil {
 		return NativeScriptCandidate{}, nil, fmt.Errorf("parse Bruno request %q: %w", file.Path, err)
@@ -1742,18 +1750,23 @@ func buildNativeCandidate(
 		return NativeScriptCandidate{}, nil, fmt.Errorf("Bruno request %q has no HTTP URL", item.Path)
 	}
 
-	defined := make(map[string]nativeVariable, len(effective.Variables))
+	defined := make(map[string]nativeVariable, len(baseEnvVars)+len(effective.Variables))
+	for name, variable := range baseEnvVars {
+		defined[name] = variable
+	}
 	for _, variable := range effective.Variables {
 		defined[variable.Name] = variable
 	}
 	templateState := &nativeTemplateState{
 		sourcePath:      file.Path,
 		defined:         defined,
+		envFallback:     fallbackEnvVars,
 		usedParams:      make(map[string]struct{}),
 		parameterValues: make(map[string]string),
 		missing:         make(map[string]struct{}),
 		generatedReq:    make(map[string]SecretRequirement),
 		resolved:        make(map[string]nativeVariableResolution),
+		resolvedEnv:     make(map[string]nativeVariableResolution),
 		resolving:       make(map[string]int),
 	}
 	params, err := parseNativeHTTPParams(nativeLookup(httpBlock, "params"))
@@ -1771,35 +1784,9 @@ func buildNativeCandidate(
 	if err != nil {
 		return NativeScriptCandidate{}, nil, fmt.Errorf("Bruno request %q: %w", item.Path, err)
 	}
-	target := rewriteNativeURLTemplates(rawTarget, templateState, sourceRequirements)
-	for parameterName, parameterValue := range templateState.parameterValues {
-		if nativeURLHasUserinfo(parameterValue) {
-			return NativeScriptCandidate{}, nil, fmt.Errorf(
-				"Bruno request %q URL parameter %q resolves to unsupported authored userinfo",
-				item.Path,
-				parameterName,
-			)
-		}
-		if nativeURLHasSensitiveQuery(parameterValue) {
-			return NativeScriptCandidate{}, nil, fmt.Errorf(
-				"Bruno request %q URL parameter %q resolves to a sensitive query value that cannot be safely projected",
-				item.Path,
-				parameterName,
-			)
-		}
-		if nativeURLHasSensitiveFragment(parameterValue) ||
-			(!strings.Contains(parameterValue, "://") &&
-				scrub.URLTokenSensitive(parameterValue)) {
-			return NativeScriptCandidate{}, nil, fmt.Errorf(
-				"Bruno request %q URL parameter %q resolves to credential-shaped material that cannot be safely projected",
-				item.Path,
-				parameterName,
-			)
-		}
-	}
+	target := rewriteNativeURLTemplates(rawTarget, encodeURL, templateState, sourceRequirements)
 	reviewReasons := make([]string, 0)
-	if nativeURLHasSensitiveQuery(rawTarget) ||
-		nativeHTTPParamsContainSensitiveCredentials(params) {
+	if strings.Contains(target, "{{secret.") {
 		diagnostic := nativeDiagnostic(
 			file.Path,
 			"warning",
@@ -1831,15 +1818,6 @@ func buildNativeCandidate(
 				"An authored Authorization header was omitted because Bruno applies explicit Basic auth after request headers.",
 				false,
 			))
-		}
-	}
-	for _, header := range headers {
-		if nativeSensitiveHeaderName(header.Name) && !header.ValueIsString {
-			return NativeScriptCandidate{}, nil, fmt.Errorf(
-				"Bruno request %q active sensitive header %q must have a string value",
-				item.Path,
-				header.Name,
-			)
 		}
 	}
 
@@ -1888,20 +1866,6 @@ func buildNativeCandidate(
 		context := nativeTemplateOrdinary
 		if nativeSensitiveHeaderName(header.Name) {
 			context = nativeTemplateSensitiveHeader
-		} else if credentialpolicy.ClassifySourceCredentialValue(header.Value) ==
-			credentialpolicy.SourceCredentialValueRedactedPlaceholder {
-			// The export redacted a recorded value such as a cookie or session
-			// id. It is not a credential, so it becomes an input supplied at
-			// review instead of a placeholder sent on the wire.
-			value, variable, kept := nativeRedactedHeaderInput(header.Value, header.Name)
-			if kept {
-				// Only text that stays in the script is translated, so a
-				// replaced value cannot ask for inputs nothing uses.
-				value = rewriteNativeTemplates(value, nativeTemplateOrdinary, header.Name, templateState)
-			}
-			templateState.missing[variable] = struct{}{}
-			headerList = append(headerList, dsl.HeaderEntry{Name: header.Name, Value: value})
-			continue
 		}
 		headerList = append(headerList, dsl.HeaderEntry{
 			Name:  header.Name,
@@ -1962,6 +1926,7 @@ func buildNativeCandidate(
 			sourceRequirements,
 			bodyPointer,
 			embeddedJSON,
+			bodyType == "json" && embeddedJSON,
 		)
 		if rewriteErr != nil {
 			return NativeScriptCandidate{}, nil, fmt.Errorf("rewrite Bruno JSON credential templates in %q: %w", item.Path, rewriteErr)
@@ -1978,6 +1943,7 @@ func buildNativeCandidate(
 			templateState,
 			bodyPointer,
 			sourceRequirements,
+			strings.Contains(bodyType, "xml"),
 		)
 		if rewriteErr != nil {
 			return NativeScriptCandidate{}, nil, fmt.Errorf("rewrite Bruno XML credential templates in %q: %w", item.Path, rewriteErr)
@@ -2219,17 +2185,35 @@ func buildNativeCandidate(
 	}
 
 	parameters := make([]dsl.Parameter, 0, len(templateState.parameterValues))
+	emittedParams := make(map[string]struct{}, len(templateState.parameterValues))
 	for _, variable := range effective.Variables {
 		value, used := templateState.parameterValues[variable.Name]
 		if !used {
 			continue
 		}
+		emittedParams[variable.Name] = struct{}{}
 		parameters = append(parameters, dsl.Parameter{
 			Name:      variable.Name,
 			Type:      "list",
 			Update:    "once",
 			Selection: "sequential",
 			Values:    []string{value},
+		})
+	}
+	extraParamNames := make([]string, 0, len(templateState.parameterValues))
+	for name := range templateState.parameterValues {
+		if _, exists := emittedParams[name]; !exists {
+			extraParamNames = append(extraParamNames, name)
+		}
+	}
+	sort.Strings(extraParamNames)
+	for _, name := range extraParamNames {
+		parameters = append(parameters, dsl.Parameter{
+			Name:      name,
+			Type:      "list",
+			Update:    "once",
+			Selection: "sequential",
+			Values:    []string{templateState.parameterValues[name]},
 		})
 	}
 
@@ -2511,7 +2495,14 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 						return "{{secret." + name + "}}"
 					}
 				}
-				if nativeTemplateRequiresSecret(expression, context, contextName) {
+				normalizedExpr := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(expression))
+				inSecretContext := context == nativeTemplateAuthUsername ||
+					context == nativeTemplateAuthPassword ||
+					context == nativeTemplateAuthToken ||
+					context == nativeTemplateSensitiveHeader ||
+					context == nativeTemplateXMLCredential ||
+					(context == nativeTemplateBody && strings.Contains(normalizedExpr, "password"))
+				if inSecretContext {
 					requirement := nativeUnresolvedSourceVariableSecretRequirement(
 						expression,
 						state.sourcePath,
@@ -2527,24 +2518,16 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 			state.missing[expression] = struct{}{}
 			return "{{var." + expression + "}}"
 		}
-		if variable, defined := state.defined[expression]; defined {
-			requiresSecret := nativeTemplateRequiresSecret(expression, context, contextName)
+		requiresSecret := nativeTemplateRequiresSecret(expression, context, contextName)
+		if variable, defined := lookupNativeVariable(state, expression, requiresSecret); defined {
 			beforeMissing := make(map[string]struct{}, len(state.missing))
 			if requiresSecret {
 				for missing := range state.missing {
 					beforeMissing[missing] = struct{}{}
 				}
 			}
-			resolution := resolveNativeVariable(expression, state)
+			resolution := resolveNativeVariableWithScope(expression, state, requiresSecret)
 			if requiresSecret {
-				// The source expression is replaced wholesale by a governed
-				// secret, so unresolved dependencies inside it are no longer
-				// executable inputs.
-				for missing := range state.missing {
-					if _, existed := beforeMissing[missing]; !existed {
-						delete(state.missing, missing)
-					}
-				}
 				if (context == nativeTemplateAuthUsername || context == nativeTemplateAuthPassword) &&
 					value == template &&
 					resolution.Complete &&
@@ -2552,7 +2535,25 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 					return ""
 				}
 				if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
+					for missing := range state.missing {
+						if _, existed := beforeMissing[missing]; !existed {
+							delete(state.missing, missing)
+						}
+					}
 					return secretReference
+				}
+				if resolution.Complete && !hasNonGovernedBrunoTemplate(resolution.Value) {
+					for missing := range state.missing {
+						if _, existed := beforeMissing[missing]; !existed {
+							delete(state.missing, missing)
+						}
+					}
+					return resolution.Value
+				}
+				for missing := range state.missing {
+					if _, existed := beforeMissing[missing]; !existed {
+						delete(state.missing, missing)
+					}
 				}
 				candidateScope := ""
 				if len(resolution.Dependencies) > 1 {
@@ -2567,10 +2568,7 @@ func rewriteNativeTemplates(value string, context nativeTemplateContext, context
 				requirement.scrubTargets = nativeVariableScrubTargets(resolution.Dependencies)
 				requirement.DisplayLabel = nativeSourceVariableDisplayLabel(expression)
 				requirement.SourceVariable = expression
-				if resolution.Complete && !strings.Contains(resolution.Value, "{{") {
-					requirement.Value = recoverableBrunoCredentialValue(resolution.Value)
-				}
-				requirement.UnresolvedSourceVariable = requirement.Value == ""
+				requirement.UnresolvedSourceVariable = true
 				registerNativeGeneratedRequirement(state, requirement)
 				return nativeCredentialProjectionReplacement(requirement)
 			}
@@ -2634,6 +2632,11 @@ func rewriteNativeComposedSensitiveHeader(
 		expression := strings.TrimSpace(match[1])
 		for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
 			if strings.HasPrefix(expression, prefix) {
+				if prefix == "secret." {
+					if secretName, isSecret, err := canonicalBrunoSecretExpression(expression); err == nil && isSecret {
+						return "{{secret." + secretName + "}}"
+					}
+				}
 				complete = false
 				return template
 			}
@@ -2642,11 +2645,11 @@ func rewriteNativeComposedSensitiveHeader(
 			complete = false
 			return template
 		}
-		if _, exists := state.defined[expression]; !exists {
+		if _, exists := lookupNativeVariable(state, expression, true); !exists {
 			complete = false
 			return template
 		}
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, true)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if secretReference, ok := exactNativeSecretReference(resolution.Value); ok {
 			if projectedRequirementAvailable {
@@ -2656,13 +2659,14 @@ func rewriteNativeComposedSensitiveHeader(
 			if sourceValue, available := nativeSourceSecretValue(secretReference, sourceRequirements); available {
 				return sourceValue
 			}
+			return secretReference
 		}
 		if !resolution.Complete {
 			complete = false
 		}
 		return resolution.Value
 	})
-	if brunoTemplatePattern.MatchString(resolved) {
+	if hasNonGovernedBrunoTemplate(resolved) {
 		complete = false
 	}
 	if projectedWholeCredential && len(dependencies) > 0 {
@@ -2672,6 +2676,9 @@ func rewriteNativeComposedSensitiveHeader(
 		if _, existed := beforeMissing[missing]; !existed {
 			delete(state.missing, missing)
 		}
+	}
+	if complete && !hasNonGovernedBrunoTemplate(resolved) {
+		return resolved, true
 	}
 
 	requirement.scrubTargets = nativeVariableScrubTargets(dependencies)
@@ -2684,12 +2691,9 @@ func rewriteNativeComposedSensitiveHeader(
 			},
 		)
 	}
-	if complete && !brunoTemplatePattern.MatchString(resolved) {
-		requirement.Value = recoverableBrunoCredentialValue(resolved)
-	}
 	requirement = describeNativeHeaderSecretRequirement(requirement, name, value)
 	registerNativeGeneratedRequirement(state, requirement)
-	return nativeCredentialProjectionReplacement(requirement), complete
+	return nativeCredentialProjectionReplacement(requirement), false
 }
 
 func registerNativeGeneratedRequirement(
@@ -2846,8 +2850,8 @@ func rewriteNativeAuthCredential(
 		submatch := brunoTemplatePattern.FindStringSubmatch(value)
 		if len(submatch) > 1 {
 			expression := strings.TrimSpace(submatch[1])
-			if variable, defined := state.defined[expression]; defined {
-				resolution := resolveNativeVariable(variable.Name, state)
+			if variable, defined := lookupNativeVariable(state, expression, true); defined {
+				resolution := resolveNativeVariableWithScope(variable.Name, state, true)
 				if resolution.Complete && resolution.Value == "" {
 					return ""
 				}
@@ -2910,10 +2914,35 @@ func nativeSourceSecretValue(
 	return "", false
 }
 
+func lookupNativeVariable(state *nativeTemplateState, name string, useEnvFallback bool) (nativeVariable, bool) {
+	if state == nil {
+		return nativeVariable{}, false
+	}
+	if variable, exists := state.defined[name]; exists {
+		return variable, true
+	}
+	if useEnvFallback && state.envFallback != nil {
+		if variable, exists := state.envFallback[name]; exists {
+			return variable, true
+		}
+	}
+	return nativeVariable{}, false
+}
+
 func resolveNativeVariable(name string, state *nativeTemplateState) nativeVariableResolution {
-	if resolution, ok := state.resolved[name]; ok {
-		restoreNativeResolutionMissing(state, resolution)
-		return resolution
+	return resolveNativeVariableWithScope(name, state, false)
+}
+
+func resolveNativeVariableWithScope(name string, state *nativeTemplateState, useEnvFallback bool) nativeVariableResolution {
+	cache := state.resolved
+	if useEnvFallback {
+		cache = state.resolvedEnv
+	}
+	if cache != nil {
+		if resolution, ok := cache[name]; ok {
+			restoreNativeResolutionMissing(state, resolution)
+			return resolution
+		}
 	}
 	if stackPosition, cyclic := state.resolving[name]; cyclic {
 		missing := append([]string(nil), state.resolutionStack[stackPosition-1:]...)
@@ -2928,7 +2957,7 @@ func resolveNativeVariable(name string, state *nativeTemplateState) nativeVariab
 			Missing:  sortedNativeSet(nativeStringSet(missing)),
 		}
 	}
-	variable, exists := state.defined[name]
+	variable, exists := lookupNativeVariable(state, name, useEnvFallback)
 	if !exists {
 		state.missing[name] = struct{}{}
 		return nativeVariableResolution{
@@ -2974,7 +3003,7 @@ func resolveNativeVariable(name string, state *nativeTemplateState) nativeVariab
 			resolutionMissing[expression] = struct{}{}
 			return "{{var." + expression + "}}"
 		}
-		nested, nestedExists := state.defined[expression]
+		nested, nestedExists := lookupNativeVariable(state, expression, useEnvFallback)
 		if !nestedExists {
 			complete = false
 			state.missing[expression] = struct{}{}
@@ -2982,7 +3011,7 @@ func resolveNativeVariable(name string, state *nativeTemplateState) nativeVariab
 			return "{{var." + expression + "}}"
 		}
 		_ = nested
-		resolution := resolveNativeVariable(expression, state)
+		resolution := resolveNativeVariableWithScope(expression, state, useEnvFallback)
 		dependencies = appendNativeVariableDependencies(dependencies, resolution.Dependencies...)
 		if !resolution.Complete {
 			complete = false
@@ -3005,7 +3034,9 @@ func resolveNativeVariable(name string, state *nativeTemplateState) nativeVariab
 		Dependencies: dependencies,
 		Missing:      sortedNativeSet(resolutionMissing),
 	}
-	state.resolved[name] = resolution
+	if cache != nil {
+		cache[name] = resolution
+	}
 	restoreNativeResolutionMissing(state, resolution)
 	return resolution
 }
@@ -3084,6 +3115,9 @@ func nativeTemplateRequiresSecret(name string, context nativeTemplateContext, co
 	if context == nativeTemplateAuthUsername || context == nativeTemplateAuthPassword ||
 		context == nativeTemplateAuthToken ||
 		context == nativeTemplateSensitiveHeader || context == nativeTemplateXMLCredential {
+		return true
+	}
+	if sharedvalue.CredentialShaped(name) {
 		return true
 	}
 	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(name))

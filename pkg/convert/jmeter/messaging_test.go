@@ -183,7 +183,7 @@ func TestMessagingScheduleAcceptsZeroRateWarmUp(t *testing.T) {
 	}
 }
 
-func TestMessagingSourceRedactsCredentialDuplicatedInXMLAttribute(t *testing.T) {
+func TestMessagingSourcePreservesCredentialsVerbatim(t *testing.T) {
 	source := string(messagingFixture(t, "original"))
 	source = strings.Replace(source, `name="fixture message"`, `name="echo-credential-canary"`, 1)
 	source = strings.Replace(source, `<stringProp name="sharedAccessKey">***</stringProp>`, `<stringProp name="sharedAccessKey">echo-credential-canary</stringProp>`, 1)
@@ -191,33 +191,44 @@ func TestMessagingSourceRedactsCredentialDuplicatedInXMLAttribute(t *testing.T) 
 	if e != nil {
 		t.Fatal(e)
 	}
-	public, _ := json.Marshal(r)
-	if strings.Contains(string(public), "echo-credential-canary") {
-		t.Fatal("credential leaked into public draft or nested source attribute")
+	if r.SourceReview.SourceFiles[0].Content != source || r.SourceReview.SourceFiles[0].Redacted {
+		t.Fatal("source review did not preserve raw JMX verbatim")
 	}
-	if !r.SourceReview.SourceFiles[0].Redacted {
-		t.Fatal("source redaction not disclosed")
-	}
-	source = strings.Replace(source, `name="echo-credential-canary"`, `name="echo&#45;credential&#45;canary"`, 1)
-	r, e = ConvertJMX([]byte(source), ConvertOptions{})
-	if e != nil {
-		t.Fatal(e)
-	}
-	if !strings.Contains(r.SourceReview.SourceFiles[0].Content, "SOURCE OMITTED") {
-		t.Fatal("entity-obscured duplicate not caught")
+	if !strings.Contains(r.Scripts[1].Config.EventHubs.ConnectionString, "SharedAccessKey=echo-credential-canary") {
+		t.Fatalf("Event Hubs connection string lost literal key: %q", r.Scripts[1].Config.EventHubs.ConnectionString)
 	}
 }
 
-func TestMessagingSourceRedactsUnsupportedExtraPropertyCredentials(t *testing.T) {
+func TestMessagingSourcePreservesExtraPropertyCredentialsAndKafkaJAASOptions(t *testing.T) {
 	for _, key := range []string{"ssl.key.password", "sasl.password", "clientSecret"} {
 		source := strings.Replace(string(messagingFixture(t, "original")), `<collectionProp name="extraConfigs">`, `<collectionProp name="extraConfigs"><elementProp name="secret-row"><stringProp name="configKey">`+key+`</stringProp><stringProp name="configValue">unsupported-secret-canary</stringProp></elementProp>`, 1)
 		r, err := ConvertJMX([]byte(source), ConvertOptions{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if strings.Contains(r.SourceReview.SourceFiles[0].Content, "unsupported-secret-canary") {
-			t.Fatalf("%s leaked through source review", key)
+		if !strings.Contains(r.SourceReview.SourceFiles[0].Content, "unsupported-secret-canary") || r.SourceReview.SourceFiles[0].Redacted {
+			t.Fatalf("%s was scrubbed from source review", key)
 		}
+	}
+	repaired, err := ConvertJMX(messagingFixture(t, "repaired"), ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kafka := repaired.Scripts[0]
+	if kafka.Config.Kafka.OAuth == nil || kafka.Config.Kafka.OAuth.ClientID != "***" || kafka.Config.Kafka.OAuth.ClientSecretRef != "***" {
+		t.Fatalf("Kafka OAuth literal options were rewritten: %#v", kafka.Config.Kafka.OAuth)
+	}
+	if hasJMeterReviewReason(kafka.Actions, "jmeter_kafka_oauth_credentials_required") {
+		t.Fatal("literal Kafka OAuth options should not emit jmeter_kafka_oauth_credentials_required")
+	}
+	meta := kafka.Actions[0].Metadata["jmeter_kafka"].(map[string]interface{})
+	effective := meta["effective_settings"].(map[string]string)
+	if effective["sasl.jaas.config"] == "[credential options withheld]" || !strings.Contains(effective["sasl.jaas.config"], "OAuthBearerLoginModule") {
+		t.Fatalf("sasl.jaas.config was withheld: %q", effective["sasl.jaas.config"])
+	}
+	oauthSource := meta["oauth_source"].(map[string]interface{})
+	if _, withheld := oauthSource["credentials"]; withheld {
+		t.Fatalf("oauth_source retained protected binding sentinel: %#v", oauthSource)
 	}
 }
 
@@ -250,9 +261,8 @@ func TestMessagingStructuredEventHubsOptionsAreBlocked(t *testing.T) {
 	}
 }
 
-func TestMessagingUnparseableJAASCannotExposeDecodedSecretCopies(t *testing.T) {
+func TestMessagingUnparseableJAASPreservesSourceReviewAndBlocksDraft(t *testing.T) {
 	data := strings.Replace(string(messagingFixture(t, "original")), `cid="***" cs="***"`, `cid="id" cs="line\nsecret"`, 1)
-	// Verify the test reached the source spelling it intends to exercise.
 	if !strings.Contains(data, `line\nsecret`) {
 		t.Fatal("JAAS fixture replacement did not apply")
 	}
@@ -260,8 +270,11 @@ func TestMessagingUnparseableJAASCannotExposeDecodedSecretCopies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(r.SourceReview.SourceFiles[0].Content, "SOURCE OMITTED") {
-		t.Fatal("unparseable JAAS source was disclosed")
+	if r.SourceReview.SourceFiles[0].Content != data || r.SourceReview.SourceFiles[0].Redacted {
+		t.Fatal("unparseable JAAS source was scrubbed or omitted")
+	}
+	if !hasJMeterReviewReason(r.Scripts[0].Actions, "jmeter_kafka_jaas_unsupported_or_malformed") {
+		t.Fatal("malformed JAAS was not blocked")
 	}
 }
 
@@ -305,7 +318,7 @@ func TestMessagingMultipleKafkaConfigurationsDoNotOverwrite(t *testing.T) {
 	sampler := func(id string) string {
 		return fmt.Sprintf(`<%s testname="%s"><stringProp name="kafkaProducerClientVariableName">%s</stringProp><stringProp name="kafkaTopic">events</stringProp><stringProp name="kafkaMessage">payload</stringProp></%s><hashTree/>`, diKafkaSampler, id, id, diKafkaSampler)
 	}
-	first := strings.Replace(config("one", "first.test"), "</"+diKafkaConfig+">", `<collectionProp name="extraConfigs"><elementProp name="tls"><stringProp name="configKey">ssl.enabled.protocols</stringProp><stringProp name="configValue">TLSv1.2</stringProp></elementProp><elementProp name="oauth"><stringProp name="configKey">sasl.jaas.config</stringProp><stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="synthetic" clientSecret="***";</stringProp></elementProp></collectionProp></`+diKafkaConfig+">", 1)
+	first := strings.Replace(strings.Replace(config("one", "first.test"), "securityType.plaintext", "securityType.sasl_ssl", 1), "</"+diKafkaConfig+">", `<collectionProp name="extraConfigs"><elementProp name="mech"><stringProp name="configKey">sasl.mechanism</stringProp><stringProp name="configValue">OAUTHBEARER</stringProp></elementProp><elementProp name="tls"><stringProp name="configKey">ssl.enabled.protocols</stringProp><stringProp name="configValue">TLSv1.2</stringProp></elementProp><elementProp name="oauth"><stringProp name="configKey">sasl.jaas.config</stringProp><stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="synthetic" clientSecret="***";</stringProp></elementProp></collectionProp></`+diKafkaConfig+">", 1)
 	input := `<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup/><hashTree>` + first + config("two", "second.test") + sampler("one") + sampler("two") + `</hashTree></hashTree></hashTree></jmeterTestPlan>`
 	r, err := ConvertJMX([]byte(input), ConvertOptions{})
 	if err != nil {
@@ -529,4 +542,238 @@ func TestMessagingInvalidScheduleExplainsTheCause(t *testing.T) {
 	if !gated || !explained {
 		t.Fatalf("gated=%v explained=%v diagnostics=%+v", gated, explained, r.Diagnostics)
 	}
+}
+
+func TestMessagingDIKafkaPlainScramAndLiteralTildeOAuth(t *testing.T) {
+	makePlan := func(brokers, securityType, mechanism, jaas, extraRows string) []byte {
+		return []byte(fmt.Sprintf(`<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup testname="kafka"/><hashTree>`+
+			`<%s><stringProp name="kafkaProducerClientVariableName">prod</stringProp>`+
+			`<stringProp name="kafkaBrokers">%s</stringProp>`+
+			`<stringProp name="securityType">%s</stringProp>`+
+			`<stringProp name="serializerKey">org.apache.kafka.common.serialization.StringSerializer</stringProp>`+
+			`<stringProp name="serializerValue">org.apache.kafka.common.serialization.StringSerializer</stringProp>`+
+			`<collectionProp name="extraConfigs">`+
+			`<elementProp name="mech"><stringProp name="configKey">sasl.mechanism</stringProp><stringProp name="configValue">%s</stringProp></elementProp>`+
+			`<elementProp name="jaas"><stringProp name="configKey">sasl.jaas.config</stringProp><stringProp name="configValue">%s</stringProp></elementProp>`+
+			`%s</collectionProp></%s><hashTree/>`+
+			`<%s testname="publish"><stringProp name="kafkaProducerClientVariableName">prod</stringProp><stringProp name="kafkaTopic">orders</stringProp><stringProp name="kafkaMessage">{"ok":true}</stringProp></%s><hashTree/>`+
+			`</hashTree></hashTree></hashTree></jmeterTestPlan>`,
+			diKafkaConfig, brokers, securityType, mechanism, jaas, extraRows, diKafkaConfig, diKafkaSampler, diKafkaSampler))
+	}
+
+	t.Run("eventhubs_sasl_plain", func(t *testing.T) {
+		connStr := "Endpoint=sb://synthetic-ns.servicebus.windows.net/;SharedAccessKeyName=SendRule;SharedAccessKey=abc123XYZ+789/0="
+		jaas := `org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="` + connStr + `";`
+		res, err := ConvertJMX(makePlan("synthetic-ns.servicebus.windows.net:9093", "securityType.sasl_ssl", "PLAIN", jaas, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := res.Scripts[0]
+		if s.Config.Kafka.Profile != "eventhubs" || s.Config.Kafka.SASLMechanism != "plain" || s.Config.Kafka.SASLUsername != "$ConnectionString" || s.Config.Kafka.SASLPassword != connStr {
+			t.Fatalf("unexpected Kafka SASL/PLAIN config: %+v", s.Config.Kafka)
+		}
+		if s.Config.Kafka.OAuth != nil {
+			t.Fatalf("unexpected OAuth config on SASL/PLAIN: %+v", s.Config.Kafka.OAuth)
+		}
+		if hasJMeterReviewReason(s.Actions, "jmeter_kafka_jaas_unsupported_or_malformed") || hasJMeterReviewReason(s.Actions, "jmeter_kafka_oauth_credentials_required") {
+			t.Fatalf("unexpected JAAS/OAuth blocker on SASL/PLAIN: %#v", s.Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(s); len(issues) > 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("kafka_scram_sha_256", func(t *testing.T) {
+		jaas := `org.apache.kafka.common.security.scram.ScramLoginModule required username='scram-user' password='scram-pass-value';`
+		res, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "SCRAM-SHA-256", jaas, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := res.Scripts[0]
+		if s.Config.Kafka.Profile != "" || s.Config.Kafka.SASLMechanism != "scram-sha-256" || s.Config.Kafka.SASLUsername != "scram-user" || s.Config.Kafka.SASLPassword != "scram-pass-value" {
+			t.Fatalf("unexpected Kafka SCRAM config: %+v", s.Config.Kafka)
+		}
+		if hasJMeterReviewReason(s.Actions, "jmeter_kafka_jaas_unsupported_or_malformed") || hasJMeterReviewReason(s.Actions, "jmeter_kafka_oauth_credentials_required") {
+			t.Fatalf("unexpected JAAS/OAuth blocker on SCRAM: %#v", s.Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(s); len(issues) > 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("oauthbearer_literal_tilde_secret", func(t *testing.T) {
+		tildeSecret := "synth8Q~0123456789abcdefABCDEF_tilde-sec"
+		jaas := `org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="00000000-0000-0000-0000-000000000099" clientSecret="` + tildeSecret + `" scope="api://synthetic/.default";`
+		extra := `<elementProp name="ep"><stringProp name="configKey">sasl.oauthbearer.token.endpoint.url</stringProp><stringProp name="configValue">https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/oauth2/v2.0/token</stringProp></elementProp>` +
+			`<elementProp name="cb"><stringProp name="configKey">sasl.login.callback.handler.class</stringProp><stringProp name="configValue">org.apache.kafka.common.security.oauthbearer.secured.OAuthBearerLoginCallbackHandler</stringProp></elementProp>`
+		res, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "OAUTHBEARER", jaas, extra), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		s := res.Scripts[0]
+		if s.Config.Kafka.OAuth == nil || s.Config.Kafka.OAuth.ClientSecretRef != tildeSecret {
+			t.Fatalf("expected literal tilde secret in ClientSecretRef, got %+v", s.Config.Kafka.OAuth)
+		}
+		if len(res.SecretRequirements) != 0 {
+			t.Fatalf("expected zero SecretRequirements for literal OAuth secret, got %+v", res.SecretRequirements)
+		}
+		if hasJMeterReviewReason(s.Actions, "jmeter_kafka_jaas_unsupported_or_malformed") || hasJMeterReviewReason(s.Actions, "jmeter_kafka_oauth_credentials_required") {
+			t.Fatalf("unexpected JAAS/OAuth blocker on literal OAuth: %#v", s.Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(s); len(issues) > 0 {
+			t.Fatalf("ValidateScriptIssues failed: %v", issues)
+		}
+	})
+
+	t.Run("scram_tokenauth_true_is_gated", func(t *testing.T) {
+		jaas := `org.apache.kafka.common.security.scram.ScramLoginModule required username="token-id" password="token-hmac" tokenauth=true;`
+		res, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "SCRAM-SHA-256", jaas, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(res.Scripts[0].Actions, "jmeter_kafka_jaas_unsupported_or_malformed") {
+			t.Fatalf("expected tokenauth=true SCRAM to be gated with jmeter_kafka_jaas_unsupported_or_malformed, got %#v", res.Scripts[0].Actions[0].Metadata)
+		}
+	})
+
+	t.Run("unresolved_jaas_variables_are_gated", func(t *testing.T) {
+		jaas := `org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USER}" password="${KAFKA_PASS}" tokenauth=false;`
+		res, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "SCRAM-SHA-256", jaas, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(res.Scripts[0].Actions, "jmeter_messaging_variable_unresolved") {
+			t.Fatalf("expected unresolved JAAS variable to be gated with jmeter_messaging_variable_unresolved, got %#v", res.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("blocked draft must remain savable: %v", issues)
+		}
+	})
+
+	t.Run("eventhubs_semicolon_injection_and_unresolved_variables_and_sb_prefix", func(t *testing.T) {
+		makeEHPlan := func(ns, keyName, key string) []byte {
+			return []byte(fmt.Sprintf(`<jmeterTestPlan><hashTree><TestPlan/><hashTree><ThreadGroup testname="eh"/><hashTree>`+
+				`<%s testname="send"><stringProp name="namespaceName">%s</stringProp><stringProp name="eventHubName">orders</stringProp>`+
+				`<stringProp name="authType">Shared access signature</stringProp><stringProp name="sharedAccessKeyName">%s</stringProp><stringProp name="sharedAccessKey">%s</stringProp>`+
+				`<collectionProp name="Messages.messages"><elementProp name="m" elementType="jp.co.pnop.jmeter.protocol.amqp.sampler.AzAmqpMessage"><stringProp name="Message.messageType">String</stringProp><stringProp name="Message.message">{"ok":true}</stringProp></elementProp></collectionProp>`+
+				`</%s><hashTree/></hashTree></hashTree></hashTree></jmeterTestPlan>`,
+				pnopEventHubsSampler, ns, keyName, key, pnopEventHubsSampler))
+		}
+
+		// sb:// prefix and trailing slash normalize cleanly when valid.
+		cleanRes, err := ConvertJMX(makeEHPlan("sb://synthetic-ns.servicebus.windows.net/", "SendRule", "abc123XYZ+789/0="), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cleanRes.Scripts[0].Config.EventHubs.ConnectionString != "Endpoint=sb://synthetic-ns.servicebus.windows.net/;SharedAccessKeyName=SendRule;SharedAccessKey=abc123XYZ+789/0=" {
+			t.Fatalf("unexpected normalized EventHubs connection string: %q", cleanRes.Scripts[0].Config.EventHubs.ConnectionString)
+		}
+		if hasJMeterReviewReason(cleanRes.Scripts[0].Actions, "jmeter_eventhubs_credentials_required") {
+			t.Fatalf("unexpected credential gate on valid sb:// namespace: %#v", cleanRes.Scripts[0].Actions[0].Metadata)
+		}
+
+		// Semicolons in keyName or key must not inject connection-string segments.
+		injRes, err := ConvertJMX(makeEHPlan("synthetic-ns.servicebus.windows.net", "SendRule;EntityPath=orders", "abc;foo=bar"), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(injRes.Scripts[0].Actions, "jmeter_eventhubs_credentials_required") ||
+			!strings.HasPrefix(injRes.Scripts[0].Config.EventHubs.ConnectionString, "{{secret.") {
+			t.Fatalf("semicolon-bearing EventHubs SAS fields bypassed credential gate: conn=%q meta=%#v",
+				injRes.Scripts[0].Config.EventHubs.ConnectionString, injRes.Scripts[0].Actions[0].Metadata)
+		}
+
+		// Unresolved ${VAR} in sharedAccessKey is gated with jmeter_messaging_variable_unresolved.
+		varRes, err := ConvertJMX(makeEHPlan("synthetic-ns.servicebus.windows.net", "SendRule", "${EH_SAS_KEY}"), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(varRes.Scripts[0].Actions, "jmeter_messaging_variable_unresolved") {
+			t.Fatalf("expected jmeter_messaging_variable_unresolved for ${EH_SAS_KEY}, got %#v", varRes.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(varRes.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("blocked EventHubs draft must remain savable: %v", issues)
+		}
+	})
+
+	t.Run("malformed_eventhubs_plain_and_non_ssl_oauth_and_templated_enums_stay_savable", func(t *testing.T) {
+		emptyPassJAAS := `org.apache.kafka.common.security.plain.PlainLoginModule required username="$ConnectionString" password="";`
+		emptyPassRes, err := ConvertJMX(makePlan("synthetic-ns.servicebus.windows.net:9093", "securityType.sasl_ssl", "PLAIN", emptyPassJAAS, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if emptyPassRes.Scripts[0].Config.Kafka.Profile != "" {
+			t.Fatalf("empty-password Event Hubs PLAIN should not set profile=eventhubs: %+v", emptyPassRes.Scripts[0].Config.Kafka)
+		}
+		if !hasJMeterReviewReason(emptyPassRes.Scripts[0].Actions, "jmeter_kafka_jaas_unsupported_or_malformed") {
+			t.Fatalf("expected empty-password JAAS blocker, got %#v", emptyPassRes.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(emptyPassRes.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("empty-password Event Hubs PLAIN draft must remain savable: %v", issues)
+		}
+
+		nonSSLOAuthJAAS := `org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required clientId="cid-1" clientSecret="csec-1" scope="api://synthetic/.default";`
+		nonSSLExtra := `<elementProp name="ep"><stringProp name="configKey">sasl.oauthbearer.token.endpoint.url</stringProp><stringProp name="configValue">https://login.microsoftonline.com/00000000-0000-0000-0000-000000000001/oauth2/v2.0/token</stringProp></elementProp>`
+		nonSSLRes, err := ConvertJMX(makePlan("broker.example.test:9092", "securityType.sasl_plaintext", "OAUTHBEARER", nonSSLOAuthJAAS, nonSSLExtra), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if nonSSLRes.Scripts[0].Config.Kafka.OAuth != nil {
+			t.Fatalf("expected non-SSL OAuth native config to stay nil on blocked draft, got %+v", nonSSLRes.Scripts[0].Config.Kafka.OAuth)
+		}
+		if !hasJMeterReviewReason(nonSSLRes.Scripts[0].Actions, "jmeter_kafka_jaas_unsupported_or_malformed") {
+			t.Fatalf("expected jmeter_kafka_jaas_unsupported_or_malformed on non-SSL OAuth, got %#v", nonSSLRes.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(nonSSLRes.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("non-SSL OAuth blocked draft must remain savable: %v", issues)
+		}
+
+		templatedEnumsExtra := `<elementProp name="acks"><stringProp name="configKey">acks</stringProp><stringProp name="configValue">${KAFKA_ACKS}</stringProp></elementProp>`
+		templatedRes, err := ConvertJMX(makePlan("broker.example.test:9093", "${SEC_PROTO}", "${SASL_MECH}", emptyPassJAAS, templatedEnumsExtra), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(templatedRes.Scripts[0].Actions, "jmeter_messaging_variable_unresolved") {
+			t.Fatalf("expected jmeter_messaging_variable_unresolved for templated enums, got %#v", templatedRes.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(templatedRes.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("templated-enum blocked draft must remain savable: %v", issues)
+		}
+
+		badTokenURLRes, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "OAUTHBEARER", nonSSLOAuthJAAS, `<elementProp name="ep"><stringProp name="configKey">sasl.oauthbearer.token.endpoint.url</stringProp><stringProp name="configValue">http://idp.example.test/token</stringProp></elementProp>`), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !hasJMeterReviewReason(badTokenURLRes.Scripts[0].Actions, "jmeter_kafka_oauth_endpoint_invalid") {
+			t.Fatalf("expected jmeter_kafka_oauth_endpoint_invalid, got %#v", badTokenURLRes.Scripts[0].Actions[0].Metadata)
+		}
+		if issues := dsl.ValidateScriptIssues(badTokenURLRes.Scripts[0]); len(issues) > 0 {
+			t.Fatalf("invalid-token-url OAuth over sasl_ssl blocked draft must remain savable: %v", issues)
+		}
+
+		for _, badEscapeJAAS := range []string{
+			`org.apache.kafka.common.security.plain.PlainLoginModule required username="svc" password="line1\nline2";`,
+			`org.apache.kafka.common.security.scram.ScramLoginModule required username='svc\tuser' password='secret';`,
+		} {
+			badEscRes, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "PLAIN", badEscapeJAAS, ""), ConvertOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !hasJMeterReviewReason(badEscRes.Scripts[0].Actions, "jmeter_kafka_jaas_unsupported_or_malformed") {
+				t.Fatalf("expected unsupported escape JAAS %q to fail closed, got %#v", badEscapeJAAS, badEscRes.Scripts[0].Actions[0].Metadata)
+			}
+			if issues := dsl.ValidateScriptIssues(badEscRes.Scripts[0]); len(issues) > 0 {
+				t.Fatalf("unsupported escape JAAS draft must remain savable: %v", issues)
+			}
+		}
+
+		escapedQuoteJAAS := `org.apache.kafka.common.security.plain.PlainLoginModule required username="svc" password="p\\\"q";`
+		escapedQuoteRes, err := ConvertJMX(makePlan("broker.example.test:9093", "securityType.sasl_ssl", "PLAIN", escapedQuoteJAAS, ""), ConvertOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := escapedQuoteRes.Scripts[0].Config.Kafka.SASLPassword; got != `p\"q` {
+			t.Fatalf("SASLPassword single-pass unescape = %q, want %q", got, `p\"q`)
+		}
+	})
 }

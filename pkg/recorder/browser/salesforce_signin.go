@@ -17,7 +17,7 @@ import (
 
 // salesforceOneTimeCode reports a fill of a one-time verification code.
 func salesforceOneTimeCode(step Step) bool {
-	if !step.Masked || step.Kind != StepFill {
+	if step.Kind != StepFill {
 		return false
 	}
 	if step.Element != nil && strings.EqualFold(strings.TrimSpace(step.Element.Attributes["autocomplete"]), "one-time-code") {

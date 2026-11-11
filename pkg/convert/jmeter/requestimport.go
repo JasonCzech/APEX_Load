@@ -518,7 +518,7 @@ func unresolvedJMeterCredentialBindings(reports []requestimport.Report) int {
 	count := 0
 	for _, report := range reports {
 		for _, requirement := range report.Requirements {
-			if requirement.SourceValueAvailable && requirement.Value != "" {
+			if !requirement.ExistingReference && !requirement.SourceValueAvailable {
 				count++
 			}
 		}

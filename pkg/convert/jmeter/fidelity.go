@@ -364,16 +364,3 @@ func applyThreadGroupTermination(tg *treeNode, script *dsl.Script, diagnostics *
 		diagnostics.Add(diag.Blocker, "JMeter ThreadGroup", script.Name, reason)
 	}
 }
-
-func gateJMeterMaskedValues(script *dsl.Script, diagnostics *diag.Collector, file string) {
-	_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
-		for _, header := range ref.Action.HeaderList {
-			value := strings.TrimSpace(header.Value)
-			if len(value) >= 3 && strings.Trim(value, "*") == "" {
-				gateJMeterAction(ref.Action, "jmeter_masked_source_value", file+"#"+ref.Path)
-				diagnostics.Add(diag.Blocker, "JMeter masked value", ref.Path, "Source header "+header.Name+" contains a redaction placeholder; explicitly bind its source reference to a real value or {{secret.NAME}} and regenerate")
-			}
-		}
-		return nil
-	})
-}

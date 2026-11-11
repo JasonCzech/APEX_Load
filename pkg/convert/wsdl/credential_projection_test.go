@@ -207,6 +207,51 @@ func TestConvertWSDLPreservesEndpointCredentialsAndSourceReview(t *testing.T) {
 		result.SourceReview.SourceFiles[0].Redacted {
 		t.Fatalf("encoded endpoint source was not preserved: %#v", result.SourceReview)
 	}
+	if result.Readiness.UnresolvedBindings != 0 || containsString(result.Readiness.BlockingCodes, "credential_bindings_required") {
+		t.Fatalf("endpoint credentials unexpectedly created unresolved bindings: %#v", result.Readiness)
+	}
+}
+
+func TestConvertWSDLPreservesLiteralSentinelDefaultsWithoutBlockingOrSecretTokenization(t *testing.T) {
+	for _, literal := range []string{"***", "[REDACTED]", "%5BREDACTED%5D"} {
+		t.Run(literal, func(t *testing.T) {
+			result, err := Convert(ImportRequest{
+				RootFile: "sentinel.wsdl",
+				Content: `<definitions name="SentinelService" targetNamespace="urn:sentinel"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="urn:sentinel">
+  <types><xsd:schema targetNamespace="urn:sentinel" elementFormDefault="qualified">
+    <xsd:element name="AuthRequest">
+      <xsd:complexType><xsd:sequence>
+        <xsd:element name="password" type="xsd:string" fixed="` + literal + `"/>
+      </xsd:sequence></xsd:complexType>
+    </xsd:element>
+  </xsd:schema></types>
+  <message name="AuthInput"><part name="parameters" element="tns:AuthRequest"/></message>
+  <portType name="AuthPortType"><operation name="Auth"><input message="tns:AuthInput"/></operation></portType>
+  <binding name="AuthBinding" type="tns:AuthPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Auth"><soap:operation soapAction="urn:Auth"/><input><soap:body use="literal"/></input></operation>
+  </binding>
+  <service name="SentinelService"><port name="AuthPort" binding="tns:AuthBinding">
+    <soap:address location="https://alice:endpoint-pass@soap.example.test/auth?api_key=endpoint-token"/>
+  </port></service>
+</definitions>`,
+			})
+			if err != nil {
+				t.Fatalf("Convert: %v", err)
+			}
+			action := result.Script.Actions[0]
+			if !strings.Contains(action.Body, "<tns:password>"+literal+"</tns:password>") {
+				t.Fatalf("action.Body = %q, want literal %q preserved", action.Body, literal)
+			}
+			if len(result.SecretRequirements) != 0 || action.Metadata["execution_blocker"] != nil || result.Readiness.State != importreview.Ready {
+				t.Fatalf("literal WSDL value triggered secret requirement or blocker: secrets=%#v readiness=%#v meta=%#v", result.SecretRequirements, result.Readiness, action.Metadata)
+			}
+		})
+	}
 }
 
 func TestProjectWSDLCredentialsPreservesEntireXMLAndAttributeSyntax(t *testing.T) {
@@ -215,7 +260,7 @@ func TestProjectWSDLCredentialsPreservesEntireXMLAndAttributeSyntax(t *testing.T
 		attrCanary = "credential-canary-attr-24b0"
 	)
 	body := []byte(`<env:Envelope xmlns:env="urn:env"><env:Header/><env:Body><auth:token xmlns:auth="urn:auth" apiKey='` + attrCanary + `'>  ` + textCanary + `  </auth:token><note a="1">&amp; exact</note></env:Body></env:Envelope>`)
-	projected, secrets, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -227,9 +272,8 @@ func TestProjectWSDLCredentialsPreservesEntireXMLAndAttributeSyntax(t *testing.T
 	if len(findings) != 1 ||
 		findings[0].Code != "import_credential_preserved" ||
 		findings[0].Gate != importreview.GateNone ||
-		len(secrets) != 0 ||
 		len(targets) != 2 {
-		t.Fatalf("projection sidecars: findings=%#v secrets=%#v targets=%#v", findings, secrets, targets)
+		t.Fatalf("projection sidecars: findings=%#v targets=%#v", findings, targets)
 	}
 	got := string(projected)
 	if got != string(body) {
@@ -255,7 +299,7 @@ func TestProjectWSDLCredentialsPreservesValidMixedSensitiveContent(t *testing.T)
   <username>alice</username>
   <password>` + canary + `<accessToken>` + childCanary + `</accessToken>suffix</password>
 </credentials><note>exact</note></Envelope>`)
-	projected, secrets, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, findings, targets, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -263,9 +307,6 @@ func TestProjectWSDLCredentialsPreservesValidMixedSensitiveContent(t *testing.T)
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if len(secrets) != 0 {
-		t.Fatalf("unsafe mixed content should not create a migratable requirement: %#v", secrets)
 	}
 	if len(findings) != 1 ||
 		findings[0].Code != "credential_xml_sensitive_mixed_content_review_required" ||
@@ -285,7 +326,7 @@ func TestProjectWSDLCredentialsPreservesValidMixedSensitiveContent(t *testing.T)
 
 func TestProjectWSDLCredentialsPreservesMalformedXMLButBlocksExecution(t *testing.T) {
 	body := []byte(`<Envelope><password>wsdl-malformed-canary</Envelope>`)
-	projected, secrets, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -297,9 +338,6 @@ func TestProjectWSDLCredentialsPreservesMalformedXMLButBlocksExecution(t *testin
 	if string(projected) != string(body) {
 		t.Fatalf("malformed XML bytes changed:\n got: %q\nwant: %q", projected, body)
 	}
-	if len(secrets) != 0 {
-		t.Fatalf("malformed preserved XML unexpectedly created requirements: %#v", secrets)
-	}
 	if !wsdlFindingHasExecutionGate(findings, "credential_xml_malformed") {
 		t.Fatalf("findings = %#v, want malformed XML execution gate", findings)
 	}
@@ -307,7 +345,7 @@ func TestProjectWSDLCredentialsPreservesMalformedXMLButBlocksExecution(t *testin
 
 func TestProjectWSDLCredentialsPreservesExplicitSecretReference(t *testing.T) {
 	body := []byte(`<Envelope><password>{{secret.EXISTING_PASSWORD}}</password></Envelope>`)
-	projected, secrets, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+	projected, findings, _, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
 		RequestKey: "login",
 		SourcePath: "login.wsdl",
 		Pointer:    "operation/Login/body",
@@ -319,8 +357,8 @@ func TestProjectWSDLCredentialsPreservesExplicitSecretReference(t *testing.T) {
 	if string(projected) != string(body) {
 		t.Fatalf("authored secret reference changed:\n got: %q\nwant: %q", projected, body)
 	}
-	if len(secrets) != 0 || wsdlFindingHasExecutionGate(findings, "") {
-		t.Fatalf("authored secret reference produced side effects: secrets=%#v findings=%#v", secrets, findings)
+	if wsdlFindingHasExecutionGate(findings, "") {
+		t.Fatalf("authored secret reference produced side effects: findings=%#v", findings)
 	}
 }
 
@@ -571,6 +609,40 @@ func TestConvertWSDLMissingEndpointUsesInertBlockedTarget(t *testing.T) {
 	}
 	if !containsString(result.Readiness.BlockingCodes, "wsdl_missing_endpoint_review_required") {
 		t.Fatalf("blocking codes = %#v", result.Readiness.BlockingCodes)
+	}
+}
+
+func TestConvertWSDLNeutralizesForeignRunAndFileTemplatesBeforeFinalize(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		RootFile: "templates.wsdl",
+		Content: `<definitions name="Svc_{{run.id}}" targetNamespace="urn:{{run.name}}"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+  xmlns:tns="urn:{{run.name}}">
+  <types><xsd:schema targetNamespace="urn:{{run.name}}" elementFormDefault="qualified">
+    <xsd:element name="CallRequest">
+      <xsd:complexType><xsd:sequence>
+        <xsd:element name="payload" type="xsd:string" fixed="{{file.missing_wsdl_asset}}:{{run.name}}"/>
+      </xsd:sequence></xsd:complexType>
+    </xsd:element>
+  </xsd:schema></types>
+  <message name="Input"><part name="parameters" element="tns:CallRequest"/></message>
+  <portType name="TestPortType"><operation name="Call"><input message="tns:Input"/></operation></portType>
+  <binding name="TestBinding" type="tns:TestPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="Call"><soap:operation soapAction="urn:{{run.name}}"/><input><soap:body use="literal"/></input></operation>
+  </binding>
+  <service name="Svc"><port name="Port" binding="tns:TestBinding">
+    <soap:address location="https://soap.example.test/endpoint"/>
+  </port></service>
+</definitions>`,
+	})
+	if err != nil {
+		t.Fatalf("Convert with foreign templates returned error: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("ValidateScriptIssues = %#v, want empty", issues)
 	}
 }
 

@@ -133,13 +133,13 @@ func TestResolvePanelExprLongestMatchWins(t *testing.T) {
 }
 
 func TestValidateBindingValue(t *testing.T) {
-	valid := []string{"prod", "us-east-1", "10.0.0.1", "a.b:c/d=e+f", strings.Repeat("a", 128)}
+	valid := []string{"prod", "us-east-1", "10.0.0.1", "a.b:c/d=e+f", strings.Repeat("a", 256), strings.Repeat("a", 4096)}
 	for _, v := range valid {
 		if !ValidateBindingValue(v) {
 			t.Fatalf("expected %q valid", v)
 		}
 	}
-	invalid := []string{"", "has space", `quote"`, "brace{", "pipe|x", "comma,x", strings.Repeat("a", 129)}
+	invalid := []string{"", "has space", `quote"`, "brace{", "pipe|x", "comma,x", strings.Repeat("a", 4097)}
 	for _, v := range invalid {
 		if ValidateBindingValue(v) {
 			t.Fatalf("expected %q invalid", v)

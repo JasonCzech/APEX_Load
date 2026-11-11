@@ -77,18 +77,10 @@ func (b Binding) Validate() error {
 	return nil
 }
 
-// ValidateFor reports a binding that names no supported source, or one a
-// credential-shaped input cannot take: a credential reads a project secret or
-// a data pool column, never a generated value or one kept in the script.
-// Bind applies it, so every importer refuses the same bindings.
-func (b Binding) ValidateFor(candidate Candidate) error {
-	if err := b.Validate(); err != nil {
-		return err
-	}
-	if candidate.CredentialShaped && b.Mode != BindingData && b.Mode != BindingSecret {
-		return fmt.Errorf("%s looks like a credential: supply it from a project secret or a data pool column", candidate.Name)
-	}
-	return nil
+// ValidateFor reports a binding that names no supported source.
+// Bind applies it, so every importer refuses the same invalid bindings.
+func (b Binding) ValidateFor(_ Candidate) error {
+	return b.Validate()
 }
 
 // Input is how a script records that this binding supplies the input name
@@ -201,11 +193,7 @@ func (b Binding) sourceLabel() string {
 }
 
 // unboundAdvice is what an operator can do with an input no binding reaches:
-// one value for every user, which a credential cannot take, so a credential
-// used where nothing can read it is corrected in the source.
-func unboundAdvice(candidate Candidate) string {
-	if candidate.CredentialShaped {
-		return "correct where the source uses it and import again"
-	}
+// give it one value for every user.
+func unboundAdvice(_ Candidate) string {
 	return "give it one value for every user"
 }

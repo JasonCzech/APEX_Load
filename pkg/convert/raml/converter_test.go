@@ -369,3 +369,370 @@ securitySchemes:
 		t.Fatalf("client_id header = %q, want none for api-key scheme", got)
 	}
 }
+
+func TestConvertRAMLClientIDEnforcementPreservesAuthoredDefaults(t *testing.T) {
+	content := `#%RAML 1.0
+title: Authored Scheme API
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_required:
+    type: Pass Through
+    describedBy:
+      headers:
+        client_id:
+          type: string
+          default: scheme-client-id
+        client_secret:
+          type: string
+          example: scheme-client-secret
+/things:
+  get:
+    displayName: List Things
+`
+	result, err := Convert(ImportRequest{Content: content})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	headers := result.Script.Actions[0].Headers
+	if headers["client_id"] != "scheme-client-id" || headers["client_secret"] != "scheme-client-secret" {
+		t.Fatalf("headers = %#v, want preserved scheme client credentials", headers)
+	}
+	if len(result.SecretRequirements) != 0 {
+		t.Fatalf("secret requirements = %#v, want none when scheme credentials have authored values", result.SecretRequirements)
+	}
+}
+
+func TestRAMLGeneratedCredentialRequirementsDeterministicHeaderOrder(t *testing.T) {
+	for i := 0; i < 32; i++ {
+		script := &dsl.Script{
+			Name:     "Multi Header Secret",
+			Protocol: "http",
+			Actions: []dsl.Action{{
+				Name:   "Call",
+				Type:   "GET",
+				Method: "GET",
+				Target: "/things",
+				Headers: map[string]string{
+					"z_client_secret": "{{secret.RAML_CLIENT_SECRET}}",
+					"a_client_secret": "{{secret.RAML_CLIENT_SECRET}}",
+					"m_client_secret": "{{secret.RAML_CLIENT_SECRET}}",
+				},
+			}},
+		}
+		reqs, err := ramlGeneratedCredentialRequirements(script, "api.raml")
+		if err != nil {
+			t.Fatalf("iter %d ramlGeneratedCredentialRequirements: %v", i, err)
+		}
+		if len(reqs) != 1 || len(reqs[0].Targets) != 3 {
+			t.Fatalf("iter %d reqs = %#v, want 1 requirement with 3 sorted targets", i, reqs)
+		}
+		if reqs[0].Targets[0].Field != "actions[0].headers.a_client_secret" ||
+			reqs[0].Targets[1].Field != "actions[0].headers.m_client_secret" ||
+			reqs[0].Targets[2].Field != "actions[0].headers.z_client_secret" {
+			t.Fatalf("iter %d targets = %#v, want deterministic alphabetical header order", i, reqs[0].Targets)
+		}
+	}
+}
+
+func TestRAMLAuthoredClientSecretTemplateInBodyOrCompositeHeaderDoesNotFail(t *testing.T) {
+	content := `#%RAML 1.0
+title: Authored Secret Template API
+baseUri: https://api.example.test
+/tokens:
+  post:
+    headers:
+      Authorization:
+        type: string
+        example: "Basic {{secret.RAML_CLIENT_SECRET}}"
+    body:
+      application/json:
+        example: '{"client_secret":"{{secret.RAML_CLIENT_SECRET}}"}'
+`
+	result, err := Convert(ImportRequest{Content: content})
+	if err != nil {
+		t.Fatalf("Convert returned error on authored {{secret.RAML_CLIENT_SECRET}}: %v", err)
+	}
+	if len(result.SecretRequirements) != 1 || len(result.SecretRequirements[0].Targets) != 2 {
+		t.Fatalf("SecretRequirements = %#v, want 1 requirement covering composite header and body targets", result.SecretRequirements)
+	}
+}
+
+func TestRAMLClientIDEnforcementLocationsAndSpellings(t *testing.T) {
+	t.Run("query_parameters_unauthored_and_authored", func(t *testing.T) {
+		unauthored := `#%RAML 1.0
+title: Query Policy API
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_enforcement:
+    type: x-client-id-enforcement
+    describedBy:
+      queryParameters:
+        client_id:
+          type: string
+        client_secret:
+          type: string
+/orders:
+  get:
+    displayName: List Orders
+`
+		res, err := Convert(ImportRequest{Content: unauthored})
+		if err != nil {
+			t.Fatalf("Convert unauthored query policy: %v", err)
+		}
+		act := res.Script.Actions[0]
+		if _, hasHeader := act.Headers["client_id"]; hasHeader {
+			t.Fatalf("unexpected client_id header when scheme uses queryParameters: %#v", act.Headers)
+		}
+		if _, hasHeader := act.Headers["client_secret"]; hasHeader {
+			t.Fatalf("unexpected client_secret header when scheme uses queryParameters: %#v", act.Headers)
+		}
+		if act.Target != "/orders?client_id={{env.RAML_CLIENT_ID}}&client_secret={{secret.RAML_CLIENT_SECRET}}" {
+			t.Fatalf("act.Target = %q, want query client_id and client_secret placeholders", act.Target)
+		}
+		if len(res.SecretRequirements) != 1 || len(res.SecretRequirements[0].Targets) != 1 || res.SecretRequirements[0].Targets[0].Field != "actions[0].target" {
+			t.Fatalf("SecretRequirements = %#v, want actions[0].target", res.SecretRequirements)
+		}
+
+		authored := `#%RAML 1.0
+title: Authored Query Policy API
+baseUri: https://api.example.test
+securitySchemes:
+  client_id_enforcement:
+    type: x-client-id-enforcement
+    describedBy:
+      queryParameters:
+        client_id:
+          type: string
+          example: query-app-id
+        client_secret:
+          type: string
+          default: query-app-secret
+/orders:
+  get:
+    displayName: List Orders
+`
+		resAuthored, err := Convert(ImportRequest{Content: authored})
+		if err != nil {
+			t.Fatalf("Convert authored query policy: %v", err)
+		}
+		actAuthored := resAuthored.Script.Actions[0]
+		if actAuthored.Target != "/orders?client_id=query-app-id&client_secret=query-app-secret" {
+			t.Fatalf("actAuthored.Target = %q, want preserved query client credentials", actAuthored.Target)
+		}
+		if len(resAuthored.SecretRequirements) != 0 {
+			t.Fatalf("SecretRequirements = %#v, want none when query credentials are authored", resAuthored.SecretRequirements)
+		}
+	})
+
+	t.Run("custom_header_spellings_and_dotted_traits_without_duplicate_injection", func(t *testing.T) {
+		customHeaders := `#%RAML 1.0
+title: Custom Header Policy API
+baseUri: https://api.example.test
+securitySchemes:
+  custom_client_policy:
+    type: Pass Through
+    describedBy:
+      headers:
+        X-Client-Id:
+          type: string
+          example: custom-id
+        X-Client-Secret:
+          type: string
+/items:
+  get:
+    displayName: List Items
+  post:
+    displayName: Create Item With Dotted Override
+    headers:
+      client.id:
+        type: string
+        example: dotted-id
+      client.secret:
+        type: string
+        example: dotted-secret
+`
+		res, err := Convert(ImportRequest{Content: customHeaders})
+		if err != nil {
+			t.Fatalf("Convert custom headers policy: %v", err)
+		}
+		getHeaders := res.Script.Actions[0].Headers
+		if getHeaders["X-Client-Id"] != "custom-id" || getHeaders["X-Client-Secret"] != "{{secret.RAML_CLIENT_SECRET}}" {
+			t.Fatalf("GET headers = %#v, want X-Client-Id and X-Client-Secret", getHeaders)
+		}
+		if _, dup := getHeaders["client_id"]; dup {
+			t.Fatalf("GET headers injected duplicate client_id: %#v", getHeaders)
+		}
+		if _, dup := getHeaders["client_secret"]; dup {
+			t.Fatalf("GET headers injected duplicate client_secret: %#v", getHeaders)
+		}
+		postHeaders := res.Script.Actions[1].Headers
+		if postHeaders["client.id"] != "dotted-id" || postHeaders["client.secret"] != "dotted-secret" {
+			t.Fatalf("POST headers = %#v, want preserved dotted client credentials", postHeaders)
+		}
+		if _, dup := postHeaders["X-Client-Id"]; dup {
+			t.Fatalf("POST headers injected duplicate X-Client-Id alongside client.id: %#v", postHeaders)
+		}
+		if _, dup := postHeaders["X-Client-Secret"]; dup {
+			t.Fatalf("POST headers injected duplicate X-Client-Secret alongside client.secret: %#v", postHeaders)
+		}
+		if len(res.SecretRequirements) != 1 || len(res.SecretRequirements[0].Targets) != 1 || res.SecretRequirements[0].Targets[0].Field != "actions[0].headers.X-Client-Secret" {
+			t.Fatalf("SecretRequirements = %#v, want single target actions[0].headers.X-Client-Secret", res.SecretRequirements)
+		}
+	})
+
+	t.Run("oauth_client_name_client_id_only_secured_by_null_optional_auth_empty_example_and_composite_templates", func(t *testing.T) {
+		spec := `#%RAML 1.0
+title: Service {{run.id}}
+baseUri: https://api.example.test
+securitySchemes:
+  oauth_client_id:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://auth.example.test/oauth/token
+      authorizationGrants: [client_credentials]
+  only_client_id_policy:
+    type: x-client-id-enforcement
+    describedBy:
+      headers:
+        client_id:
+          type: string
+          example: only-id-val
+/secured:
+  get:
+    displayName: Secured Endpoint
+    headers:
+      Authorization?:
+        type: string
+      X-Optional-Secret:
+        type: string
+        required: false
+      X-Empty-Secret:
+        type: string
+        example: ""
+    queryParameters:
+      composite:
+        type: string
+        example: "{{env.A}}&{{env.B}}"
+      tpl_body:
+        type: string
+        example: "{{run.name}}:{{file.missing}}"
+/public:
+  securedBy: [null]
+  get:
+    displayName: Public Endpoint
+`
+		res, err := Convert(ImportRequest{Content: spec})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues = %#v, want empty", issues)
+		}
+		securedAct := res.Script.Actions[1]
+		if securedAct.Headers["client_id"] != "only-id-val" {
+			t.Fatalf("securedAct client_id = %q, want only-id-val", securedAct.Headers["client_id"])
+		}
+		if _, hasSecret := securedAct.Headers["client_secret"]; hasSecret {
+			t.Fatalf("securedAct unexpectedly injected undeclared client_secret: %#v", securedAct.Headers)
+		}
+		if _, hasOptSecret := securedAct.Headers["X-Optional-Secret"]; hasOptSecret {
+			t.Fatalf("securedAct unexpectedly synthesized optional secret header: %#v", securedAct.Headers)
+		}
+		if gotEmpty, exists := securedAct.Headers["X-Empty-Secret"]; !exists || gotEmpty != "" {
+			t.Fatalf("securedAct X-Empty-Secret = %q (exists=%v), want empty string preserved", gotEmpty, exists)
+		}
+		if !strings.Contains(securedAct.Target, "composite=%7B%7Benv.A%7D%7D%26%7B%7Benv.B%7D%7D") {
+			t.Fatalf("securedAct.Target = %q, want composite query template URL-escaped", securedAct.Target)
+		}
+		publicAct := res.Script.Actions[0]
+		if _, hasAuth := publicAct.Headers["Authorization"]; hasAuth {
+			t.Fatalf("publicAct with securedBy:[null] unexpectedly received Authorization header: %#v", publicAct.Headers)
+		}
+		if _, hasClientID := publicAct.Headers["client_id"]; hasClientID {
+			t.Fatalf("publicAct with securedBy:[null] unexpectedly received client_id header: %#v", publicAct.Headers)
+		}
+	})
+
+	t.Run("plural_examples_wrapped_uri_params_oauth_header_preservation_and_unsecured_client_id_fallback", func(t *testing.T) {
+		spec := `#%RAML 1.0
+title: Plural Examples Service
+baseUri: https://{env}.example.test/{tenant}
+baseUriParameters:
+  env:
+    type: string
+    examples:
+      prod:
+        value: api-prod
+  tenant:
+    type: string
+    example:
+      value: acme
+securitySchemes:
+  oauth_2_0:
+    type: OAuth 2.0
+    settings:
+      accessTokenUri: https://auth.example.test/oauth/token
+      authorizationGrants: [client_credentials]
+  client_id_scheme:
+    type: x-client-id-enforcement
+    describedBy:
+      headers:
+        client_id:
+          type: string
+          examples:
+            default:
+              value: scheme-client-id-from-examples
+securedBy: [oauth_2_0, client_id_scheme]
+/items/{itemId}:
+  uriParameters:
+    itemId:
+      type: string
+      examples:
+        sample:
+          value: item-42
+  get:
+    displayName: Get Item
+    headers:
+      Authorization:
+        type: string
+/unsecured:
+  securedBy: [null]
+  get:
+    displayName: Unsecured With Local Client ID
+    headers:
+      client_id:
+        type: string
+`
+		res, err := Convert(ImportRequest{Content: spec})
+		if err != nil {
+			t.Fatalf("Convert: %v", err)
+		}
+		if issues := dsl.ValidateScriptIssues(res.Script); len(issues) != 0 {
+			t.Fatalf("ValidateScriptIssues = %#v, want empty", issues)
+		}
+		if res.Script.Config.BaseURL != "https://api-prod.example.test/acme" {
+			t.Fatalf("BaseURL = %q, want https://api-prod.example.test/acme", res.Script.Config.BaseURL)
+		}
+		var getItem, unsecured *dsl.Action
+		for i := range res.Script.Actions {
+			switch res.Script.Actions[i].Name {
+			case "Get Item":
+				getItem = &res.Script.Actions[i]
+			case "Unsecured With Local Client ID":
+				unsecured = &res.Script.Actions[i]
+			}
+		}
+		if getItem == nil || unsecured == nil {
+			t.Fatalf("missing expected actions in %+v", res.Script.Actions)
+		}
+		if getItem.Headers["Authorization"] != "Bearer {{var.access_token}}" {
+			t.Fatalf("getItem Authorization = %q, want Bearer {{var.access_token}} (not overwritten by {{secret.RAML_AUTHORIZATION}})", getItem.Headers["Authorization"])
+		}
+		if getItem.Headers["client_id"] != "scheme-client-id-from-examples" {
+			t.Fatalf("getItem client_id = %q, want scheme-client-id-from-examples", getItem.Headers["client_id"])
+		}
+		if unsecured.Headers["client_id"] != "{{env.RAML_CLIENT_ID}}" {
+			t.Fatalf("unsecured client_id = %q, want {{env.RAML_CLIENT_ID}} when securedBy:[null] bypasses scheme", unsecured.Headers["client_id"])
+		}
+	})
+}

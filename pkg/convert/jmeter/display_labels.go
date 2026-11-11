@@ -4,23 +4,19 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
-	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
-// SanitizeDisplayLabels removes credentials known to the imported scripts from
-// descriptive JMeter labels. Request, auth, body, parameter, and extractor
-// values are intentionally outside this function: they remain the exact
-// executable destination authored by the operator.
+// SanitizeDisplayLabels normalizes empty JMeter display labels and allocates
+// unique script names while preserving authored text verbatim (never scrubbing
+// or replacing credential-bearing names with [REDACTED]).
 //
 // Scenario group script_name fields are rewritten alongside script names so a
-// sanitized draft remains directly saveable.
+// normalized draft remains directly saveable.
 func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 	if len(scripts) == 0 {
 		return
 	}
-	sources := append([]*dsl.Script(nil), scripts...)
 	originalNames := make([]string, len(scripts))
 	refs := make([]jmeterDisplayLabelRef, 0, len(scripts)*2)
 	actionOrdinal := 0
@@ -55,13 +51,8 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 			})
 		}
 	}
-	rawLabels := make([]string, len(refs))
-	for index, ref := range refs {
-		rawLabels[index] = *ref.value
-	}
-	projectedLabels := scriptdisclosure.ProjectLabels(rawLabels, sources...)
-	for index, ref := range refs {
-		*ref.value = safeJMeterDisplayLabel(projectedLabels[index], ref.fallback)
+	for _, ref := range refs {
+		*ref.value = safeJMeterDisplayLabel(*ref.value, ref.fallback)
 	}
 
 	// Keep every allocation for a repeated authored name. Multi-JMX archives can
@@ -75,14 +66,12 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 			continue
 		}
 		originalName := originalNames[index]
-		safeName := script.Name
-		safeName = uniqueJMeterDisplayLabel(safeName, usedNames)
+		safeName := uniqueJMeterDisplayLabel(script.Name, usedNames)
 		script.Name = safeName
 		if originalName != "" {
 			safeNamesByOriginal[originalName] = append(safeNamesByOriginal[originalName], safeName)
 		}
 	}
-	sanitizeJMeterActionReviewMetadata(scripts)
 
 	if draft == nil {
 		return
@@ -98,101 +87,6 @@ func SanitizeDisplayLabels(scripts []*dsl.Script, draft *ScenarioDraft) {
 			consumedNames[originalScriptName] = allocationIndex + 1
 		}
 	}
-}
-
-type jmeterMetadataStringRef struct {
-	value string
-	set   func(string)
-}
-
-func sanitizeJMeterActionReviewMetadata(scripts []*dsl.Script) {
-	var refs []jmeterMetadataStringRef
-	for _, script := range scripts {
-		if script == nil {
-			continue
-		}
-		appendJMeterActionReviewMetadataRefs(script.Init, &refs)
-		appendJMeterActionReviewMetadataRefs(script.Actions, &refs)
-		appendJMeterActionReviewMetadataRefs(script.Teardown, &refs)
-	}
-	if len(refs) == 0 {
-		return
-	}
-	raw := make([]string, len(refs))
-	for index := range refs {
-		raw[index] = refs[index].value
-	}
-	projected := scriptdisclosure.ProjectLabels(raw, scripts...)
-	for index := range refs {
-		refs[index].set(projected[index])
-	}
-}
-
-func appendJMeterActionReviewMetadataRefs(
-	actions []dsl.Action,
-	refs *[]jmeterMetadataStringRef,
-) {
-	for index := range actions {
-		metadata := actions[index].Metadata
-		for _, key := range []string{
-			"transaction",
-			"source_condition",
-			"condition_original",
-		} {
-			appendJMeterMetadataMapStringRef(metadata, key, refs)
-		}
-		if review, ok := metadata["import_review"].(map[string]any); ok {
-			switch sourceRefs := review["source_refs"].(type) {
-			case []string:
-				for sourceIndex := range sourceRefs {
-					*refs = append(*refs, jmeterMetadataStringRef{
-						value: sourceRefs[sourceIndex],
-						set: func(value string) {
-							sourceRefs[sourceIndex] = value
-						},
-					})
-				}
-			case []any:
-				for sourceIndex, raw := range sourceRefs {
-					value, ok := raw.(string)
-					if !ok {
-						continue
-					}
-					*refs = append(*refs, jmeterMetadataStringRef{
-						value: value,
-						set: func(value string) {
-							sourceRefs[sourceIndex] = value
-						},
-					})
-				}
-			}
-		}
-		if actions[index].Control != nil {
-			for _, branch := range actions[index].Control.ActionBranches() {
-				appendJMeterActionReviewMetadataRefs(branch.Actions, refs)
-			}
-		}
-	}
-}
-
-func appendJMeterMetadataMapStringRef(
-	metadata map[string]any,
-	key string,
-	refs *[]jmeterMetadataStringRef,
-) {
-	if metadata == nil {
-		return
-	}
-	value, ok := metadata[key].(string)
-	if !ok {
-		return
-	}
-	*refs = append(*refs, jmeterMetadataStringRef{
-		value: value,
-		set: func(value string) {
-			metadata[key] = value
-		},
-	})
 }
 
 type jmeterDisplayLabelRef struct {
@@ -221,7 +115,7 @@ func appendJMeterActionLabelRefs(
 
 func safeJMeterDisplayLabel(label string, fallback string) string {
 	projected := strings.TrimSpace(label)
-	if projected == "" || strings.Contains(projected, credential.Redacted) {
+	if projected == "" {
 		return fallback
 	}
 	return projected
@@ -244,73 +138,5 @@ func uniqueJMeterDisplayLabel(label string, used map[string]struct{}) string {
 	}
 }
 
-func sanitizeJMeterResultReviewText(result *ConvertResult) {
-	if result == nil || len(result.Scripts) == 0 {
-		return
-	}
-	refs := make([]*string, 0)
-	for index := range result.Warnings {
-		refs = append(refs, &result.Warnings[index])
-	}
-	for index := range result.Assumptions {
-		refs = append(refs, &result.Assumptions[index])
-	}
-	for index := range result.Unsupported {
-		refs = append(
-			refs,
-			&result.Unsupported[index].Element,
-			&result.Unsupported[index].Detail,
-			&result.Unsupported[index].Location,
-		)
-	}
-	for index := range result.Findings {
-		refs = append(
-			refs,
-			&result.Findings[index].Element,
-			&result.Findings[index].Detail,
-			&result.Findings[index].Location,
-			&result.Findings[index].Source,
-			&result.Findings[index].SourceRef,
-			&result.Findings[index].Resolution,
-		)
-	}
-	refs = append(refs, &result.Summary.FileName)
-	for index := range result.Summary.VariablesDiscovered {
-		refs = append(refs, &result.Summary.VariablesDiscovered[index])
-	}
-	for index := range result.Summary.CSVSourcesDiscovered {
-		refs = append(refs, &result.Summary.CSVSourcesDiscovered[index])
-	}
-	if result.SourceReview != nil {
-		for index := range result.SourceReview.SourceFiles {
-			refs = append(
-				refs,
-				&result.SourceReview.SourceFiles[index].Path,
-				&result.SourceReview.SourceFiles[index].Content,
-			)
-		}
-		for index := range result.SourceReview.OmittedSourceFiles {
-			refs = append(refs, &result.SourceReview.OmittedSourceFiles[index])
-		}
-		for index := range result.SourceReview.Mappings {
-			refs = append(
-				refs,
-				&result.SourceReview.Mappings[index].ID,
-				&result.SourceReview.Mappings[index].SourceFile,
-				&result.SourceReview.Mappings[index].TargetName,
-				&result.SourceReview.Mappings[index].Notes,
-			)
-		}
-	}
-	if len(refs) == 0 {
-		return
-	}
-	raw := make([]string, len(refs))
-	for index, ref := range refs {
-		raw[index] = *ref
-	}
-	projected := scriptdisclosure.ProjectLabels(raw, result.Scripts...)
-	for index, ref := range refs {
-		*ref = projected[index]
-	}
+func sanitizeJMeterResultReviewText(_ *ConvertResult) {
 }

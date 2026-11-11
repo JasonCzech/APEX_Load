@@ -13,6 +13,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/har"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/recordingprofile"
 	"github.com/jasonczech/apexload/pkg/selector"
 )
 
@@ -145,5 +146,72 @@ func TestHARDocumentsSkipXHRWhateverTheHeaderOrder(t *testing.T) {
 	documents, err := harDocuments(harBytes)
 	if err != nil || len(documents) != 0 {
 		t.Fatalf("documents = %+v, %v; want the XHR left out", documents, err)
+	}
+}
+
+func TestHTMLLevelStepsAllowsUnmaskedPasswordAndRejectsEmptyMaskedFill(t *testing.T) {
+	started := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	nav := map[string]string{"Sec-Fetch-Dest": "document"}
+	loginHTML := `<html><form method="post" action="/auth"><input name="user"><input type="password" name="pw"><input name="otp" autocomplete="one-time-code"><input type="submit" name="go" value="Sign in"></form></html>`
+	recorded := map[string]any{"log": map[string]any{"version": "1.2", "creator": map[string]any{"name": "test", "version": "1"}, "entries": []any{
+		harEntry(started, "GET", "https://shop.test/login", "text/html", loginHTML, nav, ""),
+		harEntry(started.Add(3*time.Second), "POST", "https://shop.test/auth", "text/html", "<html>ok</html>", nav, "user=ada&pw=Secret123&otp=654321&go=Sign+in"),
+	}}}
+	harBytes, _ := json.Marshal(recorded)
+
+	unmaskedSteps := []Step{
+		{Seq: 1, Kind: StepNavigate, Timestamp: started.Add(-time.Millisecond), URL: "https://shop.test/login"},
+		{Seq: 2, Kind: StepFill, Timestamp: started.Add(time.Second), Value: "ada", Element: &selector.ElementMetadata{Tag: "input", Name: "user"}},
+		{Seq: 3, Kind: StepFill, Timestamp: started.Add(1500 * time.Millisecond), Value: "Secret123", Masked: false, Element: &selector.ElementMetadata{Tag: "input", Type: "password", Name: "pw"}},
+		{Seq: 4, Kind: StepFill, Timestamp: started.Add(2 * time.Second), Value: "654321", Masked: false, Element: &selector.ElementMetadata{Tag: "input", Name: "otp", Attributes: map[string]string{"autocomplete": "one-time-code"}}},
+		{Seq: 5, Kind: StepClick, Timestamp: started.Add(3*time.Second - 100*time.Millisecond), Element: &selector.ElementMetadata{Tag: "input", Type: "submit", Name: "go", Attributes: map[string]string{"value": "Sign in"}}},
+	}
+
+	htmlSteps, notes := HTMLLevelSteps(unmaskedSteps, harBytes)
+	if len(notes) != 0 || len(htmlSteps) != 1 || htmlSteps[2]["kind"] != "form" {
+		t.Fatalf("unmasked password/OTP HTML steps = %v, notes = %v; want form step", htmlSteps, notes)
+	}
+
+	// ScrubSensitive=true gates password/OTP form conversion back to URL level.
+	scrubSteps, scrubNotes := HTMLLevelStepsWithOptions(unmaskedSteps, harBytes, true)
+	if len(scrubSteps) != 0 || len(scrubNotes) != 1 || !strings.Contains(scrubNotes[0], `field "pw" holds a masked value`) {
+		t.Fatalf("scrubSensitive=true HTML steps = %v, notes = %v; want masked value note", scrubSteps, scrubNotes)
+	}
+
+	// Empty Masked=true fill falls back to URL request with masked note.
+	maskedEmptySteps := []Step{
+		unmaskedSteps[0],
+		unmaskedSteps[1],
+		{Seq: 3, Kind: StepFill, Timestamp: started.Add(1500 * time.Millisecond), Value: "", Masked: true, Element: &selector.ElementMetadata{Tag: "input", Type: "password", Name: "pw"}},
+		unmaskedSteps[4],
+	}
+	emptySteps, emptyNotes := HTMLLevelSteps(maskedEmptySteps, harBytes)
+	if len(emptySteps) != 0 || len(emptyNotes) != 1 || !strings.Contains(emptyNotes[0], `field "pw" holds a masked value`) {
+		t.Fatalf("masked empty HTML steps = %v, notes = %v; want masked value note", emptySteps, emptyNotes)
+	}
+
+	// Production browser-HTTP flow calls HTMLLevelSteps (unmasked) and passes HTMLSteps + Profile{ScrubSensitive: true} to har.Convert.
+	callerStepsSnapshot := map[int]map[string]any{2: htmlSteps[2]}
+	scrubbedHARRes, err := har.Convert(harBytes, har.ConvertOptions{
+		HTMLSteps: callerStepsSnapshot,
+		Profile:   &recordingprofile.Profile{ID: "strict", Name: "Strict", ScrubSensitive: true},
+	})
+	if err != nil {
+		t.Fatalf("har.Convert with HTMLSteps and ScrubSensitive=true: %v", err)
+	}
+	if _, mutated := callerStepsSnapshot[2]; !mutated {
+		t.Fatalf("har.Convert mutated caller HTMLSteps map")
+	}
+	for _, action := range scrubbedHARRes.Script.Actions {
+		if action.Params != nil && action.Params["html_step"] != nil {
+			t.Fatalf("ScrubSensitive=true attached sensitive form html_step to action: %+v", action)
+		}
+	}
+	if scrubbedHARRes.Script.Actions[1].Target != "/auth" || !strings.Contains(scrubbedHARRes.Script.Actions[1].Body, "pw=Secret123") {
+		t.Fatalf("expected sensitive HTML form step to fall back to URL request with intact exchange body, got: %+v", scrubbedHARRes.Script.Actions[1])
+	}
+	if scrubbedHARRes.SourceReview == nil || len(scrubbedHARRes.SourceReview.SourceFiles) == 0 ||
+		strings.Contains(scrubbedHARRes.SourceReview.SourceFiles[0].Content, "Secret123") {
+		t.Fatalf("ScrubSensitive=true SourceReview leaked password after HTML-step fallback: %#v", scrubbedHARRes.SourceReview)
 	}
 }

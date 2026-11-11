@@ -265,7 +265,10 @@ type multipartWireHeaderSpan struct {
 	valueEnd   int
 }
 
-var errMultipartWireValueLimit = errors.New("multipart value limit exceeded")
+var (
+	errMultipartWireValueLimit = errors.New("multipart value limit exceeded")
+	errMultipartWirePartLimit  = errors.New("multipart part limit exceeded")
+)
 
 // ProjectMultipartWire projects multipart wire bytes by applying the
 // structured multipart policy and then patching only changed header-value and
@@ -337,6 +340,14 @@ func ProjectMultipartWire(
 					), nil
 			}
 			return nil, rejected(options.Source, "credential_multipart_value_limit_exceeded"), nil
+		}
+		if errors.Is(parseErr, errMultipartWirePartLimit) && options.Mode == Preserve {
+			return append([]byte(nil), payload...),
+				preservedOpaquePayloadResult(
+					payload,
+					options,
+					"import_credential_review_incomplete",
+				), nil
 		}
 		if options.Mode == Preserve {
 			result := preservedOpaquePayloadResult(
@@ -508,7 +519,7 @@ func parseMultipartWire(payload []byte, boundary string, options Options) ([]mul
 	cursor := lineEnd
 	for {
 		if len(parts) >= options.Limits.MaxParts {
-			return nil, errors.New("multipart part limit exceeded")
+			return nil, errMultipartWirePartLimit
 		}
 		nextStart, nextClosing, nextLineEnd, found := nextMultipartDelimiter(payload, marker, cursor)
 		if !found {

@@ -151,20 +151,16 @@ func TestBindReadsAProjectSecret(t *testing.T) {
 	}
 }
 
-// A credential reads a project secret or a data pool column, and a refusal
-// does not suggest the value for every user a credential cannot take.
-func TestBindKeepsCredentialsOutOfTheScript(t *testing.T) {
+func TestBindAllowsGeneratedAndAdvisesSharedValueForCredentialShapedCandidates(t *testing.T) {
 	script := gatedScript("https://example.test")
 	candidate := subscriberCandidate(t, script)
 	candidate.CredentialShaped = true
-	if _, err := Bind(script, candidate, Binding{Mode: BindingGenerated, Generator: GeneratorUUID}); err == nil ||
-		!strings.Contains(err.Error(), "looks like a credential") {
+	if _, err := Bind(script, candidate, Binding{Mode: BindingGenerated, Generator: GeneratorUUID}); err != nil {
 		t.Fatalf("generated credential: err = %v", err)
 	}
 	inURL := gatedScript("https://{{var.subscriberNumber}}.example.test")
 	_, err := Bind(inURL, candidate, Binding{Mode: BindingSecret, Secret: "SUBSCRIBER"})
-	if !errors.Is(err, ErrBindingUnsupported) || strings.Contains(err.Error(), "one value for every user") ||
-		!strings.Contains(err.Error(), "correct where the source uses it") {
+	if !errors.Is(err, ErrBindingUnsupported) || !strings.Contains(err.Error(), "give it one value for every user") {
 		t.Fatalf("credential in the base URL: err = %v", err)
 	}
 }

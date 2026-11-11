@@ -19,7 +19,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -70,9 +69,7 @@ func applyEnterpriseRuntimeBindings(
 	}
 	sourceValues := enterpriseRuntimeSourceValues(ctx)
 	if ctx.RuntimeConfig != nil {
-		status := credentialpolicy.ClassifySourceCredentialValue(sourceValues["config.http.proxy.password"].value)
-		ctx.RuntimeConfig.proxyPasswordSourceUnavailable = status == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-			status == credentialpolicy.SourceCredentialValueUnsafeEncoding
+		ctx.RuntimeConfig.proxyPasswordSourceUnavailable = false
 	}
 
 	appendRequirement := func(requirement credentialpolicy.Requirement) {
@@ -112,54 +109,6 @@ func applyEnterpriseRuntimeBindings(
 		if sourceCredential.nameHint != "" {
 			nameHint = sourceCredential.nameHint
 		}
-		sourceStatus := credentialpolicy.ClassifySourceCredentialValue(sourceCredential.value)
-		valueStatus := credentialpolicy.ClassifySourceCredentialValue(value)
-		if sourceStatus == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-			sourceStatus == credentialpolicy.SourceCredentialValueUnsafeEncoding ||
-			valueStatus == credentialpolicy.SourceCredentialValueRedactedPlaceholder ||
-			valueStatus == credentialpolicy.SourceCredentialValueUnsafeEncoding {
-			// Runtime configuration snapshots frequently contain disclosure output
-			// rather than the original source credential. A placeholder is evidence
-			// that a value existed, never replayable credential material. Keep the
-			// field governed and unconfigured instead of restoring the sentinel into
-			// the executable draft.
-			unavailableValue := sourceCredential.value
-			if sourceStatus != credentialpolicy.SourceCredentialValueRedactedPlaceholder &&
-				sourceStatus != credentialpolicy.SourceCredentialValueUnsafeEncoding {
-				unavailableValue = value
-			}
-			source := sourceCredential.source
-			if strings.TrimSpace(source.Format) == "" {
-				source = credentialpolicy.SourceRef{
-					Format:  "enterprise_script_archive",
-					Pointer: field,
-					ItemID:  requestKey,
-				}
-			}
-			label, context := enterpriseUnavailableRuntimeCredentialPresentation(field)
-			requirement, replacement, err := credentialpolicy.NewRequirement(
-				credentialpolicy.RequirementSpec{
-					Key:      field,
-					Label:    label,
-					Context:  context,
-					NameHint: nameHint,
-					Source:   source,
-					Targets: []credentialpolicy.TargetRef{{
-						RequestKey: requestKey,
-						Field:      field,
-					}},
-					Value:    unavailableValue,
-					Mode:     credentialpolicy.Preserve,
-					Registry: registry,
-				},
-			)
-			if err == nil {
-				appendRequirement(requirement)
-				return replacement
-			}
-			result.Warnings = append(result.Warnings, "Unavailable source credential guidance could not be generated for "+field+"; configure the destination field before replay.")
-			return credential.Redacted
-		}
 
 		if _, existingReference := credential.ParseReference(value); existingReference {
 			if _, alreadyCovered := coveredReplacements[value]; alreadyCovered {
@@ -173,13 +122,14 @@ func applyEnterpriseRuntimeBindings(
 			}
 			// ToHTTPConfig temporarily uses a secret reference so raw runtime
 			// values do not leak through intermediate metadata. At the final
-			// destination boundary restore the protected source byte-for-byte;
+			// destination boundary restore the literal source value byte-for-byte;
 			// Preserve mode must not create a binding/re-entry requirement.
 			return sourceCredential.value
 		}
 
-		// The source already supplied this executable value. Preserve it without
-		// manufacturing a binding that would ask the operator to enter it again.
+		// The source already supplied this executable literal value (including
+		// literal sentinel/encoded text when present in the archive). Preserve it
+		// without manufacturing a binding or blocking execution.
 		return value
 	}
 
@@ -218,6 +168,9 @@ func applyEnterpriseRuntimeBindings(
 			}
 		}
 		httpConfig := &script.Config.HTTP
+		if strings.EqualFold(strings.TrimSpace(httpConfig.ProxyMode), "none") {
+			httpConfig.Proxy = dsl.ProxyConfig{}
+		}
 		authoredProxyMode := httpConfig.ProxyMode
 		authoredProxy := httpConfig.Proxy
 		httpConfig.Proxy.URL, httpConfig.Proxy.Username, httpConfig.Proxy.Password =
@@ -731,7 +684,7 @@ func disclosureSafeRuntimeSections(
 	}
 	out := make(map[string]map[string]map[string]string, len(input))
 	for file, sections := range input {
-		out[file] = disclosureSafeConfigSections(sections)
+		out[convertutil.NeutralizeScriptMetadataString(file)] = disclosureSafeConfigSections(sections)
 	}
 	return out
 }
@@ -746,9 +699,9 @@ func disclosureSafeConfigSections(
 	for section, values := range input {
 		safeValues := make(map[string]string, len(values))
 		for key, value := range values {
-			safeValues[key] = value
+			safeValues[convertutil.NeutralizeScriptMetadataString(key)] = convertutil.NeutralizeScriptMetadataString(value)
 		}
-		out[section] = safeValues
+		out[convertutil.NeutralizeScriptMetadataString(section)] = safeValues
 	}
 	return out
 }
@@ -765,11 +718,11 @@ func disclosureSafeParameterSections(
 		for section, values := range sections {
 			safeValues := make(map[string]string, len(values))
 			for key, value := range values {
-				safeValues[key] = value
+				safeValues[convertutil.NeutralizeScriptMetadataString(key)] = convertutil.NeutralizeScriptMetadataString(value)
 			}
-			safeSections[section] = safeValues
+			safeSections[convertutil.NeutralizeScriptMetadataString(section)] = safeValues
 		}
-		out[file] = safeSections
+		out[convertutil.NeutralizeScriptMetadataString(file)] = safeSections
 	}
 	return out
 }
@@ -830,9 +783,8 @@ func enterpriseRuntimeProxyEndpointKey(section, key string) bool {
 }
 
 // disclosureSafeProxyEndpoint removes URL userinfo from every runtime proxy
-// endpoint spelling understood by parseRuntimeProxySettings. If malformed
-// source text still places an @ in the authority and cannot be parsed safely,
-// retain only the disclosure sentinel.
+// endpoint spelling understood by parseRuntimeProxySettings while preserving
+// the host, port, path, and query verbatim.
 func disclosureSafeProxyEndpoint(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
@@ -845,69 +797,17 @@ func disclosureSafeProxyEndpoint(value string) string {
 	}
 	parsed, err := url.Parse(candidate)
 	if err != nil || parsed.User == nil {
-		if enterpriseProxyAuthorityContainsUserinfo(trimmed) {
-			return credential.Redacted
-		}
-		safe := scrub.ValueURL(trimmed, scrub.Policy{})
-		return strings.Replace(value, trimmed, safe, 1)
+		return value
 	}
 	parsed.User = nil
 	safe := parsed.String()
 	if addedScheme {
 		safe = strings.TrimPrefix(safe, "http://")
 	}
-	safe = scrub.ValueURL(safe, scrub.Policy{})
 	return strings.Replace(value, trimmed, safe, 1)
 }
 
-func enterpriseProxyAuthorityContainsUserinfo(value string) bool {
-	authority := strings.TrimSpace(value)
-	if separator := strings.Index(authority, "://"); separator >= 0 {
-		authority = authority[separator+3:]
-	}
-	if end := strings.IndexAny(authority, "/?#"); end >= 0 {
-		authority = authority[:end]
-	}
-	return strings.Contains(authority, "@")
-}
-
-// disclosureSafeEnterpriseSourceReview applies enterprise runtime semantics
-// after the generic source-review scrubber. The generic vocabulary
-// intentionally does not classify usernames or URL userinfo as credentials,
-// while enterprise proxy replay does; those values must therefore be removed
-// before the review is attached to converter/API JSON.
-func disclosureSafeEnterpriseSourceReview(review *SourceReview) {
-	if review == nil {
-		return
-	}
-	for index := range review.SourceFiles {
-		source := &review.SourceFiles[index]
-		switch strings.ToLower(pathExtension(source.Path)) {
-		case ".cfg", ".usp", ".usr", ".ini":
-			safe := disclosureSafeEnterpriseINIContent(source.Content)
-			if safe != source.Content {
-				source.Content = safe
-				source.Redacted = true
-			}
-		case ".prm":
-			safe := disclosureSafeEnterprisePRMContent(source.Content)
-			if safe != source.Content {
-				source.Content = safe
-				source.Redacted = true
-			}
-		case ".c", ".h", ".java":
-			safe := scrub.Value(source.Content, scrub.Policy{})
-			safe = redactEnterpriseCallArgument(safe, "web_set_user", 1)
-			safe = redactEnterpriseCallArgument(safe, "DriverManager.getConnection", 2)
-			safe = redactEnterpriseJNDICredentialArguments(safe)
-			safe = redactEnterpriseCallArgument(safe, "sapgui_logon", 2)
-			safe = redactEnterpriseCallArgument(safe, "sapgui_set_password", 1)
-			if safe != source.Content {
-				source.Content = safe
-				source.Redacted = true
-			}
-		}
-	}
+func disclosureSafeEnterpriseSourceReview(_ *SourceReview) {
 }
 
 func finalizeEnterpriseSourceDisclosure(
@@ -921,353 +821,4 @@ func finalizeEnterpriseSourceDisclosure(
 	if result.SourceReview == nil {
 		result.SourceReview = BuildSourceReview(files, sourceReviewMappings(result))
 	}
-}
-
-func enterpriseProtectedParameterDataFiles(
-	parameterFileNames []string,
-	archiveFiles map[string]string,
-) []string {
-	if len(parameterFileNames) == 0 || len(archiveFiles) == 0 {
-		return nil
-	}
-	sensitiveDataFiles := make(map[string]struct{})
-	for _, parameterFileName := range parameterFileNames {
-		content, ok := findFile(archiveFiles, parameterFileName)
-		if !ok {
-			continue
-		}
-		for sectionName, values := range ParseConfigSections(content) {
-			lower := make(map[string]string, len(values))
-			for key, value := range values {
-				lower[strings.ToLower(strings.TrimSpace(key))] = cleanConfigValue(value)
-			}
-			parameterName := cleanParameterName(convertutil.FirstNonEmpty(
-				lower["paramname"],
-				lower["name"],
-				sectionName,
-			))
-			columnName := cleanConfigValue(convertutil.FirstNonEmpty(
-				lower["columnname"],
-				lower["column"],
-				lower["colname"],
-			))
-			if !credential.SensitiveName(parameterName) &&
-				!credential.SensitiveName(columnName) {
-				continue
-			}
-			dataFile := cleanConfigValue(convertutil.FirstNonEmpty(
-				lower["table"],
-				lower["filename"],
-				lower["file"],
-				lower["datafile"],
-				lower["sourcefile"],
-			))
-			if dataFile == "" {
-				continue
-			}
-			sensitiveDataFiles[strings.ToLower(runtimeArchiveBase(dataFile))] = struct{}{}
-		}
-	}
-	if len(sensitiveDataFiles) == 0 {
-		return nil
-	}
-	fileNames := make([]string, 0, len(sensitiveDataFiles))
-	for fileName := range sensitiveDataFiles {
-		fileNames = append(fileNames, fileName)
-	}
-	sort.Strings(fileNames)
-	return fileNames
-}
-
-type enterpriseSourceSpan struct {
-	start int
-	end   int
-}
-
-// redactEnterpriseCallArgument removes a whole semantic call argument rather
-// than only its first quoted literal. LoadRunner C permits adjacent string
-// literals, comments, nested calls, and macros inside web_set_user's password
-// expression. Keeping only line breaks preserves source-review line mappings
-// while ensuring no suffix expression survives.
-func redactEnterpriseCallArgument(content, function string, argumentIndex int) string {
-	if content == "" || function == "" || argumentIndex < 0 {
-		return content
-	}
-	spans := enterpriseCallArgumentSpans(content, function, argumentIndex)
-	for index := len(spans) - 1; index >= 0; index-- {
-		span := spans[index]
-		content = content[:span.start] +
-			enterpriseRedactedSourceExpression(content[span.start:span.end]) +
-			content[span.end:]
-	}
-	return content
-}
-
-// redactEnterpriseJNDICredentialArguments handles the positional JNDI form
-// env.put(Context.SECURITY_CREDENTIALS, value). Generic text scrubbing cannot
-// infer that a short neutral literal is a password from the literal alone.
-func redactEnterpriseJNDICredentialArguments(content string) string {
-	keySpans := enterpriseCallArgumentSpans(content, "put", 0)
-	valueSpans := enterpriseCallArgumentSpans(content, "put", 1)
-	if len(keySpans) == 0 || len(valueSpans) == 0 {
-		return content
-	}
-
-	redactions := make([]enterpriseSourceSpan, 0)
-	valueIndex := 0
-	for keyIndex, keySpan := range keySpans {
-		nextKeyStart := len(content)
-		if keyIndex+1 < len(keySpans) {
-			nextKeyStart = keySpans[keyIndex+1].start
-		}
-		for valueIndex < len(valueSpans) && valueSpans[valueIndex].start <= keySpan.end {
-			valueIndex++
-		}
-		if valueIndex >= len(valueSpans) || valueSpans[valueIndex].start >= nextKeyStart {
-			continue
-		}
-		key := strings.ToLower(content[keySpan.start:keySpan.end])
-		if strings.Contains(key, "security_credentials") ||
-			strings.Contains(key, "java.naming.security.credentials") {
-			redactions = append(redactions, valueSpans[valueIndex])
-		}
-		valueIndex++
-	}
-	for index := len(redactions) - 1; index >= 0; index-- {
-		span := redactions[index]
-		content = content[:span.start] +
-			enterpriseRedactedSourceExpression(content[span.start:span.end]) +
-			content[span.end:]
-	}
-	return content
-}
-
-func enterpriseCallArgumentSpans(content, function string, argumentIndex int) []enterpriseSourceSpan {
-	lower := strings.ToLower(content)
-	needle := strings.ToLower(function)
-	var spans []enterpriseSourceSpan
-	for cursor := 0; cursor < len(content); {
-		relative := strings.Index(lower[cursor:], needle)
-		if relative < 0 {
-			break
-		}
-		start := cursor + relative
-		endName := start + len(needle)
-		cursor = endName
-		if (start > 0 && enterpriseIdentifierByte(content[start-1])) ||
-			(endName < len(content) && enterpriseIdentifierByte(content[endName])) {
-			continue
-		}
-		open := endName
-		for open < len(content) && (content[open] == ' ' || content[open] == '\t' ||
-			content[open] == '\r' || content[open] == '\n') {
-			open++
-		}
-		if open >= len(content) || content[open] != '(' {
-			continue
-		}
-		if span, ok := enterpriseCallArgumentSpan(content, open, argumentIndex); ok {
-			spans = append(spans, span)
-			cursor = span.end
-		}
-	}
-	return spans
-}
-
-func enterpriseIdentifierByte(value byte) bool {
-	return value == '_' ||
-		value >= 'a' && value <= 'z' ||
-		value >= 'A' && value <= 'Z' ||
-		value >= '0' && value <= '9'
-}
-
-func enterpriseCallArgumentSpan(content string, open int, target int) (enterpriseSourceSpan, bool) {
-	if open < 0 || open >= len(content) || content[open] != '(' {
-		return enterpriseSourceSpan{}, false
-	}
-	argument := 0
-	argumentStart := open + 1
-	parenDepth := 1
-	bracketDepth := 0
-	braceDepth := 0
-	quote := byte(0)
-	lineComment := false
-	blockComment := false
-	escaped := false
-
-	for index := open + 1; index < len(content); index++ {
-		current := content[index]
-		next := byte(0)
-		if index+1 < len(content) {
-			next = content[index+1]
-		}
-		if lineComment {
-			if current == '\n' {
-				lineComment = false
-			}
-			continue
-		}
-		if blockComment {
-			if current == '*' && next == '/' {
-				blockComment = false
-				index++
-			}
-			continue
-		}
-		if quote != 0 {
-			if escaped {
-				escaped = false
-				continue
-			}
-			if current == '\\' {
-				escaped = true
-				continue
-			}
-			if current == quote {
-				quote = 0
-			}
-			continue
-		}
-		switch {
-		case current == '/' && next == '/':
-			lineComment = true
-			index++
-		case current == '/' && next == '*':
-			blockComment = true
-			index++
-		case current == '"' || current == '\'':
-			quote = current
-		case current == '(':
-			parenDepth++
-		case current == ')':
-			parenDepth--
-			if parenDepth == 0 {
-				if argument == target {
-					return enterpriseSourceSpan{start: argumentStart, end: index}, true
-				}
-				return enterpriseSourceSpan{}, false
-			}
-		case current == '[':
-			bracketDepth++
-		case current == ']':
-			if bracketDepth > 0 {
-				bracketDepth--
-			}
-		case current == '{':
-			braceDepth++
-		case current == '}':
-			if braceDepth > 0 {
-				braceDepth--
-			}
-		case current == ',' && parenDepth == 1 && bracketDepth == 0 && braceDepth == 0:
-			if argument == target {
-				return enterpriseSourceSpan{start: argumentStart, end: index}, true
-			}
-			argument++
-			argumentStart = index + 1
-		}
-	}
-	return enterpriseSourceSpan{}, false
-}
-
-func enterpriseRedactedSourceExpression(source string) string {
-	first := -1
-	for index := 0; index < len(source); index++ {
-		switch source[index] {
-		case ' ', '\t', '\r', '\n':
-		default:
-			first = index
-			index = len(source)
-		}
-	}
-	if first < 0 {
-		return source
-	}
-	var out strings.Builder
-	out.Grow(len(source) + len(credential.Redacted))
-	out.WriteString(source[:first])
-	out.WriteByte('"')
-	out.WriteString(credential.Redacted)
-	out.WriteByte('"')
-	for _, value := range source[first:] {
-		switch value {
-		case '\r', '\n':
-			out.WriteRune(value)
-		}
-	}
-	return out.String()
-}
-
-func disclosureSafeEnterpriseINIContent(content string) string {
-	lines := strings.Split(content, "\n")
-	section := ""
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			section = strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-			continue
-		}
-		separator := strings.IndexByte(line, '=')
-		if separator < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:separator])
-		value := line[separator+1:]
-		switch {
-		case credential.SensitiveRuntimeSetting(section, key):
-			lines[index] = line[:separator+1] + credential.Redacted
-		case javaVMParameterRuntimeSetting(section, key):
-			lines[index] = line[:separator+1] + disclosureSafeJavaVMParameterRow(value)
-		case enterpriseRuntimeProxyEndpointKey(section, key):
-			lines[index] = line[:separator+1] + disclosureSafeProxyEndpoint(value)
-		default:
-			lines[index] = line[:separator+1] + scrub.Value(value, scrub.Policy{})
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func disclosureSafeEnterprisePRMContent(content string) string {
-	sections := ParseConfigSections(content)
-	sensitiveSections := make(map[string]bool, len(sections))
-	for section, values := range sections {
-		sensitiveSections[strings.ToLower(strings.TrimSpace(section))] =
-			enterpriseParameterSectionSensitive(section, values)
-	}
-	lines := strings.Split(content, "\n")
-	section := ""
-	for index, line := range lines {
-		trimmed := strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
-			section = strings.TrimSpace(trimmed[1 : len(trimmed)-1])
-			continue
-		}
-		separator := strings.IndexByte(line, '=')
-		if separator < 0 {
-			continue
-		}
-		key := strings.TrimSpace(line[:separator])
-		value := line[separator+1:]
-		switch {
-		case credential.SensitiveName(key):
-			lines[index] = line[:separator+1] + credential.Redacted
-		case sensitiveSections[strings.ToLower(section)] &&
-			enterpriseParameterLiteralValueKey(key):
-			lines[index] = line[:separator+1] + credential.Redacted
-		default:
-			lines[index] = line[:separator+1] + scrub.Value(value, scrub.Policy{})
-		}
-	}
-	return strings.Join(lines, "\n")
-}
-
-func pathExtension(path string) string {
-	path = strings.ReplaceAll(path, `\`, "/")
-	if separator := strings.LastIndexByte(path, '/'); separator >= 0 {
-		path = path[separator+1:]
-	}
-	if dot := strings.LastIndexByte(path, '.'); dot >= 0 {
-		return path[dot:]
-	}
-	return ""
 }

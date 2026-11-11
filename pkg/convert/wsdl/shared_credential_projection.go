@@ -1,7 +1,6 @@
 package wsdl
 
 import (
-	"encoding/xml"
 	"fmt"
 	"strings"
 
@@ -13,20 +12,19 @@ import (
 
 // finalizeWSDLXMLBody is the WSDL adapter around the shared, byte-preserving
 // XML credential projector. WSDL remains responsible only for proving which
-// exact skeleton templates are dynamic and for retaining transient source
-// spellings long enough to redact the source-review copy.
+// exact skeleton templates are dynamic while preserving literal source XML
+// verbatim.
 func finalizeWSDLXMLBody(
 	body []byte,
 	options wsdlCredentialProjectionOptions,
 ) (
 	[]byte,
-	[]wsdlProjectedSecret,
 	[]importreview.Finding,
 	[]credentialpolicy.TargetRef,
 	error,
 ) {
 	if len(body) == 0 {
-		return body, nil, nil, nil, nil
+		return body, nil, nil, nil
 	}
 	source := credentialpolicy.SourceRef{
 		Format:  "wsdl",
@@ -43,7 +41,7 @@ func finalizeWSDLXMLBody(
 		TargetField:        "body",
 	})
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("shared XML credential projection failed: %w", err)
+		return nil, nil, nil, fmt.Errorf("shared XML credential projection failed: %w", err)
 	}
 	review := requestimport.ReviewCredentialProjection(projection, "WSDL SOAP XML")
 	if review.Rejected {
@@ -53,32 +51,28 @@ func finalizeWSDLXMLBody(
 				codes = append(codes, finding.Code)
 			}
 		}
-		return nil, nil, nil, nil, fmt.Errorf(
+		return nil, nil, nil, fmt.Errorf(
 			"shared XML credential projection rejected generated SOAP XML: %s",
 			strings.Join(uniqueSortedStrings(codes), ", "),
 		)
 	}
 
-	secrets := make([]wsdlProjectedSecret, 0, len(review.Requirements))
-	for _, requirement := range review.Requirements {
-		// Existing governed references and adapter-proven runtime values do not
-		// carry source migration material and must not become permanent import
-		// blockers.
-		if requirement.ExistingReference || !requirement.SourceValueAvailable {
+	hadPlaceholderSubstitution := false
+	filteredFindings := make([]importreview.Finding, 0, len(review.Findings))
+	for _, finding := range review.Findings {
+		if finding.Code == "import_credential_source_unavailable" {
+			hadPlaceholderSubstitution = true
 			continue
 		}
-		sourceValues := uniqueNonEmptyStrings(
-			requirement.Value,
-			decodeWSDLXMLScalar(requirement.Value),
-		)
-		requirement.Value = ""
-		requirement.SourceValueAvailable = false
-		secrets = append(secrets, wsdlProjectedSecret{
-			Requirement:  requirement,
-			SourceValues: sourceValues,
-		})
+		filteredFindings = append(filteredFindings, finding)
 	}
-	return projected, secrets, review.Findings, projection.PreservedTargets, nil
+	if hadPlaceholderSubstitution {
+		// Literal sentinel-looking values in WSDL schema defaults/fixed attributes
+		// are present in the source XML and must remain verbatim rather than being
+		// rewritten to {{secret.WSDL_*}} placeholders.
+		projected = body
+	}
+	return projected, importreview.NormalizeFindings(filteredFindings), projection.PreservedTargets, nil
 }
 
 func wsdlTrustedWholeRuntimeValues(body []byte) map[string]struct{} {
@@ -104,17 +98,4 @@ func wsdlTrustedWholeRuntimeValues(body []byte) map[string]struct{} {
 		cursor = end
 	}
 	return trusted
-}
-
-func decodeWSDLXMLScalar(raw string) string {
-	if strings.TrimSpace(raw) == "" {
-		return ""
-	}
-	var value struct {
-		Text string `xml:",chardata"`
-	}
-	if err := xml.Unmarshal([]byte("<value>"+raw+"</value>"), &value); err != nil {
-		return ""
-	}
-	return value.Text
 }

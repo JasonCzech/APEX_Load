@@ -14,21 +14,24 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertresult"
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 const (
-	maxArchiveEntries = 2_000
-	maxEntryBytes     = int64(16 << 20)
-	maxTotalBytes     = int64(64 << 20)
-	maxXMLDepth       = 64
-	maxXMLElements    = 100_000
-	maxXMLAttributes  = 128
-	maxReviewActions  = 2_000
-	maxDraftAssets    = 256
+	maxArchiveEntries   = 2_000
+	maxEntryBytes       = int64(16 << 20)
+	maxTotalBytes       = int64(64 << 20)
+	maxXMLDepth         = 64
+	maxXMLElements      = 100_000
+	maxXMLAttributes    = 128
+	maxElementTextBytes = 64 << 10
+	maxReviewActions    = 2_000
+	maxDraftAssets      = 256
 )
 
 type ConvertOptions struct {
@@ -37,16 +40,19 @@ type ConvertOptions struct {
 }
 
 type ElementDisposition struct {
-	SourceFile        string      `json:"source_file"`
-	Path              string      `json:"path"`
-	Element           string      `json:"element"`
-	CanonicalType     string      `json:"canonical_type,omitempty"`
-	Recognized        bool        `json:"recognized"`
-	FixtureProven     bool        `json:"fixture_proven"`
-	Disposition       Disposition `json:"disposition"`
-	Reason            string      `json:"reason"`
-	OwningClip        string      `json:"owning_clip,omitempty"`
-	OwningComposition string      `json:"owning_composition,omitempty"`
+	SourceFile        string            `json:"source_file"`
+	Path              string            `json:"path"`
+	Element           string            `json:"element"`
+	CanonicalType     string            `json:"canonical_type,omitempty"`
+	Recognized        bool              `json:"recognized"`
+	FixtureProven     bool              `json:"fixture_proven"`
+	Disposition       Disposition       `json:"disposition"`
+	Reason            string            `json:"reason"`
+	OwningClip        string            `json:"owning_clip,omitempty"`
+	OwningComposition string            `json:"owning_composition,omitempty"`
+	Attributes        map[string]string `json:"attributes,omitempty"`
+	Text              string            `json:"text,omitempty"`
+	TextTruncated     bool              `json:"text_truncated,omitempty"`
 }
 
 type ScenarioDraft struct {
@@ -71,11 +77,14 @@ type ScenarioGroupDraft struct {
 }
 
 type AssetDraft struct {
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	SourceFile     string `json:"source_file"`
-	SourcePath     string `json:"source_path"`
-	ReviewRequired bool   `json:"review_required"`
+	Kind           string            `json:"kind"`
+	Name           string            `json:"name"`
+	SourceFile     string            `json:"source_file"`
+	SourcePath     string            `json:"source_path"`
+	ReviewRequired bool              `json:"review_required"`
+	Attributes     map[string]string `json:"attributes,omitempty"`
+	Text           string            `json:"text,omitempty"`
+	TextTruncated  bool              `json:"text_truncated,omitempty"`
 }
 
 type ConvertStats struct {
@@ -104,6 +113,7 @@ type ConvertResult struct {
 	SourceFormat       string                   `json:"source_format"`
 	FixtureGate        string                   `json:"fixture_gate"`
 	Accounting         convertresult.Accounting `json:"accounting"`
+	SourceReview       *sourceview.Review       `json:"source_review,omitempty"`
 }
 
 type documentState struct {
@@ -133,6 +143,12 @@ type parseFrame struct {
 	clipIndex        int
 	compositionIndex int
 	groupIndex       int
+	dispIndex        int
+	clipElemIndex    int
+	assetSlice       *[]AssetDraft
+	assetIndex       int
+	text             []byte
+	textTruncated    bool
 }
 
 // Convert accepts a single XML export or a bounded dependency-closure ZIP.
@@ -157,7 +173,9 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		FixtureGate:        "blocked_until_sanitized_dependency_complete_exports_are_fixture_proven",
 	}
 
+	reviewSourceFiles := make(map[string]string, len(files))
 	for _, file := range files {
+		reviewSourceFiles[file.Name] = string(file.Data)
 		state, parseErr := inspectXML(file.Name, file.Data)
 		if parseErr != nil {
 			return nil, fmt.Errorf("inspect CloudTest source %q: %w", file.Name, parseErr)
@@ -174,15 +192,21 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result.PreservedArtifacts = append(result.PreservedArtifacts, state.preserved...)
 		result.Warnings = append(result.Warnings, state.warnings...)
 		result.Unsupported = append(result.Unsupported, state.unsupported...)
+		fileReview := sourceview.Build(map[string]string{
+			convertutil.NeutralizeScriptMetadataString(file.Name): convertutil.NeutralizeScriptMetadataString(string(file.Data)),
+		}, nil)
 		for _, clip := range state.clips {
 			if len(result.Scripts) >= maxDraftAssets {
 				return nil, fmt.Errorf("CloudTest export contains more than %d Clip assets", maxDraftAssets)
 			}
-			script, truncated := buildReviewScript(clip, opts.ProjectID)
+			script, truncated := buildReviewScript(clip, opts.ProjectID, fileReview)
 			result.Stats.TruncatedActions += truncated
 			result.Stats.ReviewActions += len(script.Actions)
 			result.Scripts = append(result.Scripts, script)
 		}
+	}
+	if len(reviewSourceFiles) > 0 {
+		result.SourceReview = sourceview.Build(reviewSourceFiles, nil)
 	}
 
 	for _, disposition := range result.Dispositions {
@@ -218,6 +242,9 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		return result.Dispositions[i].Path < result.Dispositions[j].Path
 	})
+	for _, script := range result.Scripts {
+		convertutil.SanitizeScriptDSLTemplates(script, nil)
+	}
 	return result, nil
 }
 
@@ -250,6 +277,9 @@ func enforceBundleReviewBounds(result *ConvertResult, state *documentState) erro
 func sourceFiles(data []byte, fileName string) ([]archiveingest.File, string, error) {
 	isZIP := bytes.HasPrefix(data, []byte("PK\x03\x04")) || strings.EqualFold(filepath.Ext(fileName), ".zip")
 	if !isZIP {
+		if int64(len(data)) > maxEntryBytes {
+			return nil, "", fmt.Errorf("CloudTest XML exceeds %d bytes", maxEntryBytes)
+		}
 		name := strings.TrimSpace(fileName)
 		if name == "" {
 			name = "cloudtest-export.xml"
@@ -289,7 +319,7 @@ func inspectXML(fileName string, data []byte) (*documentState, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	decoder.Strict = true
 	state := &documentState{file: fileName}
-	frames := []parseFrame{{clipIndex: -1, compositionIndex: -1, groupIndex: -1, children: map[string]int{}}}
+	frames := []parseFrame{{clipIndex: -1, compositionIndex: -1, groupIndex: -1, dispIndex: -1, clipElemIndex: -1, assetIndex: -1, children: map[string]int{}}}
 	elements := 0
 	for {
 		token, err := decoder.Token()
@@ -323,8 +353,10 @@ func inspectXML(fileName string, data []byte) (*documentState, error) {
 			frame := parseFrame{
 				name: canonical, path: path, children: map[string]int{},
 				clipIndex: parent.clipIndex, compositionIndex: parent.compositionIndex, groupIndex: parent.groupIndex,
+				dispIndex: -1, clipElemIndex: -1, assetIndex: -1,
 			}
-			attrs := safeAttributes(typed.Attr)
+			attrs := canonicalAttributes(typed.Attr)
+			preservedAttrs := preservedAttributes(typed.Attr)
 			label := firstNonEmpty(attrs["name"], attrs["label"], attrs["id"], local)
 			if canonical == "clip" {
 				if len(state.clips) >= maxDraftAssets {
@@ -357,17 +389,41 @@ func inspectXML(fileName string, data []byte) (*documentState, error) {
 				frame.groupIndex = len(scenario.Groups) - 1
 			}
 			disposition := classifyElement(fileName, path, local, canonical, label, frame, state)
+			disposition.Attributes = preservedAttrs
+			frame.dispIndex = len(state.dispositions)
 			state.dispositions = append(state.dispositions, disposition)
 			if frame.clipIndex >= 0 && frame.clipIndex < len(state.clips) {
+				frame.clipElemIndex = len(state.clips[frame.clipIndex].elements)
 				state.clips[frame.clipIndex].elements = append(state.clips[frame.clipIndex].elements, disposition)
 			}
-			collectAssetDraft(state, disposition, label)
+			frame.assetSlice, frame.assetIndex = collectAssetDraft(state, disposition, label)
 			frames = append(frames, frame)
+		case xml.CharData:
+			if len(frames) > 1 {
+				current := &frames[len(frames)-1]
+				appendBoundedElementText(current, typed)
+			}
 		case xml.EndElement:
 			if len(frames) <= 1 {
 				return nil, errors.New("XML contains an unexpected closing element")
 			}
+			finished := frames[len(frames)-1]
 			frames = frames[:len(frames)-1]
+			text := strings.TrimSpace(string(finished.text))
+			if text != "" || finished.textTruncated {
+				if finished.dispIndex >= 0 && finished.dispIndex < len(state.dispositions) {
+					state.dispositions[finished.dispIndex].Text = text
+					state.dispositions[finished.dispIndex].TextTruncated = finished.textTruncated
+				}
+				if finished.clipIndex >= 0 && finished.clipIndex < len(state.clips) && finished.clipElemIndex >= 0 && finished.clipElemIndex < len(state.clips[finished.clipIndex].elements) {
+					state.clips[finished.clipIndex].elements[finished.clipElemIndex].Text = text
+					state.clips[finished.clipIndex].elements[finished.clipElemIndex].TextTruncated = finished.textTruncated
+				}
+				if finished.assetSlice != nil && finished.assetIndex >= 0 && finished.assetIndex < len(*finished.assetSlice) {
+					(*finished.assetSlice)[finished.assetIndex].Text = text
+					(*finished.assetSlice)[finished.assetIndex].TextTruncated = finished.textTruncated
+				}
+			}
 		}
 	}
 	if len(frames) != 1 {
@@ -407,31 +463,45 @@ func classifyElement(fileName, path, local, canonical, label string, frame parse
 	return disposition
 }
 
-func collectAssetDraft(state *documentState, disposition ElementDisposition, label string) {
+func collectAssetDraft(state *documentState, disposition ElementDisposition, label string) (*[]AssetDraft, int) {
 	if len(state.dataPools)+len(state.environments)+len(state.monitors)+len(state.preserved) >= maxDraftAssets*4 {
-		return
+		return nil, -1
 	}
-	draft := AssetDraft{Kind: disposition.CanonicalType, Name: label, SourceFile: disposition.SourceFile, SourcePath: disposition.Path, ReviewRequired: true}
+	draft := AssetDraft{
+		Kind: disposition.CanonicalType, Name: label, SourceFile: disposition.SourceFile, SourcePath: disposition.Path,
+		ReviewRequired: true, Attributes: disposition.Attributes,
+	}
 	switch disposition.CanonicalType {
 	case "seed_data":
 		state.dataPools = append(state.dataPools, draft)
+		return &state.dataPools, len(state.dataPools) - 1
 	case "target", "property":
 		state.environments = append(state.environments, draft)
+		return &state.environments, len(state.environments) - 1
 	case "monitor":
 		state.monitors = append(state.monitors, draft)
+		return &state.monitors, len(state.monitors) - 1
 	case "dashboard", "touchtest_app_action", "javascript", "hds", "launch_composition":
 		state.preserved = append(state.preserved, draft)
+		return &state.preserved, len(state.preserved) - 1
+	default:
+		return nil, -1
 	}
 }
 
-func buildReviewScript(clip *clipDraft, projectID string) (*dsl.Script, int) {
-	name := sanitizeName(firstNonEmpty(clip.name, "CloudTest Clip"))
+func buildReviewScript(clip *clipDraft, projectID string, fileReview *sourceview.Review) (*dsl.Script, int) {
+	name := sanitizeName(convertutil.NeutralizeScriptMetadataString(firstNonEmpty(clip.name, "CloudTest Clip")))
 	script := &dsl.Script{
 		Name: name, Version: "1.0.0", Protocol: "http", ProjectID: strings.TrimSpace(projectID),
 		GeneratedBy: "apexload-cloudtest-review-importer", GeneratedFrom: "cloudtest", CreatedAt: time.Now().UTC(),
 		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
-			Source: "cloudtest", SourceScriptName: clip.name,
-			Preserved: map[string]any{"fixture_proven": false, "source_file": clip.file, "source_path": clip.path},
+			Source: "cloudtest", SourceScriptName: convertutil.NeutralizeScriptMetadataString(clip.name),
+			Preserved: map[string]any{
+				"fixture_proven": false,
+				"source_file":    convertutil.NeutralizeScriptMetadataString(clip.file),
+				"source_path":    convertutil.NeutralizeScriptMetadataString(clip.path),
+				"source_review":  fileReview,
+			},
 		}},
 		Config: dsl.ScriptConfig{
 			BaseURL: "http://cloudtest-import.invalid",
@@ -439,6 +509,7 @@ func buildReviewScript(clip *clipDraft, projectID string) (*dsl.Script, int) {
 		},
 		Actions: []dsl.Action{},
 	}
+	declaredFiles := convertutil.DeclaredFileDataSources(script)
 	truncated := 0
 	for _, element := range clip.elements {
 		if !reviewActionElement(element.CanonicalType, element.Recognized) {
@@ -448,33 +519,48 @@ func buildReviewScript(clip *clipDraft, projectID string) (*dsl.Script, int) {
 			truncated++
 			continue
 		}
+		safePath := convertutil.NeutralizeActionMetadataString(element.Path)
+		safeElem := convertutil.NeutralizeActionMetadataString(element.Element)
+		meta := map[string]any{
+			"source_profile": "cloudtest", "source_path": safePath,
+			"source_element": safeElem, "import_disposition": string(element.Disposition),
+			"fixture_proven": false,
+		}
+		if len(element.Attributes) > 0 {
+			meta["source_attributes"] = convertutil.NeutralizeActionMetadataValue(element.Attributes)
+		}
+		if element.Text != "" {
+			meta["source_text"] = convertutil.NeutralizeActionMetadataString(element.Text)
+		}
+		if element.TextTruncated {
+			meta["source_text_truncated"] = true
+		}
+		actionValue := convertutil.NeutralizeActionSurfaceString(element.Text, declaredFiles)
 		action := dsl.Action{
-			Name:   sanitizeName(firstNonEmpty(element.CanonicalType, element.Element, "CloudTest element")),
-			Type:   "source_review",
-			Params: map[string]any{"function": element.Element},
-			Metadata: map[string]any{
-				"source_profile": "cloudtest", "source_path": element.Path,
-				"source_element": element.Element, "import_disposition": string(element.Disposition),
-				"fixture_proven": false,
-			},
+			Name:     sanitizeName(convertutil.NeutralizeScriptMetadataString(firstNonEmpty(element.CanonicalType, element.Element, "CloudTest element"))),
+			Type:     "source_review",
+			Value:    actionValue,
+			Params:   map[string]any{"function": convertutil.NeutralizeActionSurfaceString(element.Element, declaredFiles)},
+			Metadata: meta,
 		}
 		importreview.ApplyToAction(&action, []importreview.Finding{{
 			Code: "cloudtest_fixture_mapping_unproven", Severity: diag.Blocker,
-			Element: element.Element, Detail: element.Reason, Location: element.Path,
-			Source: "cloudtest", SourceRef: element.Path, ReasonCode: "cloudtest_fixture_mapping_unproven",
+			Element: safeElem, Detail: convertutil.NeutralizeActionMetadataString(element.Reason), Location: safePath,
+			Source: "cloudtest", SourceRef: safePath, ReasonCode: "cloudtest_fixture_mapping_unproven",
 			Resolution: "validate_fixture_mapping_then_replace_or_remove_review_gate", Gate: importreview.GateExecution,
 		}})
 		script.Actions = append(script.Actions, action)
 	}
 	if len(script.Actions) == 0 {
+		safeClipPath := convertutil.NeutralizeActionMetadataString(clip.path)
 		action := dsl.Action{
 			Name: "CloudTest Clip review", Type: "source_review", Params: map[string]any{"function": "clip"},
-			Metadata: map[string]any{"source_profile": "cloudtest", "source_path": clip.path, "import_disposition": string(DispositionBlockedDraft), "fixture_proven": false},
+			Metadata: map[string]any{"source_profile": "cloudtest", "source_path": safeClipPath, "import_disposition": string(DispositionBlockedDraft), "fixture_proven": false},
 		}
 		importreview.ApplyToAction(&action, []importreview.Finding{{
 			Code: "cloudtest_fixture_mapping_unproven", Severity: diag.Blocker, Element: "Clip",
-			Detail: "Clip contents require fixture-backed mapping before execution", Location: clip.path,
-			Source: "cloudtest", SourceRef: clip.path, ReasonCode: "cloudtest_fixture_mapping_unproven",
+			Detail: "Clip contents require fixture-backed mapping before execution", Location: safeClipPath,
+			Source: "cloudtest", SourceRef: safeClipPath, ReasonCode: "cloudtest_fixture_mapping_unproven",
 			Resolution: "validate_fixture_mapping_then_replace_or_remove_review_gate", Gate: importreview.GateExecution,
 		}})
 		script.Actions = append(script.Actions, action)
@@ -507,26 +593,63 @@ var recognizedElements = map[string]string{
 	"hls": "hls", "dash": "dash", "cmaf": "cmaf", "hds": "hds",
 }
 
-func safeAttributes(attrs []xml.Attr) map[string]string {
-	result := make(map[string]string)
-	allowed := map[string]bool{
-		"name": true, "label": true, "id": true, "clip": true, "clipref": true, "script": true, "content": true,
-		"duration": true, "testduration": true, "endtime": true, "startoffset": true, "offset": true, "starttime": true,
-		"rampup": true, "ramp": true, "rampduration": true, "pacing": true, "pace": true,
-		"loadzone": true, "location": true, "region": true, "vusers": true, "users": true, "virtualusers": true, "concurrency": true,
-	}
+func canonicalAttributes(attrs []xml.Attr) map[string]string {
+	result := make(map[string]string, len(attrs))
 	for _, attr := range attrs {
 		key := canonicalToken(attr.Name.Local)
-		if !allowed[key] {
+		if key == "" {
 			continue
 		}
-		value := strings.TrimSpace(attr.Value)
-		if len(value) > 256 {
-			value = value[:256]
-		}
-		result[key] = value
+		result[key] = strings.TrimSpace(attr.Value)
 	}
 	return result
+}
+
+func preservedAttributes(attrs []xml.Attr) map[string]string {
+	if len(attrs) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(attrs))
+	for _, attr := range attrs {
+		key := strings.TrimSpace(attr.Name.Local)
+		if space := strings.TrimSpace(attr.Name.Space); space != "" {
+			key = space + ":" + key
+		}
+		if key == "" {
+			continue
+		}
+		result[key] = attr.Value
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+func appendBoundedElementText(frame *parseFrame, chunk []byte) {
+	if frame == nil || len(chunk) == 0 {
+		return
+	}
+	remaining := maxElementTextBytes - len(frame.text)
+	if remaining <= 0 {
+		if len(bytes.TrimSpace(chunk)) > 0 {
+			frame.textTruncated = true
+		}
+		return
+	}
+	if len(chunk) <= remaining {
+		frame.text = append(frame.text, chunk...)
+		return
+	}
+	// Avoid splitting a multi-byte UTF-8 sequence at the boundary.
+	limit := remaining
+	for limit > 0 && limit < len(chunk) && (chunk[limit]&0xC0) == 0x80 {
+		limit--
+	}
+	frame.text = append(frame.text, chunk[:limit]...)
+	if len(bytes.TrimSpace(chunk[limit:])) > 0 {
+		frame.textTruncated = true
+	}
 }
 
 func durationValue(attrs map[string]string, keys ...string) string {

@@ -1,14 +1,18 @@
 package enterprisearchive
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"path"
 	"regexp"
 	"sort"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -21,7 +25,6 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"github.com/jasonczech/apexload/pkg/javarunner"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/httpcontract"
-	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // Decompression-bomb guards: bound the uncompressed size of any single entry
@@ -42,6 +45,167 @@ const (
 	MaxArchiveEntries    = maxEnterpriseArchiveEntries
 )
 
+var (
+	vugenReplayResultDirPattern = regexp.MustCompile(`(?i)^result\d+$`)
+	errRawArchiveBudgetExceeded = errors.New("raw zip rewrite budget exceeded")
+)
+
+type boundedRawArchiveBuffer struct {
+	buf      bytes.Buffer
+	maxBytes int
+}
+
+func (b *boundedRawArchiveBuffer) Write(p []byte) (int, error) {
+	if b.maxBytes > 0 && len(p) > b.maxBytes-b.buf.Len() {
+		return 0, errRawArchiveBudgetExceeded
+	}
+	return b.buf.Write(p)
+}
+
+// stripVuGenReplayArchiveEntries removes non-source VuGen replay outputs
+// (result1/**, result2/**, and replay.har alongside .usr/.c project sources)
+// using bounded raw ZIP stream copies without decompressing skipped entries,
+// while leaving all retained entries to be validated and bounded by archiveingest.ReadZIP.
+func stripVuGenReplayArchiveEntries(zipData []byte) []byte {
+	if err := archiveingest.ValidateZIPDirectory(zipData, maxEnterpriseArchiveEntries); err != nil {
+		return zipData
+	}
+	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	if err != nil || len(reader.File) > maxEnterpriseArchiveEntries {
+		return zipData
+	}
+
+	const maxRetainedRawPathDepth = 33 // MaxDepth (32) + 1 for StripFirstComponent
+	const maxSkippedReplayPathDepth = 256
+
+	sourceDirs := make(map[string]bool)
+	for _, entry := range reader.File {
+		if entry.Mode().IsDir() || strings.HasSuffix(entry.Name, "/") || strings.HasSuffix(entry.Name, `\`) {
+			continue
+		}
+		logical := strings.Trim(archiveingest.LogicalPath(entry.Name), "/")
+		ext := strings.ToLower(path.Ext(logical))
+		if ext != ".usr" && ext != ".c" {
+			continue
+		}
+		name, err := archiveingest.ValidateFilePath(entry.Name, maxRetainedRawPathDepth)
+		if err != nil {
+			return zipData
+		}
+		sourceDirs[path.Dir(name)] = true
+	}
+	if len(sourceDirs) == 0 {
+		return zipData
+	}
+
+	maxRawBytes := int64(maxEnterpriseArchiveTotalBytes)
+	if int64(len(zipData)) > maxRawBytes {
+		maxRawBytes = int64(len(zipData))
+	}
+
+	hasSkipped := false
+	skipEntry := make([]bool, len(reader.File))
+	var totalUncompressed uint64
+	var totalCompressed uint64
+	for i, entry := range reader.File {
+		if entry.Mode().IsDir() || strings.HasSuffix(entry.Name, "/") || strings.HasSuffix(entry.Name, `\`) {
+			cleanDir := strings.Trim(archiveingest.LogicalPath(entry.Name), "/")
+			if cleanDir != "" && isVuGenReplayDirInSourceDirs(cleanDir, sourceDirs) {
+				if _, err := archiveingest.ValidateFilePath(strings.TrimRight(entry.Name, `/\`), maxSkippedReplayPathDepth); err != nil {
+					return zipData
+				}
+				skipEntry[i] = true
+				hasSkipped = true
+				continue
+			}
+			if trimmedDir := strings.TrimRight(entry.Name, `/\`); trimmedDir != "" {
+				if _, err := archiveingest.ValidateFilePath(trimmedDir, maxRetainedRawPathDepth); err != nil {
+					return zipData
+				}
+			}
+			continue
+		}
+		cleanName := strings.Trim(archiveingest.LogicalPath(entry.Name), "/")
+		if cleanName != "" && isVuGenReplayArtifactInSourceDirs(cleanName, sourceDirs) {
+			if _, err := archiveingest.ValidateFilePath(entry.Name, maxSkippedReplayPathDepth); err != nil {
+				return zipData
+			}
+			skipEntry[i] = true
+			hasSkipped = true
+			continue
+		}
+		if _, err := archiveingest.ValidateFilePath(entry.Name, maxRetainedRawPathDepth); err != nil {
+			return zipData
+		}
+		if entry.UncompressedSize64 > maxEnterpriseArchiveEntryBytes ||
+			entry.UncompressedSize64 > maxEnterpriseArchiveTotalBytes-totalUncompressed {
+			return zipData
+		}
+		totalUncompressed += entry.UncompressedSize64
+		if entry.CompressedSize64 > uint64(maxRawBytes) ||
+			entry.CompressedSize64 > uint64(maxRawBytes)-totalCompressed {
+			return zipData
+		}
+		totalCompressed += entry.CompressedSize64
+	}
+	if !hasSkipped {
+		return zipData
+	}
+
+	filtered := &boundedRawArchiveBuffer{maxBytes: int(maxRawBytes + (8 << 20))}
+	zw := zip.NewWriter(filtered)
+	remainingRawBytes := maxRawBytes
+	for i, entry := range reader.File {
+		if skipEntry[i] {
+			continue
+		}
+		header := entry.FileHeader
+		rawReader, err := entry.OpenRaw()
+		if err != nil {
+			return zipData
+		}
+		rawWriter, err := zw.CreateRaw(&header)
+		if err != nil {
+			return zipData
+		}
+		copied, err := io.Copy(rawWriter, io.LimitReader(rawReader, remainingRawBytes+1))
+		if err != nil || copied > remainingRawBytes {
+			return zipData
+		}
+		remainingRawBytes -= copied
+	}
+	if err := zw.Close(); err != nil {
+		return zipData
+	}
+	return filtered.buf.Bytes()
+}
+
+func isVuGenReplayArtifactInSourceDirs(name string, sourceDirs map[string]bool) bool {
+	if name == "" {
+		return false
+	}
+	dir := path.Dir(name)
+	if sourceDirs[dir] && strings.EqualFold(path.Base(name), "replay.har") {
+		return true
+	}
+	return isVuGenReplayDirInSourceDirs(dir, sourceDirs)
+}
+
+func isVuGenReplayDirInSourceDirs(dir string, sourceDirs map[string]bool) bool {
+	for cur := dir; cur != "." && cur != "/" && cur != ""; {
+		parent := path.Dir(cur)
+		seg := path.Base(cur)
+		if sourceDirs[parent] && vugenReplayResultDirPattern.MatchString(seg) {
+			return true
+		}
+		if parent == cur {
+			break
+		}
+		cur = parent
+	}
+	return false
+}
+
 // readEnterpriseArchive opens the uploaded archive and returns its files keyed
 // by path.
 //
@@ -58,7 +222,8 @@ func readEnterpriseArchive(zipData []byte) (map[string]string, error) {
 		return nil, fmt.Errorf("invalid zip file: magic bytes mismatch (expected PK, got %02x%02x); file may be corrupted or truncated during upload", zipData[0], zipData[1])
 	}
 
-	extracted, err := archiveingest.ReadZIP(zipData, archiveingest.Options{
+	filteredZip := stripVuGenReplayArchiveEntries(zipData)
+	extracted, err := archiveingest.ReadZIP(filteredZip, archiveingest.Options{
 		Limits: archiveingest.Limits{
 			MaxEntries:    maxEnterpriseArchiveEntries,
 			MaxEntryBytes: maxEnterpriseArchiveEntryBytes,
@@ -93,6 +258,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	result, err := convertZip(zipData, opts, &projectFileName)
 	if err == nil {
 		stampEnterpriseSourceIdentity(result, projectFileName, opts.ScriptName)
+		sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	}
 	return result, err
 }
@@ -533,6 +699,7 @@ func convertZip(zipData []byte, opts ConvertOptions, projectFile *string) (*Conv
 			return nil, err
 		}
 		attachImportFidelityReport(result, files, projectConfig, parsedActions)
+		sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 		return result, nil
 	}
 	var result *ConvertResult
@@ -817,6 +984,7 @@ func finalizeEnterpriseArchiveImportResult(
 		}
 		resolveTemplatedBaseURL(result)
 	}
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result, scripts)
 	if err := applyJavaVMParameterRejectionReview(
 		result,
 		scripts,
@@ -856,6 +1024,7 @@ func finalizeEnterpriseArchiveImportResult(
 	// evidence afterwards so finalized drafts and standalone conversion agree.
 	attachJavaDependencyInventory(result, ctx.Files)
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result, scripts)
 	return nil
 }
 
@@ -2232,6 +2401,7 @@ func adaptDevWebConvertResult(devResult *devweb.ConvertResult, files map[string]
 		findParameterFiles(files, projectConfig),
 	)
 	attachImportFidelityReport(result, files, projectConfig, nil)
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	return result
 }
 
@@ -2440,7 +2610,7 @@ func reviewDeclaredTransactionConservation(result *ConvertResult, projectFileNam
 		}
 		missingCount++
 		if len(missingEvidence) < maxDeclaredTransactionEvidence {
-			missingEvidence = append(missingEvidence, boundedRuntimeReviewEvidence(scrub.Value(name, scrub.Policy{})))
+			missingEvidence = append(missingEvidence, boundedRuntimeReviewEvidence(name))
 		}
 	}
 	if missingCount == 0 {
@@ -2591,8 +2761,8 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	}
 	script.Metadata.Import = &dsl.ImportMetadata{
 		Source:           "enterprise_script_archive",
-		SourceScriptName: script.Name,
-		Preserved:        preserved,
+		SourceScriptName: convertutil.NeutralizeScriptMetadataString(script.Name),
+		Preserved:        convertutil.NeutralizeScriptMetadataDeep(preserved).(map[string]any),
 	}
 }
 

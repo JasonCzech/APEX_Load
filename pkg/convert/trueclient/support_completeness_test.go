@@ -48,7 +48,7 @@ var publishedTruClientSteps = map[string]struct {
 	"Dialog - Confirm":         {"handle_dialog", ScopeSupported},
 	"Dialog Prompt":            {"handle_dialog", ScopeSupported},
 	"Dialog - Authenticate":    {"dialog_secure", ScopeReviewOnly},
-	"Dialog - Prompt Password": {"dialog_secure", ScopeReviewOnly},
+	"Dialog - Prompt Password": {"handle_dialog", ScopeSupported},
 	// non-object steps
 	"Evaluate JavaScript":    {"evaluate_javascript", ScopeReviewOnly},
 	"Evaluate C":             {"evaluate_c", ScopeReviewOnly},
@@ -153,6 +153,7 @@ func TestConvertMappableStepsEmitExpectedActions(t *testing.T) {
 		{"Upload", truArg("Selector", "#a", "Path", "/tmp/f.txt"), "browser_set_files"},
 		{"Dialog - Confirm", truArg("Action", "accept"), "browser_handle_dialog"},
 		{"Dialog Prompt", truArg("Action", "accept", "Text", "hi"), "browser_handle_dialog"},
+		{"Dialog - Prompt Password", truArg("Action", "accept", "Password", "literal-secret"), "browser_handle_dialog"},
 		{"Rendezvous", truArg("Name", "Sync"), "rendezvous"},
 		{"Activate Tab", truArg("Tab", "2"), "browser_switch_window"},
 		{"Activate", truArg("Tab", "1"), "browser_switch_window"},
@@ -197,7 +198,7 @@ func TestConvertReviewOnlyStepsPreservedNotSkipped(t *testing.T) {
 		"Evaluate C", "Generic API Action", "Call Function", "Get Property",
 		"Set Day", "Seek", "Resize", "Go Back", "Go Forward",
 		"Verify PDF Content", "Wait for File Download", "Mouse Down", "Mouse Up",
-		"Dialog - Authenticate", "Dialog - Prompt Password",
+		"Dialog - Authenticate",
 	}
 	for _, action := range steps {
 		t.Run(action, func(t *testing.T) {
@@ -212,6 +213,32 @@ func TestConvertReviewOnlyStepsPreservedNotSkipped(t *testing.T) {
 				t.Fatalf("%s was flagged unsupported instead of review-only: %v", action, result.Stats.UnsupportedSteps)
 			}
 		})
+	}
+}
+
+func TestDialogPromptPasswordMapsToExecutableBrowserHandleDialog(t *testing.T) {
+	result := convertTruClientSteps(t, truNavigateAnchor+"\n"+truStepXML("Dialog - Prompt Password", truArg("Action", "accept", "Password", "my-prompt-secret")))
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want navigate + browser_handle_dialog", result.Script.Actions)
+	}
+	dialog := result.Script.Actions[1]
+	if dialog.Type != "browser_handle_dialog" {
+		t.Fatalf("dialog.Type = %q, want browser_handle_dialog", dialog.Type)
+	}
+	if dialog.Params["action"] != "accept" || dialog.Params["dialog_type"] != "prompt" || dialog.Params["prompt_text"] != "my-prompt-secret" {
+		t.Fatalf("dialog.Params = %#v, want accept + prompt + my-prompt-secret", dialog.Params)
+	}
+	if dialog.Metadata["review_required"] == true || dialog.Metadata["promotion_blocker"] == true {
+		t.Fatalf("Dialog - Prompt Password remained gated: %#v", dialog.Metadata)
+	}
+
+	authResult := convertTruClientSteps(t, truNavigateAnchor+"\n"+truStepXML("Dialog - Authenticate", truArg("Username", "op", "Password", "auth-secret")))
+	if len(authResult.Script.Actions) != 2 || authResult.Script.Actions[1].Type != "source_review" {
+		t.Fatalf("Dialog - Authenticate = %#v, want source_review", authResult.Script.Actions)
+	}
+	rawArgs, _ := authResult.Script.Actions[1].Params["args"].([]any)
+	if len(rawArgs) == 0 || !strings.Contains(fmt.Sprint(rawArgs[0]), "auth-secret") {
+		t.Fatalf("Dialog - Authenticate lost raw arguments: %#v", authResult.Script.Actions[1].Params)
 	}
 }
 

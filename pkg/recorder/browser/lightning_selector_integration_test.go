@@ -104,27 +104,71 @@ func TestRecordedLightningSelectorsMatchOneVisibleElement(t *testing.T) {
 	}
 }
 
-// A verification code typed on a Salesforce identity-verification page is
-// masked at capture, like a password: its digits never leave the page.
+// By default (ScrubSensitive=false), password and one-time verification code
+// inputs keep their captured values; with ScrubSensitive=true they are masked
+// at capture in the page.
 func TestRecordedVerificationCodeIsMasked(t *testing.T) {
 	if testing.Short() {
 		t.Skip("browser integration")
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
-		fmt.Fprint(w, `<!doctype html><html><body><input id="smc" type="text"><input id="other" type="text" autocomplete="one-time-code"></body></html>`)
+		fmt.Fprint(w, `<!doctype html><html><body><input id="pw" type="password"><input id="smc" type="text"><input id="other" type="text" autocomplete="one-time-code"></body></html>`)
 	}))
 	defer server.Close()
-	recorder := New(Options{StartURL: server.URL + "/_ui/identity/verification/method/SmsVerificationFinish", Headless: true})
-	if err := recorder.Start(); err != nil {
+
+	// Default (ScrubSensitive=false): captures literal values with Masked=false.
+	defaultRecorder := New(Options{StartURL: server.URL + "/_ui/identity/verification/method/SmsVerificationFinish", Headless: true})
+	if err := defaultRecorder.Start(); err != nil {
 		if os.Getenv("APEXLOAD_BROWSER_TESTS") == "require" {
 			t.Fatal(err)
 		}
 		t.Skipf("browser runtime unavailable: %v", err)
 	}
+	defer defaultRecorder.Stop()
+	defaultPage := defaultRecorder.context.Pages()[0]
+	for index, entry := range []struct {
+		field string
+		value string
+	}{
+		{"#pw", "LiteralPw99!"},
+		{"#smc", "482913"},
+		{"#other", "482913"},
+	} {
+		if err := defaultPage.Locator(entry.field).Fill(entry.value); err != nil {
+			t.Fatal(err)
+		}
+		if err := defaultPage.Locator(entry.field).Press("Tab"); err != nil {
+			t.Fatal(err)
+		}
+		waitForSteps(t, defaultRecorder, index+1, 5*time.Second)
+	}
+	defaultSession, err := defaultRecorder.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gotValues []string
+	for _, step := range defaultSession.Steps {
+		if step.Kind != StepFill {
+			continue
+		}
+		if step.Masked || step.Value == "" {
+			t.Fatalf("default sensitive step was masked: %+v", step)
+		}
+		gotValues = append(gotValues, step.Value)
+	}
+	if strings.Join(gotValues, "|") != "LiteralPw99!|482913|482913" {
+		t.Fatalf("default captured values = %v", gotValues)
+	}
+
+	// ScrubSensitive=true: masks password and verification code inputs at capture.
+	recorder := New(Options{StartURL: server.URL + "/_ui/identity/verification/method/SmsVerificationFinish", Headless: true, ScrubSensitive: true})
+	if err := recorder.Start(); err != nil {
+		t.Fatal(err)
+	}
 	defer recorder.Stop()
 	page := recorder.context.Pages()[0]
-	for index, field := range []string{"#smc", "#other"} {
+	for index, field := range []string{"#pw", "#smc", "#other"} {
 		if err := page.Locator(field).Fill("482913"); err != nil {
 			t.Fatal(err)
 		}
@@ -144,7 +188,7 @@ func TestRecordedVerificationCodeIsMasked(t *testing.T) {
 		}
 		fills++
 		if !step.Masked || step.Value != "" {
-			t.Fatalf("verification code step = %+v", step)
+			t.Fatalf("scrubbed verification code step = %+v", step)
 		}
 	}
 	if fills == 0 {
@@ -152,6 +196,6 @@ func TestRecordedVerificationCodeIsMasked(t *testing.T) {
 	}
 	encoded, _ := json.Marshal(session)
 	if strings.Contains(string(encoded), "482913") {
-		t.Fatal("the code reached the recording")
+		t.Fatal("the code reached the scrubbed recording")
 	}
 }

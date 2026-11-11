@@ -81,6 +81,7 @@ func ConvertSAPGUI(actions []*ParsedAction, opts ConvertOptions, detected Detect
 		"script_draft_status": "available",
 	})
 	result.Warnings = append(result.Warnings, "SAP GUI import produced a DSL draft, but execution requires the Windows SAP GUI runner bridge.")
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	return result, nil
 }
 

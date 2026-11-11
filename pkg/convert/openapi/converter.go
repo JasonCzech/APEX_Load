@@ -698,6 +698,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 	result.Unsupported = diagnostics.Items()
 	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
+	convertutil.SanitizeScriptDSLTemplates(result.Script, nil)
 	return result, nil
 }
 

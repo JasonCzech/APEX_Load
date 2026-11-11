@@ -87,6 +87,7 @@ func ConvertNetwork(actions []*ParsedAction, opts ConvertOptions, detected Detec
 		mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 	}
 	result.Warnings = append(result.Warnings, "Network endpoints were imported with {{network.*}} placeholders; replace them with governed endpoint configuration before replay.")
+	sanitizeEnterpriseArchiveScriptsDSLTemplates(result)
 	return result, nil
 }
 

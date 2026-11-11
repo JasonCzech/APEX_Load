@@ -375,13 +375,15 @@ func TestConvertRejectsNullAndEmptyDashboard(t *testing.T) {
 	}
 }
 
-func TestCanonicalizeImportSourceDropsUnknownExportFields(t *testing.T) {
-	canonical, err := CanonicalizeImportSource(`{"meta":{"token":"secret"},"dashboard":{"title":"Safe","schemaVersion":39,"pluginSecret":"drop-me","panels":[{"id":1,"type":"timeseries","unknown":"drop-me","targets":[{"expr":"up","refId":"A"}]}]}}`)
+func TestCanonicalizeImportSourcePreservesAllAuthoredFields(t *testing.T) {
+	canonical, err := CanonicalizeImportSource(`{"meta":{"token":"secret"},"dashboard":{"title":"Safe","schemaVersion":39,"pluginSecret":"keep-me","panels":[{"id":1,"type":"timeseries","unknown":"keep-me","targets":[{"expr":"up","refId":"A"}]}]}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(canonical, "secret") || strings.Contains(canonical, "drop-me") {
-		t.Fatalf("canonical source retained unknown fields: %s", canonical)
+	for _, want := range []string{`"token":"secret"`, `"pluginSecret":"keep-me"`, `"unknown":"keep-me"`} {
+		if !strings.Contains(canonical, want) {
+			t.Fatalf("canonical source dropped authored field %s: %s", want, canonical)
+		}
 	}
 	res := mustConvert(t, canonical)
 	if res.Dashboard.SourceTitle != "Safe" || len(res.Dashboard.Panels) != 1 {
@@ -447,19 +449,39 @@ func TestConvertBoundsNestedCollectionDiagnostics(t *testing.T) {
 	}
 }
 
-func TestConvertBoundsVariableValues(t *testing.T) {
-	content := fmt.Sprintf(`{"title":"Variables","schemaVersion":39,"templating":{"list":[{"name":"env","type":"constant","current":{"value":%q}}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up{env=\"$env\"}"}]}]}`, strings.Repeat("x", MaxVariableValueBytes+1))
+func TestConvertPreservesLongVariableValuesAndOptions(t *testing.T) {
+	longVal := strings.Repeat("x", MaxVariableValueBytes+64)
+	longOpt := strings.Repeat("o", MaxVariableValueBytes+64)
+	content := fmt.Sprintf(`{"title":"Variables","schemaVersion":39,"templating":{"list":[{"name":"env","type":"constant","current":{"value":%q}},{"name":"region","type":"custom","current":{"value":%q},"options":[{"value":%q}]}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up{env=\"$env\",region=\"$region\"}"}]}]}`, longVal, longOpt, longOpt)
 	result := mustConvert(t, content)
-	if !hasBlockerContaining(result, "cannot be imported") {
-		t.Fatalf("diagnostics = %#v, want oversized variable-value blocker", result.Unsupported)
+	if result.HasBlockers() {
+		t.Fatalf("unexpected blockers for >128B variable values: %#v", result.Unsupported)
 	}
-	if len(result.Bindings) != 1 || result.Bindings[0].Default != "" || result.Bindings[0].Kind != BindingRejected {
-		t.Fatalf("oversized variable value survived into review: %#v", result.Bindings)
+	if len(result.Bindings) != 2 {
+		t.Fatalf("bindings = %#v, want 2", result.Bindings)
+	}
+	if result.Bindings[0].Kind != BindingAuto || result.Bindings[0].Default != longVal || result.Bindings[0].ResolvedTo != longVal {
+		t.Fatalf("constant >128B variable not preserved: %#v", result.Bindings[0])
+	}
+	if result.Bindings[1].Kind != BindingRequired || result.Bindings[1].Default != longOpt || len(result.Bindings[1].Options) != 1 || result.Bindings[1].Options[0] != longOpt {
+		t.Fatalf("custom >128B variable option not preserved: %#v", result.Bindings[1])
 	}
 
-	unused := mustConvert(t, fmt.Sprintf(`{"title":"Variables","schemaVersion":39,"templating":{"list":[{"name":"env","type":"constant","current":{"value":%q}}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up"}]}]}`, strings.Repeat("x", MaxVariableValueBytes+1)))
-	if unused.HasBlockers() {
-		t.Fatalf("unused oversized variable should not block an otherwise safe dashboard: %#v", unused.Unsupported)
+	// Values exceeding MaxExprBytes (4096) are rejected on referenced constant/interval variables
+	// and omitted from custom options, matching ValidateBindingValue parity at commit time.
+	tooLong := strings.Repeat("z", MaxExprBytes+1)
+	oversizedConst := fmt.Sprintf(`{"title":"OversizedConst","schemaVersion":39,"templating":{"list":[{"name":"env","type":"constant","current":{"value":%q}}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up{env=\"$env\"}"}]}]}`, tooLong)
+	if resConst := mustConvert(t, oversizedConst); !resConst.HasBlockers() || resConst.Bindings[0].Kind != BindingRejected {
+		t.Fatalf("expected >MaxExprBytes referenced constant variable to block, got bindings=%#v unsupported=%#v", resConst.Bindings, resConst.Unsupported)
+	}
+	oversizedInterval := fmt.Sprintf(`{"title":"OversizedInterval","schemaVersion":39,"templating":{"list":[{"name":"win","type":"interval","current":{"value":%q}}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"rate(up[$win])"}]}]}`, tooLong)
+	if resInt := mustConvert(t, oversizedInterval); !resInt.HasBlockers() || resInt.Bindings[0].Kind != BindingRejected {
+		t.Fatalf("expected >MaxExprBytes referenced interval variable to block, got bindings=%#v unsupported=%#v", resInt.Bindings, resInt.Unsupported)
+	}
+	oversizedCustom := fmt.Sprintf(`{"title":"OversizedCustom","schemaVersion":39,"templating":{"list":[{"name":"region","type":"custom","current":{"value":%q},"options":[{"value":%q},{"value":"us-east-1"}]}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up{region=\"$region\"}"}]}]}`, tooLong, tooLong)
+	resCustom := mustConvert(t, oversizedCustom)
+	if resCustom.Bindings[0].Default != "" || len(resCustom.Bindings[0].Options) != 1 || resCustom.Bindings[0].Options[0] != "us-east-1" {
+		t.Fatalf("expected >MaxExprBytes custom default/option to be omitted while keeping valid option, got %#v", resCustom.Bindings[0])
 	}
 }
 

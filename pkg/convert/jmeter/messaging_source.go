@@ -2,96 +2,15 @@ package jmeter
 
 import (
 	"fmt"
-	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
-	"github.com/jasonczech/apexload/pkg/credential"
 	"regexp"
 	"strings"
 )
 
-var messagingJAASValue = regexp.MustCompile(`(?:^|\s)[A-Za-z][A-Za-z0-9_.]*\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)'|([^;\s]+))`)
-
-// Messaging plugins duplicate values in arbitrary XML attributes (including a
-// message's elementProp name). Redact by decoded value, then verify the entire
-// XML token stream. Entity-obscured leftovers omit the public source, preserving
-// line numbers. This does not itself persist the original as a protected source artifact.
-func redactMessagingSource(root *xmlNode, content string) (string, bool) {
-	var protected []credentialpolicy.Requirement
-	messaging := false
-	unsupportedJAAS := false
-	// disabled marks an element JMeter skips: enabled="false" on the element
-	// or on an ancestor, whose subtree is the hashTree that follows it.
-	var visit func(n *xmlNode, disabled bool)
-	visit = func(n *xmlNode, disabled bool) {
-		disabled = disabled || !jmeterElementEnabled(n)
-		if n.Name == diKafkaConfig || n.Name == diKafkaSampler || n.Name == pnopEventHubsSampler {
-			messaging = true
-		}
-		name := n.Attrs["name"]
-		if credential.SensitiveName(name) || credential.SensitiveXMLName(name) || name == "sharedAccessKey" {
-			if strings.TrimSpace(n.Text) != "" {
-				protected = append(protected, credentialpolicy.Requirement{Value: n.Text})
-			}
-		}
-		if n.Name == "elementProp" && !credential.NonCredentialName(prop(n, "configKey")) &&
-			(credential.SensitiveName(prop(n, "configKey")) || credential.SensitiveXMLName(prop(n, "configKey"))) {
-			if value := prop(n, "configValue"); value != "" {
-				protected = append(protected, credentialpolicy.Requirement{Value: value})
-			}
-		} else if n.Name == "elementProp" {
-			// A URL setting such as sasl.oauthbearer.token.endpoint.url is an
-			// address, not a credential by name (credential.NonCredentialName),
-			// but its userinfo or query can still carry one.
-			for _, value := range credentialpolicy.URLCredentialValues(prop(n, "configValue")) {
-				for _, form := range jmeterXMLTextForms(value) {
-					protected = append(protected, credentialpolicy.Requirement{Value: form})
-				}
-			}
-		}
-		if n.Name == "elementProp" && prop(n, "configKey") == "sasl.jaas.config" {
-			raw := prop(n, "configValue")
-			// Only a JAAS the converter would read must be provably redactable.
-			// A disabled one never runs; masking its values in place keeps the
-			// rest of the plan reviewable instead of omitting the document, but
-			// only when every option value is found: a variable reference, a
-			// comment or anything else the option scan cannot read fails closed.
-			if _, err := parseMessagingOAuthJAAS(raw); err != nil && (!disabled || !messagingJAASOptionsReadable(raw)) {
-				unsupportedJAAS = true
-			}
-			// Each value is protected as JAAS writes it (Java escapes kept), as
-			// Java reads it (escapes undone), and in the XML text forms a plan
-			// writer uses for both, so a value whose quotes the plan stores as
-			// &quot; is still masked in place; whatever survives is caught by the
-			// decoded check, which omits the document.
-			protect := func(value string) {
-				for _, form := range jmeterXMLTextForms(value) {
-					protected = append(protected, credentialpolicy.Requirement{Value: form})
-				}
-			}
-			protect(raw)
-			for _, m := range messagingJAASValue.FindAllStringSubmatch(raw, -1) {
-				for _, v := range m[1:] {
-					if v != "" {
-						protect(v)
-						protect(strings.ReplaceAll(strings.ReplaceAll(v, `\"`, `"`), `\\`, `\`))
-					}
-				}
-			}
-		}
-		skipNext := false
-		for _, child := range n.Children {
-			childDisabled := disabled || (skipNext && child.Name == "hashTree")
-			skipNext = child.Name != "hashTree" && !jmeterElementEnabled(child)
-			visit(child, childDisabled)
-		}
-	}
-	visit(root, false)
-	if !messaging {
-		return content, false
-	}
-	if unsupportedJAAS {
-		return omittedJMeterCredentialSource(content, "UNSUPPORTED JAAS REQUIRES PROTECTED REVIEW"), true
-	}
-	return redactJMeterCredentialValues(content, protected, nil)
+// redactMessagingSource returns the raw JMX source without redacting authored
+// messaging settings or credentials; source files are preserved verbatim for
+// operator authoring and review.
+func redactMessagingSource(_ *xmlNode, content string) (string, bool) {
+	return content, false
 }
 
 // jmeterXMLTextForms returns value with the XML text encodings a JMeter
@@ -145,7 +64,73 @@ func messagingJAASOptionsReadable(raw string) bool {
 	return true
 }
 
-var messagingOAuthOption = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_.]*)\s*=\s*"((?:[^"\\]|\\["\\])*)"`)
+var (
+	messagingOAuthOption      = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_.]*)\s*=\s*"((?:[^"\\]|\\["\\])*)"`)
+	messagingSASLModuleHeader = regexp.MustCompile(`^(org\.apache\.kafka\.common\.security\.(?:plain\.PlainLoginModule|scram\.ScramLoginModule))\s+(?i:required)(?:\s+|$)`)
+	messagingSASLLoginOption  = regexp.MustCompile(`^([A-Za-z][A-Za-z0-9_.]*)\s*=\s*(?:"((?:[^"\\]|\\["\\])*)"|'((?:[^'\\]|\\['\\])*)'|([^;\s"'=\\]+))`)
+	jaasDoubleQuoteUnescaper  = strings.NewReplacer(`\\`, `\`, `\"`, `"`)
+	jaasSingleQuoteUnescaper  = strings.NewReplacer(`\\`, `\`, `\'`, `'`)
+)
+
+func parseMessagingSASLLoginJAAS(source string) (string, map[string]string, error) {
+	trimmed := strings.TrimSpace(source)
+	if len(source) > 16384 {
+		return "", nil, fmt.Errorf("JAAS exceeds size limit")
+	}
+	header := messagingSASLModuleHeader.FindStringSubmatch(trimmed)
+	if header == nil {
+		return "", nil, fmt.Errorf("unsupported JAAS module")
+	}
+	module := header[1]
+	remaining := strings.TrimSpace(trimmed[len(header[0]):])
+	if !strings.HasSuffix(remaining, ";") {
+		return "", nil, fmt.Errorf("JAAS must end with semicolon")
+	}
+	remaining = strings.TrimSpace(strings.TrimSuffix(remaining, ";"))
+	options := map[string]string{}
+	for remaining != "" {
+		match := messagingSASLLoginOption.FindStringSubmatch(remaining)
+		if match == nil {
+			return "", nil, fmt.Errorf("malformed JAAS options")
+		}
+		key := match[1]
+		switch key {
+		case "username", "password":
+		case "tokenauth":
+			if module != "org.apache.kafka.common.security.scram.ScramLoginModule" {
+				return "", nil, fmt.Errorf("unsupported JAAS option")
+			}
+		default:
+			return "", nil, fmt.Errorf("unsupported JAAS option")
+		}
+		if _, exists := options[key]; exists {
+			return "", nil, fmt.Errorf("duplicate JAAS option")
+		}
+		rawRHS := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(strings.TrimPrefix(match[0], key)), "="))
+		var val string
+		switch {
+		case strings.HasPrefix(rawRHS, `"`):
+			val = jaasDoubleQuoteUnescaper.Replace(match[2])
+		case strings.HasPrefix(rawRHS, `'`):
+			val = jaasSingleQuoteUnescaper.Replace(match[3])
+		default:
+			val = match[4]
+		}
+		if key == "tokenauth" && !strings.EqualFold(strings.TrimSpace(val), "false") {
+			return "", nil, fmt.Errorf("delegation-token SCRAM authentication is unsupported")
+		}
+		options[key] = val
+		tail := remaining[len(match[0]):]
+		if tail != "" && !strings.ContainsAny(tail[:1], " \t\r\n") {
+			return "", nil, fmt.Errorf("JAAS options require whitespace")
+		}
+		remaining = strings.TrimSpace(tail)
+	}
+	if len(options) == 0 {
+		return "", nil, fmt.Errorf("JAAS credentials missing")
+	}
+	return module, options, nil
+}
 
 func parseMessagingOAuthJAAS(source string) (map[string]string, error) {
 	const module = "org.apache.kafka.common.security.oauthbearer.OAuthBearerLoginModule required"
@@ -173,7 +158,7 @@ func parseMessagingOAuthJAAS(source string) (map[string]string, error) {
 		if _, exists := options[key]; exists {
 			return nil, fmt.Errorf("duplicate JAAS option")
 		}
-		options[key] = strings.ReplaceAll(strings.ReplaceAll(match[2], `\"`, `"`), `\\`, `\`)
+		options[key] = jaasDoubleQuoteUnescaper.Replace(match[2])
 		tail := remaining[len(match[0]):]
 		if tail != "" && !strings.ContainsAny(tail[:1], " \t\r\n") {
 			return nil, fmt.Errorf("JAAS options require whitespace")
