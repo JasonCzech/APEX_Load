@@ -947,7 +947,8 @@ func TestDesktopRecorderStatusExposesOnlyRecorderProxyToken(t *testing.T) {
 }
 
 func TestHandleExportRecordingHARScrubOption(t *testing.T) {
-	server := NewServer(ServerConfig{})
+	server := NewServer(ServerConfig{ProxyAddr: "127.0.0.1:0"})
+	startTestRecorderProxy(t, server)
 	session, err := server.recorder.StartSession("rec-scrub", "Login HAR", recorder.SessionFilters{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -967,9 +968,36 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 		ResponseBody:         `{"ok":true}`,
 	})
 
-	// Session/delta APIs are disclosure-safe by default too; they must not
-	// provide an easier bypass around the scrubbed HAR export boundary.
-	sessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub?include=requests", nil)
+	// By default (without scrub_sensitive or ?scrub=true), authorized session/delta
+	// reads and HAR exports preserve captured values unredacted.
+	defaultSessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub?include=requests", nil)
+	defaultSessionResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(defaultSessionResp, defaultSessionReq)
+	if defaultSessionResp.Code != http.StatusOK {
+		t.Fatalf("default session status = %d body=%s", defaultSessionResp.Code, defaultSessionResp.Body.String())
+	}
+	if got := defaultSessionResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Fatalf("default session sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	}
+	if !strings.Contains(defaultSessionResp.Body.String(), "hunter2") || !strings.Contains(defaultSessionResp.Body.String(), "top-secret-token") {
+		t.Fatalf("default session unexpectedly scrubbed captured values: %s", defaultSessionResp.Body.String())
+	}
+
+	defaultExportReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
+	defaultExportResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(defaultExportResp, defaultExportReq)
+	if defaultExportResp.Code != http.StatusOK {
+		t.Fatalf("default export status = %d body=%s", defaultExportResp.Code, defaultExportResp.Body.String())
+	}
+	if got := defaultExportResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Fatalf("default export sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	}
+	if !strings.Contains(defaultExportResp.Body.String(), "top-secret-token") || !strings.Contains(defaultExportResp.Body.String(), "hunter2") {
+		t.Fatalf("default export unexpectedly scrubbed captured values: %s", defaultExportResp.Body.String())
+	}
+
+	// Explicit ?scrub=true scrubs session reads and HAR exports on demand.
+	sessionReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub?include=requests&scrub=true", nil)
 	sessionResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(sessionResp, sessionReq)
 	if sessionResp.Code != http.StatusOK {
@@ -997,8 +1025,8 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 		t.Fatalf("raw session sensitivity = %q, want %q", got, scrub.SensitivityRaw)
 	}
 
-	// Default export applies scrub-on-write for downloadable artifacts.
-	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har", nil)
+	// Explicit ?scrub=true applies scrub-on-write for downloadable artifacts.
+	scrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har&scrub=true", nil)
 	scrubResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(scrubResp, scrubReq)
 	if scrubResp.Code != http.StatusOK {
@@ -1025,8 +1053,8 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 		t.Fatalf("scrubbed entry count = %d, want 1", len(payload.Log.Entries))
 	}
 
-	// Raw export is still available for privileged correlation diagnostics, but
-	// must be explicit and labeled.
+	// Raw export is still available for privileged correlation diagnostics, and
+	// must be labeled raw_contains_secrets.
 	rawReq := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/rec-scrub/export?format=har&raw=true", nil)
 	rawResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(rawResp, rawReq)
@@ -1038,6 +1066,51 @@ func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 	}
 	if !strings.Contains(rawResp.Body.String(), "top-secret-token") {
 		t.Error("raw export should preserve values for correlation analysis")
+	}
+
+	// Starting a proxy recording with scrub_sensitive=true scrubs session reads,
+	// mutations, list, and HAR exports by default unless ?raw=true is requested.
+	if _, err := server.recorder.StopSession("rec-scrub"); err != nil {
+		t.Fatal(err)
+	}
+	startScrubReq := fromControllerHost(httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{"name":"Opt-In Scrub","scrub_sensitive":true}`)))
+	startScrubReq.Header.Set("Content-Type", "application/json")
+	startScrubResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(startScrubResp, startScrubReq)
+	if startScrubResp.Code != http.StatusCreated {
+		t.Fatalf("start scrub_sensitive status = %d body=%s", startScrubResp.Code, startScrubResp.Body.String())
+	}
+	if got := startScrubResp.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("start scrub_sensitive sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	var started struct {
+		Session recorder.Session `json:"session"`
+	}
+	if err := json.Unmarshal(startScrubResp.Body.Bytes(), &started); err != nil {
+		t.Fatal(err)
+	}
+	optInSession, ok := server.recorder.GetSession(started.Session.ID)
+	if !ok {
+		t.Fatal("opt-in session not found")
+	}
+	optInSession.Requests = append(optInSession.Requests, session.Requests[0])
+
+	optInRead := httptest.NewRecorder()
+	server.mux.ServeHTTP(optInRead, httptest.NewRequest(http.MethodGet, "/api/v1/recorder/"+started.Session.ID+"?include=requests", nil))
+	if got := optInRead.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("opt-in session read sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	if strings.Contains(optInRead.Body.String(), "hunter2") {
+		t.Fatalf("opt-in session read leaked secret: %s", optInRead.Body.String())
+	}
+
+	optInExport := httptest.NewRecorder()
+	server.mux.ServeHTTP(optInExport, httptest.NewRequest(http.MethodGet, "/api/v1/recorder/"+started.Session.ID+"/export?format=har", nil))
+	if got := optInExport.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("opt-in export sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	if strings.Contains(optInExport.Body.String(), "hunter2") {
+		t.Fatalf("opt-in export leaked secret: %s", optInExport.Body.String())
 	}
 }
 

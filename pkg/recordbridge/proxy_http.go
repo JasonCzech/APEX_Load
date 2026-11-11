@@ -10,7 +10,182 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 )
+
+// proxySessionScrubByID holds the proxy recorder sessions that opted into
+// scrubbed live reads and HAR exports. It is interim, process-local state until
+// the opt-in is carried on recorder.SessionFilters itself. The start handler
+// prunes it after StartSessionForProject against the recorder's retained
+// sessions, so it holds at most the retained sessions plus starts still in
+// flight. Value 0 marks an in-flight start (not yet in the recorder's list);
+// a positive value is the monotonic generation at which the session's opt-in
+// was committed.
+var proxySessionScrubMu sync.RWMutex
+var proxySessionScrubSeq uint64
+var proxySessionScrubByID = map[string]uint64{}
+
+// ProxySessionScrubGeneration returns the current commit generation for settled
+// proxy session scrub preferences. Callers capture this before snapshotting the
+// recorder's retained sessions and pass it to PruneProxySessionScrubSensitiveBefore
+// so a concurrent start that commits after the snapshot is never pruned.
+func ProxySessionScrubGeneration() uint64 {
+	proxySessionScrubMu.RLock()
+	gen := proxySessionScrubSeq
+	proxySessionScrubMu.RUnlock()
+	return gen
+}
+
+// PruneProxySessionScrubSensitiveBefore drops settled scrub preferences with a
+// commit generation <= maxGen for every session that is not in liveSessionIDs,
+// while preserving in-flight starts (gen == 0) and any session committed after
+// maxGen.
+func PruneProxySessionScrubSensitiveBefore(maxGen uint64, liveSessionIDs []string) {
+	live := make(map[string]struct{}, len(liveSessionIDs))
+	for _, id := range liveSessionIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			live[id] = struct{}{}
+		}
+	}
+	proxySessionScrubMu.Lock()
+	for id, gen := range proxySessionScrubByID {
+		if gen == 0 || gen > maxGen {
+			continue
+		}
+		if _, ok := live[id]; !ok {
+			delete(proxySessionScrubByID, id)
+		}
+	}
+	proxySessionScrubMu.Unlock()
+}
+
+// PruneProxySessionScrubSensitive drops settled scrub preferences for every
+// session not in liveSessionIDs.
+func PruneProxySessionScrubSensitive(liveSessionIDs []string) {
+	PruneProxySessionScrubSensitiveBefore(ProxySessionScrubGeneration(), liveSessionIDs)
+}
+
+// BeginProxySessionScrubSensitive records a session's opt-in before the
+// recorder starts it, so no read can observe the new session unscrubbed. The
+// entry survives prune until CommitProxySessionScrubSensitive (start succeeded)
+// or DeleteProxySessionScrubSensitive (start failed).
+func BeginProxySessionScrubSensitive(sessionID string, scrubSensitive bool) {
+	id := strings.TrimSpace(sessionID)
+	if id == "" || !scrubSensitive {
+		return
+	}
+	proxySessionScrubMu.Lock()
+	proxySessionScrubByID[id] = 0
+	proxySessionScrubMu.Unlock()
+}
+
+// CommitProxySessionScrubSensitive marks a started session's opt-in as
+// settled, so prune may drop it once the recorder no longer retains it.
+func CommitProxySessionScrubSensitive(sessionID string) {
+	id := strings.TrimSpace(sessionID)
+	if id == "" {
+		return
+	}
+	proxySessionScrubMu.Lock()
+	if _, ok := proxySessionScrubByID[id]; ok {
+		proxySessionScrubSeq++
+		proxySessionScrubByID[id] = proxySessionScrubSeq
+	}
+	proxySessionScrubMu.Unlock()
+}
+
+// SetProxySessionScrubSensitive records whether a started proxy recording
+// session opted into live response and HAR-export scrubbing.
+func SetProxySessionScrubSensitive(sessionID string, scrubSensitive bool) {
+	id := strings.TrimSpace(sessionID)
+	if id == "" {
+		return
+	}
+	proxySessionScrubMu.Lock()
+	if scrubSensitive {
+		proxySessionScrubSeq++
+		proxySessionScrubByID[id] = proxySessionScrubSeq
+	} else {
+		delete(proxySessionScrubByID, id)
+	}
+	proxySessionScrubMu.Unlock()
+}
+
+// DeleteProxySessionScrubSensitive removes a proxy recording session's scrub
+// preference when the session is deleted or fails to start.
+func DeleteProxySessionScrubSensitive(sessionID string) {
+	SetProxySessionScrubSensitive(sessionID, false)
+}
+
+// ProxySessionScrubSensitive reports whether a proxy recording session opted
+// into live response and HAR-export scrubbing.
+func ProxySessionScrubSensitive(session *recorder.Session) bool {
+	if session == nil {
+		return false
+	}
+	id := strings.TrimSpace(session.ID)
+	if id == "" {
+		return false
+	}
+	proxySessionScrubMu.RLock()
+	_, scrubSensitive := proxySessionScrubByID[id]
+	proxySessionScrubMu.RUnlock()
+	return scrubSensitive
+}
+
+// ShouldScrubRecorderSession reports whether a proxy recording session read,
+// mutation, or HAR export should scrub sensitive values.
+func ShouldScrubRecorderSession(r *http.Request, session *recorder.Session, canExportRaw bool) bool {
+	raw := rawRecordingExportRequested(r)
+	scrubRequested := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("scrub")), "true")
+	return !canExportRaw || scrubRequested || (!raw && ProxySessionScrubSensitive(session))
+}
+
+// CloneRecorderSessionForResponse copies a proxy recording session's exported
+// fields without copying its embedded mutex or scrubbing captured values.
+func CloneRecorderSessionForResponse(session *recorder.Session) *recorder.Session {
+	if session == nil {
+		return nil
+	}
+	clone := &recorder.Session{
+		ID:                       session.ID,
+		Name:                     session.Name,
+		ProjectID:                session.ProjectID,
+		Status:                   session.Status,
+		StartedAt:                session.StartedAt,
+		BaseURL:                  session.BaseURL,
+		RequestCount:             session.RequestCount,
+		LastSeq:                  session.LastSeq,
+		DroppedRequests:          session.DroppedRequests,
+		DroppedWebSocketMessages: session.DroppedWebSocketMessages,
+		RejectedRequests:         session.RejectedRequests,
+		LastRejectedHost:         session.LastRejectedHost,
+		FilteredRequests:         session.FilteredRequests,
+		LastFilteredHost:         session.LastFilteredHost,
+		Truncated:                session.Truncated,
+		Warnings:                 append([]string(nil), session.Warnings...),
+		Filters: recorder.SessionFilters{
+			ExcludeStatic:         session.Filters.ExcludeStatic,
+			ExcludeStaticSet:      session.Filters.ExcludeStaticSet,
+			ExcludeHosts:          append([]string(nil), session.Filters.ExcludeHosts...),
+			IncludeHosts:          append([]string(nil), session.Filters.IncludeHosts...),
+			BodyCaptureLimitBytes: session.Filters.BodyCaptureLimitBytes,
+			RedactHeaders:         append([]string(nil), session.Filters.RedactHeaders...),
+			CaptureCookies:        session.Filters.CaptureCookies,
+			RecordingProfileID:    session.Filters.RecordingProfileID,
+		},
+		Markers:          append([]marker.Marker(nil), session.Markers...),
+		OpenTransactions: append([]string(nil), session.OpenTransactions...),
+	}
+	if session.StoppedAt != nil {
+		stoppedAt := *session.StoppedAt
+		clone.StoppedAt = &stoppedAt
+	}
+	if len(session.Requests) > 0 {
+		clone.Requests = append([]recorder.RecordedRequest(nil), session.Requests...)
+	}
+	return clone
+}
 
 func (s *Service) HandleStartRecordingTransaction(w http.ResponseWriter, r *http.Request) {
 	s.HandleRecordingMarker(w, r, marker.KindTransactionStart)
@@ -44,7 +219,14 @@ func (s *Service) HandleRecordingMarker(w http.ResponseWriter, r *http.Request, 
 		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": sanitizeRecorderSessionForResponse(session), "marker": added})
+	responseSession := CloneRecorderSessionForResponse(session)
+	if ShouldScrubRecorderSession(r, session, s.canExportRaw(r, session.ProjectID)) {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		responseSession = sanitizeRecorderSessionForResponse(session)
+	} else {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"session": responseSession, "marker": added})
 }
 
 func (s *Service) HandleGetRecording(w http.ResponseWriter, r *http.Request) {
@@ -81,13 +263,13 @@ func (s *Service) HandleGetRecording(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusForbidden, "raw recording session access requires editor, project_admin, or system_admin access")
 		return
 	}
-	if raw {
-		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
-		writeJSON(w, http.StatusOK, session)
+	if ShouldScrubRecorderSession(r, session, s.canExportRaw(r, session.ProjectID)) {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
 		return
 	}
-	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
-	writeJSON(w, http.StatusOK, sanitizeRecorderSessionForResponse(session))
+	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	writeJSON(w, http.StatusOK, CloneRecorderSessionForResponse(session))
 }
 
 func (s *Service) HandleUpdateRecordedRequest(w http.ResponseWriter, r *http.Request) {
@@ -108,7 +290,14 @@ func (s *Service) HandleUpdateRecordedRequest(w http.ResponseWriter, r *http.Req
 		s.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, sanitizeRecordedRequestForResponse(*req))
+	session, _ := s.Recorder.GetSessionWindow(id, false, 0, 0)
+	if ShouldScrubRecorderSession(r, session, session != nil && s.canExportRaw(r, session.ProjectID)) {
+		w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityScrubbed)
+		writeJSON(w, http.StatusOK, sanitizeRecordedRequestForResponse(*req))
+		return
+	}
+	w.Header().Set("X-APEXLoad-Sensitivity", scrub.SensitivityRaw)
+	writeJSON(w, http.StatusOK, *req)
 }
 
 func sanitizeRecorderSessionForResponse(session *recorder.Session) *recorder.Session {
@@ -248,7 +437,7 @@ func (s *Service) HandleExportRecording(w http.ResponseWriter, r *http.Request) 
 	}
 
 	sensitivity := scrub.SensitivityRaw
-	if !raw {
+	if ShouldScrubRecorderSession(r, session, s.canExportRaw(r, session.ProjectID)) {
 		scrubbed, err := scrub.HAR(data, scrub.Policy{})
 		if err != nil {
 			s.writeError(w, http.StatusInternalServerError, "failed to scrub HAR: "+err.Error())

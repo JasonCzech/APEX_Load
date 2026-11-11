@@ -1,9 +1,12 @@
 package recordbridge
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -1359,5 +1362,201 @@ func TestBrowserRecordingManagerCloseStopsLiveRecordingBrowser(t *testing.T) {
 	defer fake.mu.Unlock()
 	if fake.forceCalls != 1 {
 		t.Fatalf("ForceStop calls = %d, want the live recording's browser closed once", fake.forceCalls)
+	}
+}
+
+func TestBrowserHTTPServiceAndConversionScrubSensitiveContract(t *testing.T) {
+	sensitiveHAR := []byte(`{
+  "log": {
+    "version": "1.2",
+    "entries": [
+      {
+        "startedDateTime": "2026-01-01T00:00:00Z",
+        "time": 12,
+        "request": {
+          "method": "POST",
+          "url": "https://shop.example/api/login?access_token=har-url-token",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {"name": "Authorization", "value": "Bearer har-header-token"},
+            {"name": "Content-Type", "value": "application/json"}
+          ],
+          "queryString": [{"name": "access_token", "value": "har-url-token"}],
+          "postData": {"mimeType": "application/json", "text": "{\"password\":\"har-body-secret\"}"}
+        },
+        "response": {
+          "status": 200,
+          "statusText": "OK",
+          "httpVersion": "HTTP/1.1",
+          "headers": [{"name": "Content-Type", "value": "application/json"}],
+          "content": {"size": 16, "mimeType": "application/json", "text": "{\"ok\":true}"}
+        }
+      }
+    ]
+  }
+}`)
+
+	makeArtifact := func() *recbrowser.Session {
+		artifact := recordedBrowserArtifact()
+		artifact.StartURL = "https://user:start-secret@shop.example/login?access_token=start-query-secret"
+		artifact.HAR = append([]byte(nil), sensitiveHAR...)
+		if len(artifact.Steps) > 0 {
+			artifact.Steps[0].Masked = false
+			artifact.Steps[0].Value = "step-fill-secret"
+		}
+		return artifact
+	}
+
+	// 1. Default session (ScrubSensitive=false): export and control endpoints stay raw.
+	mRaw := NewBrowserRecordingManager(newTestEventSink())
+	fakeRaw := newFakeBrowserRecorder(makeArtifact())
+	fakeRaw.install(mRaw)
+	svcRaw := &Service{
+		Recording:    mRaw,
+		CanExportRaw: func(*http.Request, string) bool { return true },
+	}
+
+	startedRaw, err := mRaw.Start(BrowserRecordingStartRequest{
+		Name:           "Raw Session",
+		StartURL:       "https://user:start-secret@shop.example/login?access_token=start-query-secret",
+		ScrubSensitive: false,
+	})
+	if err != nil {
+		t.Fatalf("Start raw session: %v", err)
+	}
+	stopRec := httptest.NewRecorder()
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+startedRaw.ID+"/stop", nil)
+	stopReq.SetPathValue("id", startedRaw.ID)
+	svcRaw.HandleStopBrowserRecording(stopRec, stopReq)
+	if stopRec.Code != http.StatusOK || !strings.Contains(stopRec.Body.String(), "step-fill-secret") {
+		t.Fatalf("raw stop response unexpected: status=%d body=%s", stopRec.Code, stopRec.Body.String())
+	}
+
+	exportRec := httptest.NewRecorder()
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+startedRaw.ID+"/export?format=har", nil)
+	exportReq.SetPathValue("id", startedRaw.ID)
+	svcRaw.HandleExportBrowserRecording(exportRec, exportReq)
+	if exportRec.Code != http.StatusOK {
+		t.Fatalf("raw export status = %d body=%s", exportRec.Code, exportRec.Body.String())
+	}
+	if got := exportRec.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityRaw {
+		t.Fatalf("default raw session export sensitivity = %q, want %q", got, scrub.SensitivityRaw)
+	}
+	if !strings.Contains(exportRec.Body.String(), "har-header-token") {
+		t.Fatalf("default raw session export scrubbed HAR token: %s", exportRec.Body.String())
+	}
+
+	scrubQueryRec := httptest.NewRecorder()
+	scrubQueryReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+startedRaw.ID+"/export?format=har&scrub=true", nil)
+	scrubQueryReq.SetPathValue("id", startedRaw.ID)
+	svcRaw.HandleExportBrowserRecording(scrubQueryRec, scrubQueryReq)
+	if got := scrubQueryRec.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("?scrub=true sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	if strings.Contains(scrubQueryRec.Body.String(), "har-header-token") {
+		t.Fatalf("?scrub=true export leaked HAR token: %s", scrubQueryRec.Body.String())
+	}
+
+	// 2. Opt-in ScrubSensitive=true session: start, list, control endpoints, HAR export, and companion HTTP script scrub.
+	mScrub := NewBrowserRecordingManager(newTestEventSink())
+	fakeScrub := newFakeBrowserRecorder(makeArtifact())
+	fakeScrub.install(mScrub)
+	svcScrub := &Service{
+		Recording:    mScrub,
+		Availability: func() BrowserRecordingAvailability { return BrowserRecordingAvailability{Available: true} },
+		CanExportRaw: func(*http.Request, string) bool { return true },
+	}
+
+	startRec := httptest.NewRecorder()
+	startReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions", bytes.NewReader([]byte(`{"name":"Scrubbed https://user:name-secret@shop.example/","start_url":"https://user:start-secret@shop.example/login?access_token=start-query-secret","scrub_sensitive":true}`)))
+	svcScrub.HandleStartBrowserRecording(startRec, startReq)
+	if startRec.Code != http.StatusCreated || strings.Contains(startRec.Body.String(), "start-query-secret") || strings.Contains(startRec.Body.String(), "name-secret") {
+		t.Fatalf("scrubbed start response leaked secret: status=%d body=%s", startRec.Code, startRec.Body.String())
+	}
+	var startedEnvelope struct {
+		Session BrowserRecordingSession `json:"session"`
+	}
+	if err := json.Unmarshal(startRec.Body.Bytes(), &startedEnvelope); err != nil {
+		t.Fatalf("decode start response: %v", err)
+	}
+	startedScrub := &startedEnvelope.Session
+
+	pauseRec := httptest.NewRecorder()
+	pauseReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+startedScrub.ID+"/pause", nil)
+	pauseReq.SetPathValue("id", startedScrub.ID)
+	svcScrub.HandlePauseBrowserRecording(pauseRec, pauseReq)
+	if pauseRec.Code != http.StatusOK || strings.Contains(pauseRec.Body.String(), "step-fill-secret") {
+		t.Fatalf("scrubbed pause response leaked secret: status=%d body=%s", pauseRec.Code, pauseRec.Body.String())
+	}
+
+	resumeRawRec := httptest.NewRecorder()
+	resumeRawReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+startedScrub.ID+"/resume?raw=true", nil)
+	resumeRawReq.SetPathValue("id", startedScrub.ID)
+	svcScrub.HandleResumeBrowserRecording(resumeRawRec, resumeRawReq)
+	if resumeRawRec.Code != http.StatusOK || !strings.Contains(resumeRawRec.Body.String(), "step-fill-secret") {
+		t.Fatalf("?raw=true resume response did not return raw step: status=%d body=%s", resumeRawRec.Code, resumeRawRec.Body.String())
+	}
+
+	listScrubRec := httptest.NewRecorder()
+	listScrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions", nil)
+	svcScrub.HandleListBrowserRecordings(listScrubRec, listScrubReq)
+	if listScrubRec.Code != http.StatusOK || strings.Contains(listScrubRec.Body.String(), "name-secret") {
+		t.Fatalf("scrubbed list response leaked secret: status=%d body=%s", listScrubRec.Code, listScrubRec.Body.String())
+	}
+
+	listRawRec := httptest.NewRecorder()
+	listRawReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions?raw=true", nil)
+	svcScrub.HandleListBrowserRecordings(listRawRec, listRawReq)
+	if listRawRec.Code != http.StatusOK || !strings.Contains(listRawRec.Body.String(), "name-secret") {
+		t.Fatalf("?raw=true list response scrubbed name: status=%d body=%s", listRawRec.Code, listRawRec.Body.String())
+	}
+
+	markerRec := httptest.NewRecorder()
+	markerReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+startedScrub.ID+"/notes", bytes.NewReader([]byte(`{"text":"note"}`)))
+	markerReq.SetPathValue("id", startedScrub.ID)
+	svcScrub.HandleBrowserRecordingMarker(markerRec, markerReq, recbrowser.MarkerNote)
+	if markerRec.Code != http.StatusOK || strings.Contains(markerRec.Body.String(), "start-query-secret") {
+		t.Fatalf("scrubbed session marker response leaked secret: status=%d body=%s", markerRec.Code, markerRec.Body.String())
+	}
+
+	stopScrubRec := httptest.NewRecorder()
+	stopScrubReq := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+startedScrub.ID+"/stop", nil)
+	stopScrubReq.SetPathValue("id", startedScrub.ID)
+	svcScrub.HandleStopBrowserRecording(stopScrubRec, stopScrubReq)
+	if stopScrubRec.Code != http.StatusOK || strings.Contains(stopScrubRec.Body.String(), "step-fill-secret") {
+		t.Fatalf("scrubbed stop response leaked secret: status=%d body=%s", stopScrubRec.Code, stopScrubRec.Body.String())
+	}
+
+	exportScrubRec := httptest.NewRecorder()
+	exportScrubReq := httptest.NewRequest(http.MethodGet, "/api/v1/browser-recorder/sessions/"+startedScrub.ID+"/export?format=har", nil)
+	exportScrubReq.SetPathValue("id", startedScrub.ID)
+	svcScrub.HandleExportBrowserRecording(exportScrubRec, exportScrubReq)
+	if got := exportScrubRec.Header().Get("X-APEXLoad-Sensitivity"); got != scrub.SensitivityScrubbed {
+		t.Fatalf("scrub_sensitive export sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+	if strings.Contains(exportScrubRec.Body.String(), "har-header-token") {
+		t.Fatalf("scrub_sensitive export leaked HAR token: %s", exportScrubRec.Body.String())
+	}
+
+	scrubInfo, ok := mScrub.Get(startedScrub.ID)
+	if !ok {
+		t.Fatal("scrubbed session missing")
+	}
+	scrubArtifact, _, ok := mScrub.Artifact(startedScrub.ID)
+	if !ok || scrubArtifact == nil {
+		t.Fatal("scrubbed artifact missing")
+	}
+	httpScript, _ := svcScrub.CreateHTTPScriptFromHARAtLevel(scrubArtifact, scrubInfo, "Scrubbed Session", "url", BrowserHTTPScriptOptions{})
+	if httpScript.Script == nil {
+		t.Fatal("expected companion HTTP script from HAR")
+	}
+	encodedHTTPScript, err := json.Marshal(httpScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, leaked := range []string{"har-header-token", "har-url-token"} {
+		if strings.Contains(string(encodedHTTPScript), leaked) {
+			t.Fatalf("scrub_sensitive companion HTTP script leaked %q: %s", leaked, encodedHTTPScript)
+		}
 	}
 }

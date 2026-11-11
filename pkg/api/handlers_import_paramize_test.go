@@ -8,7 +8,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -59,6 +61,50 @@ func TestSampleCorrelationsToPreAppliedSkipsManualCandidates(t *testing.T) {
 	})
 	if len(converted) != 1 || converted[0].Name != "corr_applied" {
 		t.Fatalf("pre-applied correlations = %#v, want only executable correlation", converted)
+	}
+}
+
+func TestPreAppliedCorrelationAdaptersPreserveSampleValuesUnredacted(t *testing.T) {
+	const rawSecretSample = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.sig-value"
+
+	sampleConverted := sampleCorrelationsToPreApplied([]sample.Correlation{{
+		Name:        "auth_token",
+		Source:      "header",
+		Expression:  "Authorization",
+		ExtractType: "header",
+		SampleValue: rawSecretSample,
+		FoundInStep: 1,
+		UsedInSteps: []int{2},
+		PreApplied:  true,
+	}})
+	if len(sampleConverted) != 1 || sampleConverted[0].SampleValue != rawSecretSample {
+		t.Fatalf("sampleCorrelationsToPreApplied SampleValue = %#v, want %q", sampleConverted, rawSecretSample)
+	}
+
+	openAPIConverted := openAPICorrelationsToPreApplied([]openapi.Correlation{{
+		Name:        "auth_token",
+		Source:      "body",
+		Expression:  "$.access_token",
+		ExtractType: "jsonpath",
+		SampleValue: rawSecretSample,
+		FoundInStep: 1,
+		UsedInSteps: []int{2},
+	}})
+	if len(openAPIConverted) != 1 || openAPIConverted[0].SampleValue != rawSecretSample {
+		t.Fatalf("openAPICorrelationsToPreApplied SampleValue = %#v, want %q", openAPIConverted, rawSecretSample)
+	}
+
+	postmanConverted := postmanCorrelationsToPreApplied([]postman.Correlation{{
+		Name:        "auth_token",
+		Source:      "body",
+		Expression:  "$.access_token",
+		ExtractType: "jsonpath",
+		SampleValue: rawSecretSample,
+		FoundInStep: 1,
+		UsedInSteps: []int{2},
+	}})
+	if len(postmanConverted) != 1 || postmanConverted[0].SampleValue != rawSecretSample {
+		t.Fatalf("postmanCorrelationsToPreApplied SampleValue = %#v, want %q", postmanConverted, rawSecretSample)
 	}
 }
 

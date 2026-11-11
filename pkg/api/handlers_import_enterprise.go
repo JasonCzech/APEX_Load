@@ -350,7 +350,7 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	}
 	stripped, stripErr := stripVuGenNonSourceZipEntries(data)
 	if stripErr != nil {
-		writeError(w, http.StatusUnprocessableEntity, stripErr.Error())
+		writeError(w, http.StatusBadRequest, stripErr.Error())
 		return nil, false
 	}
 	data = stripped

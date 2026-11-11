@@ -1949,9 +1949,9 @@ func TestCloneDraftSourceMigrationSkipsPlaceholdersAndMigratesRecoverableSecret(
 		t.Fatalf("clone-draft with mixed real+placeholder = %d body=%s", clone.Code, clone.Body.String())
 	}
 	var payload struct {
-		SessionID        string                     `json:"source_secret_session_id"`
-		SourceAvailable  []string                   `json:"source_value_requirement_ids"`
-		Requirements     []SecretBindingRequirement `json:"secret_binding_requirements"`
+		SessionID       string                     `json:"source_secret_session_id"`
+		SourceAvailable []string                   `json:"source_value_requirement_ids"`
+		Requirements    []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 	if err := json.Unmarshal(clone.Body.Bytes(), &payload); err != nil {
 		t.Fatal(err)
