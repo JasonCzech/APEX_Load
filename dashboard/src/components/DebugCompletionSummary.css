@@ -11,6 +11,7 @@
   overflow: auto;
   height: 100%;
   box-sizing: border-box;
+  container: debug-summary / inline-size;
 }
 .debug-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .debug-summary-heading h2 { margin: 0; }
@@ -20,9 +21,13 @@
 .debug-summary-facts > div:nth-child(n+6) { flex: 0 0 auto; }
 .debug-summary-facts dt { color: var(--text-secondary); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .debug-summary-facts dd { margin: 4px 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@container debug-summary (max-width: 820px) {
+  .debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px 16px; }
+  .debug-summary-facts > div { min-inline-size: 120px; }
+}
 @media (max-width: 768px) {
-  .debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px 16px; }
-  .debug-summary-facts dd { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+  .debug-summary-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px 16px; }
+  .debug-summary-facts > div { min-inline-size: 120px; }
 }
 /* Failures that follow the first one: one line under the counts. */
 .debug-summary-following { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: -8px 0 16px; padding: 10px 12px; border: 1px solid var(--accent-border, var(--border)); border-radius: 8px; background: var(--accent-soft); color: var(--text-primary); }
@@ -32,6 +37,10 @@
   gap: 4px;
   border-bottom: 1px solid var(--border);
   margin: 16px 0;
+}
+body .debug-summary-tabs.ux-underline-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
 }
 .debug-summary-tab {
   display: inline-flex;
@@ -107,8 +116,11 @@
 .debug-summary-issues-table th:nth-child(2) { width: 18%; }
 .debug-summary-issues-table th:nth-child(3) { width: 10%; }
 .debug-summary-issues-table th:nth-child(4) { width: 11%; }
-.debug-summary-issues-table th:nth-child(5) { width: 36%; }
-.debug-summary-issues-table th:nth-child(6) { width: 14%; }
+.debug-summary-issues-table th:nth-child(5) { width: 31%; }
+.debug-summary-issues-table th:nth-child(6) { width: 19%; }
+.debug-summary-issues-table td:last-child { overflow-wrap: normal; }
+.debug-summary-issue-actions { display: inline-flex; gap: 6px; flex-wrap: nowrap; white-space: nowrap; }
+.debug-summary-issue-actions button { white-space: nowrap; }
 .debug-table-sort-btn { display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; text-align: start; }
 .debug-table-sort-btn:hover { color: var(--text-primary); }
 .debug-table-sort-icon { color: var(--text-secondary); font-size: 11px; }

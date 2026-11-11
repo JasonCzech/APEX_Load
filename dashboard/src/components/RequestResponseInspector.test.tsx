@@ -76,8 +76,7 @@ const occurrences = (text: string) => (container.textContent ?? '').split(text).
 /** A header or form-field table by its accessible name, in the shown view. */
 const namedTable = (label: string, scope: ParentNode = panel()) => scope.querySelector<HTMLTableElement>(`table[aria-label="${label}"]`)
 /** Each body row's cells as text. */
-/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
-const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const cellText = (cell: Element) => cell.textContent ?? ''
 const rowCells = (table: Element | null) => Array.from(table?.querySelectorAll('tbody tr') ?? []).map(row => Array.from(row.children).map(cellText))
 /** The cells of the first body row whose header cell (or, without one, first cell) is name. */
 const rowNamed = (table: Element | null, name: string) => rowCells(table).find(cells => cells.includes(name))
@@ -1190,6 +1189,7 @@ describe('RequestResponseInspector tables', () => {
     />)
     const correlation = panel().querySelector('.rr-correlation-table')!
     expect(correlation.querySelector('caption')?.textContent).toBe('Values this action extracts, reads and changes')
+    expect(correlation.querySelector('tbody th[scope="row"]')?.textContent).toBe('token')
     const extracted = rowNamed(correlation, 'token')!
     expect(extracted.slice(0, 4)).toEqual(['Extracts', 'token', 'body · regex', 'abc'])
     expect(extracted[4]).toContain('Extracted')
@@ -1270,5 +1270,9 @@ describe('RequestResponseInspector header layout', () => {
     expect(tools).toMatch(/\bmin-width: 0;/)
     expect(tools).toMatch(/\bmax-width: 100%;/)
     expect(rule(css, '.rr-inspector-failure-nav')).toMatch(/\bflex-wrap: wrap;/)
+    const segmented = rule(css, '.rr-inspector-segmented')
+    expect(segmented).toMatch(/\bflex-wrap: wrap;/)
+    expect(segmented).toMatch(/\bmax-width: 100%;/)
+    expect(rule(css, '.rr-inspector-segmented button + button')).toBe('')
   })
 })

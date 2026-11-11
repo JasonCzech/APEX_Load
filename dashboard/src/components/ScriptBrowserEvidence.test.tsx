@@ -3,12 +3,32 @@ import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { describe, it, expect, vi } from 'vitest'
 import ScriptBrowserEvidence from './ScriptBrowserEvidence'
-import type { BrowserReplayEvent } from '../types/replay'
+import type { BrowserReplayEvent, BrowserReplayReport } from '../types/replay'
+
+const mockCompletedReport: BrowserReplayReport = {
+  replay_session_id: 'replay-session-1',
+  group: 'Checkout-browser-replay',
+  protocol: 'browser',
+  started_at: '2026-05-14T20:00:00Z',
+  completed_at: '2026-05-14T20:00:02Z',
+  success: true,
+  events: [{
+    phase: 'action',
+    action_index: 0,
+    action_name: 'Open home',
+    action_type: 'browser_goto',
+    target: 'https://shop.example.test',
+    success: true,
+    duration_ms: 45,
+    started_at: '2026-05-14T20:00:00Z',
+    completed_at: '2026-05-14T20:00:01Z',
+  }],
+}
 
 vi.mock('./BrowserReplayProgress', () => ({
-  default: ({ replaySessionId, onComplete, onDismiss }: { replaySessionId: string; onComplete?: () => void; onDismiss?: () => void }) => (
+  default: ({ replaySessionId, onComplete, onDismiss }: { replaySessionId: string; onComplete?: (report: BrowserReplayReport | null, events: BrowserReplayEvent[]) => void; onDismiss?: () => void }) => (
     <div data-testid="replay-progress" data-session-id={replaySessionId}>
-      <button type="button" onClick={() => onComplete?.()}>Complete replay</button>
+      <button type="button" onClick={() => onComplete?.(mockCompletedReport, mockCompletedReport.events)}>Complete replay</button>
       <button type="button" onClick={() => onDismiss?.()}>Dismiss replay</button>
     </div>
   ),
@@ -127,5 +147,193 @@ describe('selected browser evidence', () => {
       await act(async () => dismissBtn.click())
       expect(host.querySelector('[data-testid="replay-progress"]')).toBeNull()
     } finally { await act(async () => root.unmount()); host.remove() }
+  })
+
+  it('renders an accessible TabList with roving tabIndex, keyboard navigation, and controlled native replay callbacks', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const editorCss = readFileSync(`${cwd}/src/components/ScriptEditor.css`, 'utf8') as string
+    expect(editorCss).toContain('.selected-evidence-tabs { display: flex; flex-wrap: nowrap; overflow-x: auto;')
+    expect(editorCss).toContain('.selected-evidence-tabs button[aria-selected="true"]')
+    expect(editorCss).toContain('border-bottom-color: var(--accent)')
+
+    const host = document.createElement('div'); document.body.append(host)
+    const root = createRoot(host)
+    const onCompleteNative = vi.fn()
+    const onDismissNative = vi.fn()
+    try {
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="controlled-session-1"
+          nativeReplayRunning={true}
+          onStartNativeReplay={async () => 'controlled-session-1'}
+          onCompleteNativeReplay={onCompleteNative}
+          onDismissNativeReplay={onDismissNative}
+        />,
+      ))
+
+      const tablist = host.querySelector<HTMLElement>('[role="tablist"][aria-label="Browser evidence views"]')!
+      expect(tablist).not.toBeNull()
+      const tabButtons = Array.from(tablist.querySelectorAll<HTMLButtonElement>('[role="tab"]'))
+      expect(tabButtons.map(btn => btn.textContent)).toEqual([
+        'Screenshot',
+        'Assertions',
+        'DOM',
+        'Network',
+        'Browser console',
+        'Variables',
+      ])
+      expect(tabButtons[0].getAttribute('aria-selected')).toBe('true')
+      expect(tabButtons[0].tabIndex).toBe(0)
+      expect(tabButtons[1].getAttribute('aria-selected')).toBe('false')
+      expect(tabButtons[1].tabIndex).toBe(-1)
+      expect(tabButtons[0].getAttribute('aria-pressed')).toBeNull()
+
+      const panel = host.querySelector<HTMLElement>('[role="tabpanel"]')!
+      expect(panel.id).toBe(tabButtons[0].getAttribute('aria-controls'))
+      expect(panel.getAttribute('aria-labelledby')).toBe(tabButtons[0].id)
+
+      tabButtons[0].focus()
+      await act(async () => {
+        tabButtons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }))
+      })
+      expect(tabButtons[1].getAttribute('aria-selected')).toBe('true')
+      expect(tabButtons[1].tabIndex).toBe(0)
+      expect(panel.getAttribute('aria-labelledby')).toBe(tabButtons[1].id)
+
+      await act(async () => {
+        tabButtons[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }))
+      })
+      expect(tabButtons[5].getAttribute('aria-selected')).toBe('true')
+      expect(panel.getAttribute('aria-labelledby')).toBe(tabButtons[5].id)
+
+      const runBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Run native browser replay')!
+      expect(runBtn.disabled).toBe(true)
+
+      const completeBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Complete replay')!
+      await act(async () => completeBtn.click())
+      expect(onCompleteNative).toHaveBeenCalledWith(mockCompletedReport, mockCompletedReport.events)
+
+      const dismissBtn = Array.from(host.querySelectorAll('button')).find(b => b.textContent === 'Dismiss replay')!
+      await act(async () => dismissBtn.click())
+      expect(onDismissNative).toHaveBeenCalledOnce()
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
+  })
+
+  it('renders static terminal card without mounting live BrowserReplayProgress when controlled session has finished', async () => {
+    const host = document.createElement('div'); document.body.append(host)
+    const root = createRoot(host)
+    const onDismiss = vi.fn()
+    try {
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="done-session-1"
+          nativeReplayRunning={false}
+          nativeReplayReport={mockCompletedReport}
+          onStartNativeReplay={async () => 'done-session-1'}
+          onDismissNativeReplay={onDismiss}
+        />,
+      ))
+
+      const progress = host.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(progress).not.toBeNull()
+      // Mocked BrowserReplayProgress sets data-session-id; static terminal card does not mount it.
+      expect(progress.getAttribute('data-session-id')).toBeNull()
+      expect(progress.textContent).toContain('Verified ✓')
+      expect(progress.textContent).toContain('1 passed · 0 failed')
+      expect(progress.textContent).toContain('Download replay HAR')
+      expect(progress.textContent).toContain('Download replay evidence')
+      expect(progress.textContent).toContain('Verified output and scope')
+      expect(progress.querySelector('[role="alert"]')).toBeNull()
+
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="done-session-1"
+          nativeReplayRunning={false}
+          nativeReplayReport={{ ...mockCompletedReport, stopped: true, success: false }}
+          nativeReplayHarAvailable={true}
+          onStartNativeReplay={async () => 'done-session-1'}
+          onDismissNativeReplay={onDismiss}
+        />,
+      ))
+      expect(host.querySelector('[data-testid="replay-progress"] .brp-status')?.textContent).toBe('Stopped')
+      expect(host.textContent).toContain('Download replay HAR')
+
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="reportless-session-1"
+          nativeReplayRunning={false}
+          nativeReplayReport={{ ...mockCompletedReport, script_hash: undefined, stopped: true, success: false }}
+          nativeReplayHarAvailable={false}
+          onStartNativeReplay={async () => 'reportless-session-1'}
+          onDismissNativeReplay={onDismiss}
+        />,
+      ))
+      const reportlessCard = host.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(reportlessCard.querySelector('.brp-status')?.textContent).toBe('Stopped')
+      expect(reportlessCard.textContent).toContain('Open home')
+      expect(reportlessCard.textContent).not.toContain('Download replay HAR')
+      expect(reportlessCard.textContent).not.toContain('Download replay evidence')
+      expect(reportlessCard.textContent).not.toContain('Verified output and scope')
+      expect(reportlessCard.querySelector('[role="alert"]')).toBeNull()
+      expect(reportlessCard.querySelector('[role="status"]')).toBeNull()
+
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="redacted-session-1"
+          nativeReplayRunning={false}
+          nativeReplayReport={{ ...mockCompletedReport, runtime_evidence_unavailable: true }}
+          onStartNativeReplay={async () => 'redacted-session-1'}
+          onDismissNativeReplay={onDismiss}
+        />,
+      ))
+      const redactedCard = host.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(redactedCard.querySelector('[role="status"]')?.textContent).toBe(
+        'Runtime evidence unavailable. Run details and downloads cannot be shown.',
+      )
+      expect(redactedCard.textContent).not.toContain('Download replay HAR')
+      expect(redactedCard.textContent).not.toContain('Download replay evidence')
+      expect(redactedCard.textContent).not.toContain('Verified output and scope')
+      expect(redactedCard.textContent).toContain('Action evidence unavailable')
+      expect(redactedCard.textContent).not.toContain('Open home')
+
+      await act(async () => root.render(
+        <ScriptBrowserEvidence
+          event={event}
+          running={false}
+          nativeReplaySessionId="missing-session-1"
+          nativeReplayRunning={false}
+          nativeReplayReport={null}
+          nativeReplayUnavailable={true}
+          onStartNativeReplay={async () => 'missing-session-1'}
+          onDismissNativeReplay={onDismiss}
+        />,
+      ))
+      const unavailableCard = host.querySelector<HTMLElement>('[data-testid="replay-progress"]')!
+      expect(unavailableCard.querySelector('.brp-status')?.textContent).toBe('Issues found')
+      expect(unavailableCard.querySelector('[role="alert"]')?.textContent).toContain('Replay session could not be confirmed.')
+      expect(unavailableCard.textContent).not.toContain('Download replay HAR')
+
+      const closeBtn = Array.from(unavailableCard.querySelectorAll('button')).find(b => b.textContent === 'Close')!
+      await act(async () => closeBtn.click())
+      expect(onDismiss).toHaveBeenCalledOnce()
+    } finally {
+      await act(async () => root.unmount())
+      host.remove()
+    }
   })
 })

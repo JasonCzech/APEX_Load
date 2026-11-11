@@ -534,21 +534,34 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await expect(summary.getByRole('heading', { name: 'Debug summary' })).toBeFocused()
   await expect(summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Export session', exact: true })).toBeVisible()
   await expect(summary.locator('.debug-summary-heading .debug-summary-actions').getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
-  const expectFactsOnOneLine = async () => {
-    const layout = await summary.locator('.debug-summary-facts').evaluate(list => {
+  const expectFactsLayout = async () => {
+    const layout = await summary.evaluate(section => {
+      const style = getComputedStyle(section)
+      const inlineSize = section.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight)
+      const list = section.querySelector('.debug-summary-facts')!
       const listRect = list.getBoundingClientRect()
       const items = Array.from(list.querySelectorAll(':scope > div')).map(node => {
         const rect = node.getBoundingClientRect()
-        return { top: Math.round(rect.top), height: Math.round(rect.height), right: Math.round(rect.right) }
+        return { top: Math.round(rect.top), height: Math.round(rect.height), width: rect.width, right: Math.round(rect.right) }
       })
-      return { listRight: Math.round(listRect.right), items }
+      return { inlineSize, listRight: Math.round(listRect.right), items }
     })
     expect(layout.items).toHaveLength(8)
-    expect(new Set(layout.items.map(box => box.top)).size).toBe(1)
-    expect(new Set(layout.items.map(box => box.height)).size).toBe(1)
     expect(Math.max(...layout.items.map(box => box.right))).toBeLessThanOrEqual(layout.listRight + 1)
+    if (layout.inlineSize > 820) {
+      expect(new Set(layout.items.map(box => box.top)).size).toBe(1)
+      expect(new Set(layout.items.map(box => box.height)).size).toBe(1)
+    } else {
+      expect(new Set(layout.items.map(box => box.top)).size).toBeGreaterThan(1)
+      expect(Math.min(...layout.items.map(box => box.width))).toBeGreaterThanOrEqual(119)
+    }
+    return layout
   }
-  await expectFactsOnOneLine()
+  await expectFactsLayout()
+  await page.setViewportSize({ width: 1800, height: 1000 })
+  expect((await expectFactsLayout()).inlineSize).toBeGreaterThan(820)
+  await page.setViewportSize({ width: 1500, height: 1000 })
+  await expectFactsLayout()
   const summaryTabs = summary.getByRole('tablist', { name: 'Debug summary sections', exact: true })
   await expect(summaryTabs.getByRole('tab', { name: 'Transactions', exact: true })).toHaveAttribute('aria-selected', 'true')
   await expect(summary.getByRole('region', { name: 'Execution waterfall', exact: true })).toBeVisible()
@@ -572,6 +585,7 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await summary.getByLabel('Filter issues').fill('')
   await issuesTable.getByRole('button', { name: /Action/ }).click()
   await expect(issuesTable.getByRole('columnheader', { name: /Action/ })).toHaveAttribute('aria-sort', 'ascending')
+  await expect(summary.getByRole('button', { name: 'Edit Check order', exact: true })).toBeEnabled()
   await summary.getByRole('button', { name: 'Inspect Check order' }).click()
   await expect(inspectorVerdict(page).getByRole('alert')).toContainText('expected status 201, got 200')
   // The run's only failure: nothing before or after it to step to; its wire request can be copied as cURL.
@@ -592,12 +606,9 @@ test('debug completion summary opens once, links failures, downloads retained HA
   await page.screenshot({ path: testInfo.outputPath('debug-summary-desktop.png') })
   await page.setViewportSize({ width: 900, height: 850 })
   await expect(summary.getByRole('button', { name: 'Download HAR', exact: true })).toBeVisible()
-  await expectFactsOnOneLine()
+  expect((await expectFactsLayout()).inlineSize).toBeLessThanOrEqual(820)
   await page.setViewportSize({ width: 768, height: 850 })
-  const mobileTops = await summary.locator('.debug-summary-facts > div').evaluateAll(nodes =>
-    nodes.map(node => Math.round(node.getBoundingClientRect().top)),
-  )
-  expect(new Set(mobileTops).size).toBeGreaterThan(1)
+  await expectFactsLayout()
   await page.setViewportSize({ width: 900, height: 850 })
   await page.locator('.topbar-debug-action-run').click()
   await page.getByRole('menuitem', { name: 'Run in step mode', exact: true }).click()

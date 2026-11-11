@@ -1,4 +1,4 @@
-import { Fragment, useId, useMemo, useState } from 'react'
+import { Fragment, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { BrowserReplayEvent } from '../types/replay'
 import { browserResourceProtocolShortLabel } from './browserResourceEvidenceModel'
 import InspectorHeaderTable from './InspectorHeaderTable'
@@ -121,9 +121,13 @@ function NetworkRowDetail({ row, id, labelledBy, phasesUnavailable, requestSourc
   )
 }
 
+const NARROW_NETWORK_TABLE_MAX_WIDTH = 580
+
 /** Every request the action made, in one table with filters; a selected row opens its detail right under it. */
 export default function InspectorNetworkTable({ event, phasesUnavailable = false, requestSources, copyKeyPrefix, copiedKey, onCopy }: InspectorNetworkTableProps) {
   const baseId = useId()
+  const sectionRef = useRef<HTMLElement>(null)
+  const [narrow, setNarrow] = useState(false)
   const rows = useMemo(() => inspectorNetworkRows(event), [event])
   const filters = useMemo(() => inspectorNetworkFilters(rows), [rows])
   // The filter and the selection belong to the event they were made on (row
@@ -137,13 +141,32 @@ export default function InspectorNetworkTable({ event, phasesUnavailable = false
   const visible = useMemo(() => filterInspectorNetworkRows(rows, filter), [rows, filter])
   const selected = visible.find(row => row.id === selectedId) || null
   const summary = inspectorNetworkBodySummary(rows, event.snapshot?.omitted_resources)
+  const hasContent = rows.length > 0 || Boolean(summary)
+
+  useLayoutEffect(() => {
+    const section = sectionRef.current
+    if (!hasContent || !section) return
+    const applyWidth = (width: number) => {
+      if (width > 0) setNarrow(width <= NARROW_NETWORK_TABLE_MAX_WIDTH)
+    }
+    applyWidth(section.getBoundingClientRect().width || section.clientWidth)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      applyWidth(entries[0]?.contentRect.width || section.getBoundingClientRect().width || section.clientWidth)
+    })
+    observer.observe(section)
+    return () => observer.disconnect()
+  }, [hasContent])
+
   const showHop = rows.some(row => row.hop !== null)
-  const columns = showHop ? 6 : 5
+  const showHopColumn = showHop && !narrow
+  const showTypeColumn = !narrow
+  const columns = 4 + (showHopColumn ? 1 : 0) + (showTypeColumn ? 1 : 0)
   const detailId = `${baseId}-detail`
-  if (rows.length === 0 && !summary) return null
+  if (!hasContent) return null
   const shownText = filter === 'all' ? `${rows.length} ${rows.length === 1 ? 'request' : 'requests'}` : `${visible.length} of ${rows.length} requests shown`
   return (
-    <section className="rr-network" aria-label="Network requests">
+    <section ref={sectionRef} className={narrow ? 'rr-network is-narrow' : 'rr-network'} aria-label="Network requests">
       <div className="rr-network-toolbar">
         {filters.length > 1 && (
           <div className="rr-inspector-segmented" role="group" aria-label="Network filter">
@@ -162,22 +185,21 @@ export default function InspectorNetworkTable({ event, phasesUnavailable = false
         <div className="rr-network-table-wrap">
           <table className="rr-network-table">
             <caption className="rr-network-caption">{shownText}</caption>
-            {/* Columns by class: a narrow pane collapses Hop and Type to no
-                width (not display: none), so every row keeps one column count
-                and the detail row's span stays exact. */}
+            {/* Narrow panes drop Hop and Type from layout and the accessibility
+                tree, and colSpan tracks the rendered column count. */}
             <colgroup>
-              {showHop && <col className="rr-network-col-hop" />}
+              {showHopColumn && <col className="rr-network-col-hop" />}
               <col className="rr-network-col-request" />
-              <col className="rr-network-col-type" />
+              {showTypeColumn && <col className="rr-network-col-type" />}
               <col className="rr-network-col-status" />
               <col className="rr-network-col-time" />
               <col className="rr-network-col-body" />
             </colgroup>
             <thead>
               <tr>
-                {showHop && <th scope="col" className="rr-network-col-hop">Hop</th>}
+                {showHopColumn && <th scope="col" className="rr-network-col-hop">Hop</th>}
                 <th scope="col" className="rr-network-col-request">Request</th>
-                <th scope="col" className="rr-network-col-type">Type</th>
+                {showTypeColumn && <th scope="col" className="rr-network-col-type">Type</th>}
                 <th scope="col" className="rr-network-col-status">Status</th>
                 <th scope="col" className="rr-network-col-time">Time</th>
                 <th scope="col" className="rr-network-col-body">Body</th>
@@ -192,7 +214,7 @@ export default function InspectorNetworkTable({ event, phasesUnavailable = false
                 return (
                   <Fragment key={row.id}>
                     <tr className={`${isSelected ? 'is-selected' : ''}${row.role ? ' is-own' : ''}`.trim() || undefined}>
-                      {showHop && <td className="rr-network-col-hop">{row.hop ?? <span className="rr-network-unknown">{'—'}</span>}</td>}
+                      {showHopColumn && <td className="rr-network-col-hop">{row.hop ?? <span className="rr-network-unknown">{'—'}</span>}</td>}
                       <th scope="row" className="rr-network-request">
                         <button
                           id={buttonId}
@@ -208,7 +230,7 @@ export default function InspectorNetworkTable({ event, phasesUnavailable = false
                           {role && <span className="rr-network-role"> ({role})</span>}
                         </button>
                       </th>
-                      <td className="rr-network-col-type">{typeLabel(row)}</td>
+                      {showTypeColumn && <td className="rr-network-col-type">{typeLabel(row)}</td>}
                       <td className={row.failed ? 'rr-network-status is-failed' : 'rr-network-status'} title={status}>
                         {row.status === null && !row.failed ? <span className="rr-network-unknown">Unknown</span> : status}
                       </td>

@@ -734,21 +734,30 @@ export function Waterfall<T>({
       </ul>
       {sinks.length > 0 && (
         <div className="wf-sinks" role="list" aria-label={sinksLabel}>
-          {sinks.map(s => (
-            <div role="listitem" key={s.id}>
-              {s.targetId ? (
-                <button type="button" className={`wf-sink ${s.tone}`} onClick={() => { revealNode(s.targetId!); bodyRef.current?.focus({ preventScroll: true }) }}>
-                  <strong>{s.label}</strong>
-                  <small>{s.detail}</small>
-                </button>
-              ) : (
-                <span className={`wf-sink ${s.tone}`}>
-                  <strong>{s.label}</strong>
-                  <small>{s.detail}</small>
-                </span>
-              )}
-            </div>
-          ))}
+          {sinks.map((s, idx) => {
+            const detailId = `${baseId}-sink-${idx}`
+            return (
+              <div role="listitem" key={s.id}>
+                {s.targetId ? (
+                  <button
+                    type="button"
+                    className={`wf-sink ${s.tone}`}
+                    aria-label={s.label}
+                    aria-describedby={s.detail ? detailId : undefined}
+                    onClick={() => { revealNode(s.targetId!); bodyRef.current?.focus({ preventScroll: true }) }}
+                  >
+                    <strong>{s.label}</strong>
+                    <small id={s.detail ? detailId : undefined}>{s.detail}</small>
+                  </button>
+                ) : (
+                  <span className={`wf-sink ${s.tone}`}>
+                    <strong>{s.label}</strong>
+                    <small>{s.detail}</small>
+                  </span>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
       {!rows.length ? (

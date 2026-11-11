@@ -1,5 +1,5 @@
 import { confirmAction } from './ux/confirmAction'
-import { type ReactNode, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
+import { type ReactNode, useState, useEffect, useCallback, useId, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useRecordingApi } from '../hooks/useApi'
 import { useUnsavedWorkGuard } from '../hooks/NavigationGuardProvider'
@@ -307,7 +307,17 @@ export default function BrowserRecorderControlPanel({
   const [loadError, setLoadError] = useState('')
   const [scriptName, setScriptName] = useState('')
   const [preview, setPreview] = useState<RecorderImportResult | null>(null)
+  const previewRef = useRef<RecorderImportResult | null>(null)
+  const publishPreview = useCallback((next: RecorderImportResult | null) => {
+    previewRef.current = next
+    setPreview(next)
+  }, [])
   const [salesforceDraft, setSalesforceDraft] = useState<SalesforceImportResult | null>(null)
+  const salesforceDraftRef = useRef<SalesforceImportResult | null>(null)
+  const publishSalesforceDraft = useCallback((next: SalesforceImportResult | null) => {
+    salesforceDraftRef.current = next
+    setSalesforceDraft(next)
+  }, [])
   const [previewPreparedSecrets, setPreviewPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const [previewParameterizationApplying, setPreviewParameterizationApplying] = useState(false)
@@ -347,7 +357,13 @@ export default function BrowserRecorderControlPanel({
     () => summarizeRecordingIssues(session?.annotations ?? [], session?.start_url ?? ''),
     [session?.annotations, session?.start_url],
   )
-  const steps = useMemo(() => session?.steps || [], [session?.steps])
+  const rawSteps = useMemo(() => session?.steps || [], [session?.steps])
+  const steps = useMemo(() => rawSteps.filter(step => !step.deleted), [rawSteps])
+  const hasConvertibleSteps = useMemo(
+    () => (rawSteps.length > 0 ? steps.some(step => !step.excluded) : (session?.step_count ?? 0) > 0),
+    [rawSteps.length, session?.step_count, steps],
+  )
+  const emptyStepsReasonId = useId()
   const stepSearchQuery = stepSearch.trim().toLowerCase()
   const visibleSteps = useMemo(() => [...steps].sort((a, b) => session?.status === 'stopped' ? a.seq - b.seq : b.seq - a.seq).filter(step => {
     if (!stepSearchQuery) return true
@@ -374,6 +390,7 @@ export default function BrowserRecorderControlPanel({
   const recorderRequestScope = api.browserRecorderRequestScope
   const refreshInFlightRef = useRef<{ sessionId: string; recorderRequestScope: string; request: Promise<void> } | null>(null)
   const verificationStartScopeRef = useRef<object | null>(null)
+  const conversionActionScopeRef = useRef<object | null>(null)
   const sessionScopeRef = useRef({ sessionId, recorderRequestScope, generation: 0 })
   const feedbackTimerRef = useRef<number | null>(null)
   const previewCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
@@ -568,8 +585,8 @@ export default function BrowserRecorderControlPanel({
     setScriptName('')
     advancePreviewReviewGeneration()
     advanceSalesforceReviewGeneration()
-    setPreview(null)
-    setSalesforceDraft(null)
+    publishPreview(null)
+    publishSalesforceDraft(null)
     setPreviewParameterizationApplying(false)
     setSalesforceParameterizationApplying(false)
     setPreviewPreparedSecrets(null)
@@ -599,7 +616,7 @@ export default function BrowserRecorderControlPanel({
     setHTTPScriptLevel('url')
     setParameterizeInputs(false)
     void refresh()
-  }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, recorderRequestScope, refresh, sessionId])
+  }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, publishPreview, publishSalesforceDraft, recorderRequestScope, refresh, sessionId])
 
   // A selected recording profile preselects its HTTP script level.
   useEffect(() => {
@@ -858,35 +875,46 @@ export default function BrowserRecorderControlPanel({
     return true
   }
 
-  const handlePreview = async () => {
-    const previousSourceSecretSessionId = preview?.source_secret_session_id
+  const fetchFreshPreviewConversion = async (): Promise<RecorderImportResult | null> => {
+    const requestPayload = convertRequest()
+    const requestKey = JSON.stringify(requestPayload)
+    const previousSourceSecretSessionId = previewRef.current?.source_secret_session_id
     const projectId = session?.project_id
     setPreviewParameterizationApplying(false)
     advancePreviewReviewGeneration()
-    setBusy(true)
-    try {
-      const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+    const result = await api.previewBrowserRecordingConversion(sessionId, requestPayload)
+    if (!isCurrentSession()) {
+      await discardSourceSecretSession(result.source_secret_session_id, projectId)
+      return null
+    }
+    if (previousSourceSecretSessionId !== result.source_secret_session_id) {
+      await discardSupersededSourceSecretSession(
+        previousSourceSecretSessionId,
+        result.source_secret_session_id,
+        projectId,
+      )
       if (!isCurrentSession()) {
         await discardSourceSecretSession(result.source_secret_session_id, projectId)
-        return
+        return null
       }
-      if (previousSourceSecretSessionId !== result.source_secret_session_id) {
-        await discardSupersededSourceSecretSession(
-          previousSourceSecretSessionId,
-          result.source_secret_session_id,
-          projectId,
-        )
-        if (!isCurrentSession()) {
-          await discardSourceSecretSession(result.source_secret_session_id, projectId)
-          return
-        }
-      }
-      previewPreparedScriptsRef.current = null
-      previewSaveBindingsRef.current = []
-      previewParameterizationSelectionsRef.current = new Map()
-      setPreviewPreparedSecrets(null)
-      setPreview(result)
-      previewRequestKeyRef.current = JSON.stringify(convertRequest())
+    }
+    previewPreparedScriptsRef.current = null
+    previewSaveBindingsRef.current = []
+    previewParameterizationSelectionsRef.current = new Map()
+    setPreviewPreparedSecrets(null)
+    publishPreview(result)
+    previewRequestKeyRef.current = requestKey
+    return result
+  }
+
+  const handlePreview = async () => {
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
+    setBusy(true)
+    try {
+      const result = await fetchFreshPreviewConversion()
+      if (!result) return
       const suggestions = result.parameterization?.summary?.total ?? 0
       const scripts = importResultScripts(result)
       const actionCount = scripts.reduce((total, script) => total + (script.actions?.length || 0), 0)
@@ -894,6 +922,9 @@ export default function BrowserRecorderControlPanel({
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
       if (isCurrentSession()) setBusy(false)
     }
   }
@@ -975,7 +1006,7 @@ export default function BrowserRecorderControlPanel({
       && sessionScopeRef.current.generation === sourceSession.generation
       && !importDraftHasExpired(preview)
     const resolved = await applyBindingsToResult(preview, bindings, next => {
-      if (isCurrentSession()) setPreview(next)
+      if (isCurrentSession()) publishPreview(next)
     }, requestIsCurrent, api.applyBrowserRecordingSecretBindings)
     if (!isCurrentSession()) return
     if (importDraftHasExpired(resolved)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
@@ -1016,7 +1047,7 @@ export default function BrowserRecorderControlPanel({
     for (const id of selectedIds) selected.add(id)
     previewParameterizationSelectionsRef.current.set(scriptIndex, selected)
     const nextScripts = scripts.map((entry, index) => index === scriptIndex ? parameterizedScript : entry)
-    setPreview({
+    publishPreview({
       ...preview,
       script: nextScripts[0],
       scripts: nextScripts,
@@ -1140,110 +1171,98 @@ export default function BrowserRecorderControlPanel({
     return stored.map((entry, index) => withFallbackPersistedScript(entry, reviewedScripts[index]))
   }
 
-  const handleSave = async () => {
-    setSaveFeedback(null)
-    if (!(await confirmReplaySaveRisk())) return
-    const requestKey = JSON.stringify(convertRequest())
-    const hadCurrentPreview = preview !== null && previewRequestKeyRef.current === requestKey
-    if (hadCurrentPreview && importDraftHasExpired(preview)) {
-      showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
+  const persistPreviewResult = async (result: RecorderImportResult, hadCurrentPreview: boolean) => {
+    if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+    if (!hadCurrentPreview && (result.secret_binding_requirements?.length || 0) > 0) {
+      setSaveFeedback({ message: 'Credentials detected. Review the credential choices above, then save with the prefilled references.', type: 'success' })
       return
     }
-    setBusy(true)
-    try {
-      let result = hadCurrentPreview ? preview : null
-      if (!result) {
-        const previousSourceSecretSessionId = preview?.source_secret_session_id
-        const projectId = session?.project_id
-        advancePreviewReviewGeneration()
-        result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
-        if (!isCurrentSession()) {
-          await discardSourceSecretSession(result.source_secret_session_id, projectId)
-          return
-        }
-        if (previousSourceSecretSessionId !== result.source_secret_session_id) {
-          await discardSupersededSourceSecretSession(
-            previousSourceSecretSessionId,
-            result.source_secret_session_id,
-            projectId,
-          )
-          if (!isCurrentSession()) {
-            await discardSourceSecretSession(result.source_secret_session_id, projectId)
-            return
-          }
-        }
-        previewPreparedScriptsRef.current = null
-        previewSaveBindingsRef.current = []
-        previewParameterizationSelectionsRef.current = new Map()
-        setPreviewPreparedSecrets(null)
-        setPreview(result)
-        previewRequestKeyRef.current = requestKey
-      }
-      if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      if (!hadCurrentPreview && (result.secret_binding_requirements?.length || 0) > 0) {
-        setSaveFeedback({ message: 'Credentials detected. Review the credential choices above, then save with the prefilled references.', type: 'success' })
-        return
-      }
-      const scripts = await preparePreviewScripts(result)
-      if (!scripts) {
-        if (isCurrentSession()) setSaveFeedback({ message: 'Not saved: the credential review above needs attention. Resolve it, then save again.', type: 'error' })
-        return
-      }
-      if (!isCurrentSession()) return
-      if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      if (scripts.length === 0) throw new Error('Conversion produced no scripts to save')
-      // Bridge recordings live on the local recording agent; the remote
-      // controller cannot run the conversion for them, so their reviewed
-      // scripts are created directly (without a source recording session id).
-      let persisted: StoredScript[]
-      if (api.browserRecorderBridge) {
-        // The preview token belongs to the local recording agent. Transfer the
-        // reviewed exact draft to a remote-owned one-shot attestation before
-        // using the remote script-library API; otherwise the controller cannot
-        // distinguish the imported credential from a forged client marker.
-        const remoteDraft = await api.attestBridgedBrowserRecordingImport(
-          scripts,
-          session?.project_id,
-        )
-        const remoteScripts = importResultScripts(remoteDraft)
-        if (remoteScripts.length !== scripts.length) {
-          throw new Error('The remote controller did not attest every reviewed browser recording script')
-        }
-        if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-        persisted = await saveScriptsAtomically(remoteScripts, 'browser_recorder', result, () => {
-          if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
-          if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-        })
-      } else {
-        persisted = await saveThroughServerConversion(scripts)
-      }
-      void discardSourceSecretSession(
-        result.source_secret_session_id,
+    const scripts = await preparePreviewScripts(result)
+    if (!scripts) {
+      if (isCurrentSession()) setSaveFeedback({ message: 'Not saved: the credential review above needs attention. Resolve it, then save again.', type: 'error' })
+      return
+    }
+    if (!isCurrentSession()) return
+    if (importDraftHasExpired(result)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+    if (scripts.length === 0) throw new Error('Conversion produced no scripts to save')
+    // Bridge recordings live on the local recording agent; the remote
+    // controller cannot run the conversion for them, so their reviewed
+    // scripts are created directly (without a source recording session id).
+    let persisted: StoredScript[]
+    if (api.browserRecorderBridge) {
+      // The preview token belongs to the local recording agent. Transfer the
+      // reviewed exact draft to a remote-owned one-shot attestation before
+      // using the remote script-library API; otherwise the controller cannot
+      // distinguish the imported credential from a forged client marker.
+      const remoteDraft = await api.attestBridgedBrowserRecordingImport(
+        scripts,
         session?.project_id,
-      ).catch(() => {
-        // The durable save succeeded. Unmount/dismiss cleanup will retry any
-        // transient protected-session retirement failure.
+      )
+      const remoteScripts = importResultScripts(remoteDraft)
+      if (remoteScripts.length !== scripts.length) {
+        throw new Error('The remote controller did not attest every reviewed browser recording script')
+      }
+      if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      persisted = await saveScriptsAtomically(remoteScripts, 'browser_recorder', result, () => {
+        if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
+        if (importDraftHasExpired(remoteDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       })
-      if (!isCurrentSession()) {
-        // Persistence already succeeded. Publish the durable result to the
-        // captured owner callback so a late panel/session transition cannot
-        // leave newly created scripts untracked.
-        onImported?.({ scripts: persisted, stayInImportReview: true })
+    } else {
+      persisted = await saveThroughServerConversion(scripts)
+    }
+    void discardSourceSecretSession(
+      result.source_secret_session_id,
+      session?.project_id,
+    ).catch(() => {
+      // The durable save succeeded. Unmount/dismiss cleanup will retry any
+      // transient protected-session retirement failure.
+    })
+    if (!isCurrentSession()) {
+      // Persistence already succeeded. Publish the durable result to the
+      // captured owner callback so a late panel/session transition cannot
+      // leave newly created scripts untracked.
+      onImported?.({ scripts: persisted, stayInImportReview: true })
+      return
+    }
+    setSavedScript(persisted[0])
+    setSavedPreviewGeneration(previewReviewGenerationRef.current)
+    onImported?.({ scripts: persisted })
+    setSaveFeedback({
+      message: persisted.length === 1
+        ? `Script "${persisted[0].name}" saved to the script library`
+        : `Saved ${persisted.length} scripts to the script library`,
+      type: 'success',
+    })
+  }
+
+  const handleSave = async () => {
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
+    let enteredBusy = false
+    try {
+      setSaveFeedback(null)
+      if (!(await confirmReplaySaveRisk())) return
+      if (!isCurrentSession()) return
+      const currentPreview = previewRef.current
+      const requestKey = JSON.stringify(convertRequest())
+      const hadCurrentPreview = currentPreview !== null && previewRequestKeyRef.current === requestKey
+      if (hadCurrentPreview && importDraftHasExpired(currentPreview)) {
+        showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
         return
       }
-      setSavedScript(persisted[0])
-      setSavedPreviewGeneration(previewReviewGenerationRef.current)
-      onImported?.({ scripts: persisted })
-      setSaveFeedback({
-        message: persisted.length === 1
-          ? `Script "${persisted[0].name}" saved to the script library`
-          : `Saved ${persisted.length} scripts to the script library`,
-        type: 'success',
-      })
+      enteredBusy = true
+      setBusy(true)
+      const result = hadCurrentPreview ? currentPreview : await fetchFreshPreviewConversion()
+      if (!result) return
+      await persistPreviewResult(result, hadCurrentPreview)
     } catch (e: any) {
       if (isCurrentSession()) setSaveFeedback({ message: `Not saved: ${getErrorMessage(e, 'the save did not complete')}`, type: 'error' })
     } finally {
-      if (isCurrentSession()) setBusy(false)
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
+      if (enteredBusy && isCurrentSession()) setBusy(false)
     }
   }
 
@@ -1283,12 +1302,26 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleToggleStepExcluded = async (seq: number, excluded: boolean) => {
+    const lockConversion = session?.status === 'stopped'
+    if (lockConversion && conversionActionScopeRef.current === renderedSessionScope) return
+    const actionScope = renderedSessionScope
+    if (lockConversion) {
+      conversionActionScopeRef.current = actionScope
+      setBusy(true)
+    }
     try {
       const res = await api.updateBrowserRecordingStep(sessionId, seq, { excluded })
       if (!isCurrentSession()) return
       acceptRecordingSession(res.session)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
+    } finally {
+      if (lockConversion) {
+        if (conversionActionScopeRef.current === actionScope) {
+          conversionActionScopeRef.current = null
+        }
+        if (isCurrentSession()) setBusy(false)
+      }
     }
   }
 
@@ -1426,7 +1459,6 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const editableScript = importResultScripts(preview)[0] || savedScript?.script
   const previewScripts = importResultScripts(preview)
   const previewOutputNames = JSON.stringify(previewScripts.map(script => script.name))
   const previewParameterization = preview?.parameterization
@@ -1449,34 +1481,92 @@ export default function BrowserRecorderControlPanel({
   })
 
   const handleOpenEditor = async () => {
-    if (!preview) return
-    if (importDraftHasExpired(preview)) {
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const currentPreview = previewRef.current
+    const currentPreviewScripts = importResultScripts(currentPreview)
+    const requestKey = JSON.stringify(convertRequest())
+    const hadCurrentPreview = currentPreview !== null && currentPreviewScripts.length > 0 && previewRequestKeyRef.current === requestKey
+    if (hadCurrentPreview && importDraftHasExpired(currentPreview)) {
       showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
       return
     }
-    const script = importResultScripts(preview)[0]
-    if (credentialPreservingImportDraftRequiresSave(
-      preview,
-      script,
-      preview.secret_binding_requirements,
-    )) {
-      if (!onImported) {
-        showFeedback('Save this credential-preserving import before opening it in the Visual Editor.', 'error')
+    if (hadCurrentPreview && currentPreview) {
+      const script = currentPreviewScripts[0]
+      if (credentialPreservingImportDraftRequiresSave(
+        currentPreview,
+        script,
+        currentPreview.secret_binding_requirements,
+      )) {
+        if (!onImported) {
+          showFeedback('Save this credential-preserving import before opening it in the Visual Editor.', 'error')
+          return
+        }
+        await handleSave()
         return
       }
-      await handleSave()
+    }
+    if (!hadCurrentPreview && !hasConvertibleSteps) {
+      const currentSalesforceDraft = salesforceDraftRef.current
+      const fallbackSalesforceScript = currentSalesforceDraft?.script || currentSalesforceDraft?.scripts?.[0] || null
+      if (currentSalesforceDraft && fallbackSalesforceScript) {
+        await handleOpenSalesforceDraft()
+        return
+      }
+      if (savedScript?.script && scriptStepCount(savedScript.script) > 0) {
+        onEdit?.(savedScript.script)
+      }
       return
     }
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
     setBusy(true)
     setSaveFeedback(null)
     try {
-      const scripts = await preparePreviewScripts(preview)
+      const result = hadCurrentPreview ? currentPreview : await fetchFreshPreviewConversion()
+      if (!result) return
+      if (importDraftHasExpired(result)) {
+        setSaveFeedback({ message: `Not opened: ${IMPORT_DRAFT_EXPIRED_MESSAGE}`, type: 'error' })
+        return
+      }
+      const script = importResultScripts(result)[0]
+      if (!script) {
+        setSaveFeedback({ message: 'Not opened: conversion produced no script to edit.', type: 'error' })
+        return
+      }
+      if (!hadCurrentPreview && (result.secret_binding_requirements?.length || 0) > 0) {
+        setSaveFeedback({
+          message: credentialPreservingImportDraftRequiresSave(result, script, result.secret_binding_requirements)
+            ? 'Credentials detected. Review the credential choices above, then save and open in the Visual Editor.'
+            : 'Credentials detected. Review the credential choices above, then open in the Visual Editor.',
+          type: 'success',
+        })
+        return
+      }
+      if (credentialPreservingImportDraftRequiresSave(
+        result,
+        script,
+        result.secret_binding_requirements,
+      )) {
+        if (!onImported) {
+          showFeedback('Save this credential-preserving import before opening it in the Visual Editor.', 'error')
+          return
+        }
+        setSaveFeedback({
+          message: 'This conversion preserves imported credentials. Select Save and open in Visual Editor to save it first.',
+          type: 'success',
+        })
+        return
+      }
+      const scripts = await preparePreviewScripts(result)
       if (!isCurrentSession()) return
       if (scripts?.[0]) onEdit?.(scripts[0])
       else setSaveFeedback({ message: 'Not opened: the credential review above needs attention. Resolve it, then try again.', type: 'error' })
     } catch (e: unknown) {
       if (isCurrentSession()) setSaveFeedback({ message: `Not opened: ${getErrorMessage(e, 'the draft could not be prepared')}`, type: 'error' })
     } finally {
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
       if (isCurrentSession()) setBusy(false)
     }
   }
@@ -1518,7 +1608,10 @@ export default function BrowserRecorderControlPanel({
 
   const handleReviewSalesforceHTTP = async () => {
     if (!session) return
-    const previousSourceSecretSessionId = salesforceDraft?.source_secret_session_id
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
+    const previousSourceSecretSessionId = salesforceDraftRef.current?.source_secret_session_id
     const projectId = session.project_id
     setSalesforceParameterizationApplying(false)
     advanceSalesforceReviewGeneration()
@@ -1554,12 +1647,15 @@ export default function BrowserRecorderControlPanel({
       }
       salesforcePreparedScriptsRef.current = null
       setSalesforcePreparedSecrets(null)
-      setSalesforceDraft(result)
+      publishSalesforceDraft(result)
       const script = result.script || result.scripts?.[0]
       showFeedback(`Salesforce HTTP draft ready with ${script?.actions?.length || 0} actions`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
       if (isCurrentSession()) setBusy(false)
     }
   }
@@ -1574,7 +1670,7 @@ export default function BrowserRecorderControlPanel({
       && sessionScopeRef.current.generation === sourceSession.generation
       && !importDraftHasExpired(salesforceDraft)
     const resolved = await applyBindingsToResult(salesforceDraft, bindings, next => {
-      if (isCurrentSession()) setSalesforceDraft(next)
+      if (isCurrentSession()) publishSalesforceDraft(next)
     }, requestIsCurrent, api.applySecretBindings)
     if (!isCurrentSession()) return
     if (importDraftHasExpired(resolved)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
@@ -1598,7 +1694,7 @@ export default function BrowserRecorderControlPanel({
     }
     advanceSalesforceReviewGeneration()
     salesforcePreparedScriptsRef.current = null
-    setSalesforceDraft({
+    publishSalesforceDraft({
       ...salesforceDraft,
       script: parameterizedScript,
       scripts: salesforceDraft.scripts?.length
@@ -1610,12 +1706,12 @@ export default function BrowserRecorderControlPanel({
     })
   }
 
-  const prepareSalesforceScripts = async (): Promise<ScriptDefinition[] | null> => {
-    if (!salesforceDraft) return null
-    if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-    if ((salesforceDraft.secret_binding_requirements?.length || 0) === 0) return importResultScripts(salesforceDraft)
+  const prepareSalesforceScripts = async (draft = salesforceDraftRef.current): Promise<ScriptDefinition[] | null> => {
+    if (!draft) return null
+    if (importDraftHasExpired(draft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+    if ((draft.secret_binding_requirements?.length || 0) === 0) return importResultScripts(draft)
     const selectedBindingCount = salesforcePreparedSecrets?.selectedBindingCount
-      ?? salesforceDraft.secret_binding_requirements?.filter(requirement => (
+      ?? draft.secret_binding_requirements?.filter(requirement => (
         requirementNeedsSecretBinding(requirement)
       )).length
       ?? 0
@@ -1623,7 +1719,7 @@ export default function BrowserRecorderControlPanel({
     const sourceSession = { ...sessionScopeRef.current }
     salesforcePreparedScriptsRef.current = null
     const committed = await salesforceCredentialReviewRef.current?.commit()
-    if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+    if (importDraftHasExpired(draft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
     if (
       committed
       && selectedBindingCount === 0
@@ -1631,7 +1727,7 @@ export default function BrowserRecorderControlPanel({
       && sessionScopeRef.current.sessionId === sourceSession.sessionId
       && sessionScopeRef.current.generation === sourceSession.generation
     ) {
-      return importResultScripts(salesforceDraft)
+      return importResultScripts(draft)
     }
     return committed
       && salesforceReviewGenerationRef.current === sourceGeneration
@@ -1642,27 +1738,31 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleSaveSalesforceDraft = async () => {
-    if (!salesforceDraft) return
-    if (importDraftHasExpired(salesforceDraft)) {
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const currentSalesforceDraft = salesforceDraftRef.current
+    if (!currentSalesforceDraft) return
+    if (importDraftHasExpired(currentSalesforceDraft)) {
       showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
       return
     }
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
     setBusy(true)
     setSalesforceSaveFeedback(null)
     try {
-      const scripts = await prepareSalesforceScripts()
+      const scripts = await prepareSalesforceScripts(currentSalesforceDraft)
       if (!scripts?.length) {
         if (isCurrentSession()) setSalesforceSaveFeedback({ message: 'Not saved: the Salesforce credential review above needs attention. Resolve it, then save again.', type: 'error' })
         return
       }
       if (!isCurrentSession()) return
-      if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
-      const persisted = await saveScriptsAtomically(scripts, 'salesforce', salesforceDraft, () => {
+      if (importDraftHasExpired(currentSalesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+      const persisted = await saveScriptsAtomically(scripts, 'salesforce', currentSalesforceDraft, () => {
         if (!isCurrentSession()) throw new Error('The recording session changed while scripts were being saved.')
-        if (importDraftHasExpired(salesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
+        if (importDraftHasExpired(currentSalesforceDraft)) throw new Error(IMPORT_DRAFT_EXPIRED_MESSAGE)
       })
       void discardSourceSecretSession(
-        salesforceDraft?.source_secret_session_id,
+        currentSalesforceDraft.source_secret_session_id,
         session?.project_id,
       ).catch(() => {
         // The durable save succeeded. Unmount/dismiss cleanup will retry.
@@ -1681,20 +1781,26 @@ export default function BrowserRecorderControlPanel({
     } catch (e: unknown) {
       if (isCurrentSession()) setSalesforceSaveFeedback({ message: `Not saved: ${getErrorMessage(e, 'the save did not complete')}`, type: 'error' })
     } finally {
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
       if (isCurrentSession()) setBusy(false)
     }
   }
 
   const handleOpenSalesforceDraft = async () => {
-    if (importDraftHasExpired(salesforceDraft)) {
+    if (conversionActionScopeRef.current === renderedSessionScope) return
+    const currentSalesforceDraft = salesforceDraftRef.current
+    if (!currentSalesforceDraft) return
+    if (importDraftHasExpired(currentSalesforceDraft)) {
       showFeedback(IMPORT_DRAFT_EXPIRED_MESSAGE, 'error')
       return
     }
-    const script = salesforceDraft?.script || salesforceDraft?.scripts?.[0]
+    const script = currentSalesforceDraft.script || currentSalesforceDraft.scripts?.[0]
     if (credentialPreservingImportDraftRequiresSave(
-      salesforceDraft,
+      currentSalesforceDraft,
       script,
-      salesforceDraft?.secret_binding_requirements,
+      currentSalesforceDraft.secret_binding_requirements,
     )) {
       if (!onImported) {
         showFeedback('Save this credential-preserving import before opening it in the Visual Editor.', 'error')
@@ -1703,11 +1809,21 @@ export default function BrowserRecorderControlPanel({
       await handleSaveSalesforceDraft()
       return
     }
+    const actionScope = renderedSessionScope
+    conversionActionScopeRef.current = actionScope
     setBusy(true)
+    setSalesforceSaveFeedback(null)
     try {
-      const scripts = await prepareSalesforceScripts()
-      if (isCurrentSession() && scripts?.[0]) onEdit?.(scripts[0])
+      const scripts = await prepareSalesforceScripts(currentSalesforceDraft)
+      if (!isCurrentSession()) return
+      if (scripts?.[0]) onEdit?.(scripts[0])
+      else setSalesforceSaveFeedback({ message: 'Not opened: the Salesforce credential review above needs attention. Resolve it, then try again.', type: 'error' })
+    } catch (e: unknown) {
+      if (isCurrentSession()) setSalesforceSaveFeedback({ message: `Not opened: ${getErrorMessage(e, 'the Salesforce draft could not be prepared')}`, type: 'error' })
     } finally {
+      if (conversionActionScopeRef.current === actionScope) {
+        conversionActionScopeRef.current = null
+      }
       if (isCurrentSession()) setBusy(false)
     }
   }
@@ -1733,6 +1849,10 @@ export default function BrowserRecorderControlPanel({
   const openTransactions = session.open_transactions || []
   const showSalesforceHandoff = session.har_available && hasSalesforceSignal(session, preview)
   const salesforceScript = salesforceDraft?.script || salesforceDraft?.scripts?.[0] || null
+  const hasCurrentPreview = preview !== null && previewScripts.length > 0 && previewRequestKeyRef.current === JSON.stringify(convertRequest())
+  const hasFallbackSavedActions = savedScript?.script ? scriptStepCount(savedScript.script) > 0 : false
+  const usesSalesforceFallback = !hasCurrentPreview && !hasConvertibleSteps && Boolean(salesforceScript)
+  const canOpenEditor = hasCurrentPreview || hasConvertibleSteps || Boolean(salesforceScript) || hasFallbackSavedActions
   const salesforceReview = salesforceDraft?.summary?.salesforce_review
   const previewSecretRequirements = preview?.secret_binding_requirements || []
   const previewDeferredSecretCount = previewSecretRequirements.length === 0
@@ -1751,7 +1871,7 @@ export default function BrowserRecorderControlPanel({
   const salesforceSecretRequirements = salesforceDraft?.secret_binding_requirements || []
   const previewRequiresCredentialPreservingSave = credentialPreservingImportDraftRequiresSave(
     preview,
-    editableScript,
+    previewScripts[0],
     previewSecretRequirements,
   )
   const previewImportDraftExpiry = importDraftExpiryStatus(preview?.import_draft_expires_at)
@@ -1761,6 +1881,20 @@ export default function BrowserRecorderControlPanel({
     salesforceSecretRequirements,
   )
   const salesforceImportDraftExpiry = importDraftExpiryStatus(salesforceDraft?.import_draft_expires_at)
+  const openEditorDisabled = busy
+    || previewParameterizationApplying
+    || salesforceParameterizationApplying
+    || !canOpenEditor
+    || (hasCurrentPreview && (
+      Boolean(previewImportDraftExpiry?.expired)
+      || previewPreparedSecrets?.valid === false
+    ))
+    || (usesSalesforceFallback && (
+      Boolean(salesforceImportDraftExpiry?.expired)
+      || salesforcePreparedSecrets?.valid === false
+    ))
+  const openEditorRequiresSave = (hasCurrentPreview && previewRequiresCredentialPreservingSave)
+    || (usesSalesforceFallback && salesforceRequiresCredentialPreservingSave)
   const salesforceDeferredSecretCount = salesforceSecretRequirements.length === 0
     ? 0
     : salesforcePreparedSecrets?.configureLaterCount ??
@@ -2057,15 +2191,22 @@ export default function BrowserRecorderControlPanel({
                       Selector: {quality.tone} ({quality.score}/100)
                     </span>
                   )}
-                  {controllable && INTERACTION_KINDS.has(step.kind) && (
+                  {(controllable || stopped) && !step.deleted && (INTERACTION_KINDS.has(step.kind) || step.excluded) && (
                     <span className="brp-step-actions">
-                      <button type="button" className="brp-step-action" title={step.excluded ? 'Include' : 'Exclude'} onClick={() => handleToggleStepExcluded(step.seq, !step.excluded)}>
+                      <button
+                        type="button"
+                        className="brp-step-action"
+                        disabled={busy}
+                        title={step.excluded ? 'Include' : 'Exclude'}
+                        aria-label={step.excluded ? `Include step #${step.seq}` : `Exclude step #${step.seq}`}
+                        onClick={() => handleToggleStepExcluded(step.seq, !step.excluded)}
+                      >
                         {step.excluded ? '+' : '−'}
                       </button>
-                      {step.kind === 'fill' && !step.mark_secret && (
+                      {controllable && step.kind === 'fill' && !step.mark_secret && (
                         <button type="button" className="brp-step-action" title="Mark as secret" onClick={() => handleMarkStep(step.seq, 'secret')}>🔒</button>
                       )}
-                      {step.kind === 'fill' && !step.mark_param && (
+                      {controllable && step.kind === 'fill' && !step.mark_param && (
                         <button type="button" className="brp-step-action" title="Mark as data parameter" onClick={() => handleMarkStep(step.seq, 'param')}>≈</button>
                       )}
                     </span>
@@ -2301,13 +2442,26 @@ export default function BrowserRecorderControlPanel({
             {showSalesforceHandoff && (
               <button className="btn btn-secondary" onClick={handleReviewSalesforceHTTP} disabled={busy}>Review Salesforce HTTP draft</button>
             )}
-            <button className="btn btn-primary" onClick={handleSave} disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying || previewPreparedSecrets?.valid === false}>{previewSaveLabel}</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={busy || previewParameterizationApplying || (hasCurrentPreview && (Boolean(previewImportDraftExpiry?.expired) || previewPreparedSecrets?.valid === false))}>{previewSaveLabel}</button>
             {onEdit && (
-              <button className="btn btn-secondary" onClick={() => { void handleOpenEditor() }} disabled={previewImportDraftExpiry?.expired || busy || previewParameterizationApplying || !editableScript || previewPreparedSecrets?.valid === false}>
-                {previewRequiresCredentialPreservingSave ? 'Save and open in Visual Editor' : 'Open in Visual Editor'}
+              <button
+                type="button"
+                className="btn btn-secondary"
+                aria-describedby={!canOpenEditor ? emptyStepsReasonId : undefined}
+                onClick={() => { void handleOpenEditor() }}
+                disabled={openEditorDisabled}
+              >
+                {openEditorRequiresSave ? 'Save and open in Visual Editor' : 'Open in Visual Editor'}
               </button>
             )}
           </div>
+          {onEdit && !canOpenEditor && (
+            <p id={emptyStepsReasonId} className="brp-hint" role="status" data-testid="recording-empty-steps-reason">
+              {steps.some(step => step.excluded)
+                ? 'All recorded steps are excluded. Include at least one step before opening in the Visual Editor.'
+                : 'This recording has no browser steps to convert. Start a new recording to capture steps.'}
+            </p>
+          )}
           {saveFeedback && (
             <div className={`rec-feedback ${saveFeedback.type === 'error' ? 'error' : ''}`} role={saveFeedback.type === 'error' ? 'alert' : 'status'} data-testid="recording-save-feedback">
               {saveFeedback.message}

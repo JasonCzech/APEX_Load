@@ -73,6 +73,8 @@ export function DebugWaterfallDrawer({
   onInspect,
   canRevealInScript,
   onRevealInScript,
+  canEdit = true,
+  onEdit,
 }: {
   node: DebugWaterfallNode
   row?: DebugTimelineRowModel
@@ -81,6 +83,8 @@ export function DebugWaterfallDrawer({
   onInspect?: () => void
   canRevealInScript?: boolean
   onRevealInScript?: () => void
+  canEdit?: boolean
+  onEdit?: () => void
 }) {
   const baseId = useId().replace(/:/g, '')
   const [tab, setTab] = useState<DrawerTab>('timing')
@@ -137,7 +141,7 @@ export function DebugWaterfallDrawer({
         </header>
         {onInspect && (
           <div className="wf-drawer-actions">
-            <button type="button" className="btn btn-sm btn-ghost" onClick={onInspect}>Inspect {node.label}</button>
+            <button type="button" className="btn btn-sm btn-ghost" aria-label={`Inspect ${node.label || 'action'}`} onClick={onInspect}>Inspect</button>
           </div>
         )}
         <div className="wf-drawer-panel">
@@ -186,6 +190,7 @@ export function DebugWaterfallDrawer({
   }
 
   const ev = row.event
+  const actionLabel = (hop ? row.actionName : node.label) || 'action'
   const started = ev.started_at ? Date.parse(ev.started_at) : Number.NaN
   const completed = ev.completed_at ? Date.parse(ev.completed_at) : Number.NaN
   const elapsedMs = Number.isFinite(started) && Number.isFinite(completed) && completed >= started ? completed - started : null
@@ -204,10 +209,11 @@ export function DebugWaterfallDrawer({
         <code>{formatWaterfallMs(hop ? hop.durationMs : row.durationMs)}</code>
       </header>
       <div className="wf-drawer-actions">
+        {onEdit && <button type="button" className="btn btn-sm btn-secondary" disabled={!canEdit} aria-label={`Edit ${actionLabel}`} onClick={onEdit}>Edit</button>}
         {onRevealInScript && <button type="button" className="btn btn-sm btn-secondary" disabled={!canRevealInScript} onClick={onRevealInScript}>Reveal in script</button>}
         <button type="button" className="btn btn-sm btn-secondary" disabled={!view} onClick={() => void copyCurl()}>Copy as cURL</button>
         <button type="button" className="btn btn-sm btn-secondary" disabled={!view} onClick={() => void openHar()}>Open in HAR</button>
-        {onInspect && <button type="button" className="btn btn-sm btn-ghost" onClick={onInspect}>Inspect {(hop ? row.actionName : node.label) || 'action'}</button>}
+        {onInspect && <button type="button" className="btn btn-sm btn-ghost" aria-label={`Inspect ${actionLabel}`} onClick={onInspect}>Inspect</button>}
         {/* Always mounted so screen readers announce each change. */}
         <span className="wf-copy-status" role="status">{copyStatus}</span>
       </div>

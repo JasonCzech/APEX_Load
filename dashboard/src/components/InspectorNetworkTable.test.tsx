@@ -71,8 +71,7 @@ describe('InspectorNetworkTable', () => {
     // Status and Body carry their whole text in a tooltip (a narrow pane cuts them).
     expect(bodyRows()[2].querySelector('.rr-network-status')?.getAttribute('title')).toBe('404')
     expect(bodyRows()[2].lastElementChild?.getAttribute('title')).toBe('Not kept')
-    // Every column has a <col> (one column count in every layout); Type and
-    // Hop carry the classes a narrow pane collapses them by, on col, th and td.
+    // Wide layout renders all 6 <col>s, headers and cells.
     expect([...container.querySelectorAll('colgroup > col')].map(col => col.className)).toEqual([
       'rr-network-col-hop', 'rr-network-col-request', 'rr-network-col-type', 'rr-network-col-status', 'rr-network-col-time', 'rr-network-col-body',
     ])
@@ -179,5 +178,90 @@ describe('InspectorNetworkTable', () => {
   it('renders nothing without requests', () => {
     render(event({ network_entries: undefined, snapshot: undefined }))
     expect(container.innerHTML).toBe('')
+  })
+
+  it('drops Hop and Type from the DOM and adjusts detail colSpan when narrow, then restores them when widened', () => {
+    const originalResizeObserver = globalThis.ResizeObserver
+    let observerCallback: ResizeObserverCallback | null = null
+    const observed: { current: Element | null } = { current: null }
+    globalThis.ResizeObserver = class {
+      constructor(callback: ResizeObserverCallback) { observerCallback = callback }
+      observe(element: Element) { observed.current = element }
+      unobserve() {}
+      disconnect() { observed.current = null }
+    } as unknown as typeof ResizeObserver
+
+    const reportWidth = (width: number) => act(() => {
+      observerCallback?.([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver)
+    })
+
+    try {
+      // Mounting empty first and later receiving requests still attaches the observer.
+      render(event({ network_entries: undefined, snapshot: undefined }))
+      expect(observed.current).toBeNull()
+      render(event())
+      expect(observed.current?.classList.contains('rr-network')).toBe(true)
+
+      // Zero width (hidden tabpanel) keeps the default wide column set.
+      reportWidth(0)
+      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+
+      act(() => rowButton('/app.js')?.click())
+      expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('6')
+
+      // Narrow boundary (580px): Hop and Type leave the DOM and detail colSpan matches the 4 remaining columns.
+      reportWidth(580)
+      expect(container.querySelector('.rr-network')?.classList.contains('is-narrow')).toBe(true)
+      expect([...container.querySelectorAll('colgroup > col')].map(col => col.className)).toEqual([
+        'rr-network-col-request', 'rr-network-col-status', 'rr-network-col-time', 'rr-network-col-body',
+      ])
+      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Request', 'Status', 'Time', 'Body'])
+      expect(container.querySelectorAll('.rr-network-col-hop, .rr-network-col-type')).toHaveLength(0)
+      expect(bodyRows()[0].children).toHaveLength(4)
+      expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('4')
+
+      // Widening past 580px (including fractional subpixel 580.4px) restores Hop and Type and updates detail colSpan back to 6.
+      reportWidth(580.4)
+      expect(container.querySelector('.rr-network')?.classList.contains('is-narrow')).toBe(false)
+      expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+      expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('6')
+
+      // Initial mount measurement uses unrounded getBoundingClientRect().width before integer clientWidth.
+      act(() => root.unmount())
+      root = createRoot(container)
+      const rectSpy = HTMLElement.prototype.getBoundingClientRect
+      const clientWidthDesc = Object.getOwnPropertyDescriptor(Element.prototype, 'clientWidth')
+      HTMLElement.prototype.getBoundingClientRect = () => ({ width: 580.4, height: 100, top: 0, left: 0, right: 580.4, bottom: 100, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect
+      Object.defineProperty(Element.prototype, 'clientWidth', { configurable: true, get: () => 580 })
+      try {
+        render(event())
+        expect(container.querySelector('.rr-network')?.classList.contains('is-narrow')).toBe(false)
+        expect([...container.querySelectorAll('thead th')].map(th => th.textContent)).toEqual(['Hop', 'Request', 'Type', 'Status', 'Time', 'Body'])
+      } finally {
+        HTMLElement.prototype.getBoundingClientRect = rectSpy
+        if (clientWidthDesc) Object.defineProperty(Element.prototype, 'clientWidth', clientWidthDesc)
+        else Reflect.deleteProperty(Element.prototype, 'clientWidth')
+      }
+
+      // Without Hop (5 columns wide), narrow mode still spans the 4 remaining columns.
+      render(event({ network_entries: undefined, snapshot: { resources: [{ request_url: 'https://cdn.example.test/a.css', response_status: 200, response_body_state: 'empty' }] } }))
+      act(() => rowButton('cdn.example.test/a.css')?.click())
+      expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('5')
+      reportWidth(420)
+      expect(openDetail()?.closest('tr')?.querySelector('td')?.getAttribute('colspan')).toBe('4')
+    } finally {
+      globalThis.ResizeObserver = originalResizeObserver
+    }
+  })
+
+  it('uses display: none for narrow hidden columns and gives wrapped filter pills complete borders', async () => {
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/InspectorNetworkTable.css', 'utf8') as string
+    const narrowBlock = css.match(/@container debugger-detail \(max-width: 580px\) \{([\s\S]*?)\n\}/)?.[1] ?? ''
+    expect(narrowBlock).toMatch(/\.rr-network-col-type[\s\S]*?\.rr-network-col-hop[\s\S]*?display:\s*none;/)
+    expect(narrowBlock).not.toMatch(/\b(?:max-)?width:\s*0\b/)
+    expect(css).toMatch(/\.rr-network-toolbar \.rr-inspector-segmented\s*\{[^}]*\bflex-wrap:\s*wrap;[^}]*\bgap:\s*6px;[^}]*\bborder:\s*0;/)
+    expect(css).toMatch(/\.rr-network-toolbar \.rr-inspector-segmented button\s*\{[^}]*\bborder:\s*1px solid var\(--border\);[^}]*\bwhite-space:\s*nowrap;/)
   })
 })

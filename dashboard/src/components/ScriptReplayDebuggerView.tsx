@@ -1,4 +1,5 @@
 import LiveTableSandboxEditor from './LiveTableSandboxEditor'
+import LazyLoadBoundary from './LazyLoadBoundary'
 import type { RequestResponseInspectorTab, ResponseActions } from './requestResponseInspectorModel'
 
 import { scriptDataUsage } from './scriptDataUsageModel'
@@ -167,6 +168,10 @@ export interface ScriptReplayDebuggerViewProps {
   handleValidateScript: () => Promise<void>
   isBrowserScript: boolean
   jsonParseMessage: string
+  canEditAction?: (event: BrowserReplayEvent) => boolean
+  onEditAction?: (event: BrowserReplayEvent) => void
+  canRevealInScript?: (event: BrowserReplayEvent) => boolean
+  onRevealInScript?: (event: BrowserReplayEvent) => void
   onEditReplayAction: (event: BrowserReplayEvent) => void
   onEditParameterDefinition: (name: string) => void
   onActivateDebug: () => void
@@ -261,6 +266,10 @@ export function ScriptReplayDebuggerView({
   handleValidateScript,
   isBrowserScript,
   jsonParseMessage,
+  canRevealInScript,
+  onRevealInScript,
+  canEditAction,
+  onEditAction,
   onEditReplayAction,
   http3UpgradeScopes,
   onSwitchToHTTP3Upgrade,
@@ -309,6 +318,14 @@ export function ScriptReplayDebuggerView({
 }: ScriptReplayDebuggerViewProps) {
   // The Base URL applies only to relative action targets.
   const absoluteTargetCount = [...(script.init || []), ...(script.actions || []), ...(script.teardown || [])].filter(action => /^https?:\/\//i.test(action.target || "")).length
+  const [inspectorRetryCount, setInspectorRetryCount] = useState(0)
+  const InspectorComponent = useMemo(
+    () => (inspectorRetryCount === 0 ? RequestResponseInspector : lazy(() => import('./RequestResponseInspector'))),
+    [inspectorRetryCount],
+  )
+  useEffect(() => {
+    void import('./RequestResponseInspector').catch(() => {})
+  }, [])
   const {
     activeDebuggerResize,
     currentDebugAction,
@@ -657,7 +674,14 @@ export function ScriptReplayDebuggerView({
             <div className="debugger-body">
               <div className="debug-session-row">
               <div className="debug-session-tools debug-selection-status">
-                <span>{selectedReplayEvent ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}` : currentDebugAction ? `Current: ${currentDebugAction.action_name}` : 'Select an action to inspect evidence'}</span>
+                {(() => {
+                  const selectionStatusText = selectedReplayEvent
+                    ? `Inspecting ${eventLocation(selectedReplayEvent)} · ${selectedReplayEvent.action_name}`
+                    : currentDebugAction
+                      ? `Current: ${currentDebugAction.action_name}`
+                      : 'Select an action to inspect evidence'
+                  return <span title={selectionStatusText}>{selectionStatusText}</span>
+                })()}
                 <label><input type="checkbox" checked={followExecution} onChange={e => { if (e.target.checked) goCurrent(); else onFollowExecution(false) }} />Follow execution</label>
                 <button type="button" className="btn btn-sm btn-ghost" disabled={!replaying || !currentDebugAction} onClick={goCurrent}>Go to current action</button>
               </div>
@@ -1017,8 +1041,12 @@ export function ScriptReplayDebuggerView({
                     {!replayReport ? (
                       <div className="debugger-empty">No debugger session yet. Set breakpoints in the action list (a row's gutter, F9, or Cmd/Ctrl+B), review Debug options, then run one iteration.</div>
                     ) : selectedReplayEvent && selectedReplayEventIndex != null ? (
+                      <LazyLoadBoundary
+                        title="Request and response inspector could not be loaded."
+                        onRetry={() => setInspectorRetryCount(count => count + 1)}
+                      >
                       <Suspense fallback={<div className="debugger-empty" role="status">Loading request and response…</div>}>
-                      <RequestResponseInspector
+                      <InspectorComponent
                         event={selectedReplayEvent}
                         index={selectedReplayEventIndex}
                         script={script}
@@ -1030,7 +1058,10 @@ export function ScriptReplayDebuggerView({
                         variableDiff={replayVariableDiffs[selectedReplayEventIndex] || {}}
                         copiedSection={copiedReplaySnapshotSection}
                         onCopySection={handleCopyReplaySnapshotSection}
-                        onEditAction={onEditReplayAction}
+                        onEditAction={event => {
+                          if (canEditAction && !canEditAction(event)) return
+                          ;(onEditAction ?? onEditReplayAction)(event)
+                        }}
                         onOpenDebugOptions={() => setDebuggerSettingsOpen(true)}
                         addExtractorDefinition={addExtractorDefinition}
                         replaceExtractorDefinition={replaceExtractorDefinition}
@@ -1043,6 +1074,7 @@ export function ScriptReplayDebuggerView({
                         onSelectEvent={selectInspectorEvent}
                       />
                       </Suspense>
+                      </LazyLoadBoundary>
                     ) : (replaying && browserReplaySession?.current_action) ? (
                       (() => {
                         const ca = browserReplaySession?.current_action
@@ -1160,8 +1192,10 @@ export function ScriptReplayDebuggerView({
                         selectedEventIndex={selectedReplayEventIndex}
                         onSelectEvent={jumpToEvent}
                         onInspectEvent={jumpToEvent}
-                        canRevealInScript={event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) }}
-                        onRevealInScript={event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } }}
+                        canRevealInScript={canRevealInScript ?? (event => { const frame = replayFrameForEvent(event); return Boolean(frame && canInspectRuntimeFrame(frame)) })}
+                        onRevealInScript={onRevealInScript ?? (event => { const frame = replayFrameForEvent(event); if (frame) { onInspectRuntimeFrame(frame); setNarrowPane('editor') } })}
+                        canEditAction={canEditAction}
+                        onEditAction={onEditAction}
                       />
                       <details><summary>Session lifecycle ({replayActivity.length})</summary>{replayActivity.map(item => <p key={item.id}>{formatDisplayDateTime(item.timestamp, { milliseconds: true })} · {item.title} · {item.detail}</p>)}</details>
                     </div>

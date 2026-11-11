@@ -41,8 +41,7 @@ function render(props: Partial<InspectorCorrelationTableProps> = {}) {
   act(() => root.render(<InspectorCorrelationTable event={event()} variableDiff={{}} script={null} copyKeyPrefix="0:correlation" copiedKey={null} onCopy={() => undefined} {...props} />))
 }
 
-/** A cell's text without the narrow-pane direction label the Correlation table repeats in its variable cell. */
-const cellText = (cell: Element) => { const copy = cell.cloneNode(true) as Element; copy.querySelectorAll('.rr-correlation-direction-inline').forEach(node => node.remove()); return copy.textContent ?? '' }
+const cellText = (cell: Element) => cell.textContent ?? ''
 const cells = (row: Element) => [...row.querySelectorAll('th, td')].map(cellText)
 
 describe('InspectorCorrelationTable', () => {
@@ -54,17 +53,52 @@ describe('InspectorCorrelationTable', () => {
       ['Direction', 'col'], ['Variable', 'col'], ['Where', 'col'], ['Value (before → after)', 'col'], ['Result', 'col'], ['Copy', 'col'],
     ])
     const rows = [...table.querySelectorAll('tbody tr')]
-    expect(rows[0].querySelector('th')?.getAttribute('scope')).toBe('row')
+    const rowHeader = rows[0].querySelector('th')!
+    expect(rowHeader.getAttribute('scope')).toBe('row')
+    // The row header holds only the pure variable name; Direction lives in its own cell.
+    expect(rowHeader.textContent).toBe('token')
+    expect(rowHeader.querySelector('.rr-correlation-direction-inline')).toBeNull()
+    expect(rows[0].querySelector('.rr-correlation-direction')?.textContent).toBe('Extracts')
     // Copy is an icon button; its name carries the word.
     expect(cells(rows[0])).toEqual(['Extracts', 'token', 'body · regex', 'old→changed toabc', 'ExtractedUsed by 1 later step', ''])
     expect(rows[0].querySelector('button')?.getAttribute('aria-label')).toBe('Copy token value')
-    // The variable cell carries the direction as real text for the narrow layout, which drops the Direction column.
-    expect(rows[0].querySelector('th .rr-correlation-direction-inline')?.textContent).toBe('Extracts')
     // The authored request's read of csrf has no recorded resolution: one quiet line, not a row of Unknowns.
     expect(rows).toHaveLength(1)
     expect(container.querySelector('.rr-correlation-unknown-reads')?.textContent).toBe('Also reads csrf. The run did not record whether it had a value.')
     // No horizontal scroll box: Result stays in the pane, and nothing needs a keyboard-unreachable scroll.
     expect(container.querySelector('.rr-correlation-scroll')).toBeNull()
+  })
+
+  it('keeps long variable names intact in the row header with CSS truncation and keeps Direction in its own column when narrow', async () => {
+    const longVar = `c_${'aura_token_segment_'.repeat(12)}final`
+    render({ event: event({ extractions: { [longVar]: 'val-1' } }) })
+    const rowHeader = container.querySelector('tbody th[scope="row"]')!
+    expect(rowHeader.textContent).toBe(longVar)
+    expect(rowHeader.querySelector('.rr-correlation-one-line')?.getAttribute('title')).toBe(longVar)
+
+    // @ts-expect-error node:fs is available in the Vitest runtime.
+    const { readFileSync } = await import('node:fs')
+    const css = readFileSync('src/components/InspectorCorrelationTable.css', 'utf8') as string
+    expect(css).not.toContain('rr-correlation-direction-inline')
+    const containerIndex = css.indexOf('@container debugger-detail (max-width: 640px)')
+    expect(containerIndex).toBeGreaterThan(css.indexOf('\n.rr-correlation-direction {'))
+    expect(containerIndex).toBeGreaterThan(css.indexOf('\n.rr-correlation-badge {'))
+    expect(containerIndex).toBeGreaterThan(css.indexOf('\n.rr-correlation-later {'))
+
+    const narrowBlock = css.slice(containerIndex)
+    expect(narrowBlock).not.toMatch(/display:\s*none/)
+    expect(narrowBlock).toMatch(/\.rr-correlation-badge\s*\{[^}]*\bwhite-space:\s*normal;/)
+    // Verify narrow column budget leaves >= 20% width for Value at a 320px 3-column pane and >= 28px content width for Copy.
+    const pctSum = [...narrowBlock.matchAll(/\.rr-correlation-col-\w+\s*\{\s*width:\s*(\d+(?:\.\d+)?)%/g)].reduce((sum, m) => sum + Number(m[1]), 0)
+    const copyPx = Number(narrowBlock.match(/\.rr-correlation-col-copy\s*\{\s*width:\s*(\d+)px;/)?.[1] ?? '0')
+    const copyPadLeft = Number(narrowBlock.match(/\.rr-correlation-copy\s*\{[^}]*padding-left:\s*(\d+)px;/)?.[1] ?? '0')
+    const copyPadRight = Number(narrowBlock.match(/\.rr-correlation-copy\s*\{[^}]*padding-right:\s*(\d+)px;/)?.[1] ?? '0')
+    expect(copyPx - copyPadLeft - copyPadRight).toBeGreaterThanOrEqual(28)
+    const valueWidthAt320 = 320 * (1 - pctSum / 100) - copyPx
+    expect(valueWidthAt320).toBeGreaterThanOrEqual(64)
+
+    expect(css).toMatch(/\.rr-correlation-table th\.rr-correlation-variable\s*\{[^}]*\bmin-inline-size:\s*0;/)
+    expect(css).toMatch(/\.rr-correlation-one-line\s*\{[^}]*\btext-overflow:\s*ellipsis;[^}]*\bmin-inline-size:\s*0;/)
   })
 
   it('copies a value from its row, and offers no Copy for a masked or redacted one', () => {

@@ -15,7 +15,37 @@
 }
 
 .rr-network-toolbar .rr-inspector-segmented {
+  display: flex;
   flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.rr-network-toolbar .rr-inspector-segmented button {
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rr-network-toolbar .rr-inspector-segmented button[aria-pressed='true'] {
+  border-color: var(--accent-border, var(--accent));
+  background: var(--accent-soft);
+  color: var(--text-primary);
+}
+
+.rr-network-toolbar .rr-inspector-segmented button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .rr-network-filter-count {
@@ -25,6 +55,8 @@
 
 .rr-network-summary {
   margin-left: auto;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 
 .rr-network-table-wrap {
@@ -214,26 +246,33 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* A narrow debugger pane: Request keeps most of the width. Type (the filters
-   still name it) and Hop (the order still shows it) collapse to no width; the
-   rest shrink. They are not display: none, so every row keeps the same column
-   count, the detail row's span stays exact, and screen readers still read them. */
+/* A narrow debugger pane: Hop and Type leave both layout and the accessibility
+   tree (display: none before measurement, unmounted with matching colSpan once
+   measured), while Status, Time and Body shrink so Request keeps room. */
+.rr-network.is-narrow .rr-network-table > colgroup > col.rr-network-col-status,
+.rr-network.is-narrow .rr-network-table > colgroup > col.rr-network-col-time,
+.rr-network.is-narrow .rr-network-table > colgroup > col.rr-network-col-body {
+  width: 64px;
+}
+
+.rr-network.is-narrow .rr-network-table > thead > tr > th,
+.rr-network.is-narrow .rr-network-table > tbody > tr:not(.rr-network-detail-row) > td {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.rr-network.is-narrow .rr-network-row-button {
+  padding: 0 6px;
+}
+
 @container debugger-detail (max-width: 580px) {
   .rr-network-table > colgroup > col.rr-network-col-type,
-  .rr-network-table > colgroup > col.rr-network-col-hop {
-    width: 0;
-  }
-
+  .rr-network-table > colgroup > col.rr-network-col-hop,
   .rr-network-table > thead > tr > .rr-network-col-type,
   .rr-network-table > thead > tr > .rr-network-col-hop,
   .rr-network-table > tbody > tr > .rr-network-col-type,
   .rr-network-table > tbody > tr > .rr-network-col-hop {
-    padding: 0;
-    border-left: 0;
-    border-right: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    max-width: 0;
+    display: none;
   }
 
   .rr-network-table > colgroup > col.rr-network-col-status,
@@ -242,8 +281,8 @@
     width: 64px;
   }
 
-  .rr-network-table > thead > tr > th:not(.rr-network-col-type):not(.rr-network-col-hop),
-  .rr-network-table > tbody > tr:not(.rr-network-detail-row) > td:not(.rr-network-col-type):not(.rr-network-col-hop) {
+  .rr-network-table > thead > tr > th,
+  .rr-network-table > tbody > tr:not(.rr-network-detail-row) > td {
     padding-left: 6px;
     padding-right: 6px;
   }
