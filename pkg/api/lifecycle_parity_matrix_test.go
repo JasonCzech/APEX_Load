@@ -727,16 +727,16 @@ func TestLifecycleParityMatrixDocumentIsFresh(t *testing.T) {
 }
 
 // Debug and replay judge what they would execute: a recorded resource URL
-// whose credential the executed copy masks cannot be executed, although the
-// submitted content alone has no finding.
+// containing the redaction sentinel cannot be executed when live network
+// fallback is not allowed.
 func TestTransientReplayRefusesAMaskedRecordedResourceURL(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	script := &dsl.Script{Name: "Recorded resources", Version: "1.0.0", Protocol: "browser",
 		Config:   dsl.ScriptConfig{BaseURL: "https://lifecycle.example.test", Browser: dsl.BrowserConfig{Engine: "chromium", DownloadResources: "recorded"}},
-		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorded_resource_urls_available": true, "recorded_resource_urls": []any{"https://user:pass@cdn.lifecycle.example.test/app.js"}}}},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{Source: "browser_recorder", Preserved: map[string]any{"recorded_resource_urls_available": true, "recorded_resource_urls": []any{"https://user:[REDACTED]@cdn.lifecycle.example.test/app.js"}}}},
 		Actions:  []dsl.Action{{Name: "open", Type: "browser_navigate", Target: "/"}}}
-	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
-		t.Fatalf("fixture: the submitted content has findings %q", issues)
+	if issues := dsl.ValidateScriptIssues(script); len(issues) == 0 {
+		t.Fatal("fixture: expected ValidateScriptIssues to report the masked recorded_resource_urls entry")
 	}
 	body, err := json.Marshal(map[string]any{"script": script})
 	if err != nil {

@@ -616,12 +616,15 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 					} else {
 						cfg.OAuth = &dsl.KafkaOAuthConfig{Mode: "client_credentials", TokenURL: tokenEndpoint, Scope: options["scope"], AuthenticationMethod: "kafka_3_3_1_basic"}
 						for _, binding := range []struct {
-							key, field  string
-							destination *string
-						}{{"clientId", "config.kafka.oauth.client_id", &cfg.OAuth.ClientID}, {"clientSecret", "config.kafka.oauth.client_secret_ref", &cfg.OAuth.ClientSecretRef}} {
+							key, field               string
+							literalDst, secretRefDst *string
+						}{
+							{"clientId", "config.kafka.oauth.client_id", &cfg.OAuth.ClientID, &cfg.OAuth.ClientID},
+							{"clientSecret", "config.kafka.oauth.client_secret_ref", &cfg.OAuth.ClientSecret, &cfg.OAuth.ClientSecretRef},
+						} {
 							optValue := options[binding.key]
 							if strings.TrimSpace(optValue) != "" {
-								*binding.destination = optValue
+								*binding.literalDst = optValue
 								continue
 							}
 							target := credentialpolicy.TargetRef{RequestKey: script.Name, Field: binding.field}
@@ -636,7 +639,7 @@ func convertDIKafka(e *xmlNode, scope []*treeNode, ctx *convertContext, script *
 								}
 								continue
 							}
-							*binding.destination = replacement
+							*binding.secretRefDst = replacement
 							ctx.credentialRequirements = append(ctx.credentialRequirements, requirement)
 						}
 					}

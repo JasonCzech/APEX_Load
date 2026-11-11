@@ -879,23 +879,27 @@ func (collector *importedCredentialCollector) collectSensitiveConfig(config dsl.
 		collector.collectLiteralBasicComposites(config.Browser.Proxy.Username, config.Browser.Proxy.Password, "")
 	}
 	if config.Kafka.OAuth != nil {
-		oauthSecret := config.Kafka.OAuth.ClientSecretRef
-		hasExplicitClientSecret := false
-		if strings.TrimSpace(oauthSecret) == "" {
-			if literal := kafkaOAuthClientSecretField(config.Kafka.OAuth); literal != "" {
-				oauthSecret = literal
-				hasExplicitClientSecret = true
+		for _, candidate := range []struct {
+			secret   string
+			explicit bool
+		}{
+			{secret: config.Kafka.OAuth.ClientSecretRef, explicit: false},
+			{secret: config.Kafka.OAuth.ClientSecret, explicit: true},
+		} {
+			oauthSecret := candidate.secret
+			if !candidate.explicit && strings.TrimSpace(oauthSecret) == "" {
+				continue
 			}
-		}
-		if oauthSecret != "" && !containsPlatformSecretReference(oauthSecret) && !templatePattern.MatchString(oauthSecret) {
-			if hasExplicitClientSecret || !ValidLogicalSecretName(strings.TrimSpace(oauthSecret)) {
-				collector.add(oauthSecret)
+			if oauthSecret != "" && !containsPlatformSecretReference(oauthSecret) && !templatePattern.MatchString(oauthSecret) {
+				if candidate.explicit || !ValidLogicalSecretName(strings.TrimSpace(oauthSecret)) {
+					collector.add(oauthSecret)
+					if config.Kafka.OAuth.AuthenticationMethod == "client_secret_basic" || config.Kafka.OAuth.AuthenticationMethod == "kafka_3_3_1_basic" {
+						collector.collectLiteralBasicComposites(config.Kafka.OAuth.ClientID, oauthSecret, config.Kafka.OAuth.AuthenticationMethod)
+					}
+				}
+			} else if templatePattern.MatchString(oauthSecret) {
+				collector.collectTemplateReferences(oauthSecret)
 			}
-			if config.Kafka.OAuth.AuthenticationMethod == "client_secret_basic" || config.Kafka.OAuth.AuthenticationMethod == "kafka_3_3_1_basic" {
-				collector.collectLiteralBasicComposites(config.Kafka.OAuth.ClientID, oauthSecret, config.Kafka.OAuth.AuthenticationMethod)
-			}
-		} else if templatePattern.MatchString(oauthSecret) {
-			collector.collectTemplateReferences(oauthSecret)
 		}
 	}
 	if config.Network.Username != "" || config.Network.Password != "" {
@@ -1169,6 +1173,15 @@ func (collector *importedCredentialCollector) collectSensitiveTree(value any, ke
 					collector.collectLiteralURLBasicComposites(scalar)
 				}
 				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(childKey), "client_secret_ref") {
+				if scalar, ok := child.(string); ok {
+					trimmed := strings.TrimSpace(scalar)
+					if trimmed != "" && (collector.resolved || !ValidLogicalSecretName(trimmed)) {
+						collector.add(scalar)
+					}
+					continue
+				}
 			}
 			if _, scalar := child.(string); scalar && nextHeaderMap && collector.shownRecordedState(childKey) {
 				continue

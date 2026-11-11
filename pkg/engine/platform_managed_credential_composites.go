@@ -376,8 +376,8 @@ func scriptCredentialCompositeSurfaces(
 		authoredSecret := oauth.ClientSecretRef
 		dedicated := true
 		if strings.TrimSpace(authoredSecret) == "" {
-			if literal := kafkaOAuthClientSecretField(oauth); literal != "" {
-				authoredSecret = literal
+			if oauth.ClientSecret != "" {
+				authoredSecret = oauth.ClientSecret
 				dedicated = false
 			}
 		} else if !strings.Contains(authoredSecret, "{{") && !ValidLogicalSecretName(strings.TrimSpace(authoredSecret)) {

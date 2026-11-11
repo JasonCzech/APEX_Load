@@ -215,7 +215,7 @@ func TestMessagingSourcePreservesExtraPropertyCredentialsAndKafkaJAASOptions(t *
 		t.Fatal(err)
 	}
 	kafka := repaired.Scripts[0]
-	if kafka.Config.Kafka.OAuth == nil || kafka.Config.Kafka.OAuth.ClientID != "***" || kafka.Config.Kafka.OAuth.ClientSecretRef != "***" {
+	if kafka.Config.Kafka.OAuth == nil || kafka.Config.Kafka.OAuth.ClientID != "***" || kafka.Config.Kafka.OAuth.ClientSecret != "***" {
 		t.Fatalf("Kafka OAuth literal options were rewritten: %#v", kafka.Config.Kafka.OAuth)
 	}
 	if hasJMeterReviewReason(kafka.Actions, "jmeter_kafka_oauth_credentials_required") {
@@ -611,8 +611,8 @@ func TestMessagingDIKafkaPlainScramAndLiteralTildeOAuth(t *testing.T) {
 			t.Fatal(err)
 		}
 		s := res.Scripts[0]
-		if s.Config.Kafka.OAuth == nil || s.Config.Kafka.OAuth.ClientSecretRef != tildeSecret {
-			t.Fatalf("expected literal tilde secret in ClientSecretRef, got %+v", s.Config.Kafka.OAuth)
+		if s.Config.Kafka.OAuth == nil || s.Config.Kafka.OAuth.ClientSecret != tildeSecret {
+			t.Fatalf("expected literal tilde secret in ClientSecret, got %+v", s.Config.Kafka.OAuth)
 		}
 		if len(res.SecretRequirements) != 0 {
 			t.Fatalf("expected zero SecretRequirements for literal OAuth secret, got %+v", res.SecretRequirements)
