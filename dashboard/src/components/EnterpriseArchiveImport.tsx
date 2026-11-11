@@ -7,8 +7,7 @@ import { ImportGuidedRepair, type RepairResult } from './ImportGuidedRepair'
 import ImportSaveConfirmation from './ImportSaveConfirmation'
 import { importScenarioName, useImportScenario } from './useImportScenario'
 import { type ImportSaveDestination } from './useImportSaveOutcome'
-import TabList from './ux/TabList'
-import { handleTabKey } from './tabKeyboard'
+import { ImportReviewTabList } from './ImportReviewTabs'
 import DialogLayer from './ux/DialogLayer'
 import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
@@ -5534,50 +5533,26 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, folde
           <div className="lr-tab-readiness" role="status">{importedScript && (repairCheckPending ? 'Checking repair requirements…' : readinessSummaryText(importCounts))}</div>
           <div className="lr-validation-review-navigation" ref={reviewNavigationRef}>
           {reviewProjectPicker}
-          <TabList className="lr-validation-review-tabs"
- role="tablist" aria-label="Script archive review sections" onKeyDown={handleTabKey}>
-              {validationReviewTabs.map((tab) => {
-                // Unresolved grouped issues for this tab, named once in the tab's accessible name.
-                const counted = Boolean(importedScript) && ['overview', 'credentials', 'data', 'preserved'].includes(tab.id)
-                const issueCount = counted && !repairCheckPending
-                  ? tab.id === 'overview' ? unresolvedIssueCount(importCounts) : tabIssues.filter(i => (tab.id === 'credentials' && i.category === 'credentials') || (tab.id === 'data' && i.category === 'values') || (tab.id === 'preserved' && i.category === 'runtime')).length
-                  : 0
-                const checkingCount = counted && repairCheckPending
-                return (
-                <button
-                  key={tab.id}
-                  id={`lr-validation-review-tab-${tab.id}`}
-                  type="button"
-                  role="tab"
-                  aria-label={checkingCount ? `${tab.label}, checking issues` : issueCount > 0 ? `${tab.label}, ${issueCount} unresolved grouped issue${issueCount === 1 ? '' : 's'}` : tab.label}
-                  aria-selected={validationReviewTab === tab.id}
-                  aria-controls="lr-validation-review-panel"
-                  tabIndex={validationReviewTab === tab.id ? 0 : -1}
-                  className={validationReviewTab === tab.id ? 'active' : ''}
-                  onClick={() => selectValidationReviewTab(tab.id)}
-                  onKeyDown={event => {
-                    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                    event.preventDefault()
-                    const currentIndex = validationReviewTabs.findIndex(item => item.id === validationReviewTab)
-                    const nextIndex = event.key === 'Home'
-                      ? 0
-                      : event.key === 'End'
-                        ? validationReviewTabs.length - 1
-                        : event.key === 'ArrowRight'
-                          ? (currentIndex + 1) % validationReviewTabs.length
-                          : (currentIndex - 1 + validationReviewTabs.length) % validationReviewTabs.length
-                    const nextTab = validationReviewTabs[nextIndex]
-                    selectValidationReviewTab(nextTab.id)
-                    event.currentTarget.parentElement
-                      ?.querySelector<HTMLButtonElement>(`#lr-validation-review-tab-${nextTab.id}`)
-                      ?.focus()
-                  }}
-                >
-                  {tab.label}{checkingCount ? <span className="lr-tab-count" aria-hidden="true" title="Checking…">…</span> : issueCount > 0 && <span className="lr-tab-count" aria-hidden="true">{issueCount}</span>}
-                </button>
-                )
-              })}
-          </TabList>
+          <ImportReviewTabList
+            tabs={validationReviewTabs}
+            active={validationReviewTab}
+            onChange={selectValidationReviewTab}
+            counts={importedScript && !repairCheckPending ? {
+              overview: unresolvedIssueCount(importCounts),
+              credentials: tabIssues.filter(i => i.category === 'credentials').length,
+              data: tabIssues.filter(i => i.category === 'values').length,
+              preserved: tabIssues.filter(i => i.category === 'runtime').length,
+            } : undefined}
+            checkingTabs={importedScript && repairCheckPending ? { overview: true, credentials: true, data: true, preserved: true } : undefined}
+            tabId={tab => `lr-validation-review-tab-${tab}`}
+            panelId="lr-validation-review-panel"
+            className="lr-validation-review-tabs"
+            badgeClassName="lr-tab-count"
+            activeClassName="active"
+            ariaLabel="Script archive review sections"
+            countSingularLabel="unresolved grouped issue"
+            countPluralLabel="unresolved grouped issues"
+          />
           </div>
           <div
             id="lr-validation-review-panel"

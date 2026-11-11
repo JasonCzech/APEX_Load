@@ -2,7 +2,7 @@
 import { act, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
-import ImportReviewTabs, { type ImportReviewTab } from './ImportReviewTabs'
+import ImportReviewTabs, { ImportReviewTabList, type ImportReviewTab } from './ImportReviewTabs'
 
 it('keeps edits while keyboard navigation selects the labelled review panel', () => {
   const container = document.createElement('div')
@@ -79,6 +79,95 @@ it('falls back to the first applicable tab when the requested tab is hidden', ()
     expect(review.tabIndex).toBe(0)
     expect(container.querySelector('[role=tabpanel]')?.getAttribute('aria-labelledby')).toBe(review.id)
     expect(container.querySelector('[role=tabpanel]')?.textContent).toBe('Review content')
+  } finally {
+    act(() => root.unmount())
+    container.remove()
+  }
+})
+
+it('renders custom tab lists with checking indicators, custom labels, badge/active classes, and full keyboard navigation', () => {
+  const customTabs = [
+    { id: 'overview', label: 'Review' },
+    { id: 'credentials', label: 'Credentials' },
+    { id: 'data', label: 'Data & parameters' },
+    { id: 'preserved', label: 'Runtime settings' },
+    { id: 'dsl', label: 'DSL Preview' },
+    { id: 'source', label: 'Source Mapping' },
+  ] as const
+  type CustomTab = typeof customTabs[number]['id']
+
+  const container = document.createElement('div')
+  document.body.append(container)
+  const root = createRoot(container)
+  function CustomReview({ checking }: { checking: boolean }) {
+    const [active, setActive] = useState<CustomTab>('overview')
+    return <ImportReviewTabList
+      tabs={customTabs}
+      active={active}
+      onChange={setActive}
+      counts={{ overview: 3, credentials: 1, data: 0 }}
+      checkingTabs={checking ? { overview: true, credentials: true } : undefined}
+      tabId={tab => `lr-validation-review-tab-${tab}`}
+      panelId="lr-validation-review-panel"
+      className="lr-validation-review-tabs"
+      badgeClassName="lr-tab-count"
+      activeClassName="active"
+      ariaLabel="Script archive review sections"
+      countSingularLabel="unresolved grouped issue"
+      countPluralLabel="unresolved grouped issues"
+    />
+  }
+  try {
+    act(() => root.render(<CustomReview checking={true} />))
+    const tablist = container.querySelector('[role="tablist"]')!
+    expect(tablist.className).toBe('lr-validation-review-tabs')
+    expect(tablist.getAttribute('aria-label')).toBe('Script archive review sections')
+    const checkingTabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+    expect(checkingTabs[0].getAttribute('aria-label')).toBe('Review, checking issues')
+    expect(checkingTabs[0].querySelector('.lr-tab-count')?.textContent).toBe('…')
+    expect(checkingTabs[0].querySelector('.lr-tab-count')?.getAttribute('title')).toBe('Checking…')
+    expect(checkingTabs[0].className).toBe('active')
+    expect(checkingTabs[1].className).toBe('')
+
+    act(() => root.render(<CustomReview checking={false} />))
+    const tabs = [...container.querySelectorAll<HTMLButtonElement>('[role=tab]')]
+    expect(tabs.map(tab => tab.getAttribute('aria-label'))).toEqual([
+      'Review, 3 unresolved grouped issues',
+      'Credentials, 1 unresolved grouped issue',
+      'Data & parameters',
+      'Runtime settings',
+      'DSL Preview',
+      'Source Mapping',
+    ])
+    expect(tabs[0].querySelector('.lr-tab-count')?.textContent).toBe('3')
+    expect(tabs[1].querySelector('.lr-tab-count')?.textContent).toBe('1')
+    expect(tabs[2].querySelector('.lr-tab-count')).toBeNull()
+
+    act(() => {
+      tabs[0].focus()
+      tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(tabs[5])
+    expect(tabs[5].getAttribute('aria-selected')).toBe('true')
+    expect(tabs[5].className).toBe('active')
+
+    act(() => {
+      tabs[5].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(tabs[0])
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
+
+    act(() => {
+      tabs[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(tabs[5])
+    expect(tabs[5].getAttribute('aria-selected')).toBe('true')
+
+    act(() => {
+      tabs[5].dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }))
+    })
+    expect(document.activeElement).toBe(tabs[0])
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true')
   } finally {
     act(() => root.unmount())
     container.remove()
