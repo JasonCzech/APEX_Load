@@ -1967,6 +1967,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/dsl/config-catalog",
+      "operationId": "handleConfigCatalog",
+      "summary": "Config Catalog",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/dsl/config-defaults",
       "operationId": "handleConfigDefaults",
       "summary": "Config Defaults",
@@ -5744,6 +5754,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/settings/fields",
+      "operationId": "handleImportSettingsFields",
+      "summary": "Import Settings Fields",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
     },
     {
       "method": "POST",

@@ -7717,6 +7717,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -7792,6 +7793,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -8026,10 +8038,12 @@ export interface operations {
                 "java_vuser"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
+                "soap"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
                 "websocket"?: (Record<string, unknown>) | null;
@@ -8179,6 +8193,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -8216,6 +8231,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -22611,6 +22632,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -22648,6 +22670,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -22778,10 +22806,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -26686,10 +26716,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -27079,6 +27111,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -27154,6 +27187,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -27465,6 +27509,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -27498,6 +27543,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -27900,10 +27951,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -28293,6 +28346,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -28368,6 +28422,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -28679,6 +28744,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -28712,6 +28778,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -35550,6 +35622,58 @@ export interface operations {
       };
     };
   };
+  "handleConfigCatalog": {
+    parameters: {
+      "query"?: {
+        "protocol"?: string;
+        "scope"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "fields": Array<{
+              "default"?: unknown;
+              "description"?: string;
+              "group": string;
+              "label": string;
+              "options"?: Array<string>;
+              "path": string;
+              "protocols": Array<string>;
+              "scopes": Array<string>;
+              "secret"?: boolean;
+              "subgroup"?: string;
+              "tri_state"?: boolean;
+              "type": string;
+              "unit"?: string;
+            }>;
+            "groups": Array<{
+              "description": string;
+              "id": string;
+              "label": string;
+            }>;
+            "protocol"?: string;
+            "scope"?: string;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleConfigDefaults": {
     parameters?: never;
     requestBody?: never;
@@ -36050,7 +36174,7 @@ export interface operations {
               };
               "soap"?: {
                 "fault_handling"?: {
-                  "fail_on_fault"?: boolean;
+                  "fail_on_fault"?: (boolean) | null;
                 };
                 "namespaces"?: Record<string, string>;
                 "version"?: string;
@@ -43458,10 +43582,12 @@ export interface operations {
               "java_vuser"?: (Record<string, unknown>) | null;
               "log"?: (Record<string, unknown>) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: (Record<string, unknown>) | null;
               "run_logic"?: (Record<string, unknown>) | null;
+              "soap"?: (Record<string, unknown>) | null;
               "think_time"?: (Record<string, unknown>) | null;
               "web_runtime"?: (Record<string, unknown>) | null;
               "websocket"?: (Record<string, unknown>) | null;
@@ -43621,6 +43747,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -43658,6 +43785,12 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: Record<string, unknown>;
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: (Record<string, unknown>) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -43900,10 +44033,12 @@ export interface operations {
                 "java_vuser"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
+                "soap"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
                 "websocket"?: (Record<string, unknown>) | null;
@@ -44062,6 +44197,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -44099,6 +44235,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -44849,10 +44991,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -46692,6 +46836,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -46729,6 +46874,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -47820,6 +47971,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -47853,6 +48005,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -48107,6 +48265,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -48182,6 +48341,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -48552,10 +48722,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -48945,6 +49117,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -49020,6 +49193,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -49331,6 +49515,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -49364,6 +49549,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -50389,7 +50580,7 @@ export interface operations {
               };
               "soap"?: {
                 "fault_handling"?: {
-                  "fail_on_fault"?: boolean;
+                  "fail_on_fault"?: (boolean) | null;
                 };
                 "namespaces"?: Record<string, string>;
                 "version"?: string;
@@ -52327,6 +52518,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -52360,6 +52552,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -52623,6 +52821,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -52698,6 +52897,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -54267,6 +54477,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -54300,6 +54511,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -59334,6 +59551,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -59409,6 +59627,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -62317,10 +62546,12 @@ export interface operations {
                 "java_vuser"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
+                "soap"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
                 "websocket"?: (Record<string, unknown>) | null;
@@ -62470,6 +62701,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -62507,6 +62739,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -63058,10 +63296,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -63211,6 +63451,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -63248,6 +63489,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -63703,10 +63950,12 @@ export interface operations {
                 "java_vuser"?: (Record<string, unknown>) | null;
                 "log"?: (Record<string, unknown>) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: (Record<string, unknown>) | null;
                 "redaction_rules"?: Array<Record<string, unknown>>;
                 "results"?: (Record<string, unknown>) | null;
                 "run_logic"?: (Record<string, unknown>) | null;
+                "soap"?: (Record<string, unknown>) | null;
                 "think_time"?: (Record<string, unknown>) | null;
                 "web_runtime"?: (Record<string, unknown>) | null;
                 "websocket"?: (Record<string, unknown>) | null;
@@ -63856,6 +64105,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -63893,6 +64143,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -64444,10 +64700,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -64597,6 +64855,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -64634,6 +64893,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -67093,6 +67358,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -67126,6 +67392,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -67389,6 +67661,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -67464,6 +67737,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -67937,6 +68221,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -67970,6 +68255,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -86459,10 +86750,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -88302,6 +88595,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -88339,6 +88633,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -90606,10 +90906,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -90860,6 +91162,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -90897,6 +91200,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -91663,10 +91972,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -91917,6 +92228,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -91954,6 +92266,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -98404,10 +98722,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -98937,10 +99257,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -101634,10 +101956,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -102027,6 +102351,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -102102,6 +102427,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -102413,6 +102749,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -102446,6 +102783,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -102779,10 +103122,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -102934,6 +103279,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -102971,6 +103317,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -108634,6 +108986,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -108667,6 +109020,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -113701,6 +114060,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -113776,6 +114136,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -114403,6 +114774,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -114478,6 +114850,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -114756,6 +115139,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -114831,6 +115215,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -115095,6 +115490,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -115170,6 +115566,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -115434,6 +115841,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -115509,6 +115917,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -115892,10 +116311,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -116042,6 +116463,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -116079,6 +116501,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -116443,10 +116871,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -116593,6 +117023,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -116630,6 +117061,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -117145,6 +117582,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -117178,6 +117616,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -121091,6 +121535,51 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleImportSettingsFields": {
+    parameters: {
+      "query"?: {
+        "protocol"?: string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "fields": Array<{
+              "category": string;
+              "group"?: string;
+              "label": string;
+              "options"?: Array<string>;
+              "path": string;
+              "secret"?: boolean;
+              "subgroup"?: string;
+              "type": string;
+              "unit"?: string;
+            }>;
+            "groups": Array<{
+              "description": string;
+              "id": string;
+              "label": string;
+            }>;
+          };
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -135482,6 +135971,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -135515,6 +136005,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -140549,6 +141045,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -140624,6 +141121,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -141446,10 +141954,12 @@ export interface operations {
               "java_vuser"?: (Record<string, unknown>) | null;
               "log"?: (Record<string, unknown>) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: (Record<string, unknown>) | null;
               "redaction_rules"?: Array<Record<string, unknown>>;
               "results"?: (Record<string, unknown>) | null;
               "run_logic"?: (Record<string, unknown>) | null;
+              "soap"?: (Record<string, unknown>) | null;
               "think_time"?: (Record<string, unknown>) | null;
               "web_runtime"?: (Record<string, unknown>) | null;
               "websocket"?: (Record<string, unknown>) | null;
@@ -141609,6 +142119,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -141646,6 +142157,12 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: Record<string, unknown>;
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: (Record<string, unknown>) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -156711,10 +157228,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -158554,6 +159073,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -158591,6 +159111,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -159457,10 +159983,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -161300,6 +161828,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -161337,6 +161866,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -162203,10 +162738,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -164046,6 +164583,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -164083,6 +164621,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -164949,10 +165493,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -166792,6 +167338,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -166829,6 +167376,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -167695,10 +168248,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -169538,6 +170093,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -169575,6 +170131,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -169944,6 +170506,355 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -170799,6 +171710,355 @@ export interface operations {
             "replacement"?: string;
           }>;
           "replay_session_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "script"?: ({
             "actions"?: Array<{
               "assertions"?: Array<Record<string, unknown>>;
@@ -173172,6 +174432,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -173205,6 +174466,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -178239,6 +179506,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -178314,6 +179582,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -183273,6 +184552,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -183306,6 +184586,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -186229,10 +187515,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -186382,6 +187670,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -186419,6 +187708,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -190160,6 +191455,355 @@ export interface operations {
           "replay_profile"?: string;
           "replay_session_id"?: string;
           "run_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -191901,6 +193545,355 @@ export interface operations {
           "replay_profile"?: string;
           "replay_session_id"?: string;
           "run_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -193638,6 +195631,355 @@ export interface operations {
           "replay_profile"?: string;
           "replay_session_id"?: string;
           "run_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -195379,6 +197721,355 @@ export interface operations {
           "replay_profile"?: string;
           "replay_session_id"?: string;
           "run_id"?: string;
+          "runtime_overrides"?: ({
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: ({
+              "device_profile"?: string;
+              "headless"?: (boolean) | null;
+              "orientation"?: string;
+              "touch_mode"?: (boolean) | null;
+            }) | null;
+            "browser_config"?: ({
+              "available_screen_height"?: number;
+              "available_screen_width"?: number;
+              "cache_content_urls"?: (boolean) | null;
+              "cache_enabled"?: (boolean) | null;
+              "capture_document_metrics"?: (boolean) | null;
+              "capture_interactions"?: (boolean) | null;
+              "capture_screenshots"?: string;
+              "check_newer_versions"?: (boolean) | null;
+              "client_certificates"?: Array<{
+                "cert_path"?: string;
+                "key_path"?: string;
+                "origin"?: string;
+                "passphrase"?: string;
+                "pfx_path"?: string;
+              }>;
+              "client_metrics"?: (boolean) | null;
+              "device_profile"?: string;
+              "download_resources"?: string;
+              "engine"?: string;
+              "ept_calibration"?: (boolean) | null;
+              "experience_canary"?: boolean;
+              "geolocation"?: {
+                "accuracy"?: (number) | null;
+                "latitude"?: (number) | null;
+                "longitude"?: (number) | null;
+              };
+              "har_artifact_dir"?: string;
+              "har_capture"?: string;
+              "har_capture_policy"?: string;
+              "har_sla_threshold_ms"?: number;
+              "headless"?: (boolean) | null;
+              "http_credentials"?: {
+                "origin"?: string;
+                "password"?: string;
+                "send"?: string;
+                "username"?: string;
+              };
+              "locale"?: string;
+              "new_user_per_iteration"?: (boolean) | null;
+              "orientation"?: string;
+              "proxy"?: {
+                "bypass"?: string;
+                "password"?: string;
+                "server"?: string;
+                "username"?: string;
+              };
+              "quic"?: string;
+              "review_policy"?: {
+                "allow_review_required"?: boolean;
+                "allow_reviewed_javascript"?: boolean;
+              };
+              "session"?: ({
+                "identities"?: Array<Record<string, unknown>>;
+                "jwt"?: (Record<string, unknown>) | null;
+                "preflight_url"?: string;
+                "start_gap_ms"?: number;
+                "strategy"?: string;
+              }) | null;
+              "slow_mo_ms"?: number;
+              "storage_state"?: string;
+              "system_language"?: string;
+              "timezone"?: string;
+              "touch_mode"?: (boolean) | null;
+              "traceparent"?: (boolean) | null;
+              "user_agent"?: string;
+              "viewport"?: {
+                "height"?: number;
+                "width"?: number;
+              };
+            }) | null;
+            "browser_emulation"?: ({
+              "browser_type"?: string;
+              "browser_version"?: string;
+              "cache"?: ({
+                "cache_content_urls"?: (boolean) | null;
+                "check_newer_versions"?: (boolean) | null;
+                "clear_cache_for_new_user"?: (boolean) | null;
+                "download_non_html_resources"?: (boolean) | null;
+                "new_user_each_iteration"?: (boolean) | null;
+                "simulate_cache"?: (boolean) | null;
+                "simulate_prefetch"?: (boolean) | null;
+              }) | null;
+              "custom_user_agent"?: string;
+              "language"?: string;
+              "mode"?: string;
+              "platform"?: string;
+            }) | null;
+            "env"?: Record<string, string>;
+            "error_handling"?: ({
+              "continue_on_error"?: (boolean) | null;
+              "fail_transaction_on_error_message"?: (boolean) | null;
+              "honor_retry_after"?: boolean;
+              "max_retries"?: number;
+              "retry_after_max_ms"?: number;
+              "retry_backoff"?: string;
+              "retry_delay_ms"?: number;
+              "retry_on"?: Array<string>;
+              "snapshot_on_error"?: boolean;
+            }) | null;
+            "http"?: ({
+              "accept_encoding"?: string;
+              "accept_language"?: string;
+              "aura_recorded_failures"?: string;
+              "auth"?: {
+                "domain"?: string;
+                "hosts"?: Array<string>;
+                "password"?: string;
+                "token"?: string;
+                "type"?: string;
+                "username"?: string;
+              };
+              "cache_enabled"?: (boolean) | null;
+              "cache_excluded_mime_types"?: Array<string>;
+              "cache_max_unused_iterations"?: number;
+              "challenge_delay_ms"?: number;
+              "clear_cookies_per_iteration"?: (boolean) | null;
+              "connect_timeout_ms"?: number;
+              "content_check_error_limit"?: number;
+              "cookies_enabled"?: (boolean) | null;
+              "default_header_list"?: Array<Record<string, unknown>>;
+              "default_headers"?: Record<string, string>;
+              "dns_cache"?: (boolean) | null;
+              "fail_noncritical_resources"?: (boolean) | null;
+              "html_excluded_mime_types"?: Array<string>;
+              "html_parse_mode"?: string;
+              "http_errors_as_warnings"?: (boolean) | null;
+              "idle_timeout_ms"?: number;
+              "ip_version"?: string;
+              "keep_alive"?: (boolean) | null;
+              "legacy_html_checks"?: (boolean) | null;
+              "max_conns_per_host"?: number;
+              "max_idle_conns"?: number;
+              "max_meta_refresh"?: number;
+              "max_redirects"?: (number) | null;
+              "page_timeout_ms"?: number;
+              "proxy"?: {
+                "no_proxy"?: Array<string>;
+                "pac_url"?: string;
+                "password"?: string;
+                "url"?: string;
+                "username"?: string;
+              };
+              "proxy_mode"?: string;
+              "quic"?: ({
+                "alt_svc_cache"?: string;
+                "broken_ttl_ms"?: (number) | null;
+                "handshake_timeout_ms"?: number;
+                "keep_alive_ms"?: number;
+                "max_idle_timeout_ms"?: number;
+              }) | null;
+              "receive_buffer_bytes"?: number;
+              "request_timeout_ms"?: number;
+              "resource_timeout_as_warning"?: (boolean) | null;
+              "tls"?: {
+                "ca_cert_file"?: string;
+                "client_cert_file"?: string;
+                "client_key_file"?: string;
+                "insecure_skip_verify"?: boolean;
+                "max_version"?: string;
+                "min_version"?: string;
+              };
+              "tls_timeout_ms"?: number;
+              "traceparent"?: (boolean) | null;
+              "traceparent_sampled"?: (boolean) | null;
+              "user_agent"?: string;
+              "version"?: string;
+            }) | null;
+            "iterations"?: (number) | null;
+            "java_vuser"?: ({
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: (boolean) | null;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "jvm_sharing"?: string;
+              "skip_parameter_evaluation"?: (boolean) | null;
+              "use_xbootclasspath"?: (boolean) | null;
+              "vusers_per_jvm"?: number;
+            }) | null;
+            "log"?: ({
+              "error_buffer_bytes"?: number;
+              "extended_options"?: Array<string>;
+              "level"?: string;
+              "max_response_bytes"?: number;
+              "on_error_only"?: boolean;
+              "redact_run_evidence"?: (boolean) | null;
+            }) | null;
+            "log_level"?: string;
+            "override_fields"?: Array<string>;
+            "pacing"?: ({
+              "arrival_process"?: string;
+              "burstiness"?: number;
+              "delay_ms"?: number;
+              "interval_ms"?: number;
+              "max_delay_ms"?: number;
+              "max_interval_ms"?: number;
+              "min_delay_ms"?: number;
+              "min_interval_ms"?: number;
+              "quota"?: ({
+                "adaptive_aimd"?: boolean;
+                "burst_tokens"?: number;
+                "default_tokens"?: number;
+                "estimated_tokens_per_request"?: number;
+                "headroom_ratio"?: number;
+                "rpm"?: number;
+                "tpm"?: number;
+              }) | null;
+              "rate_stages"?: Array<{
+                "duration_seconds"?: number;
+                "end_tps"?: (number) | null;
+                "target_tps"?: number;
+                "warmup"?: boolean;
+              }>;
+              "seed"?: (number) | null;
+              "tps"?: number;
+              "type"?: string;
+            }) | null;
+            "redaction_rules"?: Array<{
+              "name"?: string;
+              "pattern"?: string;
+              "replacement"?: string;
+            }>;
+            "results"?: ({
+              "csv_exports"?: Array<{
+                "action_name"?: string;
+                "columns"?: Array<Record<string, unknown>>;
+                "file_name"?: string;
+                "id"?: string;
+              }>;
+              "message_detail"?: ({
+                "include_resources"?: (boolean) | null;
+                "max_item_bytes"?: number;
+                "max_items"?: number;
+                "max_total_bytes"?: number;
+                "mode"?: string;
+                "sample_rate"?: number;
+              }) | null;
+              "property_analytics"?: Array<{
+                "extraction"?: string;
+                "name"?: string;
+                "values"?: Array<string>;
+              }>;
+              "protocol_mix"?: ({
+                "max_fallback_ratio"?: (number) | null;
+                "max_quic_failure_ratio"?: (number) | null;
+                "min_samples"?: number;
+              }) | null;
+            }) | null;
+            "run_logic"?: ({
+              "action_sequence"?: Array<string>;
+              "auto_transactions"?: string;
+              "block_scheduling"?: string;
+              "blocks"?: Array<{
+                "children"?: Array<Record<string, unknown>>;
+                "iterations"?: number;
+                "mode"?: string;
+                "name"?: string;
+              }>;
+              "global_iterations"?: number;
+              "iterations"?: number;
+              "max_in_flight"?: number;
+              "max_transactions"?: number;
+              "termination_mode"?: string;
+              "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
+            }) | null;
+            "think_time"?: ({
+              "distribution"?: string;
+              "force"?: boolean;
+              "ignore"?: boolean;
+              "limit_ms"?: number;
+              "max_ms"?: number;
+              "max_percent"?: number;
+              "mean_ms"?: number;
+              "min_ms"?: number;
+              "min_percent"?: number;
+              "multiplier"?: number;
+              "std_ms"?: number;
+              "type"?: string;
+            }) | null;
+            "web_runtime"?: ({
+              "additional_attributes"?: Record<string, string>;
+              "content_checks"?: Array<{
+                "case_insensitive"?: boolean;
+                "fail_if_found"?: (boolean) | null;
+                "left_boundary"?: string;
+                "right_boundary"?: string;
+                "scope"?: string;
+                "text"?: string;
+              }>;
+              "data_formatting"?: {
+                "auto_detect"?: boolean;
+                "chain"?: Array<Record<string, unknown>>;
+              };
+              "download_filters"?: {
+                "hosts"?: Array<string>;
+                "mode"?: string;
+              };
+              "network_profiles"?: Array<{
+                "name"?: string;
+                "weight"?: number;
+              }>;
+              "network_simulation"?: {
+                "bandwidth_kbps"?: number;
+                "jitter_ms"?: number;
+                "latency_ms"?: number;
+                "mode"?: string;
+                "packet_loss_pct"?: number;
+                "preset"?: string;
+              };
+              "source_ips"?: Array<string>;
+              "streaming"?: {
+                "bandwidth_estimation"?: string;
+                "buffer_size_seconds"?: number;
+                "fixed_bitrate_kbps"?: number;
+                "mode"?: string;
+              };
+            }) | null;
+            "websocket"?: ({
+              "callback_interval_ms"?: number;
+              "compression"?: boolean;
+              "max_message_size"?: number;
+              "origin"?: string;
+              "read_timeout_ms"?: number;
+              "reconnect"?: boolean;
+              "subprotocol"?: string;
+              "write_timeout_ms"?: number;
+            }) | null;
+          }) | null;
           "runtime_profile"?: ({
             "browser_engine"?: string;
             "capture_mode"?: string;
@@ -203561,6 +206252,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -203594,6 +206286,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -208628,6 +211326,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -208703,6 +211402,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -214293,6 +217003,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -214326,6 +217037,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -214580,6 +217297,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -214655,6 +217373,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -215023,10 +217752,12 @@ export interface operations {
                   "java_vuser"?: (Record<string, unknown>) | null;
                   "log"?: (Record<string, unknown>) | null;
                   "log_level"?: string;
+                  "override_fields"?: Array<string>;
                   "pacing"?: (Record<string, unknown>) | null;
                   "redaction_rules"?: Array<Record<string, unknown>>;
                   "results"?: (Record<string, unknown>) | null;
                   "run_logic"?: (Record<string, unknown>) | null;
+                  "soap"?: (Record<string, unknown>) | null;
                   "think_time"?: (Record<string, unknown>) | null;
                   "web_runtime"?: (Record<string, unknown>) | null;
                   "websocket"?: (Record<string, unknown>) | null;
@@ -215416,6 +218147,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -215491,6 +218223,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -215802,6 +218545,7 @@ export interface operations {
                   "redact_run_evidence"?: (boolean) | null;
                 }) | null;
                 "log_level"?: string;
+                "override_fields"?: Array<string>;
                 "pacing"?: ({
                   "arrival_process"?: string;
                   "burstiness"?: number;
@@ -215835,6 +218579,12 @@ export interface operations {
                   "max_transactions"?: number;
                   "termination_mode"?: string;
                   "workload_model"?: string;
+                }) | null;
+                "soap"?: ({
+                  "fault_handling"?: Record<string, unknown>;
+                  "namespaces"?: Record<string, string>;
+                  "version"?: string;
+                  "ws_security"?: (Record<string, unknown>) | null;
                 }) | null;
                 "think_time"?: ({
                   "distribution"?: string;
@@ -217007,7 +219757,7 @@ export interface operations {
               };
               "soap"?: {
                 "fault_handling"?: {
-                  "fail_on_fault"?: boolean;
+                  "fail_on_fault"?: (boolean) | null;
                 };
                 "namespaces"?: Record<string, string>;
                 "version"?: string;
@@ -222654,6 +225404,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -222724,6 +225475,25 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: ({
+                  "ttl_seconds"?: number;
+                }) | null;
+                "username_token"?: ({
+                  "created"?: boolean;
+                  "nonce"?: boolean;
+                  "password"?: string;
+                  "password_type"?: string;
+                  "username"?: string;
+                }) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -222999,6 +225769,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -223074,6 +225845,17 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: {
+                  "fail_on_fault"?: (boolean) | null;
+                };
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: ({
+                  "timestamp"?: (Record<string, unknown>) | null;
+                  "username_token"?: (Record<string, unknown>) | null;
+                }) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -224051,7 +226833,7 @@ export interface operations {
               };
               "soap"?: {
                 "fault_handling"?: {
-                  "fail_on_fault"?: boolean;
+                  "fail_on_fault"?: (boolean) | null;
                 };
                 "namespaces"?: Record<string, string>;
                 "version"?: string;
@@ -225080,6 +227862,7 @@ export interface operations {
                 "redact_run_evidence"?: (boolean) | null;
               }) | null;
               "log_level"?: string;
+              "override_fields"?: Array<string>;
               "pacing"?: ({
                 "arrival_process"?: string;
                 "burstiness"?: number;
@@ -225113,6 +227896,12 @@ export interface operations {
                 "max_transactions"?: number;
                 "termination_mode"?: string;
                 "workload_model"?: string;
+              }) | null;
+              "soap"?: ({
+                "fault_handling"?: Record<string, unknown>;
+                "namespaces"?: Record<string, string>;
+                "version"?: string;
+                "ws_security"?: (Record<string, unknown>) | null;
               }) | null;
               "think_time"?: ({
                 "distribution"?: string;
@@ -225367,6 +228156,7 @@ export interface operations {
               "redact_run_evidence"?: (boolean) | null;
             }) | null;
             "log_level"?: string;
+            "override_fields"?: Array<string>;
             "pacing"?: ({
               "arrival_process"?: string;
               "burstiness"?: number;
@@ -225442,6 +228232,17 @@ export interface operations {
               "max_transactions"?: number;
               "termination_mode"?: string;
               "workload_model"?: string;
+            }) | null;
+            "soap"?: ({
+              "fault_handling"?: {
+                "fail_on_fault"?: (boolean) | null;
+              };
+              "namespaces"?: Record<string, string>;
+              "version"?: string;
+              "ws_security"?: ({
+                "timestamp"?: (Record<string, unknown>) | null;
+                "username_token"?: (Record<string, unknown>) | null;
+              }) | null;
             }) | null;
             "think_time"?: ({
               "distribution"?: string;
@@ -226467,7 +229268,7 @@ export interface operations {
               };
               "soap"?: {
                 "fault_handling"?: {
-                  "fail_on_fault"?: boolean;
+                  "fail_on_fault"?: (boolean) | null;
                 };
                 "namespaces"?: Record<string, string>;
                 "version"?: string;
@@ -228286,6 +231087,9 @@ export interface paths {
   "/api/v1/dsl/browser-emulation-catalog": {
     "get": operations["handleBrowserEmulationCatalog"];
   };
+  "/api/v1/dsl/config-catalog": {
+    "get": operations["handleConfigCatalog"];
+  };
   "/api/v1/dsl/config-defaults": {
     "get": operations["handleConfigDefaults"];
   };
@@ -229273,6 +232077,9 @@ export interface paths {
   };
   "/api/v1/scripts/import/settings": {
     "post": operations["handleImportSettings"];
+  };
+  "/api/v1/scripts/import/settings/fields": {
+    "get": operations["handleImportSettingsFields"];
   };
   "/api/v1/scripts/import/shared-values/apply": {
     "post": operations["handleApplyImportSharedValues"];
