@@ -405,6 +405,30 @@ describe('scriptEditorRuntimeSettingsModel', () => {
       section: 'http',
       httpTransportTab: 'tls',
     })
+    expect(getImportedRuntimeSettingsDestination('Target & identity')).toEqual({
+      section: 'script_config',
+    })
+    expect(getImportedRuntimeSettingsDestination('Run logic & pacing')).toEqual({
+      section: 'runlogic',
+    })
+    expect(getImportedRuntimeSettingsDestination('Think time')).toEqual({
+      section: 'think',
+    })
+    expect(getImportedRuntimeSettingsDestination('Transport & connections')).toEqual({
+      section: 'http',
+      httpTransportTab: 'connection',
+    })
+    expect(getImportedRuntimeSettingsDestination('Security, proxy & auth')).toEqual({
+      section: 'http',
+      httpTransportTab: 'tls',
+    })
+    expect(getImportedRuntimeSettingsDestination('Protocol behavior & session')).toEqual({
+      section: 'http',
+      httpTransportTab: 'request_defaults',
+    })
+    expect(getImportedRuntimeSettingsDestination('Errors, logging & diagnostics')).toEqual({
+      section: 'errors',
+    })
     expect(getImportedRuntimeSectionId('unknown')).toBeNull()
     expect(formatRuntimeSettingStatusLabel('compatibility_only')).toBe('Compatibility-only')
     expect(formatScriptProtocolLabel('java_vuser')).toBe('Java Vuser')

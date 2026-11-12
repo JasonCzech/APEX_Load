@@ -251,13 +251,18 @@ export function buildScriptRuntimeSummary(script: Pick<ScriptDefinition, 'config
     : httpProxyMode === 'pac' ? 'PAC script' : httpProxyMode === 'custom' && script.config.http?.proxy?.url
       ? 'Proxy configured'
       : 'Default'
+  const thinkTimeDist = (script.config.think_time as { distribution?: string } | undefined)?.distribution
+  const effectiveThinkType =
+    script.config.think_time?.type === 'exponential' || thinkTimeDist === 'exponential'
+      ? 'exponential'
+      : script.config.think_time?.type
   const thinkTimeLabel = script.config.think_time?.ignore
     ? 'Disabled'
-    : script.config.think_time?.type === 'random_percentage'
-      ? `${script.config.think_time.min_percent ?? 0}–${script.config.think_time.max_percent ?? 0}% of recorded think time`
-    : script.config.think_time?.type === 'recorded'
+    : effectiveThinkType === 'random_percentage'
+      ? `${script.config.think_time?.min_percent ?? 0}–${script.config.think_time?.max_percent ?? 0}% of recorded think time`
+    : effectiveThinkType === 'recorded'
       ? 'Replay recorded think time'
-      : `${script.config.think_time?.type || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`
+      : `${effectiveThinkType || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`
   const runLogic = script.config.run_logic
   const runLogicLabel = runLogic?.global_iterations !== undefined
     ? `${runLogic.global_iterations} shared iterations`
@@ -438,18 +443,32 @@ export interface ImportedRuntimeSettingsDestination {
 
 export function getImportedRuntimeSettingsDestination(area?: string | null): ImportedRuntimeSettingsDestination | null {
   switch (area?.trim().toLowerCase()) {
+    case 'target_identity':
+    case 'target & identity':
+    case 'script configuration': return { section: 'script_config' }
+    case 'think_time':
     case 'think time': return { section: 'think' }
     case 'pacing': return { section: 'pacing' }
+    case 'run_logic_pacing':
+    case 'run logic & pacing':
     case 'run logic': return { section: 'runlogic' }
+    case 'errors_logging_diagnostics':
+    case 'errors, logging & diagnostics':
     case 'error handling': return { section: 'errors' }
     case 'logging': return { section: 'log' }
+    case 'transport_connections':
+    case 'transport & connections': return { section: 'http', httpTransportTab: 'connection' }
     case 'http': return { section: 'http' }
     case 'proxy': return { section: 'http', httpTransportTab: 'proxy' }
     case 'authentication': return { section: 'http', httpTransportTab: 'authentication' }
+    case 'security_proxy_auth':
+    case 'security, proxy & auth':
     case 'security':
     case 'tls':
     case 'ssl':
     case 'tls / ssl': return { section: 'http', httpTransportTab: 'tls' }
+    case 'protocol_behavior_session':
+    case 'protocol behavior & session': return { section: 'http', httpTransportTab: 'request_defaults' }
     case 'browser emulation': return { section: 'browser_emulation' }
     case 'web http/html':
     case 'web runtime': return { section: 'web_runtime' }
