@@ -85,7 +85,7 @@ function mergeMaterializedWeb(base?: MaterializedWebSettings, override?: Materia
     merged.network_simulation = structuredClone(override.network_simulation)
   }
   if (hasNonZeroStreaming(override.streaming)) merged.streaming = structuredClone(override.streaming)
-  if (override.data_formatting?.auto_detect || (override.data_formatting?.chain?.length ?? 0) > 0) {
+  if (override.data_formatting?.auto_detect !== undefined || (override.data_formatting?.chain?.length ?? 0) > 0) {
     merged.data_formatting = structuredClone(override.data_formatting)
   }
   if ((override.source_ips?.length ?? 0) > 0) merged.source_ips = structuredClone(override.source_ips)

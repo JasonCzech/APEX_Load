@@ -1,4 +1,5 @@
 import type { ScenarioDataPoolBinding } from './dataPools'
+import type { RuntimeSettingsOverride } from './runtimeSettings'
 
 /** Contracts for execution plans, persisted plan runs, and plan scheduling. */
 export interface ExecutionPlanEntry {
@@ -6,7 +7,7 @@ export interface ExecutionPlanEntry {
   scenario_id: string
   scenario_name?: string
   enabled?: boolean
-  runtime_overrides?: unknown
+  runtime_overrides?: RuntimeSettingsOverride
   failure_policy?: string
   data_pools?: ScenarioDataPoolBinding[]
   timeslot_id?: string

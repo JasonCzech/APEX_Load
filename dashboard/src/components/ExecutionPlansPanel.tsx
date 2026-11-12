@@ -17,8 +17,10 @@ import {
   ExecutionPlanEntry,
   ExecutionPlanRun,
   ExecutionPlanRunResponse,
+  RuntimeSettingsOverride,
   ScenarioDataPoolBinding,
 } from '../types'
+import { hasRuntimeSettingsValues } from './newTestRunModel'
 import type { ExecutionPlanListItem, ExecutionPlanOverlap, ExecutionPlanOverlapPolicy, ExecutionPlanRunEntry, ExecutionPlanRunEntryView, ExecutionPlanRunView } from '../types/executionPlans'
 import {
   OVERLAP_POLICY_OPTIONS,
@@ -71,6 +73,7 @@ type EntryDraft = {
   failure_policy: string
   timeslot_id: string
   data_pools: DataPoolDraft[]
+  runtime_overrides?: RuntimeSettingsOverride
 }
 
 type PlanDraft = {
@@ -520,6 +523,9 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           failure_policy: e.failure_policy,
           timeslot_id: e.timeslot_id.trim() || undefined,
           data_pools: pools.length > 0 ? pools : undefined,
+          ...(hasRuntimeSettingsValues(e.runtime_overrides)
+            ? { runtime_overrides: structuredClone(e.runtime_overrides) }
+            : {}),
         }
       })
 
@@ -681,6 +687,9 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               failure_policy: e.failure_policy || 'halt',
               timeslot_id: e.timeslot_id || '',
               data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias, ...(dp.access_mode === 'live' ? { binding: dp } : {}) })),
+              ...(hasRuntimeSettingsValues(e.runtime_overrides)
+                ? { runtime_overrides: structuredClone(e.runtime_overrides) }
+                : {}),
             }))
           : [{ ...emptyEntry }],
 		}
@@ -882,6 +891,14 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                         <span>
                           {entry.enabled === false ? 'turned off' : FAILURE_POLICY_OPTIONS.find(option => option.value === (entry.failure_policy || 'halt'))?.summary}
                         </span>
+                        {hasRuntimeSettingsValues(entry.runtime_overrides) && (
+                          <>
+                            {' · '}
+                            <span className="pp-pill pp-pill-label" data-testid={`plan-entry-${entry.order}-runtime-overrides-badge`}>
+                              Runtime overrides
+                            </span>
+                          </>
+                        )}
                       </li>
                     ))}
                     {plan.entries.length > CARD_ENTRY_LIMIT ? <li className="pp-plan-entries-more">and {plan.entries.length - CARD_ENTRY_LIMIT} more</li> : null}
@@ -1056,6 +1073,11 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                       </div>
                       </div>
                       <div className="pp-entry-advanced">
+                        {hasRuntimeSettingsValues(entry.runtime_overrides) && (
+                          <span className="pp-pill pp-pill-label" title="Runtime overrides configured via API or MCP are preserved when saving" data-testid={`entry-${index + 1}-runtime-overrides-badge`}>
+                            Runtime overrides
+                          </span>
+                        )}
                         <label className="pp-entry-advanced-field">
                           <span>Timeslot</span>
                           {planReferences.timeslots ? (

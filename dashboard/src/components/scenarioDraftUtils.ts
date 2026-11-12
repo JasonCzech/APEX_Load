@@ -66,12 +66,27 @@ function hydrateCanonicalRuntimeControls(settings: ScenarioRuntimeSettingsDraft)
   const hasRunLogic = settings.run_logic !== undefined
   const hasLog = settings.log !== undefined
   const hasBrowserConfig = settings.browser_config !== undefined
+  const eh = settings.error_handling
   return {
     ...settings,
     iterations: hasRunLogic ? settings.run_logic?.iterations : settings.iterations,
     auto_transactions: hasRunLogic ? (settings.run_logic?.auto_transactions ?? '') : (settings.auto_transactions ?? ''),
     log_level: hasLog ? (settings.log?.level ?? '') : (settings.log_level ?? ''),
     browser: hasBrowserConfig ? compactBrowserFromCanonical(settings) : settings.browser,
+    ...(eh !== undefined
+      ? {
+          continue_on_error: settings.continue_on_error ?? eh.continue_on_error,
+          snapshot_on_error: settings.snapshot_on_error ?? eh.snapshot_on_error,
+          fail_transaction_on_error_message:
+            settings.fail_transaction_on_error_message ?? eh.fail_transaction_on_error_message,
+          max_retries: settings.max_retries ?? eh.max_retries,
+          retry_delay_ms: settings.retry_delay_ms ?? eh.retry_delay_ms,
+          retry_backoff: settings.retry_backoff ?? eh.retry_backoff,
+          retry_on: settings.retry_on ?? (eh.retry_on ? [...eh.retry_on] : undefined),
+          honor_retry_after: settings.honor_retry_after ?? eh.honor_retry_after,
+          retry_after_max_ms: settings.retry_after_max_ms ?? eh.retry_after_max_ms,
+        }
+      : {}),
   }
 }
 
@@ -100,9 +115,14 @@ export function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): S
     // is an absent section by definition.
     continue_on_error: errorHandling == null ? undefined : errorHandling.continue_on_error,
     snapshot_on_error: errorHandling == null ? undefined : (errorHandling.snapshot_on_error ?? false),
+    fail_transaction_on_error_message:
+      errorHandling == null ? undefined : errorHandling.fail_transaction_on_error_message,
     max_retries: errorHandling?.max_retries,
     retry_delay_ms: errorHandling?.retry_delay_ms,
     retry_backoff: errorHandling?.retry_backoff,
+    retry_on: errorHandling?.retry_on ? [...errorHandling.retry_on] : undefined,
+    honor_retry_after: errorHandling == null ? undefined : errorHandling.honor_retry_after,
+    retry_after_max_ms: errorHandling?.retry_after_max_ms,
     log: cloneValue(settings?.log),
     run_logic: cloneValue(settings?.run_logic),
     http: cloneValue(settings?.http),
@@ -149,6 +169,23 @@ function updateRuntimeSetting(
       device_profile: browser?.device_profile,
       touch_mode: browser?.touch_mode,
       orientation: browser?.orientation,
+    })
+  }
+  if (
+    settings.error_handling !== undefined &&
+    (field === 'continue_on_error' ||
+      field === 'snapshot_on_error' ||
+      field === 'fail_transaction_on_error_message' ||
+      field === 'max_retries' ||
+      field === 'retry_delay_ms' ||
+      field === 'retry_backoff' ||
+      field === 'retry_on' ||
+      field === 'honor_retry_after' ||
+      field === 'retry_after_max_ms')
+  ) {
+    next.error_handling = withoutUndefinedValues({
+      ...settings.error_handling,
+      [field]: value,
     })
   }
   return next

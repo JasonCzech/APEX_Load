@@ -202,12 +202,12 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
               <option value="resource">Resource</option>
             </select>
           </label>
-          <label className={`scenario-option-card ${check.fail_if_found ? 'selected' : ''}`}>
-            <input type="checkbox" checked={Boolean(check.fail_if_found)} onChange={event => patchContentCheck(index, { fail_if_found: event.target.checked || undefined })} />
+          <label className={`scenario-option-card ${check.fail_if_found !== false ? 'selected' : ''}`}>
+            <input type="checkbox" checked={check.fail_if_found !== false} onChange={event => patchContentCheck(index, { fail_if_found: event.target.checked })} />
             <div><strong>Fail if found</strong></div>
           </label>
           <label className={`scenario-option-card ${check.case_insensitive ? 'selected' : ''}`}>
-            <input type="checkbox" checked={Boolean(check.case_insensitive)} onChange={event => patchContentCheck(index, { case_insensitive: event.target.checked || undefined })} />
+            <input type="checkbox" checked={Boolean(check.case_insensitive)} onChange={event => patchContentCheck(index, { case_insensitive: event.target.checked })} />
             <div><strong>Case insensitive</strong></div>
           </label>
           <button type="button" className="link-button" onClick={() => patchWeb({ content_checks: contentChecks.filter((_, i) => i !== index) })}>Remove</button>
@@ -243,8 +243,8 @@ export default function WebHttpTab({ web, inheritedWeb, setWeb }: WebHttpTabProp
         <div><h4>Data formatting</h4></div>
       </div>
       <div className="scenario-option-grid">
-        <label className={`scenario-option-card ${web?.data_formatting?.auto_detect ? 'selected' : ''}`}>
-          <input type="checkbox" checked={Boolean(web?.data_formatting?.auto_detect)} onChange={event => patchWeb({ data_formatting: { ...web?.data_formatting, auto_detect: event.target.checked || undefined } })} />
+        <label className={`scenario-option-card ${(web?.data_formatting?.auto_detect ?? inheritedWeb?.data_formatting?.auto_detect) ? 'selected' : ''}`}>
+          <input type="checkbox" checked={Boolean(web?.data_formatting?.auto_detect ?? inheritedWeb?.data_formatting?.auto_detect)} onChange={event => patchWeb({ data_formatting: { ...inheritedWeb?.data_formatting, ...web?.data_formatting, auto_detect: event.target.checked } })} />
           <div><strong>Auto-detect formatting</strong><span>Detect and decode response encodings automatically.</span></div>
         </label>
       </div>

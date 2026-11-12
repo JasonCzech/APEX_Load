@@ -210,6 +210,24 @@ function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetai
   return scriptDetail.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
 
+function formatEffectiveHTTPRuntime(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
+  const groupHttp = group.runtime_settings?.http
+  const testHttp = test.runtime_settings?.http
+  if (!scriptDetail && !groupHttp && !testHttp) return 'Not exposed by run snapshot'
+  const protocol = scriptDetail?.protocol || group.protocol
+  const version =
+    groupHttp?.version !== undefined
+      ? groupHttp.version
+      : testHttp?.version !== undefined
+        ? testHttp.version
+        : scriptDetail?.script?.config?.http?.version
+  const maxConns =
+    groupHttp?.max_conns_per_host
+    ?? testHttp?.max_conns_per_host
+    ?? scriptDetail?.script?.config?.http?.max_conns_per_host
+  return `${formatScriptHTTPVersion(protocol, version)} · ${maxConns || 100} conns/host`
+}
+
 function formatGoalNumber(value: number, suffix = ''): string {
   return `${Number.isInteger(value) ? value.toString() : value.toFixed(1)}${suffix}`
 }
@@ -639,7 +657,7 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>
-                            <span className="scenario-script-detail-value">{detail ? `${formatScriptHTTPVersion(detail.protocol, detail.script?.config?.http?.version)} · ${detail.script?.config?.http?.max_conns_per_host || 100} conns/host` : 'Not exposed by run snapshot'}</span>
+                            <span className="scenario-script-detail-value">{formatEffectiveHTTPRuntime(group, detail, test)}</span>
                           </div>
                         </div>
 

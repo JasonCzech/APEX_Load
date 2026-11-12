@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScenarioFormState } from '../types/scenarioAuthoring'
-import { scenarioFormStateFromStoredScenario, runtimeSettingsFromForm, replaceScenarioRuntimeDefaults, reseedScenarioGroups, seededScenarioRuntime } from './scenarioFormModel'
+import {
+  scenarioFormStateFromStoredScenario,
+  runtimeSettingsFromForm,
+  replaceScenarioRuntimeDefaults,
+  reseedScenarioGroups,
+  scenarioErrorHandlingFlag,
+  seededScenarioRuntime,
+  withScenarioErrorHandlingFlag,
+} from './scenarioFormModel'
 
 describe('reseedScenarioGroups', () => {
   it('preserves groups beyond the selected shape and does not invent script mappings', () => {
@@ -95,4 +103,46 @@ it('preserves explicit live binding options through edit and clone without alias
   form.data_pools![0].live_options!.columns!.push('changed')
   expect(scenario.data_pools![0].live_options!.columns).toEqual(['id'])
  }
+})
+
+
+describe('scenarioErrorHandlingFlag & withScenarioErrorHandlingFlag', () => {
+  it('defaults continue_on_error to true when unset and preserves sibling error_handling fields when toggled', () => {
+    const emptyForm = { runtime_settings: undefined, groups: [] } as unknown as ScenarioFormState
+    expect(scenarioErrorHandlingFlag(emptyForm, 'continue_on_error')).toBe(true)
+    expect(scenarioErrorHandlingFlag(emptyForm, 'snapshot_on_error')).toBeUndefined()
+
+    const formWithRetries = {
+      runtime_settings: {
+        error_handling: {
+          max_retries: 3,
+          retry_delay_ms: 500,
+          retry_backoff: 'exponential',
+          retry_on: ['5xx', '429'],
+          honor_retry_after: true,
+          retry_after_max_ms: 10000,
+          fail_transaction_on_error_message: true,
+        },
+      },
+      groups: [],
+    } as unknown as ScenarioFormState
+
+    expect(scenarioErrorHandlingFlag(formWithRetries, 'continue_on_error')).toBe(true)
+
+    const optedOut = withScenarioErrorHandlingFlag(formWithRetries, 'continue_on_error', false)
+    expect(scenarioErrorHandlingFlag(optedOut, 'continue_on_error')).toBe(false)
+    expect(optedOut.runtime_settings?.error_handling).toEqual({
+      continue_on_error: false,
+      max_retries: 3,
+      retry_delay_ms: 500,
+      retry_backoff: 'exponential',
+      retry_on: ['5xx', '429'],
+      honor_retry_after: true,
+      retry_after_max_ms: 10000,
+      fail_transaction_on_error_message: true,
+    })
+
+    const roundTripped = replaceScenarioRuntimeDefaults(optedOut, runtimeSettingsFromForm(optedOut))
+    expect(roundTripped.runtime_settings?.error_handling).toEqual(optedOut.runtime_settings?.error_handling)
+  })
 })

@@ -1586,3 +1586,50 @@ it('uses one execution contract for scenario save, new run and revision with ind
  expect(saved.groups[0].stages?.[0].duration).toBe('1m')
  expect(saved.data_pools?.map(binding=>binding.alias)).toEqual(['customers','orders'])
 })
+
+
+it('preserves all 9 ErrorHandlingConfig fields across round-trip payload generation', () => {
+  const fullErrorHandling = {
+    continue_on_error: false,
+    snapshot_on_error: true,
+    fail_transaction_on_error_message: true,
+    max_retries: 3,
+    retry_delay_ms: 400,
+    retry_backoff: 'exponential',
+    retry_on: ['5xx', '429'],
+    honor_retry_after: true,
+    retry_after_max_ms: 12000,
+  }
+  const draft = buildScenarioDraftFromTest({
+    id: 'test-9-eh',
+    name: 'All 9 Error Handling Fields',
+    status: 'QUEUED',
+    total_vusers: 1,
+    duration: '1m',
+    created_at: '2026-07-19T12:00:00Z',
+    runtime_settings: { error_handling: fullErrorHandling },
+    groups: [{
+      name: 'Load',
+      script_id: 'script-1',
+      protocol: 'http',
+      vusers: 2,
+      initialization: 'at_runtime',
+      runtime_settings: { error_handling: fullErrorHandling },
+    }],
+    script_id: 'script-1',
+  } as never)
+
+  const payload = buildCreateTestPayload({
+    duration: draft.duration,
+    startDelay: draft.startDelay,
+    scenarioMode: draft.scenarioMode,
+    scriptShakeout: draft.scriptShakeout,
+    resourceBaseline: draft.resourceBaseline,
+    assignment: draft.assignment,
+    groups: draft.groups,
+    goalConfig: draft.goalConfig,
+    runtimeSettings: draft.runtimeSettings,
+  })
+  expect(payload.runtime_settings?.error_handling).toEqual(fullErrorHandling)
+  expect(payload.groups?.[0].runtime_settings?.error_handling).toEqual(fullErrorHandling)
+})

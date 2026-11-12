@@ -327,6 +327,9 @@ export interface ErrorHandlingConfig {
   max_retries?: number
   retry_delay_ms?: number
   retry_backoff?: string
+  retry_on?: string[]
+  honor_retry_after?: boolean
+  retry_after_max_ms?: number
   snapshot_on_error?: boolean
 }
 

@@ -7,7 +7,7 @@
 // applicability rule (see pkg/api fieldApplicableForProtocol).
 
 import { type RuntimeBrowserSettings, type RuntimeJavaVuserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
-import { type ScriptConfig } from '../types/scripts'
+import { type ErrorHandlingConfig, type ScriptConfig } from '../types/scripts'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { formatHTTPVersion } from './httpVersionModel'
 import { formatPacingTiming } from './runtimeTiming'
@@ -199,6 +199,55 @@ export const EMPTY_RUNTIME_DRAFT: ScenarioRuntimeSettingsDraft = {
   auto_transactions: '',
 }
 
+/**
+ * errorHandlingFromDraft extracts all 9 ErrorHandlingConfig fields from a
+ * ScenarioRuntimeSettingsDraft (resolving flat fields with fallback to
+ * draft.error_handling). Returns undefined when no field is set.
+ */
+export function errorHandlingFromDraft(draft?: ScenarioRuntimeSettingsDraft): ErrorHandlingConfig | undefined {
+  if (!draft) return undefined
+  const base = draft.error_handling
+  const continueOnError = draft.continue_on_error !== undefined ? draft.continue_on_error : base?.continue_on_error
+  const snapshotOnError = draft.snapshot_on_error !== undefined ? draft.snapshot_on_error : base?.snapshot_on_error
+  const failTransactionOnErrorMessage =
+    draft.fail_transaction_on_error_message !== undefined
+      ? draft.fail_transaction_on_error_message
+      : base?.fail_transaction_on_error_message
+  const maxRetries = draft.max_retries !== undefined ? draft.max_retries : base?.max_retries
+  const retryDelayMs = draft.retry_delay_ms !== undefined ? draft.retry_delay_ms : base?.retry_delay_ms
+  const rawBackoff = draft.retry_backoff !== undefined ? draft.retry_backoff : base?.retry_backoff
+  const retryBackoff = rawBackoff || undefined
+  const rawRetryOn = draft.retry_on !== undefined ? draft.retry_on : base?.retry_on
+  const retryOn = rawRetryOn && rawRetryOn.length > 0 ? [...rawRetryOn] : undefined
+  const honorRetryAfter = draft.honor_retry_after !== undefined ? draft.honor_retry_after : base?.honor_retry_after
+  const retryAfterMaxMs = draft.retry_after_max_ms !== undefined ? draft.retry_after_max_ms : base?.retry_after_max_ms
+
+  if (
+    continueOnError === undefined &&
+    snapshotOnError === undefined &&
+    failTransactionOnErrorMessage === undefined &&
+    maxRetries === undefined &&
+    retryDelayMs === undefined &&
+    retryBackoff === undefined &&
+    retryOn === undefined &&
+    honorRetryAfter === undefined &&
+    retryAfterMaxMs === undefined
+  ) {
+    return undefined
+  }
+  const out: ErrorHandlingConfig = {}
+  if (continueOnError !== undefined) out.continue_on_error = continueOnError
+  if (snapshotOnError !== undefined) out.snapshot_on_error = snapshotOnError
+  if (failTransactionOnErrorMessage !== undefined) out.fail_transaction_on_error_message = failTransactionOnErrorMessage
+  if (maxRetries !== undefined) out.max_retries = maxRetries
+  if (retryDelayMs !== undefined) out.retry_delay_ms = retryDelayMs
+  if (retryBackoff !== undefined) out.retry_backoff = retryBackoff
+  if (retryOn !== undefined) out.retry_on = retryOn
+  if (honorRetryAfter !== undefined) out.honor_retry_after = honorRetryAfter
+  if (retryAfterMaxMs !== undefined) out.retry_after_max_ms = retryAfterMaxMs
+  return out
+}
+
 /** isRuntimeDraftEmpty reports whether a draft carries no actual override. */
 export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boolean {
   if (!draft) return true
@@ -209,11 +258,7 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.browser &&
     !draft.log_level &&
     !draft.auto_transactions &&
-    draft.continue_on_error === undefined &&
-    draft.snapshot_on_error === undefined &&
-    draft.max_retries === undefined &&
-    draft.retry_delay_ms === undefined &&
-    !draft.retry_backoff &&
+    errorHandlingFromDraft(draft) === undefined &&
     !draft.log &&
     !draft.run_logic &&
     !draft.http &&
@@ -262,9 +307,13 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     auto_transactions: override.auto_transactions || '',
     continue_on_error: override.error_handling?.continue_on_error,
     snapshot_on_error: override.error_handling?.snapshot_on_error,
+    fail_transaction_on_error_message: override.error_handling?.fail_transaction_on_error_message,
     max_retries: override.error_handling?.max_retries,
     retry_delay_ms: override.error_handling?.retry_delay_ms,
     retry_backoff: override.error_handling?.retry_backoff,
+    retry_on: override.error_handling?.retry_on ? [...override.error_handling.retry_on] : undefined,
+    honor_retry_after: override.error_handling?.honor_retry_after,
+    retry_after_max_ms: override.error_handling?.retry_after_max_ms,
     log: override.log,
     run_logic: override.run_logic,
     http: override.http,
@@ -287,21 +336,7 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
  */
 export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): RuntimeSettingsOverride | undefined {
   if (isRuntimeDraftEmpty(draft) || !draft) return undefined
-  const hasErrorHandling =
-    draft.continue_on_error !== undefined ||
-    draft.snapshot_on_error !== undefined ||
-    draft.max_retries !== undefined ||
-    draft.retry_delay_ms !== undefined ||
-    Boolean(draft.retry_backoff)
-  const errorHandling = hasErrorHandling
-    ? {
-        ...(draft.continue_on_error !== undefined ? { continue_on_error: draft.continue_on_error } : {}),
-        ...(draft.snapshot_on_error !== undefined ? { snapshot_on_error: draft.snapshot_on_error } : {}),
-        ...(draft.max_retries !== undefined ? { max_retries: draft.max_retries } : {}),
-        ...(draft.retry_delay_ms !== undefined ? { retry_delay_ms: draft.retry_delay_ms } : {}),
-        ...(draft.retry_backoff ? { retry_backoff: draft.retry_backoff } : {}),
-      }
-    : undefined
+  const errorHandling = errorHandlingFromDraft(draft)
   return {
     iterations: draft.iterations,
     pacing: draft.pacing?.type ? draft.pacing : undefined,

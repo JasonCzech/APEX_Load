@@ -1019,4 +1019,49 @@ describe('ExecutionPlansPanel', () => {
     expect(runNow?.disabled).toBe(true)
     expect(document.getElementById(runNow?.getAttribute('aria-describedby') || '')?.textContent).toBe('A run of this plan is in progress; Run now is available when it ends.')
   })
+
+  it('preserves entry runtime_overrides across edit and save and renders a read-only indicator badge', async () => {
+    const runtimeOverrides = {
+      log_level: 'extended',
+      error_handling: { continue_on_error: false, max_retries: 3 },
+      http: { version: '2', max_conns_per_host: 64 },
+    }
+    plansApiMock.listExecutionPlans.mockResolvedValue({
+      execution_plans: [
+        plan({
+          revision: 4,
+          entries: [
+            { order: 0, scenario_id: 's1', scenario_name: 'Checkout Smoke', enabled: true, failure_policy: 'halt', runtime_overrides: runtimeOverrides },
+            { order: 1, scenario_id: 's2', scenario_name: 'Search Spike', enabled: true, failure_policy: 'continue' },
+          ],
+        }),
+      ],
+      count: 1,
+    })
+    plansApiMock.updateExecutionPlan.mockResolvedValue({ id: 'p1' })
+
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+    })
+    await flush()
+
+    expect(container.querySelector('[data-testid="plan-entry-0-runtime-overrides-badge"]')?.textContent).toBe('Runtime overrides')
+    expect(container.querySelector('[data-testid="plan-entry-1-runtime-overrides-badge"]')).toBeNull()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')?.click()
+    })
+    expect(document.querySelector('[data-testid="entry-1-runtime-overrides-badge"]')?.textContent).toBe('Runtime overrides')
+    expect(document.querySelector('[data-testid="entry-2-runtime-overrides-badge"]')).toBeNull()
+
+    await act(async () => setValue(container.querySelector('input[placeholder="e.g. nightly regression"]'), 'nightly-with-overrides'))
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('.pp-modal-actions button')).find(button => button.textContent === 'Save')?.click()
+    })
+    await flush()
+
+    const saved = plansApiMock.updateExecutionPlan.mock.calls[0][1]
+    expect(saved.entries[0].runtime_overrides).toEqual(runtimeOverrides)
+    expect(saved.entries[1].runtime_overrides).toBeUndefined()
+  })
 })

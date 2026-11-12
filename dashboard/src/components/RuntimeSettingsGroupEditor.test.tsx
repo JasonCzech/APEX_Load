@@ -4,9 +4,11 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import CreateTestRuntimeOverrides from './CreateTestRuntimeOverrides'
 import RuntimeSettingsGroupEditor, { type RuntimeEditorGroup } from './RuntimeSettingsGroupEditor'
 import { type ScenarioRuntimeSettingsDraft } from '../types'
 import { editReplacementSection } from './runtimeSettingsApply'
+import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -1557,7 +1559,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => cacheCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     const cacheWritten = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(cacheWritten?.http).toMatchObject({ cache_enabled: true })
-    expect(cacheWritten?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
+    expect(cacheWritten?.browser_emulation).toBeUndefined()
   })
 
   it('keeps this group cache and language edits when browser emulation mode returns to Inherit', () => {
@@ -1656,5 +1658,210 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(container.textContent).toContain('https://orders.example.test/v1/orders')
     expect(container.textContent).toContain('X-Action')
     expect(container.textContent).toContain('Action override')
+  })
+
+  it('keeps continue_on_error undefined when editing sibling error_handling fields and preserves all 9 error_handling fields', () => {
+    const onChange = vi.fn()
+    const initialDraft = runtimeDraftFromOverride({
+      error_handling: {
+        fail_transaction_on_error_message: true,
+        max_retries: 2,
+        retry_delay_ms: 300,
+        retry_backoff: 'exponential',
+        retry_on: ['5xx', '429'],
+        honor_retry_after: true,
+        retry_after_max_ms: 8000,
+      },
+    })
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={[{ name: 'Checkout', scriptId: 's1', protocol: 'http', scriptConfig: { base_url: '' } }]}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[initialDraft]}
+          engineDefaults={{
+            base_url: '',
+            error_handling: {
+              continue_on_error: false,
+              snapshot_on_error: false,
+              max_retries: 0,
+              retry_delay_ms: 1000,
+              retry_backoff: 'fixed',
+            },
+          }}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    const continueCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Continue on error'))
+    expect(continueCheckbox?.checked).toBe(true)
+
+    const snapshotCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Snapshot on error'))
+    expect(snapshotCheckbox).toBeTruthy()
+    act(() => snapshotCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const written = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(written?.continue_on_error).toBeUndefined()
+    expect(written?.snapshot_on_error).toBe(true)
+    expect(overrideFromRuntimeDraft(written)?.error_handling).toEqual({
+      snapshot_on_error: true,
+      fail_transaction_on_error_message: true,
+      max_retries: 2,
+      retry_delay_ms: 300,
+      retry_backoff: 'exponential',
+      retry_on: ['5xx', '429'],
+      honor_retry_after: true,
+      retry_after_max_ms: 8000,
+    })
+  })
+
+  it('renders MessageDetailFields and PropertyAnalyticsFields when applicableProtocols is used without focusGroup.protocol', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={[{ name: 'Test overrides', scriptId: 'test-overrides' }]}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined]}
+          applicableProtocols={['http', 'browser', 'java_vuser']}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    expect(container.textContent).toContain('Exchange capture')
+    expect(container.textContent).toContain('Response property analytics')
+  })
+
+  it('aligns HTTP cache read precedence with simulate_cache ?? http.cache_enabled', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={[{
+            name: 'Checkout',
+            scriptId: 's1',
+            protocol: 'http',
+            scriptConfig: {
+              base_url: '',
+              browser_emulation: {
+                mode: 'specific',
+                browser_type: 'chrome',
+                cache: { simulate_cache: true },
+              },
+            },
+          }]}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined]}
+          engineDefaults={{ base_url: '', http: { cache_enabled: false } }}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    const sessionCacheTab = Array.from(container.querySelectorAll('[role="tab"]'))
+      .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
+    act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
+    expect(cacheCheckbox?.checked).toBe(true)
+  })
+
+  it('allows WebHttpTab content_checks.fail_if_found, case_insensitive, and data_formatting.auto_detect to be overridden from true to false', () => {
+    const onChange = vi.fn()
+    const initialDraft = runtimeDraftFromOverride({
+      web_runtime: {
+        content_checks: [{ text: 'error', case_insensitive: true }],
+      },
+    })
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={[{
+            name: 'Checkout',
+            scriptId: 's1',
+            protocol: 'http',
+            scriptConfig: {
+              base_url: '',
+              web_runtime: {
+                data_formatting: { auto_detect: true },
+              },
+            },
+          }]}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[initialDraft]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Web/HTTP')
+    const failIfFoundCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Fail if found'))
+    const caseInsensitiveCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Case insensitive'))
+    const autoDetectCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Auto-detect formatting'))
+
+    // Unset fail_if_found defaults to true (checked).
+    expect(failIfFoundCheckbox?.checked).toBe(true)
+    expect(caseInsensitiveCheckbox?.checked).toBe(true)
+    expect(autoDetectCheckbox?.checked).toBe(true)
+
+    act(() => failIfFoundCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const afterFailIfFound = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(afterFailIfFound?.web_runtime?.content_checks?.[0]?.fail_if_found).toBe(false)
+
+    act(() => caseInsensitiveCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const afterCaseInsensitive = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(afterCaseInsensitive?.web_runtime?.content_checks?.[0]?.case_insensitive).toBe(false)
+
+    act(() => autoDetectCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const afterAutoDetect = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(afterAutoDetect?.web_runtime?.data_formatting?.auto_detect).toBe(false)
+  })
+
+  it('passes engineDefaults through CreateTestRuntimeOverrides so test-level edits retain sibling engine defaults', () => {
+    const onReplace = vi.fn()
+    act(() => {
+      root.render(
+        <CreateTestRuntimeOverrides
+          runtimeSettings={{ log_level: '', auto_transactions: '' }}
+          engineDefaults={{
+            base_url: '',
+            http: {
+              version: '2',
+              connect_timeout_ms: 5000,
+              request_timeout_ms: 30000,
+              max_conns_per_host: 100,
+            },
+          }}
+          groupProtocols={['http']}
+          onReplaceRuntimeSettings={onReplace}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Timeouts')
+    const connectInput = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Connect timeout'))
+    expect(connectInput).toBeTruthy()
+    act(() => setInputValue(connectInput!, '2000'))
+
+    const next = onReplace.mock.calls[onReplace.mock.calls.length - 1]?.[0]
+    expect(next?.http).toEqual({
+      version: '2',
+      connect_timeout_ms: 2000,
+      request_timeout_ms: 30000,
+      max_conns_per_host: 100,
+    })
   })
 })

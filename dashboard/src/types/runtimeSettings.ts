@@ -120,9 +120,14 @@ export interface ScenarioRuntimeSettingsDraft {
   continue_on_error?: boolean
   /** Undefined inherits the script/default setting; false is an explicit override. */
   snapshot_on_error?: boolean
+  fail_transaction_on_error_message?: boolean
   max_retries?: number
   retry_delay_ms?: number
   retry_backoff?: string
+  retry_on?: string[]
+  honor_retry_after?: boolean
+  retry_after_max_ms?: number
+  error_handling?: ErrorHandlingConfig
   log?: LogConfig
   run_logic?: RunLogicConfig
   http?: HTTPConfig

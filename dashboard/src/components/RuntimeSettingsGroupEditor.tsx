@@ -12,6 +12,7 @@ import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
   HTTP_VERSION_OPTIONS,
+  errorHandlingFromDraft,
   formatEffectiveRuntimeField,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
@@ -237,14 +238,17 @@ export default function RuntimeSettingsGroupEditor({
   const inheritedError: ErrorHandlingSettings = structuredClone(inheritedOverride?.error_handling ?? {})
   // Continue-on-error follows the scenario policy rather than the collapsed
   // inheritance chain: inside a scenario it is enabled unless a layer explicitly
-  // disables it, so the engine's stop-on-error default never applies here. This
-  // mirrors resolveGroupContinueOnError on the controller — only an explicit
-  // scenario or script value displaces the enabled-by-default policy, and the
-  // group's own override (currentError) still sits above this baseline.
-  inheritedError.continue_on_error =
+  // disables it, so the engine's stop-on-error default never applies here. Only
+  // keep an explicit scenario or script setting on inheritedError so editing
+  // sibling error_handling fields does not force continue_on_error to a boolean.
+  const explicitInheritedContinueOnError =
     scenarioDefault?.error_handling?.continue_on_error
     ?? focusGroup.scriptConfig?.error_handling?.continue_on_error
-    ?? true
+  if (explicitInheritedContinueOnError === undefined) {
+    delete inheritedError.continue_on_error
+  } else {
+    inheritedError.continue_on_error = explicitInheritedContinueOnError
+  }
   const inheritedLog: LogSettings = structuredClone(
     inheritedOverride?.log ?? (inheritedOverride?.log_level ? { level: inheritedOverride.log_level } : {}),
   )
@@ -263,15 +267,7 @@ export default function RuntimeSettingsGroupEditor({
   }
   const inheritedIterations = inheritedRunLogic.iterations ?? inheritedOverride?.iterations
 
-  const flatCurrentError: ErrorHandlingSettings = {
-    continue_on_error: draft.continue_on_error,
-    snapshot_on_error: draft.snapshot_on_error,
-    max_retries: draft.max_retries,
-    retry_delay_ms: draft.retry_delay_ms,
-    retry_backoff: draft.retry_backoff || undefined,
-  }
-  const hasCurrentError = Object.values(flatCurrentError).some(value => value !== undefined)
-  const currentError = hasCurrentError ? flatCurrentError : undefined
+  const currentError = errorHandlingFromDraft(draft)
 
   const hasLegacyLog = Boolean(draft.log_level)
   const currentLog: LogSettings | undefined = draft.log
@@ -411,12 +407,20 @@ export default function RuntimeSettingsGroupEditor({
 
   const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => {
     const effective = editReplacementSection(currentError, next, inheritedError)
+    const hasAny = Object.values(effective).some(
+      value => value !== undefined && value !== '' && (!Array.isArray(value) || value.length > 0),
+    )
     patch({
       continue_on_error: effective.continue_on_error,
       snapshot_on_error: effective.snapshot_on_error,
+      fail_transaction_on_error_message: effective.fail_transaction_on_error_message,
       max_retries: effective.max_retries,
       retry_delay_ms: effective.retry_delay_ms,
       retry_backoff: effective.retry_backoff,
+      retry_on: effective.retry_on,
+      honor_retry_after: effective.honor_retry_after,
+      retry_after_max_ms: effective.retry_after_max_ms,
+      error_handling: hasAny ? effective : undefined,
     })
   }
 
@@ -475,7 +479,7 @@ export default function RuntimeSettingsGroupEditor({
   }
   const httpSettingsValue: HTTPSettings = {
     ...effectiveHttp,
-    cache_enabled: effectiveHttp.cache_enabled ?? effectiveBrowserEmulation.cache?.simulate_cache,
+    cache_enabled: effectiveBrowserEmulation.cache?.simulate_cache ?? effectiveHttp.cache_enabled,
   }
   const httpOriginLabel = draft.http
     ? 'Group override'
@@ -498,7 +502,7 @@ export default function RuntimeSettingsGroupEditor({
   const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
   const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
   const patchHTTPSettings = (next: Partial<HTTPSettings>) => {
-    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled')) {
+    if (!Object.prototype.hasOwnProperty.call(next, 'cache_enabled') || draft.browser_emulation?.cache?.simulate_cache === undefined) {
       patchHttp(next)
       return
     }
@@ -560,7 +564,18 @@ export default function RuntimeSettingsGroupEditor({
         break
       }
       case 'error_handling':
-        patch({ continue_on_error: undefined, snapshot_on_error: undefined, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
+        patch({
+          continue_on_error: undefined,
+          snapshot_on_error: undefined,
+          fail_transaction_on_error_message: undefined,
+          max_retries: undefined,
+          retry_delay_ms: undefined,
+          retry_backoff: undefined,
+          retry_on: undefined,
+          honor_retry_after: undefined,
+          retry_after_max_ms: undefined,
+          error_handling: undefined,
+        })
         break
       case 'results':
         patch({ results: undefined })
@@ -1007,11 +1022,11 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'error_handling' && (
           <>
-            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, message_detail: value } })} />}
-            {isRuntimeFieldApplicable('results', focusGroup.protocol) && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, property_analytics: value } })} />}
+            {fieldApplicable('results') && <MessageDetailFields value={draft.results?.message_detail ?? inheritedOverride?.results?.message_detail} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, message_detail: value } })} />}
+            {fieldApplicable('results') && <PropertyAnalyticsFields value={draft.results?.property_analytics ?? inheritedOverride?.results?.property_analytics} onChange={value => patch({ results: { ...inheritedOverride?.results, ...draft.results, property_analytics: value } })} />}
             <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${effectiveError.continue_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={effectiveError.continue_on_error ?? false} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
+              <label className={`scenario-option-card ${(effectiveError.continue_on_error ?? true) ? 'selected' : ''}`}>
+                <input type="checkbox" checked={effectiveError.continue_on_error ?? true} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
                 <div><strong>Continue on error</strong><span>Keep iterating after a failed step.</span></div>
               </label>
               <label className={`scenario-option-card ${effectiveError.snapshot_on_error ? 'selected' : ''}`}>
