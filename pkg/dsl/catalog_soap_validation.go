@@ -29,14 +29,14 @@ func validateSOAPScriptIssues(script *Script) []string {
 		}
 	}
 
-	for i, action := range script.Actions {
+	visitScriptActions(script, func(path string, action Action) {
 		if action.SOAP == nil {
-			continue
+			return
 		}
 		if bodyMode := strings.TrimSpace(action.SOAP.BodyMode); bodyMode != "" && bodyMode != "raw_xml" && bodyMode != "generated" {
-			issues = append(issues, fmt.Sprintf("actions[%d] %q: soap.body_mode must be raw_xml or generated", i, action.Name))
+			issues = append(issues, fmt.Sprintf("%s: soap.body_mode must be raw_xml or generated", actionLabel(path, action)))
 		}
-	}
+	})
 
 	return issues
 }

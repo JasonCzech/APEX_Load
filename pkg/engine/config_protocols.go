@@ -382,7 +382,7 @@ func appendSOAPConfig(cfg map[string]any, script *dsl.Script) {
 			cfg["soap_ws_security_timestamp_ttl_seconds"] = float64(timestamp.TTLSeconds)
 		}
 	}
-	if soapCfg.FaultHandling.FailOnFault {
+	if soapCfg.FaultHandling.FailOnFault != nil && *soapCfg.FaultHandling.FailOnFault {
 		cfg["soap_fault_fail_on_fault"] = true
 	}
 }

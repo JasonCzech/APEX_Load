@@ -223,7 +223,7 @@ func TestSOAPPlanWithReviewPlaceholderStaysSOAP(t *testing.T) {
 				t.Fatal(err)
 			}
 			script := result.Scripts[0]
-			if script.Protocol != "soap" || !script.Config.SOAP.FaultHandling.FailOnFault {
+			if script.Protocol != "soap" || script.Config.SOAP.FaultHandling.FailOnFault == nil || !*script.Config.SOAP.FaultHandling.FailOnFault {
 				t.Fatalf("protocol = %q fail_on_fault = %v, want soap with fail_on_fault", script.Protocol, script.Config.SOAP.FaultHandling.FailOnFault)
 			}
 			gated := false

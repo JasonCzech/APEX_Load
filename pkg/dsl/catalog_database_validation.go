@@ -13,7 +13,7 @@ func validateDatabaseScriptIssues(script *Script) []string {
 	} else if !isAllowedValue(strings.ToLower(strings.TrimSpace(cfg.Driver)), "sqlite", "sqlite3", "postgres", "mysql", "odbc", "oracle") {
 		issues = append(issues, fmt.Sprintf("config.database.driver %q is not supported", cfg.Driver))
 	}
-	if strings.TrimSpace(cfg.DSN) == "" {
+	if strings.TrimSpace(cfg.DSN) == "" && strings.TrimSpace(cfg.DSNSecret) == "" {
 		issues = append(issues, "config.database.dsn is required")
 	}
 	if cfg.MaxOpenConns < 0 {

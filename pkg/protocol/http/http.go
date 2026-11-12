@@ -1576,6 +1576,22 @@ func (h *HTTP) OAuthHTTPClient() *http.Client {
 	return &client
 }
 
+func (h *HTTP) EffectiveDefaultHeaders(action *protocol.Action) (map[string]string, protocol.HeaderList) {
+	if h == nil {
+		if action == nil || !action.ResolvedDefaultHeaders {
+			return nil, nil
+		}
+		return action.DefaultHeaders, action.DefaultHeaderList
+	}
+	defaultHeaders := h.defaultHeaders
+	defaultHeaderList := h.defaultHeaderList
+	if action != nil && action.ResolvedDefaultHeaders {
+		defaultHeaders = mergeDefaultHeaders(h.typedDefaultHeaders, action.DefaultHeaders)
+		defaultHeaderList = action.DefaultHeaderList
+	}
+	return defaultHeaders, defaultHeaderList
+}
+
 func newSpanID() trace.SpanID {
 	var spanID trace.SpanID
 	if _, err := rand.Read(spanID[:]); err != nil || !spanID.IsValid() {

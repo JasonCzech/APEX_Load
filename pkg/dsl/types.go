@@ -508,7 +508,11 @@ type SOAPTimestampConfig struct {
 }
 
 type SOAPFaultHandlingConfig struct {
-	FailOnFault bool `json:"fail_on_fault,omitempty"`
+	FailOnFault *bool `json:"fail_on_fault,omitempty"`
+}
+
+func BoolPtr(b bool) *bool {
+	return &b
 }
 
 type DatabaseConfig struct {

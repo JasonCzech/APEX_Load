@@ -67295,6 +67295,7 @@ paths:
                             properties:
                               fail_on_fault:
                                 type: boolean
+                                nullable: true
                           namespaces:
                             type: object
                             additionalProperties:
@@ -246988,6 +246989,7 @@ paths:
                               properties:
                                 fail_on_fault:
                                   type: boolean
+                                  nullable: true
                             namespaces:
                               type: object
                               additionalProperties:
@@ -257731,6 +257733,7 @@ paths:
                               properties:
                                 fail_on_fault:
                                   type: boolean
+                                  nullable: true
                             namespaces:
                               type: object
                               additionalProperties:
@@ -397369,6 +397372,7 @@ paths:
                               properties:
                                 fail_on_fault:
                                   type: boolean
+                                  nullable: true
                             namespaces:
                               type: object
                               additionalProperties:
@@ -400070,6 +400074,7 @@ paths:
                               properties:
                                 fail_on_fault:
                                   type: boolean
+                                  nullable: true
                             namespaces:
                               type: object
                               additionalProperties:

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"reflect"
 	"strings"
 	"testing"
@@ -698,5 +699,106 @@ func TestEstimateCapacityAdvisoryUsesLiveAvailabilitySnapshot(t *testing.T) {
 	}
 	if advisory.AvailabilitySource != capacityAvailabilityConfiguredPlusLive {
 		t.Fatalf("availability source = %q, want %q", advisory.AvailabilitySource, capacityAvailabilityConfiguredPlusLive)
+	}
+}
+
+func TestCalculateScenarioComplexityResolvesRuntimeOverridesWithoutDoubleCounting(t *testing.T) {
+	heavyScript := &dsl.Script{
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			ErrorHandling: dsl.ErrorHandlingConfig{SnapshotOnError: true},
+			Log:           dsl.LogConfig{Level: "extended"},
+			RunLogic:      dsl.RunLogicConfig{AutoTransactions: "per_action"},
+		},
+		Actions: []dsl.Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+
+	baseScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   heavyScript,
+	}}, nil)
+
+	// Repeating the same extended/per_action/snapshot settings in scenario and
+	// group overrides must replace rather than double-count the overhead.
+	sameOverrideScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   heavyScript,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Log:           &dsl.LogConfig{Level: "extended"},
+			ErrorHandling: &dsl.ErrorHandlingConfig{SnapshotOnError: true},
+			RunLogic:      &dsl.RunLogicConfig{AutoTransactions: "per_action"},
+		},
+	}}, &RuntimeSettingsOverride{
+		LogLevel:         "extended",
+		AutoTransactions: "per_action",
+	})
+	if math.Abs(sameOverrideScore-baseScore) > 1e-9 {
+		t.Fatalf("sameOverrideScore = %v, want %v (no double-counting)", sameOverrideScore, baseScore)
+	}
+
+	// Overriding script-level heavy settings down to standard/none/false must
+	// reduce complexity to match a light script.
+	lightOverrideScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   heavyScript,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Log:           &dsl.LogConfig{Level: "standard"},
+			ErrorHandling: &dsl.ErrorHandlingConfig{SnapshotOnError: false},
+			RunLogic:      &dsl.RunLogicConfig{AutoTransactions: "none"},
+		},
+	}}, nil)
+	if lightOverrideScore >= baseScore {
+		t.Fatalf("lightOverrideScore = %v, want < baseScore %v when overrides disable heavy runtime settings", lightOverrideScore, baseScore)
+	}
+
+	// Group override enabling extended logging on a light script must increase
+	// complexity even when scenario-level runtimeSettings is nil.
+	lightScript := &dsl.Script{
+		Protocol: "http",
+		Actions:  []dsl.Action{{Name: "home", Type: "request", Target: "/"}},
+	}
+	lightBaseScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   lightScript,
+	}}, nil)
+	groupExtendedScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   lightScript,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Log:      &dsl.LogConfig{Level: "extended"},
+			RunLogic: &dsl.RunLogicConfig{AutoTransactions: "per_action"},
+		},
+	}}, nil)
+	if groupExtendedScore <= lightBaseScore {
+		t.Fatalf("groupExtendedScore = %v, want > lightBaseScore %v", groupExtendedScore, lightBaseScore)
+	}
+
+	// Group override with empty Log/RunLogic sections must replace scenario-level
+	// LogLevel/AutoTransactions aliases rather than falling back to them.
+	groupClearedScore, _ := calculateScenarioComplexity([]TestGroup{{
+		Name:     "g1",
+		Protocol: "http",
+		VUsers:   100,
+		script:   lightScript,
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Log:      &dsl.LogConfig{},
+			RunLogic: &dsl.RunLogicConfig{Iterations: 5},
+		},
+	}}, &RuntimeSettingsOverride{
+		LogLevel:         "extended",
+		AutoTransactions: "per_action",
+	})
+	if math.Abs(groupClearedScore-lightBaseScore) > 1e-9 {
+		t.Fatalf("groupClearedScore = %v, want %v when group Log/RunLogic sections clear scenario aliases", groupClearedScore, lightBaseScore)
 	}
 }

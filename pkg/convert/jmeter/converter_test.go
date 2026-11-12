@@ -614,7 +614,7 @@ func TestConvertJMXSOAPHTTPPlan(t *testing.T) {
 	if script.Config.SOAP.Version != "1.1" {
 		t.Fatalf("soap version = %q, want 1.1", script.Config.SOAP.Version)
 	}
-	if !script.Config.SOAP.FaultHandling.FailOnFault {
+	if script.Config.SOAP.FaultHandling.FailOnFault == nil || !*script.Config.SOAP.FaultHandling.FailOnFault {
 		t.Fatal("expected fail_on_fault to be enabled")
 	}
 	if len(script.Actions) != 1 {
