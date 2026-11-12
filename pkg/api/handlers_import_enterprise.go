@@ -20,6 +20,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 
@@ -617,11 +618,19 @@ func looksLikeValidHARJSON(body []byte) bool {
 	var probe struct {
 		Log json.RawMessage `json:"log"`
 	}
-	if err := json.Unmarshal(body, &probe); err != nil {
+	if err := json.Unmarshal(bytes.TrimPrefix(body, []byte("\xef\xbb\xbf")), &probe); err != nil {
 		return false
 	}
 	trimmed := bytes.TrimSpace(probe.Log)
-	return len(trimmed) > 0 && trimmed[0] == '{'
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return false
+	}
+	doc, err := sample.ParseHARDocument(string(body))
+	if err != nil {
+		return false
+	}
+	obs, err := doc.SourceObservations(true)
+	return err == nil && len(obs) > 0
 }
 
 func readValidBundledHARZipEntry(file *zip.File) []byte {

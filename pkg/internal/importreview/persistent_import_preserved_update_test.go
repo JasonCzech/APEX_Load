@@ -244,7 +244,12 @@ func TestAttachLLMAndAgentforceReviewPreserveLiteralCredentials(t *testing.T) {
 		t.Fatalf("AttachAgentforceReview(transform=false) mutated literal auth: init=%#v auth=%q", afScript.Init, afScript.Actions[0].Headers["Authorization"])
 	}
 	AttachAgentforceReview(afScript, "har", nil, true)
+	if len(afScript.Init) != 0 || afScript.Actions[0].Headers["Authorization"] != "Bearer "+agentforceBearer {
+		t.Fatalf("AttachAgentforceReview(transform=true) mutated literal auth: init=%#v auth=%q", afScript.Init, afScript.Actions[0].Headers["Authorization"])
+	}
+	delete(afScript.Actions[0].Headers, "Authorization")
+	AttachAgentforceReview(afScript, "har", nil, true)
 	if len(afScript.Init) != 1 || afScript.Init[0].Params["client_secret"] != "{{secret.SALESFORCE_CLIENT_SECRET}}" {
-		t.Fatalf("AttachAgentforceReview(transform=true) did not prepend OAuth step with {{secret.SALESFORCE_CLIENT_SECRET}}: %#v", afScript.Init)
+		t.Fatalf("AttachAgentforceReview(transform=true) did not prepend OAuth step with {{secret.SALESFORCE_CLIENT_SECRET}} when literal auth is absent: %#v", afScript.Init)
 	}
 }

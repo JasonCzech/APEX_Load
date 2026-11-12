@@ -119,21 +119,27 @@ func TestEnterpriseArchiveImportIgnoresCorruptBundledReplayHARWithoutWarning(t *
 	defer store.Close()
 	server := NewServer(ServerConfig{Store: store, ImportAssetDir: t.TempDir()})
 
-	zipData := enterpriseCollectionTestZIP(t, map[string][]byte{
-		"SalesforceScript/SalesforceScript.usr": []byte("[General]\nType=Web\nRuntimeSettings=default.cfg\n\n[Actions]\nAction=Action.c\n"),
-		"SalesforceScript/default.cfg":          []byte("[HTTP]\nConnectTimeout=20\n"),
-		"SalesforceScript/Action.c":             []byte(testSalesforceVuGenActionC),
-		"SalesforceScript/replay.har":           []byte("{corrupt-har"),
-	})
+	for _, badHAR := range []string{
+		"{corrupt-har",
+		`{"log":{"version":"1.2"}}`,
+		`{"log":{"version":"1.2","entries":[]}}`,
+	} {
+		zipData := enterpriseCollectionTestZIP(t, map[string][]byte{
+			"SalesforceScript/SalesforceScript.usr": []byte("[General]\nType=Web\nRuntimeSettings=default.cfg\n\n[Actions]\nAction=Action.c\n"),
+			"SalesforceScript/default.cfg":          []byte("[HTTP]\nConnectTimeout=20\n"),
+			"SalesforceScript/Action.c":             []byte(testSalesforceVuGenActionC),
+			"SalesforceScript/replay.har":           []byte(badHAR),
+		})
 
-	req := enterpriseCollectionTestRequest(t, "/api/v1/scripts/import/enterprise-script-archive/validate", zipData, nil)
-	rec := httptest.NewRecorder()
-	server.mux.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
-	}
-	if strings.Contains(rec.Body.String(), "Salesforce review failed") {
-		t.Fatalf("corrupt bundled replay.har should be ignored without warning, got: %s", rec.Body.String())
+		req := enterpriseCollectionTestRequest(t, "/api/v1/scripts/import/enterprise-script-archive/validate", zipData, nil)
+		rec := httptest.NewRecorder()
+		server.mux.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("badHAR=%q status = %d, body = %s", badHAR, rec.Code, rec.Body.String())
+		}
+		if strings.Contains(rec.Body.String(), "Salesforce review failed") || strings.Contains(rec.Body.String(), "Aura baseline analysis is incomplete") {
+			t.Fatalf("badHAR=%q should be ignored without warning, got: %s", badHAR, rec.Body.String())
+		}
 	}
 }
 
@@ -253,8 +259,9 @@ func TestWriteErrorPreservesStepCoordinatesAndMultiUnderscoreActionNames(t *test
 
 	t.Run("redacts real secrets inside and outside step coordinate action labels", func(t *testing.T) {
 		jwt := "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+		shortSegJWT := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
 		stripeKey := "sk_live_51H8abc123def456ghi789jkl012"
-		msg := `actions[0] "Start_iPadTest_LrgeBANs_ViewServProm_T08_ClkBackToAccInfo ?password=my_secret_pw_123 ` + jwt + ` ` + stripeKey + `": header token dGhpcyBpcyBhIHNlY3JldCB0b2tlbiB2YWx1ZQ== rejected`
+		msg := `actions[0] "Start_iPadTest_LrgeBANs_ViewServProm_T08_ClkBackToAccInfo https://example.com/very_long_url_path_segment_1234567890 ?password=my_secret_pw_123 ` + jwt + ` ` + shortSegJWT + ` ` + stripeKey + `": header token dGhpcyBpcyBhIHNlY3JldCB0b2tlbiB2YWx1ZQ== rejected`
 		rec := httptest.NewRecorder()
 		writeError(rec, http.StatusBadRequest, msg)
 		var body map[string]string
@@ -262,10 +269,18 @@ func TestWriteErrorPreservesStepCoordinatesAndMultiUnderscoreActionNames(t *test
 			t.Fatal(err)
 		}
 		got := body["error"]
-		if !strings.Contains(got, `actions[0] "Start_iPadTest_LrgeBANs_ViewServProm_T08_ClkBackToAccInfo`) {
-			t.Fatalf("expected action identifier preserved, got %q", got)
+		if !strings.Contains(got, `actions[0] "Start_iPadTest_LrgeBANs_ViewServProm_T08_ClkBackToAccInfo https://example.com/very_long_url_path_segment_1234567890`) {
+			t.Fatalf("expected action identifier and URL path preserved, got %q", got)
 		}
-		for _, secret := range []string{"my_secret_pw_123", jwt, stripeKey, "dGhpcyBpcyBhIHNlY3JldCB0b2tlbiB2YWx1ZQ=="} {
+		for _, secret := range []string{
+			"my_secret_pw_123",
+			jwt,
+			shortSegJWT,
+			"eyJhbGciOiJIUzI1NiJ9",
+			"eyJzdWIiOiIxMjM0In0",
+			stripeKey,
+			"dGhpcyBpcyBhIHNlY3JldCB0b2tlbiB2YWx1ZQ==",
+		} {
 			if strings.Contains(got, secret) {
 				t.Fatalf("expected secret %q to be redacted in %q", secret, got)
 			}

@@ -211,4 +211,91 @@ func TestHeaderListAndHeadersParityAndShortenedActionPrefix(t *testing.T) {
 	if redactedBound.Actions[0].Headers["Cookie"] != wantCookieRef || redactedBound.Actions[0].HeaderList[0].Value != wantCookieRef {
 		t.Fatalf("redacted Cookie header pair not synchronized: headers=%q header_list=%q", redactedBound.Actions[0].Headers["Cookie"], redactedBound.Actions[0].HeaderList[0].Value)
 	}
+
+	// Verify split multi-occurrence bindings across header_list (occurrence 0) and
+	// headers (occurrence 1) merge occurrences across both twins.
+	multiCookieScript := &dsl.Script{
+		Name: "MultiCookieScript", Version: "1", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.lightning.force.com"},
+		Actions: []dsl.Action{{
+			Name:    "CookieRequest",
+			Type:    "request",
+			Method:  "POST",
+			Target:  "/aura",
+			Headers: map[string]string{"Cookie": "sid=" + MaskedScriptSecret + "; csrf=" + MaskedScriptSecret},
+			HeaderList: dsl.HeaderList{
+				{Name: "Cookie", Value: "sid=" + MaskedScriptSecret + "; csrf=" + MaskedScriptSecret},
+			},
+		}},
+	}
+	multiReqs := DiscoverSecretBindingRequirements(multiCookieScript, 0)
+	var listOcc0ID, mapOcc1ID string
+	for _, req := range multiReqs {
+		if req.Path == "/actions/0/header_list/0/value" && req.Occurrence == 0 {
+			listOcc0ID = req.ID
+		}
+		if req.Path == "/actions/0/headers/Cookie" && req.Occurrence == 1 {
+			mapOcc1ID = req.ID
+		}
+	}
+	if listOcc0ID == "" || mapOcc1ID == "" {
+		t.Fatalf("missing multi-occurrence cookie requirements in %#v", multiReqs)
+	}
+	multiBound, multiRemaining, err := ApplyRedactedSecretBindings(multiCookieScript, 0, []SecretBindingSelection{
+		{RequirementID: listOcc0ID, SecretName: "COOKIE_SID"},
+		{RequirementID: mapOcc1ID, SecretName: "COOKIE_CSRF"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(multiRemaining) != 0 {
+		t.Fatalf("expected 0 remaining requirements for split multi-occurrence bindings, got %#v", multiRemaining)
+	}
+	const wantMultiCookie = "sid={{secret.COOKIE_SID}}; csrf={{secret.COOKIE_CSRF}}"
+	if multiBound.Actions[0].Headers["Cookie"] != wantMultiCookie || multiBound.Actions[0].HeaderList[0].Value != wantMultiCookie {
+		t.Fatalf("split multi-occurrence Cookie pair not synchronized: headers=%q header_list=%q", multiBound.Actions[0].Headers["Cookie"], multiBound.Actions[0].HeaderList[0].Value)
+	}
+
+	preservedMultiHeader := &dsl.Script{
+		Name: "PreservedMultiHeaderScript", Version: "1", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.lightning.force.com"},
+		Actions: []dsl.Action{{
+			Name:    "ContextRequest",
+			Type:    "request",
+			Method:  "POST",
+			Target:  "/aura",
+			Headers: map[string]string{"X-Custom-Context": "Bearer sk_live_51H8abc123def456ghi789jkl012, Bearer sk_live_99Z8abc123def456ghi789jkl999"},
+			HeaderList: dsl.HeaderList{
+				{Name: "X-Custom-Context", Value: "Bearer sk_live_51H8abc123def456ghi789jkl012, Bearer sk_live_99Z8abc123def456ghi789jkl999"},
+			},
+		}},
+	}
+	EnsureCredentialPreservingImportMetadata(preservedMultiHeader, "enterprise_script_archive")
+	preservedMultiReqs := DiscoverSecretBindingRequirements(MaskScriptSecrets(preservedMultiHeader), 0)
+	var pListOcc0ID, pMapOcc1ID string
+	for _, req := range preservedMultiReqs {
+		if req.Path == "/actions/0/header_list/0/value" && req.Occurrence == 0 {
+			pListOcc0ID = req.ID
+		}
+		if req.Path == "/actions/0/headers/X-Custom-Context" && req.Occurrence == 1 {
+			pMapOcc1ID = req.ID
+		}
+	}
+	if pListOcc0ID == "" || pMapOcc1ID == "" {
+		t.Fatalf("missing preserved multi-occurrence header requirements in %#v", preservedMultiReqs)
+	}
+	pBound, pRemaining, err := ApplyCredentialPreservingSecretBindings(preservedMultiHeader, 0, []SecretBindingSelection{
+		{RequirementID: pListOcc0ID, SecretName: "COOKIE_SID"},
+		{RequirementID: pMapOcc1ID, SecretName: "COOKIE_CSRF"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pRemaining) != 0 {
+		t.Fatalf("expected 0 remaining requirements for preserved split multi-occurrence bindings, got %#v", pRemaining)
+	}
+	const wantPreservedMulti = "Bearer {{secret.COOKIE_SID}}, Bearer {{secret.COOKIE_CSRF}}"
+	if pBound.Actions[0].Headers["X-Custom-Context"] != wantPreservedMulti || pBound.Actions[0].HeaderList[0].Value != wantPreservedMulti {
+		t.Fatalf("preserved split multi-occurrence header pair not synchronized: headers=%q header_list=%q", pBound.Actions[0].Headers["X-Custom-Context"], pBound.Actions[0].HeaderList[0].Value)
+	}
 }

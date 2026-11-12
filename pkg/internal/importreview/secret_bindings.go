@@ -1233,9 +1233,6 @@ func ApplyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings [
 		}
 		unmaskedVal, uok1 := JsonPointerString(unmaskedRaw, path)
 		for _, twinPath := range pairedTwinHeaderPaths(raw, path) {
-			if replacements[twinPath] != nil {
-				continue
-			}
 			twinProjectedVal, ok2 := JsonPointerString(raw, twinPath)
 			if !ok2 || twinProjectedVal != projectedVal {
 				continue
@@ -1245,11 +1242,14 @@ func ApplyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings [
 					continue
 				}
 			}
-			copied := make(map[int]string, len(replacements[path]))
-			for occ, val := range replacements[path] {
-				copied[occ] = val
+			if replacements[twinPath] == nil {
+				replacements[twinPath] = make(map[int]string, len(replacements[path]))
 			}
-			replacements[twinPath] = copied
+			for occ, val := range replacements[path] {
+				if _, exists := replacements[twinPath][occ]; !exists {
+					replacements[twinPath][occ] = val
+				}
+			}
 		}
 	}
 	resolved := ApplySecretBindingReplacements(raw, "", replacements)
@@ -1335,6 +1335,28 @@ func ApplyPreservedRedactedSecretBindings(
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	for _, path := range paths {
+		rawValue, rawOK := JsonPointerString(rawRoot, path)
+		projectedValue, projectedOK := JsonPointerString(projectedRoot, path)
+		if !rawOK || !projectedOK {
+			continue
+		}
+		for _, twinPath := range pairedTwinHeaderPaths(rawRoot, path) {
+			if replacementsByPath[twinPath] == nil {
+				continue
+			}
+			twinRaw, ok1 := JsonPointerString(rawRoot, twinPath)
+			twinProjected, ok2 := JsonPointerString(projectedRoot, twinPath)
+			if !ok1 || !ok2 || twinRaw != rawValue || twinProjected != projectedValue {
+				continue
+			}
+			for occ, val := range replacementsByPath[path] {
+				if _, exists := replacementsByPath[twinPath][occ]; !exists {
+					replacementsByPath[twinPath][occ] = val
+				}
+			}
+		}
+	}
 	defaultHeaderBindings := make([]defaultHeaderBinding, 0)
 	for _, path := range paths {
 		replacements := replacementsByPath[path]
@@ -1353,6 +1375,7 @@ func ApplyPreservedRedactedSecretBindings(
 			}
 			return nil, requirements, &StaleSecretBindingRequirementsError{requirements: requirements}
 		}
+		origProjectedValue := projectedValue
 		// The field is rebuilt from the projection's text around each
 		// sentinel, so that text must hold the recorded message IDs, not the
 		// UUID template review shows in their place.
@@ -1390,7 +1413,9 @@ func ApplyPreservedRedactedSecretBindings(
 			if replacementsByPath[twinPath] != nil {
 				continue
 			}
-			if twinRaw, ok := JsonPointerString(rawRoot, twinPath); ok && twinRaw == rawValue {
+			twinRaw, ok1 := JsonPointerString(rawRoot, twinPath)
+			twinProjected, ok2 := JsonPointerString(projectedRoot, twinPath)
+			if ok1 && ok2 && twinRaw == rawValue && twinProjected == origProjectedValue {
 				_ = SetJSONPointerStringValue(rawRoot, twinPath, rebuilt.String())
 			}
 		}

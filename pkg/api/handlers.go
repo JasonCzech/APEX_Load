@@ -2318,7 +2318,7 @@ func scrubClientErrorMessage(msg string) string {
 				protected = append(protected, token)
 				out.WriteString(placeholder)
 			} else {
-				out.WriteString(scrub.Value(token, scrub.Policy{}))
+				out.WriteString(token)
 			}
 			last = end
 		}
