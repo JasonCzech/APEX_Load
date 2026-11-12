@@ -66,6 +66,7 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"run_logic":         true,
 	"http":              true,
 	"web_runtime":       true,
+	"soap":              true,
 	"websocket":         true,
 	"browser_config":    true,
 	"browser_emulation": true,
@@ -325,6 +326,9 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 	if !reflect.ValueOf(config.WebRuntime).IsZero() {
 		projected.WebRuntime = cloneViaJSON(&config.WebRuntime)
 	}
+	if !reflect.ValueOf(config.SOAP).IsZero() {
+		projected.SOAP = cloneViaJSON(&config.SOAP)
+	}
 	projected.JavaVuser = runtimeJavaVuserOverrideFromConfig(config.JavaVuser)
 	if !reflect.ValueOf(config.Browser).IsZero() {
 		projected.BrowserConfig = cloneViaJSON(&config.Browser)
@@ -495,6 +499,9 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["web_runtime"] {
 		clone.WebRuntime = nil
 	}
+	if !requested["soap"] {
+		clone.SOAP = nil
+	}
 	if !requested["browser_config"] {
 		clone.BrowserConfig = nil
 	}
@@ -506,15 +513,44 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	}
 	clone.Env = nil
 	clone.RedactionRules = nil
+	clone.OverrideFields = filterOverrideFieldsForSections(clone.OverrideFields, requested)
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
 		clone.ErrorHandling == nil && clone.Browser == nil && clone.LogLevel == "" &&
 		clone.AutoTransactions == "" && clone.BaseURL == "" &&
 		clone.Results == nil && clone.Log == nil && clone.RunLogic == nil &&
-		clone.WebSocket == nil && clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil &&
-		clone.BrowserEmulation == nil && clone.JavaVuser == nil {
+		clone.WebSocket == nil && clone.HTTP == nil && clone.WebRuntime == nil && clone.SOAP == nil && clone.BrowserConfig == nil &&
+		clone.BrowserEmulation == nil && clone.JavaVuser == nil && len(clone.OverrideFields) == 0 {
 		return nil
 	}
 	return clone
+}
+
+func filterOverrideFieldsForSections(overrideFields []string, requested map[string]bool) []string {
+	if len(overrideFields) == 0 {
+		return nil
+	}
+	normalized, err := normalizeRuntimeOverrideFields(overrideFields)
+	if err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(normalized))
+	for _, path := range normalized {
+		section := overrideFieldTopSection(path)
+		matchSection := requested[section]
+		if section == "browser" {
+			matchSection = requested["browser_config"] || (requested["browser"] && isCompactBrowserOverridePath(path))
+		}
+		if matchSection ||
+			(path == "run_logic.iterations" && requested["iterations"]) ||
+			(path == "log.level" && requested["log_level"]) ||
+			(path == "run_logic.auto_transactions" && requested["auto_transactions"]) {
+			out = append(out, path)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // replaceRuntimeFields returns a deep copy of target with each selected field
@@ -566,6 +602,8 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 			next.WebSocket = src.WebSocket
 		case "web_runtime":
 			next.WebRuntime = src.WebRuntime
+		case "soap":
+			next.SOAP = src.SOAP
 		case "browser_config":
 			next.BrowserConfig = src.BrowserConfig
 		case "browser_emulation":
@@ -573,6 +611,10 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 		case "java_vuser":
 			next.JavaVuser = src.JavaVuser
 		}
+	}
+
+	if len(next.OverrideFields) > 0 || len(src.OverrideFields) > 0 {
+		next.OverrideFields = reconcileReplacedOverrideFields(target, next, src, fields)
 	}
 
 	if runtimeSettingsOverrideEmpty(next) {
@@ -685,9 +727,13 @@ func runtimeSettingsOverrideEmpty(settings *RuntimeSettingsOverride) bool {
 			settings.ErrorHandling == nil && settings.Browser == nil && settings.LogLevel == "" &&
 			settings.AutoTransactions == "" && settings.BaseURL == "" && settings.Log == nil &&
 			settings.Results == nil && settings.RunLogic == nil && settings.WebSocket == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
-			settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
+			settings.SOAP == nil && settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
 			settings.JavaVuser == nil &&
-			len(settings.Env) == 0 && len(settings.RedactionRules) == 0)
+			len(settings.Env) == 0 && len(settings.RedactionRules) == 0 && len(settings.OverrideFields) == 0)
+}
+
+func hasRuntimeSettingsOverrides(settings *RuntimeSettingsOverride) bool {
+	return !runtimeSettingsOverrideEmpty(settings)
 }
 
 // fieldApplicableForProtocol reports whether a runtime override field is meaningful
@@ -704,6 +750,8 @@ func fieldApplicableForProtocol(field, protocol string) bool {
 		// HTTP transport applies to HTTP-family protocols AND the browser
 		// protocol (which shares transport-adjacent fields in the editor).
 		return isHTTPProtocol(protocol) || protocolFamilyIsBrowser(protocol)
+	case "soap":
+		return strings.EqualFold(strings.TrimSpace(protocol), "soap")
 	case "browser_emulation":
 		// Browser emulation drives the HTTP replay engine only. The browser
 		// protocol's emulation home stays browser_config.

@@ -1611,3 +1611,132 @@ func TestHandleReplayDraftScriptRejectsMalformedAndMultiJSONBodies(t *testing.T)
 		})
 	}
 }
+
+func TestHandleReplayStoredScriptAppliesRuntimeOverridesWithoutMutatingStoredScript(t *testing.T) {
+	var observedTarget string
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		observedTarget = action.Target
+		return &protocol.Result{StatusCode: 200, Success: true}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Stored Classic Replay Target",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://stored-replay.example.test",
+			HTTP: dsl.HTTPConfig{
+				RequestTimeoutMs:  30000,
+				DefaultHeaderList: dsl.HeaderList{{Name: "X-Stored", Value: "1"}},
+			},
+			SOAP: dsl.SOAPConfig{
+				Version:    "1.1",
+				Namespaces: map[string]string{"ns": "urn:stored"},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:   "fetch",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/v1/{{env.ENDPOINT}}",
+		}},
+	})
+	if stored == nil {
+		t.Fatal("StoreScript returned nil")
+	}
+
+	body, err := json.Marshal(ReplayScriptRequest{
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			BaseURL: "https://override-replay.example.test",
+			HTTP:    &dsl.HTTPConfig{RequestTimeoutMs: 4000},
+			SOAP:    &dsl.SOAPConfig{Version: "1.2"},
+			Env:     map[string]string{"ENDPOINT": "orders"},
+			OverrideFields: []string{
+				"base_url",
+				"http.request_timeout_ms",
+				"soap.version",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+	if observedTarget != "/v1/orders" {
+		t.Fatalf("observedTarget = %q, want /v1/orders", observedTarget)
+	}
+
+	// Stored script must remain unmutated.
+	after, ok := server.runner.GetScript(stored.ID)
+	if !ok || after.Script.Config.BaseURL != "https://stored-replay.example.test" ||
+		after.Script.Config.SOAP.Version != "1.1" ||
+		len(after.Script.Config.HTTP.DefaultHeaderList) != 1 {
+		t.Fatalf("stored script was mutated: %#v", after.Script.Config)
+	}
+
+	// Invalid override_fields path in replay request returns 400 Bad Request.
+	badBody, _ := json.Marshal(ReplayScriptRequest{
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			OverrideFields: []string{"soap.nonexistent"},
+		},
+	})
+	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(badBody))
+	reqBad.Header.Set("Content-Type", "application/json")
+	respBad := httptest.NewRecorder()
+	server.mux.ServeHTTP(respBad, reqBad)
+	if respBad.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for invalid override_fields body=%s", respBad.Code, respBad.Body.String())
+	}
+
+	// Credential-preserving imported script echoed via req.Script alongside runtime_overrides
+	// changing base_url to an untrusted host must still be rejected by validatePreservedImportCredentialEdits.
+	preservedStored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Preserved Import Replay Target",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Metadata: &dsl.ScriptMetadata{
+			Import: &dsl.ImportMetadata{
+				Source: "har",
+				Preserved: map[string]any{
+					"credential_preservation": map[string]any{"enabled": true},
+				},
+			},
+		},
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://trusted-replay.example.test",
+			HTTP: dsl.HTTPConfig{
+				DefaultHeaderList: dsl.HeaderList{
+					{Name: "Authorization", Value: "Bearer super-secret-replay-token"},
+				},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:   "authed-get",
+			Type:   "http_request",
+			Method: "GET",
+			Target: "https://trusted-replay.example.test/v1/me",
+		}},
+	})
+	echoProjection := maskScriptSecrets(preservedStored.Script)
+	exfilBody, _ := json.Marshal(ReplayScriptRequest{
+		Script: echoProjection,
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			BaseURL:        "https://attacker.example.com",
+			OverrideFields: []string{"base_url"},
+		},
+	})
+	reqExfil := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+preservedStored.ID+"/replay", bytes.NewReader(exfilBody))
+	reqExfil.Header.Set("Content-Type", "application/json")
+	respExfil := httptest.NewRecorder()
+	server.mux.ServeHTTP(respExfil, reqExfil)
+	if respExfil.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 when echoing preserved-credential script with base_url override body=%s", respExfil.Code, respExfil.Body.String())
+	}
+}

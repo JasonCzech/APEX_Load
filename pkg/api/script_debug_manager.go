@@ -324,6 +324,15 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		}
 		return nil, err
 	}
+	if req.Iterations == 0 && runtimeOverridesSpecifiesIterations(req.RuntimeOverrides) && script != nil && script.Config.RunLogic.Iterations > 0 {
+		req.Iterations = script.Config.RunLogic.Iterations
+	}
+	if req.Iterations < 0 || req.Iterations > maxScriptDebugIterations {
+		if req.releaseExecutionContext != nil {
+			req.releaseExecutionContext()
+		}
+		return nil, errors.New(scriptDebugIterationsError)
+	}
 	executionCtx := req.executionContext
 	if executionCtx == nil {
 		executionCtx = context.Background()
@@ -362,6 +371,12 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
 		ignoreThinkTime = *req.IgnoreThinkTime
+	} else if runtimeOverridesSpecifiesThinkTime(req.RuntimeOverrides) && script != nil {
+		ignoreThinkTime = strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "none")
+	}
+	effectiveLogLevel := strings.TrimSpace(req.LogLevel)
+	if effectiveLogLevel == "" && script != nil {
+		effectiveLogLevel = strings.TrimSpace(script.Config.Log.Level)
 	}
 	actionGraphDigest := strings.TrimSpace(req.ActionGraphDigest)
 	if actionGraphDigest == "" {
@@ -379,7 +394,7 @@ func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, r
 		Status:                       ScriptDebugRunning,
 		Group:                        groupName,
 		Protocol:                     script.Protocol,
-		LogLevel:                     normalizeDebugLogLevel(req.LogLevel),
+		LogLevel:                     normalizeDebugLogLevel(effectiveLogLevel),
 		RuntimeProfile:               replayRuntimeProfileForDebug(script, req, ignoreThinkTime),
 		Preflight:                    cloneReplayPreflight(req.Preflight),
 		StartedAt:                    &now,
@@ -2555,7 +2570,11 @@ func replayRuntimeProfileForDebug(script *dsl.Script, req ScriptDebugStartReques
 		defaults := engine.DefaultDebugReplayHAROptions()
 		profile.HAROptions = &defaults
 	}
-	profile.LogLevel = normalizeDebugLogLevel(req.LogLevel)
+	effectiveLogLevel := strings.TrimSpace(req.LogLevel)
+	if effectiveLogLevel == "" && script != nil {
+		effectiveLogLevel = strings.TrimSpace(script.Config.Log.Level)
+	}
+	profile.LogLevel = normalizeDebugLogLevel(effectiveLogLevel)
 	profile.IgnoreThinkTime = ignoreThinkTime
 	if script != nil {
 		if profile.BrowserEngine == "" {

@@ -1576,3 +1576,248 @@ func TestStoppedDebugReportIsNotAFailure(t *testing.T) {
 	}
 	t.Fatal("no final stopped report")
 }
+
+func TestStartScriptDebugStoredScriptAppliesRuntimeOverridesAndAdHocPrecedence(t *testing.T) {
+	var executedActions []*protocol.Action
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		cloned := *action
+		executedActions = append(executedActions, &cloned)
+		return &protocol.Result{StatusCode: 200, Success: true}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Stored Debug Override Target",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://stored.example.test",
+			HTTP: dsl.HTTPConfig{
+				RequestTimeoutMs:  30000,
+				DefaultHeaderList: dsl.HeaderList{{Name: "X-Stored", Value: "keep"}},
+			},
+			Log:           dsl.LogConfig{Level: "info"},
+			RunLogic:      dsl.RunLogicConfig{Iterations: 1},
+			ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(false)},
+		},
+		Actions: []dsl.Action{{
+			Name:   "step-1",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/items/{{env.TARGET_ENV}}",
+		}},
+	})
+	if stored == nil {
+		t.Fatal("StoreScript returned nil")
+	}
+
+	// 1. Start debug session with runtime_overrides (partial merge + env + iterations + log.level + continue_on_error).
+	overrideIterations := 2
+	reqBody, err := json.Marshal(ScriptDebugStartRequest{
+		ReplaySessionID: "55555555-5555-4555-8555-555555555551",
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			BaseURL: "https://override.example.test",
+			HTTP: &dsl.HTTPConfig{
+				RequestTimeoutMs: 5000,
+			},
+			Log:           &dsl.LogConfig{Level: "debug"},
+			RunLogic:      &dsl.RunLogicConfig{Iterations: overrideIterations},
+			ErrorHandling: &dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
+			Env:           map[string]string{"TARGET_ENV": "staging"},
+			OverrideFields: []string{
+				"base_url",
+				"http.request_timeout_ms",
+				"log.level",
+				"run_logic.iterations",
+				"error_handling.continue_on_error",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/debug/sessions", bytes.NewReader(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+
+	session := waitForScriptDebugStatus(t, server.scriptDebug, "55555555-5555-4555-8555-555555555551", ScriptDebugCompleted)
+	if session.LogLevel != "debug" {
+		t.Fatalf("session.LogLevel = %q, want debug from runtime_overrides", session.LogLevel)
+	}
+	if !session.ContinueOnError {
+		t.Fatalf("session.ContinueOnError = false, want true from runtime_overrides")
+	}
+	if len(executedActions) != 2 {
+		t.Fatalf("executedActions count = %d, want 2 iterations from runtime_overrides", len(executedActions))
+	}
+	if executedActions[0].Target != "/items/staging" {
+		t.Fatalf("executed target = %q, want /items/staging from env override", executedActions[0].Target)
+	}
+
+	// Verify stored script was not mutated in memory.
+	afterStored, ok := server.runner.GetScript(stored.ID)
+	if !ok || afterStored.Script.Config.BaseURL != "https://stored.example.test" ||
+		len(afterStored.Script.Config.HTTP.DefaultHeaderList) != 1 {
+		t.Fatalf("stored script was mutated: %#v", afterStored.Script.Config)
+	}
+
+	// 2. Explicit ad-hoc fields on ScriptDebugStartRequest take precedence over runtime_overrides.
+	executedActions = nil
+	explicitContinue := false
+	explicitIgnoreThink := true
+	reqBody2, err := json.Marshal(ScriptDebugStartRequest{
+		ReplaySessionID: "55555555-5555-4555-8555-555555555552",
+		Iterations:      1,
+		LogLevel:        "trace",
+		ContinueOnError: &explicitContinue,
+		IgnoreThinkTime: &explicitIgnoreThink,
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			Log:           &dsl.LogConfig{Level: "error"},
+			RunLogic:      &dsl.RunLogicConfig{Iterations: 3},
+			ErrorHandling: &dsl.ErrorHandlingConfig{ContinueOnError: dsl.ContinueOnErrorValue(true)},
+			ThinkTime:     &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/debug/sessions", bytes.NewReader(reqBody2))
+	req2.Header.Set("Content-Type", "application/json")
+	resp2 := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp2, req2)
+	if resp2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 body=%s", resp2.Code, resp2.Body.String())
+	}
+	session2 := waitForScriptDebugStatus(t, server.scriptDebug, "55555555-5555-4555-8555-555555555552", ScriptDebugCompleted)
+	if session2.LogLevel != "trace" {
+		t.Fatalf("session2.LogLevel = %q, want ad-hoc trace precedence", session2.LogLevel)
+	}
+	if session2.ContinueOnError {
+		t.Fatalf("session2.ContinueOnError = true, want ad-hoc false precedence")
+	}
+	if !session2.RuntimeProfile.IgnoreThinkTime {
+		t.Fatalf("session2.RuntimeProfile.IgnoreThinkTime = false, want ad-hoc true precedence")
+	}
+	if len(executedActions) != 1 {
+		t.Fatalf("executedActions count = %d, want ad-hoc 1 iteration precedence", len(executedActions))
+	}
+
+	// 3. Redaction sentinel in runtime_overrides is rejected with 400 Bad Request.
+	badBody, _ := json.Marshal(ScriptDebugStartRequest{
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			SOAP: &dsl.SOAPConfig{
+				WSSecurity: &dsl.SOAPWSSecurityConfig{
+					UsernameToken: &dsl.SOAPUsernameTokenConfig{
+						Password: "[REDACTED]",
+					},
+				},
+			},
+		},
+	})
+	reqBad := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/debug/sessions", bytes.NewReader(badBody))
+	reqBad.Header.Set("Content-Type", "application/json")
+	respBad := httptest.NewRecorder()
+	server.mux.ServeHTTP(respBad, reqBad)
+	if respBad.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 for redaction sentinel in runtime_overrides body=%s", respBad.Code, respBad.Body.String())
+	}
+
+	// 4. Stored java_vuser script with runtime_overrides verifies approval against the unmodified stored script
+	// and rejects executable-surface changes (e.g., classpath or thread mode).
+	javaServer := newJavaVuserGovernanceServer(t, "project-java-debug")
+	approvedJava := approveCombinedJavaVuserThroughAPI(t, javaServer, "project-java-debug")
+
+	surfaceChangeBody, _ := json.Marshal(ScriptDebugStartRequest{
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			JavaVuser: &RuntimeJavaVuserOverride{
+				Classpath: []string{"lib/unapproved.jar"},
+			},
+			OverrideFields: []string{"java_vuser.classpath"},
+		},
+	})
+	reqJavaBad := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+approvedJava.Script.ID+"/debug/sessions", bytes.NewReader(surfaceChangeBody))
+	reqJavaBad.Header.Set("Content-Type", "application/json")
+	respJavaBad := httptest.NewRecorder()
+	javaServer.mux.ServeHTTP(respJavaBad, reqJavaBad)
+	if respJavaBad.Code != http.StatusBadRequest || !strings.Contains(respJavaBad.Body.String(), "changed the approved Java Vuser") {
+		t.Fatalf("status = %d, want 400 for java_vuser executable surface override body=%s", respJavaBad.Code, respJavaBad.Body.String())
+	}
+
+	// 5. Credential-preserving imported script echoed via req.Script alongside runtime_overrides
+	// changing base_url to an untrusted host must be rejected.
+	preservedStored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Preserved Import Debug Target",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Metadata: &dsl.ScriptMetadata{
+			Import: &dsl.ImportMetadata{
+				Source: "har",
+				Preserved: map[string]any{
+					"credential_preservation": map[string]any{"enabled": true},
+				},
+			},
+		},
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://trusted-debug.example.test",
+			HTTP: dsl.HTTPConfig{
+				DefaultHeaderList: dsl.HeaderList{
+					{Name: "Authorization", Value: "Bearer super-secret-debug-token"},
+				},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:   "authed-debug-get",
+			Type:   "http_request",
+			Method: "GET",
+			Target: "https://trusted-debug.example.test/v1/me",
+		}},
+	})
+	echoProjection := maskScriptSecrets(preservedStored.Script)
+	exfilDebugBody, _ := json.Marshal(ScriptDebugStartRequest{
+		Script: echoProjection,
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			BaseURL:        "https://attacker.example.com",
+			OverrideFields: []string{"base_url"},
+		},
+	})
+	reqExfilDebug := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+preservedStored.ID+"/debug/sessions", bytes.NewReader(exfilDebugBody))
+	reqExfilDebug.Header.Set("Content-Type", "application/json")
+	respExfilDebug := httptest.NewRecorder()
+	server.mux.ServeHTTP(respExfilDebug, reqExfilDebug)
+	if respExfilDebug.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 when echoing preserved-credential script with base_url override in debug body=%s", respExfilDebug.Code, respExfilDebug.Body.String())
+	}
+
+	// 6. StartChecked directly enforces maxScriptDebugIterations when iterations come from RuntimeOverrides.
+	excessIter := maxScriptDebugIterations + 1
+	_, startErr := server.scriptDebug.StartChecked(stored.ID, &dsl.Script{
+		Name:     "Bounds Check",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: excessIter},
+		},
+	}, ScriptDebugStartRequest{
+		RuntimeOverrides: &RuntimeSettingsOverride{
+			Iterations:     &excessIter,
+			OverrideFields: []string{"run_logic.iterations"},
+		},
+	})
+	if startErr == nil || !strings.Contains(startErr.Error(), scriptDebugIterationsError) {
+		t.Fatalf("StartChecked error = %v, want %q", startErr, scriptDebugIterationsError)
+	}
+
+	// 7. applyScriptDebugOverrides preserves valid java_vuser approval hash when top-level debug fields
+	// (e.g. LogLevel, Iterations, ContinueOnError) mutate script.Config after applyReplayOrDebugRuntimeOverrides.
+	cont := true
+	reStampedJava := applyScriptDebugOverrides(approvedJava.Script.Script, &ScriptDebugStartRequest{
+		LogLevel:        "debug",
+		Iterations:      2,
+		ContinueOnError: &cont,
+	})
+	if conflict := javaServer.runner.javaVuserApprovalConflict(reStampedJava); conflict != "" {
+		t.Fatalf("javaVuserApprovalConflict after applyScriptDebugOverrides = %q, want empty", conflict)
+	}
+}

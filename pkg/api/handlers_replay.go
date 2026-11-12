@@ -6,12 +6,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -46,18 +49,20 @@ const (
 )
 
 type ReplayScriptRequest struct {
-	LiveTableSeeds  []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
-	GroupName       string                        `json:"group_name,omitempty"`
-	ProjectID       string                        `json:"project_id,omitempty"`
-	ReplaySessionID string                        `json:"replay_session_id,omitempty"`
-	StartPaused     bool                          `json:"start_paused,omitempty"`
-	Variables       map[string]string             `json:"variables,omitempty"`
-	RedactionRules  []engine.RedactionRule        `json:"redaction_rules,omitempty"`
-	IgnoreThinkTime *bool                         `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script                   `json:"script,omitempty"`
+	LiveTableSeeds   []engine.LiveTableSandboxSeed `json:"live_table_seeds,omitempty"`
+	GroupName        string                        `json:"group_name,omitempty"`
+	ProjectID        string                        `json:"project_id,omitempty"`
+	ReplaySessionID  string                        `json:"replay_session_id,omitempty"`
+	StartPaused      bool                          `json:"start_paused,omitempty"`
+	Variables        map[string]string             `json:"variables,omitempty"`
+	RedactionRules   []engine.RedactionRule        `json:"redaction_rules,omitempty"`
+	IgnoreThinkTime  *bool                         `json:"ignore_think_time,omitempty"`
+	RuntimeOverrides *RuntimeSettingsOverride      `json:"runtime_overrides,omitempty"`
+	Script           *dsl.Script                   `json:"script,omitempty"`
 	// trustedPreservedImport is server-owned provenance. It is set only when
 	// replaying the unchanged durable script; JSON cannot opt into it.
 	trustedPreservedImport bool
+	storedBaseScript       *dsl.Script
 }
 
 func requireNonEmptyReplayBody(w http.ResponseWriter, r *http.Request) bool {
@@ -142,6 +147,7 @@ type replayExecutionPrepOptions struct {
 	TrustedPreservedImport bool
 	LiveTableSeeds         []engine.LiveTableSandboxSeed
 	Variables              map[string]string
+	RuntimeSecretValues    map[string]string
 	ComputeActionDigest    bool
 	ExtraWarnings          func(*dsl.Script) []string
 	RequireBrowserProtocol bool
@@ -155,6 +161,104 @@ type preparedReplayExecution struct {
 	Preflight         *ReplayPreflight
 	SecretResolver    engine.SecretResolver
 	ActionGraphDigest string
+}
+
+func (s *Server) applyReplayOrDebugRuntimeOverrides(
+	w http.ResponseWriter,
+	id string,
+	storedBase *dsl.Script,
+	script *dsl.Script,
+	overrides *RuntimeSettingsOverride,
+	existingRedactionRules []engine.RedactionRule,
+) (*dsl.Script, map[string]string, []engine.RedactionRule, bool) {
+	if overrides == nil {
+		return script, nil, existingRedactionRules, true
+	}
+	if script == nil {
+		writeError(w, http.StatusBadRequest, "script is required")
+		return nil, nil, nil, false
+	}
+	if err := rejectReservedRuntimeOverrideSecretReferences(overrides); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, nil, nil, false
+	}
+	if len(overrides.OverrideFields) > 0 {
+		if _, err := normalizeRuntimeOverrideFields(overrides.OverrideFields); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, nil, nil, false
+		}
+	}
+	if script != nil && scriptRequiresJavaVuserAuthoringApproval(script) {
+		if conflict := s.runner.javaVuserApprovalConflict(script); conflict != "" {
+			writeError(w, http.StatusConflict, conflict)
+			return nil, nil, nil, false
+		}
+	} else if storedBase != nil && scriptRequiresJavaVuserAuthoringApproval(storedBase) {
+		if conflict := s.runner.javaVuserApprovalConflict(storedBase); conflict != "" {
+			writeError(w, http.StatusConflict, conflict)
+			return nil, nil, nil, false
+		}
+	}
+	scope := "replay:" + firstNonEmpty(id, script.ID, script.Name)
+	protectedOverrides, runtimeSecretValues, _, err := protectRuntimeOverrideSecretsWithOptions(
+		scope,
+		0,
+		script,
+		overrides,
+		true,
+		false,
+		false,
+	)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, nil, nil, false
+	}
+	scriptClone := cloneScriptDefinition(script)
+	if scriptClone == nil {
+		writeError(w, http.StatusBadRequest, "script is required")
+		return nil, nil, nil, false
+	}
+	if err := applyRuntimeOverrides(scriptClone, protectedOverrides); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, nil, nil, false
+	}
+	referencedSecrets, err := filterReferencedRuntimeSecretValues(scriptClone, runtimeSecretValues)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, nil, nil, false
+	}
+	if storedBase != nil && isCredentialPreservingImport(storedBase) {
+		if err := validatePreservedImportCredentialEdits(scriptClone, storedBase); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, nil, nil, false
+		}
+	}
+	if script != nil && (scriptRequiresJavaVuserAuthoringApproval(script) || scriptRequiresJavaVuserAuthoringApproval(scriptClone)) {
+		if javaVuserOverrideChangedExecutableSurface(script, scriptClone) {
+			writeError(w, http.StatusBadRequest, "runtime overrides changed the approved Java Vuser classpath, JDK, VM parameters, or actions, or moved it into LoadRunner thread mode; apply these changes in the script and re-approve it through authoring review")
+			return nil, nil, nil, false
+		}
+		if evidence, ok := readJavaVuserAuthoringApproval(script); ok {
+			stampJavaVuserAuthoringApproval(scriptClone, evidence.SessionID)
+		}
+	}
+	combinedRedactionRules := cloneRedactionRules(existingRedactionRules)
+	if len(protectedOverrides.RedactionRules) > 0 {
+		if _, err := buildRuntimeRedactionConfig(protectedOverrides); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return nil, nil, nil, false
+		}
+		combinedRedactionRules = append(combinedRedactionRules, protectedOverrides.RedactionRules...)
+	}
+	for _, secretVal := range runtimeSecretValueList(referencedSecrets) {
+		if secretVal != "" {
+			combinedRedactionRules = append(combinedRedactionRules, engine.RedactionRule{
+				Pattern:     regexp.QuoteMeta(secretVal),
+				Replacement: scrub.Redacted,
+			})
+		}
+	}
+	return scriptClone, referencedSecrets, combinedRedactionRules, true
 }
 
 func (s *Server) prepareReplayOrDebugExecution(
@@ -190,7 +294,7 @@ func (s *Server) prepareReplayOrDebugExecution(
 	if !s.prepareReplayLiveTables(ctx, w, script, opts.LiveTableSeeds) {
 		return nil, false
 	}
-	secretResolver := s.runner.secretResolverForScript(script)
+	secretResolver := overlayRuntimeSecretResolver(opts.RuntimeSecretValues, s.runner.secretResolverForScript(script))
 	preflight := buildReplayPreflight(script, opts.Variables, issues, warnings, secretResolver)
 	if !preflight.Valid {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
@@ -252,6 +356,7 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.trustedPreservedImport = trustedPreservedImport
+	req.storedBaseScript = stored.Script
 
 	s.handleReplayRequestContext(r.Context(), w, stored.ID, script, req)
 }
@@ -274,6 +379,27 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		writeError(w, http.StatusRequestTimeout, "classic replay request was canceled")
 		return
 	}
+	storedBase := req.storedBaseScript
+	if storedBase == nil && id != "" {
+		if stored, ok := s.runner.GetScript(id); ok && stored != nil {
+			storedBase = stored.Script
+		}
+	}
+	var runtimeSecretValues map[string]string
+	if req.RuntimeOverrides != nil {
+		var ok bool
+		script, runtimeSecretValues, req.RedactionRules, ok = s.applyReplayOrDebugRuntimeOverrides(
+			w,
+			id,
+			storedBase,
+			script,
+			req.RuntimeOverrides,
+			req.RedactionRules,
+		)
+		if !ok {
+			return
+		}
+	}
 	preparedExec, ok := s.prepareReplayOrDebugExecution(requestCtx, w, replayExecutionPrepOptions{
 		ScriptID:               id,
 		Script:                 script,
@@ -281,6 +407,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		TrustedPreservedImport: req.trustedPreservedImport,
 		LiveTableSeeds:         req.LiveTableSeeds,
 		Variables:              req.Variables,
+		RuntimeSecretValues:    runtimeSecretValues,
 	})
 	if !ok {
 		return
@@ -293,6 +420,12 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
 		ignoreThinkTime = *req.IgnoreThinkTime
+	} else if runtimeOverridesSpecifiesThinkTime(req.RuntimeOverrides) && script != nil {
+		ignoreThinkTime = strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "none")
+	}
+	replayLogLevel := "info"
+	if script != nil && strings.TrimSpace(script.Config.Log.Level) != "" {
+		replayLogLevel = normalizeDebugLogLevel(script.Config.Log.Level)
 	}
 	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(requestCtx)
 	defer releaseExecutionCtx()
@@ -320,7 +453,7 @@ func (s *Server) handleReplayRequestContext(requestCtx context.Context, w http.R
 		ReplaySessionID: replaySessionID,
 		LiveTableSeeds:  req.LiveTableSeeds,
 		GroupName:       req.GroupName,
-		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: "info", IgnoreThinkTime: ignoreThinkTime},
+		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: replayLogLevel, IgnoreThinkTime: ignoreThinkTime},
 		Variables:       req.Variables,
 		RedactionRules:  req.RedactionRules,
 		SecretResolver:  secretResolver,

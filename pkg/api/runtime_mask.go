@@ -161,9 +161,27 @@ func maskRuntimeSettingsWithKeyRule(o *RuntimeSettingsOverride, showReferences b
 	}
 	clone.BaseURL = maskURLSecrets(clone.BaseURL)
 	maskHTTPSecrets(clone.HTTP)
+	maskSOAPSecrets(clone.SOAP)
 	maskBrowserSecrets(clone.BrowserConfig)
 	maskJavaVuserRuntimeSecrets(clone.JavaVuser)
 	return clone
+}
+
+func maskSOAPSecrets(soap *dsl.SOAPConfig) {
+	if soap == nil || soap.WSSecurity == nil || soap.WSSecurity.UsernameToken == nil {
+		return
+	}
+	token := soap.WSSecurity.UsernameToken
+	authActive := token.PasswordType != "" || token.Password != ""
+	if token.Username != "" &&
+		(authActive ||
+			isReservedRuntimeOverrideSecretReference(token.Username) ||
+			sensitiveEnvValue(token.Username)) {
+		token.Username = scrub.Redacted
+	}
+	if token.Password != "" {
+		token.Password = scrub.Redacted
+	}
 }
 
 func maskJavaVuserRuntimeSecrets(java *RuntimeJavaVuserOverride) {
@@ -718,6 +736,13 @@ func reconcileGroupRuntimeSecrets(incoming, prior *RuntimeSettingsOverride) *Run
 		}
 		reconcileHTTPSecrets(result.HTTP, priorHTTP)
 	}
+	if result.SOAP != nil {
+		var priorSOAP *dsl.SOAPConfig
+		if prior != nil {
+			priorSOAP = prior.SOAP
+		}
+		reconcileSOAPSecrets(result.SOAP, priorSOAP)
+	}
 	if result.BrowserConfig != nil {
 		var priorBrowser *dsl.BrowserConfig
 		if prior != nil {
@@ -903,6 +928,26 @@ func reconcileHTTPSecrets(incoming, prior *dsl.HTTPConfig) {
 		incoming.DefaultHeaderList = nil
 	} else {
 		incoming.DefaultHeaderList = filtered
+	}
+}
+
+// reconcileSOAPSecrets restores SOAP WS-Security UsernameToken secret fields the
+// client echoed back as the redaction sentinel from the prior stored section;
+// "" clears, any other value persists.
+func reconcileSOAPSecrets(incoming, prior *dsl.SOAPConfig) {
+	if incoming == nil || incoming.WSSecurity == nil || incoming.WSSecurity.UsernameToken == nil {
+		return
+	}
+	priorUsername, priorPassword := "", ""
+	if prior != nil && prior.WSSecurity != nil && prior.WSSecurity.UsernameToken != nil {
+		priorUsername = prior.WSSecurity.UsernameToken.Username
+		priorPassword = prior.WSSecurity.UsernameToken.Password
+	}
+	if incoming.WSSecurity.UsernameToken.Username == scrub.Redacted {
+		incoming.WSSecurity.UsernameToken.Username = priorUsername
+	}
+	if incoming.WSSecurity.UsernameToken.Password == scrub.Redacted {
+		incoming.WSSecurity.UsernameToken.Password = priorPassword
 	}
 }
 

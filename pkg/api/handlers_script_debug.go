@@ -34,6 +34,7 @@ type ScriptDebugStartRequest struct {
 	LogLevel          string                        `json:"log_level,omitempty"`
 	Browser           *dsl.BrowserConfig            `json:"browser,omitempty"`
 	IgnoreThinkTime   *bool                         `json:"ignore_think_time,omitempty"`
+	RuntimeOverrides  *RuntimeSettingsOverride      `json:"runtime_overrides,omitempty"`
 	Script            *dsl.Script                   `json:"script,omitempty"`
 	Mode              string                        `json:"-"`
 	Preflight         *ReplayPreflight              `json:"-"`
@@ -42,6 +43,7 @@ type ScriptDebugStartRequest struct {
 	// trustedPreservedImport is set only after loading the unchanged durable
 	// import snapshot. A request body cannot establish this trust.
 	trustedPreservedImport  bool
+	storedBaseScript        *dsl.Script
 	executionContext        context.Context
 	releaseExecutionContext context.CancelFunc
 }
@@ -107,6 +109,7 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		return
 	}
 	req.trustedPreservedImport = trustedPreservedImport
+	req.storedBaseScript = stored.Script
 
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
@@ -142,6 +145,7 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		return
 	}
 	req.trustedPreservedImport = trustedPreservedImport
+	req.storedBaseScript = stored.Script
 	req.Mode = "replay"
 	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
@@ -187,7 +191,32 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		profile.HAROptions = &normalized
 		req.RuntimeProfile = &profile
 	}
-	script = applyScriptDebugOverrides(script, req)
+	storedBase := req.storedBaseScript
+	if storedBase == nil && id != "" {
+		if stored, ok := s.runner.GetScript(id); ok && stored != nil {
+			storedBase = stored.Script
+		}
+	}
+	var runtimeSecretValues map[string]string
+	if req.RuntimeOverrides != nil {
+		var ok bool
+		script, runtimeSecretValues, req.RedactionRules, ok = s.applyReplayOrDebugRuntimeOverrides(
+			w,
+			id,
+			storedBase,
+			script,
+			req.RuntimeOverrides,
+			req.RedactionRules,
+		)
+		if !ok {
+			return
+		}
+	}
+	script = applyScriptDebugOverrides(script, &req)
+	if req.Iterations < 0 || req.Iterations > maxScriptDebugIterations {
+		writeError(w, http.StatusBadRequest, scriptDebugIterationsError)
+		return
+	}
 	preparedExec, ok := s.prepareReplayOrDebugExecution(r.Context(), w, replayExecutionPrepOptions{
 		ScriptID:               id,
 		Script:                 script,
@@ -197,6 +226,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		TrustedPreservedImport: req.trustedPreservedImport,
 		LiveTableSeeds:         req.LiveTableSeeds,
 		Variables:              req.Variables,
+		RuntimeSecretValues:    runtimeSecretValues,
 		ComputeActionDigest:    true,
 		ExtraWarnings:          scriptDebugParityWarnings,
 		CheckArchivedScript:    true,
@@ -257,11 +287,44 @@ func scriptDebugParityWarnings(script *dsl.Script) []string {
 	return nil
 }
 
-func applyScriptDebugOverrides(script *dsl.Script, req ScriptDebugStartRequest) *dsl.Script {
-	if script == nil {
+func applyScriptDebugOverrides(script *dsl.Script, req *ScriptDebugStartRequest) *dsl.Script {
+	if script == nil || req == nil {
 		return script
 	}
-	return applyBrowserReplayOverrides(script, BrowserReplayStartRequest{Browser: req.Browser})
+	evidence, hasValidJavaApproval := readJavaVuserAuthoringApproval(script)
+	if hasValidJavaApproval && !libraryScriptHashMatches(script, evidence.ContentHash) {
+		hasValidJavaApproval = false
+	}
+	origScript := script
+	script = applyBrowserReplayOverrides(script, BrowserReplayStartRequest{Browser: req.Browser})
+	needsClone := req.ContinueOnError != nil || strings.TrimSpace(req.LogLevel) != "" || req.Iterations > 0
+	if needsClone {
+		cloned := cloneScriptDefinition(script)
+		if cloned != nil {
+			script = cloned
+		}
+	}
+	if req.ContinueOnError != nil {
+		script.Config.ErrorHandling.ContinueOnError = dsl.ContinueOnErrorValue(*req.ContinueOnError)
+	}
+	if strings.TrimSpace(req.LogLevel) != "" {
+		script.Config.Log.Level = normalizeDebugLogLevel(req.LogLevel)
+	} else if req.RuntimeOverrides != nil && strings.TrimSpace(script.Config.Log.Level) != "" {
+		req.LogLevel = normalizeDebugLogLevel(script.Config.Log.Level)
+	}
+	if req.Iterations > 0 {
+		script.Config.RunLogic.Iterations = req.Iterations
+	} else if runtimeOverridesSpecifiesIterations(req.RuntimeOverrides) && script.Config.RunLogic.Iterations > 0 {
+		req.Iterations = script.Config.RunLogic.Iterations
+	}
+	if req.IgnoreThinkTime == nil && runtimeOverridesSpecifiesThinkTime(req.RuntimeOverrides) {
+		ignore := strings.EqualFold(strings.TrimSpace(script.Config.ThinkTime.Type), "none")
+		req.IgnoreThinkTime = &ignore
+	}
+	if hasValidJavaApproval && script != origScript {
+		stampJavaVuserAuthoringApproval(script, evidence.SessionID)
+	}
+	return script
 }
 
 func (s *Server) handleGetScriptDebugSession(w http.ResponseWriter, r *http.Request) {

@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -88,6 +90,12 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 	protected := cloneRuntimeSettings(overrides)
 	if protected == nil {
 		return nil, nil, false, nil
+	}
+	if len(protected.OverrideFields) > 0 {
+		if _, err := normalizeRuntimeOverrideFields(protected.OverrideFields); err != nil {
+			return nil, nil, false, err
+		}
+		protected = mergeRuntimeSettingsPartial(nil, protected)
 	}
 	values := make(map[string]string)
 	changed := false
@@ -193,6 +201,18 @@ func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, scri
 			if err != nil {
 				return nil, nil, false, err
 			}
+		}
+	}
+	if protected.SOAP != nil && protected.SOAP.WSSecurity != nil && protected.SOAP.WSSecurity.UsernameToken != nil {
+		token := protected.SOAP.WSSecurity.UsernameToken
+		authActive := token.PasswordType != "" || token.Password != ""
+		token.Username, err = protect("soap.ws_security.username_token.username", token.Username, authActive || sensitiveEnvValue(token.Username))
+		if err != nil {
+			return nil, nil, false, err
+		}
+		token.Password, err = protect("soap.ws_security.username_token.password", token.Password, true)
+		if err != nil {
+			return nil, nil, false, err
 		}
 	}
 	if protected.BrowserConfig != nil {
@@ -342,6 +362,9 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if script == nil || overrides == nil {
 		return nil
 	}
+	if len(overrides.OverrideFields) > 0 {
+		return applyRuntimeOverridesPartial(script, overrides)
+	}
 	if len(overrides.Env) > 0 {
 		overridden, err := applyRuntimeEnvOverrides(script, overrides.Env)
 		if err != nil {
@@ -374,6 +397,9 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	}
 	if overrides.WebRuntime != nil {
 		script.Config.WebRuntime = mergeWebRuntime(script.Config.WebRuntime, *overrides.WebRuntime)
+	}
+	if overrides.SOAP != nil {
+		script.Config.SOAP = *cloneViaJSON(overrides.SOAP)
 	}
 	if overrides.JavaVuser != nil {
 		// Scenario overrides are authored at execution time and are not covered
@@ -502,6 +528,7 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	clone.WebSocket = cloneViaJSON(overrides.WebSocket)
 	clone.HTTP = cloneViaJSON(overrides.HTTP)
 	clone.WebRuntime = cloneViaJSON(overrides.WebRuntime)
+	clone.SOAP = cloneViaJSON(overrides.SOAP)
 	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
 	clone.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
 	clone.JavaVuser = cloneViaJSON(overrides.JavaVuser)
@@ -527,7 +554,14 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 		clone.RedactionRules = make([]engine.RedactionRule, len(overrides.RedactionRules))
 		copy(clone.RedactionRules, overrides.RedactionRules)
 	}
+	if len(overrides.OverrideFields) > 0 {
+		clone.OverrideFields = append([]string(nil), overrides.OverrideFields...)
+	}
 	return &clone
+}
+
+func cloneRuntimeSettingsOverride(overrides *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	return cloneRuntimeSettings(overrides)
 }
 
 // mergeWebRuntime overlays the non-zero fields of override onto a deep copy of
@@ -709,6 +743,12 @@ func mergeJavaVuserRuntimeOverride(base *RuntimeJavaVuserOverride, group *Runtim
 }
 
 func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	if base == nil && group == nil {
+		return nil
+	}
+	if (base != nil && len(base.OverrideFields) > 0) || (group != nil && len(group.OverrideFields) > 0) {
+		return mergeRuntimeSettingsPartial(base, group)
+	}
 	if base == nil {
 		return cloneRuntimeSettings(group)
 	}
@@ -749,6 +789,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.HTTP != nil {
 		merged.HTTP = cloneViaJSON(group.HTTP)
+	}
+	if group.SOAP != nil {
+		merged.SOAP = cloneViaJSON(group.SOAP)
 	}
 	if group.Results != nil {
 		merged.Results = cloneViaJSON(group.Results)
@@ -855,6 +898,975 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 		copy(merged.RedactionRules, group.RedactionRules)
 	}
 	return merged
+}
+
+var allowedScriptConfigOverrideSections = map[string]bool{
+	"base_url":          true,
+	"results":           true,
+	"websocket":         true,
+	"pacing":            true,
+	"think_time":        true,
+	"error_handling":    true,
+	"log":               true,
+	"run_logic":         true,
+	"http":              true,
+	"web_runtime":       true,
+	"soap":              true,
+	"browser":           true,
+	"browser_emulation": true,
+}
+
+func normalizeRuntimeOverrideFields(fields []string) ([]string, error) {
+	if len(fields) == 0 {
+		return nil, nil
+	}
+	out := make([]string, 0, len(fields))
+	seen := make(map[string]bool, len(fields))
+	for _, raw := range fields {
+		canonical, err := normalizeOneRuntimeOverrideField(raw)
+		if err != nil {
+			return nil, err
+		}
+		if !seen[canonical] {
+			seen[canonical] = true
+			out = append(out, canonical)
+		}
+	}
+	return out, nil
+}
+
+func normalizeOneRuntimeOverrideField(raw string) (string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return "", fmt.Errorf("override_fields cannot contain empty field paths")
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "config.") {
+		trimmed = strings.TrimSpace(trimmed[len("config."):])
+		if trimmed == "" {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "iterations":
+		return "run_logic.iterations", nil
+	case "log_level":
+		return "log.level", nil
+	case "auto_transactions":
+		return "run_logic.auto_transactions", nil
+	case "browser_config":
+		return "browser", nil
+	case "env", "redaction_rules":
+		return lower, nil
+	}
+	if strings.HasPrefix(lower, "browser_config.") {
+		trimmed = "browser." + trimmed[len("browser_config."):]
+		lower = strings.ToLower(trimmed)
+	}
+	if strings.HasPrefix(lower, "env.") {
+		key := strings.TrimSpace(trimmed[len("env."):])
+		if key == "" {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		return "env." + key, nil
+	}
+	if lower == "java_vuser" {
+		return "java_vuser", nil
+	}
+	if strings.HasPrefix(lower, "java_vuser.") {
+		sub := strings.TrimSpace(lower[len("java_vuser."):])
+		if sub == "" || strings.Contains(sub, ".") {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		if _, ok := findStructFieldByJSONTag(reflect.TypeOf(RuntimeJavaVuserOverride{}), sub); !ok {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		return "java_vuser." + sub, nil
+	}
+	segments := strings.Split(trimmed, ".")
+	firstSeg := strings.ToLower(strings.TrimSpace(segments[0]))
+	if !allowedScriptConfigOverrideSections[firstSeg] {
+		return "", fmt.Errorf("unknown runtime override field %q", raw)
+	}
+	canonicalSegments := make([]string, 0, len(segments))
+	currentType := reflect.TypeOf(dsl.ScriptConfig{})
+	for i := 0; i < len(segments); i++ {
+		seg := strings.TrimSpace(segments[i])
+		if seg == "" {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		for currentType.Kind() == reflect.Ptr {
+			currentType = currentType.Elem()
+		}
+		if currentType.Kind() != reflect.Struct {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		field, ok := findStructFieldByJSONTag(currentType, strings.ToLower(seg))
+		if !ok {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		tagName := jsonTagName(field)
+		canonicalSegments = append(canonicalSegments, tagName)
+		fieldType := field.Type
+		for fieldType.Kind() == reflect.Ptr {
+			fieldType = fieldType.Elem()
+		}
+		if i == len(segments)-1 {
+			break
+		}
+		if fieldType.Kind() == reflect.Map {
+			mapKey := strings.TrimSpace(strings.Join(segments[i+1:], "."))
+			if mapKey == "" {
+				return "", fmt.Errorf("unknown runtime override field %q", raw)
+			}
+			canonicalSegments = append(canonicalSegments, mapKey)
+			break
+		}
+		if fieldType.Kind() != reflect.Struct {
+			return "", fmt.Errorf("unknown runtime override field %q", raw)
+		}
+		currentType = fieldType
+	}
+	return strings.Join(canonicalSegments, "."), nil
+}
+
+func findStructFieldByJSONTag(structType reflect.Type, tag string) (reflect.StructField, bool) {
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		if field.PkgPath != "" {
+			continue
+		}
+		if jsonTagName(field) == tag {
+			return field, true
+		}
+	}
+	return reflect.StructField{}, false
+}
+
+func jsonTagName(field reflect.StructField) string {
+	raw := field.Tag.Get("json")
+	if raw == "" || raw == "-" {
+		return ""
+	}
+	return strings.Split(raw, ",")[0]
+}
+
+func overrideFieldTopSection(canonicalPath string) string {
+	if idx := strings.IndexByte(canonicalPath, '.'); idx > 0 {
+		return canonicalPath[:idx]
+	}
+	return canonicalPath
+}
+
+func isCompactBrowserOverridePath(path string) bool {
+	switch path {
+	case "browser.headless", "browser.device_profile", "browser.touch_mode", "browser.orientation":
+		return true
+	default:
+		return false
+	}
+}
+
+func compactBrowserOverridePathsFromOverride(o *RuntimeSettingsOverride) []string {
+	if o == nil {
+		return nil
+	}
+	var b *RuntimeBrowserOverride
+	if o.Browser != nil {
+		b = o.Browser
+	} else if o.BrowserConfig != nil {
+		b = &RuntimeBrowserOverride{
+			Headless:      o.BrowserConfig.Headless,
+			DeviceProfile: o.BrowserConfig.DeviceProfile,
+			TouchMode:     o.BrowserConfig.TouchMode,
+			Orientation:   o.BrowserConfig.Orientation,
+		}
+	}
+	if b == nil {
+		return nil
+	}
+	var paths []string
+	if b.Headless != nil {
+		paths = append(paths, "browser.headless")
+	}
+	if b.DeviceProfile != "" {
+		paths = append(paths, "browser.device_profile")
+	}
+	if b.TouchMode != nil {
+		paths = append(paths, "browser.touch_mode")
+	}
+	if b.Orientation != "" {
+		paths = append(paths, "browser.orientation")
+	}
+	return paths
+}
+
+func appendImplicitCompactOverrideFields(fields []string, o *RuntimeSettingsOverride) []string {
+	if o == nil {
+		return fields
+	}
+	hasRunLogicSubfield := slices.ContainsFunc(fields, func(p string) bool {
+		return strings.HasPrefix(p, "run_logic.")
+	})
+	if (o.Iterations != nil || (o.RunLogic != nil && o.RunLogic.Iterations > 0 && hasRunLogicSubfield)) &&
+		!slices.Contains(fields, "run_logic") && !slices.Contains(fields, "run_logic.iterations") {
+		fields = append(fields, "run_logic.iterations")
+	}
+	if o.LogLevel != "" && !slices.Contains(fields, "log") && !slices.Contains(fields, "log.level") {
+		fields = append(fields, "log.level")
+	}
+	if o.AutoTransactions != "" && !slices.Contains(fields, "run_logic") && !slices.Contains(fields, "run_logic.auto_transactions") {
+		fields = append(fields, "run_logic.auto_transactions")
+	}
+	if o.Browser != nil && !slices.Contains(fields, "browser") {
+		for _, bp := range compactBrowserOverridePathsFromOverride(o) {
+			if !slices.Contains(fields, bp) {
+				fields = append(fields, bp)
+			}
+		}
+	}
+	return fields
+}
+
+func applyRuntimeOverridesPartial(script *dsl.Script, overrides *RuntimeSettingsOverride) error {
+	normalized, err := normalizeRuntimeOverrideFields(overrides.OverrideFields)
+	if err != nil {
+		return err
+	}
+	normalized = appendImplicitCompactOverrideFields(normalized, overrides)
+	if clonedCfg := cloneViaJSON(&script.Config); clonedCfg != nil {
+		script.Config = *clonedCfg
+	}
+	hasEnvAll := false
+	var envKeys []string
+	for _, path := range normalized {
+		if path == "env" {
+			hasEnvAll = true
+		} else if strings.HasPrefix(path, "env.") {
+			envKeys = append(envKeys, strings.TrimPrefix(path, "env."))
+		}
+	}
+	if hasEnvAll || (len(envKeys) == 0 && len(overrides.Env) > 0) {
+		if len(overrides.Env) > 0 {
+			overridden, err := applyRuntimeEnvOverrides(script, overrides.Env)
+			if err != nil {
+				return err
+			}
+			*script = *overridden
+		}
+	} else if len(envKeys) > 0 {
+		filteredEnv := make(map[string]string, len(envKeys))
+		for _, k := range envKeys {
+			filteredEnv[k] = overrides.Env[k]
+		}
+		overridden, err := applyRuntimeEnvOverrides(script, filteredEnv)
+		if err != nil {
+			return err
+		}
+		*script = *overridden
+	}
+
+	srcCfg := overrideToScriptConfig(overrides)
+	for _, path := range normalized {
+		if path == "env" || strings.HasPrefix(path, "env.") || path == "redaction_rules" {
+			continue
+		}
+		if path == "java_vuser" || strings.HasPrefix(path, "java_vuser.") {
+			if (path == "java_vuser" || path == "java_vuser.additional_vm_parameters") &&
+				overrides.JavaVuser != nil && len(overrides.JavaVuser.AdditionalVMParameters) > 0 {
+				overrideProbe := &dsl.Script{}
+				overrideProbe.Config.JavaVuser.AdditionalVMParameters =
+					append([]string(nil), overrides.JavaVuser.AdditionalVMParameters...)
+				if err := validateJavaVMParameterDisclosureSafety(overrideProbe); err != nil {
+					return err
+				}
+			}
+			applyJavaVuserOverrideField(&script.Config.JavaVuser, overrides.JavaVuser, path)
+			continue
+		}
+		if err := applyConfigOverrideField(&script.Config, &srcCfg, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func overrideToScriptConfig(overrides *RuntimeSettingsOverride) dsl.ScriptConfig {
+	var cfg dsl.ScriptConfig
+	if overrides == nil {
+		return cfg
+	}
+	cfg.BaseURL = overrides.BaseURL
+	if overrides.Results != nil {
+		cfg.Results = *cloneViaJSON(overrides.Results)
+	}
+	if overrides.WebSocket != nil {
+		cfg.WebSocket = *cloneViaJSON(overrides.WebSocket)
+	}
+	if overrides.Pacing != nil {
+		cfg.Pacing = *overrides.Pacing
+	}
+	if overrides.ThinkTime != nil {
+		cfg.ThinkTime = *overrides.ThinkTime
+	}
+	if overrides.ErrorHandling != nil {
+		cfg.ErrorHandling = *overrides.ErrorHandling
+	}
+	if overrides.Log != nil {
+		cfg.Log = *cloneLogConfig(overrides.Log)
+	}
+	if overrides.LogLevel != "" && (overrides.Log == nil || overrides.Log.Level == "") {
+		cfg.Log.Level = overrides.LogLevel
+	}
+	if overrides.RunLogic != nil {
+		cfg.RunLogic = *cloneRunLogicConfig(overrides.RunLogic)
+	}
+	if overrides.Iterations != nil && (overrides.RunLogic == nil || overrides.RunLogic.Iterations == 0) {
+		cfg.RunLogic.Iterations = *overrides.Iterations
+	}
+	if overrides.AutoTransactions != "" && (overrides.RunLogic == nil || overrides.RunLogic.AutoTransactions == "") {
+		cfg.RunLogic.AutoTransactions = overrides.AutoTransactions
+	}
+	if overrides.HTTP != nil {
+		cfg.HTTP = *cloneViaJSON(overrides.HTTP)
+	}
+	if overrides.WebRuntime != nil {
+		cfg.WebRuntime = *cloneViaJSON(overrides.WebRuntime)
+	}
+	if overrides.SOAP != nil {
+		cfg.SOAP = *cloneViaJSON(overrides.SOAP)
+	}
+	if overrides.BrowserEmulation != nil {
+		cfg.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
+	}
+	if overrides.BrowserConfig != nil {
+		cfg.Browser = *cloneViaJSON(overrides.BrowserConfig)
+	}
+	if overrides.Browser != nil {
+		if overrides.BrowserConfig == nil || overrides.BrowserConfig.Headless == nil {
+			if overrides.Browser.Headless != nil {
+				headless := *overrides.Browser.Headless
+				cfg.Browser.Headless = &headless
+			}
+		}
+		if overrides.BrowserConfig == nil || overrides.BrowserConfig.DeviceProfile == "" {
+			if overrides.Browser.DeviceProfile != "" {
+				cfg.Browser.DeviceProfile = overrides.Browser.DeviceProfile
+			}
+		}
+		if overrides.BrowserConfig == nil || overrides.BrowserConfig.TouchMode == nil {
+			if overrides.Browser.TouchMode != nil {
+				touchMode := *overrides.Browser.TouchMode
+				cfg.Browser.TouchMode = &touchMode
+			}
+		}
+		if overrides.BrowserConfig == nil || overrides.BrowserConfig.Orientation == "" {
+			if overrides.Browser.Orientation != "" {
+				cfg.Browser.Orientation = overrides.Browser.Orientation
+			}
+		}
+	}
+	return cfg
+}
+
+func applyJavaVuserOverrideField(dst *dsl.JavaVuserConfig, src *RuntimeJavaVuserOverride, path string) {
+	if dst == nil {
+		return
+	}
+	if path == "java_vuser" {
+		if src == nil {
+			*dst = dsl.JavaVuserConfig{}
+			return
+		}
+		applyJavaVuserRuntimeOverride(dst, src)
+		return
+	}
+	var zeroSrc RuntimeJavaVuserOverride
+	if src != nil {
+		zeroSrc = *src
+	}
+	switch strings.TrimPrefix(path, "java_vuser.") {
+	case "jdk_selection":
+		dst.JDKSelection = zeroSrc.JDKSelection
+	case "jdk_home":
+		dst.JDKHome = zeroSrc.JDKHome
+	case "additional_vm_parameters":
+		if len(zeroSrc.AdditionalVMParameters) > 0 {
+			dst.AdditionalVMParameters = append([]string(nil), zeroSrc.AdditionalVMParameters...)
+		} else {
+			dst.AdditionalVMParameters = nil
+		}
+	case "classpath":
+		if len(zeroSrc.Classpath) > 0 {
+			dst.Classpath = append([]string(nil), zeroSrc.Classpath...)
+		} else {
+			dst.Classpath = nil
+		}
+	case "use_xbootclasspath":
+		dst.UseXBootClasspath = cloneBoolPointer(zeroSrc.UseXBootClasspath)
+	case "dedicated_class_loader":
+		dst.DedicatedClassLoader = cloneBoolPointer(zeroSrc.DedicatedClassLoader)
+	case "skip_parameter_evaluation":
+		dst.SkipParameterEvaluation = cloneBoolPointer(zeroSrc.SkipParameterEvaluation)
+	case "jvm_sharing":
+		dst.JVMSharing = zeroSrc.JVMSharing
+		if !dsl.JavaVuserSharesJVMs(zeroSrc.JVMSharing) {
+			dst.VUsersPerJVM = 0
+		}
+	case "vusers_per_jvm":
+		dst.VUsersPerJVM = zeroSrc.VUsersPerJVM
+	}
+}
+
+func applyConfigOverrideField(dstCfg, srcCfg *dsl.ScriptConfig, canonicalPath string) error {
+	segments := strings.Split(canonicalPath, ".")
+	dstVal := reflect.ValueOf(dstCfg).Elem()
+	srcVal := reflect.ValueOf(srcCfg).Elem()
+
+	for i := 0; i < len(segments); i++ {
+		seg := segments[i]
+		for dstVal.Kind() == reflect.Ptr {
+			if dstVal.IsNil() {
+				dstVal.Set(reflect.New(dstVal.Type().Elem()))
+			}
+			dstVal = dstVal.Elem()
+		}
+		for srcVal.Kind() == reflect.Ptr {
+			if srcVal.IsNil() {
+				srcVal = reflect.Zero(srcVal.Type().Elem())
+			} else {
+				srcVal = srcVal.Elem()
+			}
+		}
+		field, ok := findStructFieldByJSONTag(dstVal.Type(), strings.ToLower(seg))
+		if !ok {
+			return fmt.Errorf("unknown runtime override field %q", canonicalPath)
+		}
+		dstField := dstVal.FieldByIndex(field.Index)
+		srcField := srcVal.FieldByIndex(field.Index)
+		if i == len(segments)-1 {
+			if canonicalPath == "error_handling.continue_on_error" && srcField.Kind() == reflect.Ptr && srcField.IsNil() {
+				falseVal := false
+				dstField.Set(reflect.ValueOf(&falseVal))
+				return nil
+			}
+			deepCopyReflectValue(dstField, srcField)
+			return nil
+		}
+		if dstField.Kind() == reflect.Map {
+			mapKey := strings.Join(segments[i+1:], ".")
+			keyVal := reflect.ValueOf(mapKey)
+			if srcField.IsValid() && !srcField.IsNil() {
+				elemVal := srcField.MapIndex(keyVal)
+				if elemVal.IsValid() {
+					if dstField.IsNil() {
+						dstField.Set(reflect.MakeMap(dstField.Type()))
+					}
+					clonedElem := reflect.New(dstField.Type().Elem()).Elem()
+					deepCopyReflectValue(clonedElem, elemVal)
+					dstField.SetMapIndex(keyVal, clonedElem)
+					return nil
+				}
+			}
+			if !dstField.IsNil() {
+				dstField.SetMapIndex(keyVal, reflect.Value{})
+			}
+			return nil
+		}
+		dstVal = dstField
+		srcVal = srcField
+	}
+	return nil
+}
+
+func deepCopyReflectValue(dst, src reflect.Value) {
+	if !src.IsValid() {
+		dst.Set(reflect.Zero(dst.Type()))
+		return
+	}
+	switch src.Kind() {
+	case reflect.Ptr, reflect.Map:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(dst.Type()))
+			return
+		}
+	case reflect.Slice:
+		if src.IsNil() {
+			dst.Set(reflect.Zero(dst.Type()))
+			return
+		}
+		if src.Len() == 0 {
+			dst.Set(reflect.MakeSlice(dst.Type(), 0, 0))
+			return
+		}
+	}
+	data, err := json.Marshal(src.Interface())
+	if err != nil {
+		dst.Set(src)
+		return
+	}
+	ptr := reflect.New(dst.Type())
+	if err := json.Unmarshal(data, ptr.Interface()); err != nil {
+		dst.Set(src)
+		return
+	}
+	dst.Set(ptr.Elem())
+}
+
+func effectiveLegacyOverrideFields(o *RuntimeSettingsOverride) []string {
+	if o == nil {
+		return nil
+	}
+	var fields []string
+	if o.BaseURL != "" {
+		fields = append(fields, "base_url")
+	}
+	if o.Results != nil {
+		fields = append(fields, "results")
+	}
+	if o.WebSocket != nil {
+		fields = append(fields, "websocket")
+	}
+	if o.Pacing != nil {
+		fields = append(fields, "pacing")
+	}
+	if o.ThinkTime != nil {
+		fields = append(fields, "think_time")
+	}
+	if o.ErrorHandling != nil {
+		fields = append(fields, "error_handling")
+	}
+	if o.Log != nil {
+		fields = append(fields, "log")
+	} else if o.LogLevel != "" {
+		fields = append(fields, "log.level")
+	}
+	if o.RunLogic != nil {
+		fields = append(fields, "run_logic")
+	} else {
+		if o.Iterations != nil {
+			fields = append(fields, "run_logic.iterations")
+		}
+		if o.AutoTransactions != "" {
+			fields = append(fields, "run_logic.auto_transactions")
+		}
+	}
+	if o.HTTP != nil {
+		fields = append(fields, "http")
+	}
+	if o.SOAP != nil {
+		fields = append(fields, "soap")
+	}
+	if o.WebRuntime != nil {
+		wr := o.WebRuntime
+		if len(wr.AdditionalAttributes) > 0 {
+			fields = append(fields, "web_runtime.additional_attributes")
+		}
+		if wr.DownloadFilters.Mode != "" || len(wr.DownloadFilters.Hosts) > 0 {
+			fields = append(fields, "web_runtime.download_filters")
+		}
+		if len(wr.ContentChecks) > 0 {
+			fields = append(fields, "web_runtime.content_checks")
+		}
+		if wr.NetworkSimulation != (dsl.NetworkSimulationConfig{}) {
+			fields = append(fields, "web_runtime.network_simulation")
+		}
+		if wr.Streaming != (dsl.StreamingConfig{}) {
+			fields = append(fields, "web_runtime.streaming")
+		}
+		if wr.DataFormatting.AutoDetect || len(wr.DataFormatting.Chain) > 0 {
+			fields = append(fields, "web_runtime.data_formatting")
+		}
+		if len(wr.SourceIPs) > 0 {
+			fields = append(fields, "web_runtime.source_ips")
+		}
+		if len(wr.NetworkProfiles) > 0 {
+			fields = append(fields, "web_runtime.network_profiles")
+		}
+	}
+	if o.BrowserEmulation != nil {
+		fields = append(fields, "browser_emulation")
+	}
+	if o.BrowserConfig != nil {
+		fields = append(fields, "browser")
+	} else if o.Browser != nil {
+		if o.Browser.Headless != nil {
+			fields = append(fields, "browser.headless")
+		}
+		if o.Browser.DeviceProfile != "" {
+			fields = append(fields, "browser.device_profile")
+		}
+		if o.Browser.TouchMode != nil {
+			fields = append(fields, "browser.touch_mode")
+		}
+		if o.Browser.Orientation != "" {
+			fields = append(fields, "browser.orientation")
+		}
+	}
+	if o.JavaVuser != nil {
+		jv := o.JavaVuser
+		if jv.JDKSelection != "" {
+			fields = append(fields, "java_vuser.jdk_selection")
+		}
+		if jv.JDKHome != "" {
+			fields = append(fields, "java_vuser.jdk_home")
+		}
+		if len(jv.AdditionalVMParameters) > 0 {
+			fields = append(fields, "java_vuser.additional_vm_parameters")
+		}
+		if len(jv.Classpath) > 0 {
+			fields = append(fields, "java_vuser.classpath")
+		}
+		if jv.UseXBootClasspath != nil {
+			fields = append(fields, "java_vuser.use_xbootclasspath")
+		}
+		if jv.DedicatedClassLoader != nil {
+			fields = append(fields, "java_vuser.dedicated_class_loader")
+		}
+		if jv.SkipParameterEvaluation != nil {
+			fields = append(fields, "java_vuser.skip_parameter_evaluation")
+		}
+		if jv.JVMSharing != "" {
+			fields = append(fields, "java_vuser.jvm_sharing")
+		}
+		if jv.VUsersPerJVM != 0 {
+			fields = append(fields, "java_vuser.vusers_per_jvm")
+		}
+	}
+	if len(o.Env) > 0 {
+		fields = append(fields, "env")
+	}
+	if len(o.RedactionRules) > 0 {
+		fields = append(fields, "redaction_rules")
+	}
+	return fields
+}
+
+func resolveEffectiveOverrideFields(o *RuntimeSettingsOverride) []string {
+	if o == nil {
+		return nil
+	}
+	if len(o.OverrideFields) > 0 {
+		fields, err := normalizeRuntimeOverrideFields(o.OverrideFields)
+		if err != nil {
+			fields = append([]string(nil), o.OverrideFields...)
+		}
+		if len(o.Env) > 0 {
+			hasEnv := false
+			for _, f := range fields {
+				if f == "env" || strings.HasPrefix(f, "env.") {
+					hasEnv = true
+					break
+				}
+			}
+			if !hasEnv {
+				fields = append(fields, "env")
+			}
+		}
+		if len(o.RedactionRules) > 0 && !slices.Contains(fields, "redaction_rules") {
+			fields = append(fields, "redaction_rules")
+		}
+		fields = appendImplicitCompactOverrideFields(fields, o)
+		return fields
+	}
+	return effectiveLegacyOverrideFields(o)
+}
+
+func combineOverrideFields(baseFields, groupFields []string) []string {
+	out := make([]string, 0, len(baseFields)+len(groupFields))
+	for _, bf := range baseFields {
+		replacedByGroup := false
+		for _, gf := range groupFields {
+			if bf == gf || strings.HasPrefix(bf, gf+".") {
+				replacedByGroup = true
+				break
+			}
+		}
+		if !replacedByGroup {
+			out = append(out, bf)
+		}
+	}
+	for _, gf := range groupFields {
+		coveredByBase := false
+		for _, existing := range out {
+			if gf == existing || strings.HasPrefix(gf, existing+".") {
+				coveredByBase = true
+				break
+			}
+		}
+		if !coveredByBase {
+			out = append(out, gf)
+		}
+	}
+	return out
+}
+
+func mergeRuntimeSettingsPartial(base, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	baseFields := resolveEffectiveOverrideFields(base)
+	groupFields := resolveEffectiveOverrideFields(group)
+
+	baseSrcCfg := overrideToScriptConfig(base)
+	groupSrcCfg := overrideToScriptConfig(group)
+	var mergedCfg dsl.ScriptConfig
+
+	var mergedJavaCfg dsl.JavaVuserConfig
+	for _, path := range baseFields {
+		if path == "env" || strings.HasPrefix(path, "env.") || path == "redaction_rules" {
+			continue
+		}
+		if path == "java_vuser" || strings.HasPrefix(path, "java_vuser.") {
+			if base != nil {
+				applyJavaVuserOverrideField(&mergedJavaCfg, base.JavaVuser, path)
+			}
+			continue
+		}
+		_ = applyConfigOverrideField(&mergedCfg, &baseSrcCfg, path)
+	}
+
+	for _, path := range groupFields {
+		if path == "env" || strings.HasPrefix(path, "env.") || path == "redaction_rules" {
+			continue
+		}
+		if path == "java_vuser" || strings.HasPrefix(path, "java_vuser.") {
+			if group != nil {
+				applyJavaVuserOverrideField(&mergedJavaCfg, group.JavaVuser, path)
+			}
+			continue
+		}
+		_ = applyConfigOverrideField(&mergedCfg, &groupSrcCfg, path)
+	}
+
+	combinedFields := combineOverrideFields(baseFields, groupFields)
+	merged := &RuntimeSettingsOverride{
+		OverrideFields: combinedFields,
+	}
+	touchedSections := make(map[string]bool, len(combinedFields))
+	for _, path := range combinedFields {
+		touchedSections[overrideFieldTopSection(path)] = true
+	}
+
+	if touchedSections["base_url"] {
+		merged.BaseURL = mergedCfg.BaseURL
+	}
+	if touchedSections["results"] {
+		merged.Results = cloneViaJSON(&mergedCfg.Results)
+	}
+	if touchedSections["websocket"] {
+		merged.WebSocket = cloneViaJSON(&mergedCfg.WebSocket)
+	}
+	if touchedSections["pacing"] {
+		pacing := mergedCfg.Pacing
+		merged.Pacing = &pacing
+	}
+	if touchedSections["think_time"] {
+		thinkTime := mergedCfg.ThinkTime
+		merged.ThinkTime = &thinkTime
+	}
+	if touchedSections["error_handling"] {
+		errorHandling := mergedCfg.ErrorHandling
+		merged.ErrorHandling = &errorHandling
+	}
+	if touchedSections["log"] {
+		merged.Log = cloneLogConfig(&mergedCfg.Log)
+	}
+	if touchedSections["run_logic"] {
+		onlyAutoTransactions := true
+		for _, path := range combinedFields {
+			if overrideFieldTopSection(path) == "run_logic" && path != "run_logic.auto_transactions" {
+				onlyAutoTransactions = false
+				break
+			}
+		}
+		if onlyAutoTransactions {
+			merged.AutoTransactions = mergedCfg.RunLogic.AutoTransactions
+		} else {
+			merged.RunLogic = cloneRunLogicConfig(&mergedCfg.RunLogic)
+		}
+	}
+	if touchedSections["http"] {
+		merged.HTTP = cloneViaJSON(&mergedCfg.HTTP)
+	}
+	if touchedSections["web_runtime"] {
+		merged.WebRuntime = cloneViaJSON(&mergedCfg.WebRuntime)
+	}
+	if touchedSections["soap"] {
+		merged.SOAP = cloneViaJSON(&mergedCfg.SOAP)
+	}
+	if touchedSections["browser"] {
+		merged.BrowserConfig = cloneViaJSON(&mergedCfg.Browser)
+	}
+	if touchedSections["browser_emulation"] {
+		merged.BrowserEmulation = cloneViaJSON(mergedCfg.BrowserEmulation)
+	}
+	if touchedSections["java_vuser"] {
+		merged.JavaVuser = &RuntimeJavaVuserOverride{
+			JDKSelection:            mergedJavaCfg.JDKSelection,
+			JDKHome:                 mergedJavaCfg.JDKHome,
+			AdditionalVMParameters:  append([]string(nil), mergedJavaCfg.AdditionalVMParameters...),
+			Classpath:               append([]string(nil), mergedJavaCfg.Classpath...),
+			UseXBootClasspath:       cloneBoolPointer(mergedJavaCfg.UseXBootClasspath),
+			DedicatedClassLoader:    cloneBoolPointer(mergedJavaCfg.DedicatedClassLoader),
+			SkipParameterEvaluation: cloneBoolPointer(mergedJavaCfg.SkipParameterEvaluation),
+			JVMSharing:              mergedJavaCfg.JVMSharing,
+			VUsersPerJVM:            mergedJavaCfg.VUsersPerJVM,
+		}
+	}
+
+	if base != nil {
+		for _, path := range baseFields {
+			if path == "env" {
+				if len(base.Env) > 0 {
+					if merged.Env == nil {
+						merged.Env = make(map[string]string, len(base.Env))
+					}
+					for k, v := range base.Env {
+						merged.Env[k] = v
+					}
+				}
+			} else if strings.HasPrefix(path, "env.") {
+				key := strings.TrimPrefix(path, "env.")
+				if merged.Env == nil {
+					merged.Env = make(map[string]string)
+				}
+				merged.Env[key] = base.Env[key]
+			}
+		}
+	}
+	if group != nil {
+		for _, path := range groupFields {
+			if path == "env" {
+				if len(group.OverrideFields) > 0 && len(group.Env) == 0 {
+					merged.Env = nil
+				} else if len(group.Env) > 0 {
+					if merged.Env == nil {
+						merged.Env = make(map[string]string, len(group.Env))
+					}
+					for k, v := range group.Env {
+						merged.Env[k] = v
+					}
+				}
+			} else if strings.HasPrefix(path, "env.") {
+				key := strings.TrimPrefix(path, "env.")
+				if merged.Env == nil {
+					merged.Env = make(map[string]string)
+				}
+				merged.Env[key] = group.Env[key]
+			}
+		}
+	}
+	if slices.Contains(baseFields, "redaction_rules") && base != nil && len(base.RedactionRules) > 0 {
+		merged.RedactionRules = cloneRedactionRules(base.RedactionRules)
+	}
+	if slices.Contains(groupFields, "redaction_rules") && group != nil {
+		merged.RedactionRules = cloneRedactionRules(group.RedactionRules)
+	}
+	return merged
+}
+
+func reconcileReplacedOverrideFields(target, next, src *RuntimeSettingsOverride, replacedFields []string) []string {
+	targetFields := resolveEffectiveOverrideFields(target)
+	srcFields := resolveEffectiveOverrideFields(src)
+	replacedSet := make(map[string]bool, len(replacedFields))
+	for _, f := range replacedFields {
+		replacedSet[f] = true
+	}
+	matchesReplaced := func(path string) bool {
+		top := overrideFieldTopSection(path)
+		if top == "browser" {
+			return replacedSet["browser_config"] || (replacedSet["browser"] && isCompactBrowserOverridePath(path))
+		}
+		if replacedSet[top] {
+			return true
+		}
+		if path == "run_logic.iterations" && replacedSet["iterations"] {
+			return true
+		}
+		if path == "log.level" && replacedSet["log_level"] {
+			return true
+		}
+		if path == "run_logic.auto_transactions" && replacedSet["auto_transactions"] {
+			return true
+		}
+		return false
+	}
+	var out []string
+	seen := make(map[string]bool)
+	addField := func(path string) {
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		out = append(out, path)
+	}
+	for _, path := range targetFields {
+		if !matchesReplaced(path) {
+			addField(path)
+		}
+	}
+	for _, path := range srcFields {
+		if matchesReplaced(path) {
+			addField(path)
+		}
+	}
+	if next != nil {
+		if replacedSet["iterations"] && !seen["run_logic"] &&
+			(next.Iterations != nil || (next.RunLogic != nil && next.RunLogic.Iterations > 0)) {
+			addField("run_logic.iterations")
+		}
+		if replacedSet["log_level"] && !seen["log"] &&
+			(next.LogLevel != "" || (next.Log != nil && next.Log.Level != "")) {
+			addField("log.level")
+		}
+		if replacedSet["auto_transactions"] && !seen["run_logic"] &&
+			(next.AutoTransactions != "" || (next.RunLogic != nil && next.RunLogic.AutoTransactions != "")) {
+			addField("run_logic.auto_transactions")
+		}
+		if replacedSet["browser"] && !seen["browser"] {
+			for _, bp := range compactBrowserOverridePathsFromOverride(next) {
+				addField(bp)
+			}
+		}
+	}
+	return out
+}
+
+func runtimeOverridesSpecifiesIterations(overrides *RuntimeSettingsOverride) bool {
+	if overrides == nil {
+		return false
+	}
+	if len(overrides.OverrideFields) == 0 {
+		return (overrides.RunLogic != nil && overrides.RunLogic.Iterations > 0) ||
+			(overrides.Iterations != nil && *overrides.Iterations > 0)
+	}
+	normalized, err := normalizeRuntimeOverrideFields(overrides.OverrideFields)
+	if err != nil {
+		return false
+	}
+	for _, path := range normalized {
+		if path == "run_logic" || path == "run_logic.iterations" {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeOverridesSpecifiesThinkTime(overrides *RuntimeSettingsOverride) bool {
+	if overrides == nil {
+		return false
+	}
+	if len(overrides.OverrideFields) == 0 {
+		return overrides.ThinkTime != nil
+	}
+	normalized, err := normalizeRuntimeOverrideFields(overrides.OverrideFields)
+	if err != nil {
+		return false
+	}
+	for _, path := range normalized {
+		if path == "think_time" || strings.HasPrefix(path, "think_time.") {
+			return true
+		}
+	}
+	return false
 }
 
 func buildRuntimeRedactionConfig(runtimeSettings *RuntimeSettingsOverride) (*engine.RedactionConfig, error) {

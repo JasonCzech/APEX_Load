@@ -1443,6 +1443,8 @@ func runtimeSettingsFieldValue(settings *RuntimeSettingsOverride, field string) 
 		return nilIfNilPointer(settings.WebSocket)
 	case "web_runtime":
 		return nilIfNilPointer(settings.WebRuntime)
+	case "soap":
+		return nilIfNilPointer(settings.SOAP)
 	case "browser_config":
 		return nilIfNilPointer(settings.BrowserConfig)
 	case "browser_emulation":

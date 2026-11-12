@@ -2667,6 +2667,7 @@ type RuntimeSettingsOverride struct {
 	RunLogic      *dsl.RunLogicConfig       `json:"run_logic,omitempty"`
 	HTTP          *dsl.HTTPConfig           `json:"http,omitempty"`
 	WebRuntime    *dsl.WebRuntimeConfig     `json:"web_runtime,omitempty"`
+	SOAP          *dsl.SOAPConfig           `json:"soap,omitempty"`
 	JavaVuser     *RuntimeJavaVuserOverride `json:"java_vuser,omitempty"`
 	// BrowserConfig is the full browser section (whole-section replace); it wins over
 	// the legacy 4-field Browser partial-merge below when both are present.
@@ -2683,6 +2684,7 @@ type RuntimeSettingsOverride struct {
 	BaseURL          string                 `json:"base_url,omitempty"`
 	Env              map[string]string      `json:"env,omitempty"`
 	RedactionRules   []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	OverrideFields   []string               `json:"override_fields,omitempty"`
 }
 
 type CreateGroupEntry struct {

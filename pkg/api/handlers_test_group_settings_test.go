@@ -232,6 +232,7 @@ func TestCommandCenterRuntimeFieldCoverage(t *testing.T) {
 		RunLogic:      &dsl.RunLogicConfig{Iterations: 3, AutoTransactions: "actions"},
 		HTTP:          &dsl.HTTPConfig{MaxRedirects: &maxRedirects},
 		WebRuntime:    &dsl.WebRuntimeConfig{},
+		SOAP:          &dsl.SOAPConfig{Version: "1.2"},
 		JavaVuser:     &RuntimeJavaVuserOverride{JDKSelection: "internal"},
 		BrowserConfig: &dsl.BrowserConfig{DeviceProfile: "desktop"},
 		BrowserEmulation: &dsl.BrowserEmulationConfig{
@@ -248,7 +249,7 @@ func TestCommandCenterRuntimeFieldCoverage(t *testing.T) {
 			continue
 		}
 		jsonFieldNames[tag] = true
-		if tag == "env" || tag == "redaction_rules" {
+		if tag == "env" || tag == "redaction_rules" || tag == "override_fields" {
 			continue
 		}
 		if !commandCenterRuntimeFieldKeys[tag] {
