@@ -83,9 +83,12 @@ export function ImportSettingsProvider({ script, disabled, onApplied, onBusyChan
  const value: SettingsContextValue = { viewGeneration, dataView, setDataView, script, editors, busy, disabled: disabled || !onApplied, apply, cancel,
   begin: category => setEditors(previous => ({ ...previous, [category]: previous[category] || { changes: {}, errors: {} } })),
   change: (category, field) => setEditors(previous => {
-   const changes = { ...previous[category]?.changes, [settingKey(field)]: field }
+   const key = settingKey(field)
+   const changes = { ...previous[category]?.changes }
+   if (field.value === undefined) delete changes[key]
+   else changes[key] = field
    const errors = { ...previous[category]?.errors }
-   delete errors[settingKey(field)]
+   delete errors[key]
    delete errors.category
    if (field.path === 'config.think_time.type' && typeof field.value === 'string') {
     const current = { ...script.config.think_time }
@@ -128,10 +131,13 @@ export function SettingValue({ category, path, parameter, value, label, type = '
  const currentValue = editor?.changes[key] ? editor.changes[key].value : value
  if (!editor || readOnly) return <span className="import-setting-value">{formatSettingValue(currentValue)}</span>
  const change = (next: unknown) => context?.change(category, { path, parameter, value: next })
+ const importedOption = value != null && value !== '' && !options?.includes(String(value)) ? String(value) : null
+ const currentOutOfCatalog = currentValue != null && currentValue !== '' && !options?.includes(String(currentValue)) ? String(currentValue) : null
+ const preservedOption = importedOption ?? currentOutOfCatalog
  const props = { 'aria-label': label, disabled: context?.disabled || context?.busy, 'aria-invalid': !!editor.errors[key] }
  return <label className="import-setting-input"><span className="sr-only">{label}</span>
   {type === 'boolean' ? <select {...props} value={currentValue == null ? '' : String(currentValue)} onChange={e => change(e.target.value === '' ? null : e.target.value === 'true')}><option value="">Default</option><option value="true">Enabled</option><option value="false">Disabled</option></select>
-   : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(e.target.value || null)}><option value="">Default</option>{currentValue && !options?.includes(String(currentValue)) ? <option value={String(currentValue)}>{String(currentValue)} (imported)</option> : null}{options?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
+   : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(importedOption !== null && e.target.value === importedOption ? undefined : (e.target.value || null))}><option value="">Default</option>{preservedOption ? <option value={preservedOption}>{preservedOption} (imported)</option> : null}{options?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
    : type === 'lines' ? <textarea {...props} rows={3} value={Array.isArray(currentValue) ? currentValue.join('\n') : ''} onChange={e => change(e.target.value.split('\n'))} />
    : <input {...props} type={type === 'number' || type === 'signed' ? 'number' : 'text'} min={type === 'number' ? 0 : undefined} step="any" value={String(currentValue ?? '')} placeholder="Default" onChange={e => change(e.target.value === '' ? null : type === 'number' || type === 'signed' ? Number(e.target.value) : e.target.value)} />}
   {editor.errors[key] && <span role="alert">{editor.errors[key]}</span>}

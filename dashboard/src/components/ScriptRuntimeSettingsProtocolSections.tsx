@@ -95,7 +95,7 @@ export function SoapRuntimeSection({ script, sectionIsActive, onSelectSection, o
               </label>
               <div className="runtime-checkbox-list">
                 <label className="checkbox-label">
-                  <input type="checkbox" checked={script.config.soap?.fault_handling?.fail_on_fault ?? true} onChange={e => updateField('config.soap.fault_handling.fail_on_fault', e.target.checked)} />
+                  <input type="checkbox" checked={Boolean(script.config.soap?.fault_handling?.fail_on_fault)} onChange={e => updateField('config.soap.fault_handling.fail_on_fault', e.target.checked)} />
                   <span>Fail on SOAP Fault</span>
                 </label>
               </div>
@@ -388,7 +388,7 @@ export function WebRuntimeCompatibilitySection({ script, sectionIsActive, onSele
               <textarea rows={4} placeholder={'Access Denied|any_response|true'} value={formatContentChecks(script.config.web_runtime?.content_checks)}
                 onChange={e => updateField('config.web_runtime', {
                   ...script.config.web_runtime,
-                  content_checks: parseContentChecks(e.target.value),
+                  content_checks: parseContentChecks(e.target.value, script.config.web_runtime?.content_checks),
                 })} />
             </label>
           </div>

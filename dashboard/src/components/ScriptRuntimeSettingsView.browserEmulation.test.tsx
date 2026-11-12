@@ -160,6 +160,28 @@ describe('ScriptRuntimeSettingsView Browser Emulation', () => {
     expect(cache.check_newer_versions).toBeUndefined()
   })
 
+  it('honors browser_emulation.cache.simulate_cache precedence over http.cache_enabled in Session & Cache', () => {
+    render(
+      httpScript({
+        http: { cache_enabled: true },
+        browser_emulation: { cache: { simulate_cache: false } },
+      }),
+      { activeSection: 'http', activeHTTPTransportTab: 'session_cache' },
+    )
+    const simulateCheckbox = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))!
+    expect(simulateCheckbox().checked).toBe(false)
+
+    render(
+      httpScript({
+        http: { cache_enabled: false },
+        browser_emulation: { cache: { simulate_cache: true } },
+      }),
+      { activeSection: 'http', activeHTTPTransportTab: 'session_cache' },
+    )
+    expect(simulateCheckbox().checked).toBe(true)
+  })
+
   it('unsets specific mode when the browser is reverted to Engine default', () => {
     const onUpdateField = render(
       httpScript({ browser_emulation: { mode: 'specific', browser_type: 'chrome' } }),

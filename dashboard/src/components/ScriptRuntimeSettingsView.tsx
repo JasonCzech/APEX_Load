@@ -305,7 +305,7 @@ export function ScriptRuntimeSettingsView({
   }
   const httpSettingsValue = {
     ...(script.config.http || {}),
-    cache_enabled: script.config.http?.cache_enabled ?? browserEmulationCache?.simulate_cache,
+    cache_enabled: script.config.browser_emulation?.cache?.simulate_cache ?? script.config.http?.cache_enabled ?? false,
   }
   const requestDefaultErrorCount = countHTTPDefaultHeaderErrors(httpSettingsValue)
   const pinnedCookieErrorCount = countPinnedCookieErrors(httpSettingsValue)
@@ -450,11 +450,11 @@ export function ScriptRuntimeSettingsView({
               </label>
               <label>
                 <span>DSN Secret</span>
-                <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="secret://perf/db-dsn" />
+                <input value={script.config.database?.dsn_secret || ''} onChange={e => updateField('config.database.dsn_secret', e.target.value)} placeholder="DB_DSN" />
               </label>
               <label className="full-width">
                 <span>DSN / Fixture</span>
-                <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:test.db?mode=rw" />
+                <input value={script.config.database?.dsn || ''} onChange={e => updateField('config.database.dsn', e.target.value)} placeholder=":memory: or file:testdb?mode=memory&cache=shared" />
               </label>
             </>
           )}
@@ -1401,7 +1401,7 @@ export function ScriptRuntimeSettingsView({
               <input type="number" value={script.config.http?.max_conns_per_host || 100}
                 onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
             <label><span>Max Idle Connections</span>
-              <input type="number" min={0} value={script.config.http?.max_idle_conns || 0}
+              <input type="number" min={0} value={script.config.http?.max_idle_conns ?? 4}
                 onChange={e => updateField('config.http', { ...script.config.http, max_idle_conns: Number(e.target.value) || undefined })} /></label>
             <label><span>Max Redirects</span>
               <input type="number" value={script.config.http?.max_redirects ?? 10}
