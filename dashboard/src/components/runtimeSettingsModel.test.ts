@@ -11,12 +11,14 @@ import {
   formatLog,
   formatPacing,
   formatThinkTime,
+  isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
   overrideFromRuntimeDraft,
   resolveRuntimeFieldSource,
   runtimeDraftFromOverride,
   runtimeOverrideFromScriptConfig,
 } from './runtimeSettingsModel'
+import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 
 describe('runtimeSettingsModel', () => {
   it('resolves the source group → scenario → script', () => {
@@ -322,5 +324,53 @@ describe('runtimeSettingsModel', () => {
       error_handling: { continue_on_error: false, snapshot_on_error: false },
     })
     expect(overrideFromRuntimeDraft({ log_level: '', auto_transactions: '' })).toBeUndefined()
+  })
+
+  it('preserves all 9 ErrorHandlingConfig fields across runtimeDraftFromOverride and overrideFromRuntimeDraft', () => {
+    const fullErrorHandling = {
+      continue_on_error: false,
+      snapshot_on_error: true,
+      fail_transaction_on_error_message: true,
+      max_retries: 4,
+      retry_delay_ms: 500,
+      retry_backoff: 'exponential',
+      retry_on: ['5xx', '429'],
+      honor_retry_after: true,
+      retry_after_max_ms: 15000,
+    }
+    const draft = runtimeDraftFromOverride({ error_handling: fullErrorHandling })
+    expect(draft).toEqual(expect.objectContaining(fullErrorHandling))
+    expect(isRuntimeDraftEmpty({
+      log_level: '',
+      auto_transactions: '',
+      fail_transaction_on_error_message: true,
+    })).toBe(false)
+    expect(isRuntimeDraftEmpty({
+      log_level: '',
+      auto_transactions: '',
+      retry_on: ['5xx'],
+    })).toBe(false)
+    expect(isRuntimeDraftEmpty({
+      log_level: '',
+      auto_transactions: '',
+      honor_retry_after: false,
+    })).toBe(false)
+    expect(isRuntimeDraftEmpty({
+      log_level: '',
+      auto_transactions: '',
+      retry_after_max_ms: 5000,
+    })).toBe(false)
+    expect(overrideFromRuntimeDraft(draft)).toEqual({
+      error_handling: fullErrorHandling,
+    })
+  })
+
+  it('materializes data_formatting.auto_detect=false over a base with auto_detect=true', () => {
+    const materialized = materializeRuntimeSettingsForApply(
+      undefined,
+      { base_url: '', web_runtime: { data_formatting: { auto_detect: true } } },
+      runtimeDraftFromOverride({ web_runtime: { data_formatting: { auto_detect: false } } }),
+    )
+    expect(materialized?.web_runtime?.data_formatting?.auto_detect).toBe(false)
   })
 })

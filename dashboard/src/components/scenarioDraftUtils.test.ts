@@ -488,3 +488,29 @@ it('keeps an explicit live-table binding and its isolated seed policy when creat
  const result = buildScenarioDraftFromTest(test)
  expect(result.revisionContext?.dataPools[0]).toMatchObject({ access_mode: 'live', live_options: { seed_policy: 'current_at_start' } })
 })
+
+it('preserves all 9 ErrorHandlingConfig fields when building a scenario draft from a test', () => {
+  const fullErrorHandling = {
+    continue_on_error: false,
+    snapshot_on_error: true,
+    fail_transaction_on_error_message: true,
+    max_retries: 3,
+    retry_delay_ms: 250,
+    retry_backoff: 'exponential',
+    retry_on: ['5xx', '429'],
+    honor_retry_after: true,
+    retry_after_max_ms: 10000,
+  }
+  const draft = buildScenarioDraftFromTest({
+    id: 'test-9-eh',
+    name: 'All 9 Error Handling Fields',
+    status: 'QUEUED',
+    total_vusers: 1,
+    duration: '1m',
+    created_at: '2026-07-19T12:00:00Z',
+    runtime_settings: { error_handling: fullErrorHandling },
+    groups: [],
+    script_id: 'script-1',
+  } as never)
+  expect(draft.runtimeSettings).toEqual(expect.objectContaining(fullErrorHandling))
+})

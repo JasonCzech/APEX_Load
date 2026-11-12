@@ -821,7 +821,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				SOAP: dsl.SOAPConfig{
 					Version:       soapVersion,
 					Namespaces:    map[string]string{"tns": doc.TargetNamespace},
-					FaultHandling: dsl.SOAPFaultHandlingConfig{FailOnFault: true},
+					FaultHandling: dsl.SOAPFaultHandlingConfig{FailOnFault: dsl.BoolPtr(true)},
 				},
 			},
 		},

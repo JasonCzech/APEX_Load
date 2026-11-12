@@ -149,9 +149,26 @@ export function replaceScenarioRuntimeDefaults(
 
 export type ScenarioErrorHandlingFlag = 'continue_on_error' | 'snapshot_on_error'
 
-/** An error-handling default as authored: undefined inherits the script's. */
+const ERROR_HANDLING_KEYS = [
+  'continue_on_error',
+  'snapshot_on_error',
+  'fail_transaction_on_error_message',
+  'max_retries',
+  'retry_delay_ms',
+  'retry_backoff',
+  'retry_on',
+  'honor_retry_after',
+  'retry_after_max_ms',
+] as const
+
+/**
+ * An error-handling default as authored: undefined inherits the effective
+ * scenario default (true for continue_on_error, undefined for snapshot_on_error).
+ */
 export function scenarioErrorHandlingFlag(form: ScenarioFormState, flag: ScenarioErrorHandlingFlag): boolean | undefined {
-  return form.runtime_settings?.error_handling?.[flag]
+  const value = form.runtime_settings?.error_handling?.[flag]
+  if (flag === 'continue_on_error') return value ?? true
+  return value
 }
 
 /** Sets an error-handling default (undefined clears it back to inherit). */
@@ -160,7 +177,11 @@ export function withScenarioErrorHandlingFlag(form: ScenarioFormState, flag: Sce
   const errorHandling = { ...(runtime.error_handling ?? {}) }
   if (value === undefined) delete errorHandling[flag]
   else errorHandling[flag] = value
-  runtime.error_handling = Object.keys(errorHandling).length > 0 ? errorHandling : undefined
+  const hasAnyErrorField = ERROR_HANDLING_KEYS.some(key => {
+    const entry = errorHandling[key]
+    return entry !== undefined && entry !== '' && (!Array.isArray(entry) || entry.length > 0)
+  })
+  runtime.error_handling = hasAnyErrorField ? errorHandling : undefined
   return { ...form, runtime_settings: Object.values(runtime).some(entry => entry !== undefined) ? runtime : undefined }
 }
 
@@ -244,9 +265,14 @@ function carryAuthoredRuntime(runtime: RuntimeSettingsOverride, current: Runtime
     if (runtime.run_logic) runtime.run_logic = { ...runtime.run_logic, auto_transactions: autoTransactions }
     else runtime.auto_transactions = autoTransactions
   }
-  for (const flag of ['continue_on_error', 'snapshot_on_error'] as const) {
+  for (const flag of ERROR_HANDLING_KEYS) {
     const value = current.error_handling?.[flag]
-    if (value !== undefined && runtime.error_handling?.[flag] === undefined) runtime.error_handling = { ...(runtime.error_handling ?? {}), [flag]: value }
+    if (value !== undefined && runtime.error_handling?.[flag] === undefined) {
+      runtime.error_handling = {
+        ...(runtime.error_handling ?? {}),
+        [flag]: Array.isArray(value) ? [...value] : value,
+      }
+    }
   }
   if (runtime.browser_config === undefined && runtime.browser === undefined) {
     if (current.browser_config !== undefined) runtime.browser_config = structuredClone(current.browser_config)

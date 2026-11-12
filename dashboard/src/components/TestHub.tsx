@@ -3832,8 +3832,8 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
           <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
         </label>
-        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'continue_on_error') ? 'selected' : ''}`}>
-          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'continue_on_error') ?? false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'continue_on_error', event.target.checked))} />
+        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'continue_on_error') !== false ? 'selected' : ''}`}>
+          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'continue_on_error') !== false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'continue_on_error', event.target.checked))} />
           <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
         </label>
         <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'snapshot_on_error') ? 'selected' : ''}`}>

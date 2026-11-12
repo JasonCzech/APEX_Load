@@ -1171,3 +1171,111 @@ it('keeps HAR selected for a single pasted HAR entry', async () => {
     container.remove()
   }
 })
+
+it('preserves converter-authored think_time, pacing, max_retries, request_timeout_ms, and continue_on_error until overridden', async () => {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  const onEdit = vi.fn()
+  try {
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'Converter Authored Script',
+        protocol: 'http',
+        config: {
+          base_url: 'https://converter.example.test',
+          think_time: { type: 'recorded', mean_ms: 2500 },
+          pacing: { type: 'fixed_interval', interval_ms: 5000 },
+          error_handling: { max_retries: 3 },
+          http: { request_timeout_ms: 15000 },
+        },
+        actions: [{ name: 'GET /items', type: 'http_request', method: 'GET', target: '/items' }],
+      },
+      warnings: [],
+      correlations: [],
+      stats: { format: 'rest_json', total_requests: 1, converted_actions: 1, assertions: 1, extractors: 0, correlations_detected: 0 },
+    })
+
+    await act(async () => root.render(<SampleScriptImport onEdit={onEdit} />))
+
+    const continueCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Continue on error'))!
+    expect(continueCheckbox.checked).toBe(true)
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Inspect & review'))!
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))!
+    await act(async () => {
+      editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        think_time: { type: 'recorded', mean_ms: 2500 },
+        pacing: { type: 'fixed_interval', interval_ms: 5000 },
+        error_handling: { max_retries: 3 },
+        http: { request_timeout_ms: 15000 },
+      }),
+    }))
+    const untouchedDraft = onEdit.mock.calls[0][0]
+    expect(untouchedDraft.config.error_handling.continue_on_error).toBeUndefined()
+
+    // Now touch the override inputs and verify user edits take effect.
+    onEdit.mockClear()
+    apiMock.importSample.mockResolvedValueOnce({
+      script: {
+        name: 'Converter Authored Script',
+        protocol: 'http',
+        config: {
+          base_url: 'https://converter.example.test',
+          think_time: { type: 'recorded', mean_ms: 2500 },
+          pacing: { type: 'fixed_interval', interval_ms: 5000 },
+          error_handling: { max_retries: 3, continue_on_error: true },
+          http: { request_timeout_ms: 15000 },
+        },
+        actions: [{ name: 'GET /items', type: 'http_request', method: 'GET', target: '/items' }],
+      },
+      warnings: [],
+      correlations: [],
+      stats: { format: 'rest_json', total_requests: 1, converted_actions: 1, assertions: 1, extractors: 0, correlations_detected: 0 },
+    })
+
+    const fieldInput = (labelText: string) => Array.from(container.querySelectorAll<HTMLLabelElement>('label.sample-import-field'))
+      .find(label => label.querySelector('span')?.textContent === labelText)
+      ?.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!
+
+    await act(async () => {
+      setControlValue(fieldInput('Think time (ms)'), '400')
+      setControlValue(fieldInput('Pacing'), 'fixed_delay')
+      setControlValue(fieldInput('Max Retries'), '2')
+      setControlValue(fieldInput('Request Timeout (ms)'), '9000')
+      continueCheckbox.click()
+    })
+
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const editButtonAfterOverride = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Open draft in Visual Editor'))!
+    await act(async () => {
+      editButtonAfterOverride.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({
+        think_time: { type: 'fixed', mean_ms: 400 },
+        pacing: { type: 'fixed_delay', delay_ms: 0 },
+        error_handling: { max_retries: 2, continue_on_error: false },
+        http: { request_timeout_ms: 9000 },
+      }),
+    }))
+  } finally {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+})

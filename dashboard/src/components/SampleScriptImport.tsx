@@ -73,6 +73,11 @@ type SampleImportOptions = {
   default_headers: string
 }
 
+type SampleImportOptionsState = {
+  values: SampleImportOptions
+  touched: Partial<Record<keyof SampleImportOptions, boolean>>
+}
+
 type SampleImportOptionsAction =
   | { type: 'update'; field: keyof SampleImportOptions; value: SampleImportOptions[keyof SampleImportOptions] }
   | { type: 'reset' }
@@ -368,22 +373,33 @@ const initialOptions: SampleImportOptions = {
   think_time_ms: '1000',
   pacing_type: 'none',
   pacing_delay_ms: '0',
-  continue_on_error: false,
+  continue_on_error: true,
   max_retries: '0',
   request_timeout_ms: '60000',
   user_agent: '',
   default_headers: '',
 }
 
-function sampleImportOptionsReducer(state: SampleImportOptions, action: SampleImportOptionsAction): SampleImportOptions {
+const initialOptionsState: SampleImportOptionsState = {
+  values: initialOptions,
+  touched: {},
+}
+
+function sampleImportOptionsReducer(state: SampleImportOptionsState, action: SampleImportOptionsAction): SampleImportOptionsState {
   switch (action.type) {
     case 'update':
       return {
-        ...state,
-        [action.field]: action.value,
+        values: {
+          ...state.values,
+          [action.field]: action.value,
+        },
+        touched: {
+          ...state.touched,
+          [action.field]: true,
+        },
       }
     case 'reset':
-      return initialOptions
+      return initialOptionsState
     default:
       return state
   }
@@ -443,7 +459,7 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
   const [formatNotice, setFormatNotice] = useState('')
   const convertTask = useAsyncTask<SampleImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
-  const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
+  const [{ values: options, touched: touchedOptions }, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptionsState)
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const [settingsEditing, setSettingsEditing] = useState(false)
@@ -715,21 +731,32 @@ export default function SampleScriptImport({ initialFiles, projectId, folderId, 
     script.name = options.name.trim() || script.name
     script.config = script.config || {}
     script.config.base_url = options.base_url.trim() || script.config.base_url || ''
-    script.config.think_time = {
-      type: 'fixed',
-      mean_ms: Number(options.think_time_ms) || 1000,
+    if (touchedOptions.think_time_ms || !script.config.think_time) {
+      const parsedThinkTime = options.think_time_ms.trim() !== '' && Number.isFinite(Number(options.think_time_ms))
+        ? Math.max(0, Number(options.think_time_ms))
+        : 1000
+      script.config.think_time = {
+        type: 'fixed',
+        mean_ms: parsedThinkTime,
+      }
     }
-    script.config.pacing = options.pacing_type === 'fixed_delay'
-      ? { type: 'fixed_delay', delay_ms: Number(options.pacing_delay_ms) || 0 }
-      : { type: 'none' }
+    if (touchedOptions.pacing_type || touchedOptions.pacing_delay_ms || !script.config.pacing) {
+      script.config.pacing = options.pacing_type === 'fixed_delay'
+        ? { type: 'fixed_delay', delay_ms: Number(options.pacing_delay_ms) || 0 }
+        : { type: 'none' }
+    }
     script.config.error_handling = {
       ...(script.config.error_handling || {}),
-      continue_on_error: options.continue_on_error,
-      max_retries: Number(options.max_retries) || 0,
+      ...(touchedOptions.continue_on_error ? { continue_on_error: options.continue_on_error } : {}),
+      ...(touchedOptions.max_retries || script.config.error_handling?.max_retries === undefined
+        ? { max_retries: Number(options.max_retries) || 0 }
+        : {}),
     }
     script.config.http = {
       ...(script.config.http || {}),
-      request_timeout_ms: Number(options.request_timeout_ms) || 60000,
+      ...(touchedOptions.request_timeout_ms || script.config.http?.request_timeout_ms === undefined
+        ? { request_timeout_ms: Number(options.request_timeout_ms) || 60000 }
+        : {}),
     }
     if (options.user_agent.trim()) {
       script.config.http.user_agent = options.user_agent.trim()

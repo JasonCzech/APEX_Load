@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -322,7 +323,7 @@ func TestParse_SOAPConfigAndActionFields(t *testing.T) {
 	if script.Config.SOAP.WSSecurity == nil || script.Config.SOAP.WSSecurity.UsernameToken == nil {
 		t.Fatalf("ws_security username_token = %#v, want configured token", script.Config.SOAP.WSSecurity)
 	}
-	if !script.Config.SOAP.FaultHandling.FailOnFault {
+	if script.Config.SOAP.FaultHandling.FailOnFault == nil || !*script.Config.SOAP.FaultHandling.FailOnFault {
 		t.Fatal("fault_handling.fail_on_fault = false, want true")
 	}
 	if script.Actions[0].SOAP == nil {
@@ -671,5 +672,192 @@ func TestParse_InitAndTeardown(t *testing.T) {
 	}
 	if len(script.Teardown) != 1 {
 		t.Errorf("teardown count = %d, want 1", len(script.Teardown))
+	}
+}
+
+func TestSOAPFaultHandlingFailOnFaultTriStateSerialization(t *testing.T) {
+	t.Run("nil omits fail_on_fault", func(t *testing.T) {
+		cfg := SOAPFaultHandlingConfig{}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("Marshal error: %v", err)
+		}
+		if strings.Contains(string(raw), "fail_on_fault") {
+			t.Fatalf("expected nil FailOnFault to be omitted, got %s", raw)
+		}
+		var decoded SOAPFaultHandlingConfig
+		if err := json.Unmarshal([]byte(`{}`), &decoded); err != nil {
+			t.Fatalf("Unmarshal error: %v", err)
+		}
+		if decoded.FailOnFault != nil {
+			t.Fatalf("FailOnFault = %v, want nil", *decoded.FailOnFault)
+		}
+	})
+
+	t.Run("explicit false round-trips", func(t *testing.T) {
+		cfg := SOAPFaultHandlingConfig{FailOnFault: BoolPtr(false)}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("Marshal error: %v", err)
+		}
+		if string(raw) != `{"fail_on_fault":false}` {
+			t.Fatalf("Marshal = %s, want {\"fail_on_fault\":false}", raw)
+		}
+		var decoded SOAPFaultHandlingConfig
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatalf("Unmarshal error: %v", err)
+		}
+		if decoded.FailOnFault == nil || *decoded.FailOnFault {
+			t.Fatalf("FailOnFault = %v, want explicit false", decoded.FailOnFault)
+		}
+	})
+
+	t.Run("explicit true round-trips", func(t *testing.T) {
+		cfg := SOAPFaultHandlingConfig{FailOnFault: BoolPtr(true)}
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("Marshal error: %v", err)
+		}
+		if string(raw) != `{"fail_on_fault":true}` {
+			t.Fatalf("Marshal = %s, want {\"fail_on_fault\":true}", raw)
+		}
+		var decoded SOAPFaultHandlingConfig
+		if err := json.Unmarshal(raw, &decoded); err != nil {
+			t.Fatalf("Unmarshal error: %v", err)
+		}
+		if decoded.FailOnFault == nil || !*decoded.FailOnFault {
+			t.Fatalf("FailOnFault = %v, want explicit true", decoded.FailOnFault)
+		}
+	})
+}
+
+func TestValidateSOAPScriptIssuesWalksLifecycleAndNestedControlActions(t *testing.T) {
+	script := &Script{
+		Name:     "soap-nested-validation",
+		Protocol: "soap",
+		Config: ScriptConfig{
+			BaseURL: "https://soap.example.test",
+			SOAP:    SOAPConfig{Version: "1.1"},
+		},
+		Init: []Action{
+			{
+				Name:   "init-soap",
+				Type:   "POST",
+				Target: "/ws",
+				Body:   "<Envelope/>",
+				SOAP:   &SOAPActionConfig{BodyMode: "invalid_init_mode"},
+			},
+		},
+		Actions: []Action{
+			{
+				Name: "branch-check",
+				Type: "control_if",
+				Control: &ControlFlow{
+					Condition: &Condition{Left: "{{var.ok}}", Op: "eq", Right: "true"},
+					Steps: []Action{
+						{
+							Name:   "nested-then-soap",
+							Type:   "POST",
+							Target: "/ws",
+							Body:   "<Envelope/>",
+							SOAP:   &SOAPActionConfig{BodyMode: "invalid_then_mode"},
+						},
+					},
+					Else: []Action{
+						{
+							Name: "parallel-soap",
+							Type: "control_parallel",
+							Control: &ControlFlow{
+								Branches: []ParallelBranch{
+									{
+										Name: "b1",
+										Steps: []Action{
+											{
+												Name:   "parallel-leaf",
+												Type:   "POST",
+												Target: "/ws",
+												Body:   "<Envelope/>",
+												SOAP:   &SOAPActionConfig{BodyMode: "invalid_parallel_mode"},
+											},
+										},
+									},
+									{
+										Name: "b2",
+										Steps: []Action{
+											{
+												Name:   "parallel-valid",
+												Type:   "POST",
+												Target: "/ws",
+												Body:   "<Envelope/>",
+												SOAP:   &SOAPActionConfig{BodyMode: "raw_xml"},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		Teardown: []Action{
+			{
+				Name:   "teardown-soap",
+				Type:   "POST",
+				Target: "/ws",
+				Body:   "<Envelope/>",
+				SOAP:   &SOAPActionConfig{BodyMode: "invalid_teardown_mode"},
+			},
+		},
+	}
+
+	issues := validateSOAPScriptIssues(script)
+	joined := strings.Join(issues, "\n")
+	for _, expected := range []string{
+		`init[0] "init-soap": soap.body_mode must be raw_xml or generated`,
+		`actions[0].control.steps[0] "nested-then-soap": soap.body_mode must be raw_xml or generated`,
+		`actions[0].control.else[0].control.branches[0].steps[0] "parallel-leaf": soap.body_mode must be raw_xml or generated`,
+		`teardown[0] "teardown-soap": soap.body_mode must be raw_xml or generated`,
+	} {
+		if !strings.Contains(joined, expected) {
+			t.Fatalf("validateSOAPScriptIssues missing %q in:\n%s", expected, joined)
+		}
+	}
+}
+
+func TestValidateDatabaseScriptIssuesAllowsDSNSecretWithoutDSN(t *testing.T) {
+	withSecret := &Script{
+		Name:     "db-secret-only",
+		Protocol: "database",
+		Config: ScriptConfig{
+			Database: DatabaseConfig{
+				Driver:    "postgres",
+				DSNSecret: "prod_db_dsn",
+			},
+		},
+		Actions: []Action{
+			{
+				Name:   "ping",
+				Type:   "db_query",
+				Params: map[string]any{"query": "SELECT 1"},
+			},
+		},
+	}
+	if issues := validateDatabaseScriptIssues(withSecret); len(issues) != 0 {
+		t.Fatalf("expected no database config issues when dsn_secret is set, got %v", issues)
+	}
+
+	withoutBoth := &Script{
+		Name:     "db-missing-dsn",
+		Protocol: "database",
+		Config: ScriptConfig{
+			Database: DatabaseConfig{
+				Driver: "postgres",
+			},
+		},
+	}
+	issues := validateDatabaseScriptIssues(withoutBoth)
+	if len(issues) != 1 || issues[0] != "config.database.dsn is required" {
+		t.Fatalf("expected config.database.dsn is required when both dsn and dsn_secret are empty, got %v", issues)
 	}
 }

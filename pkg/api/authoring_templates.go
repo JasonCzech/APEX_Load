@@ -262,7 +262,7 @@ func authoringTemplateCatalog() []AuthoringTemplate {
 					SOAP: dsl.SOAPConfig{
 						Version: "1.1",
 						FaultHandling: dsl.SOAPFaultHandlingConfig{
-							FailOnFault: true,
+							FailOnFault: boolPtr(true),
 						},
 					},
 					RunLogic: dsl.RunLogicConfig{Iterations: 1, AutoTransactions: "per_action"},

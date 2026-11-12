@@ -590,4 +590,116 @@ describe('TestExecutionScenarioPreview', () => {
     const sampledSeconds = new Set(points.map(point => point.second))
     expect([300, 900, 960].some(boundary => sampledSeconds.has(boundary))).toBe(false)
   })
+
+  it('displays overridden http.version and http.max_conns_per_host from group and scenario runtime_settings before script defaults', async () => {
+    const cardValue = (selector: string, label: string) => {
+      const card = Array.from(container.querySelectorAll(selector)).find(
+        element => element.querySelector('.scenario-script-detail-label')?.textContent === label,
+      )
+      return card?.querySelector('.scenario-script-detail-value')?.textContent
+    }
+
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{
+            id: 'test-http-override',
+            name: 'HTTP Override Scenario',
+            status: 'QUEUED',
+            total_vusers: 10,
+            duration: '5m',
+            created_at: '2026-05-12T20:00:00Z',
+            runtime_settings: {
+              http: { version: '2', max_conns_per_host: 64 },
+            },
+            groups: [
+              {
+                name: 'GroupOverride',
+                script_id: 'script-1',
+                script_name: 'Script 1',
+                protocol: 'http',
+                vusers: 5,
+                runtime_settings: {
+                  http: { version: '3', max_conns_per_host: 32 },
+                },
+              },
+              {
+                name: 'ScenarioOverride',
+                script_id: 'script-2',
+                script_name: 'Script 2',
+                protocol: 'http',
+                vusers: 5,
+              },
+            ],
+          } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{
+            points: [{ second: 0, group0: 5, group1: 5, total: 10 }],
+            totalVUsers: 10,
+            showVUsers: true,
+            peakVUsers: 10,
+            totalSeconds: 300,
+            steadySeconds: 300,
+            startDelaySeconds: 0,
+            preBaselineSeconds: 0,
+            postBaselineSeconds: 0,
+          }}
+          queuedScenarioRows={[
+            {
+              group: {
+                name: 'GroupOverride',
+                script_id: 'script-1',
+                script_name: 'Script 1',
+                protocol: 'http',
+                vusers: 5,
+                runtime_settings: {
+                  http: { version: '3', max_conns_per_host: 32 },
+                },
+              } as never,
+              detail: {
+                protocol: 'http',
+                script: { config: { http: { version: '1.1', max_conns_per_host: 100 } }, actions: [] },
+              } as never,
+              actionCount: 1,
+              initCount: 0,
+              teardownCount: 0,
+              dataSourceCount: 0,
+            },
+            {
+              group: {
+                name: 'ScenarioOverride',
+                script_id: 'script-2',
+                script_name: 'Script 2',
+                protocol: 'http',
+                vusers: 5,
+              } as never,
+              detail: {
+                protocol: 'http',
+                script: { config: { http: { version: '1.1', max_conns_per_host: 100 } }, actions: [] },
+              } as never,
+              actionCount: 1,
+              initCount: 0,
+              teardownCount: 0,
+              dataSourceCount: 0,
+            },
+          ]}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="GroupOverride"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff', '#30d158']}
+        />,
+      )
+    })
+
+    expect(cardValue('.scenario-script-detail-card', 'HTTP Runtime')).toBe('HTTP/3 required (no fallback) · 32 conns/host')
+  })
 })

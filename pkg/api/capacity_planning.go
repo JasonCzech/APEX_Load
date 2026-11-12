@@ -534,7 +534,8 @@ func calculateScenarioComplexity(groups []TestGroup, runtimeSettings *RuntimeSet
 			scriptScore += math.Min(float64(len(group.script.Actions))*0.04, 0.6)
 			scriptScore += math.Min(float64(len(group.script.Init)+len(group.script.Teardown))*0.02, 0.2)
 			scriptScore += countActionComplexity(group.script.Actions)
-			scriptScore += runtimeOverheadScore(group.script.Config, nil)
+			effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
+			scriptScore += runtimeOverheadScore(group.script.Config, effectiveRuntimeSettings)
 		}
 		if group.Initialization == "at_once" {
 			scriptScore += 0.08
@@ -583,38 +584,48 @@ func countActionComplexity(actions []dsl.Action) float64 {
 }
 
 func runtimeOverheadScore(config dsl.ScriptConfig, runtimeSettings *RuntimeSettingsOverride) float64 {
+	snapshotOnError := config.ErrorHandling.SnapshotOnError
+	logLevel := config.Log.Level
+	autoTransactions := config.RunLogic.AutoTransactions
+	pacing := config.Pacing
+	thinkTime := config.ThinkTime
+
+	if runtimeSettings != nil {
+		if runtimeSettings.ErrorHandling != nil {
+			snapshotOnError = runtimeSettings.ErrorHandling.SnapshotOnError
+		}
+		if runtimeSettings.Log != nil {
+			logLevel = runtimeSettings.Log.Level
+		} else if runtimeSettings.LogLevel != "" {
+			logLevel = runtimeSettings.LogLevel
+		}
+		if runtimeSettings.RunLogic != nil {
+			autoTransactions = runtimeSettings.RunLogic.AutoTransactions
+		} else if runtimeSettings.AutoTransactions != "" {
+			autoTransactions = runtimeSettings.AutoTransactions
+		}
+		if runtimeSettings.Pacing != nil {
+			pacing = *runtimeSettings.Pacing
+		}
+		if runtimeSettings.ThinkTime != nil {
+			thinkTime = *runtimeSettings.ThinkTime
+		}
+	}
+
 	score := 0.0
-	if config.ErrorHandling.SnapshotOnError {
+	if snapshotOnError {
 		score += 0.05
 	}
-	if strings.EqualFold(config.Log.Level, "extended") {
+	if strings.EqualFold(logLevel, "extended") {
 		score += 0.07
 	}
-	if strings.EqualFold(config.RunLogic.AutoTransactions, "per_action") {
+	if strings.EqualFold(autoTransactions, "per_action") {
 		score += 0.03
 	}
-	if config.Pacing.Type != "" && config.Pacing.Type != "none" {
+	if pacing.Type != "" && pacing.Type != "none" {
 		score -= 0.04
 	}
-	if config.ThinkTime.Type != "" && !config.ThinkTime.Ignore {
-		score -= 0.03
-	}
-	if runtimeSettings == nil {
-		return score
-	}
-	if runtimeSettings.ErrorHandling != nil && runtimeSettings.ErrorHandling.SnapshotOnError {
-		score += 0.05
-	}
-	if strings.EqualFold(runtimeSettings.LogLevel, "extended") {
-		score += 0.07
-	}
-	if strings.EqualFold(runtimeSettings.AutoTransactions, "per_action") {
-		score += 0.03
-	}
-	if runtimeSettings.Pacing != nil && runtimeSettings.Pacing.Type != "" && runtimeSettings.Pacing.Type != "none" {
-		score -= 0.04
-	}
-	if runtimeSettings.ThinkTime != nil && runtimeSettings.ThinkTime.Type != "" && !runtimeSettings.ThinkTime.Ignore {
+	if thinkTime.Type != "" && !thinkTime.Ignore {
 		score -= 0.03
 	}
 	return score

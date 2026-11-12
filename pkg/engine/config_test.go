@@ -756,7 +756,7 @@ func TestBuildProtoConfig_SOAP(t *testing.T) {
 					},
 					Timestamp: &dsl.SOAPTimestampConfig{TTLSeconds: 45},
 				},
-				FaultHandling: dsl.SOAPFaultHandlingConfig{FailOnFault: true},
+				FaultHandling: dsl.SOAPFaultHandlingConfig{FailOnFault: dsl.BoolPtr(true)},
 			},
 		},
 	}
@@ -787,6 +787,18 @@ func TestBuildProtoConfig_SOAP(t *testing.T) {
 	}
 	if cfg["soap_fault_fail_on_fault"] != true {
 		t.Errorf("soap_fault_fail_on_fault = %v, want true", cfg["soap_fault_fail_on_fault"])
+	}
+
+	script.Config.SOAP.FaultHandling.FailOnFault = dsl.BoolPtr(false)
+	cfgFalse := buildProtoConfig(script)
+	if _, exists := cfgFalse["soap_fault_fail_on_fault"]; exists {
+		t.Errorf("soap_fault_fail_on_fault = %v, want omitted when explicit false", cfgFalse["soap_fault_fail_on_fault"])
+	}
+
+	script.Config.SOAP.FaultHandling.FailOnFault = nil
+	cfgNil := buildProtoConfig(script)
+	if _, exists := cfgNil["soap_fault_fail_on_fault"]; exists {
+		t.Errorf("soap_fault_fail_on_fault = %v, want omitted when nil", cfgNil["soap_fault_fail_on_fault"])
 	}
 }
 

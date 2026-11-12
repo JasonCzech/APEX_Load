@@ -1185,6 +1185,139 @@ describe('ScriptRuntimeSettingsView extracted protocol sections', () => {
       source_ips: ['10.0.0.5', '10.0.0.6'],
     })
   })
+
+  it('preserves content-check left_boundary, right_boundary, and case_insensitive when editing in Web HTTP/HTML Compatibility', () => {
+    const script: ScriptDefinition = {
+      name: 'LR imported content checks',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: 'https://shop.example.test',
+        web_runtime: {
+          content_checks: [
+            {
+              text: 'FatalError',
+              scope: 'body_only',
+              fail_if_found: true,
+              left_boundary: '<msg>',
+              right_boundary: '</msg>',
+              case_insensitive: true,
+            },
+          ],
+        },
+      },
+      actions: [],
+    }
+    const onUpdateField = renderView(script, 'web_runtime')
+
+    const contentCheckTextarea = Array.from(container.querySelectorAll<HTMLTextAreaElement>('textarea'))
+      .find(textarea => textarea.placeholder === 'Access Denied|any_response|true')
+    expect(contentCheckTextarea?.value).toBe('FatalError|body_only|true|<msg>|</msg>|true')
+
+    typeInto(contentCheckTextarea!, 'FatalError|body_only|false|<msg>|</msg>|true')
+    expect(onUpdateField).toHaveBeenLastCalledWith('config.web_runtime', {
+      content_checks: [
+        {
+          text: 'FatalError',
+          scope: 'body_only',
+          fail_if_found: false,
+          left_boundary: '<msg>',
+          right_boundary: '</msg>',
+          case_insensitive: true,
+        },
+      ],
+    })
+  })
+
+  it('renders Fail on SOAP Fault unchecked when fault_handling is omitted or false, and checked when true', () => {
+    const baseSoap: ScriptDefinition = {
+      name: 'SOAP fault test',
+      version: '1.0.0',
+      protocol: 'soap',
+      config: {
+        base_url: 'https://soap.example.test',
+        soap: { version: '1.1' },
+      },
+      actions: [],
+    }
+    renderView(baseSoap, 'soap')
+    const checkbox = () => Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Fail on SOAP Fault'))!
+    expect(checkbox().checked).toBe(false)
+
+    renderView({
+      ...baseSoap,
+      config: { ...baseSoap.config, soap: { version: '1.1', fault_handling: { fail_on_fault: false } } },
+    }, 'soap')
+    expect(checkbox().checked).toBe(false)
+
+    renderView({
+      ...baseSoap,
+      config: { ...baseSoap.config, soap: { version: '1.1', fault_handling: { fail_on_fault: true } } },
+    }, 'soap')
+    expect(checkbox().checked).toBe(true)
+  })
+
+  it('shows engine default 4 for Max Idle Connections and valid SQLite / logical secret placeholders', () => {
+    const httpScript: ScriptDefinition = {
+      name: 'HTTP connection defaults',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="connection"
+          activeSection="http"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={httpScript}
+        />,
+      )
+    })
+    const maxIdleInput = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
+      .find(input => input.closest('label')?.textContent?.includes('Max Idle Connections'))
+    expect(maxIdleInput?.value).toBe('4')
+
+    const dbScript: ScriptDefinition = {
+      name: 'Database placeholders',
+      version: '1.0.0',
+      protocol: 'database',
+      config: { base_url: '', database: { driver: 'sqlite' } },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="script_config"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={dbScript}
+        />,
+      )
+    })
+    const secretPlaceholderInput = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('DSN Secret'))
+    const dsnInput = Array.from(container.querySelectorAll<HTMLInputElement>('input'))
+      .find(input => input.closest('label')?.textContent?.includes('DSN / Fixture'))
+    expect(secretPlaceholderInput?.placeholder).toBe('DB_DSN')
+    expect(dsnInput?.placeholder).toBe(':memory: or file:testdb?mode=memory&cache=shared')
+  })
 })
 
 describe('ScriptRuntimeSettingsView runtime tabs', () => {

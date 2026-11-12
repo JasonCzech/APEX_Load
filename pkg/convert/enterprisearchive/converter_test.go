@@ -1775,7 +1775,7 @@ func TestConvertSOAPCustomRequest(t *testing.T) {
 	if result.Script.Config.SOAP.Version != "1.1" {
 		t.Fatalf("soap version = %q, want 1.1", result.Script.Config.SOAP.Version)
 	}
-	if !result.Script.Config.SOAP.FaultHandling.FailOnFault {
+	if result.Script.Config.SOAP.FaultHandling.FailOnFault == nil || !*result.Script.Config.SOAP.FaultHandling.FailOnFault {
 		t.Fatal("expected fail_on_fault to be enabled for imported SOAP scripts")
 	}
 	if len(result.Script.Actions) != 1 {

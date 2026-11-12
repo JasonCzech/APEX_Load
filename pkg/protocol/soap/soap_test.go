@@ -859,3 +859,242 @@ func TestSOAPExecuteUnderProductionDefaultResponseBodyDiscard(t *testing.T) {
 		})
 	}
 }
+
+func TestSOAPExecuteLowercaseAcceptHeaderDoesNotCollide(t *testing.T) {
+	var seenAccept []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenAccept = r.Header.Values("Accept")
+		w.Header().Set("Content-Type", "text/xml; charset=utf-8")
+		_, _ = io.WriteString(w, `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Ok/></soapenv:Body></soapenv:Envelope>`)
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{"base_url": ts.URL}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer func() { _ = s.Teardown(context.Background()) }()
+
+	result, err := s.Execute(context.Background(), &protocol.Action{
+		Name:    "LowercaseAccept",
+		Target:  "/ws",
+		Headers: map[string]string{"accept": "application/soap+xml"},
+		Body:    []byte(`<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Ping/></soapenv:Body></soapenv:Envelope>`),
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success || result.StatusCode != http.StatusOK {
+		t.Fatalf("Success=%v StatusCode=%d ErrorMessage=%q", result.Success, result.StatusCode, result.ErrorMessage)
+	}
+	if len(seenAccept) != 1 || seenAccept[0] != "application/soap+xml" {
+		t.Fatalf("Accept headers = %v, want [application/soap+xml]", seenAccept)
+	}
+}
+
+func TestSOAPExecutePreservesScriptDefaultHeadersAndHeaderLists(t *testing.T) {
+	enabled := true
+	cases := []struct {
+		name            string
+		initConfig      map[string]any
+		action          *protocol.Action
+		wantContentType string
+		wantAccept      string
+	}{
+		{
+			name: "config default_headers map",
+			initConfig: map[string]any{
+				"default_headers": map[string]string{
+					"content-type": "text/xml; charset=iso-8859-1",
+					"accept":       "application/xml",
+				},
+			},
+			action: &protocol.Action{
+				Name:   "DefaultMap",
+				Target: "/ws",
+				Body:   []byte(`<Envelope><Body><Ping/></Body></Envelope>`),
+			},
+			wantContentType: "text/xml; charset=iso-8859-1",
+			wantAccept:      "application/xml",
+		},
+		{
+			name: "config default_header_list",
+			initConfig: map[string]any{
+				"default_header_list": protocol.HeaderList{
+					{Name: "Content-Type", Value: "application/soap+xml; charset=utf-16", Enabled: &enabled},
+					{Name: "Accept", Value: "application/soap+xml", Enabled: &enabled},
+				},
+			},
+			action: &protocol.Action{
+				Name:   "DefaultList",
+				Target: "/ws",
+				Body:   []byte(`<Envelope><Body><Ping/></Body></Envelope>`),
+			},
+			wantContentType: "application/soap+xml; charset=utf-16",
+			wantAccept:      "application/soap+xml",
+		},
+		{
+			name:       "resolved action DefaultHeaders and DefaultHeaderList",
+			initConfig: map[string]any{},
+			action: &protocol.Action{
+				Name:                   "ResolvedDefaults",
+				Target:                 "/ws",
+				Body:                   []byte(`<Envelope><Body><Ping/></Body></Envelope>`),
+				ResolvedDefaultHeaders: true,
+				DefaultHeaders:         map[string]string{"Content-Type": "text/xml; profile=custom"},
+				DefaultHeaderList: protocol.HeaderList{
+					{Name: "Accept", Value: "text/xml; version=1", Enabled: &enabled},
+				},
+			},
+			wantContentType: "text/xml; profile=custom",
+			wantAccept:      "text/xml; version=1",
+		},
+		{
+			name:       "action HeaderList case-insensitive",
+			initConfig: map[string]any{},
+			action: &protocol.Action{
+				Name:   "ActionHeaderList",
+				Target: "/ws",
+				Body:   []byte(`<Envelope><Body><Ping/></Body></Envelope>`),
+				HeaderList: protocol.HeaderList{
+					{Name: "content-type", Value: "text/xml; action-list=1", Enabled: &enabled},
+					{Name: "accept", Value: "application/xml; q=0.9", Enabled: &enabled},
+				},
+			},
+			wantContentType: "text/xml; action-list=1",
+			wantAccept:      "application/xml; q=0.9",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var gotContentType, gotAccept string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotContentType = r.Header.Get("Content-Type")
+				gotAccept = r.Header.Get("Accept")
+				w.Header().Set("Content-Type", "text/xml")
+				_, _ = io.WriteString(w, `<Envelope><Body><Pong/></Body></Envelope>`)
+			}))
+			defer ts.Close()
+
+			cfg := make(map[string]any, len(tc.initConfig)+1)
+			for k, v := range tc.initConfig {
+				cfg[k] = v
+			}
+			cfg["base_url"] = ts.URL
+
+			s := &SOAP{}
+			if err := s.Init(context.Background(), cfg); err != nil {
+				t.Fatalf("Init: %v", err)
+			}
+			defer func() { _ = s.Teardown(context.Background()) }()
+
+			result, err := s.Execute(context.Background(), tc.action)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if !result.Success {
+				t.Fatalf("Execute failed: %s", result.ErrorMessage)
+			}
+			if gotContentType != tc.wantContentType {
+				t.Fatalf("Content-Type = %q, want %q", gotContentType, tc.wantContentType)
+			}
+			if gotAccept != tc.wantAccept {
+				t.Fatalf("Accept = %q, want %q", gotAccept, tc.wantAccept)
+			}
+		})
+	}
+}
+
+func TestSOAPDelegatedCapabilities(t *testing.T) {
+	var seenCookie string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenCookie = r.Header.Get("Cookie")
+		w.Header().Set("Content-Type", "text/xml")
+		_, _ = io.WriteString(w, `<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"><soapenv:Body><Result>EXPECTED_TOKEN</Result></soapenv:Body></soapenv:Envelope>`)
+	}))
+	defer ts.Close()
+
+	uninit := &SOAP{}
+	if !uninit.ParallelSafe() {
+		t.Fatal("expected SOAP.ParallelSafe() to be true before Init")
+	}
+	if uninit.SharedSessionConcurrentSafe() {
+		t.Fatal("expected uninitialized SOAP.SharedSessionConcurrentSafe() to be false")
+	}
+	if err := uninit.SetCookie(context.Background(), protocol.ScriptCookie{Name: "a", Value: "b"}); err != nil {
+		t.Fatalf("uninitialized SetCookie: %v", err)
+	}
+	if err := uninit.CloseIdleConnections(context.Background()); err != nil {
+		t.Fatalf("uninitialized CloseIdleConnections: %v", err)
+	}
+	if _, err := uninit.OAuthHTTPClient([]string{"example.test"}); err == nil {
+		t.Fatal("expected uninitialized OAuthHTTPClient with target policy to fail closed")
+	}
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{"base_url": ts.URL}); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	defer func() { _ = s.Teardown(context.Background()) }()
+
+	if !s.ParallelSafe() || !s.SharedSessionConcurrentSafe() {
+		t.Fatalf("ParallelSafe=%v SharedSessionConcurrentSafe=%v, want both true", s.ParallelSafe(), s.SharedSessionConcurrentSafe())
+	}
+	if err := s.ValidateSharedSessionAction(&protocol.Action{Name: "op", Target: "/ws", Body: []byte(`<Envelope/>`)}); err != nil {
+		t.Fatalf("ValidateSharedSessionAction: %v", err)
+	}
+	if err := s.SetCookie(context.Background(), protocol.ScriptCookie{Name: "preseeded", Value: "cookie_val"}); err != nil {
+		t.Fatalf("SetCookie: %v", err)
+	}
+	if err := s.ConfigureVerification(protocol.Verification{
+		ID:        "v1",
+		Operation: "register",
+		Text:      "EXPECTED_TOKEN",
+		Scope:     "body",
+	}); err != nil {
+		t.Fatalf("ConfigureVerification: %v", err)
+	}
+	if snap := s.VerificationSnapshot(); len(snap) != 1 || snap[0].ID != "v1" {
+		t.Fatalf("VerificationSnapshot = %#v, want [v1]", snap)
+	}
+
+	res, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "CallWithCookieAndVerification",
+		Target: "/ws",
+		Body:   []byte(`<Envelope><Body><Op/></Body></Envelope>`),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !res.Success {
+		t.Fatalf("expected verification to pass, got error %q", res.ErrorMessage)
+	}
+	if !strings.Contains(seenCookie, "preseeded=cookie_val") {
+		t.Fatalf("seenCookie = %q, want preseeded=cookie_val", seenCookie)
+	}
+
+	// Register a failing verification and verify SOAP.Execute fails when not found.
+	if err := s.ConfigureVerification(protocol.Verification{
+		ID:        "v2",
+		Operation: "register",
+		Text:      "MISSING_TOKEN",
+		Scope:     "body",
+	}); err != nil {
+		t.Fatalf("ConfigureVerification v2: %v", err)
+	}
+	res2, err := s.Execute(context.Background(), &protocol.Action{
+		Name:   "CallFailingVerification",
+		Target: "/ws",
+		Body:   []byte(`<Envelope><Body><Op/></Body></Envelope>`),
+	})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if res2.Success || !strings.Contains(res2.ErrorMessage, "v2") {
+		t.Fatalf("expected verification v2 failure, got Success=%v ErrorMessage=%q", res2.Success, res2.ErrorMessage)
+	}
+	if err := s.CloseIdleConnections(context.Background()); err != nil {
+		t.Fatalf("CloseIdleConnections: %v", err)
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"html"
 	"math"
 	"math/rand/v2"
+	"net/http"
 	"net/url"
 	"os"
 	"sort"
@@ -161,7 +162,7 @@ func (vu *VUser) clearIterationUserState(ctx context.Context, cfg *dsl.ScriptCon
 		return "", nil
 	}
 	newUser := browserEmulationNewUserEachIteration(cfg)
-	if newUser || (vu.Script != nil && vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
+	if newUser || (vu.Script != nil && (vu.Script.Protocol == "http" || vu.Script.Protocol == "soap") && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
 		if err := vu.clearProtocolCookies(ctx); err != nil {
 			return "cookie clear", err
 		}
@@ -291,6 +292,20 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	}
 	if httpProto, ok := vu.Proto.(*protocolhttp.HTTP); ok {
 		tokenReq.HTTPClient = httpProto.OAuthHTTPClient()
+		if len(allowedTargetHosts) > 0 && tokenReq.HTTPClient == nil {
+			return fmt.Errorf("http_oauth2_token %q cannot enforce the CI runtime target policy for protocol %T", action.Name, vu.Proto)
+		}
+	} else if oauthProto, ok := vu.Proto.(interface {
+		OAuthHTTPClient([]string) (*http.Client, error)
+	}); ok {
+		client, err := oauthProto.OAuthHTTPClient(allowedTargetHosts)
+		if err != nil {
+			return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
+		}
+		if len(allowedTargetHosts) > 0 && client == nil {
+			return fmt.Errorf("http_oauth2_token %q cannot enforce the CI runtime target policy for protocol %T", action.Name, vu.Proto)
+		}
+		tokenReq.HTTPClient = client
 	} else if len(allowedTargetHosts) > 0 {
 		// Other protocol wrappers do not expose an HTTP client whose proxy and
 		// redirect legs carry the CI policy. Fail closed rather than falling back

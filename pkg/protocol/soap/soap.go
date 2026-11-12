@@ -63,11 +63,44 @@ func compileGeneratedSOAPPattern(key string, pattern string) *regexp.Regexp {
 }
 
 var (
-	_ protocol.CookieController = (*SOAP)(nil)
-	_ protocol.CacheController  = (*SOAP)(nil)
+	_ protocol.CookieController                 = (*SOAP)(nil)
+	_ protocol.CookieSetter                     = (*SOAP)(nil)
+	_ protocol.CacheController                  = (*SOAP)(nil)
+	_ protocol.ConnectionController             = (*SOAP)(nil)
+	_ protocol.VerificationController           = (*SOAP)(nil)
+	_ protocol.VerificationSnapshotter          = (*SOAP)(nil)
+	_ protocol.ParallelSafetyProvider           = (*SOAP)(nil)
+	_ protocol.SharedSessionConcurrencyProvider = (*SOAP)(nil)
 )
 
 func (s *SOAP) Name() string { return "soap" }
+
+func (s *SOAP) ParallelSafe() bool {
+	if s != nil && s.http != nil {
+		return s.http.ParallelSafe()
+	}
+	return (*httpproto.HTTP)(nil).ParallelSafe()
+}
+
+func (s *SOAP) SharedSessionConcurrentSafe() bool {
+	return s != nil && s.http != nil && s.http.SharedSessionConcurrentSafe()
+}
+
+func (s *SOAP) ValidateSharedSessionAction(action *protocol.Action) error {
+	if !s.SharedSessionConcurrentSafe() {
+		return fmt.Errorf("HTTP session is not initialized")
+	}
+	if action == nil {
+		return fmt.Errorf("soap action is required")
+	}
+	prepared := *action
+	prepared.Method = stdhttp.MethodPost
+	prepared.Headers = cloneHeaders(action.Headers)
+	preparedBody, _ := shapeSOAPBody(action, s.version, s.namespaces)
+	prepared.Body = s.applySecurity(preparedBody)
+	s.applyDefaults(&prepared)
+	return s.http.ValidateSharedSessionAction(&prepared)
+}
 
 func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	s.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
@@ -115,7 +148,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	preparedBody, namespaceConflict := shapeSOAPBody(action, s.version, s.namespaces)
 	prepared.Body = preparedBody
 	prepared.Body = s.applySecurity(prepared.Body)
-	applySOAPDefaults(&prepared, s.version, s.defaultCharset)
+	s.applyDefaults(&prepared)
 	if len(prepared.RedactedBody) == 0 {
 		redactedPrepared := *action
 		redactedPrepared.Method = stdhttp.MethodPost
@@ -129,7 +162,7 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		}
 		redactedPreparedBody, _ := shapeSOAPBody(&redactedPrepared, s.version, s.namespaces)
 		redactedPrepared.Body = redactedPreparedBody
-		applySOAPDefaults(&redactedPrepared, s.version, s.defaultCharset)
+		s.applyDefaults(&redactedPrepared)
 		prepared.RedactedBody = redactedPreparedBody
 		prepared.RedactedHeaders = cloneHeaders(redactedPrepared.Headers)
 	}
@@ -250,10 +283,58 @@ func (s *SOAP) ClearCookies(ctx context.Context) error {
 }
 
 func (s *SOAP) ClearCache(ctx context.Context) error {
-	if s.http == nil {
+	if s == nil || s.http == nil {
 		return nil
 	}
 	return s.http.ClearCache(ctx)
+}
+
+func (s *SOAP) SetCookie(ctx context.Context, cookie protocol.ScriptCookie) error {
+	if s == nil || s.http == nil {
+		return nil
+	}
+	return s.http.SetCookie(ctx, cookie)
+}
+
+func (s *SOAP) CloseIdleConnections(ctx context.Context) error {
+	if s == nil || s.http == nil {
+		return nil
+	}
+	return s.http.CloseIdleConnections(ctx)
+}
+
+func (s *SOAP) ConfigureVerification(v protocol.Verification) error {
+	if s == nil || s.http == nil {
+		return fmt.Errorf("soap protocol is not initialized")
+	}
+	return s.http.ConfigureVerification(v)
+}
+
+func (s *SOAP) VerificationSnapshot() []protocol.Verification {
+	if s == nil || s.http == nil {
+		return nil
+	}
+	return s.http.VerificationSnapshot()
+}
+
+func (s *SOAP) OAuthHTTPClient(allowedTargetHosts []string) (*stdhttp.Client, error) {
+	if s == nil || s.http == nil {
+		if len(allowedTargetHosts) > 0 {
+			return nil, fmt.Errorf("cannot enforce the CI runtime target policy for uninitialized protocol %T", s)
+		}
+		return nil, nil
+	}
+	client := s.http.OAuthHTTPClient()
+	if client == nil {
+		if len(allowedTargetHosts) > 0 {
+			return nil, fmt.Errorf("cannot enforce the CI runtime target policy for uninitialized protocol %T", s)
+		}
+		return nil, nil
+	}
+	if len(allowedTargetHosts) > 0 && client.Transport != nil {
+		client.Transport = protocol.NewTargetPolicyRoundTripper(client.Transport, allowedTargetHosts)
+	}
+	return client, nil
 }
 
 func (s *SOAP) HealthCheck(ctx context.Context) error {
@@ -762,7 +843,42 @@ func stripXMLTags(value string) string {
 	return builder.String()
 }
 
+func (s *SOAP) applyDefaults(action *protocol.Action) {
+	var defaultHeaders map[string]string
+	var defaultHeaderList protocol.HeaderList
+	if s != nil && s.http != nil {
+		defaultHeaders, defaultHeaderList = s.http.EffectiveDefaultHeaders(action)
+	} else if action != nil && action.ResolvedDefaultHeaders {
+		defaultHeaders = action.DefaultHeaders
+		defaultHeaderList = action.DefaultHeaderList
+	}
+	version := "1.1"
+	charset := "utf-8"
+	if s != nil {
+		if s.version != "" {
+			version = s.version
+		}
+		if s.defaultCharset != "" {
+			charset = s.defaultCharset
+		}
+	}
+	applySOAPDefaultsWithDefaultHeaders(action, version, charset, defaultHeaders, defaultHeaderList)
+}
+
 func applySOAPDefaults(action *protocol.Action, version, charset string) {
+	var defaultHeaders map[string]string
+	var defaultHeaderList protocol.HeaderList
+	if action != nil && action.ResolvedDefaultHeaders {
+		defaultHeaders = action.DefaultHeaders
+		defaultHeaderList = action.DefaultHeaderList
+	}
+	applySOAPDefaultsWithDefaultHeaders(action, version, charset, defaultHeaders, defaultHeaderList)
+}
+
+func applySOAPDefaultsWithDefaultHeaders(action *protocol.Action, version, charset string, defaultHeaders map[string]string, defaultHeaderList protocol.HeaderList) {
+	if action == nil {
+		return
+	}
 	if action.Headers == nil {
 		action.Headers = make(map[string]string)
 	}
@@ -772,7 +888,7 @@ func applySOAPDefaults(action *protocol.Action, version, charset string) {
 		soapAction = strings.TrimSpace(action.SOAP.Action)
 	}
 
-	if _, authored := getHeaderValue(action.Headers, "Content-Type"); !authored {
+	if !hasConfiguredHeader("Content-Type", action.Headers, action.HeaderList, defaultHeaders, defaultHeaderList) {
 		setHeaderCanonical(action.Headers, "Content-Type", defaultSOAPContentType(version, charset, soapAction))
 	}
 	if version == "1.1" {
@@ -785,9 +901,48 @@ func applySOAPDefaults(action *protocol.Action, version, charset string) {
 	} else {
 		deleteHeaderCanonical(action.Headers, "SOAPAction")
 	}
-	if _, exists := action.Headers["Accept"]; !exists {
-		action.Headers["Accept"] = "text/xml, application/soap+xml"
+	if !hasConfiguredHeader("Accept", action.Headers, action.HeaderList, defaultHeaders, defaultHeaderList) {
+		setHeaderCanonical(action.Headers, "Accept", "text/xml, application/soap+xml")
 	}
+}
+
+func hasConfiguredHeader(name string, actionHeaders map[string]string, actionHeaderList protocol.HeaderList, defaultHeaders map[string]string, defaultHeaderList protocol.HeaderList) bool {
+	if hasEnabledHeaderInList(actionHeaderList, name) {
+		return true
+	}
+	if _, ok := getHeaderValue(actionHeaders, name); ok {
+		return true
+	}
+	if hasEnabledHeaderInList(defaultHeaderList, name) {
+		return true
+	}
+	if !hasAnyHeaderInList(defaultHeaderList, name) {
+		if _, ok := getHeaderValue(defaultHeaders, name); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func hasEnabledHeaderInList(headers protocol.HeaderList, name string) bool {
+	for _, entry := range headers {
+		if entry.Enabled != nil && !*entry.Enabled {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(entry.Name), name) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyHeaderInList(headers protocol.HeaderList, name string) bool {
+	for _, entry := range headers {
+		if strings.EqualFold(strings.TrimSpace(entry.Name), name) {
+			return true
+		}
+	}
+	return false
 }
 
 func quoteSOAPAction(value string) string {

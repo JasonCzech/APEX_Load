@@ -258,6 +258,45 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     const checks = runtimeConfig().web_runtime?.content_checks
     expect(parseContentChecks(formatContentChecks(checks))).toEqual(checks)
 
+    const checksWithBoundaries = [
+      {
+        text: 'ERR_CODE',
+        scope: 'body_only',
+        fail_if_found: true,
+        left_boundary: '<error>',
+        right_boundary: '</error>',
+        case_insensitive: true,
+      },
+      {
+        text: 'WARN_CODE',
+        scope: 'any_response',
+        fail_if_found: false,
+        left_boundary: '[',
+        right_boundary: ']',
+      },
+    ]
+    expect(formatContentChecks(checksWithBoundaries)).toBe(
+      'ERR_CODE|body_only|true|<error>|</error>|true\nWARN_CODE|any_response|false|[|]',
+    )
+    expect(parseContentChecks(formatContentChecks(checksWithBoundaries))).toEqual(checksWithBoundaries)
+    expect(parseContentChecks('ERR_CODE|body_only|false\nWARN_CODE|any_response|true', checksWithBoundaries)).toEqual([
+      {
+        text: 'ERR_CODE',
+        scope: 'body_only',
+        fail_if_found: false,
+        left_boundary: '<error>',
+        right_boundary: '</error>',
+        case_insensitive: true,
+      },
+      {
+        text: 'WARN_CODE',
+        scope: 'any_response',
+        fail_if_found: true,
+        left_boundary: '[',
+        right_boundary: ']',
+      },
+    ])
+
     const chain = runtimeConfig().web_runtime?.data_formatting?.chain
     expect(parseDFEChain(formatDFEChain(chain))).toEqual(chain)
 
@@ -275,6 +314,45 @@ describe('scriptEditorRuntimeSettingsModel', () => {
       custom: 'urn:custom',
     })
     expect(syncSOAPEnvelopeNamespace('1.2', { soapenv: 'urn:owned' }, '1.1')).toEqual({ soapenv: 'urn:owned' })
+  })
+
+  it('seeds fail_on_fault when transitioning a non-SOAP script to soap, but preserves omitted or false fail_on_fault on existing soap config', () => {
+    const freshScript: ScriptDefinition = {
+      name: 'New SOAP transition',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://soap.example.test' },
+      actions: [],
+    }
+    expect(transitionScriptProtocol(freshScript, 'soap').script.config.soap?.fault_handling).toEqual({
+      fail_on_fault: true,
+    })
+
+    const reloadedOmittedFault: ScriptDefinition = {
+      name: 'Reloaded SOAP',
+      version: '1.0.0',
+      protocol: 'soap',
+      config: {
+        base_url: 'https://soap.example.test',
+        soap: { version: '1.1', namespaces: { soapenv: 'http://schemas.xmlsoap.org/soap/envelope/' } },
+      },
+      actions: [{ name: 'SOAP_Request', type: 'soap_request', target: '/ws' }],
+    }
+    expect(transitionScriptProtocol(reloadedOmittedFault, 'soap').script.config.soap?.fault_handling).toBeUndefined()
+
+    const explicitFalseFault: ScriptDefinition = {
+      ...reloadedOmittedFault,
+      config: {
+        ...reloadedOmittedFault.config,
+        soap: {
+          ...reloadedOmittedFault.config.soap,
+          fault_handling: { fail_on_fault: false },
+        },
+      },
+    }
+    expect(transitionScriptProtocol(explicitFalseFault, 'soap').script.config.soap?.fault_handling).toEqual({
+      fail_on_fault: false,
+    })
   })
 
   it('clones, detects dirty runtime edits, and resets to an isolated baseline', () => {

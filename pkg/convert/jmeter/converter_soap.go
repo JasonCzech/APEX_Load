@@ -50,7 +50,7 @@ func applySOAPProtocolHints(script *dsl.Script, warnings *[]string, threadName s
 	script.Config.SOAP = dsl.SOAPConfig{
 		Version: soapVersion,
 		FaultHandling: dsl.SOAPFaultHandlingConfig{
-			FailOnFault: true,
+			FailOnFault: dsl.BoolPtr(true),
 		},
 	}
 	// The runtime clears cookies per iteration only for http scripts, so the

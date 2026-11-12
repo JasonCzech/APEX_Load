@@ -122,7 +122,7 @@ func TestReplayAdapterFailureSnapshotsReachDebugProgress(t *testing.T) {
 					action.Body = "<Token>{{var.session_token}}</Token>"
 					action.SOAP = &dsl.SOAPActionConfig{BodyMode: "generated", Operation: "Login{{var.session_token}}", Action: "urn:{{var.session_token}}"}
 					action.Headers["SOAPAction"] = "authored-value"
-					config.SOAP.FaultHandling.FailOnFault = true
+					config.SOAP.FaultHandling.FailOnFault = dsl.BoolPtr(true)
 				case "java_http":
 					action.BodyEncoding = "base64"
 				}

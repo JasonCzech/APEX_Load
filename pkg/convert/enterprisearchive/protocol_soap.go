@@ -46,7 +46,7 @@ func detectImportProtocol(functions []ParsedFunction) (string, *dsl.SOAPConfig, 
 	return "soap", &dsl.SOAPConfig{
 		Version: soapVersion,
 		FaultHandling: dsl.SOAPFaultHandlingConfig{
-			FailOnFault: true,
+			FailOnFault: dsl.BoolPtr(true),
 		},
 	}, ""
 }

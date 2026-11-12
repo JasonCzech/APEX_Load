@@ -313,23 +313,67 @@ export function parseExactLineList(value: string): string[] {
 
 export function formatContentChecks(value?: ContentCheckConfig[]): string {
   return (value || [])
-    .map(check => `${check.text || ''}|${check.scope || 'any_response'}|${check.fail_if_found === false ? 'false' : 'true'}`)
+    .map(check => {
+      const base = `${check.text || ''}|${check.scope || 'any_response'}|${check.fail_if_found === false ? 'false' : 'true'}`
+      const leftBoundary = check.left_boundary || ''
+      const rightBoundary = check.right_boundary || ''
+      if (check.case_insensitive !== undefined) {
+        return `${base}|${leftBoundary}|${rightBoundary}|${check.case_insensitive ? 'true' : 'false'}`
+      }
+      if (leftBoundary || rightBoundary) {
+        return `${base}|${leftBoundary}|${rightBoundary}`
+      }
+      return base
+    })
     .join('\n')
 }
 
-export function parseContentChecks(value: string): ContentCheckConfig[] {
-  return value
+export function parseContentChecks(value: string, existing?: ContentCheckConfig[]): ContentCheckConfig[] {
+  const lines = value
     .split(/\r?\n/)
     .map(line => line.trim())
     .filter(Boolean)
-    .map(line => {
-      const [text, scope, failIfFound] = line.split('|').map(part => part.trim())
-      return {
-        text,
-        scope: scope || 'any_response',
-        fail_if_found: failIfFound ? failIfFound !== 'false' : true,
+  const consumed = new Set<number>()
+
+  return lines.map((line, index) => {
+    const parts = line.split('|').map(part => part.trim())
+    const [text = '', scope = '', failIfFound = ''] = parts
+    const parsed: ContentCheckConfig = {
+      text,
+      scope: scope || 'any_response',
+      fail_if_found: failIfFound ? failIfFound !== 'false' : true,
+    }
+    if (parts.length >= 5) {
+      if (parts[3]) parsed.left_boundary = parts[3]
+      if (parts[4]) parsed.right_boundary = parts[4]
+      if (parts.length >= 6 && parts[5] !== '') {
+        parsed.case_insensitive = parts[5] !== 'false'
       }
-    })
+      return parsed
+    }
+    if (parts.length === 4) {
+      if (parts[3] === 'true' || parts[3] === 'false') {
+        parsed.case_insensitive = parts[3] === 'true'
+      } else if (parts[3]) {
+        parsed.left_boundary = parts[3]
+      }
+      return parsed
+    }
+    if (existing && existing.length > 0) {
+      let matchedIndex = existing.findIndex((item, idx) => !consumed.has(idx) && (item.text || '') === text)
+      if (matchedIndex === -1 && existing.length === lines.length && !consumed.has(index)) {
+        matchedIndex = index
+      }
+      if (matchedIndex !== -1) {
+        consumed.add(matchedIndex)
+        const prior = existing[matchedIndex]
+        if (prior.left_boundary) parsed.left_boundary = prior.left_boundary
+        if (prior.right_boundary) parsed.right_boundary = prior.right_boundary
+        if (prior.case_insensitive !== undefined) parsed.case_insensitive = prior.case_insensitive
+      }
+    }
+    return parsed
+  })
 }
 
 export function formatDFEChain(value?: DFETransform[]): string {
@@ -594,15 +638,18 @@ export function transitionScriptProtocol(script: ScriptDefinition, protocol: str
   next.config = next.config || { base_url: '' }
 
   if (protocol === 'soap') {
+    const existingSoap = next.config.soap
     next.config.soap = {
-      version: next.config.soap?.version || '1.1',
-      namespaces: Object.keys(next.config.soap?.namespaces || {}).length > 0
-        ? next.config.soap?.namespaces
-        : { soapenv: defaultSOAPEnvelopeNamespace(next.config.soap?.version || '1.1') },
-      ws_security: next.config.soap?.ws_security,
-      fault_handling: {
-        fail_on_fault: next.config.soap?.fault_handling?.fail_on_fault ?? true,
-      },
+      version: existingSoap?.version || '1.1',
+      namespaces: Object.keys(existingSoap?.namespaces || {}).length > 0
+        ? existingSoap?.namespaces
+        : { soapenv: defaultSOAPEnvelopeNamespace(existingSoap?.version || '1.1') },
+      ws_security: existingSoap?.ws_security,
+      fault_handling: existingSoap
+        ? (existingSoap.fault_handling?.fail_on_fault !== undefined
+          ? { ...existingSoap.fault_handling, fail_on_fault: existingSoap.fault_handling.fail_on_fault }
+          : existingSoap.fault_handling)
+        : { fail_on_fault: true },
     }
     if (next.actions.length === 0) {
       next.actions = [{ ...structuredClone(EMPTY_SOAP_ACTION), name: 'SOAP_Request' }]

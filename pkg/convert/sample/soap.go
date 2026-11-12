@@ -40,7 +40,7 @@ func applySOAPSampleProtocol(script *dsl.Script, warnings *[]string) {
 	script.Config.SOAP = dsl.SOAPConfig{
 		Version: soapVersion,
 		FaultHandling: dsl.SOAPFaultHandlingConfig{
-			FailOnFault: true,
+			FailOnFault: dsl.BoolPtr(true),
 		},
 	}
 }

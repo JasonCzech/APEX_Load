@@ -3,6 +3,7 @@ import type { RunAnalysisPolicySelections } from './analysisPolicies/runPolicySe
 import type { MonitorBinding } from '../types/runMonitoring'
 import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
+import { errorHandlingFromDraft } from './runtimeSettingsModel'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
 import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig, WebSocketConfig, ScriptResultsConfig } from '../types/scripts'
 
@@ -386,11 +387,8 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ? { ...runtimeSettings.browser }
     : undefined
 
-  const hasErrorHandling = runtimeSettings.continue_on_error !== undefined
-    || runtimeSettings.snapshot_on_error !== undefined
-    || runtimeSettings.max_retries !== undefined
-    || runtimeSettings.retry_delay_ms !== undefined
-    || Boolean(runtimeSettings.retry_backoff)
+  const errorHandling = errorHandlingFromDraft(runtimeSettings)
+  const hasErrorHandling = errorHandling !== undefined
 
   const javaVuser = hasJavaVuserOverride(runtimeSettings.java_vuser) ? runtimeSettings.java_vuser : undefined
 
@@ -409,13 +407,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ...(!hasCanonicalRunLogic && runtimeSettings.auto_transactions
       ? { auto_transactions: runtimeSettings.auto_transactions }
       : {}),
-    ...(hasErrorHandling ? { error_handling: {
-        ...(runtimeSettings.continue_on_error !== undefined ? { continue_on_error: runtimeSettings.continue_on_error } : {}),
-        ...(runtimeSettings.snapshot_on_error !== undefined ? { snapshot_on_error: runtimeSettings.snapshot_on_error } : {}),
-        ...(runtimeSettings.max_retries !== undefined ? { max_retries: runtimeSettings.max_retries } : {}),
-        ...(runtimeSettings.retry_delay_ms !== undefined ? { retry_delay_ms: runtimeSettings.retry_delay_ms } : {}),
-        ...(runtimeSettings.retry_backoff ? { retry_backoff: runtimeSettings.retry_backoff } : {}),
-      } } : {}),
+    ...(errorHandling ? { error_handling: errorHandling } : {}),
     ...(runtimeSettings.log !== undefined ? { log: runtimeSettings.log } : {}),
     ...(runtimeSettings.run_logic !== undefined ? { run_logic: runtimeSettings.run_logic } : {}),
     ...(runtimeSettings.http !== undefined ? { http: runtimeSettings.http } : {}),
