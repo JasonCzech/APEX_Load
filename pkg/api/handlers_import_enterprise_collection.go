@@ -278,6 +278,7 @@ func (s *Server) writeEnterpriseArchiveCollectionResponse(w http.ResponseWriter,
 		}
 		item := enterpriseArchiveCollectionMember{SourceName: member.Name, SourceSize: len(member.Data)}
 		memberData := member.Data
+		memberHAR := extractBundledEnterpriseArchiveHAR(memberData)
 		stripped, stripErr := stripVuGenNonSourceZipEntries(memberData)
 		if stripErr != nil {
 			item.Error = scrub.Value("invalid script archive member: "+stripErr.Error(), scrub.Policy{})
@@ -313,6 +314,10 @@ func (s *Server) writeEnterpriseArchiveCollectionResponse(w http.ResponseWriter,
 				script.ProjectID = normalizeProjectID(req.ProjectID)
 			}
 		}
+		attachSalesforceReviewToEnterpriseArchiveResult(result, &enterpriseArchiveImportRequest{
+			HARData:   memberHAR,
+			ProjectID: req.ProjectID,
+		})
 		preserveEnterpriseArchiveCollectionMember(result, member.Name, len(member.Data))
 		item.Response = s.newEnterpriseArchiveImportResponse(r, result, req.ReadinessPolicy, req.ExpireDraft)
 		childDrafts := uniqueImportDraftScripts(importDraftScriptPointers(result.Script, result.Scripts))

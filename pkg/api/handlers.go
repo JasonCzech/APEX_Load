@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -2255,6 +2256,83 @@ func wantsCSV(r *http.Request) bool {
 	return queryFormat(r) == "csv"
 }
 
+var (
+	clientErrorStepLabelPattern = regexp.MustCompile(`(?:\b(?:init|actions|teardown)\[\d+\]|\.(?:control\.(?:steps|else|default|(?:cases|branches)\[\d+\]\.steps)\[\d+\]|params\.requests\[\d+\]))(?:\.(?:control\.(?:steps|else|default|(?:cases|branches)\[\d+\]\.steps)\[\d+\]|params\.requests\[\d+\]))*\s+"(?:\\.|[^"\\])*"`)
+	clientErrorBareTokenPattern = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
+)
+
+func isMultiUnderscoreActionIdentifier(token string) bool {
+	if strings.Count(token, "_") < 2 {
+		return false
+	}
+	for i := 0; i < len(token); i++ {
+		ch := token[i]
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		return false
+	}
+	lower := strings.ToLower(token)
+	for _, prefix := range []string{
+		"sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",
+		"whsec_", "github_pat_", "ghp_", "gho_", "ghu_", "ghs_", "ghr_",
+		"glpat_", "xoxb_", "xoxp_", "xoxa_", "xoxr_", "xoxs_",
+	} {
+		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+func scrubClientErrorMessage(msg string) string {
+	if !clientErrorStepLabelPattern.MatchString(msg) {
+		return scrub.Value(msg, scrub.Policy{})
+	}
+	prefix := "apex~stepid~"
+	for strings.Contains(msg, prefix) {
+		prefix += "~"
+	}
+	var protected []string
+	protectedMsg := clientErrorStepLabelPattern.ReplaceAllStringFunc(msg, func(segment string) string {
+		quoteStart := strings.IndexByte(segment, '"')
+		if quoteStart < 0 || len(segment) < quoteStart+2 || segment[len(segment)-1] != '"' {
+			return segment
+		}
+		coordPrefix := segment[:quoteStart]
+		inner := segment[quoteStart+1 : len(segment)-1]
+		labelScrubbed := scrub.ValueLabel(inner, scrub.Policy{})
+		matches := clientErrorBareTokenPattern.FindAllStringIndex(labelScrubbed, -1)
+		if len(matches) == 0 {
+			return coordPrefix + `"` + labelScrubbed + `"`
+		}
+		var out strings.Builder
+		last := 0
+		for _, m := range matches {
+			start, end := m[0], m[1]
+			out.WriteString(labelScrubbed[last:start])
+			token := labelScrubbed[start:end]
+			adjacentDot := (start > 0 && labelScrubbed[start-1] == '.') || (end < len(labelScrubbed) && labelScrubbed[end] == '.')
+			if !adjacentDot && isMultiUnderscoreActionIdentifier(token) {
+				placeholder := prefix + strconv.Itoa(len(protected)) + "~"
+				protected = append(protected, token)
+				out.WriteString(placeholder)
+			} else {
+				out.WriteString(token)
+			}
+			last = end
+		}
+		out.WriteString(labelScrubbed[last:])
+		return coordPrefix + `"` + out.String() + `"`
+	})
+	scrubbed := scrub.Value(protectedMsg, scrub.Policy{})
+	for i, token := range protected {
+		placeholder := prefix + strconv.Itoa(i) + "~"
+		scrubbed = strings.ReplaceAll(scrubbed, placeholder, token)
+	}
+	return scrubbed
+}
+
 func writeError(w http.ResponseWriter, status int, msg string) {
 	// Never leak internal error detail (DB errors, file paths, stack context) to
 	// clients on 5xx responses. Log a credential-scrubbed detail under a
@@ -2268,7 +2346,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 		})
 		return
 	}
-	writeJSON(w, status, map[string]string{"error": scrub.Value(msg, scrub.Policy{})})
+	writeJSON(w, status, map[string]string{"error": scrubClientErrorMessage(msg)})
 }
 
 // logServerError records the internal cause of a 5xx answered with a

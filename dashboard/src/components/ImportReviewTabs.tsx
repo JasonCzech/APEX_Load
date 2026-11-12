@@ -13,6 +13,59 @@ const IMPORT_REVIEW_TABS = [
 ] as const
 export type ImportReviewTab = typeof IMPORT_REVIEW_TABS[number]['id']
 
+export function ImportReviewTabList<T extends string = ImportReviewTab>({
+  tabs,
+  active,
+  onChange,
+  counts = {},
+  checkingTabs,
+  tabId,
+  panelId,
+  className = 'import-review-tabs',
+  badgeClassName,
+  activeClassName,
+  ariaLabel = 'Import review sections',
+  countSingularLabel = 'review item',
+  countPluralLabel = 'review items',
+}: {
+  tabs?: readonly { readonly id: T; readonly label: string }[]
+  active: T
+  onChange: (tab: T) => void
+  counts?: Partial<Record<T, number>>
+  checkingTabs?: Partial<Record<T, boolean>>
+  tabId: (tab: T) => string
+  panelId: string
+  className?: string
+  badgeClassName?: string
+  activeClassName?: string
+  ariaLabel?: string
+  countSingularLabel?: string
+  countPluralLabel?: string
+}) {
+  const resolvedTabs = (tabs ?? IMPORT_REVIEW_TABS) as readonly { readonly id: T; readonly label: string }[]
+  return <TabList className={className} aria-label={ariaLabel}>
+    {resolvedTabs.map(tab => {
+      const checking = Boolean(checkingTabs?.[tab.id])
+      const count = checking ? 0 : (counts[tab.id] || 0)
+      const isSelected = active === tab.id
+      // The count is part of the name, announced once; the visible badge is decorative.
+      const name = checking
+        ? `${tab.label}, checking issues`
+        : count > 0
+          ? `${tab.label}, ${count} ${count === 1 ? countSingularLabel : countPluralLabel}`
+          : tab.label
+      return <button type="button" key={tab.id}
+        id={tabId(tab.id)} role="tab" aria-label={name}
+        aria-selected={isSelected} aria-controls={panelId}
+        tabIndex={isSelected ? 0 : -1}
+        className={activeClassName ? (isSelected ? activeClassName : '') : undefined}
+        onClick={() => onChange(tab.id)}>
+        {tab.label}{checking ? <span className={badgeClassName} aria-hidden="true" title="Checking…">…</span> : count > 0 && <span className={badgeClassName} aria-hidden="true">{count}</span>}
+      </button>
+    })}
+  </TabList>
+}
+
 export default function ImportReviewTabs({ active, onChange, counts = {}, visibleTabs, idPrefix, children }: {
   active: ImportReviewTab
   onChange: (tab: ImportReviewTab) => void
@@ -31,19 +84,14 @@ export default function ImportReviewTabs({ active, onChange, counts = {}, visibl
     if (resolvedActive && resolvedActive !== active) onChange(resolvedActive)
   }, [active, onChange, resolvedActive])
   return <div className="import-review-layout">
-    <TabList className="import-review-tabs" aria-label="Import review sections">
-      {tabs.map(tab => {
-        const count = counts[tab.id] || 0
-        // The count is part of the name, announced once; the visible badge is decorative.
-        const name = count > 0 ? `${tab.label}, ${count} review item${count === 1 ? '' : 's'}` : tab.label
-        return <button type="button" key={tab.id}
-          id={tabId(tab.id)} role="tab" aria-label={name}
-          aria-selected={resolvedActive === tab.id} aria-controls={panelId}
-          tabIndex={resolvedActive === tab.id ? 0 : -1} onClick={() => onChange(tab.id)}>
-          {tab.label}{count > 0 && <span aria-hidden="true">{count}</span>}
-        </button>
-      })}
-    </TabList>
+    <ImportReviewTabList
+      tabs={tabs}
+      active={resolvedActive ?? active}
+      onChange={onChange}
+      counts={counts}
+      tabId={tabId}
+      panelId={panelId}
+    />
     <div role="tabpanel" id={panelId} aria-labelledby={resolvedActive ? tabId(resolvedActive) : undefined} className="import-review-panel">{children}</div>
   </div>
 }

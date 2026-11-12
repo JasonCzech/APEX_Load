@@ -41,6 +41,8 @@ func TestJMeterMessagingProjectionKeepsIdentifiersAndOffersNoTokenURLBinding(t *
 			pointers = append(pointers,
 				"/config/kafka/oauth/token_url",
 				"/actions/0/metadata/jmeter_kafka/effective_settings/sasl.oauthbearer.token.endpoint.url",
+				"/metadata/import/preserved/protected_credential_requirements_v1/0/suggested_name",
+				"/metadata/import/preserved/protected_credential_requirements_v1/0/affected_paths/0",
 			)
 		}
 		if script.Config.EventHubs.EventHub != "" {
@@ -49,10 +51,6 @@ func TestJMeterMessagingProjectionKeepsIdentifiersAndOffersNoTokenURLBinding(t *
 				"/actions/0/metadata/jmeter_eventhubs/shared_access_key_name",
 			)
 		}
-		pointers = append(pointers,
-			"/metadata/import/preserved/protected_credential_requirements_v1/0/suggested_name",
-			"/metadata/import/preserved/protected_credential_requirements_v1/0/affected_paths/0",
-		)
 		for _, pointer := range pointers {
 			want, ok := jsonPointerValue(exactScripts[index], pointer)
 			if !ok {

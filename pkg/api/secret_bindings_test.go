@@ -1006,3 +1006,55 @@ func TestSecretBindingEnforcementRequiresExplicitDevOptIn(t *testing.T) {
 		})
 	}
 }
+
+func TestSecretBindingsSameStepHeaderListAndHeadersParity(t *testing.T) {
+	const longActionName = "Start_iPadTest_LrgeBANs_ViewServProm_T08_ClkBackToAccInfo||aura_823_0_s_2_1754691916807_1_ACTION$getRecord_transaction"
+	script := &dsl.Script{
+		ID:       "same-step-header-parity",
+		Name:     "Aura Header Parity",
+		Version:  "1",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.lightning.force.com"},
+		Actions: []dsl.Action{{
+			Name:    longActionName,
+			Type:    "request",
+			Method:  http.MethodPost,
+			Target:  "/aura",
+			Headers: map[string]string{"Cookie": maskedScriptSecret, "Authorization": "Bearer " + maskedScriptSecret},
+			HeaderList: dsl.HeaderList{
+				{Name: "Cookie", Value: maskedScriptSecret},
+				{Name: "Authorization", Value: "Bearer " + maskedScriptSecret},
+			},
+		}},
+	}
+	requirements := discoverSecretBindingRequirements(script, 0)
+	cookieList := findSecretBindingRequirement(t, requirements, "/actions/0/header_list/0/value", 0)
+	cookieMap := findSecretBindingRequirement(t, requirements, "/actions/0/headers/Cookie", 0)
+	authList := findSecretBindingRequirement(t, requirements, "/actions/0/header_list/1/value", 0)
+	authMap := findSecretBindingRequirement(t, requirements, "/actions/0/headers/Authorization", 0)
+
+	if cookieList.SuggestedName != "START_IPADTEST_LRGEBANS_COOKIE" || cookieMap.SuggestedName != "START_IPADTEST_LRGEBANS_COOKIE" {
+		t.Fatalf("cookie suggested names = (%q, %q), want both START_IPADTEST_LRGEBANS_COOKIE", cookieList.SuggestedName, cookieMap.SuggestedName)
+	}
+	if authList.SuggestedName != "START_IPADTEST_LRGEBANS_TOKEN" || authMap.SuggestedName != "START_IPADTEST_LRGEBANS_TOKEN" {
+		t.Fatalf("auth suggested names = (%q, %q), want both START_IPADTEST_LRGEBANS_TOKEN", authList.SuggestedName, authMap.SuggestedName)
+	}
+	resolved, remaining, err := applySecretBindings(script, 0, []secretBindingSelection{
+		{RequirementID: cookieList.ID, SecretName: cookieList.SuggestedName},
+		{RequirementID: authMap.ID, SecretName: authMap.SuggestedName},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("expected 0 remaining requirements when one side of each header pair is bound, got %#v", remaining)
+	}
+	if resolved.Actions[0].Headers["Cookie"] != "{{secret.START_IPADTEST_LRGEBANS_COOKIE}}" ||
+		resolved.Actions[0].HeaderList[0].Value != "{{secret.START_IPADTEST_LRGEBANS_COOKIE}}" {
+		t.Fatalf("cookie pair not bound together: headers=%q list=%q", resolved.Actions[0].Headers["Cookie"], resolved.Actions[0].HeaderList[0].Value)
+	}
+	if resolved.Actions[0].Headers["Authorization"] != "Bearer {{secret.START_IPADTEST_LRGEBANS_TOKEN}}" ||
+		resolved.Actions[0].HeaderList[1].Value != "Bearer {{secret.START_IPADTEST_LRGEBANS_TOKEN}}" {
+		t.Fatalf("auth pair not bound together: headers=%q list=%q", resolved.Actions[0].Headers["Authorization"], resolved.Actions[0].HeaderList[1].Value)
+	}
+}
