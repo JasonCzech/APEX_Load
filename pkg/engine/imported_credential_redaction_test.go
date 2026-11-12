@@ -1380,3 +1380,94 @@ func TestIgnoredProxyCredentialsAreDisclosureOnly(t *testing.T) {
 		t.Fatal("malformed protected evidence did not fail closed")
 	}
 }
+
+func TestSOAPWSSecurityUsernameTokenPasswordRedaction(t *testing.T) {
+	const wssePass = "soap-wsse-canary-pass"
+	script := &dsl.Script{
+		Protocol: "soap",
+		Config: dsl.ScriptConfig{
+			SOAP: dsl.SOAPConfig{
+				WSSecurity: &dsl.SOAPWSSecurityConfig{
+					UsernameToken: &dsl.SOAPUsernameTokenConfig{
+						Username:     "svc-soap",
+						Password:     wssePass,
+						PasswordType: "digest",
+					},
+				},
+			},
+		},
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "wsdl",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name:   "GetOrder",
+			Type:   "soap",
+			Target: "https://example.test/ws",
+			Body:   `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><GetOrder/></soap:Body></soap:Envelope>`,
+		}},
+	}
+	values, err := ImportedCredentialValues(script)
+	if err != nil {
+		t.Fatalf("ImportedCredentialValues: %v", err)
+	}
+	if !containsExactString(values, wssePass) {
+		t.Fatalf("expected ImportedCredentialValues to contain %q, got %#v", wssePass, values)
+	}
+
+	collector := &importedCredentialCollector{
+		script: script,
+		seen:   map[string]struct{}{},
+	}
+	if err := collector.collectScriptConfigTarget(importedCredentialTarget{
+		Field: "config.soap.ws_security.username_token.password",
+	}); err != nil {
+		t.Fatalf("collectScriptConfigTarget: %v", err)
+	}
+	if !containsExactString(collector.values, wssePass) {
+		t.Fatalf("expected collectScriptConfigTarget to collect %q, got %#v", wssePass, collector.values)
+	}
+
+	paramScript := &dsl.Script{
+		Protocol: "soap",
+		Config: dsl.ScriptConfig{
+			SOAP: dsl.SOAPConfig{
+				WSSecurity: &dsl.SOAPWSSecurityConfig{
+					UsernameToken: &dsl.SOAPUsernameTokenConfig{
+						Username: "svc-soap",
+						Password: "{{param.wsse_pass}}",
+					},
+				},
+			},
+		},
+		Parameters: []dsl.Parameter{{
+			Name:   "wsse_pass",
+			Type:   "list",
+			Values: []string{"param-wsse-canary-value"},
+		}},
+	}
+	paramCollector := &importedCredentialCollector{
+		script: paramScript,
+		seen:   map[string]struct{}{},
+	}
+	if err := paramCollector.collectScriptConfigTarget(importedCredentialTarget{
+		Field: "config.soap.ws_security.username_token.password",
+	}); err != nil {
+		t.Fatalf("collectScriptConfigTarget param: %v", err)
+	}
+	if !containsExactString(paramCollector.values, "param-wsse-canary-value") {
+		t.Fatalf("expected collectScriptConfigTarget to expand {{param.wsse_pass}}, got %#v", paramCollector.values)
+	}
+
+	emptyCollector := &importedCredentialCollector{
+		script: &dsl.Script{Protocol: "soap"},
+		seen:   map[string]struct{}{},
+	}
+	if err := emptyCollector.collectScriptConfigTarget(importedCredentialTarget{
+		Field: "config.soap.ws_security.username_token.password",
+	}); err == nil {
+		t.Fatal("expected collectScriptConfigTarget on empty SOAP config to fail closed")
+	}
+}

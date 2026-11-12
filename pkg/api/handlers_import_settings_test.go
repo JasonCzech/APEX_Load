@@ -343,3 +343,178 @@ func TestImportSettingsSelectsTLSRequiresAnExplicitTLSValue(t *testing.T) {
 		})
 	}
 }
+
+func init() {
+	const viewerGolden = "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0 featureID="
+	accessRequirementGolden["GET /api/v1/dsl/config-catalog"] = viewerGolden
+	accessRequirementGolden["GET /api/v1/scripts/import/settings/fields"] = viewerGolden
+}
+
+func TestConfigCatalogEndpointAndImportSettingsFields(t *testing.T) {
+	server := NewServer(ServerConfig{})
+
+	w := httptest.NewRecorder()
+	server.mux.ServeHTTP(w, httptest.NewRequest("GET", "/api/v1/dsl/config-catalog?protocol=soap&scope=scenario", nil))
+	if w.Code != 200 {
+		t.Fatalf("GET /api/v1/dsl/config-catalog status=%d: %s", w.Code, w.Body.String())
+	}
+	var catalogResp dslConfigCatalogResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &catalogResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(catalogResp.Groups) != 7 {
+		t.Fatalf("groups=%d want 7", len(catalogResp.Groups))
+	}
+	foundSOAPFault := false
+	for _, f := range catalogResp.Fields {
+		if f.Path == "config.soap.fault_handling.fail_on_fault" {
+			foundSOAPFault = true
+		}
+		if f.Path == "config.jmeter" || f.Path == "config.sampler_schedules" {
+			t.Fatalf("scenario scope must exclude compatibility field %s", f.Path)
+		}
+	}
+	if !foundSOAPFault {
+		t.Fatal("missing config.soap.fault_handling.fail_on_fault in soap scenario catalog")
+	}
+
+	wFields := httptest.NewRecorder()
+	server.mux.ServeHTTP(wFields, httptest.NewRequest("GET", "/api/v1/scripts/import/settings/fields?protocol=soap", nil))
+	if wFields.Code != 200 {
+		t.Fatalf("GET /api/v1/scripts/import/settings/fields status=%d: %s", wFields.Code, wFields.Body.String())
+	}
+	var fieldsResp importSettingsFieldsResponse
+	if err := json.Unmarshal(wFields.Body.Bytes(), &fieldsResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(fieldsResp.Groups) != 7 || len(fieldsResp.Fields) == 0 {
+		t.Fatalf("unexpected fields response: groups=%d fields=%d", len(fieldsResp.Groups), len(fieldsResp.Fields))
+	}
+
+	wUnknownProto := httptest.NewRecorder()
+	server.mux.ServeHTTP(wUnknownProto, httptest.NewRequest("GET", "/api/v1/scripts/import/settings/fields?protocol=bruno", nil))
+	if wUnknownProto.Code != 200 {
+		t.Fatalf("GET /api/v1/scripts/import/settings/fields?protocol=bruno status=%d: %s", wUnknownProto.Code, wUnknownProto.Body.String())
+	}
+	var unknownProtoResp importSettingsFieldsResponse
+	if err := json.Unmarshal(wUnknownProto.Body.Bytes(), &unknownProtoResp); err != nil {
+		t.Fatal(err)
+	}
+	if len(unknownProtoResp.Fields) != 0 {
+		t.Fatalf("expected 0 fields for unknown protocol=bruno, got %d", len(unknownProtoResp.Fields))
+	}
+}
+
+func TestWidenedImportSettingsFamiliesAndCredentialGuards(t *testing.T) {
+	script := settingsTestScript()
+	script.Protocol = "soap"
+	script.Actions = []dsl.Action{{
+		Name:   "InvokeOrder",
+		Type:   "soap",
+		Target: "/ws/orders",
+		Body:   `<GetOrder xmlns="urn:orders"><id>1</id></GetOrder>`,
+		SOAP:   &dsl.SOAPActionConfig{Operation: "GetOrder", BodyMode: "payload"},
+	}}
+
+	updated, errs := applyImportSettings(script, "all", []ImportSettingsChange{
+		settingChange("config.base_url", `"https://soap.example.test"`),
+		settingChange("config.soap.version", `"1.2"`),
+		settingChange("config.soap.fault_handling.fail_on_fault", "true"),
+		settingChange("config.soap.ws_security.username_token.username", `"svc-orders"`),
+		settingChange("config.soap.ws_security.username_token.password", `"{{secret.SOAP_WSSE_PASSWORD}}"`),
+		settingChange("config.soap.ws_security.username_token.password_type", `"digest"`),
+		settingChange("config.soap.ws_security.username_token.nonce", "true"),
+		settingChange("config.soap.ws_security.username_token.created", "true"),
+		settingChange("config.soap.ws_security.timestamp.ttl_seconds", "120"),
+		settingChange("config.web_runtime.download_filters.mode", `"block_list"`),
+		settingChange("config.web_runtime.download_filters.hosts", `["cdn.example.test"]`),
+		settingChange("config.web_runtime.data_formatting.auto_detect", "true"),
+		settingChange("config.http.tls.min_version", `"1.2"`),
+		settingChange("config.http.tls.max_version", `"1.3"`),
+		settingChange("config.http.tls.ca_cert_file", `"certs/ca.pem"`),
+		settingChange("config.http.tls.client_cert_file", `"certs/client.pem"`),
+		settingChange("config.http.tls.client_key_file", `"certs/client.key"`),
+		settingChange("config.http.tls.insecure_skip_verify", "true"),
+		settingChange("config.http.proxy.url", `"http://proxy.example.test:8080"`),
+		settingChange("config.http.proxy.no_proxy", `["localhost","127.0.0.1"]`),
+		settingChange("config.http.proxy.username", `"{{secret.PROXY_USER}}"`),
+		settingChange("config.http.proxy.password", `"{{secret.PROXY_PASS}}"`),
+		settingChange("config.http.auth.type", `"bearer"`),
+		settingChange("config.http.auth.username", `"svc-api"`),
+		settingChange("config.http.auth.token", `"{{secret.BEARER_TOKEN}}"`),
+		settingChange("config.http.version", `"auto+h3"`),
+		settingChange("config.http.max_redirects", "-1"),
+		settingChange("config.pacing.seed", "-42"),
+		settingChange("config.browser.geolocation.latitude", "-33.8688"),
+		settingChange("config.browser.geolocation.longitude", "-122.3321"),
+		settingChange("config.http.quic.max_idle_timeout_ms", "15000"),
+		settingChange("config.http.quic.handshake_timeout_ms", "5000"),
+		settingChange("config.error_handling.max_retries", "2"),
+		settingChange("config.error_handling.continue_on_error", "true"),
+		settingChange("config.error_handling.fail_transaction_on_error_message", "false"),
+		settingChange("config.log.level", `"extended"`),
+		settingChange("config.log.on_error_only", "true"),
+		settingChange("config.log.max_response_bytes", "4096"),
+		settingChange("config.run_logic.iterations", "5"),
+		settingChange("config.run_logic.global_iterations", "50"),
+		settingChange("config.run_logic.max_transactions", "500"),
+	})
+	if len(errs) != 0 || updated == nil {
+		t.Fatalf("applyImportSettings failed: %v", errs)
+	}
+	if updated.Config.BaseURL != "https://soap.example.test" ||
+		updated.Config.SOAP.Version != "1.2" ||
+		updated.Config.SOAP.FaultHandling.FailOnFault == nil || !*updated.Config.SOAP.FaultHandling.FailOnFault ||
+		updated.Config.SOAP.WSSecurity == nil || updated.Config.SOAP.WSSecurity.UsernameToken == nil ||
+		updated.Config.SOAP.WSSecurity.UsernameToken.Username != "svc-orders" ||
+		updated.Config.SOAP.WSSecurity.UsernameToken.Password != "{{secret.SOAP_WSSE_PASSWORD}}" ||
+		updated.Config.SOAP.WSSecurity.UsernameToken.PasswordType != "digest" ||
+		updated.Config.SOAP.WSSecurity.Timestamp == nil || updated.Config.SOAP.WSSecurity.Timestamp.TTLSeconds != 120 ||
+		updated.Config.HTTP.TLS.MaxVersion != "1.3" ||
+		updated.Config.HTTP.TLS.CACertFile != "certs/ca.pem" ||
+		!updated.Config.HTTP.TLS.InsecureSkipVerify ||
+		updated.Config.HTTP.Proxy.URL != "http://proxy.example.test:8080" ||
+		updated.Config.HTTP.Auth.Token != "{{secret.BEARER_TOKEN}}" ||
+		updated.Config.HTTP.QUIC == nil || updated.Config.HTTP.QUIC.MaxIdleTimeoutMs != 15000 ||
+		updated.Config.HTTP.QUIC.HandshakeTimeoutMs != 5000 ||
+		updated.Config.Browser.Geolocation.Latitude == nil || *updated.Config.Browser.Geolocation.Latitude != -33.8688 ||
+		updated.Config.Browser.Geolocation.Longitude == nil || *updated.Config.Browser.Geolocation.Longitude != -122.3321 ||
+		updated.Config.ErrorHandling.MaxRetries != 2 ||
+		updated.Config.Log.Level != "extended" ||
+		updated.Config.RunLogic.Iterations != 5 {
+		t.Fatalf("unexpected updated config: %+v", updated.Config)
+	}
+
+	// Plaintext credential smuggling must be rejected across secret fields and URL userinfo.
+	for _, tc := range []struct {
+		name   string
+		change ImportSettingsChange
+	}{
+		{"soap wsse plaintext password", settingChange("config.soap.ws_security.username_token.password", `"plaintext-wsse-secret"`)},
+		{"proxy plaintext password", settingChange("config.http.proxy.password", `"plaintext-proxy-secret"`)},
+		{"auth plaintext token", settingChange("config.http.auth.token", `"plaintext-bearer-token"`)},
+		{"base_url userinfo", settingChange("config.base_url", `"https://admin:hunter2@example.test"`)},
+		{"proxy url userinfo", settingChange("config.http.proxy.url", `"http://proxyuser:proxypass@proxy.example.test:8080"`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			draft, changeErrs := applyImportSettings(script, "all", []ImportSettingsChange{tc.change})
+			if len(changeErrs) == 0 || draft != nil {
+				t.Fatalf("expected credential guard rejection for %s, got draft=%v errs=%v", tc.name, draft, changeErrs)
+			}
+		})
+	}
+
+	// Existing protected credential on source cannot be overwritten via import settings.
+	withProtected := cloneScriptDefinition(script)
+	withProtected.Config.SOAP.WSSecurity = &dsl.SOAPWSSecurityConfig{
+		UsernameToken: &dsl.SOAPUsernameTokenConfig{
+			Username: "admin",
+			Password: "imported-raw-password",
+		},
+	}
+	if draft, changeErrs := applyImportSettings(withProtected, "SOAP", []ImportSettingsChange{
+		settingChange("config.soap.ws_security.username_token.password", `"{{secret.NEW_REF}}"`),
+	}); len(changeErrs) == 0 || draft != nil {
+		t.Fatalf("expected protected value guard when overwriting existing imported secret, got errs=%v", changeErrs)
+	}
+}

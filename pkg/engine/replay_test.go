@@ -1585,3 +1585,49 @@ func TestReplayScriptMultipleIterations(t *testing.T) {
 		t.Fatalf("phases=%v want %v", phases, want)
 	}
 }
+
+func TestReplayUnredactedDebugScrubsSOAPWSSecurityPasswords(t *testing.T) {
+	const (
+		plainPass  = "wsse-plain-secret"
+		digestHash = "bXktZDerivedLWRpZ2VzdC10b2tlbg=="
+	)
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		reqBody := `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:UsernameToken><wsse:Username>svc</wsse:Username><wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordDigest">` + digestHash + `</wsse:Password></wsse:UsernameToken></wsse:Security></soap:Header><soap:Body><Op/></soap:Body></soap:Envelope>`
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    false,
+			StatusCode: 500,
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestMethod: "POST",
+				RequestURL:    "https://example.test/ws",
+				RequestBody:   reqBody,
+				ResponseBody:  `<wsse:Password>` + plainPass + `</wsse:Password>`,
+			},
+		}, nil
+	})
+
+	script := &dsl.Script{
+		Name:     "SOAPWSSEDebug",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "CallWS", Type: "POST", Method: "POST", Target: "/ws"}},
+	}
+	var debugSeen []ReplayDebugAction
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{
+		IgnoreThinkTime: true,
+		UnredactedDebug: true,
+		DebugController: replayDebugControllerFunc(func(_ context.Context, a ReplayDebugAction) error {
+			debugSeen = append(debugSeen, a)
+			return nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	raw, _ := json.Marshal(report)
+	if strings.Contains(string(raw), plainPass) || strings.Contains(string(raw), digestHash) {
+		t.Fatalf("unredacted debug replay leaked WS-Security password token: %s", raw)
+	}
+	if len(report.Snapshots) == 0 || !strings.Contains(report.Snapshots[0].RequestBody, ">[REDACTED]</wsse:Password>") || !strings.Contains(report.Snapshots[0].ResponseBody, "<wsse:Password>[REDACTED]</wsse:Password>") {
+		t.Fatalf("expected <wsse:Password>[REDACTED]</wsse:Password> in snapshot: %+v", report.Snapshots)
+	}
+}

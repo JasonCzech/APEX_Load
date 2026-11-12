@@ -8,11 +8,13 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scriptdisclosure"
 )
 
 //go:embed import_settings_fields.json
@@ -20,10 +22,14 @@ var importSettingsFieldsJSON []byte
 
 type importSettingField struct {
 	Category string   `json:"category"`
+	Group    string   `json:"group,omitempty"`
+	Subgroup string   `json:"subgroup,omitempty"`
 	Path     string   `json:"path"`
 	Label    string   `json:"label"`
 	Type     string   `json:"type"`
+	Unit     string   `json:"unit,omitempty"`
 	Options  []string `json:"options,omitempty"`
+	Secret   bool     `json:"secret,omitempty"`
 }
 
 var importSettingFields = func() []importSettingField {
@@ -33,6 +39,61 @@ var importSettingFields = func() []importSettingField {
 	}
 	return fields
 }()
+
+type importSettingsFieldsResponse struct {
+	Groups []dsl.ConfigGroupMeta `json:"groups"`
+	Fields []importSettingField  `json:"fields"`
+}
+
+// handleImportSettingsFields returns the widened import setting field definitions
+// combining legacy categories with the canonical dsl.ConfigCatalog() import scope.
+func (s *Server) handleImportSettingsFields(w http.ResponseWriter, r *http.Request) {
+	protocol := strings.TrimSpace(r.URL.Query().Get("protocol"))
+	writeJSON(w, http.StatusOK, importSettingsFieldsResponse{
+		Groups: dsl.ConfigGroups(),
+		Fields: widenedImportSettingFields(protocol),
+	})
+}
+
+func widenedImportSettingFields(protocol string) []importSettingField {
+	importCatalog := dsl.ConfigCatalogForFilter(protocol, dsl.ConfigScopeImport)
+	seen := make(map[string]int, len(importSettingFields))
+	out := make([]importSettingField, 0, len(importSettingFields)+len(importCatalog))
+	for _, f := range importSettingFields {
+		if meta, ok := dsl.ConfigFieldForPath(f.Path); ok {
+			if protocol != "" {
+				matched := false
+				for _, m := range importCatalog {
+					if m.Path == f.Path {
+						matched = true
+						break
+					}
+				}
+				if !matched {
+					continue
+				}
+			}
+			f.Group = meta.Group
+			f.Subgroup = meta.Subgroup
+			f.Unit = meta.Unit
+			f.Secret = meta.Secret
+			if len(meta.Options) > len(f.Options) {
+				f.Options = append([]string(nil), meta.Options...)
+			}
+		} else if protocol != "" {
+			continue
+		}
+		seen[f.Path] = len(out)
+		out = append(out, f)
+	}
+	for _, meta := range importCatalog {
+		if _, exists := seen[meta.Path]; exists {
+			continue
+		}
+		out = append(out, importSettingFieldFromCatalogMeta(meta, defaultImportCategoryForCatalogMeta(meta)))
+	}
+	return out
+}
 
 type ImportSettingsChange struct {
 	Path      string          `json:"path"`
@@ -153,11 +214,15 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 	safeRaw, _ := json.Marshal(repairDisclosure(source))
 	var safe map[string]any
 	_ = decodeImportSettingJSON(safeRaw, &safe)
+	maskedSourceRaw, _ := json.Marshal(maskScriptSecrets(&dsl.Script{Config: source.Config}))
+	var maskedSource map[string]any
+	_ = decodeImportSettingJSON(maskedSourceRaw, &maskedSource)
 	seen := map[string]bool{}
 	for _, change := range changes {
 		key := change.Path
 		path := strings.Split(change.Path, ".")
 		var field *importSettingField
+		var catalogMeta *dsl.ConfigFieldMeta
 		if change.Parameter != "" {
 			key = change.Parameter + "." + change.Path
 			for i, p := range source.Parameters {
@@ -172,10 +237,23 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 			}
 		} else {
 			for _, f := range importSettingFields {
-				if f.Path == change.Path && f.Category == category {
+				if f.Path == change.Path && (category == "" || f.Category == category) {
 					copy := f
 					field = &copy
 					break
+				}
+			}
+			if meta, ok := dsl.ConfigFieldForPath(change.Path); ok && slices.Contains(meta.Scopes, "import") {
+				metaCopy := meta
+				catalogMeta = &metaCopy
+				if field == nil && importCatalogFieldMatchesCategory(meta, category) {
+					f := importSettingFieldFromCatalogMeta(meta, defaultImportCategoryForCatalogMeta(meta))
+					field = &f
+				} else if field != nil && len(meta.Options) > len(field.Options) {
+					field.Options = append([]string(nil), meta.Options...)
+				}
+				if field != nil && isSignedConfigCatalogField(meta.Path) {
+					field.Type = "signed"
 				}
 			}
 		}
@@ -193,9 +271,35 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 			errors[key] = "Enter a valid " + field.Type + " value"
 			continue
 		}
+		if catalogMeta != nil && catalogMeta.Type == dsl.ConfigFieldTypeInt && value != nil {
+			number, ok := value.(json.Number)
+			if !ok {
+				errors[key] = "Enter a valid integer value"
+				continue
+			}
+			iv, err := number.Int64()
+			if err != nil {
+				errors[key] = "Enter a valid integer value"
+				continue
+			}
+			if catalogMeta.Path == "config.http.max_redirects" && iv < -1 {
+				errors[key] = "Enter a valid integer value"
+				continue
+			}
+		}
 		if !reflect.DeepEqual(importSettingValue(wire, path), importSettingValue(safe, path)) {
 			errors[key] = "Protected values must be managed in Credentials"
 			continue
+		}
+		if change.Parameter == "" && !reflect.DeepEqual(importSettingValue(wire, path), importSettingValue(maskedSource, path)) {
+			errors[key] = "Protected values must be managed in Credentials"
+			continue
+		}
+		if catalogMeta != nil && catalogMeta.Secret && value != nil {
+			if s, ok := value.(string); ok && strings.TrimSpace(s) != "" && !isPortableCredentialReference(s) {
+				errors[key] = "Use Credentials for sensitive values"
+				continue
+			}
 		}
 		setImportSettingValue(wire, path, value)
 	}
@@ -219,7 +323,7 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 		if !oldIssues[issue] {
 			matched := false
 			for _, change := range changes {
-				if change.Parameter == "" && strings.HasPrefix(issue, change.Path+" ") {
+				if change.Parameter == "" && (strings.HasPrefix(issue, change.Path+" ") || strings.HasPrefix(issue, change.Path+":")) {
 					errors[change.Path] = issue
 					matched = true
 				}
@@ -235,6 +339,9 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 	afterRaw, _ := json.Marshal(&draft)
 	var after map[string]any
 	_ = decodeImportSettingJSON(afterRaw, &after)
+	maskedAfterRaw, _ := json.Marshal(maskScriptSecrets(&dsl.Script{Config: draft.Config}))
+	var maskedAfter map[string]any
+	_ = decodeImportSettingJSON(maskedAfterRaw, &maskedAfter)
 	for _, change := range changes {
 		path := strings.Split(change.Path, ".")
 		key := change.Path
@@ -248,6 +355,10 @@ func applyImportSettings(source *dsl.Script, category string, changes []ImportSe
 			}
 		}
 		if !reflect.DeepEqual(importSettingValue(after, path), importSettingValue(afterSafe, path)) {
+			errors[key] = "Use Credentials for sensitive values"
+			continue
+		}
+		if change.Parameter == "" && !reflect.DeepEqual(importSettingValue(after, path), importSettingValue(maskedAfter, path)) {
 			errors[key] = "Use Credentials for sensitive values"
 		}
 	}
@@ -313,11 +424,18 @@ func validImportSettingValue(f importSettingField, v any) bool {
 		number, ok := v.(json.Number)
 		n, err := number.Float64()
 		return ok && err == nil && !math.IsNaN(n) && !math.IsInf(n, 0) && n >= 0
-	case "signed":
+	case "int":
 		number, ok := v.(json.Number)
-		_, err := number.Float64()
-		return ok && err == nil
-	case "text":
+		if !ok {
+			return false
+		}
+		_, err := number.Int64()
+		return err == nil
+	case "signed", "float":
+		number, ok := v.(json.Number)
+		n, err := number.Float64()
+		return ok && err == nil && !math.IsNaN(n) && !math.IsInf(n, 0)
+	case "text", "string":
 		s, ok := v.(string)
 		return ok && len(s) <= 65536
 	case "select":
@@ -325,13 +443,16 @@ func validImportSettingValue(f importSettingField, v any) bool {
 		if !ok {
 			return false
 		}
+		if len(f.Options) == 0 {
+			return len(s) <= 65536
+		}
 		for _, option := range f.Options {
 			if s == option {
 				return true
 			}
 		}
 		return false
-	case "lines":
+	case "lines", "string_list":
 		values, ok := v.([]any)
 		if !ok || len(values) > 10000 {
 			return false
@@ -343,6 +464,181 @@ func validImportSettingValue(f importSettingField, v any) bool {
 			}
 		}
 		return true
+	case "key_value_map":
+		m, ok := v.(map[string]any)
+		if !ok || len(m) > 1000 {
+			return false
+		}
+		for k, val := range m {
+			s, ok := val.(string)
+			if len(k) > 4096 || !ok || len(s) > 65536 {
+				return false
+			}
+		}
+		return true
+	case "object_list":
+		values, ok := v.([]any)
+		if !ok || len(values) > 10000 {
+			return false
+		}
+		for _, val := range values {
+			if _, ok := val.(map[string]any); !ok {
+				return false
+			}
+		}
+		return true
+	case "object":
+		_, ok := v.(map[string]any)
+		return ok
+	}
+	return false
+}
+
+func isPortableCredentialReference(s string) bool {
+	trimmed := strings.TrimSpace(s)
+	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") {
+		return false
+	}
+	probe, err := scriptdisclosure.Project(&dsl.Script{Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: s}}}})
+	return err == nil && probe != nil && probe.Config.HTTP.Auth.Password == s
+}
+
+func importSettingFieldFromCatalogMeta(meta dsl.ConfigFieldMeta, category string) importSettingField {
+	fieldType := meta.Type
+	switch meta.Type {
+	case "string":
+		fieldType = "text"
+	case "int", "float":
+		if isSignedConfigCatalogField(meta.Path) {
+			fieldType = "signed"
+		} else {
+			fieldType = "number"
+		}
+	case "string_list":
+		fieldType = "lines"
+	}
+	return importSettingField{
+		Category: category,
+		Group:    meta.Group,
+		Subgroup: meta.Subgroup,
+		Path:     meta.Path,
+		Label:    meta.Label,
+		Type:     fieldType,
+		Unit:     meta.Unit,
+		Options:  append([]string(nil), meta.Options...),
+		Secret:   meta.Secret,
+	}
+}
+
+func isSignedConfigCatalogField(path string) bool {
+	switch path {
+	case "config.pacing.seed",
+		"config.http.max_redirects",
+		"config.browser.geolocation.latitude",
+		"config.browser.geolocation.longitude":
+		return true
+	default:
+		return false
+	}
+}
+
+func defaultImportCategoryForCatalogMeta(meta dsl.ConfigFieldMeta) string {
+	switch {
+	case strings.HasPrefix(meta.Path, "config.soap."):
+		return "SOAP"
+	case strings.HasPrefix(meta.Path, "config.web_runtime."):
+		return "HTTP"
+	case strings.HasPrefix(meta.Path, "config.http.proxy."):
+		return "Proxy"
+	case strings.HasPrefix(meta.Path, "config.http.") || meta.Path == "config.base_url" || meta.Path == "config.headers" || meta.Path == "config.cookies":
+		return "HTTP"
+	case strings.HasPrefix(meta.Path, "config.run_logic."):
+		return "Run logic"
+	case strings.HasPrefix(meta.Path, "config.pacing."):
+		return "Pacing"
+	case strings.HasPrefix(meta.Path, "config.think_time."):
+		return "Think time"
+	case strings.HasPrefix(meta.Path, "config.log."):
+		return "Logging"
+	case strings.HasPrefix(meta.Path, "config.error_handling.") || strings.HasPrefix(meta.Path, "config.transaction_granularity."):
+		return "Error handling"
+	case strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics."):
+		return "Diagnostics"
+	case strings.HasPrefix(meta.Path, "config.browser_emulation."):
+		return "Browser emulation"
+	case strings.HasPrefix(meta.Path, "config.browser."):
+		return "Browser"
+	case strings.HasPrefix(meta.Path, "config.websocket."):
+		return "WebSocket"
+	case strings.HasPrefix(meta.Path, "config.kafka."):
+		return "Kafka"
+	case strings.HasPrefix(meta.Path, "config.jms."):
+		return "JMS"
+	case strings.HasPrefix(meta.Path, "config.eventhubs."):
+		return "Event Hubs"
+	case strings.HasPrefix(meta.Path, "config.grpc."):
+		return "gRPC"
+	case strings.HasPrefix(meta.Path, "config.database."):
+		return "Database"
+	case strings.HasPrefix(meta.Path, "config.network."):
+		return "Network"
+	case strings.HasPrefix(meta.Path, "config.appium."):
+		return "Appium"
+	case strings.HasPrefix(meta.Path, "config.java_vuser."):
+		return "Java VUser"
+	default:
+		return meta.Group
+	}
+}
+
+func importCatalogFieldMatchesCategory(meta dsl.ConfigFieldMeta, category string) bool {
+	if category == "" || category == "all" || category == "config" {
+		return true
+	}
+	if category == meta.Group || category == meta.Subgroup || category == meta.Group+":"+meta.Subgroup {
+		return true
+	}
+	defaultCat := defaultImportCategoryForCatalogMeta(meta)
+	if strings.EqualFold(category, defaultCat) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(category)) {
+	case "http", "internet_protocol:preferences":
+		return strings.HasPrefix(meta.Path, "config.http.") || strings.HasPrefix(meta.Path, "config.web_runtime.") || meta.Path == "config.base_url" || meta.Path == "config.headers" || meta.Path == "config.cookies" || strings.HasPrefix(meta.Path, "config.bandwidth.") || strings.HasPrefix(meta.Path, "config.streaming.")
+	case "soap":
+		return strings.HasPrefix(meta.Path, "config.soap.") || meta.Subgroup == "soap"
+	case "web_runtime", "web runtime", "internet_protocol:download_filters", "internet_protocol:content_check":
+		return strings.HasPrefix(meta.Path, "config.web_runtime.")
+	case "tls", "http_tls":
+		return strings.HasPrefix(meta.Path, "config.http.tls.")
+	case "proxy", "http_proxy", "internet_protocol:proxy":
+		return strings.HasPrefix(meta.Path, "config.http.proxy.") || meta.Path == "config.http.proxy_mode"
+	case "auth", "http_auth":
+		return strings.HasPrefix(meta.Path, "config.http.auth.")
+	case "quic", "http_quic":
+		return strings.HasPrefix(meta.Path, "config.http.quic.")
+	case "base_url", "target", "target_identity":
+		return meta.Path == "config.base_url" || meta.Group == dsl.ConfigGroupTargetIdentity
+	case "run_logic", "run logic":
+		return strings.HasPrefix(meta.Path, "config.run_logic.") || meta.Subgroup == "iterations"
+	case "pacing":
+		return strings.HasPrefix(meta.Path, "config.pacing.") || meta.Subgroup == "pacing"
+	case "think_time", "think time":
+		return strings.HasPrefix(meta.Path, "config.think_time.") || meta.Group == dsl.ConfigGroupThinkTime
+	case "log", "logging":
+		return strings.HasPrefix(meta.Path, "config.log.") || meta.Subgroup == "logging"
+	case "error_handling", "error handling", "miscellaneous":
+		return strings.HasPrefix(meta.Path, "config.error_handling.") || strings.HasPrefix(meta.Path, "config.transaction_granularity.")
+	case "diagnostics":
+		return strings.HasPrefix(meta.Path, "config.results.") || strings.HasPrefix(meta.Path, "config.replay_diagnostics.")
+	case "browser_emulation", "browser emulation":
+		return strings.HasPrefix(meta.Path, "config.browser_emulation.") || strings.HasPrefix(meta.Path, "config.browser.")
+	case "browser":
+		return strings.HasPrefix(meta.Path, "config.browser.") || strings.HasPrefix(meta.Path, "config.browser_emulation.")
+	case "network:speed_simulation", "bandwidth":
+		return strings.HasPrefix(meta.Path, "config.bandwidth.") || meta.Subgroup == "bandwidth"
+	case "streaming":
+		return strings.HasPrefix(meta.Path, "config.streaming.") || meta.Subgroup == "streaming_media"
 	}
 	return false
 }
@@ -378,9 +674,15 @@ func setImportSettingValue(v any, path []string, value any) {
 		return
 	}
 	if m[path[0]] == nil {
+		if value == nil {
+			return
+		}
 		m[path[0]] = map[string]any{}
 	}
 	setImportSettingValue(m[path[0]], path[1:], value)
+	if sub, ok := m[path[0]].(map[string]any); ok && len(sub) == 0 {
+		delete(m, path[0])
+	}
 }
 
 var importParameterSettingFields = map[string]importSettingField{

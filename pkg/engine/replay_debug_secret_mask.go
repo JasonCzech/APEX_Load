@@ -1,21 +1,69 @@
 package engine
 
-import "reflect"
+import (
+	"reflect"
+	"regexp"
+	"strings"
+)
 
 // Unredacted debugger replay shows runtime values as the protocol saw them,
-// with one exception: values resolved from the project's secret store. Every
-// debugger output (progress events, controller callbacks, the returned report
-// and error) passes through maskDebugSecrets, which replaces those exact values
-// and the reversible spellings the runtime matcher derives for them. Other raw
-// values, including credential-looking text the ordinary scrubbers would
-// redact, stay visible.
+// with one exception: values resolved from the project's secret store and
+// SOAP WS-Security UsernameToken passwords (including dynamically computed
+// PasswordDigest tokens). Every debugger output (progress events, controller
+// callbacks, the returned report and error) passes through maskDebugSecrets,
+// which replaces those exact values and the reversible spellings the runtime
+// matcher derives for them. Other raw values, including credential-looking text
+// the ordinary scrubbers would redact, stay visible.
+
+var wssePasswordElementPattern = regexp.MustCompile(`(?is)(<(?:[A-Za-z0-9_.-]+:)?Password(?:\s[^>]*)?>)([^<]*)(</(?:[A-Za-z0-9_.-]+:)?Password\s*>)`)
+
+func scrubWSSEPasswordElements(text string) string {
+	if !strings.Contains(text, "Password") && !strings.Contains(text, "password") {
+		return text
+	}
+	return wssePasswordElementPattern.ReplaceAllStringFunc(text, func(match string) string {
+		parts := wssePasswordElementPattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		openTag, inner, closeTag := parts[1], parts[2], parts[3]
+		if strings.HasSuffix(strings.TrimSpace(strings.TrimSuffix(openTag, ">")), "/") {
+			return match
+		}
+		lowerOpen := strings.ToLower(openTag)
+		isWSSE := strings.HasPrefix(lowerOpen, "<wsse:password") ||
+			strings.Contains(lowerOpen, "wssecurity") ||
+			strings.Contains(lowerOpen, "usernametoken") ||
+			strings.Contains(lowerOpen, "passwordtext") ||
+			strings.Contains(lowerOpen, "passworddigest") ||
+			strings.Contains(strings.ToLower(text), "usernametoken") ||
+			strings.Contains(strings.ToLower(text), "wssecurity")
+		if !isWSSE {
+			return match
+		}
+		trimmed := strings.TrimSpace(inner)
+		if trimmed == "" || trimmed == "[REDACTED]" {
+			return match
+		}
+		return openTag + "[REDACTED]" + closeTag
+	})
+}
+
+func scrubDebugSecretText(text string, mask *RedactionConfig) string {
+	masked := text
+	if mask != nil {
+		masked = scrubRuntimeSecretText(masked, mask)
+	}
+	return scrubWSSEPasswordElements(masked)
+}
 
 // maxDebugSecretMaskDepth bounds the walk. Replay evidence has no pointer
 // cycles; a value nested deeper than this is dropped rather than published
 // unmasked.
 const maxDebugSecretMaskDepth = 64
 
-// newDebugSecretMask returns nil when there is nothing to mask.
+// newDebugSecretMask returns a non-nil mask for debugger replay so WS-Security
+// password tokens are always scrubbed even when no secret-store values are referenced.
 func newDebugSecretMask(managedSecretValues []string) (*RedactionConfig, error) {
 	values := make([]string, 0, len(managedSecretValues))
 	for _, value := range managedSecretValues {
@@ -24,15 +72,16 @@ func newDebugSecretMask(managedSecretValues []string) (*RedactionConfig, error) 
 		}
 	}
 	if len(values) == 0 {
-		return nil, nil
+		return &RedactionConfig{}, nil
 	}
 	return WithSecretValueRedactionChecked(nil, values)
 }
 
 // maskDebugSecrets returns value with managed secrets replaced. Every pointer,
 // slice, map and interface it rewrites is copied, so evidence the engine or an
-// earlier consumer still holds is never mutated. Screenshots are dropped: they
-// can show a secret as pixels the text matcher cannot find.
+// earlier consumer still holds is never mutated. Screenshots are dropped when
+// managed secrets are active: they can show a secret as pixels the text matcher
+// cannot find.
 func maskDebugSecrets[T any](mask *RedactionConfig, value T) T {
 	if mask == nil {
 		return value
@@ -51,7 +100,7 @@ func maskDebugSecretValue(mask *RedactionConfig, value reflect.Value, depth int)
 	switch value.Kind() {
 	case reflect.String:
 		text := value.String()
-		masked := scrubRuntimeSecretText(text, mask)
+		masked := scrubDebugSecretText(text, mask)
 		if masked == text {
 			return value, false
 		}
@@ -86,7 +135,7 @@ func maskDebugSecretValue(mask *RedactionConfig, value reflect.Value, depth int)
 		}
 		if value.Type().Elem().Kind() == reflect.Uint8 {
 			text := string(value.Bytes())
-			masked := scrubRuntimeSecretText(text, mask)
+			masked := scrubDebugSecretText(text, mask)
 			if masked == text {
 				return value, false
 			}
@@ -166,7 +215,7 @@ func maskDebugSecretStruct(mask *RedactionConfig, value reflect.Value, depth int
 		current := value.Field(index)
 		var elem reflect.Value
 		var changed bool
-		if isDebugScreenshotField(field) {
+		if hasRuntimeSecretReplacers(mask) && isDebugScreenshotField(field) {
 			elem, changed = reflect.Zero(field.Type), current.Len() > 0
 		} else {
 			elem, changed = maskDebugSecretValue(mask, current, depth+1)

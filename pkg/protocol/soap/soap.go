@@ -161,15 +161,23 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			redactedPrepared.SOAP = action.RedactedSOAP
 		}
 		redactedPreparedBody, _ := shapeSOAPBody(&redactedPrepared, s.version, s.namespaces)
+		redactedPreparedBody = s.applySecurity(redactedPreparedBody)
+		redactedPreparedBody = []byte(scrubSOAPWSSecurityPasswords(string(redactedPreparedBody)))
 		redactedPrepared.Body = redactedPreparedBody
 		s.applyDefaults(&redactedPrepared)
 		prepared.RedactedBody = redactedPreparedBody
 		prepared.RedactedHeaders = cloneHeaders(redactedPrepared.Headers)
+	} else {
+		prepared.RedactedBody = []byte(scrubSOAPWSSecurityPasswords(string(s.applySecurity(prepared.RedactedBody))))
 	}
 	targetURL := resolveSOAPURL(s.baseURL, prepared.Target)
 	envelopeOverheadKB := soapEnvelopeOverheadKB(action, prepared.Body)
 
 	result, err := s.http.Execute(ctx, &prepared)
+	if result != nil && result.Snapshot != nil {
+		result.Snapshot.RequestBody = scrubSOAPWSSecurityPasswords(result.Snapshot.RequestBody)
+		result.Snapshot.ResponseBody = scrubSOAPWSSecurityPasswords(result.Snapshot.ResponseBody)
+	}
 	if err != nil || result == nil {
 		return result, err
 	}
@@ -235,7 +243,9 @@ func (s *SOAP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		evidenceAction.RedactedHeaders = nil
 		evidenceAction.RedactedParams = nil
 		evidenceAction.RedactedSOAP = nil
+		evidenceAction.RedactedBody = []byte(scrubSOAPWSSecurityPasswords(string(prepared.Body)))
 	}
+	evidenceAction.Body = []byte(scrubSOAPWSSecurityPasswords(string(evidenceAction.Body)))
 	result.ProtocolEvidence = protocol.BuildProtocolEvidence(&evidenceAction, result)
 	if discardSuccessfulBody && result.Success {
 		result.ResponseBody = ""
@@ -457,14 +467,49 @@ func buildSOAPSnapshot(action *protocol.Action, targetURL string, result *protoc
 	if !raw && len(action.RedactedBody) > 0 {
 		body = string(action.RedactedBody)
 	}
+	body = scrubSOAPWSSecurityPasswords(body)
 	return &protocol.ErrorSnapshot{
 		RequestMethod:  action.Method,
 		RequestURL:     requestURL,
 		RequestHeaders: headers,
 		RequestBody:    body,
 		ResponseStatus: result.StatusCode,
-		ResponseBody:   result.ResponseBody,
+		ResponseBody:   scrubSOAPWSSecurityPasswords(result.ResponseBody),
 	}
+}
+
+var soapWSSecurityPasswordElementPattern = regexp.MustCompile(`(?is)(<(?:[A-Za-z0-9_.-]+:)?Password(?:\s[^>]*)?>)([^<]*)(</(?:[A-Za-z0-9_.-]+:)?Password\s*>)`)
+
+func scrubSOAPWSSecurityPasswords(xmlBody string) string {
+	if !strings.Contains(xmlBody, "Password") && !strings.Contains(xmlBody, "password") {
+		return xmlBody
+	}
+	return soapWSSecurityPasswordElementPattern.ReplaceAllStringFunc(xmlBody, func(match string) string {
+		parts := soapWSSecurityPasswordElementPattern.FindStringSubmatch(match)
+		if len(parts) != 4 {
+			return match
+		}
+		openTag, inner, closeTag := parts[1], parts[2], parts[3]
+		if strings.HasSuffix(strings.TrimSpace(strings.TrimSuffix(openTag, ">")), "/") {
+			return match
+		}
+		lowerOpen := strings.ToLower(openTag)
+		isWSSE := strings.HasPrefix(lowerOpen, "<wsse:password") ||
+			strings.Contains(lowerOpen, "wssecurity") ||
+			strings.Contains(lowerOpen, "usernametoken") ||
+			strings.Contains(lowerOpen, "passwordtext") ||
+			strings.Contains(lowerOpen, "passworddigest") ||
+			strings.Contains(strings.ToLower(xmlBody), "usernametoken") ||
+			strings.Contains(strings.ToLower(xmlBody), "wssecurity")
+		if !isWSSE {
+			return match
+		}
+		trimmed := strings.TrimSpace(inner)
+		if trimmed == "" || trimmed == "[REDACTED]" {
+			return match
+		}
+		return openTag + "[REDACTED]" + closeTag
+	})
 }
 
 func readSecurityConfig(config map[string]any) soapSecurityConfig {
