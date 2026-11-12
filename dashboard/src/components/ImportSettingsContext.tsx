@@ -4,6 +4,7 @@ import { ApiError, request } from '../hooks/apiClient'
 import type { ScriptDefinition } from '../types/scripts'
 import type { EnterpriseArchiveFidelityReport, SecretBindingRequirement } from '../types/scriptImports'
 import type { ImportFinding } from './importReviewIssues'
+import { CANONICAL_RUNTIME_GROUP_IDS, resolveCanonicalRuntimeGroup, type CanonicalRuntimeGroup } from './importRuntimeSettingsModel'
 import { thinkTimeConfigForType } from './thinkTimeConfig'
 import './ImportSettingsTables.css'
 
@@ -20,6 +21,20 @@ type SettingsContextValue = {
 const Context = createContext<SettingsContextValue | null>(null)
 export const settingKey = (change: Pick<SettingChange, 'path' | 'parameter'>) => change.parameter ? `${change.parameter}.${change.path}` : change.path
 export const useImportSettings = () => useContext(Context)
+
+function resolveActiveEditorCategory(
+ editors: Record<string, Editor> | undefined,
+ category: string,
+ path: string,
+): string {
+ if (!editors) return category
+ if (editors[category]) return category
+ const canonicalGroup = resolveCanonicalRuntimeGroup(category, path)
+ if (editors[canonicalGroup]) return canonicalGroup
+ if ((path === 'config.http.proxy_mode' || path.startsWith('config.http.proxy.')) && editors.Proxy) return 'Proxy'
+ if ((path === 'config.http.proxy_mode' || path.startsWith('config.http.proxy.')) && editors.HTTP) return 'HTTP'
+ return category
+}
 
 export function ImportSettingsProvider({ script, disabled, onApplied, onBusyChange, children }: {
  script: ScriptDefinition; disabled: boolean; onApplied?: (result: SettingsResult) => void; onBusyChange: (busy: boolean) => void; children: ReactNode
@@ -67,8 +82,12 @@ export function ImportSettingsProvider({ script, disabled, onApplied, onBusyChan
   requestInFlight.current = operation
   const isCurrent = () => mounted.current && current.current === requestScope && requestInFlight.current === operation
   setBusy(true)
+  const apiCategory =
+   category !== 'Think time' && category in CANONICAL_RUNTIME_GROUP_IDS
+    ? CANONICAL_RUNTIME_GROUP_IDS[category as CanonicalRuntimeGroup]
+    : category
   try {
-   const result = await request<SettingsResult>('/scripts/import/settings', { method: 'POST', body: JSON.stringify({ script, category, changes }) })
+   const result = await request<SettingsResult>('/scripts/import/settings', { method: 'POST', body: JSON.stringify({ script, category: apiCategory, changes }) })
    if (!isCurrent()) return
    cancel(category)
    appliedScript.current = result.script
@@ -127,17 +146,19 @@ export function SettingValue({ category, path, parameter, value, label, type = '
 }) {
  const context = useImportSettings()
  const key = settingKey({ path, parameter })
- const editor = context?.editors[category]
+ const activeCategory = resolveActiveEditorCategory(context?.editors, category, path)
+ const editor = context?.editors[activeCategory]
  const currentValue = editor?.changes[key] ? editor.changes[key].value : value
  if (!editor || readOnly) return <span className="import-setting-value">{formatSettingValue(currentValue)}</span>
- const change = (next: unknown) => context?.change(category, { path, parameter, value: next })
- const importedOption = value != null && value !== '' && !options?.includes(String(value)) ? String(value) : null
- const currentOutOfCatalog = currentValue != null && currentValue !== '' && !options?.includes(String(currentValue)) ? String(currentValue) : null
+ const change = (next: unknown) => context?.change(activeCategory, { path, parameter, value: next })
+ const nonEmptyOptions = options?.filter(option => option !== '')
+ const importedOption = value != null && value !== '' && !nonEmptyOptions?.includes(String(value)) ? String(value) : null
+ const currentOutOfCatalog = currentValue != null && currentValue !== '' && !nonEmptyOptions?.includes(String(currentValue)) ? String(currentValue) : null
  const preservedOption = importedOption ?? currentOutOfCatalog
  const props = { 'aria-label': label, disabled: context?.disabled || context?.busy, 'aria-invalid': !!editor.errors[key] }
  return <label className="import-setting-input"><span className="sr-only">{label}</span>
   {type === 'boolean' ? <select {...props} value={currentValue == null ? '' : String(currentValue)} onChange={e => change(e.target.value === '' ? null : e.target.value === 'true')}><option value="">Default</option><option value="true">Enabled</option><option value="false">Disabled</option></select>
-   : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(importedOption !== null && e.target.value === importedOption ? undefined : (e.target.value || null))}><option value="">Default</option>{preservedOption ? <option value={preservedOption}>{preservedOption} (imported)</option> : null}{options?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
+   : type === 'select' ? <select {...props} value={String(currentValue ?? '')} onChange={e => change(importedOption !== null && e.target.value === importedOption ? undefined : (e.target.value || null))}><option value="">Default</option>{preservedOption ? <option value={preservedOption}>{preservedOption} (imported)</option> : null}{nonEmptyOptions?.map(option => <option key={option} value={option}>{option.replace(/_/g, ' ')}</option>)}</select>
    : type === 'lines' ? <textarea {...props} rows={3} value={Array.isArray(currentValue) ? currentValue.join('\n') : ''} onChange={e => change(e.target.value.split('\n'))} />
    : <input {...props} type={type === 'number' || type === 'signed' ? 'number' : 'text'} min={type === 'number' ? 0 : undefined} step="any" value={String(currentValue ?? '')} placeholder="Default" onChange={e => change(e.target.value === '' ? null : type === 'number' || type === 'signed' ? Number(e.target.value) : e.target.value)} />}
   {editor.errors[key] && <span role="alert">{editor.errors[key]}</span>}
