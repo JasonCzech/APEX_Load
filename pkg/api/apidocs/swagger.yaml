@@ -271173,6 +271173,8 @@ paths:
                 continue_on_error:
                   type: boolean
                   nullable: true
+                expected_content_revision:
+                  type: string
                 group_name:
                   type: string
                 ignore_think_time:
@@ -292316,6 +292318,8 @@ paths:
                 continue_on_error:
                   type: boolean
                   nullable: true
+                expected_content_revision:
+                  type: string
                 group_name:
                   type: string
                 ignore_think_time:
@@ -328735,6 +328739,8 @@ paths:
                 continue_on_error:
                   type: boolean
                   nullable: true
+                expected_content_revision:
+                  type: string
                 group_name:
                   type: string
                 ignore_think_time:
@@ -389144,6 +389150,8 @@ paths:
                 continue_on_error:
                   type: boolean
                   nullable: true
+                expected_content_revision:
+                  type: string
                 group_name:
                   type: string
                 ignore_think_time:

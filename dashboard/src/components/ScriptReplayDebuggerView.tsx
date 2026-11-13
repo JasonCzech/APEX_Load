@@ -23,8 +23,9 @@ import { isPasswordLikeFieldName, MASKED_VALUE } from './inspectorHeadersModel'
 import { isCredentialLocatorName, isSensitiveCredentialPreviewHeader, isSensitiveCredentialPreviewName } from './credentialPreviewPolicy'
 import type { StepPosition } from './referenceScopeModel'
 import { ParameterDefinitionGuide } from './ParameterDefinitionGuide'
-import { effectiveThinkTimeLabel } from './runtimeWorkspaceModel'
-import { formatPacingTiming } from './runtimeTiming'
+import { useEngineConfigDefaults } from './debugEngineDefaults'
+import { promoteSessionOverrides, resetSessionOverride, sessionOverrideCount } from './debugSessionOverrides'
+import { debugHttpRunConfiguration, debugPacingLabel, debugRetriesLabel, debugSessionBaseURL, debugSessionOverridesLabel, debugThinkTimeLabel } from './debugRunConfigurationModel'
 import TabList from './ux/TabList'
 import { handleTabKey } from './tabKeyboard'
 import type * as React from 'react'
@@ -43,6 +44,7 @@ import type {
   ReplayRuntimeSnapshot,
 } from '../types/replay'
 import type {
+  ScriptConfig,
   ScriptDefinition,
   ScriptExtractorDefinition,
 } from '../types/scripts'
@@ -81,6 +83,8 @@ import { formatDateTime as formatDisplayDateTime } from '../utils/dateTime'
 // tables load with the first selected step, keeping them out of the
 // ScriptEditor chunk.
 const RequestResponseInspector = lazy(() => import('./RequestResponseInspector'))
+// The session runtime overrides editor loads when Debug options first opens.
+const DebugSessionOverridesPanel = lazy(() => import('./DebugSessionOverridesPanel'))
 
 const DEBUG_LOG_LEVELS: ScriptDebugLogLevel[] = ['error', 'warn', 'info', 'debug', 'trace']
 const DEBUG_LOG_VIRTUALIZE_THRESHOLD = 100
@@ -250,6 +254,10 @@ export interface ScriptReplayDebuggerViewProps {
   toggleStepPathBreakpoint: (phase: string, actionIndex: number, stepPath: string[]) => Promise<void>
   validating: boolean
   warnings: string[]
+  /** A debug run sends the script body (unsaved edits, never saved, or no stored revision to pin), with session overrides on top. */
+  scriptHasUnsavedEdits?: boolean
+  /** Applies a config edit through the Author edit path (marks the script modified). */
+  onPromoteSessionOverrides?: (update: (config: ScriptConfig) => ScriptConfig) => void
 }
 
 export function ScriptReplayDebuggerView({
@@ -334,6 +342,8 @@ export function ScriptReplayDebuggerView({
   toggleStepPathBreakpoint,
   validating,
   warnings,
+  scriptHasUnsavedEdits = !scriptId,
+  onPromoteSessionOverrides,
 }: ScriptReplayDebuggerViewProps) {
   // The Base URL applies only to relative action targets.
   const absoluteTargetCount = [...(script.init || []), ...(script.actions || []), ...(script.teardown || [])].filter(action => /^https?:\/\//i.test(action.target || "")).length
@@ -455,7 +465,19 @@ export function ScriptReplayDebuggerView({
   const startPending = replaying && replayStartPending && !browserReplaySession
   const statusText = executionLabel(replaying, browserReplaySession, replayReport, startPending)
   // Shown beside Debug options, except while a run is live and the step controls need the room; the button's tooltip always carries it.
-  const debugOptionsSummary = `1 virtual user · ${replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · ${replayOptions.logLevel} logging${replayOptions.startPaused ? ' · Start paused' : ''} · ${debugContinuesAfterFailure(replayOptions, script) ? 'Continues' : 'Stops'} after a failure`
+  const sessionOverrides = sessionOverrideCount(replayOptions.runtimeOverrides)
+  const debugOptionsSummary = `1 virtual user · ${replayOptions.ignoreThinkTime ? 'Think time ignored' : 'Script think time'} · ${replayOptions.logLevel} logging${replayOptions.startPaused ? ' · Start paused' : ''} · ${debugContinuesAfterFailure(replayOptions, script) ? 'Continues' : 'Stops'} after a failure${sessionOverrides ? ` · ${sessionOverrides} session runtime ${sessionOverrides === 1 ? 'override' : 'overrides'}` : ''}`
+  const engineDefaults = useEngineConfigDefaults()
+  // What the shown run applied: the recorded run's session overrides, else the next run's.
+  const runConfigLayers = { session: runRecord ? runRecord.options.runtimeOverrides : replayOptions.runtimeOverrides, script: script.config, engine: engineDefaults }
+  const promoteToScript = onPromoteSessionOverrides ? () => {
+    const draft = replayOptions.runtimeOverrides
+    const { promoted } = promoteSessionOverrides(script.config, draft)
+    if (promoted.length === 0) return 0
+    onPromoteSessionOverrides(config => promoteSessionOverrides(config, draft).config)
+    setReplayOptions(prev => ({ ...prev, runtimeOverrides: promoted.reduce(resetSessionOverride, prev.runtimeOverrides) }))
+    return promoted.length
+  } : undefined
   const jumpToEvent = (index: number) => { setExpandedReplayEvent(index); setDebuggerTab('request'); onOpenRequestResponse?.(); setDebugDetailCollapsed(false); setNarrowPane('editor') }
   const debugOutlineState = useMemo(() => buildDebugOutline({
     events: debugEvents,
@@ -544,7 +566,7 @@ export function ScriptReplayDebuggerView({
                   })
                 }}
               >
-                Debug options ({debugOverrideCount(replayOptions)})
+                Debug options ({debugOverrideCount(replayOptions) + sessionOverrides})
               </button>
               <button
                 type="button"
@@ -711,6 +733,20 @@ export function ScriptReplayDebuggerView({
                   </div>
                   <LiveTableSandboxEditor value={replayOptions.liveTableSeedsText} usage={dataUsage} onChange={liveTableSeedsText => setReplayOptions(prev => ({ ...prev, liveTableSeedsText }))} />
                 </fieldset>
+                <LazyLoadBoundary title="Session runtime overrides could not be loaded.">
+                  <Suspense fallback={<p className="replay-panel-subtitle">Loading session runtime overrides…</p>}>
+                    <DebugSessionOverridesPanel
+                      script={script}
+                      overrides={replayOptions.runtimeOverrides}
+                      onChange={runtimeOverrides => setReplayOptions(prev => ({ ...prev, runtimeOverrides }))}
+                      disabled={replaying}
+                      storedUnmodified={Boolean(scriptId) && !scriptHasUnsavedEdits}
+                      ignoreThinkTime={replayOptions.ignoreThinkTime}
+                      engineDefaults={engineDefaults}
+                      onPromote={promoteToScript}
+                    />
+                  </Suspense>
+                </LazyLoadBoundary>
               </div>
             )}
 
@@ -896,12 +932,16 @@ export function ScriptReplayDebuggerView({
                                 <td>{runRecord?.draft ? 'Unsaved draft' : 'Script settings'}</td>
                               </tr>
                               <tr>
+                                <th scope="row">Session runtime overrides</th>
+                                <td>{debugSessionOverridesLabel(runConfigLayers.session)}</td>
+                              </tr>
+                              <tr>
                                 <th scope="row">Protocol</th>
                                 <td>{script.protocol || 'http'}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Base URL (relative targets)</th>
-                                <td>{runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</td>
+                                <td>{debugSessionBaseURL(runConfigLayers) || runRecord?.target || script.config.base_url || 'Action-specific targets'}{absoluteTargetCount > 0 ? ` · ${absoluteTargetCount} action${absoluteTargetCount === 1 ? '' : 's'} use their own absolute URL` : ''}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Iterations</th>
@@ -913,11 +953,11 @@ export function ScriptReplayDebuggerView({
                               </tr>
                               <tr>
                                 <th scope="row">Think time</th>
-                                <td>{(runRecord ? runRecord.options.ignoreThinkTime : replayOptions.ignoreThinkTime) ? `Ignored for debug (${effectiveThinkTimeLabel(script.config)})` : effectiveThinkTimeLabel(script.config)}</td>
+                                <td>{debugThinkTimeLabel(runConfigLayers, runRecord ? runRecord.options.ignoreThinkTime : replayOptions.ignoreThinkTime)}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Pacing</th>
-                                <td>{formatPacingTiming(script.config.pacing) || 'No pacing delay'}</td>
+                                <td>{debugPacingLabel(script.config)}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Failure policy</th>
@@ -929,7 +969,7 @@ export function ScriptReplayDebuggerView({
                               </tr>
                               <tr>
                                 <th scope="row">Max retries</th>
-                                <td>{script.config.error_handling?.max_retries ?? 0}{script.config.error_handling?.max_retries ? ` (${script.config.error_handling?.retry_delay_ms ?? 0} ms, ${script.config.error_handling?.retry_backoff || 'fixed'})` : ''}</td>
+                                <td>{debugRetriesLabel(runConfigLayers)}</td>
                               </tr>
                               <tr>
                                 <th scope="row">Log level</th>
@@ -955,38 +995,39 @@ export function ScriptReplayDebuggerView({
                                 <th scope="row">Run identity</th>
                                 <td>{(runRecord?.options.runId || replayOptions.runId || '').trim() || 'debug-<session id>'}</td>
                               </tr>
-                              {(['http', 'soap', 'java_http'].includes(script.protocol) || script.protocol.startsWith('http/')) && (
-                                <>
+                              {(['http', 'soap', 'java_http'].includes(script.protocol) || script.protocol.startsWith('http/')) && (() => {
+                                const http = debugHttpRunConfiguration(runConfigLayers)
+                                return <>
                                   <tr>
                                     <th scope="row">HTTP version</th>
-                                    <td>{script.config.http?.version || 'auto (HTTP/1.1 + HTTP/2)'}</td>
+                                    <td>{http.version}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">Timeouts</th>
-                                    <td>{`Request ${script.config.http?.request_timeout_ms ?? 30000} ms · Connect ${script.config.http?.connect_timeout_ms ?? 10000} ms · TLS ${script.config.http?.tls_timeout_ms ?? 10000} ms`}</td>
+                                    <td>{http.timeouts}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">Connections &amp; redirects</th>
-                                    <td>{`Keep-alive ${script.config.http?.keep_alive !== false ? 'on' : 'off'} · Max redirects ${script.config.http?.max_redirects ?? 10} · Max conns/host ${script.config.http?.max_conns_per_host ?? 6}`}</td>
+                                    <td>{http.connections}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">Cookies &amp; cache</th>
-                                    <td>{`Cookies ${script.config.http?.cookies_enabled !== false ? 'enabled' : 'disabled'}${script.config.http?.clear_cookies_per_iteration ? ' (clear each iteration)' : ''} · Cache ${script.config.http?.cache_enabled ? 'enabled' : 'disabled'}`}</td>
+                                    <td>{http.cookies}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">TLS</th>
-                                    <td>{`Min ${script.config.http?.tls?.min_version || 'TLS 1.2'}${script.config.http?.tls?.max_version ? ` · Max ${script.config.http.tls.max_version}` : ''}${script.config.http?.tls?.insecure_skip_verify ? ' · Insecure skip verify' : ''}`}</td>
+                                    <td>{http.tls}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">Proxy</th>
-                                    <td>{`${script.config.http?.proxy_mode || 'direct'}${script.config.http?.proxy?.url ? ` (${script.config.http.proxy.url})` : ''}`}</td>
+                                    <td>{http.proxy}</td>
                                   </tr>
                                   <tr>
                                     <th scope="row">HAR capture</th>
                                     <td>{`Bodies: ${runRecord?.options.harBodies || replayOptions.harBodies || 'none'} · Redirects: ${(runRecord ? runRecord.options.harRedirects : replayOptions.harRedirects) !== false ? 'on' : 'off'} · Timings: ${(runRecord ? runRecord.options.harTimings : replayOptions.harTimings) !== false ? 'on' : 'off'}`}</td>
                                   </tr>
                                 </>
-                              )}
+                              })()}
                               {isBrowserScript && (
                                 <>
                                   <tr>

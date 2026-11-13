@@ -7053,6 +7053,126 @@ describe('ScriptEditor', () => {
     }))
   })
 
+  it('starts an unmodified stored script by id with session runtime overrides and no script body', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))
+    expect(optionsButton).toBeTruthy()
+    await act(async () => { optionsButton!.click() })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')).toBeTruthy())
+    await act(async () => {
+      changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')!, 'https://staging.example.test')
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    const [, request] = apiMock.startScriptDebugSession.mock.calls[0]
+    // The server runs its stored script (import trust and Java approval intact) with the overrides.
+    expect(request).not.toHaveProperty('script')
+    // Pinned to the revision the editor shows, so a newer stored revision is refused, not run.
+    expect(request.expected_content_revision).toBe(`scr-v1-${'a'.repeat(64)}`)
+    expect(request.runtime_overrides.base_url).toBe('https://staging.example.test')
+    expect(request.runtime_overrides.override_fields).toEqual(expect.arrayContaining(['base_url', 'results.message_detail']))
+    expect(request.runtime_overrides.override_fields).not.toContain('log.level')
+    expect(request.log_level).toBe('info')
+    // Session overrides never dirty the authored script: it still counts as saved.
+    expect(container.querySelector('[data-testid="debug-session-overrides-source"]')?.textContent).toContain('The script itself is not sent')
+  })
+
+  it('says a clean stored script sends its body while its authoring baseline has not loaded', async () => {
+    apiMock.getScriptAuthoring.mockReturnValue(new Promise(() => {}))
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} initialAuthoring={null} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))
+    expect(optionsButton).toBeTruthy()
+    await act(async () => { optionsButton!.click() })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="debug-session-overrides-source"]')).toBeTruthy())
+    expect(apiMock.getScriptAuthoring).toHaveBeenCalled()
+    const source = container.querySelector('[data-testid="debug-session-overrides-source"]')?.textContent ?? ''
+    expect(source).not.toContain('The script itself is not sent')
+    expect(source).toContain('The run sends the editor’s copy of the script')
+  })
+
+  it('notes on native browser replay that it does not apply the session runtime overrides', async () => {
+    const browserScript: ScriptDefinition = {
+      version: '1.0',
+      name: 'Browser Checkout',
+      protocol: 'browser',
+      config: { base_url: 'https://shop.example.test' },
+      actions: [{ name: 'Open storefront', type: 'browser_goto', target: 'https://shop.example.test' }],
+    }
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-browser-1" initialScript={browserScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)!.click() })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Native browser replay"] [data-testid="native-replay-note"]')).toBeNull()
+    const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))
+    await act(async () => { optionsButton!.click() })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')).toBeTruthy())
+    expect(container.querySelector('[data-testid="debug-session-overrides-native-replay"]')).toBeTruthy()
+    await act(async () => {
+      changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')!, 'https://staging.example.test')
+    })
+    await flushReact()
+    expect(container.querySelector('[aria-label="Native browser replay"] [data-testid="native-replay-note"]')?.textContent).toContain('1 session runtime override is not applied here.')
+  })
+
+  it('refuses a clean stored-script debug start when the stored revision moved past the editor baseline', async () => {
+    apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('the stored script changed since it was opened; reload it before debugging', 409))
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    const [, request] = apiMock.startScriptDebugSession.mock.calls[0]
+    expect(request).not.toHaveProperty('script')
+    expect(request.expected_content_revision).toBe(`scr-v1-${'a'.repeat(64)}`)
+    expect(container.textContent).toContain('the stored script changed since it was opened')
+    expect(container.textContent).toContain('No debugger session yet')
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+  })
+
+  it('sends the draft body with session runtime overrides for an unsaved script', async () => {
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug', protocol: 'http', started_at: '2026-05-14T20:00:00Z', completed_at: '', success: true, events: [],
+    }))
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await flushReact()
+    await act(async () => { findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+    const optionsButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.startsWith('Debug options'))
+    expect(optionsButton).toBeTruthy()
+    await act(async () => { optionsButton!.click() })
+    await vi.waitFor(() => expect(container.querySelector('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')).toBeTruthy())
+    expect(container.querySelector('[data-testid="debug-session-overrides-source"]')?.textContent).toContain('The run sends the editor’s copy of the script')
+    await act(async () => {
+      changeInputValue(container.querySelector<HTMLInputElement>('[data-testid="debug-session-runtime-overrides"] [data-override-path="base_url"] input')!, 'https://staging.example.test')
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.startDraftScriptDebugSession).toHaveBeenCalledTimes(1)
+    const [request] = apiMock.startDraftScriptDebugSession.mock.calls[0]
+    expect(request.script.config.base_url).toBe('https://api.example.com')
+    expect(request.runtime_overrides).toEqual({ base_url: 'https://staging.example.test', override_fields: ['base_url'] })
+  })
+
   it('keeps an unusable run identity from reaching the controller', async () => {
     await act(async () => {
       root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
