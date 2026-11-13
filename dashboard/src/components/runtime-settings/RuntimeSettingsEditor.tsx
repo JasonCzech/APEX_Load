@@ -59,7 +59,7 @@ const PROVENANCE_MODES: readonly RuntimeSettingsEditorMode[] = ['debug', 'scenar
  * label. A path counts for the group it resolves to (catalog first), so a
  * pill is never credited with a field the catalog places elsewhere.
  */
-export function canonicalGroupSearchFieldMatches(
+function canonicalGroupSearchFieldMatches(
   group: CanonicalRuntimeGroupDefinition,
   query: string,
   catalogFields?: readonly CanonicalCatalogFieldRef[],
@@ -84,7 +84,7 @@ export function canonicalGroupSearchFieldMatches(
 }
 
 /** Whether a canonical group matches a rail search by label, description, or field label or path. */
-export function canonicalGroupMatchesSearch(
+function canonicalGroupMatchesSearch(
   group: CanonicalRuntimeGroupDefinition,
   query: string,
   catalogFields?: readonly CanonicalCatalogFieldRef[],
@@ -100,7 +100,7 @@ export function canonicalGroupMatchesSearch(
 }
 
 /** Override-provenance paths per canonical group. */
-export function overridePathsByCanonicalGroup(
+function overridePathsByCanonicalGroup(
   provenance?: Readonly<Record<string, RuntimeValueProvenance>>,
   catalogFields?: readonly CanonicalCatalogFieldRef[],
 ): Partial<Record<CanonicalRuntimeGroupId, string[]>> {
@@ -112,18 +112,6 @@ export function overridePathsByCanonicalGroup(
     ;(paths[groupId] ??= []).push(path)
   }
   return paths
-}
-
-/** Count override-provenance paths per canonical group. */
-export function countOverridesByCanonicalGroup(
-  provenance?: Readonly<Record<string, RuntimeValueProvenance>>,
-  catalogFields?: readonly CanonicalCatalogFieldRef[],
-): Partial<Record<CanonicalRuntimeGroupId, number>> {
-  const counts: Partial<Record<CanonicalRuntimeGroupId, number>> = {}
-  for (const [groupId, paths] of Object.entries(overridePathsByCanonicalGroup(provenance, catalogFields))) {
-    counts[groupId as CanonicalRuntimeGroupId] = paths?.length ?? 0
-  }
-  return counts
 }
 
 const MODE_LABELS: Record<RuntimeSettingsEditorMode, string> = {
