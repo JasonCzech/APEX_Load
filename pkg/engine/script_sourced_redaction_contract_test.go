@@ -47,13 +47,16 @@ func setRunEvidenceRedaction(script *dsl.Script, redact bool) *dsl.Script {
 	return script
 }
 
-// assertScriptSourcedRunEvidence states the unconditional runtime redaction
-// contract: script-sourced credentials are always scrubbed from run output
-// regardless of script.Config.Log.RedactRunEvidence.
-func assertScriptSourcedRunEvidence(t *testing.T, label, evidence, value string, _ bool) {
+// assertScriptSourcedRunEvidence states the per-value contract once. evidence is
+// whatever output surface the caller captured: a script-sourced value is
+// scrubbed exactly when script.Config.Log.RedactRunEvidence is on.
+func assertScriptSourcedRunEvidence(t *testing.T, label, evidence, value string, redact bool) {
 	t.Helper()
-	if strings.Contains(evidence, value) {
-		t.Fatalf("%s: script-sourced value %q survived output: %q", label, value, evidence)
+	switch {
+	case redact && strings.Contains(evidence, value):
+		t.Fatalf("%s: script-sourced value %q survived output with redaction on: %q", label, value, evidence)
+	case !redact && !strings.Contains(evidence, value):
+		t.Fatalf("%s: script-sourced value %q was scrubbed from output with redaction off: %q", label, value, evidence)
 	}
 }
 
@@ -221,8 +224,8 @@ func TestSourceVariableAssignmentFollowsRunEvidenceSetting(t *testing.T) {
 
 			vu.setSourceVariable(variableName, literal)
 
-			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[literal]; !registered {
-				t.Fatalf("source-action literal %q registered = %v, want true", literal, registered)
+			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[literal]; registered != mode.redact {
+				t.Fatalf("source-action literal %q registered = %v, want %v", literal, registered, mode.redact)
 			}
 			assertScriptSourcedRunEvidence(
 				t,
@@ -455,8 +458,8 @@ func TestImportedCredentialTemplateScopeRegistersScriptSourcedNamespaces(t *test
 			if err := vu.refreshImportedCredentialRuntimeValues(); err != nil {
 				t.Fatalf("refreshImportedCredentialRuntimeValues: %v", err)
 			}
-			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[firstRow]; !registered {
-				t.Fatalf("template value %q registered = %v, want true", firstRow, registered)
+			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[firstRow]; registered != mode.redact {
+				t.Fatalf("template value %q registered = %v, want %v", firstRow, registered, mode.redact)
 			}
 			assertScriptSourcedRunEvidence(
 				t,
@@ -474,8 +477,8 @@ func TestImportedCredentialTemplateScopeRegistersScriptSourcedNamespaces(t *test
 			if _, stale := allRuntimeSecretValues(vu.RedactionConfig)[firstRow]; stale {
 				t.Fatalf("stale template value %q survived an iteration refresh", firstRow)
 			}
-			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[secondRow]; !registered {
-				t.Fatalf("refreshed template value %q registered = %v, want true", secondRow, registered)
+			if _, registered := allRuntimeSecretValues(vu.RedactionConfig)[secondRow]; registered != mode.redact {
+				t.Fatalf("refreshed template value %q registered = %v, want %v", secondRow, registered, mode.redact)
 			}
 		})
 	}
@@ -732,8 +735,8 @@ func TestRuntimeSecretValuesForScriptReadsTheOperatorSetting(t *testing.T) {
 			if containsExactString(platform, retained) {
 				t.Fatalf("script-sourced credential leaked into the platform-managed set: %#v", platform)
 			}
-			if !containsExactString(scriptSourced, retained) {
-				t.Fatalf("script-sourced set = %#v, want retained credential present", scriptSourced)
+			if containsExactString(scriptSourced, retained) != mode.redact {
+				t.Fatalf("script-sourced set = %#v, want retained credential present = %v", scriptSourced, mode.redact)
 			}
 		})
 	}
@@ -751,8 +754,9 @@ func TestRuntimeSecretValuesForScriptReadsTheOperatorSetting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("a stale credential locator blocked runtime execution: %v", err)
 			}
-			if !containsExactString(scriptSourced, retained) {
-				t.Fatalf("script-sourced set = %#v, want valid credential collected alongside stale locator", scriptSourced)
+			if containsExactString(scriptSourced, retained) != mode.redact {
+				t.Fatalf("script-sourced set = %#v, want valid credential collected alongside stale locator = %v",
+					scriptSourced, mode.redact)
 			}
 		})
 	}
@@ -1032,6 +1036,9 @@ func TestSensitiveExtractionStaysPlatformManagedWithRunEvidenceRedactionOff(t *t
 	// Premise: the operator really did turn script-sourced run-evidence redaction
 	// off, so anything still redacted below is redacted because it is
 	// platform-managed.
+	if scriptRedactsRunEvidence(vu.Script) {
+		t.Fatal("premise failed: the fixture still redacts script-sourced run evidence")
+	}
 	if vu.RedactionConfig.HasRuntimeSecretMaterial() {
 		t.Fatal("premise failed: the fixture started with platform-managed runtime material")
 	}
@@ -1089,6 +1096,9 @@ func TestOAuth2ProducersStayPlatformManagedWithRunEvidenceRedactionOff(t *testin
 	vu.SecretResolver = SecretResolverFunc(func(name string) (string, bool) {
 		return userinfoPassword, name == "BASIC_PASSWORD"
 	})
+	if scriptRedactsRunEvidence(vu.Script) {
+		t.Fatal("premise failed: the fixture still redacts script-sourced run evidence")
+	}
 	if vu.RedactionConfig.HasRuntimeSecretMaterial() {
 		t.Fatal("premise failed: the fixture started with platform-managed runtime material")
 	}

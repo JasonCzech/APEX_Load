@@ -35,6 +35,20 @@ type SOAP struct {
 	security                 soapSecurityConfig
 	now                      func() time.Time
 	nonceGenerator           func() ([]byte, error)
+	// authoredRedactor is forwarded to the HTTP transport, which may bind it
+	// before Init creates that transport.
+	authoredRedactor protocol.TextRedactor
+}
+
+var _ protocol.RuntimeAuthoredTextRedactorSetter = (*SOAP)(nil)
+
+// SetRuntimeAuthoredTextRedactor forwards the engine's exact-match authored
+// redactor to the HTTP transport (Digest auth evidence relies on it).
+func (s *SOAP) SetRuntimeAuthoredTextRedactor(redactor protocol.TextRedactor) {
+	s.authoredRedactor = redactor
+	if s.http != nil {
+		s.http.SetRuntimeAuthoredTextRedactor(redactor)
+	}
 }
 
 type soapSecurityConfig struct {
@@ -122,6 +136,7 @@ func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
 	s.namespaces = readNamespaces(config)
 	s.security = readSecurityConfig(config)
 	s.http = &httpproto.HTTP{}
+	s.http.SetRuntimeAuthoredTextRedactor(s.authoredRedactor)
 	return s.http.Init(ctx, config)
 }
 

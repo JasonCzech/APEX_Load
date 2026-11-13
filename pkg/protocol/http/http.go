@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/credential"
@@ -44,53 +45,67 @@ type HTTP struct {
 	outcome                replayOutcomePolicy
 	authDelay              time.Duration
 
-	aliasVersion               string
-	policyPools                map[string]*httpPolicyPool
-	connections                *httpConnectionBudget
-	client                     *http.Client
-	oauthClient                *http.Client
-	transport                  *http.Transport
-	oauthTransport             *http.Transport
-	allowedTargetHosts         []string
-	baseURL                    string
-	bufPool                    *httpBufferPool
-	contentChecks              []contentCheck
-	verificationMu             sync.RWMutex
-	verifications              map[string]registeredVerification
-	dataFormattingAutoDetect   bool
-	dataFormattingChain        []dataFormattingTransform
-	streaming                  *streamingProfile
-	defaultHeaders             map[string]string
-	typedDefaultHeaders        map[string]string
-	defaultHeaderList          protocol.HeaderList
-	runCorrelation             runCorrelationPolicy
-	authType                   string
-	authHeader                 string // pre-computed Authorization header value
-	httpVersion                string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
-	quicSettings               QUICSettings
-	http3                      *http3Owner            // exact-3 transport; nil when HTTP/3 cannot run
-	http3Err                   error                  // why the exact-3 pool is unavailable, when it is
-	http3Route                 http3RouteRoundTripper // the proxy route rule the HTTP/3 pools apply
-	altSvc                     *altSvcCache           // auto+h3 alternatives and broken origins, per VUser
-	maxRedirects               int                    // <=0 = no follow, unset/default = 10
-	requestTimeout             time.Duration
-	pageTimeout                time.Duration
-	htmlParseMode              string
-	htmlExcludedMIMETypes      []string
-	cacheMaxUnusedIterations   int
-	networkProfile             string // assigned network-profile label (population mix)
-	traceparentEnabled         bool
-	traceparentSampled         bool
-	authConfig                 *protocol.AuthConfig
-	authHosts                  []authHostScope // empty = script-level auth applies to every host
-	cache                      *httpResponseCache
-	cacheContentURLsOnly       bool
-	cacheCheckNewerVersions    bool
-	resources                  *resourceFetcher
-	replayHAR                  *protocol.ReplayHARCapture
-	captureReplayNetwork       bool
-	captureNetworkTrace        bool
-	unredactedDebugSnapshots   bool
+	aliasVersion             string
+	policyPools              map[string]*httpPolicyPool
+	connections              *httpConnectionBudget
+	client                   *http.Client
+	oauthClient              *http.Client
+	transport                *http.Transport
+	oauthTransport           *http.Transport
+	allowedTargetHosts       []string
+	baseURL                  string
+	bufPool                  *httpBufferPool
+	contentChecks            []contentCheck
+	verificationMu           sync.RWMutex
+	verifications            map[string]registeredVerification
+	dataFormattingAutoDetect bool
+	dataFormattingChain      []dataFormattingTransform
+	streaming                *streamingProfile
+	defaultHeaders           map[string]string
+	typedDefaultHeaders      map[string]string
+	defaultHeaderList        protocol.HeaderList
+	runCorrelation           runCorrelationPolicy
+	authType                 string
+	authHeader               string // pre-computed Authorization header value
+	httpVersion              string // empty = automatic; "1.1"/"2" = exact; "3"/"auto+h3" = HTTP/3 policies
+	quicSettings             QUICSettings
+	http3                    *http3Owner            // exact-3 transport; nil when HTTP/3 cannot run
+	http3Err                 error                  // why the exact-3 pool is unavailable, when it is
+	http3Route               http3RouteRoundTripper // the proxy route rule the HTTP/3 pools apply
+	altSvc                   *altSvcCache           // auto+h3 alternatives and broken origins, per VUser
+	maxRedirects             int                    // <=0 = no follow, unset/default = 10
+	requestTimeout           time.Duration
+	pageTimeout              time.Duration
+	htmlParseMode            string
+	htmlExcludedMIMETypes    []string
+	cacheMaxUnusedIterations int
+	networkProfile           string // assigned network-profile label (population mix)
+	traceparentEnabled       bool
+	traceparentSampled       bool
+	authConfig               *protocol.AuthConfig
+	authHosts                []authHostScope // empty = script-level auth applies to every host
+	cache                    *httpResponseCache
+	cacheContentURLsOnly     bool
+	cacheCheckNewerVersions  bool
+	resources                *resourceFetcher
+	replayHAR                *protocol.ReplayHARCapture
+	captureReplayNetwork     bool
+	captureNetworkTrace      bool
+	unredactedDebugSnapshots bool
+	// retainAuthoredEvidence is the inverse of the script's config.log.redact_run_evidence
+	// (protocol.RedactsAuthoredEvidence). Off, request snapshot headers keep
+	// the authored values; the engine's exact runtime matcher still withholds
+	// a header carrying a platform-managed secret (see scrubAuthoredHeaders).
+	retainAuthoredEvidence bool
+	// authoredRedactor is the engine's exact-match redactor for
+	// script-authored request content (RuntimeAuthoredTextRedactorSetter).
+	// A keyed-hash credential (Digest response) is shown only when this
+	// redactor proves the credential halves carry no platform-managed value.
+	authoredRedactor atomic.Pointer[protocol.TextRedactor]
+	// metaRefreshChild marks the client a meta-refresh follow-up runs on. Its
+	// request goes to a URL the server's page named, so its traffic is not the
+	// script's own request (protocol.NetworkEntry.ScriptRequest stays false).
+	metaRefreshChild           bool
 	captureCorrelationEvidence bool
 	// page is the virtual user's HTML page context, shared with the
 	// per-version clones; nil unless the script has HTML-mode steps.
@@ -186,6 +201,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	h.captureReplayNetwork, _ = config[protocol.ReplayNetworkCaptureConfigKey].(bool)
 	h.captureNetworkTrace, _ = config[protocol.ReplayNetworkTraceConfigKey].(bool)
 	h.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
+	h.retainAuthoredEvidence = !protocol.RedactsAuthoredEvidence(config)
 	h.replayHAR = protocol.ReplayHARCaptureFromConfig(config)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
@@ -477,6 +493,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, nil, "", requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
+	// A transformed body (base64-decoded, Windows-1252 or UTF-16LE encoded)
+	// carries any platform value in a byte spelling the engine's exact matcher
+	// does not hold. Every recorder that copies the wire body (the replay HAR on
+	// each hop) records the redacted authored body, transformed the same way.
+	if withheld, ok := transformedRequestBodyWithholdingFor(action, wireBody, requestBody, redactedRequestBody); ok {
+		req = req.WithContext(context.WithValue(req.Context(), transformedBodyWithholdingKey{}, withheld))
+	}
 	result.DependencyTarget = classifyHTTPDependencyTarget(targetURL)
 	result.CorrelationID = correlationIDFromHeaders(action.Headers)
 
@@ -569,7 +592,38 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		}
 	}
 	redactedAuthHeader := buildRedactedActionAuthHeader(redactedAuthConfig)
+	if typedAuthApplied && h.retainAuthoredEvidence && h.authoredTypedAuthVisible(integratedAuth, actionAuthOverride, action) {
+		// config.log.redact_run_evidence off: a Basic/Bearer header built from
+		// script-literal credentials is what the script authored. The engine's
+		// exact matcher (bare token, Basic composites) withholds the whole
+		// header when it carries a platform-managed value.
+		redactedAuthHeader = req.Header.Get("Authorization")
+	}
 	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
+	// The same withholding reaches the replay HAR and correlation evidence,
+	// which copy the wire request's headers (typedAuthWithholding).
+	withheldAuth := typedAuthWithholding{}
+	if typedAuthApplied && h.retainAuthoredEvidence && !h.unredactedDebugSnapshots {
+		if applied := req.Header.Get("Authorization"); applied != "" && applied != redactedAuthHeader {
+			withheldAuth.applied, withheldAuth.mask = applied, redactedAuthHeader
+		}
+	}
+	// A Digest response is a keyed hash over the password that no exact
+	// matcher can find. It is shown only when the credentials are provably
+	// script literals (an action-level override names no secret reference and
+	// the bound authored redactor leaves every half unchanged, which also
+	// holds a script-level secret reference back): with the setting off or in
+	// the unredacted debugger, at either level, as the script-level Basic
+	// path does. Otherwise every surface shows "Digest [REDACTED]".
+	digestVisible := h.typedAuthCredentialsProvablyAuthored(integratedAuth, actionAuthOverride, action) &&
+		(h.unredactedDebugSnapshots || h.retainAuthoredEvidence)
+	if digestAuth != nil && (h.unredactedDebugSnapshots || h.retainAuthoredEvidence) && !digestVisible {
+		withheldAuth.digest = true
+	}
+	if withheldAuth.active() {
+		req = req.WithContext(context.WithValue(req.Context(), typedAuthWithholdingKey{}, withheldAuth))
+	}
+	debugAuthorization := ""
 	// User-authored traceparent always wins. When traceparent propagation is
 	// enabled, continue the active OTel action/test context and fall back to a
 	// synthetic header only when no active span exists.
@@ -750,6 +804,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	var harRecorder *replayHARTransport
 	if h.captureReplayNetwork {
 		recorder := newReplayHARTransport(client.Transport, h.replayHAR, h.captureNetworkTrace)
+		// Only the action's own top-level request is script-authored; a
+		// meta-refresh follow-up's target came from the server's page.
+		recorder.scriptAction = !h.metaRefreshChild
 		harRecorder = recorder
 		client.Transport = recorder
 		defer func() {
@@ -864,8 +921,19 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 	// From here a resource step's failure is the server's or the transport's,
 	// which LoadRunner reports as a warning.
 	resourceStepStarted = isResourceStep(action)
+	// client.Do adds jar cookies to req.Header in place. Keep the headers the
+	// script authored so a Digest retry, which clones the challenged request,
+	// does not publish server-issued cookies as authored request evidence.
+	var authoredRequestHeader http.Header
+	authoredSnapshotHeaders := redactedRequestHeaders
 	if !cacheHit {
 		var err error
+		authoredRequestHeader = req.Header.Clone()
+		if harRecorder != nil {
+			// net/http adds jar cookies after this point; record what the
+			// script authored so the recorder can tell them apart.
+			harRecorder.noteAuthoredRequest(req.Header)
+		}
 		resp, err = client.Do(req)
 
 		if err != nil {
@@ -879,7 +947,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			result.ErrorMessage = h.transportErrorMessage(err)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(err)
 			h3Receipt.fail(err)
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -889,7 +957,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -903,9 +971,28 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		// waiting until the success-only accounting block below would copy the
 		// raw Digest Authorization value into a failure snapshot.
 		if digestRetried && req != nil && requestHeaderKeyPresent(req.Header, "Authorization") {
-			redactedRequestHeaders = redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, true, "Digest [REDACTED]")
+			digestSnapshotHeader := "Digest [REDACTED]"
+			if !withheldAuth.digest && h.retainAuthoredEvidence {
+				// digestVisible: the action's own credentials are provably
+				// script literals — no secret reference in RedactedAuth, and no
+				// platform-managed value the run's exact matcher knows (a
+				// variable assigned from {{secret.*}}, a runtime-minted token).
+				digestSnapshotHeader = req.Header.Get("Authorization")
+			}
+			if withheldAuth.digest && h.unredactedDebugSnapshots {
+				debugAuthorization = digestSnapshotHeader
+			}
+			snapshotSource, snapshotHeaders := req.Header, action.RedactedHeaders
+			if h.retainAuthoredEvidence && !h.unredactedDebugSnapshots {
+				// With config.log.redact_run_evidence off the snapshot keeps
+				// authored headers without the name mask, so it is built from
+				// what the script authored before client.Do, not from the
+				// retry's clone that carries jar cookies the server issued.
+				snapshotSource, snapshotHeaders = authoredRequestHeader, authoredSnapshotHeaders
+			}
+			redactedRequestHeaders = redactedRequestHeadersForSnapshot(snapshotSource, snapshotHeaders, true, digestSnapshotHeader)
 			redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
-			redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
+			redactedRequestHeaders = requestHeadersWithHostForSnapshot(snapshotSource, redactedRequestHeaders, req.Host, action.RedactedHeaders)
 		}
 		if retryErr != nil {
 			result.Duration = time.Since(result.StartTime)
@@ -914,7 +1001,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			result.ErrorMessage = h.transportErrorMessage(retryErr)
 			result.HTTP3FailureCertainty = HTTP3FailureCertainty(retryErr)
 			h3Receipt.fail(retryErr)
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -924,7 +1011,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
@@ -1099,7 +1186,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		}
 		result.Success = false
 		result.ErrorMessage = fixedResponseReadError(bodyReadErr)
-		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
+		result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), nil)
 		result.Snapshot.ResponseBodyState = "not_captured"
 		h.unavailableResponseContentEvidence(result, false)
 		return result, nil
@@ -1122,7 +1209,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
 			result.Snapshot.ResponseBodyState = "not_captured"
 			h.unavailableResponseContentEvidence(result, false)
 			return result, nil
@@ -1178,7 +1265,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
 		result.ErrorMessage = err.Error()
-		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
+		result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, nil)
 		result.Snapshot.ResponseBodyState = "not_captured"
 		addResponseContentReceipt(result, "unavailable", contentBasis)
 		h.unavailableResponseContentEvidence(result, false)
@@ -1292,7 +1379,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		}
 	}
 	if !result.Success || action.CaptureMessageDetail {
-		result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 	}
 	if !result.Success || !action.DiscardResponseBodyOnSuccess {
 		result.ResponseBody = string(respBody)
@@ -1360,13 +1447,13 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (returned *
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		if result.Snapshot == nil {
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		}
 	}
 
 	if resourceEvidence != nil && (action.CaptureMessageDetail || !result.Success) {
 		if result.Snapshot == nil {
-			result.Snapshot = h.buildHTTPSnapshot(method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+			result.Snapshot = h.buildHTTPSnapshotWithheld(debugAuthorization, method, targetURL, req.Header, req.Host, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 		}
 		resourceEvidence.attach(result.Snapshot)
 	}
@@ -1864,10 +1951,25 @@ func correlationIDFromHTTPHeader(headers http.Header) string {
 }
 
 func (h *HTTP) buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Header, requestHost string, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
+	return h.buildHTTPSnapshotWithheld("", method, targetURL, requestHeaders, requestHost, requestBody, redactedTarget, redactedHeaders, redactedBody, responseStatus, responseHeaders, responseBody)
+}
+
+// buildHTTPSnapshotWithheld is buildHTTPSnapshot for a request whose typed
+// Authorization the unredacted debugger must still withhold (a Digest response
+// over a password that is not provably a script literal): debugAuthorization,
+// when set, replaces the raw Authorization in the debug snapshot.
+func (h *HTTP) buildHTTPSnapshotWithheld(debugAuthorization string, method string, targetURL string, requestHeaders http.Header, requestHost string, requestBody []byte, redactedTarget string, redactedHeaders map[string]string, redactedBody []byte, responseStatus int, responseHeaders map[string]string, responseBody []byte) *protocol.ErrorSnapshot {
 	snapshot := buildHTTPSnapshot(method, targetURL, requestHeaders, requestBody, redactedTarget, redactedHeaders, redactedBody, responseStatus, responseHeaders, responseBody)
 	if h != nil && h.unredactedDebugSnapshots {
 		snapshot.RequestURL = targetURL
 		snapshot.RequestHeaders = cloneHTTPHeaders(requestHeaders)
+		if debugAuthorization != "" {
+			for key := range snapshot.RequestHeaders {
+				if strings.EqualFold(key, "Authorization") {
+					snapshot.RequestHeaders[key] = debugAuthorization
+				}
+			}
+		}
 		if requestHost != "" {
 			if snapshot.RequestHeaders == nil {
 				snapshot.RequestHeaders = map[string]string{}
@@ -1876,6 +1978,19 @@ func (h *HTTP) buildHTTPSnapshot(method string, targetURL string, requestHeaders
 		}
 		snapshot.RequestBody = string(requestBody)
 		snapshot.ResponseHeaders = cloneStringMap(responseHeaders)
+		return snapshot
+	}
+	if h != nil && h.retainAuthoredEvidence {
+		// The request headers are what the script authored. With
+		// config.log.redact_run_evidence off they are not masked by NAME here;
+		// platform-managed values are already [REDACTED] in redactedHeaders, and
+		// the engine's exact runtime matcher withholds any other spelling of
+		// them before publication. Response headers keep the name masking.
+		headers := cloneHTTPHeaders(requestHeaders)
+		if len(redactedHeaders) > 0 {
+			headers = cloneStringMap(redactedHeaders)
+		}
+		snapshot.RequestHeaders = headers
 	}
 	return snapshot
 }
@@ -1984,6 +2099,9 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	if wireRequest != nil && wireRequest.URL != nil {
 		requestURL = wireRequest.URL.String()
 	}
+	// A transformed body that carries a platform value keeps the redacted
+	// authored body here too (transformedBodyWithholding).
+	fallbackBody = withheldRequestBody(wireRequest, fallbackBody)
 	if !httpCorrelationEvidenceFitsCaptureLimit(requestURL, fallbackBody, wireRequest, responseBody, response) {
 		result.CorrelationEvidence = protocol.UnavailableCorrelationEvidence(protocol.CorrelationEvidenceTooLargeReason)
 		return
@@ -1998,7 +2116,7 @@ func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protoc
 	result.CorrelationEvidence = &protocol.CorrelationEvidence{
 		RequestURL:             requestURL,
 		RequestBody:            string(fallbackBody),
-		RequestBodyTransformed: action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") || strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding) || bodyencoding.IsCEscaped(action.BodyEncoding)),
+		RequestBodyTransformed: requestBodyTransformed(action) || (action != nil && bodyencoding.IsCEscaped(action.BodyEncoding)),
 		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
 		ResponseBody:           string(responseBody),
 		ResponseHeaders:        responseHeaders,
@@ -2058,6 +2176,13 @@ func correlationEvidenceRequestHeaders(request *http.Request) map[string]string 
 		return nil
 	}
 	headers := cloneHTTPHeaders(request.Header)
+	for key, value := range headers {
+		if strings.EqualFold(key, "Authorization") {
+			if masked, ok := withheldAuthorization(request, value); ok {
+				headers[key] = masked
+			}
+		}
+	}
 	host := strings.TrimSpace(request.Host)
 	if host == "" && request.URL != nil {
 		host = strings.TrimSpace(request.URL.Host)
@@ -2075,6 +2200,171 @@ func correlationEvidenceRequestHeaders(request *http.Request) map[string]string 
 	}
 	headers["Host"] = host
 	return headers
+}
+
+// authoredTypedAuthVisible reports whether the typed Authorization header
+// applied to this request may be shown in the request snapshot when
+// config.log.redact_run_evidence is off. Basic, Bearer and the NTLM/Negotiate
+// pre-challenge Basic qualify: each is built from the credential halves alone,
+// and their platform-managed spellings (bare token, Basic composites over
+// user and DOMAIN\user) are in the engine's exact matcher. The halves must also
+// be provably what the script wrote (typedAuthCredentialsProvablyAuthored), so
+// a header over a platform value is withheld here whatever the matcher holds.
+func (h *HTTP) authoredTypedAuthVisible(integratedAuth *protocol.AuthConfig, actionAuthOverride bool, action *protocol.Action) bool {
+	auth := integratedAuth
+	if actionAuthOverride {
+		auth = action.Auth
+	}
+	if auth == nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
+	case "basic", "bearer":
+	default:
+		if !IsIntegratedAuthType(auth.Type) {
+			return false
+		}
+	}
+	return h.typedAuthCredentialsProvablyAuthored(auth, actionAuthOverride, action)
+}
+
+// typedAuthCredentialsProvablyAuthored reports whether auth's credentials are
+// exactly what the script wrote: an action-level override carries no secret
+// reference (actionAuthCredentialsScriptLiteral), and the bound authored
+// redactor leaves every half unchanged, so no half is a platform-managed value
+// that reached it through a variable (authoredAuthCarriesNoRuntimeValue).
+func (h *HTTP) typedAuthCredentialsProvablyAuthored(auth *protocol.AuthConfig, actionAuthOverride bool, action *protocol.Action) bool {
+	if auth == nil {
+		return false
+	}
+	if actionAuthOverride && !actionAuthCredentialsScriptLiteral(action) {
+		return false
+	}
+	return h.authoredAuthCarriesNoRuntimeValue(auth)
+}
+
+// typedAuthWithholding travels on the request context so the replay HAR
+// recorder and correlation evidence, which copy wire headers per hop, withhold
+// the same typed Authorization the request snapshot does.
+type typedAuthWithholdingKey struct{}
+
+type typedAuthWithholding struct {
+	// applied is the typed header the adapter set; mask replaces it.
+	applied string
+	mask    string
+	// digest withholds any Digest response a challenge retry sends.
+	digest bool
+}
+
+func (w typedAuthWithholding) active() bool {
+	return w.applied != "" || w.digest
+}
+
+// transformedBodyWithholdingKey carries a transformedBodyWithholding on the
+// request context so the replay HAR recorder, which copies the wire body per
+// hop, records the redacted authored body instead.
+type transformedBodyWithholdingKey struct{}
+
+type transformedBodyWithholding struct {
+	// wire is the body as sent; masked replaces it in recorded evidence.
+	wire, masked []byte
+}
+
+// requestBodyTransformed reports whether the adapter re-encodes an action's
+// body between the resolved text and the wire bytes.
+func requestBodyTransformed(action *protocol.Action) bool {
+	return action != nil && (strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64") ||
+		strings.EqualFold(action.BodyEncoding, "windows-1252") || bodyencoding.IsUTF16LE(action.BodyEncoding))
+}
+
+// transformedRequestBodyWithholdingFor answers the withholding for a
+// transformed body whose redacted form differs from the sent one, that is a
+// body into which the engine substituted a platform value. A compressed wire
+// body is never readable text and needs none.
+func transformedRequestBodyWithholdingFor(action *protocol.Action, wireBody, requestBody, redactedRequestBody []byte) (transformedBodyWithholding, bool) {
+	if !requestBodyTransformed(action) || len(wireBody) == 0 || len(redactedRequestBody) == 0 ||
+		!bytes.Equal(wireBody, requestBody) || bytes.Equal(requestBody, redactedRequestBody) {
+		return transformedBodyWithholding{}, false
+	}
+	return transformedBodyWithholding{wire: wireBody, masked: redactedRequestBody}, true
+}
+
+// withheldRequestBody returns the body a recorder keeps for a hop whose sent
+// body is data: the masked authored body when the request carries a
+// withholding for exactly those bytes.
+func withheldRequestBody(req *http.Request, data []byte) []byte {
+	if req == nil {
+		return data
+	}
+	w, ok := req.Context().Value(transformedBodyWithholdingKey{}).(transformedBodyWithholding)
+	if !ok || !bytes.Equal(data, w.wire) {
+		return data
+	}
+	return w.masked
+}
+
+// withheldAuthorization returns the replacement for a hop's Authorization
+// value when req carries a typedAuthWithholding that covers it.
+func withheldAuthorization(req *http.Request, value string) (string, bool) {
+	if req == nil || value == "" {
+		return "", false
+	}
+	w, ok := req.Context().Value(typedAuthWithholdingKey{}).(typedAuthWithholding)
+	if !ok {
+		return "", false
+	}
+	if w.applied != "" && value == w.applied {
+		return w.mask, true
+	}
+	if w.digest && len(value) >= len("Digest ") && strings.EqualFold(value[:len("Digest ")], "Digest ") {
+		return "Digest [REDACTED]", true
+	}
+	return "", false
+}
+
+// SetRuntimeAuthoredTextRedactor binds the engine's exact-match redactor for
+// script-authored request content.
+func (h *HTTP) SetRuntimeAuthoredTextRedactor(redactor protocol.TextRedactor) {
+	if redactor == nil {
+		h.authoredRedactor.Store(nil)
+		return
+	}
+	h.authoredRedactor.Store(&redactor)
+}
+
+var _ protocol.RuntimeAuthoredTextRedactorSetter = (*HTTP)(nil)
+
+// authoredAuthCarriesNoRuntimeValue reports whether the bound authored
+// redactor leaves every credential half of auth unchanged. Without a bound
+// redactor origin cannot be proven, so the answer is no.
+func (h *HTTP) authoredAuthCarriesNoRuntimeValue(auth *protocol.AuthConfig) bool {
+	if h == nil || auth == nil {
+		return false
+	}
+	bound := h.authoredRedactor.Load()
+	if bound == nil || *bound == nil {
+		return false
+	}
+	redactor := *bound
+	for _, value := range []string{auth.Username, auth.Password, auth.Domain, auth.Token} {
+		if value != "" && redactor(value) != value {
+			return false
+		}
+	}
+	return true
+}
+
+// actionAuthCredentialsScriptLiteral reports whether the action's typed auth
+// credentials are exactly what the script wrote: the engine's RedactedAuth
+// differs from the resolved Auth wherever a platform-managed secret was
+// substituted. Without RedactedAuth origin is unknown, so the answer is no.
+func actionAuthCredentialsScriptLiteral(action *protocol.Action) bool {
+	if action == nil || action.Auth == nil || action.RedactedAuth == nil {
+		return false
+	}
+	resolved, redacted := action.Auth, action.RedactedAuth
+	return resolved.Username == redacted.Username && resolved.Password == redacted.Password &&
+		resolved.Token == redacted.Token && resolved.Domain == redacted.Domain
 }
 
 func redactedRequestHeadersForSnapshot(headers http.Header, redactedHeaders map[string]string, redactAuthorization bool, redactedAuthorization string) map[string]string {

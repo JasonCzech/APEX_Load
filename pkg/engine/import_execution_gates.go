@@ -94,8 +94,9 @@ func executionBlockerCodes(metadata map[string]any) []string {
 	add := func(value string) {
 		value = strings.TrimSpace(value)
 		// Advisory callouts (encrypted_proxy_password) and preserved literal
-		// credential markers never block execution; runtime output redaction
-		// scrubs literal credentials unconditionally.
+		// credential markers never block execution: nothing an imported script
+		// carries is a secret, and the operator chooses whether those literals
+		// are scrubbed from run output via config.log.redact_run_evidence.
 		if value != "" && !dsl.AdvisoryExecutionBlockerCode(value) && !nonBlockingCredentialExecutionCode(value) {
 			seen[value] = struct{}{}
 		}

@@ -39,7 +39,24 @@ func buildTestRedactionForScript(t *testing.T, script *dsl.Script, resolver Secr
 	return ensureDynamicSecretRegistry(cfg)
 }
 
-func TestLiteralDSLCredentialsAlwaysRedactWithoutRunEvidenceMetadataOrRuntimeSecretMaterial(t *testing.T) {
+// scrubTextOrIdentity reads a possibly nil config as "no redaction".
+func scrubTextOrIdentity(cfg *RedactionConfig, text string) string {
+	if cfg == nil {
+		return text
+	}
+	return cfg.ScrubText(text)
+}
+
+func TestLiteralDSLCredentialsRedactOnlyWhenRunEvidenceRedactionOn(t *testing.T) {
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			assertLiteralDSLCredentialsFollowRunEvidenceSetting(t, mode.redact)
+		})
+	}
+}
+
+func assertLiteralDSLCredentialsFollowRunEvidenceSetting(t *testing.T, redact bool) {
+	t.Helper()
 	const (
 		soapPwd        = "synth-soap-userpwd-7101"
 		wssePwd        = "synth-wsse-pwd-7102"
@@ -69,7 +86,7 @@ func TestLiteralDSLCredentialsAlwaysRedactWithoutRunEvidenceMetadataOrRuntimeSec
 			},
 			"log": map[string]any{
 				"level":               "debug",
-				"redact_run_evidence": false,
+				"redact_run_evidence": redact,
 			},
 			"kafka": map[string]any{
 				"oauth": map[string]any{
@@ -138,9 +155,12 @@ func TestLiteralDSLCredentialsAlwaysRedactWithoutRunEvidenceMetadataOrRuntimeSec
 		t.Fatalf("dsl.Parse: %v", err)
 	}
 
+	if ScriptRedactsRunEvidence(script) != redact {
+		t.Fatalf("premise failed: parsed redact_run_evidence = %t, want %t", ScriptRedactsRunEvidence(script), redact)
+	}
 	cfg := buildTestRedactionForScript(t, script, nil)
 	if cfg == nil {
-		t.Fatalf("expected RedactionConfig to be non-nil for literal DSL credentials")
+		cfg = ensureDynamicSecretRegistry(&RedactionConfig{})
 	}
 	// Guard 2 (#14): literal DSL credentials must NOT flip HasRuntimeSecretMaterial() to true.
 	if cfg.HasRuntimeSecretMaterial() {
@@ -154,8 +174,8 @@ func TestLiteralDSLCredentialsAlwaysRedactWithoutRunEvidenceMetadataOrRuntimeSec
 	}
 	for _, secret := range allCanaries {
 		got := cfg.ScrubText("echoed=" + secret)
-		if strings.Contains(got, secret) {
-			t.Errorf("RedactionConfig failed to scrub literal DSL secret %q: got %q", secret, got)
+		if leaked := strings.Contains(got, secret); leaked == redact {
+			t.Errorf("redact_run_evidence=%t: literal DSL secret %q leaked=%t: got %q", redact, secret, leaked, got)
 		}
 	}
 
@@ -176,35 +196,10 @@ func TestMailSASLBase64CompositesRedactForLiteralAndPlatformManagedCredentials(t
 		managedPwd = "synth-smtp-managed-pwd-8202"
 	)
 
-	literalRaw, _ := json.Marshal(map[string]any{
-		"name":     "smtp-literal",
-		"protocol": "network",
-		"config": map[string]any{
-			"network": map[string]any{
-				"username": mailUser,
-				"password": literalPwd,
-			},
-		},
-		"actions": []any{map[string]any{
-			"name":   "send-mail",
-			"type":   "smtp_send",
-			"target": "127.0.0.1:2525",
-		}},
-	})
-	literalScript, err := dsl.Parse(literalRaw)
-	if err != nil {
-		t.Fatalf("dsl.Parse literal mail: %v", err)
-	}
-	literalCfg := buildTestRedactionForScript(t, literalScript, nil)
-	plainWire := base64.StdEncoding.EncodeToString([]byte("\x00" + mailUser + "\x00" + literalPwd))
-	loginPassWire := base64.StdEncoding.EncodeToString([]byte(literalPwd))
-	for _, wire := range []string{plainWire, loginPassWire} {
-		if scrubbed := literalCfg.ScrubText("AUTH trace: " + wire); strings.Contains(scrubbed, wire) {
-			t.Fatalf("literal mail SASL base64 wire %q was not redacted: %q", wire, scrubbed)
-		}
-	}
-	if literalCfg.HasRuntimeSecretMaterial() {
-		t.Fatalf("literal mail credentials must not mark HasRuntimeSecretMaterial()")
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run("literal_"+mode.name, func(t *testing.T) {
+			assertLiteralMailSASLCompositesFollowRunEvidenceSetting(t, mailUser, literalPwd, mode.redact)
+		})
 	}
 
 	managedRaw, _ := json.Marshal(map[string]any{
@@ -229,13 +224,64 @@ func TestMailSASLBase64CompositesRedactForLiteralAndPlatformManagedCredentials(t
 	resolver := SecretResolverFunc(func(name string) (string, bool) {
 		return managedPwd, name == "SMTP_PASS"
 	})
-	managedCfg := buildTestRedactionForScript(t, managedScript, resolver)
-	managedPlainWire := base64.StdEncoding.EncodeToString([]byte("\x00" + mailUser + "\x00" + managedPwd))
-	if scrubbed := managedCfg.ScrubText("AUTH PLAIN " + managedPlainWire); strings.Contains(scrubbed, managedPlainWire) {
-		t.Fatalf("managed mail SASL base64 wire leaked: %q", scrubbed)
+	// The platform-managed half is redacted whatever the setting says.
+	for _, mode := range runEvidenceRedactionModes {
+		setRunEvidenceRedaction(managedScript, mode.redact)
+		managedCfg := buildTestRedactionForScript(t, managedScript, resolver)
+		for _, wire := range mailSASLWireForms(mailUser, managedPwd) {
+			if scrubbed := scrubTextOrIdentity(managedCfg, "AUTH trace: "+wire); strings.Contains(scrubbed, wire) {
+				t.Fatalf("%s: managed mail SASL wire %q leaked: %q", mode.name, wire, scrubbed)
+			}
+		}
+		if !managedCfg.HasRuntimeSecretMaterial() {
+			t.Fatalf("platform-managed {{secret.*}} mail credentials must mark HasRuntimeSecretMaterial()")
+		}
 	}
-	if !managedCfg.HasRuntimeSecretMaterial() {
-		t.Fatalf("platform-managed {{secret.*}} mail credentials must mark HasRuntimeSecretMaterial()")
+}
+
+// mailSASLWireForms is every SMTP AUTH PLAIN / AUTH LOGIN spelling of a
+// credential pair, padded and unpadded.
+func mailSASLWireForms(user, password string) []string {
+	plain := []byte("\x00" + user + "\x00" + password)
+	return []string{
+		base64.StdEncoding.EncodeToString(plain),
+		base64.RawStdEncoding.EncodeToString(plain),
+		base64.StdEncoding.EncodeToString([]byte(password)),
+		base64.RawStdEncoding.EncodeToString([]byte(password)),
+	}
+}
+
+func assertLiteralMailSASLCompositesFollowRunEvidenceSetting(t *testing.T, mailUser, literalPwd string, redact bool) {
+	t.Helper()
+	literalRaw, _ := json.Marshal(map[string]any{
+		"name":     "smtp-literal",
+		"protocol": "network",
+		"config": map[string]any{
+			"network": map[string]any{
+				"username": mailUser,
+				"password": literalPwd,
+			},
+			"log": map[string]any{"redact_run_evidence": redact},
+		},
+		"actions": []any{map[string]any{
+			"name":   "send-mail",
+			"type":   "smtp_send",
+			"target": "127.0.0.1:2525",
+		}},
+	})
+	literalScript, err := dsl.Parse(literalRaw)
+	if err != nil {
+		t.Fatalf("dsl.Parse literal mail: %v", err)
+	}
+	literalCfg := buildTestRedactionForScript(t, literalScript, nil)
+	for _, wire := range mailSASLWireForms(mailUser, literalPwd) {
+		scrubbed := scrubTextOrIdentity(literalCfg, "AUTH trace: "+wire)
+		if leaked := strings.Contains(scrubbed, wire); leaked == redact {
+			t.Fatalf("redact_run_evidence=%t: literal mail SASL wire %q leaked=%t: %q", redact, wire, leaked, scrubbed)
+		}
+	}
+	if literalCfg != nil && literalCfg.HasRuntimeSecretMaterial() {
+		t.Fatalf("literal mail credentials must not mark HasRuntimeSecretMaterial()")
 	}
 }
 
@@ -251,36 +297,51 @@ func TestRunShakeoutInitializesParametersAndRedactsLiteralAndManagedSecrets(t *t
 		return &shakeoutEchoFailureProto{}
 	})
 
-	script := &dsl.Script{
-		Name:     "shakeout-redaction",
-		Protocol: protoName,
-		Parameters: []dsl.Parameter{{
-			Name:   "login_password",
-			Type:   "list",
-			Values: []string{paramPwd},
-		}},
-		Actions: []dsl.Action{{
-			Name:   "auth-step",
-			Type:   "request",
-			Method: "POST",
-			Target: "/auth?token={{secret.SHAKEOUT_TOKEN}}",
-			Headers: map[string]string{
-				"X-Api-Key": literalKey,
-			},
-			Body: `{"password":"{{param.login_password}}"}`,
-		}},
-	}
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			script := setRunEvidenceRedaction(&dsl.Script{
+				Name:     "shakeout-redaction",
+				Protocol: protoName,
+				Parameters: []dsl.Parameter{{
+					Name:   "login_password",
+					Type:   "list",
+					Values: []string{paramPwd},
+				}},
+				Actions: []dsl.Action{{
+					Name:   "auth-step",
+					Type:   "request",
+					Method: "POST",
+					Target: "/auth?token={{secret.SHAKEOUT_TOKEN}}",
+					Headers: map[string]string{
+						"X-Api-Key": literalKey,
+					},
+					Body: `{"password":"{{param.login_password}}"}`,
+				}},
+			}, mode.redact)
 
-	err := RunScriptShakeoutWithSecretResolver(context.Background(), "shakeout-group", script, SecretResolverFunc(func(name string) (string, bool) {
-		return managedTok, name == "SHAKEOUT_TOKEN"
-	}))
-	if err == nil {
-		t.Fatalf("expected RunScriptShakeoutWithSecretResolver to fail on unsuccessful action")
-	}
-	for _, secret := range []string{paramPwd, literalKey, managedTok} {
-		if strings.Contains(err.Error(), secret) {
-			t.Fatalf("shakeout error leaked %q: %v", secret, err)
-		}
+			err := RunScriptShakeoutWithSecretResolver(context.Background(), "shakeout-group", script, SecretResolverFunc(func(name string) (string, bool) {
+				return managedTok, name == "SHAKEOUT_TOKEN"
+			}))
+			if err == nil {
+				t.Fatalf("expected RunScriptShakeoutWithSecretResolver to fail on unsuccessful action")
+			}
+			// The secret-store value is redacted in both modes.
+			if strings.Contains(err.Error(), managedTok) {
+				t.Fatalf("shakeout error leaked platform-managed %q: %v", managedTok, err)
+			}
+			// The parameter lands under a "password" JSON key, which the generic
+			// name-based body scrub masks in both modes.
+			if strings.Contains(err.Error(), paramPwd) {
+				t.Fatalf("shakeout error leaked name-scrubbed body value %q: %v", paramPwd, err)
+			}
+			// The literal header value echoed into error text has no sensitive
+			// name around it, so only the operator setting decides.
+			for _, secret := range []string{literalKey} {
+				if leaked := strings.Contains(err.Error(), secret); leaked == mode.redact {
+					t.Fatalf("redact_run_evidence=%t: shakeout error literal %q leaked=%t: %v", mode.redact, secret, leaked, err)
+				}
+			}
+		})
 	}
 }
 
@@ -505,6 +566,8 @@ func TestDefaultHeaderListBodyAssignmentsAndOAuthTokenURLCompositesAreRedacted(t
 	// 1. Finding 1: static config.http.default_header_list and resolved DefaultHeaders / DefaultHeaderList.
 	echoSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
+		// A failure status makes replay capture the echoed body as evidence.
+		w.WriteHeader(http.StatusUnauthorized)
 		_, _ = fmt.Fprintf(w, `<html><script>const accPassword = '%s'; const cfg = {password: '%s'};</script><body>auth=%s custom=%s</body></html>`,
 			inlineJSPin, inlineObjPin, r.Header.Get("Authorization"), r.Header.Get("X-Api-Key"))
 	}))
@@ -554,17 +617,28 @@ func TestDefaultHeaderListBodyAssignmentsAndOAuthTokenURLCompositesAreRedacted(t
 		}
 	}
 
-	// 2. Finding 2: ReplayScript + scrubSensitiveResultWithOptions redact echoed default headers AND inline JS body/HTML assignments.
-	replayRes, err := ReplayScript(context.Background(), script, ReplayOptions{})
-	if err != nil {
-		t.Fatalf("ReplayScript: %v", err)
-	}
-	replayJSON, _ := json.Marshal(replayRes)
-	for _, secret := range []string{staticDefTok, dynDefTok, inlineJSPin, inlineObjPin} {
-		if strings.Contains(string(replayJSON), secret) {
-			t.Fatalf("ReplayScript leaked %q: %s", secret, replayJSON)
+	// 2. Finding 2: ReplayScript redacts echoed literal default headers only when
+	// redact_run_evidence is on; inline JS body/HTML assignments are scrubbed by
+	// name in both modes.
+	for _, mode := range runEvidenceRedactionModes {
+		setRunEvidenceRedaction(script, mode.redact)
+		replayRes, err := ReplayScript(context.Background(), script, ReplayOptions{})
+		if err != nil {
+			t.Fatalf("%s: ReplayScript: %v", mode.name, err)
+		}
+		replayJSON, _ := json.Marshal(replayRes)
+		for _, secret := range []string{staticDefTok, dynDefTok} {
+			if leaked := strings.Contains(string(replayJSON), secret); leaked == mode.redact {
+				t.Fatalf("%s: ReplayScript literal default header %q leaked=%t: %s", mode.name, secret, leaked, replayJSON)
+			}
+		}
+		for _, secret := range []string{inlineJSPin, inlineObjPin} {
+			if strings.Contains(string(replayJSON), secret) {
+				t.Fatalf("%s: ReplayScript leaked name-scrubbed inline assignment %q: %s", mode.name, secret, replayJSON)
+			}
 		}
 	}
+	script.Config.Log.RedactRunEvidence = nil
 
 	cfg := buildTestRedactionForScript(t, script, nil)
 	if cfg.HasRuntimeSecretMaterial() {
@@ -616,20 +690,22 @@ func TestDefaultHeaderListBodyAssignmentsAndOAuthTokenURLCompositesAreRedacted(t
 				Name: "mint-lit",
 				Type: "http_oauth2_token",
 				Params: map[string]any{
-					"token_url":  litTokenURL,
-					"grant_type": "client_credentials",
-					"client_id":  "cid",
-					"save_as":    "tok1",
+					"token_url":     litTokenURL,
+					"grant_type":    "client_credentials",
+					"client_id":     "cid",
+					"client_secret": "oauth-client-secret-value",
+					"save_as":       "tok1",
 				},
 			},
 			{
 				Name: "mint-param",
 				Type: "http_oauth2_token",
 				Params: map[string]any{
-					"token_url":  fmt.Sprintf("http://svc:{{param.idp_pass}}@%s/oauth/token", parsedOAuth.Host),
-					"grant_type": "client_credentials",
-					"client_id":  "cid",
-					"save_as":    "tok2",
+					"token_url":     fmt.Sprintf("http://svc:{{param.idp_pass}}@%s/oauth/token", parsedOAuth.Host),
+					"grant_type":    "client_credentials",
+					"client_id":     "cid",
+					"client_secret": "oauth-client-secret-value",
+					"save_as":       "tok2",
 				},
 			},
 		},
@@ -642,14 +718,29 @@ func TestDefaultHeaderListBodyAssignmentsAndOAuthTokenURLCompositesAreRedacted(t
 		t.Fatalf("ImportedCredentialValues missed literal token_url Basic composite %q: %v", litBasic, oauthVals)
 	}
 
-	oauthReplay, err := ReplayScript(context.Background(), oauthScript, ReplayOptions{})
-	if err != nil {
-		t.Fatalf("ReplayScript(oauthScript): %v", err)
-	}
-	oauthReplayJSON, _ := json.Marshal(oauthReplay)
-	for _, secret := range []string{litOAuthPass, litBasic, paramOAuthPass, paramBasic} {
-		if strings.Contains(string(oauthReplayJSON), secret) {
-			t.Fatalf("ReplayScript leaked OAuth token_url Basic secret/composite %q: %s", secret, oauthReplayJSON)
+	for _, mode := range runEvidenceRedactionModes {
+		setRunEvidenceRedaction(oauthScript, mode.redact)
+		oauthReplay, err := ReplayScript(context.Background(), oauthScript, ReplayOptions{})
+		if err != nil {
+			t.Fatalf("%s: ReplayScript(oauthScript): %v", mode.name, err)
+		}
+		// The token endpoint's rejection is reported without its body or the
+		// token_url, so nothing here may surface in either mode.
+		oauthReplayJSON, _ := json.Marshal(oauthReplay)
+		for _, secret := range []string{litOAuthPass, litBasic, paramOAuthPass, paramBasic} {
+			if strings.Contains(string(oauthReplayJSON), secret) {
+				t.Fatalf("%s: ReplayScript OAuth token_url Basic literal/composite %q leaked: %s",
+					mode.name, secret, oauthReplayJSON)
+			}
+		}
+		// The run's matcher carries the literal token_url credential and its
+		// Basic composite only when redact_run_evidence is on.
+		oauthCfg := buildTestRedactionForScript(t, oauthScript, nil)
+		for _, secret := range []string{litOAuthPass, litBasic} {
+			scrubbed := scrubTextOrIdentity(oauthCfg, "echo "+secret)
+			if leaked := strings.Contains(scrubbed, secret); leaked == mode.redact {
+				t.Fatalf("%s: run matcher token_url literal/composite %q leaked=%t: %q", mode.name, secret, leaked, scrubbed)
+			}
 		}
 	}
 }
@@ -758,15 +849,19 @@ func TestRound4TemplatedURLsShakeoutAndConcurrentTransactionRedaction(t *testing
 			},
 		},
 	}
-	oauthQueryReport, err := ReplayScript(context.Background(), oauthQueryScript, ReplayOptions{
-		Variables: map[string]string{"k": runtimeQueryK},
-	})
-	if err != nil {
-		t.Fatalf("ReplayScript(oauthQueryScript): %v", err)
-	}
-	oauthQueryBytes, _ := json.Marshal(oauthQueryReport)
-	if strings.Contains(string(oauthQueryBytes), runtimeQueryK) {
-		t.Fatalf("ReplayScript leaked runtime OAuth token_url query secret %q: %s", runtimeQueryK, oauthQueryBytes)
+	for _, mode := range runEvidenceRedactionModes {
+		setRunEvidenceRedaction(oauthQueryScript, mode.redact)
+		oauthQueryReport, err := ReplayScript(context.Background(), oauthQueryScript, ReplayOptions{
+			Variables: map[string]string{"k": runtimeQueryK},
+		})
+		if err != nil {
+			t.Fatalf("%s: ReplayScript(oauthQueryScript): %v", mode.name, err)
+		}
+		oauthQueryBytes, _ := json.Marshal(oauthQueryReport)
+		if leaked := strings.Contains(string(oauthQueryBytes), runtimeQueryK); leaked == mode.redact {
+			t.Fatalf("%s: ReplayScript runtime OAuth token_url query value %q leaked=%t: %s",
+				mode.name, runtimeQueryK, leaked, oauthQueryBytes)
+		}
 	}
 
 	// 2. scrubReplayBody scrubs inline JS credential assignments.
@@ -909,9 +1004,27 @@ func TestRound4TemplatedURLsShakeoutAndConcurrentTransactionRedaction(t *testing
 		t.Fatalf("ReplayScript(hdrScript): %v", err)
 	}
 	hdrReportBytes, _ := json.Marshal(hdrReport)
-	for _, secret := range []string{defaultHdrPwd, actionHdrPwd, paramHdrPwd, respApiKey} {
-		if strings.Contains(string(hdrReportBytes), secret) {
-			t.Fatalf("ReplayScript leaked password/API-key header secret %q: %s", secret, hdrReportBytes)
+	// Header VALUES are masked by header name in both modes, so a response
+	// header that only ever appears as a header value is always hidden.
+	if strings.Contains(string(hdrReportBytes), respApiKey) {
+		t.Fatalf("ReplayScript leaked API-key response header %q: %s", respApiKey, hdrReportBytes)
+	}
+	// The same authored literals echoed back in the body carry no name, so they
+	// follow redact_run_evidence.
+	for _, mode := range runEvidenceRedactionModes {
+		setRunEvidenceRedaction(hdrScript, mode.redact)
+		modeReport, err := ReplayScript(context.Background(), hdrScript, ReplayOptions{})
+		if err != nil {
+			t.Fatalf("%s: ReplayScript(hdrScript): %v", mode.name, err)
+		}
+		modeBytes, _ := json.Marshal(modeReport)
+		if strings.Contains(string(modeBytes), respApiKey) {
+			t.Fatalf("%s: ReplayScript leaked API-key response header %q: %s", mode.name, respApiKey, modeBytes)
+		}
+		for _, secret := range []string{defaultHdrPwd, actionHdrPwd, paramHdrPwd} {
+			if leaked := strings.Contains(string(modeBytes), secret); leaked == mode.redact {
+				t.Fatalf("%s: ReplayScript echoed literal header value %q leaked=%t: %s", mode.name, secret, leaked, modeBytes)
+			}
 		}
 	}
 

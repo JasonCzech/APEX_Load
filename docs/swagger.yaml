@@ -14279,6 +14279,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -47531,6 +47533,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -47751,6 +47755,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -48378,6 +48384,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -48960,6 +48968,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -49708,6 +49718,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -49928,6 +49940,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -50555,6 +50569,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -51137,6 +51153,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -51932,6 +51950,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -52152,6 +52172,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -52779,6 +52801,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -53361,6 +53385,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -54024,6 +54050,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -54244,6 +54272,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -54871,6 +54901,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -55453,6 +55485,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -56116,6 +56150,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -56336,6 +56372,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -56963,6 +57001,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -57545,6 +57585,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -166906,6 +166948,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -167126,6 +167170,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -167753,6 +167799,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -168417,6 +168465,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -169280,6 +169330,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -169500,6 +169552,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -170127,6 +170181,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -170791,6 +170847,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -171724,6 +171782,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -171944,6 +172004,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -172571,6 +172633,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -173235,6 +173299,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -174104,6 +174170,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -174324,6 +174392,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -174951,6 +175021,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -175615,6 +175687,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -176478,6 +176552,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -176698,6 +176774,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -177325,6 +177403,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -177989,6 +178069,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -178857,6 +178939,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -179077,6 +179161,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -179704,6 +179790,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -180368,6 +180456,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -181237,6 +181327,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -181457,6 +181549,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -182084,6 +182178,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -182748,6 +182844,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -226328,6 +226426,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -226548,6 +226648,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -227175,6 +227277,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -227839,6 +227943,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -228703,6 +228809,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -228923,6 +229031,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -229550,6 +229660,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -230214,6 +230326,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -231149,6 +231263,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -231369,6 +231485,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -231996,6 +232114,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -232660,6 +232780,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -233530,6 +233652,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -233750,6 +233874,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -234377,6 +234503,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -235041,6 +235169,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -235905,6 +236035,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -236125,6 +236257,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -236752,6 +236886,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -237416,6 +237552,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -238285,6 +238423,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -238505,6 +238645,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -239132,6 +239274,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -239796,6 +239940,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -240666,6 +240812,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -240886,6 +241034,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -241513,6 +241663,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -242177,6 +242329,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -267715,6 +267869,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -267935,6 +268091,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -268562,6 +268720,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -269144,6 +269304,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -272610,6 +272772,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -272830,6 +272994,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -273457,6 +273623,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -274121,6 +274289,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -291975,6 +292145,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -292195,6 +292367,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -292822,6 +292996,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -293486,6 +293662,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -316216,6 +316394,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -316436,6 +316616,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -317063,6 +317245,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -317645,6 +317829,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -317933,6 +318119,8 @@ paths:
                           framework_error:
                             type: string
                         nullable: true
+                      authored_request_retained:
+                        type: boolean
                       browser_evidence:
                         type: object
                         properties:
@@ -327491,6 +327679,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -327711,6 +327901,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -328338,6 +328530,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -329002,6 +329196,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -386032,6 +386228,8 @@ paths:
                                   description: 'Go type: AuraBatch'
                                   additionalProperties: true
                                   nullable: true
+                                authored_request_retained:
+                                  type: boolean
                                 browser_evidence:
                                   type: object
                                   properties:
@@ -386252,6 +386450,8 @@ paths:
                           snapshot:
                             type: object
                             properties:
+                              authored_request_retained:
+                                type: boolean
                               console_entries:
                                 type: array
                                 items:
@@ -386879,6 +387079,8 @@ paths:
                             snapshot:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -387543,6 +387745,8 @@ paths:
                             items:
                               type: object
                               properties:
+                                authored_request_retained:
+                                  type: boolean
                                 console_entries:
                                   type: array
                                   items:
@@ -488717,6 +488921,8 @@ paths:
                         snapshot:
                           type: object
                           properties:
+                            authored_request_retained:
+                              type: boolean
                             console_entries:
                               type: array
                               items:
@@ -619653,6 +619859,8 @@ paths:
                   snapshot:
                     type: object
                     properties:
+                      authored_request_retained:
+                        type: boolean
                       console_entries:
                         type: array
                         items:
@@ -619700,6 +619908,8 @@ paths:
                               required:
                                 - actions
                               nullable: true
+                            authored_request_retained:
+                              type: boolean
                             browser_evidence:
                               type: object
                               properties:

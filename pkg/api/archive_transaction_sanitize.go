@@ -144,7 +144,7 @@ func sanitizeArchivedTransaction(item *TransactionEvent) {
 	item.ConsoleEntries = sanitizeArchivedConsoleEntries(item.ConsoleEntries, policy)
 	item.NetworkEntries = sanitizeArchivedNetworkEntries(item.NetworkEntries, policy)
 	item.DOMSummary = sanitizeArchivedDOMSummary(item.DOMSummary, policy)
-	if structured, ok := sanitizeArchivedEvidenceValue(item.ProtocolEvidence, policy).(map[string]any); ok {
+	if structured, ok := sanitizeArchivedProtocolEvidence(item.ProtocolEvidence, policy).(map[string]any); ok {
 		item.ProtocolEvidence = structured
 	} else {
 		item.ProtocolEvidence = nil
@@ -213,6 +213,99 @@ func sanitizeArchivedStringMap(values map[string]string, policy scrub.Policy) ma
 		}
 	}
 	return out
+}
+
+// archivedEvidenceAuthoredMarker mirrors engine.ProtocolEvidenceAuthoredRequestMarker.
+const archivedEvidenceAuthoredMarker = "authored_request_retained"
+
+// sanitizeArchivedProtocolEvidence is sanitizeArchivedEvidenceValue for a
+// transaction's protocol_evidence. When the engine marked the evidence (the
+// script left config.log.redact_run_evidence off), its request-describing
+// entries — target, operation, metadata.headers, metadata.params and
+// metadata.soap — already went through the run's exact platform-secret matcher
+// and keep their authored values here, like an authored network entry's
+// request side. Every other entry is re-scrubbed as before.
+func sanitizeArchivedProtocolEvidence(value any, policy scrub.Policy) any {
+	evidence, ok := value.(map[string]any)
+	if !ok {
+		return sanitizeArchivedEvidenceValue(value, policy)
+	}
+	if marked, _ := evidence[archivedEvidenceAuthoredMarker].(bool); !marked {
+		return sanitizeArchivedEvidenceValue(value, policy)
+	}
+	rest := make(map[string]any, len(evidence))
+	kept := map[string]any{}
+	var metadata map[string]any
+	for key, item := range evidence {
+		switch key {
+		case archivedEvidenceAuthoredMarker:
+		case "target", "operation":
+			kept[key] = item
+		case "metadata":
+			if typed, ok := item.(map[string]any); ok {
+				metadata = typed
+			} else {
+				rest[key] = item
+			}
+		default:
+			rest[key] = item
+		}
+	}
+	out, _ := sanitizeArchivedEvidenceValue(rest, policy).(map[string]any)
+	if out == nil {
+		out = map[string]any{}
+	}
+	for key, item := range kept {
+		out[key] = cloneArchivedAuthoredEvidence(item, policy)
+	}
+	if metadata != nil {
+		metadataRest := make(map[string]any, len(metadata))
+		metadataKept := map[string]any{}
+		for key, item := range metadata {
+			switch key {
+			case "headers", "params", "soap":
+				metadataKept[key] = item
+			default:
+				metadataRest[key] = item
+			}
+		}
+		scrubbed, _ := sanitizeArchivedEvidenceValue(metadataRest, policy).(map[string]any)
+		if scrubbed == nil {
+			scrubbed = map[string]any{}
+		}
+		for key, item := range metadataKept {
+			scrubbed[key] = cloneArchivedAuthoredEvidence(item, policy)
+		}
+		out["metadata"] = scrubbed
+	}
+	out[archivedEvidenceAuthoredMarker] = true
+	return out
+}
+
+// cloneArchivedAuthoredEvidence detaches an authored evidence value without
+// re-scrubbing it. A value of a non-JSON-native type is normalized and then
+// scrubbed like any other evidence: the engine only marks JSON-native shapes.
+func cloneArchivedAuthoredEvidence(value any, policy scrub.Policy) any {
+	switch typed := value.(type) {
+	case nil, bool, string, json.Number, float64:
+		return value
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = cloneArchivedAuthoredEvidence(item, policy)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			out[key] = cloneArchivedAuthoredEvidence(item, policy)
+		}
+		return out
+	case map[string]string:
+		return cloneArchivedHeaders(typed)
+	default:
+		return sanitizeArchivedEvidenceValue(value, policy)
+	}
 }
 
 func sanitizeArchivedEvidenceValue(value any, policy scrub.Policy) any {
@@ -302,6 +395,17 @@ func sanitizeArchivedHeaders(headers map[string]string, policy scrub.Policy) map
 	return out
 }
 
+func cloneArchivedHeaders(headers map[string]string) map[string]string {
+	if headers == nil {
+		return nil
+	}
+	out := make(map[string]string, len(headers))
+	for key, value := range headers {
+		out[key] = value
+	}
+	return out
+}
+
 func scrubArchiveTarget(value string, policy scrub.Policy) string {
 	trimmed := strings.TrimSpace(value)
 	if strings.Contains(trimmed, "://") {
@@ -336,13 +440,18 @@ func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scru
 		} else {
 			out[index].BrowserEvidence = nil
 		}
+		// The engine marks a request side it already scrubbed under a script
+		// that left config.log.redact_run_evidence off: exact platform-managed
+		// values are gone and the authored values stay. Do not re-apply the
+		// name/shape scrub to it here. Response content is always re-scrubbed.
+		authored := out[index].AuthoredRequestRetained
 		if har := out[index].HAR.Clone(); har != nil {
 			har.ID = scrub.ValueLabel(har.ID, policy)
 			for _, body := range []*protocol.ReplayHARBody{har.RequestBody, har.ResponseBody} {
 				if body != nil {
 					body.MimeType = scrub.ValueLabel(body.MimeType, policy)
 				}
-				if body != nil && (body.State == "retained" || body.Text != "") {
+				if body != nil && (body.State == "retained" || body.Text != "") && !(authored && body == har.RequestBody) {
 					body.Text = scrub.BodyText(scrub.ValueLabel(body.Text, policy))
 				}
 			}
@@ -354,11 +463,13 @@ func sanitizeArchivedNetworkEntries(entries []protocol.NetworkEntry, policy scru
 			})
 		}
 		out[index].FailureKind = sanitizeArchivedNetworkFailureKind(out[index].FailureKind)
-		out[index].URL = scrub.ValueURL(out[index].URL, policy)
+		if !authored {
+			out[index].URL = scrub.ValueURL(out[index].URL, policy)
+			out[index].RequestHeaders = sanitizeArchivedHeaders(out[index].RequestHeaders, policy)
+			out[index].RequestBody = scrub.BodyText(scrub.ValueLabel(out[index].RequestBody, policy))
+		}
 		out[index].Method = scrub.ValueLabel(out[index].Method, policy)
 		out[index].ResourceType = scrub.ValueLabel(out[index].ResourceType, policy)
-		out[index].RequestHeaders = sanitizeArchivedHeaders(out[index].RequestHeaders, policy)
-		out[index].RequestBody = scrub.BodyText(scrub.ValueLabel(out[index].RequestBody, policy))
 		out[index].ResponseHeaders = sanitizeArchivedHeaders(out[index].ResponseHeaders, policy)
 		if batch := out[index].Aura; batch != nil {
 			for action := range batch.Actions {
@@ -402,9 +513,16 @@ func sanitizeArchivedSnapshot(snapshot *protocol.ErrorSnapshot, policy scrub.Pol
 	}
 	out := *snapshot
 	out.RequestMethod = scrub.ValueLabel(out.RequestMethod, policy)
-	out.RequestURL = scrub.ValueURL(out.RequestURL, policy)
-	out.RequestHeaders = sanitizeArchivedHeaders(out.RequestHeaders, policy)
-	out.RequestBody = scrub.BodyText(scrub.ValueLabel(out.RequestBody, policy))
+	// See sanitizeArchivedNetworkEntries: an engine-marked authored request
+	// side keeps its values; the response side is always re-scrubbed.
+	authored := snapshot.AuthoredRequestRetained
+	if !authored {
+		out.RequestURL = scrub.ValueURL(out.RequestURL, policy)
+		out.RequestHeaders = sanitizeArchivedHeaders(out.RequestHeaders, policy)
+		out.RequestBody = scrub.BodyText(scrub.ValueLabel(out.RequestBody, policy))
+	} else {
+		out.RequestHeaders = cloneArchivedHeaders(out.RequestHeaders)
+	}
 	out.ResponseHeaders = sanitizeArchivedHeaders(out.ResponseHeaders, policy)
 	previousResponseBody := out.ResponseBody
 	out.ResponseBody = scrub.BodyText(scrub.ValueLabel(out.ResponseBody, policy))

@@ -654,13 +654,6 @@ func TestKafkaOAuthLiteralClientSecretResolutionAndRedaction(t *testing.T) {
 				t.Fatal("kafka_oauth_client_secret_literal leaked into resolved proto config")
 			}
 
-			redactionCfg := buildTestRedactionForScript(t, script, nil)
-			if redactionCfg.HasRuntimeSecretMaterial() {
-				t.Fatal("HasRuntimeSecretMaterial() = true for literal-only Kafka OAuth client_secret, want false")
-			}
-			if got := scrubSensitiveTextWithConfig("a  b", redactionCfg); got != "a  b" {
-				t.Fatalf("whitespace-only client_secret_ref polluted redaction matcher: got %q, want %q", got, "a  b")
-			}
 			pair := url.QueryEscape(" client+id ") + ":" + url.QueryEscape(literalSecret)
 			encoding := base64.StdEncoding
 			if method == "kafka_3_3_1_basic" {
@@ -668,9 +661,22 @@ func TestKafkaOAuthLiteralClientSecretResolutionAndRedaction(t *testing.T) {
 				encoding = base64.URLEncoding
 			}
 			encodedComposite := encoding.EncodeToString([]byte(pair))
-			for _, candidate := range []string{literalSecret, encodedComposite} {
-				if got := scrubSensitiveTextWithConfig("err "+candidate, redactionCfg); strings.Contains(got, candidate) {
-					t.Fatalf("scrubSensitiveTextWithConfig failed to redact %q in %q", candidate, got)
+			// A literal client_secret is script-sourced: it and its Basic
+			// composite are redacted only when redact_run_evidence is on.
+			for _, mode := range runEvidenceRedactionModes {
+				setRunEvidenceRedaction(script, mode.redact)
+				redactionCfg := buildTestRedactionForScript(t, script, nil)
+				if redactionCfg.HasRuntimeSecretMaterial() {
+					t.Fatalf("%s: HasRuntimeSecretMaterial() = true for literal-only Kafka OAuth client_secret, want false", mode.name)
+				}
+				if got := scrubSensitiveTextWithConfig("a  b", redactionCfg); got != "a  b" {
+					t.Fatalf("%s: whitespace-only client_secret_ref polluted redaction matcher: got %q, want %q", mode.name, got, "a  b")
+				}
+				for _, candidate := range []string{literalSecret, encodedComposite} {
+					got := scrubSensitiveTextWithConfig("err "+candidate, redactionCfg)
+					if leaked := strings.Contains(got, candidate); leaked == mode.redact {
+						t.Fatalf("%s: literal Kafka OAuth value %q leaked=%t in %q", mode.name, candidate, leaked, got)
+					}
 				}
 			}
 		})

@@ -640,7 +640,7 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 	if err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, scrubLocalCIError(err, nil)
 	}
-	cliRedaction := attachCLIEnvSecrets(cliScriptBytesRedactionConfig(rawScript), variables)
+	cliRedaction := cliScriptBytesExecutionRedactionConfig(rawScript, variables)
 	if err := validateGitHubLocalCIAssetIsolation(rawScript); err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, scrubLocalCIError(err, cliRedaction)
 	}

@@ -150,7 +150,7 @@ func TestResolvedImportedDynamicHeaderAndBodyValuesFollowRunEvidenceSetting(t *t
 					varValue,
 					"data=" + dataValue,
 				},
-				scriptSourcedRedacted: true,
+				scriptSourcedRedacted: mode.redact,
 				platformManaged:       []string{platformSecret},
 			}
 			vu := &VUser{
@@ -226,7 +226,7 @@ func TestResolvedImportedComposedBearerComponentFollowsRunEvidenceSetting(t *tes
 					bearerComponent,
 					"Bearer " + bearerComponent,
 				},
-				scriptSourcedRedacted: true,
+				scriptSourcedRedacted: mode.redact,
 			}
 			vu := &VUser{Script: script, Proto: probe, Variables: map[string]string{}}
 			probe.vu = vu
@@ -276,7 +276,7 @@ func TestResolvedImportedURLPasswordAndCompositeFollowRunEvidenceSetting(t *test
 					password,
 					username + ":" + password,
 				},
-				scriptSourcedRedacted: true,
+				scriptSourcedRedacted: mode.redact,
 			}
 			vu := &VUser{
 				Script: script,
