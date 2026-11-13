@@ -50,7 +50,7 @@ import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
-import { effectiveRuntimeSection, formatPacing, formatThinkTime, formatErrorHandling, runtimeBrowserSettings, runtimeOverrideRowFromDraft, runtimeSectionSource } from './runtimeSettingsModel'
+import { effectiveRuntimeSection, formatPacing, formatThinkTime, formatErrorHandling, isPartialRuntimeDraft, resolveRuntimeRowsValue, runtimeBrowserSettings, runtimeOverrideRowFromDraft, runtimeSectionSource } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroupsWithReport, type RuntimeApplyReport } from './runtimeSettingsApply'
 import { adaptScenarioShapeDefaults, availableScenarioModelFamilies, BROWSER_DEFAULT_GROUP_VUSERS, DEFAULT_GROUP_VUSERS, shapeFamilyFor, type ScenarioModelFamilyId,buildClosedVUserPlan, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, buildSteppedRampPlan, formatModelTimeLabel, getScenarioShapePreset, isGuidedClosedVUserOwned, MAX_STEPPED_RAMP_STEPS, remapClosedRampDownHistory, remapGoalDrivenIndexedState, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import ReplaceScenarioScriptsModal from './ReplaceScenarioScriptsModal'
@@ -93,7 +93,6 @@ import {
   scenarioGroupWithRuntimeSettings,
   reseedScenarioGroups,
   runtimeSettingsFromForm,
-  scenarioErrorHandlingFlag,
   scenarioFormStateFromStoredScenario,
   seededScenarioRuntime,
   withAdaptedGoalBounds,
@@ -400,6 +399,26 @@ function vusersForScriptGroup(group: Pick<ScenarioFormGroup, 'vusers' | 'stages'
 /** A traffic-profile target in its own unit: "12 TPS", "30 VUsers". */
 function formatProfileLoad(value: number, runtimeTarget?: 'tps' | 'vusers') {
   return `${formatUpTo(value)} ${runtimeTarget === 'vusers' ? 'VUsers' : 'TPS'}`
+}
+
+/** The two error-handling defaults on the Advanced card: Inherit leaves each script's own
+ *  setting (continue-on-error stays on unless a layer disables it). */
+const ERROR_HANDLING_ASSURANCE_CARDS = [
+  { flag: 'continue_on_error', title: 'Continue on action errors', description: 'Keep collecting resilience evidence after request-level failures.', inheritLabel: 'Inherit (on unless a script disables it)' },
+  { flag: 'snapshot_on_error', title: 'Snapshot on error', description: 'Preserve request/response context for failed actions.', inheritLabel: "Inherit (each script's setting)" },
+] as const
+
+/**
+ * The scenario default an error-handling select shows, read through the shared row resolver: ''
+ * when the scenario row does not set it (each script's own setting applies), else 'true' or
+ * 'false'. A v1 error_handling section applies whole, so a snapshot flag it omits runs as false;
+ * an omitted continue-on-error stays on, as the scenario policy says.
+ */
+function scenarioErrorHandlingSelectValue(row: RuntimeSettingsOverride | undefined, flag: 'continue_on_error' | 'snapshot_on_error'): '' | 'true' | 'false' {
+  const { index, value } = resolveRuntimeRowsValue(`error_handling.${flag}`, [row])
+  if (index < 0) return ''
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  return flag === 'snapshot_on_error' && !isPartialRuntimeDraft(row) ? 'false' : ''
 }
 
 function findScriptById(scripts: StoredScript[], scriptId?: string) {
@@ -3860,14 +3879,28 @@ function TestHub({ onScriptWorkflowChange, applicationRepository, onSelectTest, 
           <input type="checkbox" checked={form.resource_baseline} onChange={event => setForm({ ...form, resource_baseline: event.target.checked })} />
           <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
         </label>
-        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'continue_on_error') !== false ? 'selected' : ''}`}>
-          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'continue_on_error') !== false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'continue_on_error', event.target.checked))} />
-          <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
-        </label>
-        <label className={`scenario-option-card ${scenarioErrorHandlingFlag(form, 'snapshot_on_error') ? 'selected' : ''}`}>
-          <input type="checkbox" checked={scenarioErrorHandlingFlag(form, 'snapshot_on_error') ?? false} onChange={event => setForm(withScenarioErrorHandlingFlag(form, 'snapshot_on_error', event.target.checked))} />
-          <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
-        </label>
+        {ERROR_HANDLING_ASSURANCE_CARDS.map(card => {
+          const value = scenarioErrorHandlingSelectValue(form.runtime_settings, card.flag)
+          const enabled = card.flag === 'continue_on_error' ? value !== 'false' : value === 'true'
+          return (
+            <label key={card.flag} className={`scenario-option-card tri-state ${enabled ? 'selected' : ''}`}>
+              <div>
+                <strong>{card.title}</strong>
+                <span>{card.description}</span>
+                <select
+                  className="settings-input"
+                  aria-label={card.title}
+                  value={value}
+                  onChange={event => setForm(withScenarioErrorHandlingFlag(form, card.flag, event.target.value === '' ? undefined : event.target.value === 'true'))}
+                >
+                  <option value="">{card.inheritLabel}</option>
+                  <option value="true">Enabled</option>
+                  <option value="false">Disabled</option>
+                </select>
+              </div>
+            </label>
+          )
+        })}
       </div>
     </div>
   )

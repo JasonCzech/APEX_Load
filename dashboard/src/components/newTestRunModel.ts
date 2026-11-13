@@ -1,11 +1,13 @@
 import { countLabel as formatCount } from '../utils/numberFormat'
 import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator, TrafficProfile } from '../types'
 import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
+import { type ScriptConfig } from '../types/scripts'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
   applyRuntimeOverrideDiff,
   effectiveRuntimeSection,
+  effectiveRuntimeValue,
   resolveRuntimeRowsValue,
   isFieldOverridden,
   isPartialRuntimeDraft,
@@ -1418,8 +1420,6 @@ function runtimePacingAmount(pacing?: RuntimeSettingsOverride['pacing']) {
 
 function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGroupRuntimeSettings>): Pick<GroupEditDraft,
   'iterations'
-  | 'log_level'
-  | 'auto_transactions'
   | 'pacingType'
   | 'pacingAmount'
   | 'pacingConfig'
@@ -1436,8 +1436,6 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
   const pacingAmount = runtimePacingAmount(runtime.pacing)
   return {
     iterations: runtime.iterations === undefined ? '' : String(runtime.iterations),
-    log_level: runtime.log_level || 'standard',
-    auto_transactions: runtime.auto_transactions || 'none',
     pacingType: runtime.pacing?.type || '',
     pacingAmount: pacingAmount === undefined ? '' : String(pacingAmount),
     pacingConfig: runtime.pacing ? { ...runtime.pacing } : undefined,
@@ -1456,6 +1454,61 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
     browser_touch_mode: runtime.browser?.touch_mode === undefined ? '' : String(runtime.browser.touch_mode),
     browser_orientation: runtime.browser?.orientation || '',
   }
+}
+
+/** The group dialog's text selects whose empty option inherits (Inherit (<effective>)). */
+export const GROUP_INHERITABLE_TEXT_PATHS = { log_level: 'log.level', auto_transactions: 'run_logic.auto_transactions' } as const
+export type GroupInheritableTextField = keyof typeof GROUP_INHERITABLE_TEXT_PATHS
+
+/**
+ * The value the group's own row (stored group row with this run's override laid over it)
+ * supplies at `path`, or '' when it supplies none, so the select sits on its inherit option
+ * instead of showing a value the group does not set.
+ */
+function groupOwnRuntimeText(group: ScenarioScriptGroup, override: GroupRunOverride | undefined, path: string): string {
+  const groupRow = mergeRuntimeSettingsForRun(group.runtime_settings, override?.runtime_settings)
+  const value = runtimeLayerValue(path, groupRow).value
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+/**
+ * What the group runs with on the inherit option: the run-level row (run defaults over the
+ * scenario row), then the script, then the engine default. Picking inherit resets the group's
+ * leaf (a partial path, see NewTestPage's save), so a value the group sets does not hide the run
+ * level. A group row that already lists the path with no value (a v1 section that omits it, or a
+ * partial clear) replaces the run level and the script's section at run time (the merge copies the
+ * group section and applyRuntimeOverrides replaces the script's section whole), so there only the
+ * engine default applies. Undefined when no layer that is known here sets it.
+ */
+export function groupInheritedRuntimeText(
+  field: GroupInheritableTextField,
+  group: ScenarioScriptGroup,
+  scenario: StoredScenario,
+  runDefaultOverrides: RunDefaultOverrides,
+  override?: GroupRunOverride,
+  scriptConfig?: ScriptConfig,
+  engineDefaults?: ScriptConfig,
+): string | undefined {
+  const path = GROUP_INHERITABLE_TEXT_PATHS[field]
+  const groupRow = mergeRuntimeSettingsForRun(group.runtime_settings, override?.runtime_settings)
+  const text = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim() : undefined)
+  const engineOnly = () => text(effectiveRuntimeValue(path, { engine: engineDefaults }).value)
+  const own = runtimeLayerValue(path, groupRow)
+  if (own.listed && text(own.value) === undefined) return engineOnly()
+  const root = runtimeLayerValue(path, runLevelRuntimeSettings(scenario, runDefaultOverrides))
+  if (root.listed) return text(root.value) ?? engineOnly()
+  return text(effectiveRuntimeValue(path, { script: scriptConfig, engine: engineDefaults }).value)
+}
+
+/**
+ * The run override after the full runtime settings editor saved `row` as the group's complete
+ * runtime row (stored group row plus every edit). The row is partial, so merging it over the
+ * stored group row applies exactly its paths (mergePartialRuntimeSettingsForRun); a row that
+ * resets everything is `{ override_fields: [] }`, never a missing row that would restore the
+ * stored one. Every other run override of the group is kept.
+ */
+export function groupRunOverrideWithRuntimeRow(existing: GroupRunOverride | undefined, row: RuntimeSettingsOverride): GroupRunOverride {
+  return { ...(existing || {}), runtime_settings: cloneRuntimeSettingsForRun(row) }
 }
 
 export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, override?: GroupRunOverride): GroupEditDraft {
@@ -1479,6 +1532,8 @@ export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: Stored
     ramp_down: effective.ramp_down || '',
     initialization: effective.initialization || 'at_runtime',
     ...buildRuntimeGroupEditDraftValues(runtime),
+    log_level: groupOwnRuntimeText(group, override, GROUP_INHERITABLE_TEXT_PATHS.log_level),
+    auto_transactions: groupOwnRuntimeText(group, override, GROUP_INHERITABLE_TEXT_PATHS.auto_transactions),
     assignmentMode,
     selectedTargets: assignment?.selected_targets || [],
     requiredLabels,

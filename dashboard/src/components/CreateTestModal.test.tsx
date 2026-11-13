@@ -9,7 +9,7 @@ import CreateTestModal from './CreateTestModal'
 import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 import { useNavigationGuard, useNavigationGuardRunner } from '../hooks/NavigationGuardProvider'
-import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
+import { buildRuntimeSettingsDraft, buildScenarioDraftFromTest } from './scenarioDraftUtils'
 import type { ScenarioDraft, TestSummary } from '../types'
 
 const monitorRequest = vi.hoisted(() => vi.fn())
@@ -225,6 +225,106 @@ describe('CreateTestModal', () => {
       }),
     }))
     expect(onCreated).toHaveBeenCalledWith({ id: 'test-1' })
+  })
+
+  it('submits a per-group runtime override edited in the group drawer as a partial row', async () => {
+    const scripts = [{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '', script: { name: 'Checkout Script', protocol: 'http', config: { pacing: { type: 'none' } }, actions: [] } }]
+    await act(async () => {
+      root.render(<CreateTestModal scripts={scripts as never} onClose={vi.fn()} onCreated={vi.fn()} />)
+    })
+    await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve() })
+    const open = container.querySelector('[data-testid="create-test-group-0-runtime-settings"]') as HTMLButtonElement
+    expect(open).toBeTruthy()
+    await act(async () => { open.click() })
+    const drawer = document.querySelector('[data-testid="create-test-group-runtime-dialog"]') as HTMLElement
+    expect(drawer).toBeTruthy()
+    const tab = Array.from(drawer.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === 'Iteration Pacing') as HTMLButtonElement
+    await act(async () => { tab.click() })
+    const pacing = Array.from(drawer.querySelectorAll('label')).find(label => label.textContent?.includes('Pacing'))?.querySelector('select') as HTMLSelectElement
+    await act(async () => { pacing.value = 'fixed_delay'; pacing.dispatchEvent(new Event('change', { bubbles: true })) })
+    await act(async () => { (Array.from(drawer.querySelectorAll('button')).find(button => button.textContent === 'Apply to group') as HTMLButtonElement).click() })
+    expect(document.querySelector('[data-testid="create-test-group-runtime-dialog"]')).toBeNull()
+    expect(container.querySelector('[data-testid="create-test-group-0-runtime-overrides"]')).toBeTruthy()
+    await click('Create queued run')
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups: Array<{ runtime_settings?: { override_fields?: string[]; pacing?: { type?: string } } }> }
+    expect(payload.groups[0].runtime_settings?.override_fields).toEqual(['pacing.type'])
+    expect(payload.groups[0].runtime_settings?.pacing?.type).toBe('fixed_delay')
+  })
+
+  describe('group drawer on a group whose runtime row owns the iteration', () => {
+    const scripts = [{ id: 'script-1', name: 'Checkout Script', protocol: 'http', created_at: '', script: { name: 'Checkout Script', protocol: 'http', config: { pacing: { type: 'none' } }, actions: [] } }]
+    type GroupPayload = { iterations?: number; runtime_settings?: { override_fields?: string[]; pacing?: { type?: string }; run_logic?: { iterations?: number }; log?: { level?: string } } }
+
+    async function openDrawer() {
+      const initialScenario: ScenarioDraft = {
+        ...weightedScenarioDraft(),
+        assignment: { mode: 'auto' },
+        groups: [{
+          ...weightedScenarioDraft().groups[0],
+          iterations: 10,
+          iterationPayloadSource: 'runtime',
+          runtimeSettings: buildRuntimeSettingsDraft({ run_logic: { iterations: 10 }, log: { level: 'extended' }, override_fields: ['run_logic.iterations', 'log.level'] } as never),
+        }],
+      }
+      await act(async () => {
+        root.render(<CreateTestModal scripts={scripts as never} initialScenario={initialScenario} onClose={vi.fn()} onCreated={vi.fn()} />)
+      })
+      await act(async () => { vi.advanceTimersByTime(300); await Promise.resolve() })
+      await act(async () => { (container.querySelector('[data-testid="create-test-group-0-runtime-settings"]') as HTMLButtonElement).click() })
+      const drawer = document.querySelector('[data-testid="create-test-group-runtime-dialog"]') as HTMLElement
+      expect(drawer).toBeTruthy()
+      return drawer
+    }
+    async function clickIn(scope: ParentNode, label: string) {
+      const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find(candidate => candidate.textContent?.trim() === label || candidate.getAttribute('aria-label') === label)
+      expect(button, label).toBeTruthy()
+      await act(async () => { button!.click() })
+    }
+    async function editPacing(drawer: HTMLElement) {
+      const pacing = Array.from(drawer.querySelectorAll('label')).find(label => label.textContent?.includes('Pacing'))?.querySelector('select') as HTMLSelectElement
+      await act(async () => { pacing.value = 'fixed_delay'; pacing.dispatchEvent(new Event('change', { bubbles: true })) })
+    }
+    async function applyAndSubmit(drawer: HTMLElement): Promise<GroupPayload> {
+      await clickIn(drawer, 'Apply to group')
+      expect(document.querySelector('[data-testid="create-test-group-runtime-dialog"]')).toBeNull()
+      await click('Create queued run')
+      return (apiMock.createTest.mock.calls[0][0] as { groups: GroupPayload[] }).groups[0]
+    }
+
+    it('keeps both the drawer edit and the runtime iteration', async () => {
+      const drawer = await openDrawer()
+      await clickIn(drawer, 'Iteration Pacing')
+      await editPacing(drawer)
+      const group = await applyAndSubmit(drawer)
+      expect(group.runtime_settings?.override_fields).toEqual(['run_logic.iterations', 'log.level', 'pacing.type'])
+      expect(group.runtime_settings?.pacing?.type).toBe('fixed_delay')
+      expect(group.runtime_settings?.run_logic?.iterations).toBe(10)
+      expect(group.runtime_settings?.log?.level).toBe('extended')
+      // The row owns the iteration, so it is never sent twice.
+      expect(group.iterations).toBeUndefined()
+    })
+
+    it('resets the iteration alongside another drawer edit and keeps the other override', async () => {
+      const drawer = await openDrawer()
+      await clickIn(drawer, 'Clear Iterations override')
+      await clickIn(drawer, 'Iteration Pacing')
+      await editPacing(drawer)
+      const group = await applyAndSubmit(drawer)
+      expect(group.runtime_settings?.override_fields).toEqual(['log.level', 'pacing.type'])
+      expect(group.runtime_settings?.pacing?.type).toBe('fixed_delay')
+      expect(group.runtime_settings?.log?.level).toBe('extended')
+      expect(group.runtime_settings?.run_logic?.iterations).toBeUndefined()
+      expect(group.iterations).toBeUndefined()
+    })
+
+    it('clears the whole row when every override is reset', async () => {
+      const drawer = await openDrawer()
+      await clickIn(drawer, 'Clear Iterations override')
+      await clickIn(drawer, 'Clear Log level override')
+      const group = await applyAndSubmit(drawer)
+      expect(group.runtime_settings).toBeUndefined()
+      expect(group.iterations).toBeUndefined()
+    })
   })
 
   it('blocks an observer setup above the backend diagnostic envelope', async () => {

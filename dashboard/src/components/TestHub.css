@@ -1214,6 +1214,15 @@ body .scenario-builder-run-tabs.ux-underline-tabs [role='tab'] { padding-inline:
   margin-top: 3px;
 }
 
+.scenario-option-card.tri-state {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.scenario-option-card.tri-state select {
+  margin-top: 8px;
+  width: 100%;
+}
+
 .scenario-option-card strong,
 .scenario-option-card span {
   display: block;

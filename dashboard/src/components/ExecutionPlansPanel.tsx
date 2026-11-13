@@ -17,10 +17,15 @@ import {
   ExecutionPlanEntry,
   ExecutionPlanRun,
   ExecutionPlanRunResponse,
-  RuntimeSettingsOverride,
   ScenarioDataPoolBinding,
 } from '../types'
-import { hasRuntimeSettingsValues } from './newTestRunModel'
+import { useSystemApi } from '../hooks/api/useSystemApi'
+import type { PartialRuntimeSettingsOverride, ScenarioRuntimeSettingsDraft } from '../types/runtimeSettings'
+import type { ScriptConfig } from '../types/scripts'
+import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
+import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
+import { isPartialRuntimeDraft, legacyRuntimeOverrideFields, runtimeOverrideFieldPaths, sameRuntimeValue } from './runtimeSettingsModel'
 import type { ExecutionPlanListItem, ExecutionPlanOverlap, ExecutionPlanOverlapPolicy, ExecutionPlanRunEntry, ExecutionPlanRunEntryView, ExecutionPlanRunView } from '../types/executionPlans'
 import {
   OVERLAP_POLICY_OPTIONS,
@@ -50,6 +55,88 @@ import PlanEntryDataNote from './PlanEntryDataNote'
 import { liveBindingSummary } from './scenarioDataBindingModel'
 import RowActions from './ux/RowActions'
 import { scenarioNameCounts, scenarioNameKey } from './scenarioNames'
+import { planEntryRuntimeSecretError } from './executionPlanRuntimeSecrets'
+
+/** Every protocol family with protocol-gated runtime sections: a plan entry's
+ *  overrides apply to every group of the scenario it runs. */
+const PLAN_ENTRY_RUNTIME_PROTOCOLS = ['http', 'browser', 'java_vuser', 'websocket']
+
+/** The paths an entry's stored row overrides, for its badge. */
+function planEntryOverridePaths(overrides?: PartialRuntimeSettingsOverride): string[] {
+  if (!overrides) return []
+  return isPartialRuntimeDraft(overrides) ? runtimeOverrideFieldPaths(overrides) : legacyRuntimeOverrideFields(overrides)
+}
+
+/** A stored entry row is kept as saved unless the user changes it; `{}` included. */
+function hasPlanEntryRuntimeOverrides(overrides?: PartialRuntimeSettingsOverride | null): overrides is PartialRuntimeSettingsOverride {
+  return overrides !== undefined && overrides !== null
+}
+
+/**
+ * Edits one plan entry's runtime_overrides with the shared runtime settings editor.
+ * The entry's row becomes the run's test-level runtime row (buildPlanEntryCreateRequest),
+ * so edits are written as override paths through the runtime settings model. Applying
+ * without a change keeps the stored row exactly as saved.
+ */
+function PlanEntryRuntimeDialog({ entryLabel, value, onApply, onClose }: {
+  entryLabel: string
+  value?: PartialRuntimeSettingsOverride
+  onApply: (next: PartialRuntimeSettingsOverride | undefined) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const { getConfigDefaults } = useSystemApi()
+  const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>()
+  const [draft, setDraft] = useState<ScenarioRuntimeSettingsDraft | undefined>(() => (value ? buildRuntimeSettingsDraft(value) : undefined))
+  const [touched, setTouched] = useState(false)
+  const [error, setError] = useState('')
+  useModalDialog({ dialogRef, onClose })
+  useEffect(() => {
+    let cancelled = false
+    getConfigDefaults().then(res => { if (!cancelled) setEngineDefaults(res.config) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [getConfigDefaults])
+  const apply = () => {
+    if (!touched) { onClose(); return }
+    const payload = draft ? buildRuntimeSettingsPayload(draft) as PartialRuntimeSettingsOverride | undefined : undefined
+    // An edit undone back to the stored row keeps the row byte-for-byte as saved.
+    const baseline = value ? buildRuntimeSettingsPayload(buildRuntimeSettingsDraft(value)) : undefined
+    if (sameRuntimeValue(payload ?? null, baseline ?? null)) { onClose(); return }
+    const secretError = planEntryRuntimeSecretError(payload)
+    if (secretError) { setError(secretError); return }
+    onApply(payload && Object.keys(payload).length > 0 ? payload : undefined)
+  }
+  return (
+    <DialogLayer><div className="pp-modal-overlay" {...dialogBackdropProps(onClose)}>
+      <div ref={dialogRef} className="pp-modal pp-modal-wide" role="dialog" aria-modal="true" aria-labelledby="execution-plan-entry-runtime-title" data-testid="plan-entry-runtime-dialog">
+        <div className="pp-modal-header">
+          <h3 id="execution-plan-entry-runtime-title">Runtime settings · {entryLabel}</h3>
+        </div>
+        <div className="pp-modal-form">
+          <RuntimeSettingsGroupEditor
+            title="Entry runtime overrides"
+            description="These overrides become the run's runtime defaults for this entry and replace the scenario's own runtime defaults. Fields left unset use each group's overrides and script settings."
+            overrideLabel="Entry override"
+            hideApplyPanel
+            groups={[{ name: 'Entry overrides', scriptId: 'plan-entry-overrides' }]}
+            focusedIndex={0}
+            onFocusChange={() => {}}
+            overrides={[draft]}
+            engineDefaults={engineDefaults}
+            onChange={(_, next) => { setTouched(true); setError(''); setDraft(next) }}
+            onApplyToGroups={() => {}}
+            applicableProtocols={PLAN_ENTRY_RUNTIME_PROTOCOLS}
+          />
+        </div>
+        {error && <div className="pp-error" role="alert">{error}</div>}
+        <div className="pp-modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={apply}>Apply to entry</button>
+        </div>
+      </div>
+    </div></DialogLayer>
+  )
+}
 
 interface Props {
   projectId?: string
@@ -73,7 +160,7 @@ type EntryDraft = {
   failure_policy: string
   timeslot_id: string
   data_pools: DataPoolDraft[]
-  runtime_overrides?: RuntimeSettingsOverride
+  runtime_overrides?: PartialRuntimeSettingsOverride
 }
 
 type PlanDraft = {
@@ -229,6 +316,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState<PlanDraft | null>(null)
+  const [runtimeEntryIndex, setRuntimeEntryIndex] = useState<number | null>(null)
   // Timeslots and data pools are chosen by name, not typed as IDs. When they
   // cannot be listed, the editor falls back to ID fields.
   const { listTimeslots } = useCapacityApi()
@@ -283,6 +371,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
 	const discardDraft = useCallback(() => {
 		setDraft(null)
 		setError(null)
+		setRuntimeEntryIndex(null)
 	}, [])
 	const closeDraft = useCallback(() => runGuarded(discardDraft), [discardDraft, runGuarded])
   const closeRunResult = useCallback(() => setRunResult(null), [])
@@ -523,7 +612,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
           failure_policy: e.failure_policy,
           timeslot_id: e.timeslot_id.trim() || undefined,
           data_pools: pools.length > 0 ? pools : undefined,
-          ...(hasRuntimeSettingsValues(e.runtime_overrides)
+          ...(hasPlanEntryRuntimeOverrides(e.runtime_overrides)
             ? { runtime_overrides: structuredClone(e.runtime_overrides) }
             : {}),
         }
@@ -687,7 +776,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
               failure_policy: e.failure_policy || 'halt',
               timeslot_id: e.timeslot_id || '',
               data_pools: (e.data_pools || []).map(dp => ({ pool_id: dp.pool_id, alias: dp.alias, ...(dp.access_mode === 'live' ? { binding: dp } : {}) })),
-              ...(hasRuntimeSettingsValues(e.runtime_overrides)
+              ...(hasPlanEntryRuntimeOverrides(e.runtime_overrides)
                 ? { runtime_overrides: structuredClone(e.runtime_overrides) }
                 : {}),
             }))
@@ -891,10 +980,10 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                         <span>
                           {entry.enabled === false ? 'turned off' : FAILURE_POLICY_OPTIONS.find(option => option.value === (entry.failure_policy || 'halt'))?.summary}
                         </span>
-                        {hasRuntimeSettingsValues(entry.runtime_overrides) && (
+                        {hasPlanEntryRuntimeOverrides(entry.runtime_overrides) && (
                           <>
                             {' · '}
-                            <span className="pp-pill pp-pill-label" data-testid={`plan-entry-${entry.order}-runtime-overrides-badge`}>
+                            <span className="pp-pill pp-pill-label" title={planEntryOverridePaths(entry.runtime_overrides).join(', ') || undefined} data-testid={`plan-entry-${entry.order}-runtime-overrides-badge`}>
                               Runtime overrides
                             </span>
                           </>
@@ -1073,11 +1162,20 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
                       </div>
                       </div>
                       <div className="pp-entry-advanced">
-                        {hasRuntimeSettingsValues(entry.runtime_overrides) && (
-                          <span className="pp-pill pp-pill-label" title="Runtime overrides configured via API or MCP are preserved when saving" data-testid={`entry-${index + 1}-runtime-overrides-badge`}>
+                        {hasPlanEntryRuntimeOverrides(entry.runtime_overrides) && (
+                          <span className="pp-pill pp-pill-label" title={planEntryOverridePaths(entry.runtime_overrides).join(', ') || 'Runtime overrides'} data-testid={`entry-${index + 1}-runtime-overrides-badge`}>
                             Runtime overrides
                           </span>
                         )}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          aria-label={`Edit entry ${index + 1} runtime settings`}
+                          data-testid={`entry-${index + 1}-runtime-settings`}
+                          onClick={() => setRuntimeEntryIndex(index)}
+                        >
+                          Runtime settings
+                        </button>
                         <label className="pp-entry-advanced-field">
                           <span>Timeslot</span>
                           {planReferences.timeslots ? (
@@ -1147,6 +1245,19 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, canA
             </div>
           </div>
         </div></DialogLayer>
+      )}
+      {draft && runtimeEntryIndex !== null && draft.entries[runtimeEntryIndex] && (
+        <PlanEntryRuntimeDialog
+          key={runtimeEntryIndex}
+          entryLabel={draft.entries[runtimeEntryIndex].scenario_id ? entryScenarioName(draft.entries[runtimeEntryIndex]) : `Entry ${runtimeEntryIndex + 1}`}
+          value={draft.entries[runtimeEntryIndex].runtime_overrides}
+          onClose={() => setRuntimeEntryIndex(null)}
+          onApply={next => {
+            const target = runtimeEntryIndex
+            setDraft(d => (d ? { ...d, entries: d.entries.map((e, i) => (i === target ? { ...e, runtime_overrides: next } : e)) } : d))
+            setRuntimeEntryIndex(null)
+          }}
+        />
       )}
 
       {/* Run result modal */}

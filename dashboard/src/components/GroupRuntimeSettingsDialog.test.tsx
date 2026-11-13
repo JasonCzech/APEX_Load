@@ -163,6 +163,54 @@ describe('GroupRuntimeSettingsDialog', () => {
     expect(JSON.stringify(patchBody)).not.toContain('null')
   })
 
+  it('names the field when a reset changes only override_fields (an explicit clear reset to inherited)', async () => {
+    // The stored row lists log.level with no value (an explicit clear). Resetting it to
+    // inherited leaves every section value unchanged, so only the override paths differ;
+    // the PATCH must still name the field or the backend keeps the stored clear.
+    let patchBody: { runtime_settings: RuntimeSettingsOverride & RuntimeOverrideFieldsExtension; fields: string[] } | undefined
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings') && init?.method === 'PATCH') { patchBody = JSON.parse(String(init.body)); return jsonResponse({}) }
+      if (url.includes('/runtime-settings')) return jsonResponse({ test_id: 'clear-run', group: 'HTTP', group_index: 0, protocol: 'http', status: 'QUEUED', editable: true, revision: 'sha256:clear', editable_fields: ['log_level'], script_settings: { log: { level: 'extended' } }, runtime_settings: { override_fields: ['log.level'] }, effective_settings: {} })
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => root.render(<GroupRuntimeSettingsDialog testId="clear-run" groupName="HTTP" onClose={() => {}} onSaved={() => {}} />))
+    await flush()
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    const clear = dialog.querySelector('button[aria-label="Clear Log level override"]') as HTMLButtonElement
+    expect(clear).not.toBeNull()
+    await act(async () => clear.click())
+    const save = Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.includes('Save to run'))!
+    await act(async () => save.click())
+    await flush()
+    expect(dialog.textContent).not.toContain('No changes to save.')
+    expect(patchBody?.fields).toEqual(expect.arrayContaining(['log_level', 'log']))
+    expect(patchBody?.runtime_settings.override_fields ?? []).not.toContain('log.level')
+  })
+
+  it('keeps an untouched SOAP section and its masked password out of a sibling reset', async () => {
+    let patchBody: { runtime_settings: RuntimeSettingsOverride & RuntimeOverrideFieldsExtension; fields: string[] } | undefined
+    const soap = { version: '1.2', ws_security: { username_token: { username: 'svc', password: '[REDACTED]' } } }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = requestUrl(input)
+      if (url.includes('/runtime-settings') && init?.method === 'PATCH') { patchBody = JSON.parse(String(init.body)); return jsonResponse({}) }
+      if (url.includes('/runtime-settings')) return jsonResponse({ test_id: 'soap-run', group: 'SOAP', group_index: 0, protocol: 'soap', status: 'QUEUED', editable: true, revision: 'sha256:soap', editable_fields: ['pacing', 'soap'], runtime_settings: { soap, pacing: { type: 'fixed_delay', delay_ms: 500 } }, effective_settings: {} })
+      if (url.includes('/dsl/config-defaults')) return jsonResponse({ config: {} })
+      return jsonResponse({})
+    })
+    await act(async () => root.render(<GroupRuntimeSettingsDialog testId="soap-run" groupName="SOAP" onClose={() => {}} onSaved={() => {}} />))
+    await flush()
+    const dialog = document.querySelector('.group-run-settings-dialog') as HTMLElement
+    await act(async () => (dialog.querySelector('button[aria-label="Clear Pacing override"]') as HTMLButtonElement).click())
+    await act(async () => Array.from(dialog.querySelectorAll('button')).find(button => button.textContent?.includes('Save to run'))!.click())
+    await flush()
+    expect(patchBody?.fields).toEqual(['pacing'])
+    // The section rides along unchanged (masked sentinel preserved) and stays listed.
+    expect(patchBody?.runtime_settings.soap).toEqual(soap)
+    expect(patchBody?.runtime_settings.override_fields).toContain('soap')
+  })
+
   it('renders the editable group editor for a queued run and skips saving when nothing changed', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const url = requestUrl(input)
@@ -601,7 +649,7 @@ describe('GroupRuntimeSettingsDialog', () => {
           editable: false, revision: 'sha256:v1-empty', editable_reason: 'run is RUNNING', editable_fields: [],
           runtime_settings: { pacing: {}, error_handling: {} },
           test_runtime_settings: { think_time: {} },
-          script_settings: { pacing: { type: 'fixed_delay', delay_ms: 100 }, think_time: { type: 'random', mean_ms: 100 }, error_handling: { snapshot_on_error: true } },
+          script_settings: { pacing: { type: 'fixed_delay', delay_ms: 100 }, think_time: { type: 'random', mean_ms: 100 }, error_handling: { snapshot_on_error: true }, log: { level: 'extended' } },
           effective_settings: {},
         })
       }
@@ -615,8 +663,13 @@ describe('GroupRuntimeSettingsDialog', () => {
     const rows = Array.from(document.querySelectorAll('.group-run-settings-summary-row'))
     const source = (label: string) => rows.find(row => row.querySelector('td')?.textContent === label)?.querySelector('.group-run-settings-source')?.textContent
     expect(source('Pacing')).toBe('Group override')
+    // The read-only table uses the editor's provenance labels and badges.
+    expect(source('Think time')).toBe('Scenario default')
+    expect(rows.find(row => row.querySelector('td')?.textContent === 'Pacing')?.querySelector('.runtime-source-badge.source-group')).not.toBeNull()
+    expect(source('Base URL')).toBe('Engine default')
     expect(source('Error handling')).toBe('Group override')
     expect(source('Think time')).toBe('Scenario default')
+    expect(source('Logging')).toBe('Script default')
   })
 
   it('bounds the imported-source panel to the section cap with an overflow note', async () => {
