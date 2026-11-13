@@ -995,7 +995,7 @@ func normalizeOneRuntimeOverrideField(raw string) (string, error) {
 		if seg == "" {
 			return "", fmt.Errorf("unknown runtime override field %q", raw)
 		}
-		for currentType.Kind() == reflect.Ptr {
+		for currentType.Kind() == reflect.Pointer {
 			currentType = currentType.Elem()
 		}
 		if currentType.Kind() != reflect.Struct {
@@ -1008,7 +1008,7 @@ func normalizeOneRuntimeOverrideField(raw string) (string, error) {
 		tagName := jsonTagName(field)
 		canonicalSegments = append(canonicalSegments, tagName)
 		fieldType := field.Type
-		for fieldType.Kind() == reflect.Ptr {
+		for fieldType.Kind() == reflect.Pointer {
 			fieldType = fieldType.Elem()
 		}
 		if i == len(segments)-1 {
@@ -1325,13 +1325,13 @@ func applyConfigOverrideField(dstCfg, srcCfg *dsl.ScriptConfig, canonicalPath st
 
 	for i := 0; i < len(segments); i++ {
 		seg := segments[i]
-		for dstVal.Kind() == reflect.Ptr {
+		for dstVal.Kind() == reflect.Pointer {
 			if dstVal.IsNil() {
 				dstVal.Set(reflect.New(dstVal.Type().Elem()))
 			}
 			dstVal = dstVal.Elem()
 		}
-		for srcVal.Kind() == reflect.Ptr {
+		for srcVal.Kind() == reflect.Pointer {
 			if srcVal.IsNil() {
 				srcVal = reflect.Zero(srcVal.Type().Elem())
 			} else {
@@ -1383,7 +1383,7 @@ func deepCopyReflectValue(dst, src reflect.Value) {
 		return
 	}
 	switch src.Kind() {
-	case reflect.Ptr, reflect.Map:
+	case reflect.Pointer, reflect.Map:
 		if src.IsNil() {
 			dst.Set(reflect.Zero(dst.Type()))
 			return
