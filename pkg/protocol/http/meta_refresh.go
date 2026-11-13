@@ -144,6 +144,9 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 	next.RedactedHeaders = refreshHeaders(action.RedactedHeaders)
 	next.RedactedHeaderList = refreshHeaderList(action.RedactedHeaderList)
 	child := h.metaRefreshClient()
+	// metaRefreshClient also builds per-HTTP-version clients for ordinary
+	// requests; only this follow-up targets a URL the server named.
+	child.metaRefreshChild = true
 	child.defaultHeaders = refreshHeaders(h.defaultHeaders)
 	child.typedDefaultHeaders = refreshHeaders(h.typedDefaultHeaders)
 	child.defaultHeaderList = refreshHeaderList(h.defaultHeaderList)
@@ -169,6 +172,10 @@ func (h *HTTP) followMetaRefresh(ctx context.Context, action *protocol.Action, r
 	final, err := child.Execute(ctx, &next)
 	if err != nil {
 		return fail(err)
+	}
+	if final != nil && final.Snapshot != nil {
+		// The follow-up's URL is the one the server's page named.
+		final.Snapshot.RequestURLNotAuthored = true
 	}
 	if h.captureReplayNetwork {
 		final.NetworkEntries = append(result.NetworkEntries, final.NetworkEntries...)
@@ -263,8 +270,11 @@ func (h *HTTP) metaRefreshClient() *HTTP {
 		captureReplayNetwork:       h.captureReplayNetwork,
 		captureNetworkTrace:        h.captureNetworkTrace,
 		unredactedDebugSnapshots:   h.unredactedDebugSnapshots,
+		retainAuthoredEvidence:     h.retainAuthoredEvidence,
+		metaRefreshChild:           h.metaRefreshChild,
 		replayHAR:                  h.replayHAR,
 	}
+	child.authoredRedactor.Store(h.authoredRedactor.Load())
 	if h.resources != nil {
 		r := *h.resources
 		r.h = child

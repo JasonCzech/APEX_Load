@@ -76,7 +76,11 @@ import {
   errorHandlingSectionIsPinned,
   errorHandlingSurvivesBooleanClear,
   groupHiddenPartialTiming,
+  groupInheritedRuntimeText,
+  groupRunOverrideWithRuntimeRow,
   groupRunRuntimeIsPartial,
+  runLevelRuntimeSettings,
+  type GroupInheritableTextField,
   formatGroupPlacement,
   generatorCanRunGroup,
   getEffectiveResourceBaseline,
@@ -119,7 +123,12 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { effectiveGroupVUsers, maxVUsersForRole, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { trafficProfileMappingForGroup, trafficProfilePeak } from './trafficProfilePreviewModel'
-import { effectiveRuntimeSection, isPartialRuntimeDraft, resolveRuntimeRowsValue, runtimeRowCoversPath } from './runtimeSettingsModel'
+import { effectiveRuntimeSection, isPartialRuntimeDraft, partialRuntimeOverrideFromDraft, resolveRuntimeRowsValue, runtimeRowCoversPath, sameRuntimeValue, upgradeRuntimeDraftToPartial } from './runtimeSettingsModel'
+import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import { buildRuntimeSettingsDraft } from './scenarioDraftUtils'
+import { buildRuntimeSettingsPayload } from './scenarioPayloadUtils'
+import type { ScenarioRuntimeSettingsDraft } from '../types/runtimeSettings'
+import type { ScriptConfig } from '../types/scripts'
 import {
   canonicalThinkTimeType,
   thinkTimeConfigForType,
@@ -236,6 +245,90 @@ type GroupEditChanges = {
 }
 
 const formatProfileTps = (value: number | undefined) => formatUpTo(value ?? 0)
+
+/** The group dialog's text select options; the empty option is Inherit (<effective>). */
+const GROUP_TEXT_SELECT_OPTIONS: Record<GroupInheritableTextField, Array<{ value: string; label: string }>> = {
+  log_level: [
+    { value: 'disabled', label: 'Disabled' },
+    { value: 'standard', label: 'Standard' },
+    { value: 'extended', label: 'Extended' },
+  ],
+  auto_transactions: [
+    { value: 'none', label: 'None' },
+    { value: 'per_action', label: 'Per Action' },
+    { value: 'per_iteration', label: 'Per Iteration' },
+  ],
+}
+
+function groupTextInheritLabel(field: GroupInheritableTextField, inherited: string | undefined) {
+  if (!inherited) return 'Inherit (script default)'
+  return `Inherit (${GROUP_TEXT_SELECT_OPTIONS[field].find(option => option.value === inherited)?.label ?? inherited})`
+}
+
+/**
+ * The run-group dialog's full runtime settings editor: the shared group editor over the group's
+ * own row (stored group row plus this run's override), with the run-level row as its scenario
+ * layer and the group's script config. Every edit is a partial path written through the runtime
+ * settings model; Apply hands back the group's complete row, or nothing when it is unchanged.
+ */
+function RunGroupRuntimeEditorDialog({ label, protocol, groupRow, runLevelRow, scriptConfig, engineDefaults, draftScope, onApply, onClose }: {
+  label: string
+  protocol?: string
+  groupRow?: RuntimeSettingsOverride
+  runLevelRow?: RuntimeSettingsOverride
+  scriptConfig?: ScriptConfig
+  engineDefaults?: ScriptConfig
+  draftScope: string
+  onApply: (row: RuntimeSettingsOverride) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const [draft, setDraft] = useState<ScenarioRuntimeSettingsDraft | undefined>(() => (groupRow ? buildRuntimeSettingsDraft(groupRow) : undefined))
+  const [touched, setTouched] = useState(false)
+  useModalDialog({ dialogRef, onClose })
+  const apply = () => {
+    if (!touched) { onClose(); return }
+    const baseline = groupRow ? buildRuntimeSettingsPayload(buildRuntimeSettingsDraft(groupRow)) : undefined
+    const payload = draft ? buildRuntimeSettingsPayload(draft) : undefined
+    if (sameRuntimeValue(payload ?? null, baseline ?? null)) { onClose(); return }
+    // The model writes partial rows; a reset of everything leaves an explicit empty partial row.
+    const row = draft && isPartialRuntimeDraft(draft)
+      ? partialRuntimeOverrideFromDraft(draft)
+      : partialRuntimeOverrideFromDraft(upgradeRuntimeDraftToPartial(draft))
+    onApply((row ?? { override_fields: [] }) as RuntimeSettingsOverride)
+  }
+  return (
+    <DialogLayer><div className="modal-overlay" {...dialogBackdropProps(onClose)}>
+      <div ref={dialogRef} className="modal modal-wide run-group-runtime-editor-modal" role="dialog" aria-modal="true" aria-labelledby="new-test-run-group-runtime-title" data-testid="run-group-runtime-editor">
+        <div className="modal-header">
+          <h3 id="new-test-run-group-runtime-title">All runtime settings · {label}</h3>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Close</button>
+        </div>
+        <div className="new-test-default-editor">
+          <RuntimeSettingsGroupEditor
+            draftScope={draftScope}
+            title={`Run overrides · ${label}`}
+            description="Overrides for this group in this run only. Unset fields inherit the run defaults, then the script and engine defaults. The scenario is not changed."
+            hideApplyPanel
+            hideGroupSelector
+            groups={[{ name: label, scriptId: 'run-group', protocol, scriptConfig }]}
+            focusedIndex={0}
+            onFocusChange={() => {}}
+            scenarioDefault={runLevelRow}
+            engineDefaults={engineDefaults}
+            overrides={[draft]}
+            onChange={(_, next) => { setTouched(true); setDraft(next) }}
+            onApplyToGroups={() => {}}
+          />
+          <div className="modal-actions">
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn btn-primary" onClick={apply}>Apply for this run</button>
+          </div>
+        </div>
+      </div>
+    </div></DialogLayer>
+  )
+}
 
 function formatDate(value?: string) {
   return value ? new Date(value).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Never'
@@ -805,6 +898,11 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   const [editingGroupKey, setEditingGroupKey] = useState<string | null>(null)
   const [groupEditDraft, setGroupEditDraft] = useState<GroupEditDraft>(() => emptyGroupEditDraft())
   const [groupSaveNotice, setGroupSaveNotice] = useState('')
+  const [groupRuntimeEditorOpen, setGroupRuntimeEditorOpen] = useState(false)
+  // Script configs (null: could not be read) and engine defaults, so the group dialog names the
+  // value an inherit option really runs with.
+  const [groupScriptConfigs, setGroupScriptConfigs] = useState<Record<string, ScriptConfig | null>>({})
+  const [runtimeEngineDefaults, setRuntimeEngineDefaults] = useState<ScriptConfig | undefined>()
   const [showNewRelease, setShowNewRelease] = useState(false)
   const [draftEstimate, setDraftEstimate] = useState<DraftCapacityEstimate | null>(null)
   const [estimateCheckedAt, setEstimateCheckedAt] = useState('')
@@ -1286,6 +1384,29 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
     [editingGroupKey, scenario],
   )
+  useEffect(() => {
+    if (!editingGroupKey) setGroupRuntimeEditorOpen(false)
+  }, [editingGroupKey])
+  // The script behind the group being edited, read once per script for the inherit labels and the
+  // full runtime settings editor; a failed read leaves the inherit labels on the run defaults.
+  const editingGroupScriptId = editingGroup?.script_id
+  useEffect(() => {
+    const scriptId = editingGroupScriptId
+    if (!scriptId || hasOwnKey(groupScriptConfigs, scriptId) || typeof api.getScript !== 'function') return undefined
+    let cancelled = false
+    void Promise.resolve(api.getScript(scriptId))
+      .then(full => { if (!cancelled) setGroupScriptConfigs(current => ({ ...current, [scriptId]: full?.script?.config ?? null })) })
+      .catch(() => { if (!cancelled) setGroupScriptConfigs(current => ({ ...current, [scriptId]: null })) })
+    return () => { cancelled = true }
+  }, [api, editingGroupScriptId, groupScriptConfigs])
+  useEffect(() => {
+    if (!editingGroupKey || runtimeEngineDefaults || typeof api.getConfigDefaults !== 'function') return undefined
+    let cancelled = false
+    void Promise.resolve(api.getConfigDefaults())
+      .then(response => { if (!cancelled && response?.config) setRuntimeEngineDefaults(response.config) })
+      .catch(() => { /* Engine defaults only refine the inherit labels. */ })
+    return () => { cancelled = true }
+  }, [api, editingGroupKey, runtimeEngineDefaults])
   const editingGroupStagePeak = useMemo(
     () => editingGroup ? stagedGroupPeakVUsers(editingGroup) : undefined,
     [editingGroup],
@@ -1371,6 +1492,20 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     }
     return { label: 'Scenario default (enabled)', disabled: false }
   }, [groupErrorHandlingInherit, runDefaultOverrides, scenario])
+  const groupTextInherit = useMemo(() => {
+    const label = (field: GroupInheritableTextField) => groupTextInheritLabel(field, editingGroup && scenario
+      ? groupInheritedRuntimeText(
+          field,
+          editingGroup,
+          scenario,
+          runDefaultOverrides,
+          editingGroupKey ? groupRunOverrides[editingGroupKey] : undefined,
+          groupScriptConfigs[editingGroup.script_id] ?? undefined,
+          runtimeEngineDefaults,
+        )
+      : undefined)
+    return { log_level: label('log_level'), auto_transactions: label('auto_transactions') }
+  }, [editingGroup, editingGroupKey, groupRunOverrides, groupScriptConfigs, runDefaultOverrides, runtimeEngineDefaults, scenario])
   const hasGroupEditChanges = useMemo(
     () => Object.values(groupEditChanges).some(Boolean),
     [groupEditChanges],
@@ -2591,7 +2726,12 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     // leaves it lists, so the v1 path below — which copies the inherited section into the group
     // and sends it as a whole-section row — would replace the script's own run_logic, log,
     // browser and error handling with those few leaves.
-    const partialGroupRuntime = groupRunRuntimeIsPartial(editingGroup, scenario, runDefaultOverridesRef.current, existingOverride)
+    // An inherit pick on a text select resets one leaf. A v1 group row cannot express that (its
+    // log or run_logic section applies whole, so the run defaults could never reach the leaf), so
+    // the save is written as partial paths, upgrading the v1 row without changing anything else.
+    const inheritReset = (groupEditChanges.log_level && !groupEditDraft.log_level.trim())
+      || (groupEditChanges.auto_transactions && !groupEditDraft.auto_transactions.trim())
+    const partialGroupRuntime = inheritReset || groupRunRuntimeIsPartial(editingGroup, scenario, runDefaultOverridesRef.current, existingOverride)
     if (partialGroupRuntime) {
       const edits = groupRuntimePathEdits(groupEditDraft, groupEditChanges)
       if (edits.length > 0) {
@@ -2726,6 +2866,18 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     setGroupSaveNotice('Saved script settings for this run only. Scenario defaults were not changed.')
     setEditingGroupKey(null)
     return true
+  }
+
+  const applyFullGroupRuntime = (row: RuntimeSettingsOverride) => {
+    if (!editingGroupKey || !editingGroup || !scenario) return
+    const nextOverride = groupRunOverrideWithRuntimeRow(groupRunOverridesRef.current[editingGroupKey], row)
+    const next = { ...groupRunOverridesRef.current, [editingGroupKey]: nextOverride }
+    groupRunOverridesRef.current = next
+    setGroupRunOverrides(next)
+    // The quick controls re-read the saved row, so they show what the full editor applied.
+    setGroupEditDraft(buildGroupEditDraft(editingGroup, scenario, runDefaultOverridesRef.current, nextOverride))
+    setGroupSaveNotice('Saved script settings for this run only. Scenario defaults were not changed.')
+    setGroupRuntimeEditorOpen(false)
   }
 
   savePendingRunEditorsRef.current = () => {
@@ -4112,6 +4264,22 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                 </section>
                 <section>
                   <h4>Runtime Settings</h4>
+                  <div className="new-test-group-full-runtime">
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      data-testid="run-group-open-full-runtime"
+                      disabled={hasGroupEditChanges}
+                      onClick={() => setGroupRuntimeEditorOpen(true)}
+                    >
+                      All runtime settings
+                    </button>
+                    <span className="new-test-inline-note">
+                      {hasGroupEditChanges
+                        ? 'Save or cancel the changes in this dialog first.'
+                        : 'HTTP, SOAP, browser, error handling and every other runtime setting for this group, for this run only.'}
+                    </span>
+                  </div>
                   <div className="new-test-default-editor-grid">
                     <label className={changedFieldClass(groupEditChanges.iterations)}>
                       <span>Iterations <ChangedBadge changed={groupEditChanges.iterations} /></span>
@@ -4120,17 +4288,17 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     <label className={changedFieldClass(groupEditChanges.log_level)}>
                       <span>Log level <ChangedBadge changed={groupEditChanges.log_level} /></span>
                       <select className="settings-input" value={groupEditDraft.log_level} onChange={event => setGroupEditDraft(prev => ({ ...prev, log_level: event.target.value }))}>
-                        <option value="disabled">Disabled</option>
-                        <option value="standard">Standard</option>
-                        <option value="extended">Extended</option>
+                        <option value="">{groupTextInherit.log_level}</option>
+                        {groupEditDraft.log_level && !GROUP_TEXT_SELECT_OPTIONS.log_level.some(option => option.value === groupEditDraft.log_level) && <option value={groupEditDraft.log_level}>{groupEditDraft.log_level}</option>}
+                        {GROUP_TEXT_SELECT_OPTIONS.log_level.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
                     <label className={changedFieldClass(groupEditChanges.auto_transactions)}>
                       <span>Auto transactions <ChangedBadge changed={groupEditChanges.auto_transactions} /></span>
                       <select className="settings-input" value={groupEditDraft.auto_transactions} onChange={event => setGroupEditDraft(prev => ({ ...prev, auto_transactions: event.target.value }))}>
-                        <option value="none">None</option>
-                        <option value="per_action">Per Action</option>
-                        <option value="per_iteration">Per Iteration</option>
+                        <option value="">{groupTextInherit.auto_transactions}</option>
+                        {groupEditDraft.auto_transactions && !GROUP_TEXT_SELECT_OPTIONS.auto_transactions.some(option => option.value === groupEditDraft.auto_transactions) && <option value={groupEditDraft.auto_transactions}>{groupEditDraft.auto_transactions}</option>}
+                        {GROUP_TEXT_SELECT_OPTIONS.auto_transactions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
                     <label className={changedFieldClass(groupEditChanges.pacing)}>
@@ -4385,6 +4553,19 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           </div>
         </div></DialogLayer>,
         document.body,
+      )}
+      {editingGroupKey && editingGroup && scenario && groupRuntimeEditorOpen && (
+        <RunGroupRuntimeEditorDialog
+          label={editingGroup.name || editingGroup.script_name || 'Script group'}
+          protocol={editingGroup.protocol}
+          groupRow={mergeRuntimeSettingsForRun(editingGroup.runtime_settings, groupRunOverrides[editingGroupKey]?.runtime_settings)}
+          runLevelRow={runLevelRuntimeSettings(scenario, runDefaultOverrides)}
+          scriptConfig={groupScriptConfigs[editingGroup.script_id] ?? undefined}
+          engineDefaults={runtimeEngineDefaults}
+          draftScope={`${activeProjectID}:${scenarioId}:${editingGroupKey}:full-runtime`}
+          onApply={applyFullGroupRuntime}
+          onClose={() => setGroupRuntimeEditorOpen(false)}
+        />
       )}
 
     </div>

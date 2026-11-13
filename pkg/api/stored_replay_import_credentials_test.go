@@ -441,9 +441,12 @@ func TestUnmaskedStoredImportedScriptDebugAllowsLiteralEditsAndRedactsSessionOut
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{"imported-unmasked-password", "added-literal-debug-secret"} {
-		if strings.Contains(string(encoded), secret) {
-			t.Fatalf("debug session leaked %q: %s", secret, encoded)
+	// The interactive debugger is unredacted (PR #311): script literals,
+	// imported or newly typed, stay readable; only secret-store values are
+	// masked there.
+	for _, literal := range []string{"imported-unmasked-password", "added-literal-debug-secret"} {
+		if !strings.Contains(string(encoded), literal) {
+			t.Fatalf("unredacted debug session hid script literal %q: %s", literal, encoded)
 		}
 	}
 }

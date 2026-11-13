@@ -113,3 +113,11 @@
 /* A launch blocker the user can fix here takes them to its field. */
 .new-test-blocker-link { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .new-test-blocker-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.new-test-group-full-runtime {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}

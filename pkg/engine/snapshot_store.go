@@ -44,7 +44,7 @@ func boundedErrorSnapshot(snapshot *protocol.ErrorSnapshot, maxBytes int) (*prot
 	}
 	remaining := maxBytes - snapshotBaseOverhead
 	largeFieldLimit := max(1, maxBytes/2)
-	out := &protocol.ErrorSnapshot{ResponseStatus: snapshot.ResponseStatus, ScreenshotOmitted: snapshot.ScreenshotOmitted, RequestWireHeadersUnavailable: snapshot.RequestWireHeadersUnavailable}
+	out := &protocol.ErrorSnapshot{ResponseStatus: snapshot.ResponseStatus, ScreenshotOmitted: snapshot.ScreenshotOmitted, RequestWireHeadersUnavailable: snapshot.RequestWireHeadersUnavailable, AuthoredRequestRetained: snapshot.AuthoredRequestRetained, RequestURLNotAuthored: snapshot.RequestURLNotAuthored}
 	switch snapshot.ResponseBodyState {
 	case "captured", "partial", "empty", "redacted", "not_captured", "expired":
 		out.ResponseBodyState = snapshot.ResponseBodyState
@@ -196,6 +196,13 @@ func takeSnapshotNetworkEntries(entries []protocol.NetworkEntry, remaining *int)
 			RequestBodyEncoding:  takeSnapshotString(entry.RequestBodyEncoding, remaining, 64),
 			RequestBodyTruncated: entry.RequestBodyTruncated,
 			ResponseHeaders:      takeSnapshotStringMap(entry.ResponseHeaders, remaining),
+			// Bounding keeps the engine's authored-request marker so later
+			// sanitizers do not re-mask what the script authored, and the
+			// in-process origin flags so a later engine re-scrub (the replay
+			// event) applies the same authored/server-sourced split.
+			AuthoredRequestRetained:  entry.AuthoredRequestRetained,
+			ScriptRequest:            entry.ScriptRequest,
+			RequestCookieNotAuthored: entry.RequestCookieNotAuthored,
 		})
 	}
 	return out

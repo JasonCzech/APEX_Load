@@ -1265,6 +1265,31 @@ describe('TestHub', () => {
     expect(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')?.value).toBe('Edited before configuring')
   })
 
+  it('offers inherit on the Advanced error-handling defaults and lists only the flags set (tri-state)', async () => {
+    await act(async () => root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} initialView="builder" />))
+    await flushPromises()
+    await chooseLibraryScriptForGroup()
+    await act(async () => setInputValue(container.querySelector<HTMLInputElement>('input[placeholder="Scenario name"]')!, 'Tri-state probe'))
+    await clickWizardStep('Run settings')
+    await clickScenarioSettingsSection('Advanced settings')
+    const assurance = () => container.querySelector('[data-testid="pre-run-assurance"]')!
+    const flagSelect = (label: string) => assurance().querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!
+    expect(flagSelect('Continue on action errors').value).toBe('')
+    expect(flagSelect('Continue on action errors').options[0].textContent).toBe('Inherit (on unless a script disables it)')
+    expect(flagSelect('Snapshot on error').value).toBe('')
+    await act(async () => setSelectValue(flagSelect('Continue on action errors'), 'false'))
+    await act(async () => setSelectValue(flagSelect('Snapshot on error'), 'true'))
+    expect(flagSelect('Snapshot on error').closest('.scenario-option-card')?.classList.contains('selected')).toBe(true)
+    // Back to inherit: the flag leaves the row instead of being pinned false.
+    await act(async () => setSelectValue(flagSelect('Snapshot on error'), ''))
+    expect(flagSelect('Snapshot on error').value).toBe('')
+    await clickButton('Save scenario')
+    await flushPromises()
+    const payload = apiMock.createScenario.mock.calls[0][0] as { runtime_settings?: { error_handling?: Record<string, unknown>; override_fields?: string[] } }
+    expect(payload.runtime_settings?.override_fields).toEqual(['error_handling.continue_on_error'])
+    expect(payload.runtime_settings?.error_handling).toEqual({ continue_on_error: false })
+  })
+
   it('saves the joint evidence its runs capture, grouped by a promoted property category (NA-B)', async () => {
     apiMock.listScripts.mockResolvedValue({
       scripts: [{ id: 'script-1', name: 'Checkout Flow', protocol: 'http', version: '1.0.0', created_at: '2026-05-12T00:00:00Z',

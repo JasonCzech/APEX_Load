@@ -28,10 +28,21 @@ type errorLogBuffer struct {
 	classification *RedactionConfig
 	omittedRecords int
 }
+
+// authoredLogText is a log attribute value holding script-authored REQUEST
+// content (the parameter_substitution target and request body). The VUser log
+// handlers re-scrub it with scrubAuthoredTextWithConfig instead of the full
+// scrubber, so it follows config.log.redact_run_evidence like the other
+// request-side surfaces. It deliberately does not implement slog.LogValuer:
+// Resolve must keep the type for the handlers to see it.
+type authoredLogText string
+
 type errorLogHandler struct {
-	next           slog.Handler
-	buffer         *errorLogBuffer
-	redact         func(string) string
+	next   slog.Handler
+	buffer *errorLogBuffer
+	redact func(string) string
+	// redactAuthored scrubs an authoredLogText value; nil uses redact.
+	redactAuthored func(string) string
 	unavailable    func() bool
 	classification func() *RedactionConfig
 	attrs          []slog.Attr
@@ -44,6 +55,12 @@ func (b *errorLogBuffer) clearLocked() {
 	b.records = nil
 }
 func (b *errorLogBuffer) close() { b.mu.Lock(); defer b.mu.Unlock(); b.clearLocked() }
+func (h *errorLogHandler) redactAuthoredText(value string) string {
+	if h.redactAuthored != nil {
+		return h.redactAuthored(value)
+	}
+	return h.redact(value)
+}
 func (h *errorLogHandler) Enabled(_ context.Context, level slog.Level) bool {
 	return level >= slog.LevelInfo
 }
@@ -70,7 +87,17 @@ func (h *errorLogHandler) Handle(ctx context.Context, r slog.Record) error {
 		if len(key) > 256 {
 			key = "omitted_detail"
 		}
-		value := fmt.Sprint(a.Value.Resolve().Any())
+		resolved := a.Value.Resolve().Any()
+		if authored, ok := resolved.(authoredLogText); ok {
+			value := h.redactAuthoredText(string(authored))
+			if len(value) > 4096 {
+				value = "log detail omitted by retention limit"
+			}
+			clean.AddAttrs(slog.Any(strings.Clone(key), authoredLogText(strings.Clone(value))))
+			size += len(key) + len(value) + 32
+			return
+		}
+		value := fmt.Sprint(resolved)
 		value = h.redact(value)
 		if len(value) > 4096 {
 			value = "log detail omitted by retention limit"
@@ -108,6 +135,10 @@ func (h *errorLogHandler) Handle(ctx context.Context, r slog.Record) error {
 			// Only records from the current classification epoch remain here.
 			projected := slog.NewRecord(entry.record.Time, entry.record.Level, h.redact(entry.record.Message), entry.record.PC)
 			entry.record.Attrs(func(attr slog.Attr) bool {
+				if authored, ok := attr.Value.Any().(authoredLogText); ok {
+					projected.AddAttrs(slog.String(h.redact(attr.Key), h.redactAuthoredText(string(authored))))
+					return true
+				}
 				projected.AddAttrs(slog.String(h.redact(attr.Key), h.redact(attr.Value.String())))
 				return true
 			})
@@ -167,7 +198,7 @@ func (vu *VUser) errorOnlyLogger(cfg dsl.LogConfig) *slog.Logger {
 		}
 		vu.errorLogs = &errorLogBuffer{limit: limit}
 	}
-	return slog.New(&errorLogHandler{next: slog.Default().Handler(), buffer: vu.errorLogs, unavailable: func() bool { return vu.resultPublicationUnavailable() }, classification: vu.resultPublicationRedactionConfig, redact: func(s string) string { return scrubSensitiveTextWithConfig(s, vu.resultPublicationRedactionConfig()) }}).With("vuser", vu.ID, "group", vu.Group)
+	return slog.New(&errorLogHandler{next: slog.Default().Handler(), buffer: vu.errorLogs, unavailable: func() bool { return vu.resultPublicationUnavailable() }, classification: vu.resultPublicationRedactionConfig, redact: func(s string) string { return scrubSensitiveTextWithConfig(s, vu.resultPublicationRedactionConfig()) }, redactAuthored: func(s string) string { return scrubAuthoredTextWithConfig(s, vu.resultPublicationRedactionConfig()) }}).With("vuser", vu.ID, "group", vu.Group)
 }
 
 func (vu *VUser) closeErrorLogs() {
@@ -249,6 +280,10 @@ func (h *runtimePublicationLogHandler) Handle(ctx context.Context, record slog.R
 			}
 			attr.Value = slog.GroupValue(out...)
 		case slog.KindAny:
+			if authored, ok := attr.Value.Any().(authoredLogText); ok {
+				attr.Value = slog.StringValue(cloneBoundedResultString(scrubAuthoredTextWithConfig(string(authored), config), 4096))
+				break
+			}
 			attr.Value = slog.StringValue(projectText(fmt.Sprint(attr.Value.Any()), 4096))
 		}
 		return attr

@@ -45,26 +45,63 @@ type JavaHTTP struct {
 	http                     *httpproto.HTTP
 	redactionMu              sync.RWMutex
 	redactor                 protocol.TextRedactor
-	secretActive             func() bool
-	baseURL                  string
-	codec                    string
-	helperMode               string
-	contentType              string
-	accept                   string
-	bodyEncoding             string
-	preserveBinaryResult     bool
-	objectSchema             string
-	requestMapping           map[string]string
-	responseMapping          map[string]string
-	footprintReq             *javarunner.FootprintRequest
+	authoredRedactor         protocol.TextRedactor
+	// retainAuthoredEvidence is the inverse of the script's
+	// config.log.redact_run_evidence (protocol.RedactsAuthoredEvidence).
+	retainAuthoredEvidence bool
+	secretActive           func() bool
+	baseURL                string
+	codec                  string
+	helperMode             string
+	contentType            string
+	accept                 string
+	bodyEncoding           string
+	preserveBinaryResult   bool
+	objectSchema           string
+	requestMapping         map[string]string
+	responseMapping        map[string]string
+	footprintReq           *javarunner.FootprintRequest
 }
 
 var (
-	_ protocol.CookieController            = (*JavaHTTP)(nil)
-	_ protocol.CacheController             = (*JavaHTTP)(nil)
-	_ protocol.RuntimeTextRedactorSetter   = (*JavaHTTP)(nil)
-	_ protocol.RuntimeSecretActivitySetter = (*JavaHTTP)(nil)
+	_ protocol.CookieController                  = (*JavaHTTP)(nil)
+	_ protocol.CacheController                   = (*JavaHTTP)(nil)
+	_ protocol.RuntimeTextRedactorSetter         = (*JavaHTTP)(nil)
+	_ protocol.RuntimeAuthoredTextRedactorSetter = (*JavaHTTP)(nil)
+	_ protocol.RuntimeSecretActivitySetter       = (*JavaHTTP)(nil)
 )
+
+func (j *JavaHTTP) SetRuntimeAuthoredTextRedactor(redactor protocol.TextRedactor) {
+	j.redactionMu.Lock()
+	j.authoredRedactor = redactor
+	j.redactionMu.Unlock()
+	if j.http != nil {
+		j.http.SetRuntimeAuthoredTextRedactor(redactor)
+	}
+}
+
+// requestRedactor returns the redactor for script-authored REQUEST content: the
+// runtime redactor with config.log.redact_run_evidence on, otherwise the
+// exact-match-only authored redactor (nil when none is bound).
+func (j *JavaHTTP) requestRedactor() protocol.TextRedactor {
+	if !j.retainAuthoredEvidence {
+		return j.currentRedactor()
+	}
+	j.redactionMu.RLock()
+	redactor := j.authoredRedactor
+	j.redactionMu.RUnlock()
+	return redactor
+}
+
+// requestPayloadContainsSecret decides whether an opaque authored request
+// payload is withheld. With config.log.redact_run_evidence off only exact
+// runtime values count; the body-shape heuristic applies only when it is on.
+func (j *JavaHTTP) requestPayloadContainsSecret(raw []byte, encoded string) bool {
+	if !j.retainAuthoredEvidence {
+		return j.payloadContainsSecret(raw, encoded, true)
+	}
+	return j.payloadContainsSecretWith(j.requestRedactor(), raw, encoded, false)
+}
 
 func (j *JavaHTTP) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
 	j.redactionMu.Lock()
@@ -109,7 +146,16 @@ func (j *JavaHTTP) payloadContainsSecret(raw []byte, encoded string, includeHeur
 	if len(raw) == 0 && strings.TrimSpace(encoded) == "" {
 		return false
 	}
-	redactor := j.currentRedactor()
+	return j.payloadContainsSecretWith(j.currentRedactor(), raw, encoded, includeHeuristic)
+}
+
+func (j *JavaHTTP) payloadContainsSecretWith(redactor protocol.TextRedactor, raw []byte, encoded string, includeHeuristic bool) bool {
+	if j.unredactedDebugSnapshots {
+		return false
+	}
+	if len(raw) == 0 && strings.TrimSpace(encoded) == "" {
+		return false
+	}
 	checkText := func(s string) bool {
 		if s == "" {
 			return false
@@ -154,6 +200,7 @@ func (j *JavaHTTP) Name() string { return "java_http" }
 
 func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 	j.unredactedDebugSnapshots, _ = config[protocol.ReplayUnredactedDebugConfigKey].(bool)
+	j.retainAuthoredEvidence = !protocol.RedactsAuthoredEvidence(config)
 	if baseURL, ok := config["base_url"].(string); ok {
 		j.baseURL = strings.TrimSpace(baseURL)
 	}
@@ -249,6 +296,10 @@ func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
 		j.footprintReq = &normalized
 	}
 	j.http = &httpproto.HTTP{}
+	j.redactionMu.RLock()
+	authoredRedactor := j.authoredRedactor
+	j.redactionMu.RUnlock()
+	j.http.SetRuntimeAuthoredTextRedactor(authoredRedactor)
 	if redactor := j.currentRedactor(); redactor != nil {
 		if setter, ok := any(j.http).(protocol.RuntimeTextRedactorSetter); ok {
 			setter.SetRuntimeTextRedactor(redactor)
@@ -444,9 +495,9 @@ func (j *JavaHTTP) Execute(ctx context.Context, action *protocol.Action) (result
 		result.ResponseBody = scrub.Redacted
 	}
 	if result != nil && result.Snapshot != nil && !j.unredactedDebugSnapshots {
-		if len(prepared.Body) > 0 && j.payloadContainsSecret(prepared.Body, string(action.Body), true) {
+		if len(prepared.Body) > 0 && j.requestPayloadContainsSecret(prepared.Body, string(action.Body)) {
 			result.Snapshot.RequestBody = scrub.Redacted
-		} else if result.Snapshot.RequestBody != "" && j.payloadContainsSecret([]byte(result.Snapshot.RequestBody), result.Snapshot.RequestBody, true) {
+		} else if result.Snapshot.RequestBody != "" && j.requestPayloadContainsSecret([]byte(result.Snapshot.RequestBody), result.Snapshot.RequestBody) {
 			result.Snapshot.RequestBody = scrub.Redacted
 		}
 		if result.Snapshot.ResponseBody != "" && (result.ResponseBody == scrub.Redacted || j.payloadContainsSecret([]byte(result.Snapshot.ResponseBody), result.Snapshot.ResponseBody, true)) {
@@ -623,14 +674,16 @@ func firstHeaderValue(headers map[string]string, key string) string {
 }
 
 func (j *JavaHTTP) buildPreflightSnapshot(action *protocol.Action) *protocol.ErrorSnapshot {
-	snap := buildJavaHTTPPreflightSnapshot(j.baseURL, action, j.unredactedDebugSnapshots)
+	snap := buildJavaHTTPPreflightSnapshotWithHeuristics(j.baseURL, action, j.unredactedDebugSnapshots, !j.retainAuthoredEvidence)
 	if snap == nil || j.unredactedDebugSnapshots {
 		return snap
 	}
-	redactor := j.currentRedactor()
+	// Everything in a preflight snapshot is the authored request, so it follows
+	// config.log.redact_run_evidence through requestRedactor.
+	redactor := j.requestRedactor()
 	if redactor != nil {
 		snap.RequestURL = redactor(snap.RequestURL)
-		if snap.RequestBody != "" && j.payloadContainsSecret([]byte(snap.RequestBody), snap.RequestBody, true) {
+		if snap.RequestBody != "" && j.requestPayloadContainsSecret([]byte(snap.RequestBody), snap.RequestBody) {
 			snap.RequestBody = scrub.Redacted
 		} else {
 			snap.RequestBody = redactor(snap.RequestBody)
@@ -639,11 +692,16 @@ func (j *JavaHTTP) buildPreflightSnapshot(action *protocol.Action) *protocol.Err
 	if len(snap.RequestHeaders) > 0 {
 		policy := scrub.Policy{}
 		for key, value := range snap.RequestHeaders {
-			if policy.SensitiveHeader(key) {
-				snap.RequestHeaders[key] = scrub.Redacted
-			} else if redactor != nil {
-				snap.RequestHeaders[key] = redactor(value)
+			scrubbed := value
+			if redactor != nil {
+				scrubbed = redactor(value)
 			}
+			if policy.SensitiveHeader(key) && (!j.retainAuthoredEvidence || scrubbed != value) {
+				// With the setting off a sensitively named header is withheld
+				// only when it carries an exact platform-managed value.
+				scrubbed = scrub.Redacted
+			}
+			snap.RequestHeaders[key] = scrubbed
 		}
 	}
 	return snap
@@ -651,6 +709,13 @@ func (j *JavaHTTP) buildPreflightSnapshot(action *protocol.Action) *protocol.Err
 
 func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action, unredactedDebug ...bool) *protocol.ErrorSnapshot {
 	raw := len(unredactedDebug) > 0 && unredactedDebug[0]
+	return buildJavaHTTPPreflightSnapshotWithHeuristics(baseURL, action, raw, true)
+}
+
+// buildJavaHTTPPreflightSnapshotWithHeuristics builds the preflight request
+// snapshot. bodyHeuristic applies the body-shape scrub to a base64 payload; it
+// follows config.log.redact_run_evidence for authored request content.
+func buildJavaHTTPPreflightSnapshotWithHeuristics(baseURL string, action *protocol.Action, raw, bodyHeuristic bool) *protocol.ErrorSnapshot {
 	if action == nil {
 		return nil
 	}
@@ -663,7 +728,7 @@ func buildJavaHTTPPreflightSnapshot(baseURL string, action *protocol.Action, unr
 	if !raw && len(action.RedactedBody) > 0 {
 		requestBody = string(action.RedactedBody)
 	}
-	if !raw && requestBody != "" {
+	if !raw && bodyHeuristic && requestBody != "" {
 		if decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(requestBody)); err == nil {
 			if scrub.BodyText(string(decoded)) != string(decoded) {
 				requestBody = scrub.Redacted

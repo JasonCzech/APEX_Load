@@ -102,10 +102,12 @@ type importedCredentialTemplatePlan struct {
 //   - The explicit operator-facing disclosure surface
 //     (ImportedCredentialValuesForDisclosure, feeding pkg/scriptdisclosure).
 //
-// The locator walk itself is a fail-closed corruption gate and is NOT part of
-// the redaction feature: a locator that no longer matches its executable field
-// returns an error, and every caller above refuses the run or the disclosure,
-// whatever the setting says.
+// The locator walk itself runs whatever the setting says and is NOT part of the
+// redaction feature. The disclosure surface treats a locator that no longer
+// matches its executable field as a fail-closed error; this runtime form
+// tolerates it and still collects the credentials that do match, because the
+// redaction setting must never fail a run. A locator naming an unsupported
+// field is still an error in both forms.
 func ImportedCredentialValues(script *dsl.Script) ([]string, error) {
 	values, _, err := inspectImportedCredentials(script)
 	return values, err

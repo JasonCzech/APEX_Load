@@ -552,6 +552,18 @@ describe('scenarioDraftUtils partial runtime overrides', () => {
     expect(promoted.groups[0].runtimeSettings?.run_logic).toEqual({ iterations: 6 })
   })
 
+  it('takes a patch that carries its own runtime row as authoritative over a runtime-owned iteration', () => {
+    const runtimeSettings = buildRuntimeSettingsDraft({ run_logic: { iterations: 10 }, override_fields: ['run_logic.iterations'] } as never)
+    const draft = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), groups: [{ ...group, iterationPayloadSource: 'runtime', runtimeSettings }] }, [])
+    const nextRow = buildRuntimeSettingsDraft({ run_logic: { iterations: 10 }, log: { level: 'debug' }, override_fields: ['run_logic.iterations', 'log.level'] } as never)
+    const applied = scenarioDraftReducer(draft, { type: 'updateGroup', index: 0, patch: { runtimeSettings: nextRow, iterations: undefined, iterationPayloadSource: 'runtime' } })
+    expect(applied.groups[0].runtimeSettings).toBe(nextRow)
+    expect(applied.groups[0].iterationPayloadSource).toBe('runtime')
+    const cleared = scenarioDraftReducer(applied, { type: 'updateGroup', index: 0, patch: { runtimeSettings: undefined, iterations: undefined, iterationPayloadSource: undefined } })
+    expect(cleared.groups[0].runtimeSettings).toBeUndefined()
+    expect(cleared.groups[0].iterationPayloadSource).toBeUndefined()
+  })
+
   it('keeps a group\'s compact iterations when a partial row lists only other run_logic fields', () => {
     const runtimeSettings = buildRuntimeSettingsDraft({ run_logic: { workload_model: 'open' }, override_fields: ['run_logic.workload_model'] } as never)
     const draft = buildInitialScenarioDraft({ ...buildInitialScenarioDraft(undefined, []), groups: [{ ...group, iterations: 3, runtimeSettings }] }, [])

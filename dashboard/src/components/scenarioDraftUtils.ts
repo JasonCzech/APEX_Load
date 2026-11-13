@@ -236,7 +236,11 @@ function updateScenarioGroup(group: ScenarioDraftGroup, patch: Partial<ScenarioD
       iterationPayloadSource: undefined,
     }
   }
-  if (!Object.prototype.hasOwnProperty.call(patch, 'iterations')) {
+  // A patch that supplies its own runtime row (the group runtime drawer) is authoritative: it has
+  // already reconciled the iteration between the row and the compact field, so rewriting the
+  // iteration into the old row would discard the new row and its edits.
+  if (!Object.prototype.hasOwnProperty.call(patch, 'iterations')
+    || Object.prototype.hasOwnProperty.call(patch, 'runtimeSettings')) {
     return { ...group, ...patch }
   }
 

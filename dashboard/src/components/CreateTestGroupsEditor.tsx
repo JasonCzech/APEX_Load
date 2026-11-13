@@ -1,6 +1,23 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { LoadStageDraft, StoredScript, ScenarioDraftGroup, ScenarioMode, SystemInventoryGenerator } from '../types'
+import type { RuntimeSettingsOverride, ScenarioRuntimeSettingsDraft } from '../types/runtimeSettings'
+import type { ScriptConfig } from '../types/scripts'
+import { useScriptApi } from '../hooks/api/useScriptApi'
+import { useSystemApi } from '../hooks/api/useSystemApi'
+import { useModalDialog } from '../hooks/useModalDialog'
+import DialogLayer from './ux/DialogLayer'
+import { dialogBackdropProps } from './dialogBackdropProps'
+import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import {
+  isFieldOverridden,
+  isPartialRuntimeDraft,
+  isRuntimeDraftEmpty,
+  overrideFieldValue,
+  runtimeDraftOwnsIterations,
+  runtimeOverrideRowFromDraft,
+  setOverrideField,
+} from './runtimeSettingsModel'
 import DurationField from './DurationField'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { clampVUsersForRole, maxVUsersForRole, stagePeakVUsers, OBSERVER_MAX_VUSERS } from './observerGroupModel'
@@ -15,6 +32,10 @@ interface Props {
   availableTargets?: string[]
   generatorInventory?: SystemInventoryGenerator[]
   availableLabels?: Record<string, string[]>
+  /** The test-wide runtime row: the scenario-default layer every group inherits. */
+  testRuntimeSettings?: ScenarioRuntimeSettingsDraft
+  /** Draft scope for the runtime editors' unsent-input recovery. */
+  draftScope?: string
 }
 
 function isBrowserScript(scripts: StoredScript[], scriptId: string): boolean {
@@ -37,6 +58,132 @@ function sameStageTargets(left?: LoadStageDraft[], right?: LoadStageDraft[]): bo
   return left.every((stage, index) => stage.target_vusers === right[index].target_vusers)
 }
 
+
+/**
+ * The group patch a runtime editor change makes. A runtime iteration override and the compact
+ * Iterations field are alternate representations of one setting, so when the edited row owns the
+ * iteration the compact field shows the row's value (and is not sent on its own); a partial row that lists run_logic without its
+ * iteration first adopts the compact value, so the row does not silently drop it.
+ */
+function groupRuntimePatch(group: ScenarioDraftGroup, next: ScenarioRuntimeSettingsDraft | undefined): Partial<ScenarioDraftGroup> {
+  let runtimeSettings = next && !isRuntimeDraftEmpty(next) ? next : undefined
+  if (runtimeSettings && isPartialRuntimeDraft(runtimeSettings) && group.iterations !== undefined
+    && runtimeSettings.run_logic !== undefined && !isFieldOverridden(runtimeSettings, 'run_logic.iterations')) {
+    runtimeSettings = setOverrideField(runtimeSettings, 'run_logic.iterations', group.iterations)
+  }
+  if (runtimeSettings && runtimeDraftOwnsIterations(runtimeSettings)) {
+    return { runtimeSettings, iterations: rowIterations(runtimeSettings), iterationPayloadSource: 'runtime' }
+  }
+  // The row no longer carries the iteration: a compact value displayed from it goes too, so a
+  // reset to inherited is not re-pinned as a top-level iteration.
+  if (group.iterationPayloadSource === 'runtime') {
+    return { runtimeSettings, iterations: undefined, iterationPayloadSource: undefined }
+  }
+  return { runtimeSettings }
+}
+
+/** The iteration count a row that owns the iteration runs (undefined: the engine default). */
+function rowIterations(runtimeSettings: ScenarioRuntimeSettingsDraft): number | undefined {
+  const value = isPartialRuntimeDraft(runtimeSettings)
+    ? overrideFieldValue(runtimeSettings, 'run_logic.iterations')
+    : runtimeSettings.run_logic !== undefined ? runtimeSettings.run_logic.iterations : runtimeSettings.iterations
+  return typeof value === 'number' ? value : undefined
+}
+
+/** A stored script carries its config only when the library returned the full definition. */
+function scriptConfigOf(script?: StoredScript): ScriptConfig | undefined {
+  return script?.script?.config
+}
+
+/**
+ * The per-group runtime settings drawer: the shared group editor mounted on one group, with the
+ * test-wide row as its scenario-default layer and the group's own script config (fetched when
+ * the library list carries only summaries) so every inherited value is the real one. Edits are
+ * partial rows written through the runtime settings model; Apply hands them to the group.
+ */
+function GroupRuntimeSettingsDrawer({ groups, scripts, index, testRuntimeSettings, draftScope, onApply, onClose }: {
+  groups: ScenarioDraftGroup[]
+  scripts: StoredScript[]
+  index: number
+  testRuntimeSettings?: ScenarioRuntimeSettingsDraft
+  draftScope?: string
+  onApply: (next: ScenarioRuntimeSettingsDraft | undefined) => void
+  onClose: () => void
+}) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const { getScript } = useScriptApi()
+  const { getConfigDefaults } = useSystemApi()
+  const group = groups[index]
+  const listed = scripts.find(script => script.id === group?.scriptId)
+  const [fetchedConfig, setFetchedConfig] = useState<{ scriptId: string; config?: ScriptConfig; failed?: boolean }>()
+  const [engineDefaults, setEngineDefaults] = useState<ScriptConfig | undefined>()
+  const [draft, setDraft] = useState<ScenarioRuntimeSettingsDraft | undefined>(group?.runtimeSettings)
+  const [touched, setTouched] = useState(false)
+  useModalDialog({ dialogRef, onClose })
+  const needsScriptFetch = Boolean(group?.scriptId && !scriptConfigOf(listed))
+  useEffect(() => {
+    if (!needsScriptFetch || !group?.scriptId) return undefined
+    let cancelled = false
+    const scriptId = group.scriptId
+    getScript(scriptId)
+      .then(full => { if (!cancelled) setFetchedConfig({ scriptId, config: scriptConfigOf(full) }) })
+      .catch(() => { if (!cancelled) setFetchedConfig({ scriptId, failed: true }) })
+    return () => { cancelled = true }
+  }, [getScript, group?.scriptId, needsScriptFetch])
+  useEffect(() => {
+    let cancelled = false
+    getConfigDefaults().then(res => { if (!cancelled) setEngineDefaults(res.config) }).catch(() => {})
+    return () => { cancelled = true }
+  }, [getConfigDefaults])
+  if (!group) return null
+  const scriptConfig = scriptConfigOf(listed) ?? (fetchedConfig?.scriptId === group.scriptId ? fetchedConfig.config : undefined)
+  const scriptLoading = needsScriptFetch && fetchedConfig?.scriptId !== group.scriptId
+  const scriptFailed = needsScriptFetch && fetchedConfig?.scriptId === group.scriptId && fetchedConfig.failed
+  const label = group.name || `Group ${index + 1}`
+  const editorGroups = groups.map((candidate, candidateIndex) => {
+    const script = scripts.find(entry => entry.id === candidate.scriptId)
+    return {
+      name: candidate.name || `Group ${candidateIndex + 1}`,
+      scriptId: candidate.scriptId,
+      protocol: script?.protocol,
+      scriptConfig: candidateIndex === index ? scriptConfig : scriptConfigOf(script),
+    }
+  })
+  const overrides = groups.map((candidate, candidateIndex) => (candidateIndex === index ? draft : candidate.runtimeSettings))
+  return (
+    <DialogLayer><div className="modal-overlay create-test-group-runtime-overlay" {...dialogBackdropProps(onClose)}>
+      <div ref={dialogRef} className="modal modal-wide create-test-group-runtime-dialog" role="dialog" aria-modal="true" aria-labelledby="create-test-group-runtime-title" data-testid="create-test-group-runtime-dialog">
+        <div className="modal-header">
+          <h3 id="create-test-group-runtime-title">Runtime settings · {label}</h3>
+        </div>
+        <div className="modal-form">
+          {scriptLoading && <p className="groups-note" role="status">Loading the script's runtime settings…</p>}
+          {scriptFailed && <p className="groups-note" role="alert">The script's own runtime settings could not be loaded, so inherited values show the scenario and engine defaults.</p>}
+          <RuntimeSettingsGroupEditor
+            draftScope={draftScope ? `${draftScope}:group:${index}` : undefined}
+            title={`Runtime overrides · ${label}`}
+            description="Overrides for this group only. Unset fields inherit the test-wide runtime overrides, then the script and engine defaults."
+            hideApplyPanel
+            hideGroupSelector
+            groups={editorGroups}
+            focusedIndex={index}
+            onFocusChange={() => {}}
+            scenarioDefault={runtimeOverrideRowFromDraft(testRuntimeSettings) as RuntimeSettingsOverride | undefined}
+            engineDefaults={engineDefaults}
+            overrides={overrides}
+            onChange={(_, next) => { setTouched(true); setDraft(next) }}
+            onApplyToGroups={() => {}}
+          />
+        </div>
+        <div className="modal-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={() => (touched ? onApply(draft) : onClose())}>Apply to group</button>
+        </div>
+      </div>
+    </div></DialogLayer>
+  )
+}
+
 export default function CreateTestGroupsEditor({
   scenarioMode,
   groups,
@@ -47,7 +194,10 @@ export default function CreateTestGroupsEditor({
   availableTargets,
   generatorInventory,
   availableLabels,
+  testRuntimeSettings,
+  draftScope,
 }: Props) {
+  const [runtimeGroupIndex, setRuntimeGroupIndex] = useState<number | null>(null)
   // Keyed by group index -- the same handle onUpdateGroup uses. Removing a
   // group shifts the indexes, so the map is dropped wholesale on removal.
   const observerClampSnapshots = useRef(new Map<number, ObserverClampSnapshot>())
@@ -262,6 +412,21 @@ export default function CreateTestGroupsEditor({
                 scope="group"
               />
             </div>
+            <div className="group-runtime-settings-row">
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                aria-label={`Runtime settings for ${group.name || `group ${idx + 1}`}`}
+                data-testid={`create-test-group-${idx}-runtime-settings`}
+                disabled={!group.scriptId}
+                onClick={() => setRuntimeGroupIndex(idx)}
+              >
+                Runtime settings
+              </button>
+              {group.runtimeSettings && !isRuntimeDraftEmpty(group.runtimeSettings) && (
+                <span className="group-runtime-overrides-pill" data-testid={`create-test-group-${idx}-runtime-overrides`}>Group overrides set</span>
+              )}
+            </div>
             {groups.length > 1 && (
               <button
                 type="button"
@@ -281,6 +446,22 @@ export default function CreateTestGroupsEditor({
         </div>
       )
       })}
+      {runtimeGroupIndex !== null && groups[runtimeGroupIndex] && (
+        <GroupRuntimeSettingsDrawer
+          key={runtimeGroupIndex}
+          groups={groups}
+          scripts={scripts}
+          index={runtimeGroupIndex}
+          testRuntimeSettings={testRuntimeSettings}
+          draftScope={draftScope}
+          onClose={() => setRuntimeGroupIndex(null)}
+          onApply={next => {
+            const target = runtimeGroupIndex
+            onUpdateGroup(target, groupRuntimePatch(groups[target], next))
+            setRuntimeGroupIndex(null)
+          }}
+        />
+      )}
     </div>
   )
 }

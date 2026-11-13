@@ -611,7 +611,7 @@ func TestReplayScriptDoesNotLinkConcurrentGroupSiblings(t *testing.T) {
 
 // replayFollowsRootAndProbe replays a root failure followed by one probe
 // action against a server whose responses never satisfy the probe.
-func replayFollowsRootAndProbe(t *testing.T, probe dsl.Action, variables map[string]string) *ReplayReport {
+func replayFollowsRootAndProbe(t *testing.T, probe dsl.Action, variables map[string]string, configure ...func(*dsl.Script)) *ReplayReport {
 	t.Helper()
 	protocolName := "replay-follows-local-http"
 	registerReplayFollowsHTTPProtocol.Do(func() { protocol.Register(protocolName, func() protocol.Protocol { return &httpprotocol.HTTP{} }) })
@@ -626,6 +626,9 @@ func replayFollowsRootAndProbe(t *testing.T, probe dsl.Action, variables map[str
 			{Name: "Login", Type: "GET", Target: "/login", Extractors: []dsl.Extractor{{Name: "x", Source: "body", Type: "regex", Expression: `cshc=([a-z0-9]+)`, OnMiss: "fail"}}},
 			probe,
 		},
+	}
+	for _, apply := range configure {
+		apply(script)
 	}
 	report, err := ReplayScript(context.Background(), script, ReplayOptions{ReplaySessionID: "probe-session", IgnoreThinkTime: true, Variables: variables})
 	if err != nil {
@@ -677,7 +680,20 @@ func TestReplayStructuredBodyResolutionFailureListsOnlyUnsetVariables(t *testing
 	})
 }
 
+// The diagnosis must name the unresolved variables in both run-evidence modes:
+// with config.log.redact_run_evidence on the sensitively named headers that
+// carried them are masked; off they keep the authored template text. The
+// operator-supplied set_token replay variable is platform-managed and never
+// reaches the report in either mode.
 func TestReplayUnresolvedVariablesSurviveDefaultRedaction(t *testing.T) {
+	for _, mode := range runEvidenceRedactionModes {
+		t.Run(mode.name, func(t *testing.T) {
+			testReplayUnresolvedVariablesSurviveRedaction(t, mode.redact)
+		})
+	}
+}
+
+func testReplayUnresolvedVariablesSurviveRedaction(t *testing.T, redact bool) {
 	report := replayFollowsRootAndProbe(t, dsl.Action{
 		Name: "Save", Type: "POST", Target: "/save",
 		Headers: map[string]string{
@@ -688,11 +704,22 @@ func TestReplayUnresolvedVariablesSurviveDefaultRedaction(t *testing.T) {
 		},
 		Body:       `{"token":"{{var.body_token}}"}`,
 		Assertions: []dsl.Assertion{{Type: "body_contains", Expected: "Saved"}},
-	}, map[string]string{"set_token": "synthetic-set-token-value"})
+	}, map[string]string{"set_token": "synthetic-set-token-value"}, func(script *dsl.Script) { setRunEvidenceRedaction(script, redact) })
 	probe := report.Events[1]
 	for name, value := range probe.Headers {
-		if strings.Contains(value, "{{var.") {
-			t.Fatalf("precondition: default redaction left header %s as %q", name, value)
+		if redact && strings.Contains(value, "{{var.") {
+			t.Fatalf("precondition: run-evidence redaction left header %s as %q", name, value)
+		}
+	}
+	if !redact {
+		if got := probe.Headers["X-CSRF-Token"]; got != "{{var.csrf}}" {
+			t.Fatalf("redaction off: X-CSRF-Token = %q, want the authored template", got)
+		}
+		if got := probe.Headers["Authorization"]; got != "Bearer {{var.access_token}}" {
+			t.Fatalf("redaction off: Authorization = %q, want the authored template", got)
+		}
+		if got := probe.Headers["X-Set-Token"]; got != redactedPayloadValue {
+			t.Fatalf("redaction off: X-Set-Token = %q, want the platform-managed value masked by name", got)
 		}
 	}
 	want := []string{"access_token", "body_token", "csrf"}
@@ -738,6 +765,9 @@ func TestReplayConcurrentChildrenCarryResolutionTimeVariables(t *testing.T) {
 			group,
 		},
 	}
+	// Redaction on so the sensitively named headers are masked: the diagnosis
+	// must then come from the resolution-time record.
+	setRunEvidenceRedaction(script, true)
 	report, err := ReplayScript(context.Background(), script, ReplayOptions{ReplaySessionID: "concurrent-variables-session", IgnoreThinkTime: true, Variables: map[string]string{"set_token": "synthetic-set-token-value"}})
 	if err != nil {
 		t.Fatal(err)

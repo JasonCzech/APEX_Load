@@ -2028,7 +2028,7 @@ func (vu *VUser) setResolvedSourceVariable(name string, resolved string) {
 // script-sourced half on overflow). A platform-managed failure is recorded on the
 // VUser by the funnel and is checked at the next action boundary.
 func (vu *VUser) registerSourceVariableRunEvidenceValue(name, resolved string) {
-	if vu == nil || resolved == "" || !scriptRedactsCredentials(vu.Script) {
+	if vu == nil || resolved == "" || !scriptRedactsRunEvidence(vu.Script) {
 		return
 	}
 	vu.ensureImportedCredentialInspection()

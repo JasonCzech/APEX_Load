@@ -94,17 +94,20 @@ func (s *Server) handleListExecutionPlans(w http.ResponseWriter, r *http.Request
 		plans = []*storage.ExecutionPlan{}
 	}
 	if !strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_activity")), "true") {
-		writeJSON(w, http.StatusOK, map[string]any{"execution_plans": plans, "count": len(plans), "limit": limit, "offset": offset})
+		masked := maskExecutionPlansForResponse(plans)
+		writeJSON(w, http.StatusOK, map[string]any{"execution_plans": masked, "count": len(masked), "limit": limit, "offset": offset})
 		return
 	}
 	// The plan cards show each plan's running, waiting and last-run state.
+	// Activity reads the stored plans: an approval's content hash covers the
+	// unmasked entry rows, so only the response is masked.
 	activities, errs := service.Activities(plans)
 	withActivity := make([]executionPlanWithActivity, 0, len(plans))
 	for i, plan := range plans {
 		if errs[i] != nil {
 			slog.Warn("execution plan activity unavailable", "plan_id", plan.ID, "error", errs[i])
 		}
-		withActivity = append(withActivity, executionPlanWithActivity{ExecutionPlan: plan, Activity: activities[i]})
+		withActivity = append(withActivity, executionPlanWithActivity{ExecutionPlan: maskExecutionPlanForResponse(plan), Activity: activities[i]})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"execution_plans": withActivity, "count": len(withActivity), "limit": limit, "offset": offset})
 }
@@ -118,7 +121,7 @@ func (s *Server) handleGetExecutionPlan(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, plan)
+	writeJSON(w, http.StatusOK, maskExecutionPlanForResponse(plan))
 }
 
 func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Request) {

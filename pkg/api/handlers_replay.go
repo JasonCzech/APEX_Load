@@ -1114,9 +1114,11 @@ func replaySessionLeaseOperationTimeout(ttl time.Duration) time.Duration {
 }
 
 // prepareTransientExecutableScript clones and sanitizes a replay, debugger, or
-// browser draft before execution while preserving literal DSL credentials so
-// runtime redaction can scrub them from outputs, traces, HARs, and logs without
-// forcing pre-execution secret bindings.
+// browser draft before execution while preserving literal DSL credentials
+// without forcing pre-execution secret bindings: nothing a script carries is a
+// secret. Runtime redaction scrubs those literals from outputs, traces, HARs,
+// and logs only when the script sets config.log.redact_run_evidence to true;
+// secret-store values are always scrubbed.
 func prepareTransientExecutableScript(
 	w http.ResponseWriter,
 	script *dsl.Script,

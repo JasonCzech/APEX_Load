@@ -1897,7 +1897,9 @@ describe('NewTestPage', () => {
     expect(logLevelSelect).toBeTruthy()
     expect(pacingSelect).toBeTruthy()
     if (!vusersInput || !iterationsInput || !logLevelSelect || !pacingSelect) return
-    expect(logLevelSelect.value).toBe('standard')
+    // The group sets no log level, so the select sits on inherit and names the run default.
+    expect(logLevelSelect.value).toBe('')
+    expect(logLevelSelect.options[logLevelSelect.selectedIndex]?.textContent).toBe('Inherit (Standard)')
     expect(pacingSelect.options[pacingSelect.selectedIndex]?.textContent).toBe('Script timing')
     const initiallyDisabledSaveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
     expect(initiallyDisabledSaveButton?.disabled).toBe(true)
@@ -2591,6 +2593,118 @@ describe('NewTestPage', () => {
     const groupRow = payload.groups?.[0].runtime_settings as (Record<string, unknown> & { override_fields?: string[] }) | undefined
     expect(resolveRuntimeOverrideFields(groupRow).sort()).toEqual(['browser.device_profile', 'run_logic.iterations'])
     expect(groupRow?.run_logic).toEqual({ iterations: 7 })
+  })
+
+  describe('group runtime inherit and full editor', () => {
+    const page = () => (
+      <NewTestPage
+        activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+        activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+        releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+        onSelectTest={vi.fn()}
+        onCreateRelease={vi.fn().mockResolvedValue(null)}
+      />
+    )
+    function scenarioWith(groupRuntime: Record<string, unknown> | undefined, scenarioRuntime?: Record<string, unknown>) {
+      apiMock.listScenarios.mockResolvedValue({
+        scenarios: [{
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          ...(scenarioRuntime ? { runtime_settings: scenarioRuntime } : {}),
+          scripts: [{ order: 1, name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10, ...(groupRuntime ? { runtime_settings: groupRuntime } : {}) }],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        }],
+      })
+    }
+    async function openGroupDialog() {
+      await act(async () => { root.render(page()) })
+      await flushPromises()
+      await act(async () => { container.querySelector('.new-test-scenario-table-row')?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const row = Array.from(container.querySelectorAll('.new-test-script-row')).find(element => element.textContent?.includes('Checkout'))
+      await act(async () => { row?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushPromises()
+      return document.querySelector('.run-group-modal') as HTMLElement
+    }
+    async function createAndReadGroupRow() {
+      await flushDebouncedPreflight()
+      const hold = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
+      await act(async () => { hold?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      await flushPromises()
+      expect(apiMock.createTest).toHaveBeenCalled()
+      const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<{ runtime_settings?: Record<string, unknown> & { override_fields?: string[] } }> }
+      return payload.groups?.[0]?.runtime_settings
+    }
+    function selectedText(select: HTMLSelectElement | null | undefined) {
+      return select?.options[select.selectedIndex]?.textContent
+    }
+
+    it('names the script value an unset log level and auto transactions inherit', async () => {
+      scenarioWith(undefined)
+      apiMock.getScript.mockResolvedValue({ id: 'script-1', script: { config: { log: { level: 'extended' }, run_logic: { auto_transactions: 'per_action' } } } })
+      const modal = await openGroupDialog()
+      expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+      const logLevel = findControlByLabel<HTMLSelectElement>(modal, 'Log level', 'select')
+      const autoTransactions = findControlByLabel<HTMLSelectElement>(modal, 'Auto transactions', 'select')
+      expect(logLevel?.value).toBe('')
+      expect(selectedText(logLevel)).toBe('Inherit (Extended)')
+      expect(autoTransactions?.value).toBe('')
+      expect(selectedText(autoTransactions)).toBe('Inherit (Per Action)')
+    })
+
+    it('resets a v1 group log level to inherited without pinning the rest of its log section', async () => {
+      scenarioWith({ log: { level: 'extended', on_error_only: true } }, { log_level: 'disabled' })
+      const modal = await openGroupDialog()
+      const logLevel = findControlByLabel<HTMLSelectElement>(modal, 'Log level', 'select')
+      expect(logLevel?.value).toBe('extended')
+      expect(logLevel?.querySelector('option[value=""]')?.textContent).toBe('Inherit (Disabled)')
+      await act(async () => { if (logLevel) setSelectValue(logLevel, '') })
+      const save = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run')
+      await act(async () => { save?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const groupRow = await createAndReadGroupRow()
+      // The v1 section is upgraded without changing meaning: every other log leaf stays pinned
+      // (as the whole section pinned them), and only the level is no longer listed, so the run
+      // default applies to it.
+      const fields = resolveRuntimeOverrideFields(groupRow)
+      expect(fields).toContain('log.on_error_only')
+      expect(fields).not.toContain('log.level')
+      expect(fields).not.toContain('log')
+      expect(groupRow?.log).toMatchObject({ on_error_only: true })
+      expect(groupRow?.log).not.toHaveProperty('level')
+    })
+
+    it('edits every runtime setting of a group through the full editor and refreshes the quick controls', async () => {
+      scenarioWith({ http: { request_timeout_ms: 5000 }, log: { level: 'extended' }, override_fields: ['http.request_timeout_ms', 'log.level'] })
+      const modal = await openGroupDialog()
+      const open = modal.querySelector('[data-testid="run-group-open-full-runtime"]') as HTMLButtonElement
+      // Pending quick edits must be saved or cancelled first, so neither editor discards the other.
+      const iterations = findControlByLabel<HTMLInputElement>(modal, 'Iterations', 'input')
+      await act(async () => { if (iterations) setInputValue(iterations, '3') })
+      expect(open.disabled).toBe(true)
+      await act(async () => { if (iterations) setInputValue(iterations, '') })
+      expect(open.disabled).toBe(false)
+      await act(async () => { open.click() })
+      await flushPromises()
+      const editor = document.querySelector('[data-testid="run-group-runtime-editor"]') as HTMLElement
+      expect(editor).toBeTruthy()
+      const clear = editor.querySelector('button[aria-label="Clear HTTP transport override"]') as HTMLButtonElement
+      expect(clear).toBeTruthy()
+      await act(async () => { clear.click() })
+      const apply = Array.from(editor.querySelectorAll('button')).find(button => button.textContent === 'Apply for this run')
+      await act(async () => { apply?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      expect(document.querySelector('[data-testid="run-group-runtime-editor"]')).toBeNull()
+      expect(findControlByLabel<HTMLSelectElement>(modal, 'Log level', 'select')?.value).toBe('extended')
+      expect((Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement).disabled).toBe(true)
+      const close = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Close')
+      await act(async () => { close?.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
+      const groupRow = await createAndReadGroupRow()
+      expect(resolveRuntimeOverrideFields(groupRow)).toEqual(['log.level'])
+      expect(groupRow?.http).toBeUndefined()
+    })
   })
 
   it('names a hidden untyped partial think time override in the group dialog and resets its leaves', async () => {
@@ -3308,12 +3422,14 @@ describe('NewTestPage', () => {
       return controls
     }
 
-    // Pacing, think time mode + mean, continue/snapshot on error, device profile, orientation,
-    // headless, touch mode. Pinned EXACTLY: a lower count means the discovery selector stopped
-    // matching and the guard would pass vacuously, and a higher one means a clearable control was
-    // added to the dialog — which has to fail here until its section is carried through
-    // CLEARABLE_RUNTIME_SECTIONS, the stored fixture above and the tombstone pass.
-    expect(inheritControls().length).toBe(9)
+    // Log level, auto transactions, pacing, think time mode + mean, continue/snapshot on error,
+    // device profile, orientation, headless, touch mode. Pinned EXACTLY: a lower count means the
+    // discovery selector stopped matching and the guard would pass vacuously, and a higher one
+    // means a clearable control was added to the dialog — which has to fail here until its
+    // section is carried through CLEARABLE_RUNTIME_SECTIONS, the stored fixture above and the
+    // tombstone pass. The two text selects reset one leaf each, which a save writes as partial
+    // paths instead of a tombstone (covered by the inherit tests).
+    expect(inheritControls().length).toBe(11)
 
     for (let pass = 0; pass < 20; pass += 1) {
       const pending = inheritControls().find(control => control.value !== '')

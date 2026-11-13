@@ -19,9 +19,31 @@ type replayHARTransport struct {
 	base         http.RoundTripper
 	capture      *protocol.ReplayHARCapture
 	captureTrace bool
+	// scriptAction marks the recorder of the action's own top-level request:
+	// only its first hop is protocol.NetworkEntry.ScriptRequest. Page resource
+	// fetches and meta-refresh follow-ups leave it false.
+	scriptAction bool
 	mu           sync.Mutex
 	records      []*replayHARRecord
+	// authoredCookie is the Cookie header the script's request carried before
+	// net/http added jar cookies (noteAuthoredRequest); authoredNoted reports
+	// whether it was recorded at all.
+	authoredCookie string
+	authoredNoted  bool
 }
+
+// noteAuthoredRequest records the request headers the script authored, before
+// the client adds cookies from its jar.
+func (r *replayHARTransport) noteAuthoredRequest(header http.Header) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.authoredCookie = strings.Join(header.Values("Cookie"), "; ")
+	r.authoredNoted = true
+}
+
 type replayHARRecord struct {
 	entry        protocol.NetworkEntry
 	response     *http.Response
@@ -56,8 +78,25 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 		hopTrace = newHTTPTraceCollector()
 	}
 	record := &replayHARRecord{
-		entry: protocol.NetworkEntry{URL: req.URL.String(), Method: req.Method, HAR: protocol.NewReplayHARExchange()},
+		// The action's own recorder: its first hop is the request the script's
+		// action authored; later hops are redirects or auth retries.
+		entry: protocol.NetworkEntry{URL: req.URL.String(), Method: req.Method, HAR: protocol.NewReplayHARExchange(), ScriptRequest: r.scriptAction && len(r.records) == 0},
 		trace: hopTrace,
+	}
+	if record.entry.ScriptRequest {
+		// A Cookie header that differs from the authored one carries cookies
+		// the jar added from earlier server responses.
+		if cookie := strings.Join(req.Header.Values("Cookie"), "; "); cookie != "" && (!r.authoredNoted || cookie != r.authoredCookie) {
+			record.entry.RequestCookieNotAuthored = true
+		}
+		// An Authorization header built from script-resolved credential halves
+		// (the NTLM/Negotiate pre-challenge Basic, or the Basic net/http builds
+		// from URL userinfo) is script-authored credential material: it follows
+		// config.log.redact_run_evidence like the halves it was built from. When
+		// a half carries a platform value, the engine registers the composite as
+		// platform-managed (platformDerivedActionComposites and the authored
+		// {{secret.*}} surface registration), so the exact matcher withholds it
+		// in every mode.
 	}
 	r.records = append(r.records, record)
 	r.mu.Unlock()
@@ -65,6 +104,12 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 	observed := req.Clone(req.Context())
 	if c != nil || r.captureTrace {
 		record.entry.RequestHeaders = harHeaders(req.Header)
+		// A typed Authorization the request snapshot withholds (a Basic pair
+		// over a platform-managed value, a Digest response that is not
+		// provably over a script literal) is withheld on every hop here too.
+		if masked, ok := withheldAuthorization(req, req.Header.Get("Authorization")); ok {
+			record.entry.RequestHeaders["Authorization"] = masked
+		}
 	}
 	if c != nil && c.Options.KeepBody(true) {
 		if req.Body == nil {
@@ -73,6 +118,11 @@ func (r *replayHARTransport) RoundTrip(req *http.Request) (*http.Response, error
 			observed.Body = &replayHARBodyReader{ReadCloser: req.Body, limit: c.Options.MaxBodyBytes, done: func(data []byte, complete bool) {
 				record.mu.Lock()
 				defer record.mu.Unlock()
+				// A transformed body that carries a platform value is recorded
+				// as the redacted authored body (transformedBodyWithholding).
+				if complete {
+					data = withheldRequestBody(req, data)
+				}
 				record.entry.HAR.RequestBody = c.Body(data, req.Header.Get("Content-Type"), complete)
 			}}
 		}

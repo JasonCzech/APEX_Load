@@ -5,9 +5,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strconv"
+	"unicode/utf8"
 )
 
 const InvalidTemplateContract Code = "invalid_template_contract"
@@ -32,7 +34,72 @@ type TemplateOccurrence struct {
 	ExpressionSHA256 string `json:"expression_sha256"`
 }
 
-type TemplateContext struct{ formWireTokens, literalTokens map[int]bool }
+type TemplateContext struct {
+	formWireTokens, literalTokens map[int]bool
+	// jsonQuotes is how many times the rendered body JSON-quotes a value
+	// resolved in this surface (one for the leaf itself, one more per
+	// enclosing JSON-string layer); formEscaped marks a surface whose
+	// rendered text is then form-escaped, and encoded one whose wire is
+	// base64 of the rendered text.
+	jsonQuotes  int
+	formEscaped bool
+	encoded     bool
+}
+
+// WireSpellings returns the spellings any substring of a value resolved in
+// this surface takes in the rendered body, one per escaping layer, innermost
+// first: the HTML-safe JSON escape applied once per quoting layer and then,
+// for a form-escaped surface, its query escape (in upper- and lowercase hex).
+// JSON and query escaping work rune by rune, so the spelling of a substring is
+// a substring of the rendered value. A base64 wire has no per-substring
+// spelling, so only the decoded-layer spellings are returned for it.
+func (c TemplateContext) WireSpellings(value string) []string {
+	if value == "" || !utf8.ValidString(value) {
+		return nil
+	}
+	var out []string
+	current := value
+	for i := 0; i < c.jsonQuotes; i++ {
+		if _, err := quotedSize(current, MaxBodyBytes); err != nil {
+			return out
+		}
+		data, err := json.Marshal(current)
+		if err != nil || len(data) < 2 {
+			return out
+		}
+		current = string(data[1 : len(data)-1])
+		if current != value {
+			out = append(out, current)
+		}
+	}
+	if c.formEscaped {
+		escaped := url.QueryEscape(current)
+		if escaped != current {
+			out = append(out, escaped)
+			if lower := lowerPercentHex(escaped); lower != escaped {
+				out = append(out, lower)
+			}
+		}
+	}
+	return out
+}
+
+// lowerPercentHex lowercases the hex digits of every percent escape.
+func lowerPercentHex(value string) string {
+	b := []byte(value)
+	for i := 0; i+2 < len(b); i++ {
+		if b[i] != '%' {
+			continue
+		}
+		for j := i + 1; j <= i+2; j++ {
+			if b[j] >= 'A' && b[j] <= 'F' {
+				b[j] += 'a' - 'A'
+			}
+		}
+		i += 2
+	}
+	return string(b)
+}
 
 func (c TemplateContext) IsFormWireToken(index int) bool { return c.formWireTokens[index] }
 func (c TemplateContext) IsLiteralToken(index int) bool  { return c.literalTokens[index] }
@@ -163,7 +230,7 @@ type preparedTemplates struct {
 func prepareTemplates(p *payload) (*preparedTemplates, error) {
 	result := &preparedTemplates{message: map[*node]*templateSurface{}, fields: map[int]*templateSurface{}, jsonFields: map[int]*payload{}, jsonLeaves: map[int]map[*node]*templateSurface{}}
 	remaining := MaxTemplateOccurrences
-	add := func(kind string, fieldIndex int, route []Segment, value, fieldKey string) (*templateSurface, error) {
+	add := func(kind string, fieldIndex int, route []Segment, value, fieldKey string, layout TemplateContext) (*templateSurface, error) {
 		routeID := ""
 		if len(route) > 0 {
 			var err error
@@ -176,7 +243,7 @@ func prepareTemplates(p *payload) (*preparedTemplates, error) {
 			return nil, err
 		}
 		id := sha256.Sum256([]byte("aura-template-context-v1\x00" + kind + "\x00" + strconv.Itoa(fieldIndex) + "\x00" + fieldKey + "\x00" + routeID))
-		surface := &templateSurface{id: hex.EncodeToString(id[:]), value: value}
+		surface := &templateSurface{id: hex.EncodeToString(id[:]), value: value, context: layout}
 		matches := authoredTemplatePattern.FindAllStringIndex(value, remaining+1)
 		if len(matches) > remaining {
 			return nil, fail(TokenLimit)
@@ -198,7 +265,7 @@ func prepareTemplates(p *payload) (*preparedTemplates, error) {
 			continue
 		}
 		key, _ := routeKey(leaf.Route)
-		surface, err := add("message", -1, leaf.Route, leaf.Value, "message")
+		surface, err := add("message", -1, leaf.Route, leaf.Value, "message", TemplateContext{jsonQuotes: 1 + leaf.JSONStringDepth, formEscaped: p.codec == FormMessage, encoded: p.encoded})
 		if err != nil {
 			return nil, err
 		}
@@ -221,14 +288,14 @@ func prepareTemplates(p *payload) (*preparedTemplates, error) {
 						continue
 					}
 					key, _ := routeKey(leaf.Route)
-					surface, err := add("context", i, leaf.Route, leaf.Value, field.key)
+					surface, err := add("context", i, leaf.Route, leaf.Value, field.key, TemplateContext{jsonQuotes: 1 + leaf.JSONStringDepth, formEscaped: true, encoded: p.encoded})
 					if err != nil {
 						return nil, err
 					}
 					result.jsonLeaves[i][q.nodes[key]] = surface
 				}
 			} else {
-				surface, err := add("form", i, nil, field.value, field.key)
+				surface, err := add("form", i, nil, field.value, field.key, TemplateContext{formEscaped: true, encoded: p.encoded})
 				if err != nil {
 					return nil, err
 				}

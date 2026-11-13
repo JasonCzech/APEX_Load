@@ -392,6 +392,148 @@ describe('CreateTestGroupsEditor', () => {
 
     expect(onUpdateGroup).toHaveBeenCalledWith(0, { role: 'load' })
   })
+  describe('per-group runtime settings', () => {
+    function mockApi(scriptConfig: Record<string, unknown>) {
+      const calls: string[] = []
+      vi.spyOn(globalThis, 'fetch').mockImplementation(async input => {
+        const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+        calls.push(url)
+        const body = url.includes('/scripts/script-http')
+          ? { id: 'script-http', name: 'Checkout API', protocol: 'http', version: '1.0.0', created_at: '', script: { name: 'Checkout API', protocol: 'http', config: scriptConfig, actions: [] } }
+          : { config: {} }
+        return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      })
+      return calls
+    }
+    async function flushAll() {
+      for (let i = 0; i < 6; i++) await act(async () => { await Promise.resolve() })
+    }
+    function dialog() {
+      return document.querySelector('[data-testid="create-test-group-runtime-dialog"]') as HTMLElement | null
+    }
+    async function click(scope: ParentNode, label: string) {
+      const button = Array.from(scope.querySelectorAll<HTMLButtonElement>('button')).find(candidate => candidate.textContent === label || candidate.getAttribute('aria-label') === label)
+      if (!button) throw new Error(`button ${label} not found`)
+      await act(async () => button.click())
+      await flushAll()
+    }
+    function summarySource(label: string) {
+      const row = Array.from(dialog()!.querySelectorAll('.runtime-override-row')).find(candidate => candidate.querySelector('td')?.textContent === label)
+      return row?.querySelector('.runtime-source-badge')?.textContent
+    }
+    afterEach(() => vi.restoreAllMocks())
+
+    it('opens the group editor over the real script config and saves a partial row for that group only', async () => {
+      const calls = mockApi({ log: { level: 'debug' }, http: { request_timeout_ms: 7000 } })
+      const onUpdateGroup = vi.fn()
+      const groupRow = { log: { level: 'extended' }, http: { request_timeout_ms: 5000 }, log_level: '', auto_transactions: '', override_fields: ['log.level', 'http.request_timeout_ms'] }
+      await act(async () => {
+        root.render(
+          <CreateTestGroupsEditor
+            scenarioMode="vuser_driven"
+            groups={[draftGroup({ name: 'Buyers', runtimeSettings: groupRow }), draftGroup({ name: 'Browsers', scriptId: 'script-browser' })]}
+            scripts={scripts}
+            testRuntimeSettings={{ log_level: '', auto_transactions: '', think_time: { type: 'fixed', mean_ms: 250 }, override_fields: ['think_time'] }}
+            onAddGroup={vi.fn()}
+            onUpdateGroup={onUpdateGroup}
+            onRemoveGroup={vi.fn()}
+          />,
+        )
+      })
+      expect(container.querySelector('[data-testid="create-test-group-0-runtime-overrides"]')?.textContent).toBe('Group overrides set')
+      expect(container.querySelector('[data-testid="create-test-group-1-runtime-overrides"]')).toBeNull()
+      await click(container, 'Runtime settings for Buyers')
+      expect(dialog()?.textContent).toContain('Runtime settings · Buyers')
+      // The listed script is a summary, so its full definition is read for the inherited layer.
+      expect(calls.some(url => url.includes('/scripts/script-http'))).toBe(true)
+      expect(summarySource('Log level')).toBe('Group override')
+      expect(summarySource('Think time')).toBe('Scenario default')
+      await click(dialog()!, 'Clear Log level override')
+      expect(summarySource('Log level')).toBe('Script default')
+      expect(onUpdateGroup).not.toHaveBeenCalled()
+      await click(dialog()!, 'Apply to group')
+      expect(dialog()).toBeNull()
+      expect(onUpdateGroup).toHaveBeenCalledTimes(1)
+      const [index, patch] = onUpdateGroup.mock.calls[0]
+      expect(index).toBe(0)
+      expect(patch.runtimeSettings.override_fields).toEqual(['http.request_timeout_ms'])
+      expect(patch.runtimeSettings.http).toEqual({ request_timeout_ms: 5000 })
+    })
+
+    it('discards edits on Cancel and leaves an unedited group alone on Apply', async () => {
+      mockApi({})
+      const onUpdateGroup = vi.fn()
+      await act(async () => {
+        root.render(
+          <CreateTestGroupsEditor
+            scenarioMode="vuser_driven"
+            groups={[draftGroup({ name: 'Buyers', runtimeSettings: { log_level: '', auto_transactions: '', pacing: { type: 'fixed_delay', delay_ms: 5 } } })]}
+            scripts={scripts}
+            onAddGroup={vi.fn()}
+            onUpdateGroup={onUpdateGroup}
+            onRemoveGroup={vi.fn()}
+          />,
+        )
+      })
+      await click(container, 'Runtime settings for Buyers')
+      await click(dialog()!, 'Clear Pacing override')
+      await click(dialog()!, 'Cancel')
+      await click(container, 'Runtime settings for Buyers')
+      expect(summarySource('Pacing')).toBe('Group override')
+      await click(dialog()!, 'Apply to group')
+      expect(onUpdateGroup).not.toHaveBeenCalled()
+    })
+
+    it('keeps the compact iteration showing the row value when Apply changes another field', async () => {
+      mockApi({})
+      const onUpdateGroup = vi.fn()
+      await act(async () => {
+        root.render(
+          <CreateTestGroupsEditor
+            scenarioMode="vuser_driven"
+            groups={[draftGroup({ name: 'Buyers', iterations: 4, iterationPayloadSource: 'runtime', runtimeSettings: { log_level: '', auto_transactions: '', run_logic: { iterations: 4 }, http: { request_timeout_ms: 5000 }, override_fields: ['run_logic.iterations', 'http.request_timeout_ms'] } })]}
+            scripts={scripts}
+            onAddGroup={vi.fn()}
+            onUpdateGroup={onUpdateGroup}
+            onRemoveGroup={vi.fn()}
+          />,
+        )
+      })
+      await click(container, 'Runtime settings for Buyers')
+      await click(dialog()!, 'Clear HTTP transport override')
+      await click(dialog()!, 'Apply to group')
+      const patch = onUpdateGroup.mock.calls[0][1]
+      // The row still runs 4 iterations, so the card shows 4 rather than the script default.
+      expect(patch.iterations).toBe(4)
+      expect(patch.iterationPayloadSource).toBe('runtime')
+      expect(patch.runtimeSettings.override_fields).toEqual(['run_logic.iterations'])
+    })
+
+    it('drops a compact iteration shown from the runtime row when the row stops owning it', async () => {
+      mockApi({})
+      const onUpdateGroup = vi.fn()
+      await act(async () => {
+        root.render(
+          <CreateTestGroupsEditor
+            scenarioMode="vuser_driven"
+            groups={[draftGroup({ name: 'Buyers', iterations: 4, iterationPayloadSource: 'runtime', runtimeSettings: { log_level: '', auto_transactions: '', run_logic: { iterations: 4 }, http: { request_timeout_ms: 5000 }, override_fields: ['run_logic.iterations', 'http.request_timeout_ms'] } })]}
+            scripts={scripts}
+            onAddGroup={vi.fn()}
+            onUpdateGroup={onUpdateGroup}
+            onRemoveGroup={vi.fn()}
+          />,
+        )
+      })
+      await click(container, 'Runtime settings for Buyers')
+      await click(dialog()!, 'Clear Iterations override')
+      await click(dialog()!, 'Apply to group')
+      const patch = onUpdateGroup.mock.calls[0][1]
+      expect(patch.iterations).toBeUndefined()
+      expect('iterations' in patch).toBe(true)
+      expect(patch.iterationPayloadSource).toBeUndefined()
+      expect(patch.runtimeSettings.override_fields).toEqual(['http.request_timeout_ms'])
+    })
+  })
 })
 
 function rampedStageSchedule(): LoadStageDraft[] {
