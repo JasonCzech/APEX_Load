@@ -45,9 +45,9 @@ func unwrapHARArchiveUpload(data []byte, allowPair bool) ([]byte, []byte, error)
 	if !isZIPUpload(data) {
 		return data, nil, nil
 	}
-	maxTotalBytes := int64(harImportMaxFileBytes)
+	maxTotalBytes := harImportMaxFileBytes
 	if allowPair {
-		maxTotalBytes = 2 * int64(harImportMaxFileBytes)
+		maxTotalBytes = 2 * harImportMaxFileBytes
 	}
 	files, err := archiveingest.ReadZIP(data, archiveingest.Options{Limits: archiveingest.Limits{
 		MaxEntries:    harArchiveMaxEntries,

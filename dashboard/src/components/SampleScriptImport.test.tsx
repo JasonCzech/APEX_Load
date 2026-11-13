@@ -1244,9 +1244,13 @@ it('preserves converter-authored think_time, pacing, max_retries, request_timeou
       stats: { format: 'rest_json', total_requests: 1, converted_actions: 1, assertions: 1, extractors: 0, correlations_detected: 0 },
     })
 
-    const fieldInput = (labelText: string) => Array.from(container.querySelectorAll<HTMLLabelElement>('label.sample-import-field'))
-      .find(label => label.querySelector('span')?.textContent === labelText)
-      ?.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')!
+    const fieldInput = (labelText: string) => {
+      const control = Array.from(container.querySelectorAll<HTMLLabelElement>('label.sample-import-field'))
+        .find(label => label.querySelector('span')?.textContent === labelText)
+        ?.querySelector<HTMLInputElement | HTMLSelectElement>('input, select')
+      if (!control) throw new Error(`missing sample import field: ${labelText}`)
+      return control
+    }
 
     await act(async () => {
       setControlValue(fieldInput('Think time (ms)'), '400')
