@@ -3,6 +3,9 @@ package dsl
 import (
 	"slices"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/protocol/browsercontract"
+	"github.com/jasonczech/apexload/pkg/protocol/httpcontract"
 )
 
 // Canonical runtime configuration groups (7-group taxonomy).
@@ -64,6 +67,10 @@ type ConfigFieldMeta struct {
 var (
 	allScopes         = []string{ConfigScopeImport, ConfigScopeAuthor, ConfigScopeDebug, ConfigScopeScenario}
 	nonScenarioScopes = []string{ConfigScopeImport, ConfigScopeAuthor, ConfigScopeDebug}
+	// sourceOwnedScopes marks source-provenance settings (JMeter compatibility
+	// identity and sampler schedules) that an import draft keeps exactly as the
+	// importer produced them; only the guarded import repairs may change them.
+	sourceOwnedScopes = []string{ConfigScopeAuthor, ConfigScopeDebug}
 	retiredScopes     = []string{}
 
 	protoUniversal   = []string{"*"}
@@ -153,6 +160,10 @@ func ConfigCatalogForFilter(protocol, scope string) []ConfigFieldMeta {
 	protocol = strings.ToLower(strings.TrimSpace(protocol))
 	scope = strings.ToLower(strings.TrimSpace(scope))
 	if protocol != "" && protocol != "*" && !catalogHasExplicitProtocol(protocol, scope) {
+		// Versioned aliases (http/1.1, http/2, http/3) are HTTP-family scripts.
+		protocol = ProtocolFamily(protocol)
+	}
+	if protocol != "" && protocol != "*" && !catalogHasExplicitProtocol(protocol, scope) {
 		return nil
 	}
 	var out []ConfigFieldMeta
@@ -215,7 +226,72 @@ var canonicalConfigIndex = func() map[string]int {
 	return m
 }()
 
-var canonicalConfigCatalog = []ConfigFieldMeta{
+// scenarioOverridableConfigSections lists the ScriptConfig sections a scenario
+// group's runtime_settings override can carry. PARITY: pkg/api
+// allowedScriptConfigOverrideSections; the API test
+// TestConfigCatalogScenarioScopeMatchesRuntimeOverridePaths keeps them in step.
+var scenarioOverridableConfigSections = map[string]bool{
+	"base_url":          true,
+	"results":           true,
+	"websocket":         true,
+	"pacing":            true,
+	"think_time":        true,
+	"error_handling":    true,
+	"log":               true,
+	"run_logic":         true,
+	"http":              true,
+	"web_runtime":       true,
+	"soap":              true,
+	"browser":           true,
+	"browser_emulation": true,
+}
+
+// scenarioOverridableJavaVuserFields lists the java_vuser fields a scenario
+// override may set. PARITY: pkg/api RuntimeJavaVuserOverride, which leaves the
+// operator-owned runner fields (runner_command, harness_jar, work_dir, ...) out
+// on purpose.
+var scenarioOverridableJavaVuserFields = map[string]bool{
+	"jdk_selection":             true,
+	"jdk_home":                  true,
+	"additional_vm_parameters":  true,
+	"classpath":                 true,
+	"use_xbootclasspath":        true,
+	"dedicated_class_loader":    true,
+	"skip_parameter_evaluation": true,
+	"jvm_sharing":               true,
+	"vusers_per_jvm":            true,
+}
+
+// scenarioOverridableConfigPath reports whether a scenario runtime_settings
+// override can carry the catalog path, so the scenario scope never advertises
+// a field the override path rejects or silently drops.
+func scenarioOverridableConfigPath(path string) bool {
+	rest, ok := strings.CutPrefix(path, "config.")
+	if !ok {
+		return false
+	}
+	section, sub, _ := strings.Cut(rest, ".")
+	if section == "java_vuser" {
+		return scenarioOverridableJavaVuserFields[sub]
+	}
+	return scenarioOverridableConfigSections[section]
+}
+
+// withScenarioScopePolicy drops the scenario scope from every entry whose path
+// a scenario override cannot carry.
+func withScenarioScopePolicy(entries []ConfigFieldMeta) []ConfigFieldMeta {
+	for i, entry := range entries {
+		if !slices.Contains(entry.Scopes, ConfigScopeScenario) || scenarioOverridableConfigPath(entry.Path) {
+			continue
+		}
+		entries[i].Scopes = slices.DeleteFunc(slices.Clone(entry.Scopes), func(scope string) bool {
+			return scope == ConfigScopeScenario
+		})
+	}
+	return entries
+}
+
+var canonicalConfigCatalog = withScenarioScopePolicy([]ConfigFieldMeta{
 	// Base URL
 	{
 		Path:        "config.base_url",
@@ -240,7 +316,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Scopes:      nonScenarioScopes,
 	},
 
-	// JMeter compatibility & sampler schedules (excluded from scenario scope)
+	// JMeter compatibility & sampler schedules (source-owned: not editable through
+	// import settings and excluded from scenario scope)
 	{
 		Path:        "config.jmeter.profile",
 		Group:       ConfigGroupProtocolBehaviorSession,
@@ -249,7 +326,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "Source-engine compatibility profile identifier.",
 		Type:        ConfigFieldTypeString,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.source_plan_id",
@@ -259,7 +336,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "Source JMeter test plan identifier.",
 		Type:        ConfigFieldTypeString,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.source_group_id",
@@ -269,7 +346,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "Source JMeter thread group identifier.",
 		Type:        ConfigFieldTypeString,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.timezone",
@@ -279,7 +356,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "IANA timezone used for JMeter time functions.",
 		Type:        ConfigFieldTypeString,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.context_confirmed",
@@ -290,7 +367,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Type:        ConfigFieldTypeBoolean,
 		Default:     false,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.producer_lifecycle",
@@ -301,7 +378,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Type:        ConfigFieldTypeSelect,
 		Options:     []string{"per_thread", "per_iteration", "per_action", "shared"},
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.sample_timing",
@@ -312,7 +389,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Type:        ConfigFieldTypeSelect,
 		Options:     []string{"send_only", "broker_ack", "round_trip"},
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.jmeter.configuration_id",
@@ -322,7 +399,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "Source JMeter broker or client configuration identifier.",
 		Type:        ConfigFieldTypeString,
 		Protocols:   protoJMeter,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 	{
 		Path:        "config.sampler_schedules",
@@ -332,7 +409,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Description: "Shared rate-shaping schedules referenced by action pacing IDs.",
 		Type:        ConfigFieldTypeObjectList,
 		Protocols:   protoUniversal,
-		Scopes:      nonScenarioScopes,
+		Scopes:      sourceOwnedScopes,
 	},
 
 	// Think time
@@ -343,7 +420,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Think time mode",
 		Description: "How inter-action think time delays are calculated.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"none", "fixed", "recorded", "random_percentage", "gaussian", "uniform"},
+		Options:     []string{"none", "fixed", "recorded", "random_percentage", "gaussian", "normal", "uniform", "exponential"},
 		Default:     "none",
 		Protocols:   protoUniversal,
 		Scopes:      allScopes,
@@ -867,10 +944,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTransportConnections,
 		Subgroup:    "HTTP transport",
 		Label:       "HTTP protocol version",
-		Description: "HTTP wire protocol policy (1.1, 2, auto+h3, or 3).",
+		Description: "HTTP wire protocol policy. Unset (\"\") is automatic: HTTP/1.1 with opportunistic HTTP/2 over TLS; 1.1 pins HTTP/1.1 only.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"1.1", "2", "auto+h3", "3"},
-		Default:     "1.1",
+		Options:     []string{"", "1.1", "2", "auto+h3", "3"},
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -902,9 +978,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTransportConnections,
 		Subgroup:    "Connection pool",
 		Label:       "Maximum idle connections",
-		Description: "Maximum idle keep-alive connections retained in the pool.",
+		Description: "Maximum idle keep-alive connections retained in the pool (at most 32).",
 		Type:        ConfigFieldTypeInt,
-		Default:     100,
+		Default:     httpcontract.DefaultMaxIdleConns,
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1142,10 +1218,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupSecurityProxyAuth,
 		Subgroup:    "Proxy",
 		Label:       "Proxy mode",
-		Description: "Outbound HTTP proxy routing policy.",
+		Description: "Outbound HTTP proxy routing policy. Unset (\"\") uses the custom proxy URL when one is set; none bypasses it.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"none", "system", "custom", "pac"},
-		Default:     "none",
+		Options:     []string{"", "none", "system", "custom", "pac"},
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1207,7 +1282,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Authentication scheme",
 		Description: "Default HTTP authentication scheme applied to requests.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any", "kerberos"},
+		Options:     []string{"", "basic", "bearer", "digest", "ntlm", "negotiate", "negotiate_any"},
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1288,9 +1363,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTargetIdentity,
 		Subgroup:    "HTTP identity",
 		Label:       "User-Agent header",
-		Description: "Default User-Agent header value when browser emulation is not active.",
+		Description: "Default User-Agent header value when browser emulation is not active. Unset sends no User-Agent header.",
 		Type:        ConfigFieldTypeString,
-		Default:     "APEXLoad/1.0",
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1299,9 +1373,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "Headers and identity",
 		Label:       "Accept-Encoding header",
-		Description: "Default Accept-Encoding header value.",
+		Description: "Default Accept-Encoding header value. Unset sends no Accept-Encoding header.",
 		Type:        ConfigFieldTypeString,
-		Default:     "gzip, deflate, br",
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1310,9 +1383,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTargetIdentity,
 		Subgroup:    "HTTP identity",
 		Label:       "Accept-Language header",
-		Description: "Default Accept-Language header value.",
+		Description: "Default Accept-Language header value. Unset sends no Accept-Language header.",
 		Type:        ConfigFieldTypeString,
-		Default:     "en-US,en;q=0.9",
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1400,10 +1472,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "Redirects and HTML",
 		Label:       "HTML resource discovery scope",
-		Description: "Response content types scanned when discovering embedded HTML resources.",
+		Description: "Response content types scanned when discovering embedded HTML resources. Unset (\"\") scans every content-bearing response; html scans text/html only.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"html", "text", "any"},
-		Default:     "html",
+		Options:     []string{"", "html", "text", "any"},
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1507,7 +1578,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Mark synthesized traceparent as sampled",
 		Description: "Set the sampled flag (01) on synthesized W3C traceparent headers.",
 		Type:        ConfigFieldTypeBoolean,
-		Default:     false,
+		Default:     true,
 		TriState:    true,
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
@@ -1562,7 +1633,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Network simulation mode",
 		Description: "Bandwidth and latency shaping mode.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"", "disabled", "preset", "custom"},
+		Options:     []string{"", "max", "preset", "custom"},
 		Protocols:   protoHTTPFamily,
 		Scopes:      allScopes,
 	},
@@ -1805,7 +1876,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Fail action on SOAP Fault",
 		Description: "Mark the action failed whenever the response contains a SOAP Fault element.",
 		Type:        ConfigFieldTypeBoolean,
-		Default:     true,
+		Default:     false,
 		TriState:    true,
 		Protocols:   protoSOAP,
 		Scopes:      allScopes,
@@ -1989,8 +2060,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Java payload codec",
 		Description: "Serialization format used for Java-over-HTTP payloads.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"raw", "xml", "json", "java_serialized", "hessian"},
-		Default:     "raw",
+		Options:     []string{"java_serialized_object_base64"},
+		Default:     "java_serialized_object_base64",
 		Protocols:   protoJavaHTTP,
 		Scopes:      allScopes,
 	},
@@ -1999,10 +2070,10 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "Java over HTTP",
 		Label:       "Java serializer helper mode",
-		Description: "Helper execution strategy for Java object serialization.",
+		Description: "Helper execution strategy for Java object serialization (embedded; the sidecar helper is not wired for java_http).",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"none", "passthrough", "mapped"},
-		Default:     "none",
+		Options:     []string{"", "embedded"},
+		Default:     "embedded",
 		Protocols:   protoJavaHTTP,
 		Scopes:      allScopes,
 	},
@@ -2034,7 +2105,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Request body encoding",
 		Description: "Wire encoding of authored Java-over-HTTP request bodies.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"text", "base64", "hex"},
+		Options:     []string{"base64"},
 		Default:     "base64",
 		Protocols:   protoJavaHTTP,
 		Scopes:      allScopes,
@@ -2074,11 +2145,11 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "Java over HTTP",
 		Label:       "Default response extractor type",
-		Description: "Default extractor type applied to Java-over-HTTP responses.",
+		Description: "Default extractor type applied to Java-over-HTTP responses. Not supported by embedded java_http, so no editing scope offers it.",
 		Type:        ConfigFieldTypeSelect,
 		Options:     []string{"regex", "xpath", "jsonpath", "boundary"},
 		Protocols:   protoJavaHTTP,
-		Scopes:      allScopes,
+		Scopes:      retiredScopes,
 	},
 	{
 		Path:        "config.java_http.preserve_binary_result",
@@ -2309,9 +2380,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTargetIdentity,
 		Subgroup:    "Database",
 		Label:       "Database driver",
-		Description: "SQL driver name (postgres, mysql, sqlserver, oracle, or sqlite).",
+		Description: "SQL driver name (postgres, mysql, oracle, odbc, sqlite, or sqlite3).",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"postgres", "mysql", "sqlserver", "oracle", "sqlite"},
+		Options:     []string{"postgres", "mysql", "oracle", "odbc", "sqlite", "sqlite3"},
 		Protocols:   protoDatabase,
 		Scopes:      allScopes,
 	},
@@ -2586,9 +2657,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupTargetIdentity,
 		Subgroup:    "Browser identity",
 		Label:       "Browser engine",
-		Description: "Playwright browser engine (chromium, firefox, or webkit).",
+		Description: "Playwright browser engine (chromium or webkit).",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"chromium", "firefox", "webkit"},
+		Options:     []string{"chromium", "webkit"},
 		Default:     "chromium",
 		Protocols:   protoBrowser,
 		Scopes:      allScopes,
@@ -2718,7 +2789,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Viewport width",
 		Description: "Browser viewport width in pixels.",
 		Type:        ConfigFieldTypeInt,
-		Default:     1280,
+		Default:     browsercontract.DefaultViewportWidth,
 		Protocols:   protoBrowser,
 		Scopes:      allScopes,
 	},
@@ -2729,7 +2800,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Viewport height",
 		Description: "Browser viewport height in pixels.",
 		Type:        ConfigFieldTypeInt,
-		Default:     720,
+		Default:     browsercontract.DefaultViewportHeight,
 		Protocols:   protoBrowser,
 		Scopes:      allScopes,
 	},
@@ -2923,6 +2994,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Cache HTML content URLs",
 		Description: "Cache HTML document responses in addition to static assets.",
 		Type:        ConfigFieldTypeBoolean,
+		Default:     browsercontract.DefaultCacheContentURLs,
 		TriState:    true,
 		Protocols:   protoBrowser,
 		Scopes:      allScopes,
@@ -2955,9 +3027,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "Browser cache",
 		Label:       "Sub-resource download policy",
-		Description: "Control which sub-resources (all, html_only, or critical) the browser loads.",
+		Description: "Control which sub-resources the browser loads (all, only the recorded ones, or none).",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"all", "html_only", "critical"},
+		Options:     []string{"all", "recorded", "none"},
 		Default:     "all",
 		Protocols:   protoBrowser,
 		Scopes:      allScopes,
@@ -3396,9 +3468,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "SAP GUI",
 		Label:       "SAP session lifecycle",
-		Description: "Reuse or recreate SAP GUI sessions across iterations.",
+		Description: "Attach to an existing SAP GUI session, open a new one, or reuse one across iterations.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"reuse", "reset_per_iteration"},
+		Options:     []string{"reuse", "attach", "new_session"},
 		Default:     "reuse",
 		Protocols:   protoSAPGUI,
 		Scopes:      allScopes,
@@ -3526,9 +3598,9 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupProtocolBehaviorSession,
 		Subgroup:    "JMS",
 		Label:       "Session acknowledgement mode",
-		Description: "JMS message acknowledgement mode (auto, client, or transacted).",
+		Description: "JMS message acknowledgement mode (auto, dups_ok, client, or transacted; client and transacted run only in mock mode).",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"auto", "client", "transacted"},
+		Options:     []string{"auto", "dups_ok", "client", "transacted"},
 		Default:     "auto",
 		Protocols:   protoJMS,
 		Scopes:      allScopes,
@@ -4342,9 +4414,8 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Group:       ConfigGroupErrorsLoggingDiagnostics,
 		Subgroup:    "Error handling",
 		Label:       "Continue iteration on action error",
-		Description: "Continue executing subsequent steps in the iteration after an action fails.",
+		Description: "Continue executing subsequent steps in the iteration after an action fails. Unset inherits the scenario policy, which continues unless a layer disables it.",
 		Type:        ConfigFieldTypeBoolean,
-		Default:     false,
 		TriState:    true,
 		Protocols:   protoUniversal,
 		Scopes:      allScopes,
@@ -4574,7 +4645,7 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Label:       "Termination mode",
 		Description: "How the script determines when to stop iterating.",
 		Type:        ConfigFieldTypeSelect,
-		Options:     []string{"", "duration", "iterations", "whichever_first"},
+		Options:     []string{"", "duration", "iterations"},
 		Protocols:   protoUniversal,
 		Scopes:      allScopes,
 	},
@@ -4773,4 +4844,4 @@ var canonicalConfigCatalog = []ConfigFieldMeta{
 		Protocols:   protoUniversal,
 		Scopes:      allScopes,
 	},
-}
+})

@@ -1345,11 +1345,9 @@ func applyConfigOverrideField(dstCfg, srcCfg *dsl.ScriptConfig, canonicalPath st
 		dstField := dstVal.FieldByIndex(field.Index)
 		srcField := srcVal.FieldByIndex(field.Index)
 		if i == len(segments)-1 {
-			if canonicalPath == "error_handling.continue_on_error" && srcField.Kind() == reflect.Ptr && srcField.IsNil() {
-				falseVal := false
-				dstField.Set(reflect.ValueOf(&falseVal))
-				return nil
-			}
+			// A listed path with no value copies that absence: for the
+			// tri-state continue_on_error a nil means "not set at this layer",
+			// never an explicit opt-out.
 			deepCopyReflectValue(dstField, srcField)
 			return nil
 		}
@@ -1601,7 +1599,32 @@ func combineOverrideFields(baseFields, groupFields []string) []string {
 	return out
 }
 
+// v1RowForPartialMerge returns o unchanged when it is nil or already partial,
+// and otherwise a clone without the compact aliases v1 ignores beside their
+// section, so the partial merge applies exactly what v1 applied. The caller's
+// row is never modified.
+func v1RowForPartialMerge(o *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	if o == nil || len(o.OverrideFields) > 0 {
+		return o
+	}
+	shadowed := (o.Log != nil && o.LogLevel != "") ||
+		(o.RunLogic != nil && (o.Iterations != nil || o.AutoTransactions != "")) ||
+		(o.BrowserConfig != nil && o.Browser != nil)
+	if !shadowed {
+		return o
+	}
+	clone := cloneRuntimeSettings(o)
+	dropV1ShadowedRuntimeAliases(clone)
+	return clone
+}
+
 func mergeRuntimeSettingsPartial(base, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	// Either side may still be a v1 row (no override_fields) merged beside a
+	// partial one. v1 lets a section win over its compact alias, while the
+	// partial path fills a zero section value from the alias, so normalize a
+	// v1 side the same way a converted row is normalized before reading it.
+	base = v1RowForPartialMerge(base)
+	group = v1RowForPartialMerge(group)
 	baseFields := resolveEffectiveOverrideFields(base)
 	groupFields := resolveEffectiveOverrideFields(group)
 
@@ -1763,6 +1786,27 @@ func mergeRuntimeSettingsPartial(base, group *RuntimeSettingsOverride) *RuntimeS
 	return merged
 }
 
+// overridePathBelongsToRuntimeField reports whether a canonical
+// override_fields path is owned by a Command Center / replace-style runtime
+// field name (a section name or one of the compact aliases).
+func overridePathBelongsToRuntimeField(path, field string) bool {
+	top := overrideFieldTopSection(path)
+	if top == "browser" {
+		return field == "browser_config" || (field == "browser" && isCompactBrowserOverridePath(path))
+	}
+	switch field {
+	case top:
+		return true
+	case "iterations":
+		return path == "run_logic.iterations"
+	case "log_level":
+		return path == "log.level"
+	case "auto_transactions":
+		return path == "run_logic.auto_transactions"
+	}
+	return false
+}
+
 func reconcileReplacedOverrideFields(target, next, src *RuntimeSettingsOverride, replacedFields []string) []string {
 	targetFields := resolveEffectiveOverrideFields(target)
 	srcFields := resolveEffectiveOverrideFields(src)
@@ -1771,23 +1815,9 @@ func reconcileReplacedOverrideFields(target, next, src *RuntimeSettingsOverride,
 		replacedSet[f] = true
 	}
 	matchesReplaced := func(path string) bool {
-		top := overrideFieldTopSection(path)
-		if top == "browser" {
-			return replacedSet["browser_config"] || (replacedSet["browser"] && isCompactBrowserOverridePath(path))
-		}
-		if replacedSet[top] {
-			return true
-		}
-		if path == "run_logic.iterations" && replacedSet["iterations"] {
-			return true
-		}
-		if path == "log.level" && replacedSet["log_level"] {
-			return true
-		}
-		if path == "run_logic.auto_transactions" && replacedSet["auto_transactions"] {
-			return true
-		}
-		return false
+		return slices.ContainsFunc(replacedFields, func(field string) bool {
+			return overridePathBelongsToRuntimeField(path, field)
+		})
 	}
 	var out []string
 	seen := make(map[string]bool)
@@ -1830,6 +1860,26 @@ func reconcileReplacedOverrideFields(target, next, src *RuntimeSettingsOverride,
 	return out
 }
 
+// runtimeOverrideAppliesField reports whether overrides applies canonicalPath
+// at all. A legacy (v1) override with no override_fields applies every section
+// it carries, so the caller's own section-presence check decides; a partial
+// override applies only the listed paths (and the compact aliases it carries),
+// exactly as applyRuntimeOverridesPartial and the save-time projection do.
+func runtimeOverrideAppliesField(overrides *RuntimeSettingsOverride, canonicalPath string) bool {
+	if overrides == nil {
+		return false
+	}
+	if len(overrides.OverrideFields) == 0 {
+		return true
+	}
+	for _, path := range resolveEffectiveOverrideFields(overrides) {
+		if path == canonicalPath || strings.HasPrefix(canonicalPath, path+".") {
+			return true
+		}
+	}
+	return false
+}
+
 func runtimeOverridesSpecifiesIterations(overrides *RuntimeSettingsOverride) bool {
 	if overrides == nil {
 		return false
@@ -1838,16 +1888,10 @@ func runtimeOverridesSpecifiesIterations(overrides *RuntimeSettingsOverride) boo
 		return (overrides.RunLogic != nil && overrides.RunLogic.Iterations > 0) ||
 			(overrides.Iterations != nil && *overrides.Iterations > 0)
 	}
-	normalized, err := normalizeRuntimeOverrideFields(overrides.OverrideFields)
-	if err != nil {
-		return false
-	}
-	for _, path := range normalized {
-		if path == "run_logic" || path == "run_logic.iterations" {
-			return true
-		}
-	}
-	return false
+	// Partial overrides: iterations apply when run_logic.iterations is listed
+	// (directly or via run_logic) or implied by a compact iterations alias,
+	// exactly as applyRuntimeOverridesPartial applies them.
+	return runtimeOverrideAppliesField(overrides, "run_logic.iterations")
 }
 
 func runtimeOverridesSpecifiesThinkTime(overrides *RuntimeSettingsOverride) bool {

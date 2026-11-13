@@ -16,7 +16,9 @@
       "recorded",
       "random_percentage",
       "gaussian",
-      "uniform"
+      "normal",
+      "uniform",
+      "exponential"
     ]
   },
   {
@@ -84,7 +86,8 @@
       "random_delay",
       "fixed_interval",
       "random_interval",
-      "tps"
+      "tps",
+      "quota"
     ]
   },
   {
@@ -154,7 +157,9 @@
     "type": "select",
     "options": [
       "1.1",
-      "2"
+      "2",
+      "auto+h3",
+      "3"
     ]
   },
   {

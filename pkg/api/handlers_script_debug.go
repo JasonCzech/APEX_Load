@@ -309,7 +309,7 @@ func applyScriptDebugOverrides(script *dsl.Script, req *ScriptDebugStartRequest)
 	}
 	if strings.TrimSpace(req.LogLevel) != "" {
 		script.Config.Log.Level = normalizeDebugLogLevel(req.LogLevel)
-	} else if req.RuntimeOverrides != nil && strings.TrimSpace(script.Config.Log.Level) != "" {
+	} else if runtimeOverridesSpecifiesLogLevel(req.RuntimeOverrides) && strings.TrimSpace(script.Config.Log.Level) != "" {
 		req.LogLevel = normalizeDebugLogLevel(script.Config.Log.Level)
 	}
 	if req.Iterations > 0 {

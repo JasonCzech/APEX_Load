@@ -367,6 +367,11 @@ func appendSOAPConfig(cfg map[string]any, script *dsl.Script) {
 			}
 			if token.Password != "" {
 				cfg["soap_ws_security_password"] = token.Password
+				// Origin, not shape: only a secret-store reference marks the
+				// password for withholding from SOAP snapshots and evidence.
+				if containsPlatformSecretReference(token.Password) {
+					cfg["soap_ws_security_password_secret_store"] = true
+				}
 			}
 			if token.PasswordType != "" {
 				cfg["soap_ws_security_password_type"] = token.PasswordType

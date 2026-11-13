@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
@@ -201,7 +202,18 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 		// that is absent from the source group's effective profile must therefore
 		// clear a target override for that field. Using mergeRuntimeSettings here
 		// retained stale target values because nil/empty source fields were skipped.
-		refs[target].RuntimeSettings = replaceRuntimeFields(refs[target].RuntimeSettings, effective, applicable)
+		priorTargetRuntime := refs[target].RuntimeSettings
+		refs[target].RuntimeSettings = replaceRuntimeFields(priorTargetRuntime, effective, applicable)
+		if slices.Contains(applicable, "soap") {
+			sourceToken := soapUsernameTokenOf(refs[target].RuntimeSettings)
+			refs[target].RuntimeSettings = keepTargetSOAPCredentials(refs[target].RuntimeSettings, priorTargetRuntime)
+			if sourceToken != nil && (sourceToken.Username != "" || sourceToken.Password != "") {
+				targetToken := soapUsernameTokenOf(tr.effectiveGroupRuntimeLocked(stored, refs[target].ScriptID, refs[target].RuntimeSettings))
+				if targetToken == nil || (targetToken.Username == "" && targetToken.Password == "") {
+					return nil, true, fmt.Errorf("target group %d has no SOAP WS-Security credentials of its own; WS-Security credentials are not copied between groups, so enter them for that group first", target)
+				}
+			}
+		}
 		applied++
 	}
 
@@ -286,6 +298,165 @@ func (tr *TestRunner) ApplyScenarioRuntimeToGroups(id string, req ApplyRuntimeTo
 		Applied:         applied,
 		Skipped:         skipped,
 	}, true, nil
+}
+
+// effectiveGroupRuntimeLocked materializes a group's effective runtime profile
+// (engine defaults -> group script -> scenario root -> group override), the
+// same layering ApplyScenarioRuntimeToGroups uses for the source group.
+func (tr *TestRunner) effectiveGroupRuntimeLocked(scenario *StoredScenario, scriptID string, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	effective := runtimeSettingsFromScriptConfig(dsl.DefaultScriptConfig())
+	if stored, ok := tr.scripts[scriptID]; ok && stored != nil && stored.Script != nil {
+		effective = mergeRuntimeSettings(effective, runtimeSettingsFromScriptConfig(stored.Script.Config))
+	}
+	if scenario != nil {
+		effective = mergeRuntimeSettings(effective, scenario.RuntimeSettings)
+	}
+	return mergeRuntimeSettings(effective, group)
+}
+
+// soapCredentialFieldPaths are the WS-Security UsernameToken credential leaves
+// that apply-to-groups never copies from the source group.
+var soapCredentialFieldPaths = []string{
+	"soap.ws_security.username_token.username",
+	"soap.ws_security.username_token.password",
+}
+
+func soapUsernameTokenOf(o *RuntimeSettingsOverride) *dsl.SOAPUsernameTokenConfig {
+	if o == nil || o.SOAP == nil || o.SOAP.WSSecurity == nil {
+		return nil
+	}
+	return o.SOAP.WSSecurity.UsernameToken
+}
+
+// keepTargetSOAPCredentials keeps WS-Security UsernameToken credentials out of
+// an apply-to-groups copy, as Env secrets are. Copying them would either store
+// the source script's literal unsealed in the target row or hand the target the
+// source group's controller-owned APEX_RUNTIME_OVERRIDE_G<n>_* reference, which
+// couples rotation and lifetime across groups. The rest of the SOAP section is
+// copied.
+//
+// A credential the target's own prior group override set is kept in the row:
+// it was sealed for this group when that override was stored. Any other
+// credential (from the target's script or the scenario root) is never written
+// into the row, because this path does not run StoreScenario's seal pass and
+// writing it would also pin it. The row instead records override_fields that
+// cover the copied SOAP settings but leave those credential leaves out, so the
+// target keeps inheriting them from its script or the scenario root.
+func keepTargetSOAPCredentials(next, prior *RuntimeSettingsOverride) *RuntimeSettingsOverride {
+	sourceToken := soapUsernameTokenOf(next)
+	if sourceToken == nil {
+		// The copied section has no UsernameToken, so it carries no credential.
+		return next
+	}
+	priorFields := resolveEffectiveOverrideFields(prior)
+	priorToken := soapUsernameTokenOf(prior)
+	ownCredential := func(path string) string {
+		if priorToken == nil || !overrideFieldsCoverPath(priorFields, path) {
+			return ""
+		}
+		if strings.HasSuffix(path, ".username") {
+			return priorToken.Username
+		}
+		return priorToken.Password
+	}
+	token := *sourceToken
+	token.Username = ownCredential(soapCredentialFieldPaths[0])
+	token.Password = ownCredential(soapCredentialFieldPaths[1])
+	inherited := map[string]bool{}
+	if token.Username == "" {
+		inherited[soapCredentialFieldPaths[0]] = true
+	}
+	if token.Password == "" {
+		inherited[soapCredentialFieldPaths[1]] = true
+	}
+	security := *next.SOAP.WSSecurity
+	security.UsernameToken = &token
+	soap := *next.SOAP
+	soap.WSSecurity = &security
+	next.SOAP = &soap
+	if len(inherited) == 0 {
+		return next
+	}
+	if len(next.OverrideFields) == 0 {
+		// The row is about to switch from v1 to partial semantics. Drop the
+		// compact aliases v1 ignores when their section is present, so the
+		// partial row applies exactly what the v1 row applied.
+		dropV1ShadowedRuntimeAliases(next)
+	}
+	fields := make([]string, 0, 8)
+	for _, path := range resolveEffectiveOverrideFields(next) {
+		if overrideFieldTopSection(path) != "soap" {
+			fields = append(fields, path)
+		}
+	}
+	next.OverrideFields = append(fields, overrideFieldPathsExcluding(reflect.TypeOf(dsl.SOAPConfig{}), "soap", inherited)...)
+	return next
+}
+
+// dropV1ShadowedRuntimeAliases removes the compact aliases a v1 row carries
+// alongside their section. v1 applyRuntimeOverrides lets the section win
+// (log over log_level, run_logic over iterations/auto_transactions, the full
+// browser section over the compact browser override), while the partial path
+// fills a zero section value from the alias. Call it only on a v1 row before
+// giving it override_fields.
+func dropV1ShadowedRuntimeAliases(o *RuntimeSettingsOverride) {
+	if o == nil || len(o.OverrideFields) > 0 {
+		return
+	}
+	if o.Log != nil {
+		o.LogLevel = ""
+	}
+	if o.RunLogic != nil {
+		o.Iterations = nil
+		o.AutoTransactions = ""
+	}
+	if o.BrowserConfig != nil {
+		o.Browser = nil
+	}
+}
+
+// overrideFieldsCoverPath reports whether an override_fields list owns path,
+// either exactly or through an ancestor section.
+func overrideFieldsCoverPath(fields []string, path string) bool {
+	for _, field := range fields {
+		if field == path || strings.HasPrefix(path, field+".") {
+			return true
+		}
+	}
+	return false
+}
+
+// overrideFieldPathsExcluding lists override field paths that together cover
+// every field of t under prefix except the excluded leaves. Only structs on the
+// way to an excluded leaf are expanded; every other field stays one path.
+func overrideFieldPathsExcluding(t reflect.Type, prefix string, excluded map[string]bool) []string {
+	for t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	var paths []string
+	for i := 0; i < t.NumField(); i++ {
+		name, _, _ := strings.Cut(t.Field(i).Tag.Get("json"), ",")
+		if name == "" || name == "-" {
+			continue
+		}
+		path := prefix + "." + name
+		if excluded[path] {
+			continue
+		}
+		expand := false
+		for leaf := range excluded {
+			if strings.HasPrefix(leaf, path+".") {
+				expand = true
+				break
+			}
+		}
+		if expand {
+			paths = append(paths, overrideFieldPathsExcluding(t.Field(i).Type, path, excluded)...)
+		} else {
+			paths = append(paths, path)
+		}
+	}
+	return paths
 }
 
 // runtimeSettingsFromScriptConfig projects concrete DSL configuration sections
@@ -614,7 +785,18 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 	}
 
 	if len(next.OverrideFields) > 0 || len(src.OverrideFields) > 0 {
-		next.OverrideFields = reconcileReplacedOverrideFields(target, next, src, fields)
+		reconcileTarget := target
+		if len(next.OverrideFields) == 0 {
+			// A v1 target row is about to switch to partial semantics. Drop
+			// the compact aliases v1 ignores beside their section (log_level
+			// beside log, iterations/auto_transactions beside run_logic, the
+			// compact browser override beside browser_config) so the
+			// converted row applies exactly what the v1 row applied for every
+			// field that was not copied.
+			dropV1ShadowedRuntimeAliases(next)
+			reconcileTarget = v1RowForPartialMerge(target)
+		}
+		next.OverrideFields = reconcileReplacedOverrideFields(reconcileTarget, next, src, fields)
 	}
 
 	if runtimeSettingsOverrideEmpty(next) {

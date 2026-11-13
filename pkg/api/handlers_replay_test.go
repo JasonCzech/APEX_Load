@@ -1694,49 +1694,274 @@ func TestHandleReplayStoredScriptAppliesRuntimeOverridesWithoutMutatingStoredScr
 	if respBad.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400 for invalid override_fields body=%s", respBad.Code, respBad.Body.String())
 	}
+}
 
-	// Credential-preserving imported script echoed via req.Script alongside runtime_overrides
-	// changing base_url to an untrusted host must still be rejected by validatePreservedImportCredentialEdits.
-	preservedStored := server.runner.StoreScript(&dsl.Script{
-		Name:     "Preserved Import Replay Target",
+func postReplayAPIJSON(t *testing.T, server *Server, path string, payload any) *httptest.ResponseRecorder {
+	t.Helper()
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	return resp
+}
+
+func replayResponseRuntimeLogLevel(t *testing.T, resp *httptest.ResponseRecorder) string {
+	t.Helper()
+	var decoded struct {
+		Report struct {
+			RuntimeProfile struct {
+				LogLevel string `json:"log_level"`
+			} `json:"runtime_profile"`
+		} `json:"report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode replay response: %v body=%s", err, resp.Body.String())
+	}
+	return decoded.Report.RuntimeProfile.LogLevel
+}
+
+// A classic replay runtime override of run_logic.iterations must run that
+// many iterations (the debug path already does); without an override the
+// classic replay keeps running one iteration whatever the script says.
+func TestClassicReplayHonorsIterationsOverride(t *testing.T) {
+	var executed atomic.Int64
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		executed.Add(1)
+		return &protocol.Result{StatusCode: 200, Success: true}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Classic Replay Iterations",
 		Version:  "1.0.0",
 		Protocol: protocolName,
-		Metadata: &dsl.ScriptMetadata{
-			Import: &dsl.ImportMetadata{
-				Source: "har",
-				Preserved: map[string]any{
-					"credential_preservation": map[string]any{"enabled": true},
-				},
-			},
-		},
 		Config: dsl.ScriptConfig{
-			BaseURL: "https://trusted-replay.example.test",
-			HTTP: dsl.HTTPConfig{
-				DefaultHeaderList: dsl.HeaderList{
-					{Name: "Authorization", Value: "Bearer super-secret-replay-token"},
-				},
+			BaseURL:  "https://stored-replay.example.test",
+			RunLogic: dsl.RunLogicConfig{Iterations: 5},
+		},
+		Actions: []dsl.Action{{Name: "fetch", Type: "GET", Method: "GET", Target: "/v1/items"}},
+	})
+	if stored == nil {
+		t.Fatal("StoreScript returned nil")
+	}
+	path := "/api/v1/scripts/" + stored.ID + "/replay"
+
+	resp := postReplayAPIJSON(t, server, path, ReplayScriptRequest{})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("no-override status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := executed.Swap(0); got != 1 {
+		t.Fatalf("no-override executed = %d, want 1 (classic replay ignores script iterations)", got)
+	}
+
+	resp = postReplayAPIJSON(t, server, path, ReplayScriptRequest{RuntimeOverrides: &RuntimeSettingsOverride{
+		RunLogic:       &dsl.RunLogicConfig{Iterations: 3},
+		OverrideFields: []string{"run_logic.iterations"},
+	}})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("override status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := executed.Swap(0); got != 3 {
+		t.Fatalf("override executed = %d, want 3 from runtime_overrides run_logic.iterations", got)
+	}
+
+	// An override that does not name iterations leaves the one-iteration default.
+	resp = postReplayAPIJSON(t, server, path, ReplayScriptRequest{RuntimeOverrides: &RuntimeSettingsOverride{
+		BaseURL:        "https://override-replay.example.test",
+		OverrideFields: []string{"base_url"},
+	}})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("base_url override status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if got := executed.Swap(0); got != 1 {
+		t.Fatalf("base_url override executed = %d, want 1", got)
+	}
+
+	tooMany := maxScriptDebugIterations + 1
+	resp = postReplayAPIJSON(t, server, path, ReplayScriptRequest{RuntimeOverrides: &RuntimeSettingsOverride{
+		Iterations:     &tooMany,
+		OverrideFields: []string{"run_logic.iterations"},
+	}})
+	if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), scriptDebugIterationsError) {
+		t.Fatalf("excess iterations status = %d body=%s, want 400 %q", resp.Code, resp.Body.String(), scriptDebugIterationsError)
+	}
+	if got := executed.Load(); got != 0 {
+		t.Fatalf("excess iterations executed = %d, want 0", got)
+	}
+}
+
+// Classic replay and debug sessions default to info logging. The script's
+// own config.log.level replaces that default only when a runtime override
+// names the log level.
+func TestReplayAndDebugLogLevelDefaultUnlessOverridden(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{StatusCode: 200, Success: true}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Log Level Default",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://stored-log.example.test",
+			Log:     dsl.LogConfig{Level: "error"},
+		},
+		Actions: []dsl.Action{{Name: "fetch", Type: "GET", Method: "GET", Target: "/v1/items"}},
+	})
+	if stored == nil {
+		t.Fatal("StoreScript returned nil")
+	}
+	replayPath := "/api/v1/scripts/" + stored.ID + "/replay"
+	debugPath := "/api/v1/scripts/" + stored.ID + "/debug/sessions"
+
+	cases := []struct {
+		name      string
+		overrides *RuntimeSettingsOverride
+		sessionID string
+		want      string
+	}{
+		{name: "no overrides", sessionID: "a1100000-0000-4000-8000-000000000001", want: "info"},
+		{
+			name:      "override without log level",
+			overrides: &RuntimeSettingsOverride{BaseURL: "https://override-log.example.test", OverrideFields: []string{"base_url"}},
+			sessionID: "a1100000-0000-4000-8000-000000000002",
+			want:      "info",
+		},
+		{
+			name:      "partial log.level override",
+			overrides: &RuntimeSettingsOverride{Log: &dsl.LogConfig{Level: "warn"}, OverrideFields: []string{"log.level"}},
+			sessionID: "a1100000-0000-4000-8000-000000000003",
+			want:      "warn",
+		},
+		{
+			name:      "legacy whole log section",
+			overrides: &RuntimeSettingsOverride{Log: &dsl.LogConfig{Level: "debug"}},
+			sessionID: "a1100000-0000-4000-8000-000000000004",
+			want:      "debug",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := postReplayAPIJSON(t, server, replayPath, ReplayScriptRequest{RuntimeOverrides: tc.overrides})
+			if resp.Code != http.StatusOK {
+				t.Fatalf("replay status = %d body=%s", resp.Code, resp.Body.String())
+			}
+			if got := replayResponseRuntimeLogLevel(t, resp); got != tc.want {
+				t.Fatalf("classic replay log_level = %q, want %q", got, tc.want)
+			}
+
+			resp = postReplayAPIJSON(t, server, debugPath, ScriptDebugStartRequest{
+				ReplaySessionID:  tc.sessionID,
+				RuntimeOverrides: tc.overrides,
+			})
+			if resp.Code != http.StatusOK {
+				t.Fatalf("debug status = %d body=%s", resp.Code, resp.Body.String())
+			}
+			session := waitForScriptDebugStatus(t, server.scriptDebug, tc.sessionID, ScriptDebugCompleted)
+			if session.LogLevel != tc.want || session.RuntimeProfile.LogLevel != tc.want {
+				t.Fatalf("debug LogLevel = %q profile = %q, want %q", session.LogLevel, session.RuntimeProfile.LogLevel, tc.want)
+			}
+		})
+	}
+}
+
+// A stored credential-preserving import (import_value_policy=preserve) that is
+// replayed or debugged with runtime_overrides must be judged by the
+// retained-credential edit policy against the durable stored snapshot, both
+// when the request runs the stored script and when it echoes an edited
+// projection in req.Script. That policy is permissive today (imported values
+// are not secrets), so the override runs; the stub proves the policy hook is
+// consulted with the overridden clone and the stored snapshot as prior.
+func TestPreservedImportRuntimeOverridesConsultCredentialEditPolicy(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{StatusCode: 200, Success: true}, nil
+	})
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:     "Preserved Import Override Target",
+		Version:  "1.0.0",
+		Protocol: protocolName,
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "har",
+			Preserved: map[string]any{
+				dsl.ImportPreservedCredentialPolicyKey: dsl.ImportPreservedCredentialPolicyPreserve,
 			},
-		},
-		Actions: []dsl.Action{{
-			Name:   "authed-get",
-			Type:   "http_request",
-			Method: "GET",
-			Target: "https://trusted-replay.example.test/v1/me",
 		}},
-	})
-	echoProjection := maskScriptSecrets(preservedStored.Script)
-	exfilBody, _ := json.Marshal(ReplayScriptRequest{
-		Script: echoProjection,
-		RuntimeOverrides: &RuntimeSettingsOverride{
-			BaseURL:        "https://attacker.example.com",
-			OverrideFields: []string{"base_url"},
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://trusted-import.example.test",
+			HTTP: dsl.HTTPConfig{DefaultHeaderList: dsl.HeaderList{
+				{Name: "Authorization", Value: "Bearer imported-token"},
+			}},
 		},
+		Actions: []dsl.Action{{Name: "authed-get", Type: "GET", Method: "GET", Target: "/v1/me"}},
 	})
-	reqExfil := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+preservedStored.ID+"/replay", bytes.NewReader(exfilBody))
-	reqExfil.Header.Set("Content-Type", "application/json")
-	respExfil := httptest.NewRecorder()
-	server.mux.ServeHTTP(respExfil, reqExfil)
-	if respExfil.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400 when echoing preserved-credential script with base_url override body=%s", respExfil.Code, respExfil.Body.String())
+	if stored == nil {
+		t.Fatal("StoreScript returned nil")
+	}
+	if !isCredentialPreservingImport(stored.Script) {
+		t.Fatal("fixture is not a credential-preserving import")
+	}
+	// The echoed script is an unmasked editor draft with an edited base_url.
+	// It binds through the unmasked preserved-import preparation path and
+	// differs from the stored snapshot it must be judged against, so a
+	// regression that judged the override against the echo would be caught.
+	echoed := cloneScriptDefinition(stored.Script)
+	echoed.Config.BaseURL = "https://echoed-edit.example.test"
+	if _, _, err := resolveStoredReplayImportScript(cloneScriptDefinition(echoed), stored.Script, server.runner.preservedImportEditOptions()); err != nil {
+		t.Fatalf("echoed draft does not bind: %v", err)
+	}
+	overrides := &RuntimeSettingsOverride{
+		BaseURL:        "https://other-host.example.test",
+		OverrideFields: []string{"base_url"},
+	}
+	replayPath := "/api/v1/scripts/" + stored.ID + "/replay"
+	debugPath := "/api/v1/scripts/" + stored.ID + "/debug/sessions"
+
+	// Current permissive policy: the override runs, stored or echoed.
+	for i, script := range []*dsl.Script{nil, echoed} {
+		if resp := postReplayAPIJSON(t, server, replayPath, ReplayScriptRequest{Script: cloneScriptDefinition(script), RuntimeOverrides: overrides}); resp.Code != http.StatusOK {
+			t.Fatalf("permissive replay[%d] status = %d body=%s", i, resp.Code, resp.Body.String())
+		}
+		sessionID := "a1100000-0000-4000-8000-00000000001" + strconv.Itoa(i)
+		if resp := postReplayAPIJSON(t, server, debugPath, ScriptDebugStartRequest{
+			ReplaySessionID:  sessionID,
+			Script:           cloneScriptDefinition(script),
+			RuntimeOverrides: overrides,
+		}); resp.Code != http.StatusOK {
+			t.Fatalf("permissive debug[%d] status = %d body=%s", i, resp.Code, resp.Body.String())
+		}
+		waitForScriptDebugStatus(t, server.scriptDebug, sessionID, ScriptDebugCompleted)
+	}
+
+	var consulted []string
+	original := validatePreservedImportCredentialEdits
+	validatePreservedImportCredentialEdits = func(candidate, prior *dsl.Script) error {
+		consulted = append(consulted, candidate.Config.BaseURL+" <- "+prior.Config.BaseURL)
+		return errors.New("stub credential edit policy refusal")
+	}
+	t.Cleanup(func() { validatePreservedImportCredentialEdits = original })
+
+	for _, tc := range []struct {
+		name    string
+		path    string
+		payload any
+	}{
+		{"stored replay", replayPath, ReplayScriptRequest{RuntimeOverrides: overrides}},
+		{"stored debug", debugPath, ScriptDebugStartRequest{ReplaySessionID: "a1100000-0000-4000-8000-000000000020", RuntimeOverrides: overrides}},
+		{"echoed replay", replayPath, ReplayScriptRequest{Script: cloneScriptDefinition(echoed), RuntimeOverrides: overrides}},
+		{"echoed debug", debugPath, ScriptDebugStartRequest{ReplaySessionID: "a1100000-0000-4000-8000-000000000021", Script: cloneScriptDefinition(echoed), RuntimeOverrides: overrides}},
+	} {
+		before := len(consulted)
+		resp := postReplayAPIJSON(t, server, tc.path, tc.payload)
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "stub credential edit policy refusal") {
+			t.Fatalf("%s status = %d body=%s, want 400 from the credential edit policy", tc.name, resp.Code, resp.Body.String())
+		}
+		want := "https://other-host.example.test <- https://trusted-import.example.test"
+		if len(consulted) != before+1 || consulted[before] != want {
+			t.Fatalf("%s policy consulted with %q, want one call %q (prior = stored snapshot)", tc.name, consulted[before:], want)
+		}
 	}
 }
