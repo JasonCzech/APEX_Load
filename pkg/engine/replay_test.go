@@ -1585,3 +1585,58 @@ func TestReplayScriptMultipleIterations(t *testing.T) {
 		t.Fatalf("phases=%v want %v", phases, want)
 	}
 }
+
+// Unredacted debug hides only secret-store values. A WS-Security password
+// resolved from {{secret.NAME}} is masked by the runtime secret matcher, in its
+// raw and XML-escaped spellings; a script-sourced WS-Security password is not a
+// secret and stays visible.
+func TestReplayUnredactedDebugMasksOnlySecretStoreWSSecurityPasswords(t *testing.T) {
+	const (
+		managedPass  = "vault&wsse-pass-0042"
+		escapedPass  = "vault&amp;wsse-pass-0042"
+		scriptedPass = "script-sourced-wsse-pass"
+	)
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		reqBody := `<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Header><wsse:Security xmlns:wsse="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"><wsse:UsernameToken><wsse:Username>svc</wsse:Username><wsse:Password Type="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0#PasswordText">` + escapedPass + `</wsse:Password></wsse:UsernameToken></wsse:Security></soap:Header><soap:Body><Op/></soap:Body></soap:Envelope>`
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    false,
+			StatusCode: 500,
+			Snapshot: &protocol.ErrorSnapshot{
+				RequestMethod: "POST",
+				RequestURL:    "https://example.test/ws",
+				RequestBody:   reqBody,
+				ResponseBody:  `<echo>` + managedPass + `</echo><wsse:Password>` + scriptedPass + `</wsse:Password>`,
+			},
+		}, nil
+	})
+
+	script := &dsl.Script{
+		Name:     "SOAPWSSEDebug",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{SOAP: dsl.SOAPConfig{WSSecurity: &dsl.SOAPWSSecurityConfig{
+			UsernameToken: &dsl.SOAPUsernameTokenConfig{Username: "svc", Password: "{{secret.SOAP_PASS}}", PasswordType: "text"},
+		}}},
+		Actions: []dsl.Action{{Name: "CallWS", Type: "POST", Method: "POST", Target: "/ws"}},
+	}
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{
+		IgnoreThinkTime: true,
+		UnredactedDebug: true,
+		SecretResolver: SecretResolverFunc(func(name string) (string, bool) {
+			return managedPass, name == "SOAP_PASS"
+		}),
+		DebugController: replayDebugControllerFunc(func(_ context.Context, a ReplayDebugAction) error {
+			return nil
+		}),
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	raw, _ := json.Marshal(report)
+	if strings.Contains(string(raw), managedPass) || strings.Contains(string(raw), escapedPass) || strings.Contains(string(raw), "wsse-pass-0042") {
+		t.Fatalf("unredacted debug replay leaked the secret-store WS-Security password: %s", raw)
+	}
+	if len(report.Snapshots) == 0 || !strings.Contains(report.Snapshots[0].ResponseBody, "<wsse:Password>"+scriptedPass+"</wsse:Password>") {
+		t.Fatalf("unredacted debug must keep the script-sourced WS-Security password: %+v", report.Snapshots)
+	}
+}

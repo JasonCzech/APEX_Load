@@ -905,6 +905,12 @@ func (collector *importedCredentialCollector) collectSensitiveConfig(config dsl.
 	if config.Network.Username != "" || config.Network.Password != "" {
 		collector.collectLiteralMailSASLComposites(config.Network.Username, config.Network.Password)
 	}
+	if config.SOAP.WSSecurity != nil && config.SOAP.WSSecurity.UsernameToken != nil {
+		wssePass := config.SOAP.WSSecurity.UsernameToken.Password
+		if strings.TrimSpace(wssePass) != "" && !containsPlatformSecretReference(wssePass) {
+			collector.add(wssePass)
+		}
+	}
 	if state := strings.TrimSpace(config.Browser.StorageState); state != "" && !containsPlatformSecretReference(state) && !templatePattern.MatchString(state) {
 		for _, secret := range browserprotocol.StorageStateSecretValues(state) {
 			collector.add(secret)
@@ -975,6 +981,17 @@ func (collector *importedCredentialCollector) collectScriptConfigTarget(
 			return errors.New("retained database DSN locator no longer matches executable config")
 		}
 		collector.collectDSN(collector.script.Config.Database.DSN)
+		return nil
+	case strings.Contains(field, "config.soap.ws_security.username_token.password"):
+		if collector.script.Config.SOAP.WSSecurity == nil ||
+			collector.script.Config.SOAP.WSSecurity.UsernameToken == nil ||
+			strings.TrimSpace(collector.script.Config.SOAP.WSSecurity.UsernameToken.Password) == "" {
+			return errors.New("retained SOAP WS-Security password locator no longer matches executable config")
+		}
+		wssePass := collector.script.Config.SOAP.WSSecurity.UsernameToken.Password
+		if !containsPlatformSecretReference(wssePass) {
+			collector.add(wssePass)
+		}
 		return nil
 	case strings.Contains(field, "config.java_vuser.additional_vm_parameters"):
 		parameters := collector.script.Config.JavaVuser.AdditionalVMParameters

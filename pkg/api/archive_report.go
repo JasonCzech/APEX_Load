@@ -1128,6 +1128,11 @@ func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
 	if settings == nil {
 		return nil
 	}
+	if len(settings.OverrideFields) > 0 {
+		// A partial override applies exactly its listed paths (plus the
+		// compact aliases it carries); sections it merely carries do not.
+		return append([]string(nil), resolveEffectiveOverrideFields(settings)...)
+	}
 	fields := make([]string, 0, 6)
 	if settings.Results != nil {
 		fields = append(fields, "results")
@@ -1173,6 +1178,12 @@ func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
 	}
 	if settings.WebRuntime != nil {
 		fields = append(fields, "web_runtime")
+	}
+	if settings.WebSocket != nil {
+		fields = append(fields, "websocket")
+	}
+	if settings.SOAP != nil {
+		fields = append(fields, "soap")
 	}
 	if settings.BrowserConfig != nil {
 		fields = append(fields, "browser_config")

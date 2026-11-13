@@ -2420,6 +2420,22 @@ func runtimeSettingsIterationValue(settings *RuntimeSettingsOverride) (int, bool
 	if settings == nil {
 		return 0, false
 	}
+	if len(settings.OverrideFields) > 0 {
+		// A partial override states iterations only when override_fields
+		// (or the compact alias) lists it; a run_logic section carried for a
+		// sibling such as workload_model has a zero Iterations that is not an
+		// override. Precedence mirrors overrideToScriptConfig.
+		if !runtimeOverrideAppliesField(settings, "run_logic.iterations") {
+			return 0, false
+		}
+		if settings.RunLogic != nil && settings.RunLogic.Iterations > 0 {
+			return settings.RunLogic.Iterations, true
+		}
+		if settings.Iterations != nil {
+			return *settings.Iterations, true
+		}
+		return 0, true
+	}
 	if settings.RunLogic != nil {
 		return settings.RunLogic.Iterations, true
 	}
@@ -2427,6 +2443,14 @@ func runtimeSettingsIterationValue(settings *RuntimeSettingsOverride) (int, bool
 		return *settings.Iterations, true
 	}
 	return 0, false
+}
+
+// runtimeOverrideDeclaresOpenModel reports whether a runtime-settings layer
+// selects the open workload model, honoring partial override_fields.
+func runtimeOverrideDeclaresOpenModel(settings *RuntimeSettingsOverride) bool {
+	return settings != nil && settings.RunLogic != nil &&
+		runtimeOverrideAppliesField(settings, "run_logic.workload_model") &&
+		dsl.CanonicalWorkloadModel(settings.RunLogic.WorkloadModel) == "open"
 }
 
 func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations int) *RuntimeSettingsOverride {
@@ -2911,8 +2935,8 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: vusers cannot exceed %d", index, maxManagedTestVUsers)
 	}
 	groupIsOpenModel := (script.Script != nil && dsl.CanonicalWorkloadModel(script.Script.Config.RunLogic.WorkloadModel) == "open") ||
-		(group.RuntimeSettings != nil && group.RuntimeSettings.RunLogic != nil && dsl.CanonicalWorkloadModel(group.RuntimeSettings.RunLogic.WorkloadModel) == "open") ||
-		(runtimeSettings != nil && runtimeSettings.RunLogic != nil && dsl.CanonicalWorkloadModel(runtimeSettings.RunLogic.WorkloadModel) == "open")
+		runtimeOverrideDeclaresOpenModel(group.RuntimeSettings) ||
+		runtimeOverrideDeclaresOpenModel(runtimeSettings)
 	allowStageTargetTPS := normalizeScenarioMode(scenarioMode) != "vuser_driven" || groupIsOpenModel
 	derivedRampUp, derivedRampDown, derivedVUsers, err := loadStageCompatibility(group.Stages, index, allowStageTargetTPS)
 	if err != nil {
@@ -2945,13 +2969,19 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
 	}
 	if group.RuntimeSettings != nil {
-		if group.RuntimeSettings.RunLogic == nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
+		// Under partial override_fields a zero run_logic.iterations is "not
+		// set" (overrideToScriptConfig lets the compact alias win), so only a
+		// positive value claims the canonical representation there.
+		partialRuntime := len(group.RuntimeSettings.OverrideFields) > 0
+		runLogicIterationsSet := group.RuntimeSettings.RunLogic != nil &&
+			(!partialRuntime || group.RuntimeSettings.RunLogic.Iterations > 0)
+		if !runLogicIterationsSet && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
 		}
 		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.RunLogic.Iterations < 0 {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.run_logic.iterations must be zero or greater", index)
 		}
-		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.Iterations != nil && group.RuntimeSettings.RunLogic.Iterations != *group.RuntimeSettings.Iterations {
+		if runLogicIterationsSet && group.RuntimeSettings.Iterations != nil && group.RuntimeSettings.RunLogic.Iterations != *group.RuntimeSettings.Iterations {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations conflicts with runtime_settings.run_logic.iterations", index)
 		}
 		if group.Iterations != nil {
@@ -2962,8 +2992,16 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 		// Canonical sections are authoritative. Remove the legacy alias once its
 		// value has been checked so later merges cannot retain two representations.
 		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.Iterations != nil {
-			group.RuntimeSettings = cloneRuntimeSettings(group.RuntimeSettings)
-			group.RuntimeSettings.Iterations = nil
+			folded := cloneRuntimeSettings(group.RuntimeSettings)
+			if !runLogicIterationsSet {
+				folded.RunLogic = cloneRunLogicConfig(folded.RunLogic)
+				folded.RunLogic.Iterations = *folded.Iterations
+			}
+			folded.Iterations = nil
+			if partialRuntime && !runtimeOverrideAppliesField(folded, "run_logic.iterations") {
+				folded.OverrideFields = append(append([]string(nil), folded.OverrideFields...), "run_logic.iterations")
+			}
+			group.RuntimeSettings = folded
 		}
 	}
 	assignment, err := normalizeGroupGeneratorAssignmentSettings(group.Assignment)

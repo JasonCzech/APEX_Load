@@ -1372,7 +1372,13 @@ func runtimeSettingsFieldChanges(before, after *RuntimeSettingsOverride, fields 
 	maskedAfter := maskRuntimeSettings(cloneRuntimeSettings(after))
 	changes := map[string]any{}
 	for _, field := range fields {
-		if reflect.DeepEqual(runtimeSettingsFieldValue(before, field), runtimeSettingsFieldValue(after, field)) {
+		// Under partial semantics the listed paths decide what applies, so
+		// listing or unlisting a path (an override to a zero value, or a reset
+		// to inherited) is a change even when the section values are equal.
+		beforePaths := runtimeSettingsFieldOverridePaths(before, field)
+		afterPaths := runtimeSettingsFieldOverridePaths(after, field)
+		pathsChanged := !slices.Equal(beforePaths, afterPaths)
+		if !pathsChanged && reflect.DeepEqual(runtimeSettingsFieldValue(before, field), runtimeSettingsFieldValue(after, field)) {
 			continue
 		}
 		change := map[string]any{}
@@ -1382,9 +1388,29 @@ func runtimeSettingsFieldChanges(before, after *RuntimeSettingsOverride, fields 
 		if toValue := runtimeSettingsFieldValue(maskedAfter, field); toValue != nil {
 			change["to"] = toValue
 		}
+		if pathsChanged {
+			change["override_fields"] = map[string]any{"from": beforePaths, "to": afterPaths}
+		}
 		changes[field] = change
 	}
 	return changes
+}
+
+// runtimeSettingsFieldOverridePaths returns the sorted override_fields paths
+// one editable field owns. A legacy (v1) override has none, so its change
+// detection stays a pure section-value comparison.
+func runtimeSettingsFieldOverridePaths(settings *RuntimeSettingsOverride, field string) []string {
+	if settings == nil || len(settings.OverrideFields) == 0 {
+		return nil
+	}
+	paths := []string{}
+	for _, path := range resolveEffectiveOverrideFields(settings) {
+		if overridePathBelongsToRuntimeField(path, field) {
+			paths = append(paths, path)
+		}
+	}
+	slices.Sort(paths)
+	return paths
 }
 
 // runtimeSettingsFieldValue extracts the effective value of one override field,
@@ -1443,6 +1469,8 @@ func runtimeSettingsFieldValue(settings *RuntimeSettingsOverride, field string) 
 		return nilIfNilPointer(settings.WebSocket)
 	case "web_runtime":
 		return nilIfNilPointer(settings.WebRuntime)
+	case "soap":
+		return nilIfNilPointer(settings.SOAP)
 	case "browser_config":
 		return nilIfNilPointer(settings.BrowserConfig)
 	case "browser_emulation":

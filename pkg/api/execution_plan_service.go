@@ -122,6 +122,9 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 			if err := json.Unmarshal(entry.RuntimeOverrides, &runtimeOverrides); err != nil {
 				return http.StatusBadRequest, "entry runtime_overrides must be a valid runtime settings object"
 			}
+			if err := validateExecutionPlanRuntimeOverrideSecrets(runtimeOverrides); err != nil {
+				return http.StatusBadRequest, err.Error()
+			}
 		}
 		if len(entry.DataPools) > maxExecutionPlanDataPoolsPerEntry {
 			return http.StatusBadRequest, fmt.Sprintf("execution plan entry contains %d data pools; limit is %d", len(entry.DataPools), maxExecutionPlanDataPoolsPerEntry)
@@ -164,6 +167,25 @@ func (service *testRunnerExecutionPlanService) Validate(plan *storage.ExecutionP
 		}
 	}
 	return 0, ""
+}
+
+// validateExecutionPlanRuntimeOverrideSecrets keeps typed credentials out of
+// plan entries. Plan runtime_overrides are stored and returned verbatim (no
+// protect/mask/reconcile pass), so a SOAP WS-Security password must be an
+// exact reference to a configured project credential, never plaintext and
+// never a controller-reserved APEX_RUNTIME_OVERRIDE_* name.
+func validateExecutionPlanRuntimeOverrideSecrets(overrides *RuntimeSettingsOverride) error {
+	if overrides == nil || overrides.SOAP == nil || overrides.SOAP.WSSecurity == nil || overrides.SOAP.WSSecurity.UsernameToken == nil {
+		return nil
+	}
+	password := strings.TrimSpace(overrides.SOAP.WSSecurity.UsernameToken.Password)
+	if password == "" {
+		return nil
+	}
+	if !runtimeOverrideExactSecretPattern.MatchString(password) || isReservedRuntimeOverrideSecretReference(password) {
+		return errors.New("entry runtime_overrides soap.ws_security.username_token.password must be a {{secret.NAME}} reference to a project credential; plaintext WS-Security passwords are not stored in execution plans")
+	}
+	return nil
 }
 
 // validateExecutionPlanTimeslot rejects a timeslot reference that does not

@@ -585,6 +585,9 @@ func TestBuildProtoConfig_ResolvesSecretPlaceholders(t *testing.T) {
 	if cfg["soap_ws_security_password"] != "soap-pass" {
 		t.Fatalf("soap_ws_security_password = %v, want soap-pass", cfg["soap_ws_security_password"])
 	}
+	if cfg["soap_ws_security_password_secret_store"] != true {
+		t.Fatalf("soap_ws_security_password_secret_store = %v, want true for a secret-store reference", cfg["soap_ws_security_password_secret_store"])
+	}
 	if cfg["browser_http_credentials_password"] != "browser-pass" {
 		t.Fatalf("browser_http_credentials_password = %v, want browser-pass", cfg["browser_http_credentials_password"])
 	}
@@ -775,6 +778,9 @@ func TestBuildProtoConfig_SOAP(t *testing.T) {
 	}
 	if cfg["soap_ws_security_password_type"] != "text" {
 		t.Errorf("soap_ws_security_password_type = %v, want text", cfg["soap_ws_security_password_type"])
+	}
+	if _, exists := cfg["soap_ws_security_password_secret_store"]; exists {
+		t.Errorf("a script-sourced WS-Security password must not be marked as a secret-store value")
 	}
 	if cfg["soap_ws_security_nonce"] != true {
 		t.Errorf("soap_ws_security_nonce = %v, want true", cfg["soap_ws_security_nonce"])

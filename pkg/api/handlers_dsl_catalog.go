@@ -52,6 +52,40 @@ func (s *Server) handleConfigDefaults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dslConfigDefaultsResponse{Config: dsl.DefaultScriptConfig()})
 }
 
+func init() {
+	routeCatalogAuthRules = append(routeCatalogAuthRules,
+		routeAuth(http.MethodGet, "/api/v1/dsl/config-catalog", viewerGlobalAccess()),
+		routeAuth(http.MethodGet, "/api/v1/scripts/import/settings/fields", viewerGlobalAccess()),
+	)
+	indexedRouteCatalogAuthRules = compileRouteAuthCatalog(routeCatalogAuthRules)
+}
+
+// dslConfigCatalogResponse is the payload of GET /api/v1/dsl/config-catalog:
+// the canonical 7-group taxonomy and per-field metadata for ScriptConfig.
+type dslConfigCatalogResponse struct {
+	Protocol string                `json:"protocol,omitempty"`
+	Scope    string                `json:"scope,omitempty"`
+	Groups   []dsl.ConfigGroupMeta `json:"groups"`
+	Fields   []dsl.ConfigFieldMeta `json:"fields"`
+}
+
+// handleConfigCatalog returns the canonical ScriptConfig field metadata catalog.
+// Optional ?protocol= and ?scope= query parameters filter the returned fields.
+func (s *Server) handleConfigCatalog(w http.ResponseWriter, r *http.Request) {
+	protocol := strings.TrimSpace(r.URL.Query().Get("protocol"))
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	fields := dsl.ConfigCatalogForFilter(protocol, scope)
+	if fields == nil {
+		fields = []dsl.ConfigFieldMeta{}
+	}
+	writeJSON(w, http.StatusOK, dslConfigCatalogResponse{
+		Protocol: protocol,
+		Scope:    scope,
+		Groups:   dsl.ConfigGroups(),
+		Fields:   fields,
+	})
+}
+
 // browserEmulationCatalogResponse is the payload of
 // GET /api/v1/dsl/browser-emulation-catalog: the curated browser identities
 // (types, versions, platforms, languages) the Browser Emulation runtime tab

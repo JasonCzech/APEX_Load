@@ -275,15 +275,14 @@ func applySuggestedImportCommitSecretBindings(
 			ProvenVars:  importCommitProvenBodyVariables(body.Text(), ref.Path, dynamicReadiness),
 			TargetField: "body",
 		}
-		_, result, err := credentialpolicy.ProjectRequestBody(
+		result, projected := projectImportCommitBodyForReview(
 			body.Wire(),
 			importCommitSurfaceContentType(ref),
 			options,
 		)
-		for index := range result.Requirements {
-			result.Requirements[index].Value = ""
-		}
-		if err != nil {
+		if !projected {
+			// Import preserves the body byte-identical when it cannot be
+			// projected; it is never rewritten or rejected here.
 			return nil
 		}
 		if result.Disposition == credentialpolicy.BlockedDraft {
@@ -300,6 +299,23 @@ func applySuggestedImportCommitSecretBindings(
 		return nil, nil, err
 	}
 	return working, nil, nil
+}
+
+// projectImportCommitBodyForReview runs the byte-preserving credential
+// projection over one request body and reports whether it produced a result.
+// Requirement values are always cleared. A projection error is not a commit
+// failure: import keeps the unredacted body as recorded, so the surface is
+// simply left without review gates or preserved-target metadata.
+func projectImportCommitBodyForReview(
+	wire []byte,
+	contentType string,
+	options credentialpolicy.Options,
+) (credentialpolicy.Result, bool) {
+	_, result, err := credentialpolicy.ProjectRequestBody(wire, contentType, options)
+	for index := range result.Requirements {
+		result.Requirements[index].Value = ""
+	}
+	return result, err == nil
 }
 
 func stripCredentialPreservingImportPolicy(script *dsl.Script) {
