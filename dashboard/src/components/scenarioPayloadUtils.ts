@@ -1,11 +1,10 @@
 import type { JointEvidenceProjection } from '../types/jointEvidence'
 import type { RunAnalysisPolicySelections } from './analysisPolicies/runPolicySelection'
 import type { MonitorBinding } from '../types/runMonitoring'
-import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
+import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode, TrafficProfile } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
-import { errorHandlingFromDraft } from './runtimeSettingsModel'
+import { isPartialRuntimeDraft, legacyRuntimeOverridePayload, partialRuntimeOverrideFromDraft, type RuntimeOverridePayload } from './runtimeSettingsModel'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig, WebSocketConfig, ScriptResultsConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -50,27 +49,7 @@ export type ScenarioUpsertPayload = {
   joint_evidence?: JointEvidenceProjection
   telemetry_acceptance_policy_id?: string
   telemetry_budget_policy_id?: string
-  runtime_settings?: {
-    iterations?: number
-    pacing?: PacingConfig
-    think_time?: ThinkTimeConfig
-    browser?: Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
-    log_level?: string
-    auto_transactions?: string
-    error_handling?: ErrorHandlingConfig
-    log?: LogConfig
-    run_logic?: RunLogicConfig
-    http?: HTTPConfig
-    results?: ScriptResultsConfig
-    websocket?: WebSocketConfig
-    web_runtime?: WebRuntimeConfig
-    browser_config?: BrowserConfig
-    browser_emulation?: BrowserEmulationConfig
-    java_vuser?: RuntimeJavaVuserSettings
-    base_url?: string
-    env?: Record<string, string>
-    redaction_rules?: Array<{ name?: string, pattern: string, replacement?: string }>
-  }
+  runtime_settings?: RuntimeOverridePayload
   data_pools?: ScenarioDataPoolBinding[]
 }
 
@@ -342,85 +321,18 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
   return Object.keys(payload).length ? payload : undefined
 }
 
-// hasJavaVuserOverride mirrors isJavaVuserSettingsEmpty (runtimeSettingsModel):
-// a {} or all-empty Java Env section carries no override and is not serialized.
-function hasJavaVuserOverride(java?: RuntimeJavaVuserSettings): boolean {
-  if (!java) return false
-  return Boolean(
-    java.jdk_selection
-    || java.jdk_home
-    || (java.additional_vm_parameters && java.additional_vm_parameters.length > 0)
-    || (java.classpath && java.classpath.length > 0)
-    || java.use_xbootclasspath !== undefined
-    || java.dedicated_class_loader !== undefined
-    || java.skip_parameter_evaluation !== undefined
-    || java.jvm_sharing
-    || java.vusers_per_jvm,
-  )
-}
-
+/**
+ * The runtime_settings request body for a draft. A partial draft (any edit made
+ * through the runtime settings model) sends only the paths it lists, with
+ * override_fields, so the backend applies just those paths onto each group's
+ * script settings. A draft nobody edited keeps its exact v1 body.
+ */
 export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSettings): ScenarioUpsertPayload['runtime_settings'] | undefined {
-  const hasCanonicalRunLogic = runtimeSettings.run_logic !== undefined
-  const hasCanonicalLog = runtimeSettings.log !== undefined
-  const hasCanonicalBrowser = runtimeSettings.browser_config !== undefined
-  const pacing = runtimeSettings.pacing && runtimeSettings.pacing.type
-    ? { ...runtimeSettings.pacing }
-    : undefined
-  const thinkTime = runtimeSettings.think_time && (
-    runtimeSettings.think_time.ignore
-    || runtimeSettings.think_time.type
-    || runtimeSettings.think_time.mean_ms !== undefined
-    || runtimeSettings.think_time.std_ms !== undefined
-    || runtimeSettings.think_time.min_ms !== undefined
-    || runtimeSettings.think_time.max_ms !== undefined
-    || runtimeSettings.think_time.multiplier !== undefined
-    || runtimeSettings.think_time.limit_ms !== undefined
-  )
-    ? { ...runtimeSettings.think_time }
-    : undefined
-  const browser = !hasCanonicalBrowser && runtimeSettings.browser && (
-    runtimeSettings.browser.headless !== undefined
-    || runtimeSettings.browser.device_profile
-    || runtimeSettings.browser.touch_mode !== undefined
-    || runtimeSettings.browser.orientation
-  )
-    ? { ...runtimeSettings.browser }
-    : undefined
-
-  const errorHandling = errorHandlingFromDraft(runtimeSettings)
-  const hasErrorHandling = errorHandling !== undefined
-
-  const javaVuser = hasJavaVuserOverride(runtimeSettings.java_vuser) ? runtimeSettings.java_vuser : undefined
-
-  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && runtimeSettings.results === undefined && runtimeSettings.websocket === undefined && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
-    return undefined
+  if (isPartialRuntimeDraft(runtimeSettings)) {
+    const partial = partialRuntimeOverrideFromDraft(runtimeSettings)
+    return partial ? structuredClone(partial) as RuntimeOverridePayload : undefined
   }
-
-  return {
-    ...(!hasCanonicalRunLogic && runtimeSettings.iterations !== undefined
-      ? { iterations: Number(runtimeSettings.iterations) }
-      : {}),
-    ...(pacing ? { pacing } : {}),
-    ...(thinkTime ? { think_time: thinkTime } : {}),
-    ...(browser ? { browser } : {}),
-    ...(!hasCanonicalLog && runtimeSettings.log_level ? { log_level: runtimeSettings.log_level } : {}),
-    ...(!hasCanonicalRunLogic && runtimeSettings.auto_transactions
-      ? { auto_transactions: runtimeSettings.auto_transactions }
-      : {}),
-    ...(errorHandling ? { error_handling: errorHandling } : {}),
-    ...(runtimeSettings.log !== undefined ? { log: runtimeSettings.log } : {}),
-    ...(runtimeSettings.run_logic !== undefined ? { run_logic: runtimeSettings.run_logic } : {}),
-    ...(runtimeSettings.http !== undefined ? { http: runtimeSettings.http } : {}),
-    ...(runtimeSettings.results !== undefined ? { results: structuredClone(runtimeSettings.results) } : {}),
-    ...(runtimeSettings.websocket !== undefined ? { websocket: structuredClone(runtimeSettings.websocket) } : {}),
-    ...(runtimeSettings.web_runtime !== undefined ? { web_runtime: runtimeSettings.web_runtime } : {}),
-    ...(runtimeSettings.browser_config !== undefined ? { browser_config: runtimeSettings.browser_config } : {}),
-    ...(runtimeSettings.browser_emulation !== undefined ? { browser_emulation: runtimeSettings.browser_emulation } : {}),
-    ...(javaVuser ? { java_vuser: { ...javaVuser } } : {}),
-    ...(runtimeSettings.base_url !== undefined ? { base_url: runtimeSettings.base_url } : {}),
-    ...(runtimeSettings.env ? { env: { ...runtimeSettings.env } } : {}),
-    ...(runtimeSettings.redaction_rules ? { redaction_rules: runtimeSettings.redaction_rules.map(rule => ({ ...rule })) } : {}),
-  }
+  return legacyRuntimeOverridePayload(runtimeSettings)
 }
 
 

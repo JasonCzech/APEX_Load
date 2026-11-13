@@ -133,4 +133,16 @@ describe('WebHttpTab enum vocabulary', () => {
     expect(optionValues('Bandwidth estimation')).toEqual(['rolling', 'instant'])
     expect(optionValues('Scope')).toEqual(['any_response', 'main_document', 'resource'])
   })
+
+  it('writes only the auto-detect leaf, never copying the inherited transform chain into the section', () => {
+    const setWeb = vi.fn()
+    act(() => {
+      root.render(<WebHttpTab web={undefined} inheritedWeb={{ data_formatting: { chain: [{ type: 'base64_decode' }] } }} setWeb={setWeb} />)
+    })
+    const autoDetect = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Auto-detect formatting'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    act(() => autoDetect.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(setWeb).toHaveBeenLastCalledWith({ data_formatting: { auto_detect: true } })
+  })
 })

@@ -22,6 +22,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { readStoredStringArrayRecord, removeStoredItem, writeStoredJSON } from '../utils/browserStorage'
 import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { runtimeBrowserSettings } from './runtimeSettingsModel'
 import { SortIndicator as SortIcon } from './SortIndicator'
 import { LoadComparisonPanel, type LoadComparisonTestOption } from './LoadComparisonPanel'
 import { ReleaseTrendPanel } from './ReleaseTrendPanel'
@@ -1067,7 +1068,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
         return {
           test,
           report,
-          runtimeSummary: formatBrowserRuntimeSummary(report.manifest?.provenance?.runtime_settings?.browser ?? test.runtime_settings?.browser),
+          runtimeSummary: formatBrowserRuntimeSummary(runtimeBrowserSettings(report.manifest?.provenance?.runtime_settings) ?? runtimeBrowserSettings(test.runtime_settings)),
         }
       })
       .filter((entry): entry is PerformanceTrendEntry => Boolean(entry)),
@@ -1655,7 +1656,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   const rateWindow = recentRate !== undefined ? RECENT_AVERAGE_LABEL : 'last sample'
                   const errorCounts = liveRunCounts(latest, population)
                   const cardArt = recent.art ?? latest?.avg_response_ms
-                  const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+                  const runtimeSummary = formatBrowserRuntimeSummary(runtimeBrowserSettings(test.runtime_settings))
                   const metricOption = graphMetricOptions[0]
                   const chartData = history.slice(-60).map(point => ({
                     ...point,
@@ -1815,7 +1816,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
                   </thead>
                   <tbody>
                     {sortedRecentTests.map(test => {
-                      const runtimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+                      const runtimeSummary = formatBrowserRuntimeSummary(runtimeBrowserSettings(test.runtime_settings))
                       return (
                         <tr key={test.id} onClick={event => { if (!insideRowDisclosure(event)) onSelectTest(test.id) }}>
                           <td>

@@ -2,7 +2,7 @@ import LoadPlanChart from './LoadPlanChart'
 
 import { CapacityAdvisory, RuntimeSettingsOverride, ScriptShakeoutReport, TestSummary } from '../types'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
-import { errorHandlingSectionIsPinned } from './newTestRunModel'
+import { effectiveRuntimeSection, resolveRuntimeRowsValue, runtimeBrowserSettings, runtimeSectionSource } from './runtimeSettingsModel'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import type { ScenarioSnapshotSource } from './useExecutionScenarioPreviewModel'
 import { formatTimeCompact } from '../utils/timeUtils'
@@ -102,83 +102,121 @@ function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
   return formatPacingTiming(pacing) || 'None'
 }
 
-function formatOverridePacing(test: TestSummary): string {
-  const pacing = test.runtime_settings?.pacing
-  return formatPacingTiming(pacing) || 'Script-level value not exposed'
+type PreviewGroup = TestSummary['groups'][number] | undefined
+
+// Each displayed path is resolved through the group row and then the run's row the way the
+// backend applies them (resolveRuntimeRowsValue): a partial row (override_fields) supplies only
+// the paths it lists, canonical sections and compact aliases alike, while a v1 row supplies every
+// field of a section it carries — error_handling included, whose omitted half executes false.
+function previewRuntimeValue(path: string, group: PreviewGroup, test: TestSummary | undefined): { value: unknown; origin: string } | null {
+  const { index, value } = resolveRuntimeRowsValue(path, [group?.runtime_settings, test?.runtime_settings])
+  if (index < 0) return null
+  return { value, origin: index === 0 && group ? ' (group override)' : ' (scenario override)' }
 }
 
-function formatOverrideThinkTime(test: TestSummary): string {
-  const thinkTime = test.runtime_settings?.think_time
-  if (!thinkTime) return 'Script-level value not exposed'
-  if (thinkTime.ignore) return 'Disabled'
-  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
-  return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
+/** A listed path with a usable value (an empty listed value falls through to the next layer). */
+function previewRuntimeSetting(path: string, group: PreviewGroup, test: TestSummary | undefined): { value: unknown; origin: string } | null {
+  const resolved = previewRuntimeValue(path, group, test)
+  return resolved && resolved.value !== undefined && resolved.value !== null && resolved.value !== '' ? resolved : null
 }
 
-function formatRuntimePacingOverride(pacing?: RuntimeSettingsOverride['pacing']): string | null {
-  return formatPacingTiming(pacing)
+type TimingSection = 'pacing' | 'think_time'
+
+/**
+ * A pacing or think_time section resolved the same way: each row contributes only the paths it
+ * lists, laid over the script's section when the snapshot carries it, and a row listing the whole
+ * section (a v1 row, or a partial row listing it) replaces what is below. The origin is the
+ * highest row that lists anything inside the section.
+ */
+function previewRuntimeSection<K extends TimingSection>(
+  section: K,
+  group: PreviewGroup,
+  test: TestSummary | undefined,
+  scriptDetail?: ScenarioScriptDetail,
+): { value: RuntimeSettingsOverride[K] | undefined; origin: string; whole: boolean } | null {
+  const layers = [group?.runtime_settings, test?.runtime_settings]
+  const source = runtimeSectionSource(section, layers)
+  if (!source) return null
+  const base = scriptDetail?.script?.config?.[section] as RuntimeSettingsOverride[K] | undefined
+  const value = effectiveRuntimeSection<RuntimeSettingsOverride[K]>(section, layers, source.whole ? undefined : base) ?? undefined
+  return { value, origin: source.layer === 0 && group ? ' (group override)' : ' (scenario override)', whole: source.whole }
 }
 
-function formatRuntimeThinkTimeOverride(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
+function formatPreviewThinkTime(thinkTime?: RuntimeSettingsOverride['think_time'] | null): string | null {
   if (!thinkTime) return null
   if (thinkTime.ignore) return 'Disabled'
   if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
+/** A partial row over a script section the snapshot does not expose has no complete value. */
+const PARTIAL_TIMING_LABEL: Record<TimingSection, string> = {
+  pacing: 'Script pacing with overridden fields',
+  think_time: 'Script think time with overridden fields',
+}
+
+/** A whole section that names no type (an empty v1 section) leaves the script's timing. */
+const UNTYPED_TIMING_LABEL: Record<TimingSection, string> = {
+  pacing: 'Script timing',
+  think_time: 'Script think time',
+}
+
+function timingFallbackLabel(section: TimingSection, whole: boolean): string {
+  return whole ? UNTYPED_TIMING_LABEL[section] : PARTIAL_TIMING_LABEL[section]
+}
+
+function formatPreviewTiming(section: TimingSection, group: PreviewGroup, test: TestSummary | undefined, scriptDetail?: ScenarioScriptDetail): string | null {
+  const resolved = previewRuntimeSection(section, group, test, scriptDetail)
+  if (!resolved) return null
+  const text = section === 'pacing'
+    ? formatPacingTiming(resolved.value as RuntimeSettingsOverride['pacing'])
+    : formatPreviewThinkTime(resolved.value as RuntimeSettingsOverride['think_time'])
+  return `${text || timingFallbackLabel(section, resolved.whole)}${resolved.origin}`
+}
+
+function formatOverridePacing(test: TestSummary): string {
+  const resolved = previewRuntimeSection('pacing', undefined, test)
+  if (!resolved) return 'Script-level value not exposed'
+  return formatPacingTiming(resolved.value) || timingFallbackLabel('pacing', resolved.whole)
+}
+
+function formatOverrideThinkTime(test: TestSummary): string {
+  const resolved = previewRuntimeSection('think_time', undefined, test)
+  if (!resolved) return 'Script-level value not exposed'
+  return formatPreviewThinkTime(resolved.value) || timingFallbackLabel('think_time', resolved.whole)
+}
+
 function formatEffectivePacing(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = formatRuntimePacingOverride(group.runtime_settings?.pacing)
-  if (groupOverride) return `${groupOverride} (group override)`
-  const testOverride = formatRuntimePacingOverride(test.runtime_settings?.pacing)
-  if (testOverride) return `${testOverride} (scenario override)`
-  return formatPacingLabel(scriptDetail)
+  return formatPreviewTiming('pacing', group, test, scriptDetail) ?? formatPacingLabel(scriptDetail)
 }
 
 function formatEffectiveThinkTime(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = formatRuntimeThinkTimeOverride(group.runtime_settings?.think_time)
-  if (groupOverride) return `${groupOverride} (group override)`
-  const testOverride = formatRuntimeThinkTimeOverride(test.runtime_settings?.think_time)
-  if (testOverride) return `${testOverride} (scenario override)`
-  return formatThinkTimeLabel(scriptDetail)
-}
-
-// error_handling is transmitted and applied as a whole SECTION, never field by field:
-// mergeRuntimeSettings (pkg/api/runtime_overrides.go) swaps the run-level section for the
-// group's outright whenever the group carries one, and applyRuntimeOverrides then assigns
-// script.Config.ErrorHandling = *overrides.ErrorHandling. dsl.ErrorHandlingConfig stores plain
-// bools with omitempty, so a field the winning section omits is absent on the wire AND executes
-// as false — the level underneath never supplies it. Resolving the chain field-wise would report
-// a half the run discards, so mirror newTestRunModel.resolveGroupErrorHandling here.
-type ResolvedErrorHandlingSection = {
-  section: NonNullable<RuntimeSettingsOverride['error_handling']>
-  origin: string
-}
-
-function resolveErrorHandlingSection(group: TestSummary['groups'][number] | undefined, test: TestSummary): ResolvedErrorHandlingSection | null {
-  const groupSection = group?.runtime_settings?.error_handling
-  if (errorHandlingSectionIsPinned(groupSection)) return { section: groupSection!, origin: ' (group override)' }
-  const testSection = test.runtime_settings?.error_handling
-  if (errorHandlingSectionIsPinned(testSection)) return { section: testSection!, origin: ' (scenario override)' }
-  return null
+  return formatPreviewTiming('think_time', group, test, scriptDetail) ?? formatThinkTimeLabel(scriptDetail)
 }
 
 function formatContinueOnError(test: TestSummary): string {
-  const resolved = resolveErrorHandlingSection(undefined, test)
+  const resolved = previewRuntimeValue('error_handling.continue_on_error', undefined, test)
   if (!resolved) return 'Script-level value not exposed'
-  return resolved.section.continue_on_error ? 'Enabled' : 'Disabled'
+  return resolved.value ? 'Enabled' : 'Disabled'
 }
 
 function formatRunSnapshotOnError(test: TestSummary): string {
-  const resolved = resolveErrorHandlingSection(undefined, test)
+  const resolved = previewRuntimeValue('error_handling.snapshot_on_error', undefined, test)
   if (!resolved) return 'Script-level value not exposed'
-  return resolved.section.snapshot_on_error ? 'Enabled' : 'Disabled'
+  return resolved.value ? 'Enabled' : 'Disabled'
+}
+
+function formatRunRuntimeValue(test: TestSummary, path: string): string {
+  const resolved = previewRuntimeSetting(path, undefined, test)
+  return resolved ? String(resolved.value) : 'Script-level value not exposed'
 }
 
 function formatEffectiveIterations(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  if (group.runtime_settings?.iterations !== undefined) return `${group.runtime_settings.iterations} (group override)`
+  const groupOverride = previewRuntimeSetting('run_logic.iterations', group, undefined)
+  if (groupOverride) return `${groupOverride.value} (group override)`
   if (group.iterations !== undefined) return `${group.iterations} (group override)`
-  const override = test.runtime_settings?.iterations
-  if (override !== undefined) return `${override} (scenario override)`
+  const override = previewRuntimeSetting('run_logic.iterations', undefined, test)
+  if (override) return `${override.value} (scenario override)`
   const iterations = scriptDetail?.script?.config?.run_logic?.iterations
   if (!scriptDetail) return 'Not exposed by run snapshot'
   if (!iterations) return 'Duration driven'
@@ -186,44 +224,35 @@ function formatEffectiveIterations(group: TestSummary['groups'][number], scriptD
 }
 
 function formatEffectiveAutoTransactions(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = group.runtime_settings?.auto_transactions
-  if (groupOverride) return `${groupOverride} (group override)`
-  const override = test.runtime_settings?.auto_transactions
-  if (override) return `${override} (scenario override)`
+  const resolved = previewRuntimeSetting('run_logic.auto_transactions', group, test)
+  if (resolved) return `${resolved.value}${resolved.origin}`
   if (!scriptDetail) return 'Not exposed by run snapshot'
   return scriptDetail.script?.config?.run_logic?.auto_transactions || 'none'
 }
 
 function formatEffectiveLogLevel(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupOverride = group.runtime_settings?.log_level
-  if (groupOverride) return `${groupOverride} (group override)`
-  const override = test.runtime_settings?.log_level
-  if (override) return `${override} (scenario override)`
+  const resolved = previewRuntimeSetting('log.level', group, test)
+  if (resolved) return `${resolved.value}${resolved.origin}`
   if (!scriptDetail) return 'Not exposed by run snapshot'
   return scriptDetail.script?.config?.log?.level || 'standard'
 }
 
 function formatSnapshotOnError(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const resolved = resolveErrorHandlingSection(group, test)
-  if (resolved) return `${resolved.section.snapshot_on_error ? 'Enabled' : 'Disabled'}${resolved.origin}`
+  const resolved = previewRuntimeValue('error_handling.snapshot_on_error', group, test)
+  if (resolved) return `${resolved.value ? 'Enabled' : 'Disabled'}${resolved.origin}`
   if (!scriptDetail) return 'Not exposed by run snapshot'
   return scriptDetail.script?.config?.error_handling?.snapshot_on_error ? 'Enabled' : 'Disabled'
 }
 
 function formatEffectiveHTTPRuntime(group: TestSummary['groups'][number], scriptDetail: ScenarioScriptDetail | undefined, test: TestSummary): string {
-  const groupHttp = group.runtime_settings?.http
-  const testHttp = test.runtime_settings?.http
-  if (!scriptDetail && !groupHttp && !testHttp) return 'Not exposed by run snapshot'
+  const versionLayer = previewRuntimeValue('http.version', group, test)
+  const maxConnsLayer = previewRuntimeValue('http.max_conns_per_host', group, test)
+  if (!scriptDetail && !versionLayer && !maxConnsLayer) return 'Not exposed by run snapshot'
   const protocol = scriptDetail?.protocol || group.protocol
-  const version =
-    groupHttp?.version !== undefined
-      ? groupHttp.version
-      : testHttp?.version !== undefined
-        ? testHttp.version
-        : scriptDetail?.script?.config?.http?.version
-  const maxConns =
-    groupHttp?.max_conns_per_host
-    ?? testHttp?.max_conns_per_host
+  const version = versionLayer
+    ? versionLayer.value as NonNullable<RuntimeSettingsOverride['http']>['version']
+    : scriptDetail?.script?.config?.http?.version
+  const maxConns = (maxConnsLayer?.value as number | undefined)
     ?? scriptDetail?.script?.config?.http?.max_conns_per_host
   return `${formatScriptHTTPVersion(protocol, version)} · ${maxConns || 100} conns/host`
 }
@@ -254,7 +283,7 @@ export default function TestExecutionScenarioPreview({
   if (test.status !== 'QUEUED' && test.status !== 'PENDING' && test.status !== 'RESERVED' && test.status !== 'SHAKEOUT' && test.status !== 'SHAKEOUT_REVIEW') {
     return null
   }
-  const browserRuntimeSummary = formatBrowserRuntimeSummary(test.runtime_settings?.browser)
+  const browserRuntimeSummary = formatBrowserRuntimeSummary(runtimeBrowserSettings(test.runtime_settings))
   const snapshotSummary = scenarioSnapshotSummary(snapshotSource, snapshotLoading)
   const shakeoutReviewRequired = test.status === 'SHAKEOUT_REVIEW' || Boolean(startShakeoutConflict)
   const shakeoutEvidence = startShakeoutConflict?.results?.filter(result => result.status === 'failed') || []
@@ -470,15 +499,15 @@ export default function TestExecutionScenarioPreview({
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Iterations</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.iterations ?? 'Script-level value not exposed'}</span>
+              <span className="scenario-setting-value">{formatRunRuntimeValue(test, 'run_logic.iterations')}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Log level</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.log_level || 'Script-level value not exposed'}</span>
+              <span className="scenario-setting-value">{formatRunRuntimeValue(test, 'log.level')}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Auto transactions</span>
-              <span className="scenario-setting-value">{test.runtime_settings?.auto_transactions || 'Script-level value not exposed'}</span>
+              <span className="scenario-setting-value">{formatRunRuntimeValue(test, 'run_logic.auto_transactions')}</span>
             </div>
             <div className="scenario-setting-card">
               <span className="scenario-setting-label">Pacing</span>

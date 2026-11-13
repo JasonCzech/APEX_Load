@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 import NewTestPage from './NewTestPage'
 import { CLEARABLE_RUNTIME_SECTIONS, type ClearableRuntimeSection } from './newTestRunModel'
 import { pacingFromEdit } from './pacingEditModel'
+import { resolveRuntimeOverrideFields } from './runtimeSettingsModel'
 import { readNewTestDraft, saveNewTestDraft } from './newTestDraft'
 import { persistNewTestQueueAttempt } from './newTestQueueAttempt'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
@@ -2501,6 +2502,177 @@ describe('NewTestPage', () => {
     expect(payload.groups).toHaveLength(1)
     // The unedited sibling section survives; only the cleared browser section is removed.
     expect(payload.groups?.[0].runtime_settings).toEqual({ log_level: 'debug' })
+  })
+
+  it('lists only the edited paths for a group with no stored row under a partial scenario', async () => {
+    // A partial scenario row lists only its own leaves, so its sections are projections. Copying
+    // one into a whole-section v1 group row would replace the script's run_logic and browser
+    // config with those few leaves; the group row must be partial and list only what was edited.
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          runtime_settings: {
+            run_logic: { iterations: 2 },
+            browser_config: { headless: true },
+            override_fields: ['run_logic.iterations', 'browser.headless'],
+          },
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'browser',
+              vusers: 10,
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const row = Array.from(container.querySelectorAll('.new-test-script-row')).find(element => element.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const iterations = findControlByLabel<HTMLInputElement>(modal, 'Iterations', 'input')
+    const deviceProfile = findControlByLabel<HTMLInputElement>(modal, 'Device profile', 'input')
+    expect(iterations).toBeTruthy()
+    expect(deviceProfile).toBeTruthy()
+    if (!iterations || !deviceProfile) return
+    await act(async () => {
+      setInputValue(iterations, '7')
+    })
+    await act(async () => {
+      setInputValue(deviceProfile, 'iphone')
+    })
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Saved script settings for this run only.')
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalled()
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<{ runtime_settings?: Record<string, unknown> }> }
+    const groupRow = payload.groups?.[0].runtime_settings as (Record<string, unknown> & { override_fields?: string[] }) | undefined
+    expect(resolveRuntimeOverrideFields(groupRow).sort()).toEqual(['browser.device_profile', 'run_logic.iterations'])
+    expect(groupRow?.run_logic).toEqual({ iterations: 7 })
+  })
+
+  it('names a hidden untyped partial think time override in the group dialog and resets its leaves', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [
+        {
+          id: 'scenario-1',
+          name: 'Checkout Smoke',
+          duration: '10m',
+          scenario_mode: 'vuser_driven',
+          scripts: [
+            {
+              order: 1,
+              name: 'Checkout',
+              script_id: 'script-1',
+              script_name: 'Checkout Script',
+              protocol: 'http',
+              vusers: 10,
+              runtime_settings: {
+                think_time: { mean_ms: 800 },
+                log: { level: 'debug' },
+                override_fields: ['think_time.mean_ms', 'log.level'],
+              },
+            },
+          ],
+          script_count: 1,
+          created_at: '2026-05-12T20:00:00Z',
+          updated_at: '2026-05-12T20:00:00Z',
+          associated_releases: [],
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row') as HTMLTableRowElement | null
+    await act(async () => {
+      scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const row = Array.from(container.querySelectorAll('.new-test-script-row')).find(element => element.textContent?.includes('Checkout')) as HTMLTableRowElement | undefined
+    await act(async () => {
+      row?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const note = modal.querySelector('[data-testid="group-hidden-think-time"]')
+    expect(note?.textContent).toContain('Script think time · mean ms 800 (group override)')
+    const reset = Array.from(note?.querySelectorAll('button') ?? []).find(button => button.textContent === 'Reset to script think time') as HTMLButtonElement | undefined
+    expect(reset).toBeTruthy()
+    await act(async () => {
+      reset?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(modal.querySelector('[data-testid="group-hidden-think-time"]')).toBeNull()
+    const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run') as HTMLButtonElement | undefined
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await flushDebouncedPreflight()
+    const createQueuedButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Hold for manual start')
+    await act(async () => {
+      createQueuedButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.createTest).toHaveBeenCalled()
+    const payload = apiMock.createTest.mock.calls[0][0] as { groups?: Array<{ runtime_settings?: Record<string, unknown> }> }
+    const groupRow = payload.groups?.[0].runtime_settings as (Record<string, unknown> & { override_fields?: string[] }) | undefined
+    expect(resolveRuntimeOverrideFields(groupRow)).toEqual(['log.level'])
+    expect(groupRow?.think_time).toBeUndefined()
   })
 
   it('clears a whole-section browser_config for this run instead of pinning an empty one', async () => {

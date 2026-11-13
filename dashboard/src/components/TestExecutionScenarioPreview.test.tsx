@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TestExecutionScenarioPreview from './TestExecutionScenarioPreview'
+import { formatPacingTiming } from './runtimeTiming'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -333,6 +334,117 @@ describe('TestExecutionScenarioPreview', () => {
     // script's own value is discarded and continue executes false — not 'not exposed'.
     expect(cardValue('.scenario-setting-card', 'Continue on error')).toBe('Disabled')
     expect(cardValue('.scenario-setting-card', 'Snapshot on error')).toBe('Enabled')
+  })
+
+  it('resolves partial (override_fields) group and run rows per path, canonical sections included', async () => {
+    const groupRuntime = {
+      run_logic: { iterations: 5, auto_transactions: 'actions' },
+      log: { level: 'debug' },
+      error_handling: { continue_on_error: true },
+      override_fields: ['run_logic.iterations', 'run_logic.auto_transactions', 'log.level', 'error_handling.continue_on_error'],
+    }
+    const runRuntime = {
+      run_logic: { iterations: 7 },
+      log: { level: 'extended' },
+      error_handling: { snapshot_on_error: true },
+      browser_config: { device_profile: 'iphone-15' },
+      override_fields: ['run_logic.iterations', 'log.level', 'error_handling.snapshot_on_error', 'browser.device_profile'],
+    }
+    const group = { name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10, runtime_settings: groupRuntime }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-partial', name: 'Partial', status: 'QUEUED', total_vusers: 10, duration: '5m', created_at: '2026-05-12T20:00:00Z', runtime_settings: runRuntime, groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 10, total: 10 }], totalVUsers: 10, showVUsers: true, peakVUsers: 10, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-1', name: 'Checkout Script', protocol: 'http', script: { config: { error_handling: { snapshot_on_error: false }, run_logic: { iterations: 1 } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Checkout"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const cardValue = (selector: string, label: string) => Array.from(container.querySelectorAll(selector))
+      .find(card => card.querySelector('.scenario-setting-label, .scenario-script-detail-label')?.textContent === label)
+      ?.querySelector('.scenario-setting-value, .scenario-script-detail-value')
+      ?.textContent
+    // The partial group lists only continue_on_error, so the run's snapshot setting applies.
+    expect(cardValue('.scenario-script-detail-card', 'Snapshot on error')).toBe('Enabled (scenario override)')
+    expect(cardValue('.scenario-setting-card', 'Iterations')).toBe('7')
+    expect(cardValue('.scenario-setting-card', 'Log level')).toBe('extended')
+    expect(cardValue('.scenario-setting-card', 'Continue on error')).toBe('Script-level value not exposed')
+    expect(cardValue('.scenario-setting-card', 'Browser Runtime')).toBe('iphone-15')
+    const text = container.textContent || ''
+    expect(text).toContain('5 (group override)')
+    expect(text).toContain('debug (group override)')
+    expect(text).toContain('actions (group override)')
+  })
+
+  it('resolves partial pacing and think_time leaves over the run row and the script section', async () => {
+    const groupRuntime = {
+      pacing: { delay_ms: 500 },
+      think_time: { mean_ms: 800 },
+      override_fields: ['pacing.delay_ms', 'think_time.mean_ms'],
+    }
+    const runRuntime = {
+      // pacing.type is not listed, so the run row contributes only delay_ms.
+      pacing: { type: 'tps', delay_ms: 300 },
+      think_time: { type: 'random', mean_ms: 200 },
+      override_fields: ['pacing.delay_ms', 'think_time'],
+    }
+    const group = { name: 'Checkout', script_id: 'script-1', script_name: 'Checkout Script', protocol: 'http', vusers: 10, runtime_settings: groupRuntime }
+    await act(async () => {
+      root.render(
+        <TestExecutionScenarioPreview
+          test={{ id: 'test-partial-timing', name: 'Partial timing', status: 'QUEUED', total_vusers: 10, duration: '5m', created_at: '2026-05-12T20:00:00Z', runtime_settings: runRuntime, groups: [group] } as never}
+          startCapacityConflict={null}
+          startShakeoutConflict={null}
+          startFeedback=""
+          onDismissStartConflict={vi.fn()}
+          onConfirmStartAnyway={vi.fn()}
+          onContinueAfterShakeoutFailure={vi.fn()}
+          onCancelShakeoutRun={vi.fn()}
+          queuedScenarioPreview={{ points: [{ second: 0, group0: 10, total: 10 }], totalVUsers: 10, showVUsers: true, peakVUsers: 10, totalSeconds: 300, steadySeconds: 300, startDelaySeconds: 0, preBaselineSeconds: 0, postBaselineSeconds: 0 }}
+          queuedScenarioRows={[{
+            group,
+            detail: { id: 'script-1', name: 'Checkout Script', protocol: 'http', script: { config: { pacing: { type: 'fixed_delay', delay_ms: 100 }, think_time: { type: 'fixed', mean_ms: 50 } }, actions: [] } },
+            actionCount: 0, initCount: 0, teardownCount: 0, dataSourceCount: 0,
+          }] as never}
+          snapshotSource="immutable_manifest"
+          snapshotLoading={false}
+          snapshotError=""
+          expandedScenarioScript="Checkout"
+          onExpandedScenarioScriptChange={vi.fn()}
+          onEditScript={vi.fn()}
+          groupColors={['#0a84ff']}
+        />,
+      )
+    })
+    const cardValue = (selector: string, label: string) => Array.from(container.querySelectorAll(selector))
+      .find(card => card.querySelector('.scenario-setting-label, .scenario-script-detail-label')?.textContent === label)
+      ?.querySelector('.scenario-setting-value, .scenario-script-detail-value')
+      ?.textContent
+    // The group's think_time leaf lands on the run row's random section, not a defaulted 'fixed'.
+    expect(cardValue('.scenario-script-detail-card', 'Think time')).toBe('random · 800ms (group override)')
+    // The group's pacing leaf lands on the script's fixed_delay pacing instead of being skipped.
+    expect(cardValue('.scenario-script-detail-card', 'Pacing')).toBe(`${formatPacingTiming({ type: 'fixed_delay', delay_ms: 500 })} (group override)`)
+    // Run-level cards: the unlisted pacing.type never applies, so the script's own pacing runs.
+    expect(cardValue('.scenario-setting-card', 'Pacing')).toBe('Script pacing with overridden fields')
+    expect(cardValue('.scenario-setting-card', 'Think time')).toBe('random · 200ms')
   })
 
   it('discloses when the manifest preview was synthesized from retained run state', async () => {

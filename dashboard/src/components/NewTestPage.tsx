@@ -59,13 +59,14 @@ import TimezoneSelect from './ux/TimezoneSelect'
 import type { ScheduleClockChange } from '../types/executionPlans'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import {
-  applyGroupErrorHandlingDraftEdit,
+  applyGroupErrorHandlingSelect,
   buildEffectiveScenarioGroups,
   buildEmptyRunDefaultOverrides,
   buildGroupEditDraft,
   buildGroupErrorHandlingSectionForRun,
   buildGroupsForRunPayload,
   buildGroupRuntimeTableValues,
+  buildPartialGroupRunRuntimeOverride,
   buildRunDefaultCards,
   buildRunDefaultEditDraft,
   buildRunLoadProfilePreview,
@@ -74,6 +75,8 @@ import {
   emptyGroupEditDraft,
   errorHandlingSectionIsPinned,
   errorHandlingSurvivesBooleanClear,
+  groupHiddenPartialTiming,
+  groupRunRuntimeIsPartial,
   formatGroupPlacement,
   generatorCanRunGroup,
   getEffectiveResourceBaseline,
@@ -94,6 +97,7 @@ import {
   stampClearedRuntimeSections,
   type GroupEditDraft,
   type GroupRunOverride,
+  type GroupRuntimePathEdit,
   type RunDefaultEditDraft,
   type RunDefaultKey,
   type RunDefaultOverrides,
@@ -115,6 +119,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { effectiveGroupVUsers, maxVUsersForRole, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
 import { trafficProfileMappingForGroup, trafficProfilePeak } from './trafficProfilePreviewModel'
+import { effectiveRuntimeSection, isPartialRuntimeDraft, resolveRuntimeRowsValue, runtimeRowCoversPath } from './runtimeSettingsModel'
 import {
   canonicalThinkTimeType,
   thinkTimeConfigForType,
@@ -550,6 +555,30 @@ function groupEditDraftPatchFromAssignment(assignment?: GeneratorAssignmentSetti
     selectedTargets: [],
     requiredLabels: {},
   }
+}
+
+/**
+ * The run dialog's runtime edits as override paths, for a partial group row: each changed control
+ * becomes its own path, and a control set back to inherit/blank resets that path. Only changed
+ * controls are listed, so a value the dialog merely displays (inherited from the scenario) is
+ * never pinned at the group.
+ */
+function groupRuntimePathEdits(draft: GroupEditDraft, changes: GroupEditChanges): GroupRuntimePathEdit[] {
+  const edits: GroupRuntimePathEdit[] = []
+  const text = (value: string) => value.trim() || undefined
+  const flag = (value: string) => (value === '' ? undefined : value === 'true')
+  if (changes.iterations) edits.push({ path: 'run_logic.iterations', value: Number(draft.iterations) })
+  if (changes.log_level) edits.push({ path: 'log.level', value: text(draft.log_level) })
+  if (changes.auto_transactions) edits.push({ path: 'run_logic.auto_transactions', value: text(draft.auto_transactions) })
+  if (changes.pacing) edits.push({ path: 'pacing', value: pacingFromEdit(draft.pacingType, draft.pacingAmount, draft.pacingConfig) })
+  if (changes.think_time) edits.push({ path: 'think_time', value: thinkTimeFromEdit(draft.thinkTimeMs, draft.thinkIgnore, draft.thinkTimeConfig) })
+  if (changes.continue_on_error) edits.push({ path: 'error_handling.continue_on_error', value: flag(draft.continue_on_error) })
+  if (changes.snapshot_on_error) edits.push({ path: 'error_handling.snapshot_on_error', value: flag(draft.snapshot_on_error) })
+  if (changes.browser_device_profile) edits.push({ path: 'browser.device_profile', value: text(draft.browser_device_profile) })
+  if (changes.browser_headless) edits.push({ path: 'browser.headless', value: flag(draft.browser_headless) })
+  if (changes.browser_touch_mode) edits.push({ path: 'browser.touch_mode', value: flag(draft.browser_touch_mode) })
+  if (changes.browser_orientation) edits.push({ path: 'browser.orientation', value: text(draft.browser_orientation) })
+  return edits
 }
 
 function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft): GroupEditChanges {
@@ -1279,21 +1308,48 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
   // keeps executing both booleans as false, so the inherit option cannot be honoured at all.
   // Offering it there is the silent discard this control exists to avoid, so it is disabled and
   // says why instead.
+  const groupEditPartialRuntime = useMemo(
+    () => Boolean(editingGroup && scenario && groupRunRuntimeIsPartial(
+      editingGroup,
+      scenario,
+      runDefaultOverrides,
+      editingGroupKey ? groupRunOverrides[editingGroupKey] : undefined,
+    )),
+    [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario],
+  )
+  // An untyped partial pacing/think time override (only some leaves listed, the type from the
+  // script) leaves the type select on its inherit option with the leaf inputs hidden, so the
+  // dialog names the overridden leaves and offers a reset of those paths when the group owns them.
+  const groupHiddenTiming = useMemo(() => {
+    if (!editingGroup || !scenario) return { pacing: undefined, think_time: undefined }
+    const override = editingGroupKey ? groupRunOverrides[editingGroupKey] : undefined
+    return {
+      pacing: groupHiddenPartialTiming('pacing', editingGroup, scenario, runDefaultOverrides, override),
+      think_time: groupHiddenPartialTiming('think_time', editingGroup, scenario, runDefaultOverrides, override),
+    }
+  }, [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario])
   const groupErrorHandlingInherit = useMemo(() => {
     if (!scenario) return { label: 'Script default', disabled: false }
+    const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
+    if (groupEditPartialRuntime) {
+      // Partial rows reset each half on its own, so a retry policy never pins the booleans.
+      const rootLists = isPartialRuntimeDraft(rootRuntime)
+        ? runtimeRowCoversPath(rootRuntime, 'error_handling.snapshot_on_error')
+        : errorHandlingSectionIsPinned(effectiveRuntimeSection('error_handling', [rootRuntime]))
+      return { label: rootLists ? 'Scenario default' : 'Script default', disabled: false }
+    }
     const groupRuntime = mergeRuntimeSettingsForRun(
       editingGroup?.runtime_settings,
       editingGroupKey ? groupRunOverrides[editingGroupKey]?.runtime_settings : undefined,
     )
-    if (errorHandlingSurvivesBooleanClear(groupRuntime?.error_handling)) {
+    if (errorHandlingSurvivesBooleanClear(effectiveRuntimeSection('error_handling', [groupRuntime]))) {
       return { label: 'Pinned by group retry policy', disabled: true }
     }
-    const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
     return {
-      label: errorHandlingSectionIsPinned(rootRuntime?.error_handling) ? 'Scenario default' : 'Script default',
+      label: errorHandlingSectionIsPinned(effectiveRuntimeSection('error_handling', [rootRuntime])) ? 'Scenario default' : 'Script default',
       disabled: false,
     }
-  }, [editingGroup, editingGroupKey, groupRunOverrides, runDefaultOverrides, scenario])
+  }, [editingGroup, editingGroupKey, groupEditPartialRuntime, groupRunOverrides, runDefaultOverrides, scenario])
   // The readiness review judges the scenario as this run will launch it: the
   // run's defaults and each group's run overrides laid over the stored ones.
   const readinessScenario = useMemo(() => scenario && {
@@ -1309,7 +1365,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     if (groupErrorHandlingInherit.disabled) return groupErrorHandlingInherit
     if (!scenario) return { label: 'Scenario default (enabled)', disabled: false }
     const rootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides) || scenario.runtime_settings
-    const scenarioValue = rootRuntime?.error_handling?.continue_on_error
+    const scenarioValue = resolveRuntimeRowsValue('error_handling.continue_on_error', [rootRuntime]).value as boolean | undefined
     if (scenarioValue !== undefined) {
       return { label: `Scenario default (${scenarioValue ? 'enabled' : 'disabled'})`, disabled: false }
     }
@@ -2529,33 +2585,51 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
         setError('Iterations must be greater than 0 for a script group override.')
         return false
       }
-      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic }
+    }
+    // When the group row or the scenario row is partial (override_fields), every edit is written
+    // as its own listed path. A partial ancestor's sections are projections holding only the
+    // leaves it lists, so the v1 path below — which copies the inherited section into the group
+    // and sends it as a whole-section row — would replace the script's own run_logic, log,
+    // browser and error handling with those few leaves.
+    const partialGroupRuntime = groupRunRuntimeIsPartial(editingGroup, scenario, runDefaultOverridesRef.current, existingOverride)
+    if (partialGroupRuntime) {
+      const edits = groupRuntimePathEdits(groupEditDraft, groupEditChanges)
+      if (edits.length > 0) {
+        nextOverride.runtime_settings = buildPartialGroupRunRuntimeOverride(editingGroup.runtime_settings, existingOverride?.runtime_settings, edits)
+      }
+    }
+    // The v1 write path below edits whole sections of v1 rows only (every row is v1 here), so its
+    // direct section accesses are marked `runtime-row-v1-write` for newTestRuntimeReadGuard.test.ts.
+    // Display and baseline reads go through the shared resolvers instead.
+    if (!partialGroupRuntime && groupEditChanges.iterations) {
+      const iterations = Number(groupEditDraft.iterations)
+      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic } // runtime-row-v1-write
       setRuntimeIterations(runtimeSettings, iterations)
       runtimeChanged = true
     }
-    if (groupEditChanges.log_level) {
-      if (!runtimeSettings.log && effectiveRootRuntime.log) runtimeSettings.log = { ...effectiveRootRuntime.log }
+    if (!partialGroupRuntime && groupEditChanges.log_level) {
+      if (!runtimeSettings.log && effectiveRootRuntime.log) runtimeSettings.log = { ...effectiveRootRuntime.log } // runtime-row-v1-write
       setRuntimeLogLevel(runtimeSettings, groupEditDraft.log_level)
       runtimeChanged = true
     }
-    if (groupEditChanges.auto_transactions) {
-      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic }
+    if (!partialGroupRuntime && groupEditChanges.auto_transactions) {
+      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic } // runtime-row-v1-write
       setRuntimeAutoTransactions(runtimeSettings, groupEditDraft.auto_transactions)
       runtimeChanged = true
     }
-    if (groupEditChanges.pacing) {
+    if (!partialGroupRuntime && groupEditChanges.pacing) {
       const pacing = pacingFromEdit(groupEditDraft.pacingType, groupEditDraft.pacingAmount, groupEditDraft.pacingConfig)
-      if (pacing) runtimeSettings.pacing = pacing
-      else delete runtimeSettings.pacing
+      if (pacing) runtimeSettings.pacing = pacing // runtime-row-v1-write
+      else delete runtimeSettings.pacing // runtime-row-v1-write
       runtimeChanged = true
     }
-    if (groupEditChanges.think_time) {
+    if (!partialGroupRuntime && groupEditChanges.think_time) {
       const thinkTime = thinkTimeFromEdit(groupEditDraft.thinkTimeMs, groupEditDraft.thinkIgnore, groupEditDraft.thinkTimeConfig)
-      if (thinkTime) runtimeSettings.think_time = thinkTime
-      else delete runtimeSettings.think_time
+      if (thinkTime) runtimeSettings.think_time = thinkTime // runtime-row-v1-write
+      else delete runtimeSettings.think_time // runtime-row-v1-write
       runtimeChanged = true
     }
-    if (groupEditChanges.error_handling) {
+    if (!partialGroupRuntime && groupEditChanges.error_handling) {
       // The API applies error_handling as a whole SECTION (mergeRuntimeSettings copies the
       // group's section over the run's, applyRuntimeOverrides then assigns it whole), so the
       // winning section contributes every field and the levels underneath contribute nothing —
@@ -2563,8 +2637,8 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
       // every combination of the two halves; the section it declines to build is dropped here and
       // tombstoned below, which is how the group stops pinning error handling at all.
       const errorHandling = buildGroupErrorHandlingSectionForRun({
-        groupSection: runtimeSettings.error_handling,
-        inheritedSection: effectiveRootRuntime.error_handling,
+        groupSection: runtimeSettings.error_handling, // runtime-row-v1-write
+        inheritedSection: effectiveRootRuntime.error_handling, // runtime-row-v1-write
         draft: {
           continue_on_error: groupEditDraft.continue_on_error,
           snapshot_on_error: groupEditDraft.snapshot_on_error,
@@ -2574,20 +2648,20 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
           snapshot_on_error: groupEditChanges.snapshot_on_error,
         },
       })
-      if (errorHandling) runtimeSettings.error_handling = errorHandling
-      else delete runtimeSettings.error_handling
+      if (errorHandling) runtimeSettings.error_handling = errorHandling // runtime-row-v1-write
+      else delete runtimeSettings.error_handling // runtime-row-v1-write
       runtimeChanged = true
     }
-    if (groupEditChanges.browser) {
-      if (!runtimeSettings.browser_config && effectiveRootRuntime.browser_config) {
-        runtimeSettings.browser_config = cloneRuntimeSettingsForRun({ browser_config: effectiveRootRuntime.browser_config })?.browser_config
+    if (!partialGroupRuntime && groupEditChanges.browser) {
+      if (!runtimeSettings.browser_config && effectiveRootRuntime.browser_config) { // runtime-row-v1-write
+        runtimeSettings.browser_config = cloneRuntimeSettingsForRun({ browser_config: effectiveRootRuntime.browser_config })?.browser_config // runtime-row-v1-write
       }
       setRuntimeBrowser(runtimeSettings, {
         device_profile: groupEditDraft.browser_device_profile || undefined,
         headless: groupEditDraft.browser_headless ? groupEditDraft.browser_headless === 'true' : undefined,
         touch_mode: groupEditDraft.browser_touch_mode ? groupEditDraft.browser_touch_mode === 'true' : undefined,
         orientation: groupEditDraft.browser_orientation || undefined,
-      }, { ancestorPinsBrowserConfig: Boolean(effectiveRootRuntime.browser_config) })
+      }, { ancestorPinsBrowserConfig: Boolean(effectiveRootRuntime.browser_config) }) // runtime-row-v1-write
       runtimeChanged = true
     }
     // buildGroupsForRunPayload overlays this override back onto the group's STORED
@@ -2600,8 +2674,10 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
     // also keeps the clear across a second save: the merge above already applied the earlier
     // tombstone, so the key is missing again and would otherwise be silently forgotten,
     // restoring the stored section.
-    stampClearedRuntimeSections(runtimeSettings, editingGroup.runtime_settings)
-    if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsInstructions(runtimeSettings)) {
+    if (!partialGroupRuntime) stampClearedRuntimeSections(runtimeSettings, editingGroup.runtime_settings)
+    if (partialGroupRuntime) {
+      // Set above, or kept from the existing override when no runtime field changed.
+    } else if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsInstructions(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
     } else if (runtimeChanged) {
       delete nextOverride.runtime_settings
@@ -4077,6 +4153,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         <option value="tps">Target TPS</option>
                       </select>
                     </label>
+                    {groupHiddenTiming.pacing && !groupEditDraft.pacingType && groupEditDraft.pacingConfig && (
+                      <p className="new-test-default-editor-note" data-testid="group-hidden-pacing">
+                        {groupHiddenTiming.pacing.summary} ({groupHiddenTiming.pacing.groupOwned ? 'group override' : 'scenario override'})
+                        {groupHiddenTiming.pacing.groupOwned && (
+                          <> <button type="button" className="btn btn-ghost btn-sm" onClick={() => setGroupEditDraft(prev => ({ ...prev, pacingAmount: '', pacingConfig: undefined }))}>Reset to script timing</button></>
+                        )}
+                      </p>
+                    )}
                     {['fixed_delay', 'fixed_interval', 'tps'].includes(groupEditDraft.pacingType) && (
                       <label className={changedFieldClass(groupEditChanges.pacing)}>
                         <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Seconds'} <ChangedBadge changed={groupEditChanges.pacing} /></span>
@@ -4173,6 +4257,14 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                         <option value="uniform">Uniform</option>
                       </select>
                     </label>
+                    {groupHiddenTiming.think_time && !canonicalThinkTimeType(groupEditDraft.thinkTimeConfig?.type) && !groupEditDraft.thinkIgnore && groupEditDraft.thinkTimeConfig && (
+                      <p className="new-test-default-editor-note" data-testid="group-hidden-think-time">
+                        {groupHiddenTiming.think_time.summary} ({groupHiddenTiming.think_time.groupOwned ? 'group override' : 'scenario override'})
+                        {groupHiddenTiming.think_time.groupOwned && (
+                          <> <button type="button" className="btn btn-ghost btn-sm" onClick={() => setGroupEditDraft(prev => ({ ...prev, thinkTimeMs: '', thinkTimeConfig: undefined }))}>Reset to script think time</button></>
+                        )}
+                      </p>
+                    )}
                     {/* No mode selected is the inherit option, which carries no mean: showing the
                         field there invites a value thinkTimeFromEdit now deliberately ignores. */}
                     {groupEditDraft.thinkTimeConfig?.type === 'random_percentage' && <ThinkTimePercentageInputs value={groupEditDraft.thinkTimeConfig} disabled={groupEditDraft.thinkIgnore} onChange={change => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, ...change } }))} />}
@@ -4234,7 +4326,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </label>
                     <label className={changedFieldClass(groupEditChanges.continue_on_error)}>
                       <span>Continue on error <ChangedBadge changed={groupEditChanges.continue_on_error} /></span>
-                      <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingDraftEdit(prev, 'continue_on_error', event.target.value) }))}>
+                      <select className="settings-input" value={groupEditDraft.continue_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingSelect(prev, 'continue_on_error', event.target.value, groupEditPartialRuntime) }))}>
                         <option value="" disabled={continueOnErrorInherit.disabled}>{continueOnErrorInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>
@@ -4242,7 +4334,7 @@ export default function NewTestPage({ activeApplication: workspaceApplication, a
                     </label>
                     <label className={changedFieldClass(groupEditChanges.snapshot_on_error)}>
                       <span>Snapshot on error <ChangedBadge changed={groupEditChanges.snapshot_on_error} /></span>
-                      <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingDraftEdit(prev, 'snapshot_on_error', event.target.value) }))}>
+                      <select className="settings-input" value={groupEditDraft.snapshot_on_error} onChange={event => setGroupEditDraft(prev => ({ ...prev, ...applyGroupErrorHandlingSelect(prev, 'snapshot_on_error', event.target.value, groupEditPartialRuntime) }))}>
                         <option value="" disabled={groupErrorHandlingInherit.disabled}>{groupErrorHandlingInherit.label}</option>
                         <option value="true">Enabled</option>
                         <option value="false">Disabled</option>

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  RUNTIME_OVERRIDE_SCHEMA,
+  applyRuntimeOverrideDiff,
+  applyRuntimeOverrideEdit,
+  effectiveRuntimeValue,
   formatAutoTransactions,
   formatBrowserEmulation,
   formatEffectiveRuntimeField,
@@ -11,13 +15,33 @@ import {
   formatLog,
   formatPacing,
   formatThinkTime,
+  isFieldOverridden,
+  isPartialRuntimeDraft,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
+  legacyRuntimeOverrideFields,
+  legacyRuntimeOverridePayload,
+  normalizeRuntimeOverrideFieldPath,
+  normalizeRuntimeOverrideFields,
+  overlayRuntimeOverrideSection,
   overrideFromRuntimeDraft,
+  partialRuntimeOverrideFromDraft,
+  resetOverrideField,
   resolveRuntimeFieldSource,
+  resolveRuntimeRowsValue,
+  runtimeBrowserSettings,
+  resolveRuntimeOverrideFields,
   runtimeDraftFromOverride,
   runtimeOverrideFromScriptConfig,
+  setOverrideField,
+  effectiveRuntimeSection,
+  overrideFieldValue,
+  runtimeOverrideFieldPaths,
+  runtimeRowCoversPath,
+  runtimeSectionSource,
+  upgradeRuntimeDraftToPartial,
 } from './runtimeSettingsModel'
+import { type PartialRuntimeSettingsOverride } from '../types/runtimeSettings'
 import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 
 describe('runtimeSettingsModel', () => {
@@ -97,6 +121,46 @@ describe('runtimeSettingsModel', () => {
     expect(groupWins).toEqual({ value: 'edge', source: 'group' })
     const engineFallback = formatEffectiveRuntimeField('browser_emulation', undefined, undefined, undefined)
     expect(engineFallback).toEqual({ value: 'None', source: 'engine' })
+  })
+
+  it('attributes a v1 layer\'s whole section to that layer even when it formats empty', () => {
+    type Row = Parameters<typeof formatEffectiveRuntimeField>[1]
+    const script = { pacing: { type: 'fixed_delay', delay_ms: 500 }, error_handling: { continue_on_error: true }, think_time: { type: 'fixed', mean_ms: 750 } } as Row
+    const group = { pacing: { delay_ms: 0 }, error_handling: {} } as unknown as Row
+    expect(formatEffectiveRuntimeField('pacing', group, undefined, script)).toEqual({ value: 'None', source: 'group' })
+    expect(formatEffectiveRuntimeField('error_handling', group, undefined, script)).toEqual({ value: 'Stop on error', source: 'group' })
+    // A scenario v1 layer carrying the section wins over the script below it.
+    expect(formatEffectiveRuntimeField('pacing', undefined, group, script)).toEqual({ value: 'None', source: 'scenario' })
+    // A field the layer does not carry still falls through.
+    expect(formatEffectiveRuntimeField('think_time', group, undefined, script)).toEqual({ value: 'fixed · 750ms', source: 'script' })
+  })
+
+  it('formats a partial group\'s listed leaves over the inherited section in the Summary', () => {
+    type Row = Parameters<typeof formatEffectiveRuntimeField>[1] & { override_fields?: string[] }
+    const group = { http: { request_timeout_ms: 5000 }, override_fields: ['http.request_timeout_ms'] } as Row
+    const scenario = { http: { version: '2', proxy_mode: 'custom' } } as Row
+    const http = formatEffectiveRuntimeField('http', group, scenario)
+    expect(http.value).toContain('5000ms timeout')
+    expect(http.value).toContain('proxy')
+    expect(http.source).toBe('mixed')
+    // A group listing the whole section still owns it.
+    const whole = formatEffectiveRuntimeField('http', { http: { request_timeout_ms: 5000 }, override_fields: ['http'] } as Row, scenario)
+    expect(whole).toEqual({ value: '5000ms timeout', source: 'group' })
+    // A compact leaf reads its canonical path.
+    expect(formatEffectiveRuntimeField('iterations', { run_logic: { iterations: 5 }, override_fields: ['run_logic.iterations'] } as Row, { iterations: 2 } as Row).source).toBe('group')
+    const retries = formatEffectiveRuntimeField('error_handling', { error_handling: { max_retries: 3 }, override_fields: ['error_handling.max_retries'] } as Row, { error_handling: { continue_on_error: true } } as Row)
+    expect(retries.source).toBe('mixed')
+    expect(retries.value).toMatch(/continue/i)
+  })
+
+  it('resolves stored rows per path, partial rows by what they list and v1 rows by section', () => {
+    const partial = { error_handling: { continue_on_error: true }, override_fields: ['error_handling.continue_on_error'] }
+    const v1 = { error_handling: {} }
+    expect(resolveRuntimeRowsValue('error_handling.snapshot_on_error', [partial, { error_handling: { snapshot_on_error: true } }])).toEqual({ index: 1, value: true })
+    expect(resolveRuntimeRowsValue('error_handling.snapshot_on_error', [v1, { error_handling: { snapshot_on_error: true } }])).toEqual({ index: 0, value: undefined })
+    expect(resolveRuntimeRowsValue('log.level', [{ log: { level: 'debug' }, override_fields: ['log.level'] }])).toEqual({ index: 0, value: 'debug' })
+    expect(runtimeBrowserSettings({ browser_config: { device_profile: 'iphone' }, override_fields: ['browser.device_profile'] })).toEqual({ device_profile: 'iphone' })
+    expect(runtimeBrowserSettings({ browser: { headless: true } })).toEqual({ headless: true })
   })
 
   it('formats and round-trips a Java Env override', () => {
@@ -372,5 +436,415 @@ describe('runtimeSettingsModel', () => {
       runtimeDraftFromOverride({ web_runtime: { data_formatting: { auto_detect: false } } }),
     )
     expect(materialized?.web_runtime?.data_formatting?.auto_detect).toBe(false)
+  })
+})
+
+describe('partial runtime overrides (override_fields)', () => {
+  const REDACTED = '[REDACTED]'
+
+  it('keeps the override-section structure in step with docs/dsl.schema.json', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const schema = JSON.parse(readFileSync(`${cwd}/../docs/dsl.schema.json`, 'utf8') as string) as {
+      $defs: Record<string, { type?: string; properties?: Record<string, { $ref?: string; type?: string }> }>
+    }
+    const defs = schema.$defs
+    const kind = (property: { $ref?: string; type?: string }): string => {
+      if (property.$ref) {
+        const name = property.$ref.split('/').pop() as string
+        const def = defs[name]
+        if (def.type === 'object' && def.properties) return name
+        return def.type === 'object' ? '*' : ''
+      }
+      return property.type === 'object' ? '*' : ''
+    }
+    const expected: Record<string, string> = {}
+    const walk = (name: string) => {
+      if (name in expected) return
+      expected[name] = ''
+      const properties = defs[name].properties ?? {}
+      expected[name] = Object.keys(properties).sort().map(field => {
+        const child = kind(properties[field])
+        if (child && child !== '*') walk(child)
+        return child ? `${field}:${child}` : field
+      }).join(' ')
+    }
+    const sections = ['base_url', 'results', 'websocket', 'pacing', 'think_time', 'error_handling', 'log', 'run_logic', 'http', 'web_runtime', 'soap', 'browser', 'browser_emulation']
+    const root = sections.map(section => {
+      const child = kind(defs.ScriptConfig.properties![section])
+      if (child && child !== '*') walk(child)
+      return child ? `${section}:${child}` : section
+    })
+    expect(RUNTIME_OVERRIDE_SCHEMA).toEqual({ ScriptConfig: root.join(' '), ...expected })
+  })
+
+  it('normalizes paths exactly as normalizeRuntimeOverrideFields does', () => {
+    const cases: Array<[string, string | undefined]> = [
+      ['iterations', 'run_logic.iterations'],
+      ['log_level', 'log.level'],
+      ['auto_transactions', 'run_logic.auto_transactions'],
+      ['browser_config', 'browser'],
+      ['browser_config.headless', 'browser.headless'],
+      ['config.http.request_timeout_ms', 'http.request_timeout_ms'],
+      [' HTTP.TLS.Min_Version ', 'http.tls.min_version'],
+      ['http', 'http'],
+      ['env', 'env'],
+      ['env.API_Key', 'env.API_Key'],
+      ['redaction_rules', 'redaction_rules'],
+      ['java_vuser', 'java_vuser'],
+      ['java_vuser.classpath', 'java_vuser.classpath'],
+      ['http.default_headers', 'http.default_headers'],
+      // A map key keeps its case and any dots, and is not walked.
+      ['http.default_headers.X-Trace.Id', 'http.default_headers.X-Trace.Id'],
+      ['soap.ws_security.username_token.password', 'soap.ws_security.username_token.password'],
+      ['web_runtime.network_simulation.latency_ms', 'web_runtime.network_simulation.latency_ms'],
+      // A list is a whole leaf: no index paths below it.
+      ['http.proxy.no_proxy', 'http.proxy.no_proxy'],
+      ['http.proxy.no_proxy.0', undefined],
+      ['http.request_timeout_ms.x', undefined],
+      ['java_vuser.jdk_home.x', undefined],
+      ['java_vuser.runner_command', undefined],
+      ['jmeter', undefined],
+      ['http.nope', undefined],
+      ['env.', undefined],
+      ['config.', undefined],
+      ['', undefined],
+    ]
+    for (const [raw, canonical] of cases) {
+      expect([raw, normalizeRuntimeOverrideFieldPath(raw)]).toEqual([raw, canonical])
+    }
+    expect(normalizeRuntimeOverrideFields(['iterations', 'run_logic.iterations', 'log_level'])).toEqual(['run_logic.iterations', 'log.level'])
+  })
+
+  it('lists what a v1 row applies, letting a section beat its compact alias', () => {
+    expect(legacyRuntimeOverrideFields({
+      log: { on_error_only: true },
+      log_level: 'debug',
+      run_logic: { workload_model: 'open' },
+      iterations: 4,
+      browser_config: { engine: 'webkit' },
+      browser: { headless: true },
+      http: { request_timeout_ms: 1 },
+      env: { A: '1' },
+    })).toEqual(['log', 'run_logic', 'http', 'browser', 'env'])
+    expect(legacyRuntimeOverrideFields({
+      log_level: 'debug',
+      iterations: 4,
+      auto_transactions: 'per_action',
+      browser: { headless: false, device_profile: 'pixel_8' },
+      web_runtime: { network_simulation: { latency_ms: 0 }, content_checks: [{ text: 'ok' }], data_formatting: { auto_detect: false } },
+      java_vuser: { use_xbootclasspath: false, vusers_per_jvm: 0 },
+    })).toEqual([
+      'log.level',
+      'run_logic.iterations',
+      'run_logic.auto_transactions',
+      'web_runtime.content_checks',
+      'browser.headless',
+      'browser.device_profile',
+      'java_vuser.use_xbootclasspath',
+    ])
+  })
+
+  it('lists one HTTP leaf for an edit on an empty draft and sends only that leaf', () => {
+    const draft = setOverrideField(undefined, 'http.request_timeout_ms', 5000)
+    expect(draft.override_fields).toEqual(['http.request_timeout_ms'])
+    expect(partialRuntimeOverrideFromDraft(draft)).toEqual({
+      http: { request_timeout_ms: 5000 },
+      override_fields: ['http.request_timeout_ms'],
+    })
+  })
+
+  it('converts a stored v1 row on first edit without changing what it applies', () => {
+    const stored = runtimeDraftFromOverride({
+      http: { request_timeout_ms: 100, tls: { min_version: '1.2' } },
+      log: { level: 'debug' },
+      log_level: 'standard',
+      iterations: 3,
+      pacing: { type: 'fixed_delay', delay_ms: 250 },
+    })
+    const edited = setOverrideField(stored, 'error_handling.max_retries', 2)
+    expect(edited.override_fields).toEqual(['pacing', 'log', 'run_logic.iterations', 'http', 'error_handling.max_retries'])
+    // The shadowed log_level alias is dropped: v1 let the log section win.
+    expect(partialRuntimeOverrideFromDraft(edited)).toEqual({
+      pacing: { type: 'fixed_delay', delay_ms: 250 },
+      log: { level: 'debug' },
+      run_logic: { iterations: 3 },
+      http: { request_timeout_ms: 100, tls: { min_version: '1.2' } },
+      error_handling: { max_retries: 2 },
+      override_fields: ['pacing', 'log', 'run_logic.iterations', 'http', 'error_handling.max_retries'],
+    })
+    // A path inside an already-listed section is covered, not listed twice.
+    expect(setOverrideField(edited, 'http.request_timeout_ms', 9).override_fields).toEqual(edited.override_fields)
+  })
+
+  it('leaves a v1 row nobody edits as v1', () => {
+    const stored = runtimeDraftFromOverride({ http: { request_timeout_ms: 100 }, iterations: 3 })
+    expect(isPartialRuntimeDraft(stored)).toBe(false)
+    expect(overrideFromRuntimeDraft(stored)).not.toHaveProperty('override_fields')
+    expect(legacyRuntimeOverridePayload(stored!)).toEqual({ http: { request_timeout_ms: 100 }, iterations: 3 })
+  })
+
+  it('resets one field to inherited while keeping every other override in its section', () => {
+    let draft = setOverrideField(undefined, 'http.request_timeout_ms', 5000)
+    draft = setOverrideField(draft, 'http.tls.min_version', '1.3')
+    const reset = resetOverrideField(draft, 'http.request_timeout_ms')
+    expect(reset.override_fields).toEqual(['http.tls.min_version'])
+    expect(partialRuntimeOverrideFromDraft(reset)).toEqual({ http: { tls: { min_version: '1.3' } }, override_fields: ['http.tls.min_version'] })
+    // Resetting the last field leaves nothing overridden.
+    expect(isRuntimeDraftEmpty(resetOverrideField(reset, 'http.tls.min_version'))).toBe(true)
+  })
+
+  it('splits a listed section into its other fields when one field inside it is reset', () => {
+    const stored = runtimeDraftFromOverride({ error_handling: { continue_on_error: false, max_retries: 2 } })
+    const reset = resetOverrideField(stored, 'error_handling.continue_on_error')
+    expect(reset.override_fields).toEqual([
+      'error_handling.fail_transaction_on_error_message',
+      'error_handling.honor_retry_after',
+      'error_handling.max_retries',
+      'error_handling.retry_after_max_ms',
+      'error_handling.retry_backoff',
+      'error_handling.retry_delay_ms',
+      'error_handling.retry_on',
+      'error_handling.snapshot_on_error',
+    ])
+    expect(partialRuntimeOverrideFromDraft(reset)?.error_handling).toEqual({ max_retries: 2 })
+    expect(reset.continue_on_error).toBeUndefined()
+    // Nested: resetting a TLS leaf of a listed http section keeps http's other
+    // fields and TLS's other fields listed.
+    const http = resetOverrideField(runtimeDraftFromOverride({ http: { tls: { min_version: '1.2', ca_cert_file: 'ca.pem' } } }), 'http.tls.min_version')
+    expect(http.override_fields).toContain('http.request_timeout_ms')
+    expect(http.override_fields).toContain('http.tls.ca_cert_file')
+    expect(http.override_fields).not.toContain('http.tls')
+    expect(http.override_fields).not.toContain('http.tls.min_version')
+    // env and map keys split into the other keys present.
+    const env = resetOverrideField(runtimeDraftFromOverride({ env: { A: '1', B: '2' } }), 'env.A')
+    expect(env.override_fields).toEqual(['env.B'])
+    expect(partialRuntimeOverrideFromDraft(env)).toEqual({ env: { B: '2' }, override_fields: ['env.B'] })
+  })
+
+  it('lists explicit true and false and treats an unset tri-state as inherited', () => {
+    const disabled = setOverrideField(undefined, 'error_handling.continue_on_error', false)
+    expect(disabled.continue_on_error).toBe(false)
+    expect(isFieldOverridden(disabled, 'error_handling.continue_on_error')).toBe(true)
+    expect(partialRuntimeOverrideFromDraft(disabled)).toEqual({ error_handling: { continue_on_error: false }, override_fields: ['error_handling.continue_on_error'] })
+    const inherited = resetOverrideField(disabled, 'error_handling.continue_on_error')
+    expect(isFieldOverridden(inherited, 'error_handling.continue_on_error')).toBe(false)
+    expect(inherited.continue_on_error).toBeUndefined()
+    // A listed path with no value overrides to empty (the backend's zero value).
+    const cleared = setOverrideField(undefined, 'http.keep_alive', undefined)
+    expect(isFieldOverridden(cleared, 'http.keep_alive')).toBe(true)
+    expect(partialRuntimeOverrideFromDraft(cleared)).toEqual({ override_fields: ['http.keep_alive'] })
+  })
+
+  it('keeps a stored masked secret listed and sent unchanged so the backend restores it', () => {
+    // v1 row: the whole http section is listed on conversion, so the masked
+    // password is sent as "[REDACTED]" and reconcileHTTPSecrets restores it.
+    const v1 = runtimeDraftFromOverride({ http: { auth: { type: 'basic', username: REDACTED, password: REDACTED } } })
+    const v1Edited = setOverrideField(v1, 'http.request_timeout_ms', 5000)
+    expect(partialRuntimeOverrideFromDraft(v1Edited)).toEqual({
+      http: { auth: { type: 'basic', username: REDACTED, password: REDACTED }, request_timeout_ms: 5000 },
+      override_fields: ['http'],
+    })
+    // Partial row: a listed secret leaf stays listed and masked when a sibling changes.
+    const partial = runtimeDraftFromOverride({
+      http: { auth: { password: REDACTED }, proxy: { url: 'http://proxy' } },
+      override_fields: ['http.auth.password', 'http.proxy.url'],
+    })
+    const edited = setOverrideField(partial, 'http.request_timeout_ms', 5000)
+    expect(partialRuntimeOverrideFromDraft(edited)).toEqual({
+      http: { auth: { password: REDACTED }, proxy: { url: 'http://proxy' }, request_timeout_ms: 5000 },
+      override_fields: ['http.auth.password', 'http.proxy.url', 'http.request_timeout_ms'],
+    })
+    // A value at an unlisted path is never applied (mergeRuntimeSettingsPartial
+    // drops it before sealing), so it is not sent.
+    const unlisted = runtimeDraftFromOverride({ http: { auth: { password: REDACTED } }, override_fields: ['http.request_timeout_ms'] })
+    expect(partialRuntimeOverrideFromDraft(unlisted)).toEqual({ override_fields: ['http.request_timeout_ms'] })
+    // A typed credential is an ordinary listed value; the backend seals it.
+    const typed = setOverrideField(undefined, 'soap.ws_security.username_token.password', 'hunter2')
+    expect(partialRuntimeOverrideFromDraft(typed)).toEqual({
+      soap: { ws_security: { username_token: { password: 'hunter2' } } },
+      override_fields: ['soap.ws_security.username_token.password'],
+    })
+  })
+
+  it('reads a stored partial row the way resolveEffectiveOverrideFields does', () => {
+    expect(resolveRuntimeOverrideFields({
+      env: { A: '1' },
+      iterations: 3,
+      browser: { headless: true },
+      override_fields: ['http.request_timeout_ms'],
+    })).toEqual(['http.request_timeout_ms', 'env', 'run_logic.iterations', 'browser.headless'])
+    // A compact alias fills its section's zero value under partial semantics.
+    const draft = runtimeDraftFromOverride({ iterations: 3, run_logic: { workload_model: 'open' }, override_fields: ['run_logic.workload_model'] })
+    expect(partialRuntimeOverrideFromDraft(draft)).toEqual({
+      run_logic: { workload_model: 'open', iterations: 3 },
+      override_fields: ['run_logic.workload_model', 'run_logic.iterations'],
+    })
+  })
+
+  it('applies a section patch leaf by leaf and a wholesale section by its changed leaves', () => {
+    const patched = applyRuntimeOverrideEdit(undefined, 'http', { tls: { min_version: '1.3' }, keep_alive: false, default_headers: { 'X-A': '1' } })
+    expect(patched.override_fields).toEqual(['http.tls.min_version', 'http.keep_alive', 'http.default_headers'])
+    const reverted = applyRuntimeOverrideEdit(patched, 'http', { keep_alive: undefined })
+    expect(reverted.override_fields).toEqual(['http.tls.min_version', 'http.default_headers'])
+    const diffed = applyRuntimeOverrideDiff(undefined, 'java_vuser', { classpath: ['a.jar'], jvm_sharing: 'shared' }, { classpath: ['a.jar'], jvm_sharing: 'dedicated' })
+    expect(partialRuntimeOverrideFromDraft(diffed)).toEqual({ java_vuser: { jvm_sharing: 'dedicated' }, override_fields: ['java_vuser.jvm_sharing'] })
+  })
+
+  it('resolves effective values with group override, scenario default, script and engine provenance', () => {
+    const script = { base_url: '', http: { request_timeout_ms: 300, default_headers: { 'X-Script': '1' } } }
+    const engine = { base_url: '', http: { request_timeout_ms: 60000, connect_timeout_ms: 30000, keep_alive: true } }
+    const scenario = setOverrideField(undefined, 'http.connect_timeout_ms', 1000)
+    const group = setOverrideField(undefined, 'http.keep_alive', false)
+    const layers = { group, scenario, script, engine }
+    expect(effectiveRuntimeValue('http.keep_alive', layers)).toEqual({ value: false, provenance: 'group_override' })
+    expect(effectiveRuntimeValue('http.connect_timeout_ms', layers)).toEqual({ value: 1000, provenance: 'scenario_default' })
+    expect(effectiveRuntimeValue('http.default_headers', layers)).toEqual({ value: { 'X-Script': '1' }, provenance: 'script' })
+    expect(effectiveRuntimeValue('http.request_timeout_ms', { script: { base_url: '' }, engine })).toEqual({ value: 60000, provenance: 'engine_default' })
+    // A v1 layer applies every path its sections cover, even one it leaves empty.
+    expect(effectiveRuntimeValue('http.request_timeout_ms', { scenario: { http: { version: '2' } }, script, engine })).toEqual({ value: undefined, provenance: 'scenario_default' })
+  })
+
+  it('overlays a section for display: listed leaves over the inherited value', () => {
+    const inherited = { request_timeout_ms: 300, tls: { min_version: '1.2', ca_cert_file: 'ca.pem' } }
+    const draft = setOverrideField(undefined, 'http.tls.min_version', '1.3')
+    expect(overlayRuntimeOverrideSection(inherited, draft, 'http')).toEqual({ request_timeout_ms: 300, tls: { min_version: '1.3', ca_cert_file: 'ca.pem' } })
+    // A v1 section replaces the inherited one whole.
+    expect(overlayRuntimeOverrideSection(inherited, { log_level: '', auto_transactions: '', http: { version: '2' } }, 'http')).toEqual({ version: '2' })
+  })
+
+  it('carries SOAP and override_fields through the draft and the v1 payload', () => {
+    const stored = { soap: { version: '1.2' } }
+    const draft = runtimeDraftFromOverride(stored)
+    expect(draft?.soap).toEqual({ version: '1.2' })
+    expect(isRuntimeDraftEmpty(draft)).toBe(false)
+    expect(legacyRuntimeOverridePayload(draft!)).toEqual({ soap: { version: '1.2' } })
+    expect(overrideFromRuntimeDraft(draft)).toMatchObject({ soap: { version: '1.2' } })
+  })
+})
+
+describe('v1 rows keep whole-section semantics for empty or untyped sections', () => {
+  // Wire rows as the API returns them: omitempty drops a zero `type`.
+  const wire = (row: object) => row as PartialRuntimeSettingsOverride
+  it('lists an empty v1 error_handling, think_time or untyped pacing whole', () => {
+    expect(upgradeRuntimeDraftToPartial(runtimeDraftFromOverride({ error_handling: {} })).override_fields).toContain('error_handling')
+    expect(runtimeOverrideFieldPaths({ error_handling: {} })).toEqual(['error_handling'])
+    expect(runtimeOverrideFieldPaths(wire({ think_time: {} }))).toEqual(['think_time'])
+    expect(runtimeOverrideFieldPaths(wire({ pacing: { delay_ms: 500 } }))).toEqual(['pacing'])
+    expect(runtimeOverrideFieldPaths(wire({ pacing: {} }))).toEqual(['pacing'])
+    expect(upgradeRuntimeDraftToPartial(runtimeDraftFromOverride(wire({ think_time: {} }))).override_fields).toContain('think_time')
+    expect(upgradeRuntimeDraftToPartial(runtimeDraftFromOverride(wire({ pacing: { delay_ms: 500 } }))).override_fields).toContain('pacing')
+  })
+
+  it('agrees with resolveRuntimeRowsValue and displays the zero section', () => {
+    expect(effectiveRuntimeSection('think_time', [wire({ think_time: {} })])).toEqual({})
+    expect(effectiveRuntimeSection('think_time', [wire({ think_time: {} }), { think_time: { type: 'random', mean_ms: 100 } }])).toEqual({})
+    expect(effectiveRuntimeSection('error_handling', [{ error_handling: {} }], { snapshot_on_error: true })).toEqual({})
+    for (const row of [{ error_handling: {} }, { think_time: {} }, { pacing: { delay_ms: 500 } }].map(wire)) {
+      const section = Object.keys(row)[0]
+      expect(resolveRuntimeRowsValue(section, [row]).index).toBe(0)
+      expect(runtimeRowCoversPath(row, section)).toBe(true)
+      expect(isFieldOverridden(row, section)).toBe(true)
+      expect(runtimeSectionSource(section, [row])).toEqual({ layer: 0, whole: true })
+    }
+  })
+
+  it('keeps the empty section pinned through an unrelated partial edit', () => {
+    const edited = setOverrideField(runtimeDraftFromOverride({ error_handling: {}, log: { level: 'debug' } }), 'log.level', 'trace')
+    const row = partialRuntimeOverrideFromDraft(edited)
+    expect(row?.override_fields).toEqual(expect.arrayContaining(['error_handling', 'log']))
+    expect(row?.error_handling).toEqual({})
+    const reset = resetOverrideField(runtimeDraftFromOverride(wire({ think_time: {}, log: { level: 'debug' } })), 'log')
+    expect(partialRuntimeOverrideFromDraft(reset)).toEqual({ think_time: {}, override_fields: ['think_time'] })
+  })
+
+  it('folds flat draft error-handling controls over the v1 section', () => {
+    const draft = { ...runtimeDraftFromOverride({ error_handling: {} })!, continue_on_error: true }
+    expect(overrideFieldValue(draft, 'error_handling')).toEqual({ continue_on_error: true })
+  })
+
+  it('does not treat a null run tombstone as a v1 section', () => {
+    expect(runtimeOverrideFieldPaths({ error_handling: null, think_time: null, pacing: null } as PartialRuntimeSettingsOverride)).toEqual([])
+  })
+})
+
+describe('listed java_vuser and env overlay the lower layer', () => {
+  const lower = { java_vuser: { jvm_sharing: 'shared', vusers_per_jvm: 4, classpath: ['lib.jar'] }, env: { BASE: 'b', OTHER: 'o' } }
+  const row = { java_vuser: { jdk_home: '/a' }, override_fields: ['java_vuser'] } as PartialRuntimeSettingsOverride
+
+  it('displays only the non-empty leaves over the lower layer', () => {
+    expect(effectiveRuntimeSection('java_vuser', [row], lower.java_vuser)).toEqual({ ...lower.java_vuser, jdk_home: '/a' })
+    expect(effectiveRuntimeSection('java_vuser', [row, lower as PartialRuntimeSettingsOverride])).toEqual({ ...lower.java_vuser, jdk_home: '/a' })
+    expect(resolveRuntimeRowsValue('java_vuser.jvm_sharing', [row, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: 'shared' })
+    expect(resolveRuntimeRowsValue('java_vuser.jdk_home', [row, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: '/a' })
+    expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [row])).toEqual({ index: -1, value: undefined })
+    const script = { java_vuser: lower.java_vuser } as unknown as Parameters<typeof effectiveRuntimeValue>[1]['script']
+    expect(effectiveRuntimeValue('java_vuser.vusers_per_jvm', { group: row, script })).toEqual({ value: 4, provenance: 'script' })
+    expect(effectiveRuntimeValue('java_vuser', { group: row, script })).toEqual({ value: { ...lower.java_vuser, jdk_home: '/a' }, provenance: 'group_override' })
+  })
+
+  it('a non-shared jvm_sharing in the listed section clears the per-JVM count', () => {
+    const dedicated = { java_vuser: { jvm_sharing: 'dedicated' }, override_fields: ['java_vuser'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [dedicated, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: undefined })
+    expect(effectiveRuntimeSection('java_vuser', [dedicated], lower.java_vuser)).toEqual({ jvm_sharing: 'dedicated', classpath: ['lib.jar'] })
+  })
+
+  it('a listed non-shared jvm_sharing leaf clears the per-JVM count (partial and v1 rows)', () => {
+    const partialLeaf = { java_vuser: { jvm_sharing: 'dedicated' }, override_fields: ['java_vuser.jvm_sharing'] } as PartialRuntimeSettingsOverride
+    const v1Leaf = { java_vuser: { jvm_sharing: 'dedicated' } } as PartialRuntimeSettingsOverride
+    for (const row of [partialLeaf, v1Leaf]) {
+      expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [row, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: undefined })
+      expect(overlayRuntimeOverrideSection(lower.java_vuser, row, 'java_vuser')).toEqual({ jvm_sharing: 'dedicated', classpath: ['lib.jar'] })
+      expect(effectiveRuntimeSection('java_vuser', [row], lower.java_vuser)).toEqual({ jvm_sharing: 'dedicated', classpath: ['lib.jar'] })
+      const script = { java_vuser: lower.java_vuser } as unknown as Parameters<typeof effectiveRuntimeValue>[1]['script']
+      expect(effectiveRuntimeValue('java_vuser.vusers_per_jvm', { scenario: row, script })).toEqual({ value: undefined, provenance: 'scenario_default' })
+      // A higher row re-sharing JVMs without a count keeps the cleared count.
+      const higher = { java_vuser: { jvm_sharing: 'shared' } } as PartialRuntimeSettingsOverride
+      expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [higher, row, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: undefined })
+      expect(effectiveRuntimeSection('java_vuser', [higher, row], lower.java_vuser)).toEqual({ jvm_sharing: 'shared', classpath: ['lib.jar'] })
+    }
+    // A shared leaf, or a row that also lists its own count, keeps the count.
+    const sharedLeaf = { java_vuser: { jvm_sharing: 'threads' }, override_fields: ['java_vuser.jvm_sharing'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [sharedLeaf, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: 4 })
+    expect(overlayRuntimeOverrideSection(lower.java_vuser, sharedLeaf, 'java_vuser')).toEqual({ ...lower.java_vuser, jvm_sharing: 'threads' })
+    const withCount = { java_vuser: { jvm_sharing: 'dedicated', vusers_per_jvm: 7 }, override_fields: ['java_vuser.jvm_sharing', 'java_vuser.vusers_per_jvm'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('java_vuser.vusers_per_jvm', [withCount, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: 7 })
+    expect(overlayRuntimeOverrideSection(lower.java_vuser, withCount, 'java_vuser')).toEqual({ jvm_sharing: 'dedicated', vusers_per_jvm: 7, classpath: ['lib.jar'] })
+  })
+
+  it('reset of one leaf splits the listed section into its set leaves only', () => {
+    const both = { java_vuser: { jdk_home: '/a', jdk_selection: 'specified' }, override_fields: ['java_vuser'] } as PartialRuntimeSettingsOverride
+    const reset = resetOverrideField(runtimeDraftFromOverride(both), 'java_vuser.jdk_home')
+    expect(reset.override_fields).toEqual(['java_vuser.jdk_selection'])
+    expect(partialRuntimeOverrideFromDraft(reset)).toEqual({ java_vuser: { jdk_selection: 'specified' }, override_fields: ['java_vuser.jdk_selection'] })
+    // The run keeps the lower layer's sharing mode and per-JVM count.
+    expect(resolveRuntimeRowsValue('java_vuser.jvm_sharing', [reset, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: 'shared' })
+  })
+
+  it('a listed env with keys merges them over the lower layer', () => {
+    const envRow = { env: { BASE: 'x' }, override_fields: ['env'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('env.OTHER', [envRow, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: 'o' })
+    expect(resolveRuntimeRowsValue('env.BASE', [envRow, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: 'x' })
+    expect(effectiveRuntimeSection('env', [envRow], lower.env)).toEqual({ BASE: 'x', OTHER: 'o' })
+    // An implicit env (a partial row carrying env without listing it) reads the same way.
+    const implicit = { env: { BASE: 'x' }, http: { version: '2' }, override_fields: ['http.version'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('env.OTHER', [implicit, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 1, value: 'o' })
+    // A listed env with no keys still clears the lower layers (mergeRuntimeSettingsPartial).
+    const cleared = { override_fields: ['env'] } as PartialRuntimeSettingsOverride
+    expect(resolveRuntimeRowsValue('env.OTHER', [cleared, lower as PartialRuntimeSettingsOverride])).toEqual({ index: 0, value: undefined })
+  })
+})
+
+describe('v1 null section tombstones beside their alias', () => {
+  it.each([
+    [{ browser_config: null, browser: { headless: true } }, 'browser.headless', true],
+    [{ run_logic: null, iterations: 3 }, 'run_logic.iterations', 3],
+    [{ log: null, log_level: 'debug' }, 'log.level', 'debug'],
+  ])('%j: both resolvers read the alias', (row, path, value) => {
+    const stored = row as unknown as PartialRuntimeSettingsOverride
+    expect(runtimeOverrideFieldPaths(stored)).toEqual([path])
+    expect(resolveRuntimeRowsValue(path, [stored])).toEqual({ index: 0, value })
+    expect(overrideFieldValue(stored, path)).toEqual(value)
   })
 })

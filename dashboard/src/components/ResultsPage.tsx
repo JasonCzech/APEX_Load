@@ -38,6 +38,7 @@ import {
   getBrowserBreakdownTitle,
 } from './browserBreakdownModel'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { runtimeBrowserSettings } from './runtimeSettingsModel'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import {
   COMPARISON_CHART_METRICS,
@@ -1579,7 +1580,7 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenTestArchive, onOpenRepo
                     <div key={test.id} className="results-compare-panel" style={{ borderTopColor: comparisonRunColor(index), borderTopWidth: 3 }}>
                       {(() => {
                         const browserOverview = buildBrowserBreakdownData('overall', browserBreakdownSource(report))[0]
-                        const browserRuntimeSummary = formatBrowserRuntimeSummary(report?.manifest.provenance?.runtime_settings?.browser)
+                        const browserRuntimeSummary = formatBrowserRuntimeSummary(runtimeBrowserSettings(report?.manifest.provenance?.runtime_settings))
                         const actionStats = comparisonActionFiltered ? (report?.metric_populations ? report.by_request : report?.by_action)?.[comparisonActionFilter] : undefined
                         const population = report?.metric_populations?.transaction
                         const namedPopulation = population?.transactions ? population : undefined

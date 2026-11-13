@@ -29,6 +29,18 @@ describe('jointEvidenceModel', () => {
     expect(promotedPropertyCategories({ groups: [group('web')] }, [{ id: 'web', protocol: 'browser' }] as never)).toEqual(['browser_iteration'])
   })
 
+  it('keeps the script\'s promoted categories when a partial group row lists only message detail', () => {
+    const scripts = [{ id: 'a', script: { config: { results: { property_analytics: [rule('tier')] } } } }] as never
+    const partial = {
+      name: 'a', script_id: 'a', vusers: 1, ramp_up: '', ramp_down: '', stages: [], initialization: 'at_runtime' as const,
+      runtimeSettings: { results: { message_detail: { mode: 'off' as const } }, override_fields: ['results.message_detail.mode'], log_level: '', auto_transactions: '' },
+    }
+    expect(promotedPropertyCategories({ groups: [partial] }, scripts)).toEqual(['tier'])
+    // Listing property_analytics itself still replaces the script's rules.
+    const listed = { ...partial, runtimeSettings: { ...partial.runtimeSettings, results: { property_analytics: [rule('channel')] }, override_fields: ['results.property_analytics'] } }
+    expect(promotedPropertyCategories({ groups: [listed] }, scripts)).toEqual(['channel'])
+  })
+
   it('keeps at most three dimensions and one property category', () => {
     let projection: JointEvidenceProjection = { population: 'action', dimensions: ['name'] }
     projection = toggleJointEvidenceDimension(projection, 'group', true)
