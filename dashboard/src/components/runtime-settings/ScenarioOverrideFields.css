@@ -1,0 +1,76 @@
+/* Scenario and group override editor: per-field provenance and reset, and the
+   panel list of overrides a panel's own controls do not show. */
+.runtime-override-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.runtime-override-field-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.runtime-field-provenance {
+  font-size: 11px;
+}
+.runtime-override-reset,
+.runtime-override-secret-clear {
+  font-size: 12px;
+}
+.runtime-override-panel-list {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+.runtime-override-panel-list ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.runtime-override-panel-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.runtime-override-panel-value {
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.runtime-override-kv-table {
+  display: grid;
+  gap: 6px;
+}
+.runtime-override-kv-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.runtime-override-kv-row input {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.runtime-override-kv-row .form-error {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--danger-text);
+  font-size: 12px;
+}
+.runtime-override-checkbox-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.runtime-override-checkbox-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}

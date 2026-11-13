@@ -209,7 +209,7 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     // Universal tabs always present.
     render(0) // http
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Browser Emulation', 'Web/HTTP'])
+    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Browser Emulation', 'Web/HTTP'])
 
     render(1) // browser — HTTP Transport (with browser emulation) + Web/HTTP still show
     expect(tabLabels()).toContain('HTTP Transport')
@@ -218,7 +218,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     render(2) // grpc — protocol-specific tabs hidden
     expect(tabLabels()).not.toContain('HTTP Transport')
     expect(tabLabels()).not.toContain('Web/HTTP')
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
+    expect(tabLabels()).toEqual(['Summary', 'Target & identity', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling'])
   })
 
   it('renders the browser device editor under HTTP Transport → Browser emulation for a browser group', () => {
@@ -441,7 +441,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'exponential'),
     )
     expect(backoff).toBeTruthy()
-    expect(Array.from(backoff?.options || []).map(option => option.value)).toEqual(['', 'fixed', 'exponential'])
+    expect(Array.from(backoff?.options || []).map(option => option.value)).toEqual(['', 'fixed', 'exponential', 'retry_after'])
     act(() => setSelectValue(backoff!, 'fixed'))
     expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ retry_backoff: 'fixed' }))
   })
@@ -673,13 +673,13 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'closed') && Array.from(s.options).some(o => o.value === 'open'),
     ) as HTMLSelectElement
     expect(workloadSelect).toBeTruthy()
-    act(() => setSelectValue(workloadSelect, 'open'))
+    act(() => setSelectValue(workloadSelect, 'closed'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
-    expect(last.run_logic).toEqual({ iterations: 5, workload_model: 'open' })
+    expect(last.run_logic).toEqual({ iterations: 5, workload_model: 'closed' })
     expect(last.override_fields).toEqual(['run_logic.iterations', 'run_logic.workload_model'])
     // The legacy alias is folded into the section on the wire.
     expect(buildRuntimeSettingsPayload(last)).toEqual({
-      run_logic: { iterations: 5, workload_model: 'open' },
+      run_logic: { iterations: 5, workload_model: 'closed' },
       override_fields: ['run_logic.iterations', 'run_logic.workload_model'],
     })
   })
@@ -1155,10 +1155,10 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('Error Handling')
-    const continueOnError = Array.from(container.querySelectorAll('label')).find(label =>
-      (label.textContent || '').includes('Continue on error'),
-    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
-    expect(continueOnError.checked).toBe(false)
+    // The scenario default disables continue-on-error; the group inherits it.
+    const continueOnError = findLabeledControl<HTMLSelectElement>('Continue on error', 'select')
+    expect(continueOnError.value).toBe('')
+    expect(continueOnError.options[0].textContent).toBe('Inherit (Disabled)')
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Max retries', 'input'), '3'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(last.max_retries).toBe(3)
@@ -1628,10 +1628,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
     expect(sessionCacheTab).toBeTruthy()
     act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
-    expect(cacheCheckbox).toBeTruthy()
-    act(() => cacheCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => setSelectValue(findLabeledControl<HTMLSelectElement>('HTTP cache override', 'select'), 'true'))
     const cacheWritten = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(cacheWritten?.http).toMatchObject({ cache_enabled: true })
     expect(cacheWritten?.browser_emulation).toBeUndefined()
@@ -2026,9 +2023,10 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('Error Handling')
-    const continueCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Continue on error'))
-    expect(continueCheckbox?.checked).toBe(true)
+    // The v1 section omits continue_on_error, which inherits the scenario policy (enabled).
+    const continueSelect = findLabeledControl<HTMLSelectElement>('Continue on error', 'select')
+    expect(continueSelect.value).toBe('')
+    expect(continueSelect.options[0].textContent).toBe('Inherit (Enabled)')
 
     const snapshotCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
       .find(cb => cb.closest('label')?.textContent?.includes('Snapshot on error'))
@@ -2123,9 +2121,9 @@ describe('RuntimeSettingsGroupEditor', () => {
     const sessionCacheTab = Array.from(container.querySelectorAll('[role="tab"]'))
       .find(tab => (tab.textContent || '').startsWith('Session & Cache'))
     act(() => sessionCacheTab!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
-      .find(cb => cb.closest('label')?.textContent?.includes('Simulate HTTP cache'))
-    expect(cacheCheckbox?.checked).toBe(true)
+    const cacheOverride = findLabeledControl<HTMLSelectElement>('HTTP cache override', 'select')
+    expect(cacheOverride.value).toBe('')
+    expect(cacheOverride.options[0].textContent).toBe('Inherit (Enabled)')
   })
 
   it('allows WebHttpTab content_checks.fail_if_found, case_insensitive, and data_formatting.auto_detect to be overridden from true to false', () => {
@@ -2257,10 +2255,7 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     render(last)
     clickTab('Error Handling')
-    const continueOnError = Array.from(container.querySelectorAll('label')).find(label =>
-      (label.textContent || '').includes('Continue on error'),
-    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
-    act(() => continueOnError.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    act(() => setSelectValue(findLabeledControl<HTMLSelectElement>('Continue on error', 'select'), 'false'))
     last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1] as ScenarioRuntimeSettingsDraft
     // The scripts' retries, delays and the rest of each section keep applying.
     expect(buildRuntimeSettingsPayload(last)).toEqual({
